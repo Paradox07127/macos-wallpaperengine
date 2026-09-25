@@ -206,16 +206,16 @@ struct LocalizationCoverageTests {
         }
     }
 
-    @Test("A key that varies by plural in English has every English form and varies in Spanish too")
+    @Test("English and Spanish vary by plural together, and an English plural has every form written")
     func pluralKeysVaryInEnglishAndSpanish() throws {
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
         let plural = catalog.pluralKeys
         #expect(!plural.isEmpty, "No key varies by plural — the catalog decode stopped seeing variations")
 
         let english = plural.filter { catalog.strings[$0]?.localizations?[catalog.sourceLanguage]?.isComplete(for: catalog.sourceLanguage) != true }
-        let flatSpanish = plural.filter { catalog.strings[$0]?.localizations?["es"]?.variesByPlural != true }
-        #expect(english.isEmpty, "English plural without a written one and other form: \(english.prefix(20).joined(separator: ", "))")
-        #expect(flatSpanish.isEmpty, "Varies by plural in English but not in Spanish, which would read \"1 fondos\": \(flatSpanish.prefix(20).joined(separator: ", "))")
+        let oneForm = catalog.pluralMismatches
+        #expect(english.isEmpty, "English plural with a form missing, blank or never used: \(english.prefix(20).joined(separator: ", "))")
+        #expect(oneForm.isEmpty, "Only one of English and Spanish varies by plural; the bracketed one reads \"1 fondos\": \(oneForm.prefix(20).joined(separator: ", "))")
     }
 
     @Test("Plural entries count as written only with every form their language needs")
@@ -229,21 +229,32 @@ struct LocalizationCoverageTests {
             return #"{"stringUnit": {"state": "translated", "value": "\#(value)"}, "substitutions": {"n": {"formatSpecifier": "lld", \#(variations)}}}"#
         }
         let english = plural(["one": "%lld item", "other": "%lld items"])
+        let elementos = plural(["one": "%lld elemento", "other": "%lld elementos"])
         let fixture = #"""
         {"sourceLanguage": "en", "strings": {
-          "%lld complete": {"localizations": {"en": \#(english), "es": \#(plural(["one": "%lld elemento", "other": "%lld elementos"]))}},
+          "%lld complete": {"localizations": {"en": \#(english), "es": \#(elementos)}},
           "%lld drops the count": {"localizations": {"en": \#(english), "es": \#(plural(["one": "un elemento", "other": "%lld elementos"]))}},
-          "%lld es blank": {"localizations": {"es": \#(plural(["one": "", "other": "%lld elementos"]))}},
-          "%lld es lacks one": {"localizations": {"es": \#(plural(["other": "%lld elementos"]))}},
+          "%lld es blank": {"localizations": {"en": \#(english), "es": \#(plural(["one": "", "other": "%lld elementos"]))}},
+          "%lld es lacks one": {"localizations": {"en": \#(english), "es": \#(plural(["other": "%lld elementos"]))}},
+          "%lld es only, en absent": {"localizations": {"es": \#(elementos)}},
+          "%lld es only, en flat": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld items"}}, "es": \#(elementos)}},
           "%lld / %lld substituted": {"localizations": {
             "en": \#(substituted("%1$lld / %2$#@n@", ["one": "%arg item", "other": "%arg items"])),
             "es": \#(substituted("%1$lld / %2$#@n@", ["one": "%arg elemento", "other": "%arg elementos"]))}},
-          "%lld / %lld substitution lacks one": {"localizations": {"es": \#(substituted("%lld / %#@n@", ["other": "%arg elementos"]))}}
+          "%lld / %lld substitution lacks one": {"localizations": {
+            "en": \#(substituted("%lld / %#@n@", ["one": "%arg item", "other": "%arg items"])),
+            "es": \#(substituted("%lld / %#@n@", ["other": "%arg elementos"]))}},
+          "%lld / %lld substitution unused": {"localizations": {
+            "en": \#(substituted("%1$lld / %2$#@n@", ["one": "%arg item", "other": "%arg items"])),
+            "es": \#(substituted("%1$lld / %2$lld elementos", ["one": "%arg elemento", "other": "%arg elementos"]))}}
         }}
         """#
         let catalog = try JSONDecoder().decode(StringCatalog.self, from: Data(fixture.utf8))
 
-        #expect(catalog.keysMissingLocalization("es") == ["%lld / %lld substitution lacks one", "%lld es blank", "%lld es lacks one"])
+        #expect(catalog.keysMissingLocalization("es") == [
+            "%lld / %lld substitution lacks one", "%lld / %lld substitution unused", "%lld es blank", "%lld es lacks one",
+        ])
+        #expect(catalog.pluralMismatches == ["%lld es only, en absent [en]", "%lld es only, en flat [en]"])
         #expect(catalog.placeholderMismatches(for: "es").map { $0.components(separatedBy: " expected").first } == ["%lld drops the count", "%lld es blank"])
         #expect(catalog.strings["%lld / %lld substituted"]?.localizations?["es"]?.texts == [
             ["one"]: "%1$lld / %2$lld elemento", ["other"]: "%1$lld / %2$lld elementos",
@@ -703,6 +714,16 @@ private struct StringCatalog: Decodable {
         strings.keys.sorted().filter { strings[$0]?.localizations?[sourceLanguage]?.variesByPlural == true }
     }
 
+    /// "key [language]" for each key where only one of English and Spanish varies by plural; the
+    /// bracket names the language left with one form. A missing `en` counts as one form: the key.
+    var pluralMismatches: [String] {
+        strings.keys.sorted().compactMap { key in
+            let english = strings[key]?.localizations?[sourceLanguage]?.variesByPlural == true
+            let spanish = strings[key]?.localizations?["es"]?.variesByPlural == true
+            return english == spanish ? nil : "\(key) [\(english ? "es" : sourceLanguage)]"
+        }
+    }
+
     func placeholderMismatches(for locale: String) -> [String] {
         strings.keys.sorted().compactMap { key in
             let sourceValue = strings[key]?.localizations?[sourceLanguage]?.otherText ?? key
@@ -808,12 +829,21 @@ private struct StringCatalog: Decodable {
             texts.first { $0.key.allSatisfy { $0 == "other" } }?.value
         }
 
-        /// Every text written, and each plural carrying every category `locale` needs.
+        /// Substitutions no `%#@name@` in the value names: their plural forms are never shown.
+        var unusedSubstitutions: [String] {
+            let value = stringUnit?.value ?? ""
+            return (substitutions ?? [:]).keys.sorted().filter { name in
+                value.range(of: #"%(\d+\$)?#@"# + NSRegularExpression.escapedPattern(for: name) + "@", options: .regularExpression) == nil
+            }
+        }
+
+        /// Every text written, each plural carrying every category `locale` needs, and every substitution used.
         func isComplete(for locale: String) -> Bool {
             if variations != nil, variations?.plural == nil {
                 return false
             }
             guard variations != nil || stringUnit?.value.isEmpty == false else { return false }
+            guard unusedSubstitutions.isEmpty else { return false }
             let required = StringCatalog.pluralCategories[locale] ?? ["other"]
             let plurals = [variations?.plural].compactMap(\.self) + (substitutions ?? [:]).values.map { $0.variations?.plural ?? [:] }
             return plurals.allSatisfy { plural in
