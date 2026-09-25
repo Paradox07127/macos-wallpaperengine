@@ -47,7 +47,7 @@ xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 
 ## 首次启动引导
 
-选择**导入文件**、**Apple Aerials**，或拖入支持的文件/项目。多屏时选择一台或所有显示器。
+选择**导入文件**、**Apple 航拍**，或拖入支持的文件/项目。多屏时选择一台或所有显示器。
 可以跳过引导，之后从设置配置显示器，也可以从**关于 → 欢迎导览**重新打开。
 创意工坊配置独立进行，见[快速上手](quick-start.md#8创意工坊配置pro)。
 

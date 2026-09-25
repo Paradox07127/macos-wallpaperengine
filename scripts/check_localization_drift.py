@@ -5,22 +5,24 @@ The `en` VALUE is the baseline, never the catalog key: some keys are explicit
 identifiers (`error.app.file_access_denied`) whose text lives only in the value,
 so comparing a key's placeholders against a value's reports every one of them.
 
-Three failures, in descending severity:
+Four failures, in descending severity:
 
   1. the placeholder set differs from `en` — the wrong value gets substituted,
      or `String(format:)` reads past its arguments
-  2. a language is absent while `en` is present — that language silently falls
+  2. a language is marked translated but its value is empty while `en` is not —
+     that language shows a blank
+  3. a language is absent while `en` is present — that language silently falls
      back to English
-  3. a language is present but not marked translated — it is a placeholder
+  4. a language is present but not marked translated — it is a placeholder
      someone still has to write
 
 Then the copy rules, which keep one wording per language:
 
-  4. TERM: a concept has one name per language (`TERMS`); allowed compounds
+  5. TERM: a concept has one name per language (`TERMS`); allowed compounds
      are blanked out before the banned pattern is searched
-  5. PUNCT: zh-Hans / zh-Hant punctuation, quotes and spacing (`PUNCT`), and
+  6. PUNCT: zh-Hans / zh-Hant punctuation, quotes and spacing (`PUNCT`), and
      UI paths in every translation written as one quoted `A › B` (`PATH_RULES`)
-  6. ELLIPSIS: a translation ends with "…" exactly when its English does
+  7. ELLIPSIS: a translation ends with "…" exactly when its English does
 
 Xcode omits the `en` entry entirely when the key *is* the English string; those
 keys are checked against the key instead, which is the same text.
@@ -137,6 +139,7 @@ PUNCT_LANGS = ('zh-Hans', 'zh-Hant')
 PATH_RULES = [
     ('path-arrow', r'[^\s（(←]\s*→\s*[^\s)）]', '路径分隔符写 › （前后各一个空格）'),
     ('path-quote', r'[”」]\s*[›→]\s*[“「]', '整条路径只加一对引号'),
+    ('path-space', r'(?<! )›|(?<=  )›|›(?! )|›(?=  )', '› 前后各一个空格'),
 ]
 # (rule, language) turns a PUNCT rule off for a language; (rule, language, key) for one value
 PUNCT_SKIP = {
@@ -150,8 +153,10 @@ PUNCT_SKIP = {
     ('space-in-cjk', 'zh-Hant', 'ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop'),  # same key legend
 }
 # kept half-width: code spans, markdown link targets, format specifiers, URLs, shortcut glyph runs, digit ranges/times
-CODE_SPAN = re.compile(r'`[^`]*`|\]\([^)]*\)|' + PLACEHOLDER.pattern + r'|https?://\S+|'
-                       r'[⌘⌥⌃⇧][^ ]*|\d[:.–]\d')
+# A URL or shortcut run stops at whitespace, CJK or full-width punctuation and gives back a trailing , . ; : ! ?
+RUN = r'[^\s\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]*(?<![.,;:!?])'
+CODE_SPAN = re.compile(r'`[^`]*`|\]\([^)]*\)|' + PLACEHOLDER.pattern + r'|https?://' + RUN + r'|'
+                       r'[⌘⌥⌃⇧]' + RUN + r'|\d[:.–]\d')
 
 
 def signature(text):
@@ -169,13 +174,14 @@ def signature(text):
 
 
 def audit(catalog):
-    mismatch, missing, untranslated = [], [], []
+    mismatch, missing, untranslated, empty = [], [], [], []
     for key, entry in catalog.get('strings', {}).items():
         localizations = entry.get('localizations') or {}
         if not localizations:
             continue
         english = localizations.get('en', {}).get('stringUnit', {}).get('value')
-        base = signature(english if english is not None else key)
+        english = english if english is not None else key
+        base = signature(english)
 
         for lang in REQUIRED:
             unit = localizations.get(lang, {}).get('stringUnit')
@@ -184,10 +190,12 @@ def audit(catalog):
                 continue
             if unit.get('state') != 'translated':
                 untranslated.append((key, lang, unit.get('state')))
+            elif not unit.get('value') and english:
+                empty.append((key, lang))
             found = signature(unit.get('value', ''))
             if found != base:
                 mismatch.append((key, lang, base, found))
-    return mismatch, missing, untranslated
+    return mismatch, missing, untranslated, empty
 
 
 def blank(text, pattern):
@@ -270,18 +278,33 @@ def self_test():
             'zh-Hant': unit('存根'),
             'es': unit('Borrador'),
         }},
+        'Blank but translated': {'localizations': {
+            'en': unit('Blank but translated'),
+            'ja': unit(''),
+            'zh-Hans': unit('空白'),
+            'zh-Hant': unit('空白'),
+            'es': unit('En blanco'),
+        }},
+        'Blank in English too': {'localizations': {
+            'en': unit(''),
+            'ja': unit(''),
+            'zh-Hans': unit(''),
+            'zh-Hant': unit(''),
+            'es': unit(''),
+        }},
     }}
-    mismatch, missing, untranslated = audit(drifted)
+    mismatch, missing, untranslated, empty = audit(drifted)
     assert [m[0] for m in mismatch] == ['Linked %lld of %lld'], mismatch
     assert missing == [('Absent language', 'zh-Hant')], missing
     assert [u[0] for u in untranslated] == ['Still a stub'], untranslated
+    assert empty == [('Blank but translated', 'ja')], empty
 
     clean = {'strings': {'All good %@': {'localizations': {
         'en': unit('All good %@'), 'ja': unit('問題なし %@'),
         'zh-Hans': unit('没问题 %@'), 'zh-Hant': unit('沒問題 %@'),
         'es': unit('Todo bien %@'),
     }}}}
-    assert audit(clean) == ([], [], []), audit(clean)
+    assert audit(clean) == ([], [], [], []), audit(clean)
     assert copy_audit(clean) == ([], [], []), copy_audit(clean)
 
     copy = {'strings': {
@@ -309,6 +332,16 @@ def self_test():
         'Aerial library': {'localizations': {'zh-Hant': unit('空照圖庫')}},
         'Wallpaper Engine (downloaded)': {'localizations': {
             'zh-Hans': unit('Wallpaper Engine(已下载)')}},  # half-width parens around Chinese
+        'Path separator unspaced': {'localizations': {
+            'zh-Hans': unit('设置›通知')}},
+        'Path separator spaced': {'localizations': {
+            'zh-Hans': unit('设置 › 通知')}},
+        'URL then comma': {'localizations': {
+            'zh-Hans': unit('访问 https://example.com,然后继续')}},
+        'Shortcut then comma': {'localizations': {
+            'zh-Hans': unit('按 ⌘C,然后继续')}},
+        'URL with a query string': {'localizations': {
+            'zh-Hans': unit('打开 https://example.com/?id=1 查看')}},
     }}
     terms, punct, ellipsis = copy_audit(copy)
     assert sorted(t[:3] for t in terms) == sorted([
@@ -323,7 +356,12 @@ def self_test():
     assert sorted(p[:3] for p in punct) == sorted([
         ('Linked %lld, skipped %lld.', 'zh-Hans', 'halfwidth-punct'),
         ('Wallpaper Engine (downloaded)', 'zh-Hans', 'halfwidth-paren'),
+        ('Path separator unspaced', 'zh-Hans', 'path-space'),
+        ('URL then comma', 'zh-Hans', 'halfwidth-punct'),
+        ('Shortcut then comma', 'zh-Hans', 'halfwidth-punct'),
     ]), punct
+    url = 'https://example.com/?id=1'
+    assert CODE_SPAN.match(url).group(0) == url, CODE_SPAN.match(url)  # no rule sees inside a URL, so check the span itself
     assert [e[:2] for e in ellipsis] == [('Connecting…', 'zh-Hans')], ellipsis
     print('Localization drift self-test passed.')
 
@@ -334,12 +372,14 @@ def main():
         return 0
 
     catalog = json.loads(CATALOG.read_text())
-    mismatch, missing, untranslated = audit(catalog)
+    mismatch, missing, untranslated, empty = audit(catalog)
     terms, punct, ellipsis = copy_audit(catalog)
 
     for key, lang, base, found in mismatch:
         print(f'PLACEHOLDER DRIFT  {lang:8} {key[:70]!r}\n'
               f'                   en={base}  {lang}={found}')
+    for key, lang in empty:
+        print(f'EMPTY VALUE        {lang:8} {key[:70]!r}')
     for key, lang in missing:
         print(f'LANGUAGE ABSENT    {lang:8} {key[:70]!r}')
     for key, lang, state in untranslated:
@@ -354,7 +394,7 @@ def main():
         print(f'ELLIPSIS DRIFT     {lang:8} {key[:70]!r}\n'
               f'                   ends with "…": en={trails}  {lang}={not trails}')
 
-    total = (len(mismatch) + len(missing) + len(untranslated)
+    total = (len(mismatch) + len(empty) + len(missing) + len(untranslated)
              + len(terms) + len(punct) + len(ellipsis))
     checked = len(catalog.get('strings', {}))
     if total:

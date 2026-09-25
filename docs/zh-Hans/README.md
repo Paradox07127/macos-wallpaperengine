@@ -3,7 +3,7 @@
 [English](../README.md) · **简体中文**
 
 Loomscreen 是一个以菜单栏为核心的 macOS 动态壁纸平台：用 Metal 原生渲染
-Wallpaper Engine 场景（Pro），另支持视频、网页与 Apple Aerials 壁纸，可按显示器
+Wallpaper Engine 场景（Pro），另支持视频、网页与 Apple 航拍壁纸，可按显示器
 分别配置，保存整屏方案，并带播放列表与自动化。天气、小组件和音乐可独立叠加；
 macOS 26+ 还提供经兼容性检查的系统视频壁纸 provider。
 

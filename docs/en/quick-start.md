@@ -72,19 +72,27 @@ The Steam Workshop page needs one-time setup, guided in-app:
 1. Open **Settings → Workshop**. A status bar across the top of the page shows where each of the three prerequisites stands, and the **Steam connection** section below lists them step by step and offers auto-configuration.
 2. **SteamCMD** — downloads run through Valve's command-line tool using your own
    Steam account; accounts with a cached login are discovered and offered
-   automatically. Three ways to get the tool, all on the **SteamCMD** row —
-   the button is the common one for your current state, the `⋯` menu beside it
-   holds the rest:
-   - **Install SteamCMD** — Loomscreen installs a managed copy. It fetches
-     Valve's package manifest, checks every download against the manifest's
-     SHA-256, unpacks it, and keeps the result only if the binary's code
-     signature and team identifier are Valve's. If any step fails it rolls back
-     and leaves your previous setup alone.
+   automatically. Until the tool is ready, the **SteamCMD** row offers
+   **Set up SteamCMD**, **Locate automatically** and **Choose SteamCMD**; once
+   it is ready, the row offers **Change**, **Locate automatically** and
+   **Set up SteamCMD**:
+   - **Set up SteamCMD** — opens a dialog with two choices.
+     **Install with Loomscreen** shows the download size and where the copy will
+     go, and **Download and install** installs a managed copy. It fetches Valve's
+     package manifest, checks every download against the manifest's SHA-256,
+     unpacks it, and keeps the result only if the binary's code signature and
+     team identifier are Valve's. If any step fails it rolls back and leaves
+     your previous setup alone. **Install with Homebrew** shows a Terminal
+     command with a **Copy** button; run it, then use **Locate automatically**.
    - **Locate automatically** — finds an existing install (Homebrew,
      `/usr/local/bin`, and friends).
-   - **Choose SteamCMD** — point at a binary yourself. It goes through the same
-     signature and checksum gates as everything else, on every run rather than
-     only when you pick it.
+   - **Choose SteamCMD** (**Change** once the tool is ready) — point at a binary
+     yourself. It goes through the same signature and checksum gates as
+     everything else, on every run rather than only when you pick it.
+   - The `⋯` menu beside the buttons appears only when there is something to
+     undo: **Forget the SteamCMD I chose** goes back to automatic detection, and
+     **Remove the copy Loomscreen installed** deletes the managed copy after you
+     confirm.
 3. **Steam Web API key** — enables API-backed browsing, creator metadata and preset lists; public browsing and download-by-link can be used without it. Get a key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). New keys are stored in the login Keychain; older file-based keys migrate when Keychain access succeeds.
 4. **Engine assets** — scenes reference shared Wallpaper Engine assets; Loomscreen downloads them once via SteamCMD and can check for updates on launch (**Settings → Workshop**).
 
@@ -105,7 +113,9 @@ on to include presets in the general browse grid. The base wallpaper's detail
 page still provides its preset list.
 
 The row separates *Saved by you* from *From the Workshop*, and its menu offers
-**Save as New Preset**, **Rename**, and **Delete preset**. A
+**Save as New Preset**, **Rename**, and **Delete preset**. When the applied
+preset is one you saved and you have changed values since, the menu also offers
+**Update “*name*”** to save those changes into it. A
 preset is a layer over the scene's defaults, and your own tweaks are a layer on
 top of that — so anything you change afterwards stays yours, and deleting the
 preset keeps your changes.
