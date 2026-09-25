@@ -122,6 +122,21 @@ struct ConnectionStepStateTests {
         #expect(service.connectionStepState == .attention)
     }
 
+    @Test("A check that ended without a verdict asks for attention and says why")
+    func noVerdictReadsAsAttentionWithItsReason() throws {
+        let (service, _) = try makeService()
+        service.binaryPath = "/tmp/steamcmd"
+        let busy = SteamCMDDoctorError.connectorBusy.localizedDescription
+        service.setProbe(.binaryIdentity, status: .yellow(message: busy, command: nil))
+
+        #expect(service.binaryStepState == .attention)
+        #expect(service.attentionMessage(for: .binaryIdentity) == busy)
+        #expect(service.isBinaryPresumedReady, "no verdict offered a reinstall of a binary nothing refused")
+
+        service.setProbe(.binaryIdentity, status: .running)
+        #expect(service.binaryStepState == .working)
+    }
+
     @Test("All three steps green is the only way to read ready")
     func allStepsGreenReadsAsReady() throws {
         let (service, _) = try makeService()

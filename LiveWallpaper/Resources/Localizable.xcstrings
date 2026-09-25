@@ -40702,41 +40702,6 @@
         }
       }
     },
-    "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself." : {
-      "comment" : "Workshop setup error when auto-detection finds no SteamCMD.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se encontró SteamCMD en los sitios habituales. Usa Instalar SteamCMD para la copia de Loomscreen, o Elegir SteamCMD para indicar una tú."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通常の場所に SteamCMD が見つかりませんでした。「SteamCMD をインストール」で Loomscreen 専用のコピーを用意するか、「SteamCMD を選択」で自分で指定してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在常见位置未找到 SteamCMD。可用“安装 SteamCMD”让 Loomscreen 安装自己的副本，或用“选择 SteamCMD”自行指定。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在常見位置找不到 SteamCMD。可用「安裝 SteamCMD」讓 Loomscreen 安裝自己的副本，或用「選擇 SteamCMD」自行指定。"
-          }
-        }
-      }
-    },
     "No Video Selected" : {
       "localizations" : {
         "en" : {
@@ -67681,13 +67646,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SteamCMD 已不在 Loomscreen 找到它的位置。请再次运行“自动定位”。"
+            "value" : "SteamCMD 已不在 Loomscreen 找到它的位置。请再次运行“自动查找”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SteamCMD 已不在 Loomscreen 找到它的位置。請再次執行「自動定位」。"
+            "value" : "SteamCMD 已不在 Loomscreen 找到它的位置。請再次執行「自動尋找」。"
           }
         }
       }

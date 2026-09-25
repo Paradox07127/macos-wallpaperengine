@@ -89,10 +89,10 @@ struct WorkshopPageSourceTests {
         let gate = try #require(menu.range(of: "if !steamCMDReady {"))
         let end = try #require(menu.range(of: "\n            }", range: gate.upperBound ..< menu.endIndex))
         let gated = menu[gate.upperBound ..< end.lowerBound]
-        #expect(gated.contains(#"Button("Install SteamCMD", action: onInstallSteamCMD)"#))
+        #expect(gated.contains(#"Button("Set up SteamCMD", action: onInstallSteamCMD)"#))
         #expect(gated.contains(#"Button("Locate automatically", action: onLocateSteamCMD)"#))
         #expect(
-            menu.components(separatedBy: "Install SteamCMD").count == 2,
+            menu.components(separatedBy: "Set up SteamCMD").count == 2,
             "an ungated copy would reinstall a SteamCMD that already works"
         )
         let page = try RepositoryRoot.source(Self.page)
@@ -107,7 +107,7 @@ struct WorkshopPageSourceTests {
         let end = try #require(menu.range(of: "\n            }", range: gate.upperBound ..< menu.endIndex))
         let lines = menu[gate.upperBound ..< end.lowerBound].split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-        for row in [#"Button("Install SteamCMD", action: onInstallSteamCMD)"#, #"Button("Locate automatically", action: onLocateSteamCMD)"#] {
+        for row in [#"Button("Set up SteamCMD", action: onInstallSteamCMD)"#, #"Button("Locate automatically", action: onLocateSteamCMD)"#] {
             let index = try #require(lines.firstIndex(of: row))
             #expect(
                 lines.indices.contains(index + 1) && lines[index + 1] == ".disabled(steamCMDBusy)",
