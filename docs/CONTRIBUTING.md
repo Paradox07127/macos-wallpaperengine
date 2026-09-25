@@ -73,7 +73,7 @@ Update English and Simplified Chinese documentation together.
 
 ## Reporting bugs
 
-Use **Settings → About → Report a Bug…** for a pre-filled report, review the
+Use **Settings → About → Report a Bug** for a pre-filled report, review the
 included diagnostics, and add reproduction steps. Or file a
 [GitHub issue](https://github.com/Paradox07127/macos-wallpaperengine/issues)
 with macOS version and Mac model. Security reports go through

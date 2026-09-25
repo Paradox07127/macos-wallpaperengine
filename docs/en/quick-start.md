@@ -19,7 +19,7 @@ Skipping onboarding is fine — everything below works from the Settings window.
 ## 2) Know the two surfaces
 
 - **Menu bar icon** — day-to-day control: add a wallpaper, global on/off, per-display play/pause and prev/next, volume, live CPU/GPU/RAM/thermal strip, reload, quit.
-- **Settings window** (menu bar → **Manage**) — sidebar lists your **Displays**, plus **Saved** (wallpapers and schemes), **Apple Aerials**, (Pro) **Steam Workshop**, and **System Wallpaper** on macOS 26+; the settings tabs (General, Display Defaults, Performance, Weather, Shortcuts, Backup…) live in the same window.
+- **Settings window** (menu bar → **Manage**) — sidebar lists your **Displays**, plus **Saved** (wallpapers and schemes), **Apple Aerials**, (Pro) **Steam Workshop**, and **System Wallpaper** on macOS 26+; the settings tabs (General, Display Defaults, Performance, Integrations, Shortcuts, Backup…) live in the same window.
 
 ## 3) Configure one display end-to-end
 
@@ -75,14 +75,14 @@ The Steam Workshop page needs one-time setup, guided in-app:
    automatically. Three ways to get the tool, all on the **SteamCMD** row —
    the button is the common one for your current state, the `⋯` menu beside it
    holds the rest:
-   - **Install SteamCMD…** — Loomscreen installs a managed copy. It fetches
+   - **Install SteamCMD** — Loomscreen installs a managed copy. It fetches
      Valve's package manifest, checks every download against the manifest's
      SHA-256, unpacks it, and keeps the result only if the binary's code
      signature and team identifier are Valve's. If any step fails it rolls back
      and leaves your previous setup alone.
    - **Locate automatically** — finds an existing install (Homebrew,
      `/usr/local/bin`, and friends).
-   - **Choose SteamCMD…** — point at a binary yourself. It goes through the same
+   - **Choose SteamCMD** — point at a binary yourself. It goes through the same
      signature and checksum gates as everything else, on every run rather than
      only when you pick it.
 3. **Steam Web API key** — enables API-backed browsing, creator metadata and preset lists; public browsing and download-by-link can be used without it. Get a key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). New keys are stored in the login Keychain; older file-based keys migrate when Keychain access succeeds.
@@ -105,7 +105,7 @@ on to include presets in the general browse grid. The base wallpaper's detail
 page still provides its preset list.
 
 The row separates *Saved by you* from *From the Workshop*, and its menu offers
-**Save current values as a preset…**, **Rename…**, and **Delete preset**. A
+**Save as New Preset**, **Rename**, and **Delete preset**. A
 preset is a layer over the scene's defaults, and your own tweaks are a layer on
 top of that — so anything you change afterwards stays yours, and deleting the
 preset keeps your changes.
@@ -117,7 +117,7 @@ preset keeps your changes.
   by default. Spotify/Music Automation permission enables controls and missing
   playhead reads; Pro Audio Response enables reactive visuals.
 - **Overlays → Widgets**: add a Weather tile alongside CPU, Memory or other
-  widgets. Choose system/manual location under **Settings → Weather**.
+  widgets. Choose system/manual location under **Settings → Integrations → Weather**.
 - **System Wallpaper** (macOS 26+): add a supported video and open macOS
   Wallpaper settings to select it. The system provider can continue playing
   with Loomscreen closed. This path does not include scenes, web or overlays,
@@ -127,4 +127,4 @@ preset keeps your changes.
 
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
-- Hit an edge case? **Settings → About → Report a Bug…** pre-fills diagnostics.
+- Hit an edge case? **Settings → About → Report a Bug** pre-fills diagnostics.

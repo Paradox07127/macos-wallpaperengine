@@ -104,6 +104,6 @@ Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。出货与 CI
 
 ## 贡献与许可
 
-欢迎 Issue 和 PR —— 每个 PR 需要过哪些门禁见 [docs/zh-Hans/CONTRIBUTING.md](docs/zh-Hans/CONTRIBUTING.md)。安全问题请走 [docs/zh-Hans/SECURITY.md](docs/zh-Hans/SECURITY.md)，不要提到公开的 issue 列表里。报 Bug 建议直接用应用内 **设置 → 关于 → 报告问题…**，它会自动附带诊断信息。
+欢迎 Issue 和 PR —— 每个 PR 需要过哪些门禁见 [docs/zh-Hans/CONTRIBUTING.md](docs/zh-Hans/CONTRIBUTING.md)。安全问题请走 [docs/zh-Hans/SECURITY.md](docs/zh-Hans/SECURITY.md)，不要提到公开的 issue 列表里。报 Bug 建议直接用应用内 **设置 → 关于 → 报告问题**，它会自动附带诊断信息。
 
 MIT（[LICENSE](LICENSE)）—— 覆盖整个仓库，含 Pro-only 模块。

@@ -97,6 +97,30 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
+    /// The style keywords are hand-written strings; this is what keeps them equal to the catalog's names.
+    @Test("The shelf's current style names reach the Shelf style section", arguments: languages)
+    func shelfStyleNamesReachTheShelfSection(language: String) throws {
+        let bundle = try bundle(for: language)
+        for style in ["Fan", "Focus Row"] {
+            let query = style.localized(in: bundle)
+            let anchor = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
+                .first { $0.destination == .general }?.anchor
+            #expect(
+                anchor == .generalAppearance,
+                Comment(rawValue: "\(language): `\(query)` (\(style)) lands on \(anchor?.rawValue ?? "nothing")")
+            )
+        }
+    }
+
+    @Test("A retired shelf style name no longer reaches General")
+    func retiredShelfStyleNamesAreNotIndexed() {
+        for query in ["cover flow", "封面流"] {
+            let reachesGeneral = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
+                .contains { $0.destination == .general }
+            #expect(!reachesGeneral, Comment(rawValue: "`\(query)` still reaches General"))
+        }
+    }
+
     @Test("Every settings row title is indexed and every indexed name is catalogued")
     func everySettingRowIsIndexed() throws {
         let capabilities = ProductCapabilities.pro.withWorkshopOnline()

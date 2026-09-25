@@ -61762,7 +61762,7 @@
       }
     },
     "Shelf style" : {
-      "comment" : "Settings row title: Edit Desk wallpaper shelf layout (crate or cover flow).",
+      "comment" : "Settings row title: Edit Desk wallpaper shelf layout (facing in, crate, folders, fan or focus row).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
