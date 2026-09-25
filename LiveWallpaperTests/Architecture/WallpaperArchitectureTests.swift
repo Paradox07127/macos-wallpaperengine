@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
+import SwiftUI
 import Testing
 import WebKit
-@testable import LiveWallpaper
 
 @Suite("WallpaperSessionDefinition")
 struct WallpaperSessionDefinitionTests {
@@ -1394,6 +1395,19 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(chosen.entries.map(\.title) == ["a.mp4", "b.mov"])
         #expect(chosen.entries.map(\.content) == [.video(bookmarkData: Data("a.mp4".utf8)), .video(bookmarkData: Data("b.mov".utf8))])
         #expect(chosen.failed == 1)
+    }
+
+    @Test("The end picker shows a stored midnight 0 as 24:00 and writes a choice back unchanged")
+    func endPickerShowsStoredMidnightAsTwentyFour() {
+        var stored = 0
+        let end = WallpaperAutomationSheet.endHourBinding(Binding(get: { stored }, set: { stored = $0 }))
+
+        #expect(end.wrappedValue == 24)
+        end.wrappedValue = 6
+        #expect(stored == 6)
+
+        stored = 18
+        #expect(end.wrappedValue == 18)
     }
 
     @Test("A fallback picked in the panel is saved and fills the unscheduled hours at once")
