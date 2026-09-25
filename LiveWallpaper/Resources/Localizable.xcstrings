@@ -3500,7 +3500,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@”将从已保存的方案中移除。已套用过它的显示器会保持当前画面不变。"
+            "value" : "“%@”将从已保存的方案中移除。已应用它的显示器会保持当前画面不变。"
           }
         },
         "zh-Hant" : {
@@ -5112,7 +5112,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加应用程序"
+            "value" : "添加 App"
           }
         },
         "zh-Hant" : {
@@ -5390,7 +5390,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加 Web API key"
+            "value" : "添加 Web API 密钥"
           }
         },
         "zh-Hant" : {
@@ -5426,7 +5426,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加应用程序"
+            "value" : "添加 App"
           }
         },
         "zh-Hant" : {
@@ -6103,7 +6103,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将鼠标所在显示器的播放列表切换到下一项。"
+            "value" : "将指针所在显示器的播放列表切换到下一项。"
           }
         },
         "zh-Hant" : {
@@ -7629,7 +7629,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "应用于所有叠加层预览。"
+            "value" : "应用到所有叠加层预览。"
           }
         },
         "zh-Hant" : {
@@ -7700,7 +7700,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "应用于所有显示器上的全部小组件。"
+            "value" : "应用到所有显示器上的全部小组件。"
           }
         },
         "zh-Hant" : {
@@ -8152,7 +8152,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "应用于 %@"
+            "value" : "应用到 %@"
           }
         },
         "zh-Hant" : {
@@ -8187,7 +8187,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "应用于 %1$@（⌘%2$lld）"
+            "value" : "应用到 %1$@（⌘%2$lld）"
           }
         },
         "zh-Hant" : {
@@ -11047,7 +11047,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在无 API key 浏览"
+            "value" : "未使用 API 密钥浏览"
           }
         },
         "zh-Hant" : {
@@ -12654,7 +12654,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启动时检查 Wallpaper Engine 素材更新"
+            "value" : "启动时检查 Wallpaper Engine 资源更新"
           }
         },
         "zh-Hant" : {
@@ -12690,7 +12690,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启动时检查素材更新"
+            "value" : "启动时检查资源更新"
           }
         },
         "zh-Hant" : {
@@ -13461,7 +13461,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择 Web"
+            "value" : "选择网页"
           }
         },
         "zh-Hant" : {
@@ -16481,7 +16481,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将此账号连接到 Loomscreen 一次。下载登录会话会与 Steam 应用分开保存。"
+            "value" : "将此账户连接到 Loomscreen 一次。下载登录会话会与 Steam 应用分开保存。"
           }
         },
         "zh-Hant" : {
@@ -16790,7 +16790,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "控制场景中的光标跟随和网页鼠标交互。"
+            "value" : "控制场景中的指针跟随和网页鼠标交互。"
           }
         },
         "zh-Hant" : {
@@ -18932,7 +18932,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法打开 Web 资源"
+            "value" : "无法打开网页资源"
           }
         },
         "zh-Hant" : {
@@ -19247,7 +19247,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法移除下载的素材。"
+            "value" : "无法移除下载的资源。"
           }
         },
         "zh-Hant" : {
@@ -20064,7 +20064,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "光标"
+            "value" : "指针"
           }
         },
         "zh-Hant" : {
@@ -22725,7 +22725,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用你自己的 Steam 账号下载创意工坊壁纸"
+            "value" : "用你自己的 Steam 账户下载创意工坊壁纸"
           }
         },
         "zh-Hant" : {
@@ -22753,7 +22753,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用你自己的 Steam 账号与 Wallpaper Engine 授权下载创意工坊壁纸；不经第三方服务器"
+            "value" : "用你自己的 Steam 账户与 Wallpaper Engine 授权下载创意工坊壁纸；不经第三方服务器"
           }
         },
         "zh-Hant" : {
@@ -23454,7 +23454,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已链接下载的素材。%@"
+            "value" : "已链接下载的资源。%@"
           }
         },
         "zh-Hant" : {
@@ -23982,7 +23982,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下载时使用 Steam 账号，Loomscreen 不保存密码。"
+            "value" : "下载时使用 Steam 账户，Loomscreen 不保存密码。"
           }
         },
         "zh-Hant" : {
@@ -24498,7 +24498,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拖入视频文件、Web 文件或文件夹作为壁纸。"
+            "value" : "拖入视频文件、网页文件或文件夹作为壁纸。"
           }
         },
         "zh-Hant" : {
@@ -24822,7 +24822,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑应用程序例外"
+            "value" : "编辑 App 例外"
           }
         },
         "zh-Hant" : {
@@ -27749,7 +27749,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "跟随光标"
+            "value" : "跟随指针"
           }
         },
         "zh-Hant" : {
@@ -27814,7 +27814,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "跟随光标"
+            "value" : "跟随指针"
           }
         },
         "zh-Hant" : {
@@ -27848,7 +27848,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "默认跟随光标"
+            "value" : "默认跟随指针"
           }
         },
         "zh-Hant" : {
@@ -28839,7 +28839,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "获取素材"
+            "value" : "获取资源"
           }
         },
         "zh-Hant" : {
@@ -30274,7 +30274,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在这个项目和你已链接的 Wallpaper Engine 素材里都找不到图像图层。"
+            "value" : "在这个项目和你已链接的 Wallpaper Engine 资源里都找不到图像图层。"
           }
         },
         "zh-Hant" : {
@@ -30310,7 +30310,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在这个项目里找不到图像图层。它们通常来自 Wallpaper Engine 的共享素材。"
+            "value" : "在这个项目里找不到图像图层。它们通常来自 Wallpaper Engine 的共享资源。"
           }
         },
         "zh-Hant" : {
@@ -35521,7 +35521,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的下载登录会话不可用。请重新连接此账号；Steam 应用的登录状态独立管理。"
+            "value" : "Loomscreen 的下载登录会话不可用。请重新连接此账户；Steam 应用的登录状态独立管理。"
           }
         },
         "zh-Hant" : {
@@ -41195,7 +41195,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未配置 Web 源"
+            "value" : "未配置网页来源"
           }
         },
         "zh-Hant" : {
@@ -43408,7 +43408,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开创意工坊设置页，下载或链接 Wallpaper Engine 素材"
+            "value" : "打开创意工坊设置页，下载或链接 Wallpaper Engine 资源"
           }
         },
         "zh-Hant" : {
@@ -45865,7 +45865,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请选择 Web 文件或文件夹"
+            "value" : "请选择网页文件或文件夹"
           }
         },
         "zh-Hant" : {
@@ -49300,7 +49300,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "接收光标移动和点击。"
+            "value" : "接收指针移动和点击。"
           }
         },
         "zh-Hant" : {
@@ -49847,7 +49847,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刷新 Web 预览"
+            "value" : "刷新网页预览"
           }
         },
         "zh-Hant" : {
@@ -49883,7 +49883,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新生成 Web 快照"
+            "value" : "重新生成网页快照"
           }
         },
         "zh-Hant" : {
@@ -53718,7 +53718,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "响应光标移动，不捕获点击。"
+            "value" : "响应指针移动，不捕获点击。"
           }
         },
         "zh-Hant" : {
@@ -59696,7 +59696,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在访达中显示素材"
+            "value" : "在访达中显示资源"
           }
         },
         "zh-Hant" : {
@@ -59978,7 +59978,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Finder 中显示"
+            "value" : "在访达中显示"
           }
         },
         "zh-Hant" : {
@@ -60096,7 +60096,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Finder 中显示日志"
+            "value" : "在访达中显示日志"
           }
         },
         "zh-Hant" : {
@@ -60485,7 +60485,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在访达中显示 Wallpaper Engine 素材文件夹"
+            "value" : "在访达中显示 Wallpaper Engine 资源文件夹"
           }
         },
         "zh-Hant" : {
@@ -62863,7 +62863,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 账号"
+            "value" : "Steam 账户"
           }
         },
         "zh-Hant" : {
@@ -63943,7 +63943,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 拒绝了登录（%@）。请重新登录此账号，然后再次检查。"
+            "value" : "Steam 拒绝了登录（%@）。请重新登录此账户，然后再次检查。"
           }
         },
         "zh-Hant" : {
@@ -63978,7 +63978,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 拒绝了登录。请重新登录此账号，然后再次检查。"
+            "value" : "Steam 拒绝了登录。请重新登录此账户，然后再次检查。"
           }
         },
         "zh-Hant" : {
@@ -65511,7 +65511,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切换鼠标所在显示器的播放列表上一项。"
+            "value" : "将指针所在显示器的播放列表切换到上一项。"
           }
         },
         "zh-Hant" : {
@@ -66266,7 +66266,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切换到视频或 Web 以拖放文件"
+            "value" : "切换到视频或网页以拖放文件"
           }
         },
         "zh-Hant" : {
@@ -69850,7 +69850,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选中的不是 Web 文件，也不是含有 index 页面的文件夹。"
+            "value" : "选中的不是网页文件，也不是含有 index 页面的文件夹。"
           }
         },
         "zh-Hant" : {
@@ -70504,7 +70504,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 处的 Web 壁纸加载失败（错误 %lld）：%@"
+            "value" : "%@ 处的网页壁纸加载失败（错误 %lld）：%@"
           }
         },
         "zh-Hant" : {
@@ -70540,7 +70540,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 处的 Web 壁纸加载失败：%@"
+            "value" : "%@ 处的网页壁纸加载失败：%@"
           }
         },
         "zh-Hant" : {
@@ -70780,7 +70780,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 Steam 账号未拥有 Wallpaper Engine，无法下载其资源。"
+            "value" : "此 Steam 账户未拥有 Wallpaper Engine，无法下载其资源。"
           }
         },
         "zh-Hant" : {
@@ -74844,7 +74844,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在显示器详情中选择“保存为方案”，将壁纸、叠加层和设置一并保存。套用方案会整套替换。"
+            "value" : "在显示器详情中选择“保存为方案”，将壁纸、叠加层和设置一并保存。应用方案会整套替换。"
           }
         },
         "zh-Hant" : {
@@ -75107,7 +75107,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用显示器上的书签按钮保存其壁纸。套用书签只更换壁纸，不改动该显示器的设置。"
+            "value" : "使用显示器上的书签按钮保存其壁纸。应用书签只更换壁纸，不改动该显示器的设置。"
           }
         },
         "zh-Hant" : {
@@ -77001,7 +77001,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未准备 Wallpaper Engine 素材"
+            "value" : "尚未准备 Wallpaper Engine 资源"
           }
         },
         "zh-Hant" : {
@@ -78374,7 +78374,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 选项"
+            "value" : "网页选项"
           }
         },
         "zh-Hant" : {
@@ -78410,7 +78410,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 渲染"
+            "value" : "网页渲染"
           }
         },
         "zh-Hant" : {
@@ -78479,7 +78479,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 文件或文件夹"
+            "value" : "网页文件或文件夹"
           }
         },
         "zh-Hant" : {
@@ -78549,7 +78549,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 壁纸使用中"
+            "value" : "网页壁纸使用中"
           }
         },
         "zh-Hant" : {
@@ -78585,7 +78585,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 壁纸加载失败：%@"
+            "value" : "网页壁纸加载失败：%@"
           }
         },
         "zh-Hant" : {
@@ -78619,7 +78619,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 壁纸类型"
+            "value" : "网页壁纸类型"
           }
         },
         "zh-Hant" : {
@@ -79883,7 +79883,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "创意工坊 · 连接 Steam 账号"
+            "value" : "创意工坊 · 连接 Steam 账户"
           }
         },
         "zh-Hant" : {
@@ -83423,7 +83423,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 未能取出已保存的 API key——弹出询问时请允许访问，或在设置里重新设置一次。"
+            "value" : "macOS 未能取出已保存的 API 密钥——弹出询问时请允许访问，或在设置里重新设置一次。"
           }
         },
         "zh-Hant" : {
