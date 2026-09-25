@@ -199,6 +199,13 @@ final class EditDeskUndoStack {
         await enqueue { await self.run(isRedo: true, expecting: nil) }
     }
 
+    func perform(redo: Bool, announcingTo toasts: EditDeskToastCenter) {
+        Task {
+            guard let outcome = redo ? await self.redo() : await self.undo() else { return }
+            toasts.post(outcome)
+        }
+    }
+
     func removeAll() {
         undoSteps.removeAll()
         redoSteps.removeAll()
@@ -643,5 +650,10 @@ enum EditDeskUndoKeyRoute: Equatable {
             return .text
         }
         return keyWindowIsMain ? .stack : .ignore
+    }
+
+    @MainActor static var current: EditDeskUndoKeyRoute {
+        let key = NSApp.keyWindow
+        return route(firstResponder: key?.firstResponder, keyWindowIsMain: key != nil && key === NSApp.mainWindow)
     }
 }

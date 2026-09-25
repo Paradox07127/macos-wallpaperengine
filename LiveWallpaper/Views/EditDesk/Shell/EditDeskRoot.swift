@@ -31,15 +31,19 @@ struct EditDeskRoot: View {
     private let initialNavigation: Navigation?
     private let initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?
     private let initialOnboardingRequested: Bool
+    /// The window's Edit › Undo; nil when the root is hosted in any other window.
+    private let menuUndo: EditDeskMenuUndoManager?
 
     init(
         initialNavigation: Navigation? = nil,
         initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest? = nil,
-        initialOnboardingRequested: Bool = false
+        initialOnboardingRequested: Bool = false,
+        menuUndo: EditDeskMenuUndoManager? = nil
     ) {
         self.initialNavigation = initialNavigation
         self.initialAddWallpaperRequest = initialAddWallpaperRequest
         self.initialOnboardingRequested = initialOnboardingRequested
+        self.menuUndo = menuUndo
     }
 
     private var background: EditDeskBackground {
@@ -54,7 +58,7 @@ struct EditDeskRoot: View {
                     switch router.page {
                     case .home, .library:
                         // One page: the library is the stage's p = 2 state, not a separate view.
-                        HomePage(router: router, toasts: toasts, library: library)
+                        homePage(router)
                     case .schemes:
                         SchemesPage(router: router, toasts: toasts)
                     case .systemWallpaper:
@@ -170,6 +174,8 @@ struct EditDeskRoot: View {
             )
             undo.onRecord = { [toasts] text, stepID in toasts.post(text, style: .success, undoStepID: stepID) }
             self.undo = undo
+            menuUndo?.stack = undo
+            menuUndo?.toasts = toasts
             let library = SavedLibraryModel(screenManager: screenManager)
             library.prepareLibrary(alsoKeeping: undo.retainedCoverFileNames)
             self.library = library
@@ -188,25 +194,20 @@ struct EditDeskRoot: View {
             session.consumePendingDeepLink()
             #endif
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openGeneralSettings)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettingsSection)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: .openWorkshopPane)) { notification in
-            router?.handle(notification)
-            #if !LITE_BUILD
-            workshopSession?.consumePendingDeepLink()
-            #endif
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openAppleAerials)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: .promptAddWallpaper)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: Self.restartOnboardingNotification)) { router?.handle($0) }
+        #if !LITE_BUILD
+        .modifier(RouterNotifications(router: router, screenManager: screenManager, workshopSession: workshopSession))
+        #else
+        .modifier(RouterNotifications(router: router, screenManager: screenManager))
+        #endif
         .onChange(of: router?.onboardingRequested) {
             guard let router, let progress, let signals else { return }
             Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in
-            router?.screensRefreshed(availableDisplayIDs: screenManager.screens.map(\.id))
-        }
+    }
+
+    /// Off `body`: the first `HomePage(…)` in this file pays for building HomePage's memberwise initializer.
+    private func homePage(_ router: EditDeskRouter) -> some View {
+        HomePage(router: router, toasts: toasts, library: library)
     }
 
     static func consumeOnboardingRequest(router: EditDeskRouter, progress: OnboardingProgress, signals: OnboardingSignals) {
@@ -302,18 +303,41 @@ private struct UndoCommands: ViewModifier {
 
     /// These buttons take ⌘Z before the Edit menu does, so a text field being edited gets it back as `undo:`.
     private func run(redo: Bool) {
-        let key = NSApp.keyWindow
-        switch EditDeskUndoKeyRoute.route(firstResponder: key?.firstResponder, keyWindowIsMain: key != nil && key === NSApp.mainWindow) {
+        switch EditDeskUndoKeyRoute.current {
         case .text:
             NSApp.sendAction(Selector((redo ? "redo:" : "undo:")), to: nil, from: nil)
         case .ignore:
             break
         case .stack:
-            guard let undo else { return }
-            Task {
-                guard let outcome = redo ? await undo.redo() : await undo.undo() else { return }
-                toasts.post(outcome)
-            }
+            undo?.perform(redo: redo, announcingTo: toasts)
         }
+    }
+}
+
+/// The app's navigation notifications, for the router. Off `body`, which is slow to type-check.
+private struct RouterNotifications: ViewModifier {
+    let router: EditDeskRouter?
+    let screenManager: ScreenManager
+    #if !LITE_BUILD
+    let workshopSession: WorkshopSession?
+    #endif
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .openGeneralSettings)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettingsSection)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: .openWorkshopPane)) { notification in
+                router?.handle(notification)
+                #if !LITE_BUILD
+                workshopSession?.consumePendingDeepLink()
+                #endif
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openAppleAerials)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: .promptAddWallpaper)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: EditDeskRoot.restartOnboardingNotification)) { router?.handle($0) }
+            .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in
+                router?.screensRefreshed(availableDisplayIDs: screenManager.screens.map(\.id))
+            }
     }
 }

@@ -104,12 +104,11 @@ struct SettingsWindowHost {
     ) -> NSWindowController {
         let contentSize = editDeskEnabled
             ? SettingsWindowMetrics.editDeskDefaultContentSize : SettingsWindowMetrics.defaultContentSize
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
+        let contentRect = NSRect(origin: .zero, size: contentSize)
+        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        let window: NSWindow = editDeskEnabled
+            ? EditDeskWindow(contentRect: contentRect, styleMask: styleMask, backing: .buffered, defer: false)
+            : NSWindow(contentRect: contentRect, styleMask: styleMask, backing: .buffered, defer: false)
         window.contentMinSize = editDeskEnabled
             ? SettingsWindowMetrics.editDeskMinimumContentSize : SettingsWindowMetrics.minimumContentSize
         window.title = L10n.Window.settingsTitle
@@ -145,7 +144,8 @@ struct SettingsWindowHost {
             window.contentView = hostingView(EditDeskRoot(
                 initialNavigation: initialNavigation,
                 initialAddWallpaperRequest: initialAddWallpaperRequest,
-                initialOnboardingRequested: initialOnboardingRequested
+                initialOnboardingRequested: initialOnboardingRequested,
+                menuUndo: (window as? EditDeskWindow)?.menuUndo
             ))
         } else {
             window.contentView = hostingView(ContentView(
@@ -730,6 +730,12 @@ extension AppDelegate: NSWindowDelegate {
               window == settingsWindowController?.window,
               window.isVisible else { return }
         acquireSettingsSystemMonitorLeaseIfNeeded()
+    }
+
+    /// nil leaves every other window the undo manager AppKit makes for it. NSWindow's `undo:`, `redo:` and
+    /// their menu validation take the manager from here; they ignore an `undoManager` override on the window.
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        (window as? EditDeskWindow)?.menuUndo
     }
 }
 

@@ -48,6 +48,15 @@ struct EditDeskUndoStackTests {
         #expect(condition())
     }
 
+    /// The window's Edit › Undo over `stack`, sending every command along `route`.
+    private func menuUndo(_ route: EditDeskUndoKeyRoute, over stack: EditDeskUndoStack, toasts: EditDeskToastCenter) -> EditDeskMenuUndoManager {
+        let menuUndo = EditDeskMenuUndoManager()
+        menuUndo.stack = stack
+        menuUndo.toasts = toasts
+        menuUndo.route = { route }
+        return menuUndo
+    }
+
     @Test("Undo restores the rebound configuration from before the apply; redo restores the one undo replaced", .timeLimit(.minutes(1)))
     func undoRestoresBeforeAndRedoRestoresAfter() async throws {
         let stack = stack()
@@ -235,6 +244,50 @@ struct EditDeskUndoStackTests {
         #expect(EditDeskUndoKeyRoute.route(firstResponder: NSView(), keyWindowIsMain: false) == .ignore)
         #expect(EditDeskUndoKeyRoute.route(firstResponder: nil, keyWindowIsMain: false) == .ignore)
         #expect(EditDeskUndoKeyRoute.route(firstResponder: NSTextView(), keyWindowIsMain: false) == .text)
+    }
+
+    @Test("Edit › Undo routed to the stack is on and undoes the stack's newest step", .timeLimit(.minutes(1)))
+    func menuUndoReachesTheStack() async {
+        let stack = stack()
+        let toasts = EditDeskToastCenter()
+        stack.recordRename(of: bookmarks.add(label: "Before", content: Self.page("R")))
+        let menuUndo = menuUndo(.stack, over: stack, toasts: toasts)
+
+        #expect(menuUndo.canUndo)
+        menuUndo.undo()
+        await waitUntil { stack.undoSteps.isEmpty }
+    }
+
+    @Test("Edit › Undo routed to a text field undoes the text edit and leaves the stack alone", .timeLimit(.minutes(1)))
+    func menuUndoLeavesTheStackToATextField() async throws {
+        let stack = stack()
+        let toasts = EditDeskToastCenter()
+        stack.recordRename(of: bookmarks.add(label: "Before", content: Self.page("T")))
+        let menuUndo = menuUndo(.text, over: stack, toasts: toasts)
+        menuUndo.groupsByEvent = false
+        var textUndone = 0
+        menuUndo.beginUndoGrouping()
+        menuUndo.registerUndo(withTarget: stack) { _ in textUndone += 1 }
+        menuUndo.endUndoGrouping()
+
+        #expect(menuUndo.canUndo)
+        menuUndo.undo()
+        #expect(textUndone == 1)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(stack.undoSteps.count == 1, "the stack's step was undone along with the text")
+    }
+
+    @Test("Edit › Undo while another window is key is off and leaves the stack alone", .timeLimit(.minutes(1)))
+    func menuUndoIsOffForAnotherKeyWindow() async throws {
+        let stack = stack()
+        let toasts = EditDeskToastCenter()
+        stack.recordRename(of: bookmarks.add(label: "Before", content: Self.page("I")))
+        let menuUndo = menuUndo(.ignore, over: stack, toasts: toasts)
+
+        #expect(!menuUndo.canUndo)
+        menuUndo.undo()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(stack.undoSteps.count == 1)
     }
 
     @Test("A deadline whose sleep ends after its wait did cannot resume the next command's wait")
