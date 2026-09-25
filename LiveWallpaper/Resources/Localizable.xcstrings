@@ -80159,13 +80159,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine(已下载)"
+            "value" : "Wallpaper Engine（已下载）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine(已下載)"
+            "value" : "Wallpaper Engine（已下載）"
           }
         }
       }
