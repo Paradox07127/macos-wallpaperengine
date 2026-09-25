@@ -1008,34 +1008,41 @@ private final class S7OverlayTestScreen: NSScreen {
 @MainActor
 struct S8aGridFidelityTests {
     private static let inset = DesignTokens.Settings.formHorizontalMargin
+    private static let windows: [(width: CGFloat, columns: Int)] = [(1040, 5), (1280, 6), (1728, 8)]
 
-    /// R-22: 194pt columns, 14 gap, 18 side inset — six at 1280 and four at 1040.
-    @Test("Column arithmetic packs 6 at 1280 and 4 at 1040")
+    /// 186pt preferred columns shared out across the row, 14 gap, 18 side inset.
+    @Test("Column arithmetic packs 5 at 1040, 6 at 1280 and 8 at 1728, with or without a legacy scroller")
     func columnArithmetic() {
-        expectClose(DesignTokens.LibraryGrid.workshopBrowseColumnWidth, 194, "S8a.columnWidth", tolerance: 0)
+        expectClose(DesignTokens.LibraryGrid.workshopBrowseColumnWidth, 186, "S8a.columnWidth", tolerance: 0)
         expectClose(DesignTokens.LibraryGrid.spacing, 14, "S8a.gap", tolerance: 0)
         expectClose(Self.inset, 18, "S8a.sideInset", tolerance: 0)
-        for (window, expected) in [(CGFloat(1280), 6), (CGFloat(1040), 4)] {
-            let columns = DesignTokens.LibraryGrid.columns(
-                for: .medium, aspect: .square, fitting: window - 2 * Self.inset,
-                columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
-            )
-            ProbeRenderer.report("S8a.columns.\(Int(window))", columns.count)
-            #expect(columns.count == expected, "\(window) packed \(columns.count) columns")
+        let scroller = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+        for (window, expected) in Self.windows {
+            for gutter in [2 * Self.inset, 2 * Self.inset + scroller] {
+                let columns = DesignTokens.LibraryGrid.columns(
+                    for: .medium, aspect: .square, fitting: window - gutter,
+                    columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
+                )
+                ProbeRenderer.report("S8a.columns.\(Int(window)).less\(Int(gutter))", columns.count)
+                #expect(columns.count == expected, "\(window) less \(gutter) packed \(columns.count) columns")
+            }
         }
-        // R-22's other half: the 24pt gutter the rest of the app uses would drop 1280 to five.
+        // Why the inset is 18: the 24pt gutter the rest of the app uses, with a legacy scroller, drops 1040 to four.
         let atGutter = DesignTokens.LibraryGrid.columns(
-            for: .medium, aspect: .square, fitting: 1280 - 2 * DesignTokens.Spacing.xl,
+            for: .medium, aspect: .square, fitting: 1040 - 2 * DesignTokens.Spacing.xl - scroller,
             columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
         )
         ProbeRenderer.report("S8a.columnsIfGutterWere24", atGutter.count)
-        #expect(atGutter.count == 5)
+        #expect(atGutter.count == 4)
     }
 
-    /// The same grid rendered: count, pitch and leading inset come off the bitmap.
-    @Test("Rendered grid lays out 6 columns at 1280 and 4 at 1040")
+    /// The same grid rendered: count, width, pitch and both insets come off the bitmap.
+    @Test("Rendered grid fills the row with 5 columns at 1040, 6 at 1280 and 8 at 1728")
     func renderedGrid() async throws {
-        for (window, expected) in [(CGFloat(1280), 6), (CGFloat(1040), 4)] {
+        // The scroll view gives a legacy scroller's width out of the row when the system shows one.
+        let scroller = NSScroller.preferredScrollerStyle == .legacy
+            ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+        for (window, expected) in Self.windows {
             let size = CGSize(width: window, height: 400)
             let image = await ProbeRenderer.render("S8a-\(Int(window))-grid-dark", size: size) {
                 ZStack {
@@ -1058,19 +1065,21 @@ struct S8aGridFidelityTests {
             ProbeRenderer.report("S8a.\(Int(window)).tileRuns", tiles.map { "x=\($0.x) w=\($0.width)" })
             #expect(tiles.count == expected, "\(window) rendered \(tiles.count) columns, expected \(expected)")
             let first = try #require(tiles.first)
-            expectClose(first.width, 194, "S8a.\(Int(window)).tile.w")
+            let row = window - 2 * Self.inset - scroller
+            let shared = (row - CGFloat(expected - 1) * DesignTokens.LibraryGrid.spacing) / CGFloat(expected)
+            expectClose(first.width, shared, "S8a.\(Int(window)).tile.w")
             expectClose(first.x, Self.inset, "S8a.\(Int(window)).leadingInset")
             if tiles.count >= 2 {
                 expectClose(tiles[1].x - tiles[0].maxX, 14, "S8a.\(Int(window)).gap")
             }
-            // Tiles pack from the leading edge; the slack stays on the trailing side.
+            // The columns share the row: past the last tile there is only the side inset.
             let last = try #require(tiles.last)
-            ProbeRenderer.report("S8a.\(Int(window)).trailingSlack", window - Self.inset - last.maxX)
+            expectClose(window - Self.inset - scroller - last.maxX, 0, "S8a.\(Int(window)).trailingSlack")
         }
     }
 
     /// One card at its real column width, rendered, so the S8 skin is measured rather than assumed.
-    @Test("A single Edit Desk BrowseCard renders square at 194")
+    @Test("A single Edit Desk BrowseCard renders square at the preset width")
     func singleCard() async throws {
         let width = DesignTokens.LibraryGrid.workshopBrowseColumnWidth
         let image = await ProbeRenderer.render("S8a-card-editDesk-dark", size: CGSize(width: 240, height: 240)) {

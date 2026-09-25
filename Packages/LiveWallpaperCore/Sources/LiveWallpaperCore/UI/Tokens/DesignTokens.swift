@@ -164,10 +164,9 @@ public enum DesignTokens {
             }
         }
 
-        /// The Edit Desk Workshop grid's column, kept out of the `LibraryTileSize` ladder because
-        /// that ladder is a persisted global preference while this page is fixed at six columns
-        /// (1280 − 2×18 inset fits 6×194 + 5×14; 1040 fits four).
-        public static let workshopBrowseColumnWidth: CGFloat = 194
+        /// Preferred column of the Edit Desk Workshop grid, off the persisted `LibraryTileSize` ladder; the columns
+        /// share the row. 186 keeps five at 1040 under a 17pt legacy scroller: 1040 − 2×18 − 17 = 987 ≥ 5×186 + 4×14.
+        public static let workshopBrowseColumnWidth: CGFloat = 186
 
         /// Off the spacing scale on purpose: the tiles read as a mosaic, where `lg`
         /// opened the rows wider than the columns look.
@@ -197,13 +196,16 @@ public enum DesignTokens {
         ) -> [GridItem] {
             let column = columnWidth ?? self.columnWidth(for: size, aspect: aspect)
             let count = max(1, Int(((width + spacing) / (column + spacing)).rounded(.down)))
-            let resolved = columnWidth == nil ? resolvedColumnWidth(for: size, aspect: aspect, fitting: width) : column
+            let resolved = resolvedColumnWidth(for: size, aspect: aspect, fitting: width, columnWidth: columnWidth)
             return Array(repeating: GridItem(.fixed(resolved), spacing: spacing), count: count)
         }
 
-        public static func resolvedColumnWidth(for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat) -> CGFloat {
-            let preferred = columnWidth(for: size, aspect: aspect)
-            guard case .wide = aspect, width > 0 else { return preferred }
+        /// `.wide` and a pinned `columnWidth` share the row evenly; `.square` ladder steps keep their width.
+        public static func resolvedColumnWidth(
+            for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat, columnWidth: CGFloat? = nil
+        ) -> CGFloat {
+            let preferred = columnWidth ?? self.columnWidth(for: size, aspect: aspect)
+            guard columnWidth != nil || aspect == .wide, width > 0 else { return preferred }
             let count = max(1, Int(((width + spacing) / (preferred + spacing)).rounded(.down)))
             return max(1, (width - CGFloat(count - 1) * spacing) / CGFloat(count))
         }
