@@ -5142,7 +5142,7 @@
       }
     },
     "Add to Library" : {
-      "comment" : "File picker confirm button: the chosen files join the Wallpaper Library.",
+      "comment" : "File picker confirm button: the chosen files join the Wallpaper Library. Also the shelf's label while files are dragged over it.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

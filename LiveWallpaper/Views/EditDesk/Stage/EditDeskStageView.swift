@@ -112,6 +112,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             shelfLayer.addSublayer(cardFocusRing)
             cardFocusRing.borderWidth = 3
             cardFocusRing.cornerRadius = DesignTokens.EditDesk.Corner.shelfCard
+            cardFocusRing.cornerCurve = .continuous
             cardFocusRing.isHidden = true
             applyPalette()
             arrangementLayer.anchorPoint = CGPoint(x: 0.5, y: 0)
