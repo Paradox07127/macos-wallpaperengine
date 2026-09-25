@@ -109,7 +109,7 @@ struct GeneralSettingsView: View {
     var body: some View {
         contentForPage
             .frame(minWidth: 500, minHeight: 400)
-            .settingsPageBackground()
+            .contentColumnBackground()
             .onAppear { refreshSystemStatusIndicators() }
             .alert(
                 "Import Configuration?",

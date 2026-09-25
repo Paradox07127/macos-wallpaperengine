@@ -2,10 +2,6 @@ import AppKit
 import SwiftUI
 
 public extension View {
-    func settingsPageBackground() -> some View {
-        background(DesignTokens.Colors.pageBackground.ignoresSafeArea())
-    }
-
     func settingsFormChrome(minWidth: CGFloat? = nil, minHeight: CGFloat? = nil) -> some View {
         modifier(SettingsFormChrome(minWidth: minWidth, minHeight: minHeight))
     }
@@ -26,7 +22,7 @@ private struct SettingsFormChrome: ViewModifier {
             // the slot so the bounded form centers and the background still fills it.
             .frame(maxWidth: DesignTokens.Settings.maxContentWidth)
             .frame(maxWidth: .infinity)
-            .settingsPageBackground()
+            .contentColumnBackground()
     }
 }
 

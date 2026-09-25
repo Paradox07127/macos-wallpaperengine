@@ -292,8 +292,6 @@ final class EditDeskStageModel {
     var dropHintText = ""
     /// How many cards' thumbnails to keep decoded around the visible run.
     var shelfRenderBudget = StageGeometry.shelfCapacity
-    /// False lets the frosted window show through: the stage stops painting its own canvas.
-    var opaqueBackground = true
     /// Band at the top of the stage the display arrangement must keep clear, so the overview
     /// onboarding card does not sit on the displays (R-27). Springs to its new value.
     var arrangementTopInset: CGFloat = 0

@@ -2,25 +2,34 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The Edit Desk's canvas. `frosted` swaps the flat fill for the desktop blurred behind the window;
-/// Reduce Transparency falls back to the flat fill, because a see-through canvas is exactly what
-/// that setting asks us not to do.
+/// The Edit Desk window's canvas. `frosted` swaps the flat fill for the desktop blurred behind the
+/// window; Reduce Transparency and Increase Contrast keep the flat fill, which is what both settings ask for.
 struct EditDeskBackdrop: View {
     let frosted: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        ZStack {
-            if frosted, !reduceTransparency {
+        Group {
+            if frosted, !reduceTransparency, contrast != .increased {
                 BehindWindowBlur()
             } else {
                 DesignTokens.EditDesk.Colors.background
             }
-            Image(nsImage: Self.dotTile)
-                .resizable(resizingMode: .tile)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// The overview's and the library's dot texture, drawn by `HomePage` over the window's canvas.
+struct EditDeskDotGrid: View {
+    var body: some View {
+        Image(nsImage: Self.dotTile)
+            .resizable(resizingMode: .tile)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     /// A SwiftUI layer rather than the stage's own `backgroundColor`: an opaque stage would force

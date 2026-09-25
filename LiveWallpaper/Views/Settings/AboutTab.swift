@@ -11,7 +11,7 @@ extension GeneralSettingsView {
             aboutContent(.minimal)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .settingsPageBackground()
+        .contentColumnBackground()
     }
 
     private func aboutContent(_ layout: AboutLayout) -> some View {
