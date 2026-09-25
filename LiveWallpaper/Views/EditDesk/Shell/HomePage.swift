@@ -1343,7 +1343,7 @@ struct HomePage: View {
         panel.directoryURL = SettingsManager.shared.getLastUsedDirectory()
         panel.prompt = String(
             localized: "Add to Library", bundle: .appLanguage,
-            comment: "File picker confirm button: the chosen files join the Wallpaper Library."
+            comment: "File picker confirm button: the chosen files join the Wallpaper Library. Also the shelf's label while files are dragged over it."
         )
         panel.message = String(
             localized: "Adds the selected files to the Wallpaper Library without changing any display.", bundle: .appLanguage,
@@ -1449,6 +1449,7 @@ struct LibraryGridTile: View {
     @State private var isHovering = false
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var image: CGImage? {
         guard let thumbnail, !isOffScreen else { return nil }
@@ -1477,6 +1478,20 @@ struct LibraryGridTile: View {
                 colors: [.clear, DesignTokens.EditDesk.Colors.gradientCardBottom],
                 startPoint: .center, endPoint: .bottom
             )
+            Group {
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
+                    .strokeBorder(
+                        contrast == .increased
+                            ? DesignTokens.EditDesk.Colors.cardRimRingIncreased : DesignTokens.EditDesk.Colors.cardRimRing,
+                        lineWidth: 1
+                    )
+                VStack(spacing: 0) {
+                    Rectangle().fill(DesignTokens.EditDesk.Colors.cardRimHighlight).frame(height: 1)
+                    Spacer(minLength: 0)
+                    Rectangle().fill(DesignTokens.EditDesk.Colors.cardRimShade).frame(height: 1)
+                }
+            }
+            .allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: item.title)
                     .font(DesignTokens.EditDesk.Typography.cardTitle)

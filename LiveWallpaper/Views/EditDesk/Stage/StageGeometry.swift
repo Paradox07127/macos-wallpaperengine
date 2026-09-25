@@ -900,7 +900,7 @@ enum StageGeometry {
         waveLift(style: style, index: index, centre: hovered.map(CGFloat.init))
     }
 
-    private static func lerp(_ from: CGFloat, _ to: CGFloat, _ mix: CGFloat) -> CGFloat {
+    static func lerp(_ from: CGFloat, _ to: CGFloat, _ mix: CGFloat) -> CGFloat {
         from + (to - from) * mix
     }
 }

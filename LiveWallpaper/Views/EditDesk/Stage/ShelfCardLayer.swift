@@ -1,20 +1,26 @@
 import AppKit
 import LiveWallpaperCore
 import QuartzCore
+import SwiftUI
 
 @MainActor
 final class ShelfCardLayer {
     let layer = CALayer()
     let face = CALayer()
-    private let thumbnail = CALayer()
+    /// Casts the tight contact shadow through the face's own path; no content of its own.
+    let edgeShadow = CALayer()
+    let thumbnail = CALayer()
     private let gradient = CAGradientLayer()
+    let spine = CAGradientLayer()
+    let sheen = CAGradientLayer()
+    let rimTop = CALayer()
+    let rimBottom = CALayer()
     private let badge = CATextLayer()
     private let outline = CALayer()
     private let shade = CALayer()
-    private let spine = CAGradientLayer()
     private let tab = CALayer()
-    private var regularRing: CGColor?
-    private var gridRing: CGColor?
+    /// `GalleryTileChrome`'s stroke at full strength; the card fades it in as it lands in the grid.
+    private var gridStroke: CGColor?
     /// The shadow tokens' shared hue at full alpha; their two alphas ride `shadowOpacity` instead,
     /// which is what lets the hover darken the shadow continuously.
     private var shadowTint: CGColor?
@@ -35,37 +41,44 @@ final class ShelfCardLayer {
         layer.frame
     }
 
-    private static let rowShadowPath = CGPath(
-        roundedRect: CGRect(origin: .zero, size: StageGeometry.cardSize),
-        cornerWidth: DesignTokens.EditDesk.Corner.shelfCard,
-        cornerHeight: DesignTokens.EditDesk.Corner.shelfCard, transform: nil
-    )
+    private static let rowShadowPath = RoundedRectangle(
+        cornerRadius: DesignTokens.EditDesk.Corner.shelfCard, style: .continuous
+    ).path(in: CGRect(origin: .zero, size: StageGeometry.cardSize)).cgPath
     /// Contact shadow cast onto the card behind. SCREENS S2 only gives the wide float shadow,
     /// which on a single plane leaves the overlap looking pasted on.
     private static let contactShadowOffset: CGFloat = 9
-    private static let contactShadowRadius: CGFloat = 9
-    private static let contactShadowDrop: CGFloat = 4
     private var badgeWidth: CGFloat = 0
     private var shadowSize = CGSize.zero
 
     init() {
         layer.addSublayer(face)
         face.anchorPoint = CGPoint(x: 0, y: 0.5)
+        face.addSublayer(edgeShadow)
         face.addSublayer(thumbnail)
         thumbnail.masksToBounds = true
         thumbnail.contentsGravity = .resizeAspectFill
-        thumbnail.addSublayer(gradient)
-        thumbnail.addSublayer(badge)
+        thumbnail.borderWidth = 1
+        for sublayer in [gradient, spine, sheen, rimTop, rimBottom, badge] {
+            thumbnail.addSublayer(sublayer)
+        }
         face.addSublayer(shade)
-        face.addSublayer(spine)
         face.addSublayer(tab)
         face.addSublayer(outline)
+        for rounded in [face, thumbnail, shade, tab, outline, badge] {
+            rounded.cornerCurve = .continuous
+        }
         outline.borderWidth = 1.5
         shade.backgroundColor = StageLayerStyle.black
         shade.opacity = 0
         tab.cornerRadius = DesignTokens.EditDesk.Corner.badge
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
+        // shelf-lab's `linear-gradient(112deg)` across its 2.6W-wide box, in that box's unit space (y down).
+        sheen.colors = [0, 0.13, 0].map { NSColor.white.withAlphaComponent($0).cgColor }
+        sheen.locations = [0.34, 0.47, 0.60]
+        sheen.startPoint = CGPoint(x: 0.033, y: -0.376)
+        sheen.endPoint = CGPoint(x: 0.967, y: 1.376)
+        edgeShadow.shadowRadius = DesignTokens.EditDesk.Shadow.shelfCardEdge.radius
         StageLayerStyle.text(badge, size: 11, mono: true)
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
         badge.masksToBounds = true
@@ -88,20 +101,23 @@ final class ShelfCardLayer {
         let colors = DesignTokens.EditDesk.Colors.self
         badge.foregroundColor = StageLayerStyle.black
         badge.backgroundColor = NSColor(card?.statusBadge == nil ? colors.success : colors.warning).cgColor
-        thumbnail.backgroundColor = NSColor(colors.background).cgColor
+        thumbnail.backgroundColor = NSColor(DesignTokens.Colors.surfaceRaised).cgColor
+        thumbnail.borderColor = NSColor(increasedContrast ? colors.cardRimRingIncreased : colors.cardRimRing).cgColor
+        rimTop.backgroundColor = NSColor(colors.cardRimHighlight).cgColor
+        rimBottom.backgroundColor = NSColor(colors.cardRimShade).cgColor
         outline.borderColor = StageLayerStyle.white
         spine.colors = [
             NSColor(colors.strokeHotShell).withAlphaComponent(0.55).cgColor,
             NSColor.black.withAlphaComponent(0.35).cgColor,
         ]
         tab.backgroundColor = NSColor(colors.strokeHotShell).withAlphaComponent(0.2).cgColor
-        regularRing = NSColor(colors.strokeShelfCardRing).cgColor
-        gridRing = NSColor(increasedContrast ? colors.strokeRegularIncreased : colors.strokeRegular).cgColor
+        gridStroke = NSColor(Color.primary.opacity(DesignTokens.Card.strokeOpacity)).cgColor
         let restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
         let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCardHover.color).cgColor
         shadowTint = restShadow.copy(alpha: 1)
         restShadowAlpha = restShadow.alpha
         hotShadowAlpha = hotShadow.alpha
+        edgeShadow.shadowColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCardEdge.color).cgColor
         gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientCardBottom).cgColor]
     }
 
@@ -115,8 +131,7 @@ final class ShelfCardLayer {
         perspective.m34 = -1 / StageGeometry.shelfPerspective
         layer.sublayerTransform = perspective
         let size = placement.frame.size
-        let corner = DesignTokens.EditDesk.Corner.shelfCard
-            + (DesignTokens.EditDesk.Corner.gridCard - DesignTokens.EditDesk.Corner.shelfCard) * gridMix
+        let corner = StageGeometry.lerp(DesignTokens.EditDesk.Corner.shelfCard, DesignTokens.Corner.lg, gridMix)
         let tilted = 1 - gridMix
         // Facing In's middle card faces front, so its spine and contact shadow grow with its turn
         // instead of jumping sides as the card crosses the middle.
@@ -147,9 +162,15 @@ final class ShelfCardLayer {
         tab.opacity = Float(tilted)
         thumbnail.frame = face.bounds
         thumbnail.cornerRadius = corner
+        // shelf-lab's slide: the band tracks the turn, clamped so the folders' 40° cannot push it off the card.
+        let slide = min(max(0.5 + 0.014 * posed.rotationYDegrees + 0.012 * posed.rotationZDegrees, 0.1), 0.9)
+        sheen.frame = CGRect(x: -1.6 * size.width * slide, y: 0, width: 2.6 * size.width, height: size.height)
+        sheen.opacity = Float(tilted)
+        rimTop.frame = CGRect(x: 0, y: 0, width: size.width, height: 1)
+        rimBottom.frame = CGRect(x: 0, y: size.height - 1, width: size.width, height: 1)
         face.cornerRadius = corner
-        face.borderWidth = 1
-        face.borderColor = gridMix == 1 ? gridRing : regularRing
+        face.borderWidth = DesignTokens.Card.strokeWidth
+        face.borderColor = gridStroke.flatMap { $0.copy(alpha: $0.alpha * gridMix) }
         gradient.frame = CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
         badge.frame = CGRect(x: 8, y: 8, width: badgeWidth, height: 18)
         outline.frame = face.bounds
@@ -162,26 +183,34 @@ final class ShelfCardLayer {
         layer.opacity = Float(placement.opacity) * (dragged ? 0.3 : 1)
         let rest = DesignTokens.EditDesk.Shadow.shelfCard
         let hot = DesignTokens.EditDesk.Shadow.shelfCardHover
-        face.shadowColor = shadowTint
-        face.shadowOpacity = Float(
-            max(0.3, 1 - placement.dim) * (restShadowAlpha + (hotShadowAlpha - restShadowAlpha) * lifted)
-        )
+        let edge = DesignTokens.EditDesk.Shadow.shelfCardEdge
+        let lit = max(0.3, 1 - placement.dim)
         // Each card throws a tight shadow onto the one it has fallen across, past its near edge: with
-        // the whole row on one plane that contact edge is the only thing left that reads as depth. The
-        // design's wide float shadow only comes back once the cards flatten into the grid.
+        // the whole row on one plane that contact edge is the only thing left that reads as depth.
         let contactMix = edged * (1 - lifted)
-        face.shadowRadius = rest.radius + (hot.radius - rest.radius) * lifted
-            - (rest.radius - Self.contactShadowRadius) * contactMix
+        face.shadowColor = shadowTint
+        face.shadowOpacity = Float(lit * StageGeometry.lerp(
+            StageGeometry.lerp(restShadowAlpha, hotShadowAlpha, lifted), CGFloat(DesignTokens.Card.restShadowOpacity), gridMix
+        ))
+        face.shadowRadius = StageGeometry.lerp(
+            StageGeometry.lerp(rest.radius, hot.radius, lifted), DesignTokens.Card.shadowRadius, gridMix
+        )
         face.shadowOffset = CGSize(
             width: outward * Self.contactShadowOffset * contactMix,
-            height: rest.y + (hot.y - rest.y) * lifted - (rest.y - Self.contactShadowDrop) * contactMix
+            height: StageGeometry.lerp(StageGeometry.lerp(rest.y, hot.y, lifted), DesignTokens.Card.restShadowYOffset, gridMix)
         )
+        edgeShadow.frame = face.bounds
+        edgeShadow.shadowOpacity = Float(lit * tilted)
+        // 0.6: shelf-lab leans the contact shadow 0.6 as far as the spread one.
+        edgeShadow.shadowOffset = CGSize(width: outward * Self.contactShadowOffset * 0.6 * contactMix, height: edge.y)
         // The path is a pure function of the size, so `shadowSize` is a cache key and nothing more:
         // missing the hit costs one extra `CGPath`, never a shadow of the wrong size.
         if size != shadowSize {
-            face.shadowPath = size == StageGeometry.cardSize
+            let path = size == StageGeometry.cardSize
                 ? Self.rowShadowPath
-                : CGPath(roundedRect: face.bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
+                : RoundedRectangle(cornerRadius: corner, style: .continuous).path(in: face.bounds).cgPath
+            face.shadowPath = path
+            edgeShadow.shadowPath = path
             shadowSize = size
         }
     }

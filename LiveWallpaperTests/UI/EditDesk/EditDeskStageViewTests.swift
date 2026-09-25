@@ -1,6 +1,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 @MainActor
@@ -241,24 +242,24 @@ struct EditDeskStageViewTests {
         let restShell = try #require(wallpapered.normalStroke).alpha
         let restEmpty = try #require(empty.normalStroke).alpha
         let restButton = try #require(emptyButtons(empty).first?.borderColor).alpha
-        let restRing = try #require(card.face.borderColor).alpha
+        let restRing = try #require(card.thumbnail.borderColor).alpha
         // S9 gives the empty display its own `1px dashed .4`; the wallpapered shell stays on .25.
         #expect(restShell == 0.25, Comment(rawValue: "\(restShell)"))
         #expect(restEmpty == 0.40, Comment(rawValue: "\(restEmpty)"))
         #expect(restButton == 0.08, Comment(rawValue: "\(restButton)"))
-        #expect(restRing == 0.08, Comment(rawValue: "\(restRing)"))
+        #expect(restRing == 0.10, Comment(rawValue: "\(restRing)"))
 
         model.increaseContrast = true
         await Task.yield()
         let hotShell = try #require(wallpapered.normalStroke).alpha
         let hotEmpty = try #require(empty.normalStroke).alpha
         let hotButton = try #require(emptyButtons(empty).first?.borderColor).alpha
-        let hotRing = try #require(card.face.borderColor).alpha
+        let hotRing = try #require(card.thumbnail.borderColor).alpha
         // GAP §6's tiers, and the proof that `Increased` has not drifted from `ink(contrast:)`.
         #expect(hotShell == 0.65, Comment(rawValue: "shell \(restShell) → \(hotShell)"))
         #expect(hotEmpty == 0.80, Comment(rawValue: "empty shell \(restEmpty) → \(hotEmpty)"))
         #expect(hotButton == 0.35, Comment(rawValue: "empty button \(restButton) → \(hotButton)"))
-        #expect(hotRing == 0.35, Comment(rawValue: "grid ring \(restRing) → \(hotRing)"))
+        #expect(hotRing == 0.35, Comment(rawValue: "inner ring \(restRing) → \(hotRing)"))
 
         // Control: the other accessibility input the stage carries must not move a single stroke.
         model.increaseContrast = false
@@ -268,11 +269,11 @@ struct EditDeskStageViewTests {
         let backShell = try #require(wallpapered.normalStroke).alpha
         let backEmpty = try #require(empty.normalStroke).alpha
         let backButton = try #require(emptyButtons(empty).first?.borderColor).alpha
-        let backRing = try #require(card.face.borderColor).alpha
+        let backRing = try #require(card.thumbnail.borderColor).alpha
         #expect(backShell == restShell, Comment(rawValue: "shell \(restShell) → \(backShell)"))
         #expect(backEmpty == restEmpty, Comment(rawValue: "empty shell \(restEmpty) → \(backEmpty)"))
         #expect(backButton == restButton, Comment(rawValue: "empty button \(restButton) → \(backButton)"))
-        #expect(backRing == restRing, Comment(rawValue: "grid ring \(restRing) → \(backRing)"))
+        #expect(backRing == restRing, Comment(rawValue: "inner ring \(restRing) → \(backRing)"))
     }
 
     @Test("Swapping the library for a different set of the same size keeps the shelf drawn")
@@ -1685,32 +1686,30 @@ struct EditDeskStageViewTests {
     }
 
     @Test("Facing In draws the spine and contact shadow on each card's outer edge, and none on the face-on middle card")
-    func facingInSpineSitsOnTheOuterEdge() throws {
+    func facingInSpineSitsOnTheOuterEdge() {
         let tile = ShelfCardLayer()
         tile.update(
             card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
             increasedContrast: false
         )
-        func place(_ style: ShelfStyle, _ index: Int) throws -> (spine: CALayer, shadow: CGFloat) {
+        func place(_ style: ShelfStyle, _ index: Int) -> (spine: CALayer, shadow: CGFloat) {
             let placement = StageGeometry.cardPlacement(
                 style: style, index: index, count: 13, progress: 1, focus: 6, windowSize: StageGeometry.designWindow
             )
             tile.place(placement, style: style, gridMix: 0, dragged: false, reduceMotion: false)
-            // The spine is the face's only direct gradient sublayer.
-            let spine = try #require(tile.face.sublayers?.first { $0 is CAGradientLayer })
-            return (spine, tile.face.shadowOffset.width)
+            return (tile.spine, tile.face.shadowOffset.width)
         }
-        let right = try place(.facingIn, 8)
+        let right = place(.facingIn, 8)
         #expect(right.spine.frame.maxX == StageGeometry.cardSize.width && right.spine.opacity == 1 && right.shadow > 0,
                 Comment(rawValue: "right card: spine \(right.spine.frame) at \(right.spine.opacity), shadow \(right.shadow)"))
-        let left = try place(.facingIn, 4)
+        let left = place(.facingIn, 4)
         #expect(left.spine.frame.minX == 0 && left.spine.opacity == 1 && left.shadow < 0,
                 Comment(rawValue: "left card: spine \(left.spine.frame) at \(left.spine.opacity), shadow \(left.shadow)"))
-        let middle = try place(.facingIn, 6)
+        let middle = place(.facingIn, 6)
         #expect(middle.spine.opacity == 0 && middle.shadow == 0,
                 Comment(rawValue: "middle card: spine at \(middle.spine.opacity), shadow \(middle.shadow)"))
         // Control: the crate keeps both on every card's left edge.
-        let crate = try place(.crate, 8)
+        let crate = place(.crate, 8)
         #expect(crate.spine.frame.minX == 0 && crate.spine.opacity == 1 && crate.shadow < 0,
                 Comment(rawValue: "crate card: spine \(crate.spine.frame) at \(crate.spine.opacity), shadow \(crate.shadow)"))
     }
@@ -1743,6 +1742,196 @@ struct EditDeskStageViewTests {
         _ = place(1)
         let settled = try #require(tile.face.shadowPath)
         #expect(settled.boundingBox.size == StageGeometry.cardSize)
+    }
+
+    private func refinedTile(_ appearance: NSAppearance.Name = .darkAqua, increasedContrast: Bool = false) -> ShelfCardLayer {
+        let tile = ShelfCardLayer()
+        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+            tile.update(
+                card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+                increasedContrast: increasedContrast
+            )
+        }
+        return tile
+    }
+
+    /// Places `tile` the way `render` does, with `gridMix` read off `progress`.
+    private func pose(
+        _ tile: ShelfCardLayer, style: ShelfStyle = .crate, index: Int = 0, focus: Double = 0,
+        progress: Double = 1, hover: Double = 0, reduceMotion: Bool = false
+    ) {
+        tile.hover.jump(to: hover)
+        tile.place(
+            StageGeometry.cardPlacement(
+                style: style, index: index, count: 13, progress: progress, focus: focus, windowSize: StageGeometry.designWindow
+            ),
+            style: style, gridMix: CGFloat(StageGeometry.progressSplit(progress).t2), dragged: false, reduceMotion: reduceMotion
+        )
+    }
+
+    private func layerTree(_ root: CALayer) -> [CALayer] {
+        [root] + (root.sublayers ?? []).flatMap { layerTree($0) }
+    }
+
+    private func shadowAlpha(_ layer: CALayer) -> CGFloat {
+        (layer.shadowColor?.alpha ?? 0) * CGFloat(layer.shadowOpacity)
+    }
+
+    @Test("The spine hangs in the thumbnail's rounded clip, so the near corners cut it instead of it poking past them")
+    func spineIsClippedByTheThumbnail() {
+        let tile = refinedTile()
+        pose(tile)
+        #expect(
+            tile.spine.superlayer === tile.thumbnail,
+            Comment(rawValue: "the spine hangs off \(tile.spine.superlayer === tile.face ? "the face" : "another layer")")
+        )
+        #expect(tile.thumbnail.masksToBounds && tile.thumbnail.cornerRadius > 0)
+    }
+
+    @Test("At the grid end the card is the tile it hands over to: GalleryTileChrome's corner, curve, stroke and rest shadow")
+    func gridEndMatchesTheTile() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let tile = refinedTile(appearance)
+            pose(tile, progress: 2)
+            var tileStroke: CGFloat = -1
+            NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+                tileStroke = NSColor(Color.primary.opacity(DesignTokens.Card.strokeOpacity)).cgColor.alpha
+            }
+            let face = tile.face
+            let name = appearance.rawValue
+            #expect(face.cornerRadius == DesignTokens.Corner.lg, Comment(rawValue: "\(name): corner \(face.cornerRadius)"))
+            let circular = layerTree(tile.layer).filter { $0.cornerRadius > 0 && $0.cornerCurve != .continuous }
+            #expect(circular.isEmpty, Comment(rawValue: "\(name): \(circular.count) rounded layers keep circular corners"))
+            let stroke = face.borderColor?.alpha ?? -1
+            #expect(
+                face.borderWidth == DesignTokens.Card.strokeWidth && abs(stroke - tileStroke) < 0.0001,
+                Comment(rawValue: "\(name): stroke \(face.borderWidth)pt at α \(stroke), the tile's is α \(tileStroke)")
+            )
+            let spread = shadowAlpha(face)
+            #expect(
+                abs(spread - CGFloat(DesignTokens.Card.restShadowOpacity)) < 0.0001
+                    && face.shadowRadius == DesignTokens.Card.shadowRadius
+                    && face.shadowOffset == CGSize(width: 0, height: DesignTokens.Card.restShadowYOffset),
+                Comment(rawValue: "\(name): shadow α \(spread), r \(face.shadowRadius), offset \(face.shadowOffset)")
+            )
+            #expect(
+                shadowAlpha(tile.edgeShadow) == 0 && tile.sheen.opacity == 0,
+                Comment(rawValue: "\(name): contact shadow α \(shadowAlpha(tile.edgeShadow)), sheen \(tile.sheen.opacity)")
+            )
+        }
+        let view = EditDeskStageView(model: makeModel())
+        defer { view.detach() }
+        #expect(view.debugFocusRing.cornerCurve == .continuous)
+    }
+
+    @Test("Landing in the grid moves corner, stroke and shadows a little each frame, never all at once on the last")
+    func gridHandOffDoesNotStep() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let tile = refinedTile(appearance)
+            var last: [CGFloat]?
+            for step in 95 ... 100 {
+                pose(tile, progress: 1 + Double(step) / 100)
+                let now = [
+                    tile.face.cornerRadius, tile.face.borderColor?.alpha ?? 0, shadowAlpha(tile.face), shadowAlpha(tile.edgeShadow),
+                ]
+                if let last {
+                    let moved = zip(now, last).map { abs($0 - $1) }
+                    #expect(
+                        moved[0] <= 0.1 && moved.dropFirst().allSatisfy { $0 <= 0.01 },
+                        Comment(rawValue: "\(appearance.rawValue) at gridMix .\(step): corner, stroke, shadow, contact moved \(moved)")
+                    )
+                }
+                last = now
+            }
+        }
+    }
+
+    @Test("A tight contact shadow sits under the face on the face's own path and leans out past the near edge only")
+    func contactShadowHugsTheNearEdge() throws {
+        let tile = refinedTile()
+        pose(tile, index: 8)
+        let edge = tile.edgeShadow
+        #expect(tile.face.sublayers?.first === edge, "the contact shadow must lie under everything else the face holds")
+        // Core Animation copies a `shadowPath` it is handed, so equal is the closest a test sees to "the same object".
+        let path = try #require(tile.face.shadowPath)
+        #expect(edge.shadowPath == path && edge.frame == tile.face.bounds)
+        #expect(
+            abs(shadowAlpha(edge) - 0.38) < 0.0001 && edge.shadowRadius == 1 && edge.shadowOffset.height == 1,
+            Comment(rawValue: "contact shadow α \(shadowAlpha(edge)), r \(edge.shadowRadius), offset \(edge.shadowOffset)")
+        )
+        let crate = edge.shadowOffset.width
+        pose(tile, style: .facingIn, index: 8, focus: 6)
+        let right = edge.shadowOffset.width
+        pose(tile, style: .facingIn, index: 6, focus: 6)
+        let middle = edge.shadowOffset.width
+        #expect(crate < 0 && right > 0 && middle == 0, Comment(rawValue: "x: crate \(crate), right half \(right), middle \(middle)"))
+    }
+
+    @Test("The sheen slides with each card's turn, stays on the card at 40°, holds under Reduce Motion and is gone in the grid")
+    func sheenFollowsTheTurn() {
+        let tile = refinedTile()
+        func slide(_ style: ShelfStyle, index: Int = 0, focus: Double = 0, hover: Double = 0, reduceMotion: Bool = false) -> CGFloat {
+            pose(tile, style: style, index: index, focus: focus, hover: hover, reduceMotion: reduceMotion)
+            return tile.sheen.frame.minX
+        }
+        // x = −1.6 × 200 × clamp(0.50 + 0.014·rotY + 0.012·rotZ, 0.10, 0.90)
+        let cases: [(String, CGFloat, CGFloat)] = [
+            ("crate at rest, 28°", slide(.crate), -285.44),
+            ("crate hovered square", slide(.crate, hover: 1), -160),
+            ("Facing In's right half, −28°", slide(.facingIn, index: 8, focus: 6), -34.56),
+            ("folders at 40°, clamped to .90", slide(.folders), -288),
+            ("crate hovered under Reduce Motion", slide(.crate, hover: 1, reduceMotion: true), -285.44),
+        ]
+        for (name, actual, expected) in cases {
+            #expect(abs(actual - expected) < 0.01, Comment(rawValue: "\(name): sheen at x \(actual), expected \(expected)"))
+        }
+        let sheen = tile.sheen
+        #expect(
+            sheen.superlayer === tile.thumbnail && abs(sheen.frame.width - 520) < 0.01 && sheen.frame.height == 112
+                && sheen.opacity == 1,
+            Comment(rawValue: "sheen \(sheen.frame) at \(sheen.opacity)")
+        )
+        pose(tile, progress: 2)
+        #expect(sheen.opacity == 0, Comment(rawValue: "sheen at \(sheen.opacity) in the grid"))
+    }
+
+    @Test("The top light and bottom shade are 1pt lines in the thumbnail's clip, and the inner ring takes the contrast tier")
+    func rimLinesAndInnerRing() {
+        let tile = refinedTile()
+        pose(tile)
+        let bounds = tile.thumbnail.bounds
+        #expect(tile.rimTop.superlayer === tile.thumbnail && tile.rimBottom.superlayer === tile.thumbnail)
+        #expect(
+            tile.rimTop.frame == CGRect(x: 0, y: 0, width: bounds.width, height: 1)
+                && tile.rimBottom.frame == CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1),
+            Comment(rawValue: "top \(tile.rimTop.frame), bottom \(tile.rimBottom.frame) in \(bounds)")
+        )
+        let light = tile.rimTop.backgroundColor
+        let shade = tile.rimBottom.backgroundColor
+        #expect(
+            (light?.components?.first ?? 0) > 0.99 && abs((light?.alpha ?? 0) - 0.30) < 0.0001
+                && (shade?.components?.first ?? 1) < 0.01 && abs((shade?.alpha ?? 0) - 0.35) < 0.0001,
+            Comment(rawValue: "top \(String(describing: light)), bottom \(String(describing: shade))")
+        )
+        let ring = tile.thumbnail.borderColor?.alpha ?? 0
+        #expect(tile.thumbnail.borderWidth == 1 && abs(ring - 0.10) < 0.0001, Comment(rawValue: "ring \(tile.thumbnail.borderWidth)pt at α \(ring)"))
+        let contrast = refinedTile(increasedContrast: true)
+        pose(contrast)
+        let raised = contrast.thumbnail.borderColor?.alpha ?? 0
+        #expect(abs(raised - 0.35) < 0.0001, Comment(rawValue: "Increase Contrast ring at α \(raised)"))
+    }
+
+    @Test("A tilted card keeps Core Animation's macOS default of antialiasing all four edges of its face and picture")
+    func tiltedEdgesAreAntialiased() {
+        let tile = refinedTile()
+        pose(tile)
+        let allEdges: CAEdgeAntialiasingMask = [.layerLeftEdge, .layerRightEdge, .layerBottomEdge, .layerTopEdge]
+        for (name, layer) in [("face", tile.face), ("thumbnail", tile.thumbnail)] {
+            #expect(
+                layer.allowsEdgeAntialiasing && layer.edgeAntialiasingMask == allEdges,
+                Comment(rawValue: "\(name): antialiasing \(layer.allowsEdgeAntialiasing), edges \(layer.edgeAntialiasingMask.rawValue)")
+            )
+        }
     }
 
     @Test("The wave follows the pointer slot by slot instead of sticking to the card it lifted")

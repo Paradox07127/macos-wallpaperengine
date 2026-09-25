@@ -530,8 +530,6 @@ public enum DesignTokens {
             public static let strokeDashedCard = ink("StrokeDashedCard", 0.30)
             public static let strokeSelectedChip = ink("StrokeSelectedChip", 0.40)
             public static let strokeHotShell = ink("StrokeHotShell", 0.80)
-            /// Pairs with `Shadow.shelfCard`'s 1px ring (SCREENS.md S2).
-            public static let strokeShelfCardRing = ink("StrokeShelfCardRing", 0.12)
 
             public static let fillShell = ink("FillShell", 0.02)
             public static let fillNavPill = ink("FillNavPill", 0.05)
@@ -547,6 +545,11 @@ public enum DesignTokens {
             public static let hudPrimaryGlyph = Color.black
             public static let gradientStageBottom = Color.black.opacity(0.7)
             public static let gradientCardBottom = Color.black.opacity(0.5)
+            /// A wallpaper card's inner ring and 1pt top light / bottom shade, drawn over the artwork.
+            public static let cardRimRing = Color.white.opacity(0.10)
+            public static let cardRimRingIncreased = Color.white.opacity(0.35)
+            public static let cardRimHighlight = Color.white.opacity(0.30)
+            public static let cardRimShade = Color.black.opacity(0.35)
             /// Separates the shelf from the stage; a hard black band is too heavy on a light canvas.
             public static let shelfScrim = adaptive(
                 "ShelfScrim",
@@ -625,8 +628,11 @@ public enum DesignTokens {
             public static let shell = Shadow(color: .black.opacity(0.22), radius: 14, y: 5)
             public static let modal = Shadow(color: shadowColor("Modal", light: 0.16, dark: 0.38), radius: 24, y: 10)
             public static let hoverCard = Shadow(color: shadowColor("Hover", light: 0.16, dark: 0.32), radius: 12, y: 6)
-            public static let shelfCard = Shadow(color: .black.opacity(0.3), radius: 14, y: 6)
-            public static let shelfCardHover = Shadow(color: shadowColor("ShelfHover", light: 0.36, dark: 0.32), radius: 12, y: 6)
+            /// The shelf card's spread shadow at rest and hovered, and its tight contact shadow; each
+            /// `radius` is the shelf-lab CSS blur ÷ 2.
+            public static let shelfCard = Shadow(color: .black.opacity(0.26), radius: 9, y: 8)
+            public static let shelfCardHover = Shadow(color: shadowColor("ShelfHover", light: 0.36, dark: 0.32), radius: 14, y: 14)
+            public static let shelfCardEdge = Shadow(color: .black.opacity(0.38), radius: 1, y: 1)
             public static let floatPanel = Shadow(color: shadowColor("Float", light: 0.14, dark: 0.32), radius: 18, y: 8)
             public static let workshopCard = Shadow(color: shadowColor("Card", light: 0.10, dark: 0.24), radius: 8, y: 3)
             public static let workshopCardRing = Shadow(color: shadowColor("Ring", light: 0.06, dark: 0.12), radius: 1, y: 0)

@@ -92,7 +92,6 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.strokeBadge` | white `.25` | SCREENS S1 (type badge border) |
 | `Colors.strokeSelectedChip` | white `.40` | SCREENS S6 (selected console chip border) |
 | `Colors.strokeHotShell` | white `.80` | SCREENS S2 / MOTION (hovered shelf card outline) |
-| `Colors.strokeShelfCardRing` | white `.12` | SCREENS S2 (shelf card shadow ring) |
 | `Colors.fillShell` | white `.02` | SCREENS S1 (display shell background) |
 | `Colors.fillNavPill` | white `.06` | SCREENS S1 (nav pill / import capsule) |
 | `Colors.fillSelectedChip` | white `.14` | SCREENS S6 (selected console chip fill) |
@@ -102,14 +101,17 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.playbackControlFill` | `rgba(0,0,0,.55)` | SCREENS S1 (hover playback controls) |
 | `Colors.gradientStageBottom` | black `.7` | SCREENS S1 (screen content bottom gradient) |
 | `Colors.gradientCardBottom` | black `.5` | SCREENS S2 (shelf card bottom gradient) |
+| `Colors.cardRimRing` / `cardRimRingIncreased` | white `.10`; Increase Contrast → `.35` (fixed) | shelf-lab v3 `.q-refined` (1px inner ring of the shelf card and the library grid tile) |
+| `Colors.cardRimHighlight` | white `.30` (fixed) | shelf-lab v3 `.q-refined` (1px top edge, same two cards) |
+| `Colors.cardRimShade` | black `.35` (fixed) | shelf-lab v3 `.q-refined` (1px bottom edge, same two cards) |
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.modalPanel` | `rgba(22,22,26,.98)` | SCREENS S4 (modal background) |
 | `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
 | `Colors.tagChipFill` | `rgba(0,0,0,.55)` (fixed) | SCREENS S4 (tag chips) |
-| `Colors.fillSecondaryButton` | white `.10` | SCREENS S4 (secondary apply button) |
-| `Colors.fillTertiaryButton` | white `.06` | SCREENS S4 (＋ / … buttons) |
-| `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | SCREENS S4 (primary apply button) |
+| `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9), empty display's Choose File, library modal download progress track |
+| `Colors.fillTertiaryButton` | white `.06` | library modal ＋ / … menus and status chips (SCREENS S4), empty display's Paste URL |
+| `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | onboarding card primary button (SCREENS S9) |
 | `Corner.content` | 3 | README Tokens #5 |
 | `Corner.badge` | 3 | SCREENS S1 (type badge) |
 | `Corner.shelfCard` | 6 | README Tokens #5 |
@@ -125,12 +127,14 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Corner.modal` | 18 | README Tokens #5 |
 | `Corner.capsule` | 99 | README Tokens #5 |
 | `Corner.floatPanel` | 16 | SCREENS S5 |
-| `Corner.button` | 9 | SCREENS S4 (bottom-bar buttons) |
+| `Corner.button` | 9 | library modal ＋ / … menus (SCREENS S4), onboarding card buttons (SCREENS S9) |
 | `Corner.chip` | 5 | SCREENS S4/S5 (preview chips, float thumbnails) |
 | `Shadow.shell` | `0 30px 80px rgba(0,0,0,.6)` | README Tokens #6 |
 | `Shadow.modal` | `0 60px 140px rgba(0,0,0,.7)` | README Tokens #6 |
 | `Shadow.hoverCard` | `0 30px 60px rgba(0,0,0,.7)` | README Tokens #6 |
-| `Shadow.shelfCard` | `0 14px 30px rgba(0,0,0,.6)` (+ `strokeShelfCardRing`) | SCREENS S2 |
+| `Shadow.shelfCard` | `0 8px 18px rgba(0,0,0,.26)`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (shelf card spread shadow) |
+| `Shadow.shelfCardHover` | `0 14px 28px rgba(0,0,0,.32)`, light `.36`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (hovered shelf card) |
+| `Shadow.shelfCardEdge` | `0 1px 2px rgba(0,0,0,.38)`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (shelf card contact shadow) |
 | `Shadow.floatPanel` | `0 20px 50px rgba(0,0,0,.5)` | SCREENS S5 |
 | `Spacing.s8` | 8 | README Tokens #7 |
 | `Spacing.s12` | 12 | README Tokens #7 |
@@ -148,7 +152,7 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Typography.modalTitle` | 22pt bold | README Tokens #8 |
 | `Typography.navItem` | 12pt | SCREENS S1 (nav pill item) |
 | `Typography.libraryModalTitle` | 20pt bold | SCREENS S4 (library modal title) |
-| `Typography.button` | 13pt bold | SCREENS S4 (bottom-bar buttons) |
+| `Typography.button` | 15pt bold | library modal ＋ / … menu glyphs (SCREENS S4) |
 | `Typography.floatName` | 10pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 11pt bold | SCREENS S5 (「松手替换」) |
 
