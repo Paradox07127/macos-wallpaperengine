@@ -98,6 +98,8 @@ struct SettingsWindowHost {
         initialNavigation: Navigation?,
         initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?,
         initialOnboardingRequested: Bool = false,
+        // false = neither restores nor autosaves the frame the user left this window at.
+        savesFrame: Bool = true,
         delegate: any NSWindowDelegate
     ) -> NSWindowController {
         let contentSize = editDeskEnabled
@@ -133,8 +135,10 @@ struct SettingsWindowHost {
         // The saved frame has to land BEFORE the hosting view goes in.
         // center() is only the first-run fallback — a successful restore replaces it.
         let frameName = editDeskEnabled ? "LiveWallpaperEditDeskWindow" : "LiveWallpaperSettingsWindow"
-        window.setFrameAutosaveName(frameName)
-        if !window.setFrameUsingName(frameName) {
+        if savesFrame {
+            window.setFrameAutosaveName(frameName)
+        }
+        if !savesFrame || !window.setFrameUsingName(frameName) {
             window.center()
         }
         if editDeskEnabled {

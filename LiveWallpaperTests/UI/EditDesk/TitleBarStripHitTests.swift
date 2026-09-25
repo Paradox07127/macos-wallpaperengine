@@ -33,9 +33,6 @@ struct TitleBarStripHitTests {
 
     /// The app's own Edit Desk window, parked off every display: SwiftUI runs `onAppear` only on screen.
     private func withWindow(navigation: Navigation?, _ body: (NSWindow) async throws -> Void) async throws {
-        let frameKey = "NSWindow Frame LiveWallpaperEditDeskWindow"
-        let previousFrame = UserDefaults.standard.object(forKey: frameKey)
-        defer { UserDefaults.standard.set(previousFrame, forKey: frameKey) }
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
@@ -59,7 +56,7 @@ struct TitleBarStripHitTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: true, initialNavigation: navigation, initialAddWallpaperRequest: nil, delegate: delegate
+            editDeskEnabled: true, initialNavigation: navigation, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
         defer {

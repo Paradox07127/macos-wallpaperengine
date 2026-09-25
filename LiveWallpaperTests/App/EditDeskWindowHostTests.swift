@@ -173,5 +173,49 @@ struct EditDeskWindowHostTests {
         #expect(window.styleMask == [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
     }
 
+    @Test("A window that does not save its frame opens at the default size and leaves the user's saved frame alone")
+    func windowsThatDoNotSaveTheirFrameLeaveTheUserKeyAlone() throws {
+        let frameKey = "NSWindow Frame LiveWallpaperEditDeskWindow"
+        let savedFrame = UserDefaults.standard.string(forKey: frameKey)
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(),
+            featureCatalog: .unconfigured
+        ))
+        #if !LITE_BUILD
+        let doctor = SteamCMDDoctorService()
+        let host = SettingsWindowHost(
+            manager: manager,
+            wallpaperExportService: WallpaperExportService(),
+            workshopDoctorService: doctor,
+            workshopServices: WorkshopServices(),
+            workshopSetupController: WorkshopSetupController(doctor: doctor)
+        )
+        #else
+        let host = SettingsWindowHost(manager: manager, wallpaperExportService: WallpaperExportService())
+        #endif
+        let delegate = WindowDelegate()
+        let controller = host.makeWindowController(
+            editDeskEnabled: true, initialNavigation: nil, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
+        )
+        let window = try #require(controller.window)
+        defer {
+            window.contentView = nil
+            window.close()
+            manager.tearDownForTermination()
+        }
+
+        // require, not expect: an autosaving window has to stop here, before the move writes the parked frame into the user's key.
+        try #require(window.frameAutosaveName.isEmpty)
+        #expect(window.contentRect(forFrameRect: window.frame).size == CGSize(width: 1280, height: 820))
+        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+        window.close()
+        #expect(UserDefaults.standard.string(forKey: frameKey) == savedFrame)
+    }
+
     private final class WindowDelegate: NSObject, NSWindowDelegate {}
 }
