@@ -230,12 +230,12 @@ struct WorkshopDetailIdentityHeader: View {
 
     private var updatedText: Text? {
         guard let updated = item.timeUpdated else { return nil }
-        return Text("Updated \(Self.dateFormatter.string(from: updated)) (\(WorkshopRelativeDateFormatter.string(updated)))")
+        return Text("Updated \(Self.mediumDate(updated)) (\(WorkshopRelativeDateFormatter.string(updated)))")
     }
 
     private var postedText: Text? {
         guard let posted = item.timeCreated else { return nil }
-        return Text("Posted \(Self.dateFormatter.string(from: posted)) (\(WorkshopRelativeDateFormatter.string(posted)))")
+        return Text("Posted \(Self.mediumDate(posted)) (\(WorkshopRelativeDateFormatter.string(posted)))")
     }
 
     @ViewBuilder
@@ -262,6 +262,12 @@ struct WorkshopDetailIdentityHeader: View {
             return String(localized: "\(scaled)K subs", bundle: .appLanguage, comment: "Workshop item subscriber count, thousands.")
         }
         return String(localized: "\(count) subs", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item subscriber count.")
+    }
+
+    /// Locale set per call, not in the initializer: the app language can change while the app runs.
+    static func mediumDate(_ date: Date) -> String {
+        dateFormatter.locale = AppLanguagePreference.current.locale
+        return dateFormatter.string(from: date)
     }
 
     private static let dateFormatter: DateFormatter = {

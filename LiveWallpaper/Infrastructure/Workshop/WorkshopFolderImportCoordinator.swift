@@ -16,15 +16,21 @@ final class WorkshopFolderImportCoordinator {
         let total: Int
     }
 
-    /// True until the last queued batch ends.
-    private(set) var isImporting = false
+    private enum Importer { case folders, downloadScan }
+
+    /// Which entry is writing history, presets and tombstones; nil when idle. One slot for both entries.
+    private var importer: Importer?
+    /// True from a folder request until the last queued batch ends, including while it waits for the download scan.
+    var isImporting: Bool {
+        importer == .folders || !pendingFolders.isEmpty
+    }
+
     /// The batch being imported, once its projects are counted; nil otherwise.
     private(set) var progress: Progress?
     @ObservationIgnored var onLocalLibraryImported: (@MainActor (Int) -> Void)?
 
-    /// Requests made while a batch runs, each imported as its own batch in arrival order.
-    @ObservationIgnored private var pendingFolders: [[URL]] = []
-    @ObservationIgnored private var isIngesting = false
+    /// Requests made while an import runs, each imported as its own batch in arrival order.
+    private var pendingFolders: [[URL]] = []
     @ObservationIgnored private let importService: WallpaperEngineImportService
     @ObservationIgnored private let fileManager: FileManager
 
@@ -36,13 +42,13 @@ final class WorkshopFolderImportCoordinator {
         self.fileManager = fileManager
     }
 
-    /// One pass for every folder: a request made while another import runs waits for it.
+    /// One pass for every folder: a request made while another import or the download scan runs waits for it.
     func importProjects(from folders: [URL]) {
-        guard !isImporting else {
+        guard importer == nil else {
             pendingFolders.append(folders)
             return
         }
-        isImporting = true
+        importer = .folders
         Task { [weak self] in
             await self?.importQueue(startingWith: folders)
         }
@@ -54,7 +60,7 @@ final class WorkshopFolderImportCoordinator {
             await importAll(from: batch)
             next = pendingFolders.isEmpty ? nil : pendingFolders.removeFirst()
         }
-        isImporting = false
+        importer = nil
     }
 
     private func importAll(from folders: [URL]) async {
@@ -113,10 +119,16 @@ final class WorkshopFolderImportCoordinator {
         onLocalLibraryImported?(wallpaperEntries)
     }
 
+    /// Skipped, not queued, while anything else imports: the scan reruns on the next Workshop visit.
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
-        guard !isIngesting, !isImporting else { return }
-        isIngesting = true
-        defer { isIngesting = false }
+        guard importer == nil else { return }
+        importer = .downloadScan
+        defer {
+            importer = nil
+            if !pendingFolders.isEmpty {
+                importProjects(from: pendingFolders.removeFirst())
+            }
+        }
 
         let settings = SettingsManager.shared.loadGlobalSettings()
         // Re-import when the stored source bookmark no longer resolves.

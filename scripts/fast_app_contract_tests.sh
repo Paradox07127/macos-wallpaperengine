@@ -76,6 +76,7 @@ SUITES=(
   SteamCachedLoginVerdictTests
   WorkshopDownloadReadinessTests
   WorkshopFolderImportCoordinatorTests
+  WorkshopDateLanguageTests
   SystemMemoryPressureWatcherTests
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests

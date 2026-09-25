@@ -434,6 +434,7 @@ struct WorkshopPreviewImage: View {
 enum WorkshopRelativeDateFormatter {
     static func string(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
+        formatter.locale = AppLanguagePreference.current.locale
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
     }
