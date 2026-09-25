@@ -235,8 +235,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyOverlayToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"
-        // Not "Reset All": that key collides with the diagnostics-flag button's
-        // "Reset all" in xcstringstool symbol generation.
         case .resetAllSettings: return "Reset All Settings"
         case .removeSystemWallpaper:     return "Remove"
         case .disconnectAerialsLibrary:  return "Disconnect"

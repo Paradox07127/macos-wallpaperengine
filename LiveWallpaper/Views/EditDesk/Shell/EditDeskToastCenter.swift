@@ -15,7 +15,6 @@ final class EditDeskToastCenter {
         let id: UUID
         let text: String
         let style: Style
-        var failure: WallpaperFailureSnapshot?
         var screenID: CGDirectDisplayID?
         var postedAt: Date
         /// Seconds on screen; nil keeps the toast until it is dismissed.
@@ -36,9 +35,6 @@ final class EditDeskToastCenter {
     private(set) var toasts: [Toast] = []
 
     @ObservationIgnored private let now: @Sendable () -> Date
-    #if !LITE_BUILD
-    @ObservationIgnored private var mirroredToken: Int?
-    #endif
 
     init(now: @escaping @Sendable () -> Date = Date.init) {
         self.now = now
@@ -48,7 +44,6 @@ final class EditDeskToastCenter {
     func post(
         _ text: String,
         style: Toast.Style,
-        failure: WallpaperFailureSnapshot? = nil,
         screenID: CGDirectDisplayID? = nil,
         persistent: Bool = false,
         duration: TimeInterval = EditDeskToastCenter.duration,
@@ -62,7 +57,7 @@ final class EditDeskToastCenter {
             toasts.removeAll { $0.undoStepID != nil }
         }
         let toast = Toast(
-            id: UUID(), text: text, style: style, failure: failure, screenID: screenID, postedAt: now(),
+            id: UUID(), text: text, style: style, screenID: screenID, postedAt: now(),
             lifetime: style == .failure || persistent ? nil : (undoStepID == nil ? duration : Self.undoDuration),
             undoStepID: undoStepID
         )
@@ -108,21 +103,10 @@ final class EditDeskToastCenter {
         guard toasts.contains(where: expired) else { return }
         toasts.removeAll(where: expired)
     }
-
-    #if !LITE_BUILD
-    /// Guards against re-posting the same `WorkshopToastCenter` event on every observation tick.
-    func mirror(_ event: WorkshopToastEvent) {
-        guard event.token != mirroredToken else { return }
-        mirroredToken = event.token
-        let text = event.message.isEmpty ? event.title : "\(event.title) · \(event.message)"
-        post(text, style: event.isSuccess ? .success : .failure, failure: event.failure, screenID: event.screenID)
-    }
-    #endif
 }
 
 struct EditDeskToastHost: View {
     let center: EditDeskToastCenter
-    var onOpenFailure: (WallpaperFailureSnapshot, CGDirectDisplayID) -> Void = { _, _ in }
     var onOpenDisplay: (CGDirectDisplayID) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -195,11 +179,7 @@ struct EditDeskToastHost: View {
 
     private func open(_ toast: EditDeskToastCenter.Toast) {
         guard let screenID = toast.screenID else { return }
-        if let failure = toast.failure {
-            onOpenFailure(failure, screenID)
-        } else {
-            onOpenDisplay(screenID)
-        }
+        onOpenDisplay(screenID)
         center.dismiss(toast.id)
     }
 

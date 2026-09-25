@@ -105,32 +105,4 @@ struct EditDeskToastCenterTests {
         center.post("Applied to 1", style: .success, screenID: 1)
         #expect(center.toasts.map(\.text) == ["Applied to 2", "Applied to 1"])
     }
-
-    #if !LITE_BUILD
-    @Test("A Workshop event is mirrored once per token, not once per observation")
-    func workshopEventMirroredOncePerToken() {
-        let center = EditDeskToastCenter()
-        let event = WorkshopToastEvent(
-            token: 1,
-            headline: "Applied",
-            title: "Aurora",
-            message: "Applied to Main Display",
-            isSuccess: true
-        )
-
-        center.mirror(event)
-        center.mirror(event)
-        #expect(center.toasts.count == 1, "The same token was mirrored twice")
-
-        let nextEvent = WorkshopToastEvent(
-            token: 2,
-            headline: "Applied",
-            title: "Nightfall",
-            message: "Applied to Main Display",
-            isSuccess: true
-        )
-        center.mirror(nextEvent)
-        #expect(center.toasts.count == 2, "A new token was not mirrored")
-    }
-    #endif
 }
