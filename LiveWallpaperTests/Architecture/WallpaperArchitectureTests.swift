@@ -1410,6 +1410,23 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(end.wrappedValue == 18)
     }
 
+    @Test("The playing row is the saved queue's cursor entry, only while the playlist runs")
+    func playingRowIsTheSavedQueuesCursorEntry() {
+        let queue = ["A", "B", "C"].map { WallpaperQueueEntry(title: $0, content: .html(source: .inline($0), config: .default)) }
+        var playlist = ScreenConfiguration(screenID: 1, wallpaper: queue[2].content)
+        playlist.wallpaperQueue = queue
+        playlist.playlistCursorIndex = 2
+        var schedule = playlist
+        schedule.wallpaperMode = .schedule
+        let unqueued = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .inline("current"), config: .default))
+        let legacy = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]), playlistBookmarks: [Data([2]), Data([3])], playlistCursorIndex: 1)
+
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: playlist, insertedCurrent: nil) == queue[2].id)
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: schedule, insertedCurrent: nil) == nil, "a daily schedule marked a playlist row as playing")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: unqueued, insertedCurrent: "current") == "current", "the current wallpaper put first is not the playing row")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: legacy, insertedCurrent: nil) == "legacy-video-1", "an old video list's cursor row is not the playing row")
+    }
+
     @Test("A fallback picked in the panel is saved and fills the unscheduled hours at once")
     func pickedFallbackFillsUnscheduledHours() throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))

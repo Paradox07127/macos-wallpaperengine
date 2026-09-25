@@ -72,6 +72,9 @@ struct WallpaperAutomationSheet: View {
     @State private var pickTarget: PickTarget = .queue
     @State private var added: [LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
     @State private var error: String?
+    @State private var playingEntryID: WallpaperQueueEntry.ID?
+    @State private var insertedCurrentID: WallpaperQueueEntry.ID?
+    @State private var thumbnails = ShelfThumbnailCache()
 
     private enum PickTarget: Equatable {
         case queue, slot(UUID), fallback
@@ -127,6 +130,17 @@ struct WallpaperAutomationSheet: View {
         Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
     }
 
+    /// By the cursor, not by content: editing a playing scene's properties changes its content but not its row.
+    static func nowPlayingEntryID(in configuration: ScreenConfiguration?, insertedCurrent: WallpaperQueueEntry.ID?) -> WallpaperQueueEntry.ID? {
+        if let insertedCurrent {
+            return insertedCurrent
+        }
+        guard let configuration, configuration.wallpaperMode == .playlist else { return nil }
+        let queue = configuration.effectiveWallpaperQueue
+        let cursor = configuration.playlistCursorIndex ?? 0
+        return queue.indices.contains(cursor) ? queue[cursor].id : nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -173,6 +187,10 @@ struct WallpaperAutomationSheet: View {
         .frame(width: 820, height: 600)
         .background(DesignTokens.Colors.pageBackground)
         .onAppear(perform: load)
+        .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
+            guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
+            playingEntryID = Self.nowPlayingEntryID(in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID)
+        }
         .onChange(of: mode) { _, mode in
             guard mode == .schedule, slots.isEmpty else { return }
             let fallback = currentEntry
@@ -206,8 +224,16 @@ struct WallpaperAutomationSheet: View {
                 List {
                     ForEach(Array(queue.enumerated()), id: \.element.id) { index, entry in
                         HStack(spacing: 14) {
-                            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
-                            entryLabel(entry)
+                            if entry.id == playingEntryID {
+                                Image(systemName: "waveform").foregroundStyle(.tint)
+                                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: !reduceMotion)
+                                    .frame(width: 22).accessibilityHidden(true)
+                            } else {
+                                Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
+                            }
+                            QueueEntryLabel(entry: entry, isPlaying: entry.id == playingEntryID, thumbnails: thumbnails) {
+                                thumbnailRequest(for: entry)
+                            }
                             Spacer()
                             icon("play.fill", "Preview on This Display") {
                                 Self.startTrial(entry, shownBeforeTrial: &shownBeforeTrial, manager: manager, screen: screen)
@@ -479,21 +505,31 @@ struct WallpaperAutomationSheet: View {
 
     private var currentEntry: WallpaperQueueEntry? {
         guard let config = manager.getConfiguration(for: screen) else { return nil }
-        let sceneID = config.activeWallpaper.sceneDescriptor?.workshopID
-        let item = library.items.first { item in
+        var entry = WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
+        entry.title = matchingItem(entry)?.title ?? manager.wallpaperDisplayName(for: screen) ?? ""
+        return entry
+    }
+
+    private func matchingItem(_ entry: WallpaperQueueEntry) -> LibraryItem? {
+        let sceneID = entry.content.sceneDescriptor?.workshopID
+        return library.items.first { item in
             switch item.source {
             case let .bookmark(bookmark):
-                return bookmark.content == config.activeWallpaper
+                return bookmark.content == entry.content
                     || (sceneID != nil && bookmark.content.sceneDescriptor?.workshopID == sceneID)
             case let .aerial(asset):
-                return library.aerial(asset, matches: config.activeWallpaper)
+                return library.aerial(asset, matches: entry.content)
             #if !LITE_BUILD
-            case let .workshop(entry):
-                return entry.origin.workshopID == (sceneID ?? config.wpeOrigin?.workshopID)
+            case let .workshop(project):
+                return project.origin.workshopID == (sceneID ?? entry.origin?.workshopID)
             #endif
             }
         }
-        return WallpaperQueueEntry(title: item?.title ?? manager.wallpaperDisplayName(for: screen) ?? "", content: config.activeWallpaper, origin: config.wpeOrigin)
+    }
+
+    private func thumbnailRequest(for entry: WallpaperQueueEntry) -> ShelfThumbnailCache.Request {
+        matchingItem(entry)?.thumbnail
+            ?? .bookmark(WallpaperBookmark(label: entry.title, content: entry.content, wpeOrigin: entry.origin))
     }
 
     private func load() {
@@ -502,8 +538,11 @@ struct WallpaperAutomationSheet: View {
         savedMode = config.wallpaperMode
         queue = config.effectiveWallpaperQueue
         if config.wallpaperQueue == nil, config.wallpaperType != .video {
-            queue.insert(currentEntry ?? WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin), at: 0)
+            let current = currentEntry ?? WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
+            queue.insert(current, at: 0)
+            insertedCurrentID = current.id
         }
+        playingEntryID = Self.nowPlayingEntryID(in: config, insertedCurrent: insertedCurrentID)
         slots = (config.scheduleSlots ?? []).map { slot in
             var migrated = slot
             if migrated.wallpaper == nil, let bookmark = migrated.videoBookmarkData {
@@ -523,5 +562,51 @@ struct WallpaperAutomationSheet: View {
             queue: queue, slots: slots, fallback: fallback ?? (mode == .schedule ? derivedFallback : nil), mode: mode,
             rotationMinutes: rotation > 0 ? rotation : nil, shuffle: shuffle, for: screen
         )
+    }
+}
+
+private struct QueueEntryLabel: View {
+    private static let thumbnailSize = CGSize(width: 64, height: 36)
+    let entry: WallpaperQueueEntry
+    let isPlaying: Bool
+    let thumbnails: ShelfThumbnailCache
+    let request: @MainActor () -> ShelfThumbnailCache.Request
+    @State private var image: CGImage?
+    @State private var subtitle = ""
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        HStack(spacing: 12) {
+            thumbnail
+                .frame(width: Self.thumbnailSize.width, height: Self.thumbnailSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+                .accessibilityHidden(true)
+                .task(id: entry.id) {
+                    let pixelSize = CGSize(width: Self.thumbnailSize.width * scale, height: Self.thumbnailSize.height * scale)
+                    image = await thumbnails.image(request(), pixelSize: pixelSize, scale: scale)
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: entry.displayTitle).lineLimit(2).multilineTextAlignment(.leading)
+                if !subtitle.isEmpty {
+                    Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(isPlaying ? Text("Now playing") : Text(verbatim: ""))
+            .task(id: entry.id) {
+                guard case let .video(bookmarkData, .none) = entry.content else { return }
+                subtitle = await MetadataService.shared.metadata(for: bookmarkData).subtitle
+            }
+        }
+    }
+
+    @ViewBuilder private var thumbnail: some View {
+        if let image {
+            Image(decorative: image, scale: 1).resizable().scaledToFill()
+        } else {
+            Image(systemName: entry.symbol).font(.title3)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.quaternary)
+        }
     }
 }
