@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for taking the time to file a bug! Before submitting:
         - Search [existing issues](https://github.com/Paradox07127/macos-wallpaperengine/issues?q=is%3Aissue) — your bug may already be tracked.
-        - If you opened this template from the in-app **Report a Bug…** sheet (Settings → About, or Settings → Advanced), the diagnostic snapshot is already pasted below. Please add **What happened?** and **Steps to reproduce** before posting.
+        - If you opened this template from the in-app **Report a Bug** sheet (Settings → About, or Settings → Advanced), the diagnostic snapshot is already pasted below. Please add **What happened?** and **Steps to reproduce** before posting.
 
   - type: checkboxes
     id: prerequisites
@@ -74,7 +74,7 @@ body:
     attributes:
       value: |
         ---
-        **Note:** When you open this template from the in-app **Report a Bug…** sheet, a `<details>` diagnostic snapshot block and reproduction outline are pre-filled at the top of the issue body. You can keep them as-is, edit them, or delete them — file paths and `/Users/<name>` segments are already redacted, but please double-check before posting.
+        **Note:** When you open this template from the in-app **Report a Bug** sheet, a `<details>` diagnostic snapshot block and reproduction outline are pre-filled at the top of the issue body. You can keep them as-is, edit them, or delete them — file paths and `/Users/<name>` segments are already redacted, but please double-check before posting.
 
   - type: textarea
     id: log-file

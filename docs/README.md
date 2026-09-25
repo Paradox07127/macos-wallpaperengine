@@ -33,5 +33,5 @@ filename. A change to one is expected to land in the other in the same PR.
 
 ## Support
 
-- [GitHub Issues](https://github.com/Paradox07127/macos-wallpaperengine/issues) — include macOS version, Mac model, and reproduction steps, or use **Settings → About → Report a Bug…** in the app.
+- [GitHub Issues](https://github.com/Paradox07127/macos-wallpaperengine/issues) — include macOS version, Mac model, and reproduction steps, or use **Settings → About → Report a Bug** in the app.
 - [GitHub Discussions](https://github.com/Paradox07127/macos-wallpaperengine/discussions) — questions and ideas.

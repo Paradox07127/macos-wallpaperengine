@@ -393,9 +393,10 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     ],
                     keywords: [
                         "language", "appearance", "theme", "dark", "light", "tile size", "library",
-                        "shelf style", "crate", "cover flow", "cards rendered", "shelf capacity",
+                        "shelf style", "crate", "fan", "focus row", "cards rendered", "shelf capacity",
                         "autoplay preview", "hover", "status capsule", "system health", "home default",
-                        "架子样式", "木箱", "封面流", "状态胶囊", "主界面默认态",
+                        "架子样式", "木箱", "扇形", "焦点横排", "状态胶囊", "主界面默认态",
+                        "焦點橫排", "フォーカス", "abanico", "fila con foco",
                     ]
                 ),
                 SettingsNavigationSearchTarget(

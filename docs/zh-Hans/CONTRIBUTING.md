@@ -55,6 +55,6 @@ UI 复用 [Core 设计系统](../../Packages/LiveWallpaperCore/DESIGN.md)。英�
 
 ## 报告 bug
 
-可使用**设置 → 关于 → 报告问题…**生成预填报告，检查所含诊断后补充复现步骤；
+可使用**设置 → 关于 → 报告问题**生成预填报告，检查所含诊断后补充复现步骤；
 也可以直接提 [GitHub issue](https://github.com/Paradox07127/macos-wallpaperengine/issues)，
 附 macOS 版本与 Mac 机型。安全问题走[安全策略](SECURITY.md)，不走公开 issue。

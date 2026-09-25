@@ -31,5 +31,5 @@ macOS 26+ 还提供经兼容性检查的系统视频壁纸 provider。
 
 ## 支持
 
-- [GitHub Issues](https://github.com/Paradox07127/macos-wallpaperengine/issues) —— 请附上 macOS 版本、Mac 机型与复现步骤，或直接用应用内的 **设置 → 关于 → 报告问题…**。
+- [GitHub Issues](https://github.com/Paradox07127/macos-wallpaperengine/issues) —— 请附上 macOS 版本、Mac 机型与复现步骤，或直接用应用内的 **设置 → 关于 → 报告问题**。
 - [GitHub Discussions](https://github.com/Paradox07127/macos-wallpaperengine/discussions) —— 提问与想法。
