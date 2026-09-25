@@ -7,6 +7,7 @@ import Testing
 struct DetailIconButtonSourceTests {
     private static let hudPath = "LiveWallpaper/Views/EditDesk/Detail/DetailHero.swift"
     private static let topBarPath = "LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift"
+    private static let hostPath = "LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift"
     private static let componentPath =
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/GlassIconButton.swift"
 
@@ -25,6 +26,14 @@ struct DetailIconButtonSourceTests {
         #expect(!source.contains("flatFill:"))
         #expect(source.contains("role: .destructive"))
         #expect(source.contains("accessibilityLabel(Text(\"Clear Wallpaper\"))"))
+    }
+
+    @Test("The top bar's reload button reloads only the display it shows")
+    func reloadReachesThisDisplayOnly() throws {
+        let topBar = try RepositoryRoot.source(Self.topBarPath)
+        let host = try RepositoryRoot.source(Self.hostPath)
+        #expect(topBar.contains("actions.reload"))
+        #expect(host.contains("reloadWallpaperForScreen(screen)"))
     }
 
     @Test("Only those two call sites opt into the flat variant")

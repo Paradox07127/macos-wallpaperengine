@@ -682,7 +682,8 @@ struct DisplayDetailHost: View {
             enterWebAddress: { pasteURL(screen.id) },
             switchBackToVideo: switchBack.contains(.video) ? { switchToSaved(.video, on: screen) } : nil,
             switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
-            applyWebSource: { apply(.html($0), screen.id) }
+            applyWebSource: { apply(.html($0), screen.id) },
+            reload: { screenManager.reloadWallpaperForScreen(screen) }
         )
     }
 

@@ -50,6 +50,8 @@ struct DetailTopBar: View {
             if section == .wallpaper {
                 icon("rectangle.2.swap", "Change Wallpaper") { changeMenuPresented.toggle() }
                     .appLanguagePopover(isPresented: $changeMenuPresented, arrowEdge: .bottom) { changeMenu }
+                icon("arrow.triangle.2.circlepath", "Reload display", help: Text("Reload display content")) { actions.reload() }
+                    .disabled(!hasWallpaper || attemptShown)
             }
             if let openAutomation = actions.openAutomation {
                 icon("list.bullet", "Playlist & Schedule", action: openAutomation)
