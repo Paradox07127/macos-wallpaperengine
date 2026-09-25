@@ -109,9 +109,8 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.modalPanel` | `rgba(22,22,26,.98)` | SCREENS S4 (modal background) |
 | `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
-| `Colors.tagChipFill` | `rgba(0,0,0,.55)` (fixed) | SCREENS S4 (tag chips) |
-| `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9), empty display's Choose File, library modal download progress track |
-| `Colors.fillTertiaryButton` | white `.06` | library modal ＋ / … menus and status chips (SCREENS S4), empty display's Paste URL |
+| `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9) |
+| `Colors.fillTertiaryButton` | white `.06` | library modal ＋ / … menus (SCREENS S4) |
 | `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | onboarding card primary button (SCREENS S9) |
 | `Corner.content` | 3 | README Tokens #5 |
 | `Corner.badge` | 3 | SCREENS S1 (type badge) |
@@ -152,7 +151,6 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Typography.stageTitle` | 13pt semibold | README Tokens #8 |
 | `Typography.modalTitle` | 22pt bold | README Tokens #8 |
 | `Typography.navItem` | 12pt | SCREENS S1 (nav pill item) |
-| `Typography.libraryModalTitle` | 20pt bold | SCREENS S4 (library modal title) |
 | `Typography.button` | 15pt bold | library modal ＋ / … menu glyphs (SCREENS S4) |
 | `Typography.floatName` | 10pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 11pt bold | SCREENS S5 (「松手替换」) |

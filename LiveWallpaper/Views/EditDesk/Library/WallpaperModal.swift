@@ -33,8 +33,6 @@ struct WallpaperModal: View {
     @Environment(SteamCMDDoctorService.self) private var doctor: SteamCMDDoctorService?
     #endif
 
-    private static let barPadding: CGFloat = 20
-
     var body: some View {
         EditDeskModalChrome(
             windowSize: windowSize,
@@ -187,39 +185,6 @@ struct WallpaperModal: View {
                 RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip, style: .continuous)
                     .fill(DesignTokens.EditDesk.Colors.mediaChipFill)
             )
-    }
-
-    @ViewBuilder
-    private var presetCapsule: some View {
-        if let presetName = content.presetName {
-            Text("◈ Preset \(presetName) ▾")
-                .font(DesignTokens.EditDesk.Typography.chip)
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
-                .frame(height: 28)
-                .background(Capsule().fill(DesignTokens.EditDesk.Colors.mediaChipFill))
-        }
-    }
-
-    // MARK: Bottom bar
-
-    private var bottomBar: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: DesignTokens.EditDesk.Spacing.s12) {
-                ModalMetaLine(title: content.title, metaParts: content.metaParts, installed: content.installed)
-                    .id(content.itemID)
-                    .transition(.opacity)
-                Spacer(minLength: 0)
-            }
-            .animation(navigationAnimation, value: content.itemID)
-            .frame(maxHeight: .infinity)
-            applyControls
-                .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
-            ModalShortcutHint()
-                .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
-        }
-        .padding(.horizontal, Self.barPadding)
-        .frame(height: ModalGeometry.bottomBarHeight)
     }
 
     private var applyControls: some View {
@@ -458,39 +423,10 @@ struct WallpaperModal: View {
     }
 }
 
-/// SCREENS.md S4's bottom-bar button skin: a flat token fill, so hover and press have to be drawn
-/// here rather than inherited from a system style.
-/// SCREENS.md S4 gives every bottom-bar control the same 38pt height.
+/// Side of the "＋" and "…" menus in the icon row that closes the modal's left column.
 private let modalButtonHeight: CGFloat = 38
 
-private struct ModalBarButton<Label: View>: View {
-    let fill: Color
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .frame(height: modalButtonHeight)
-                .background(shape.fill(fill))
-                .overlay(
-                    shape.strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
-                        .opacity(isHovering ? 1 : 0)
-                )
-                .contentShape(shape)
-        }
-        .buttonStyle(ModalPressStyle())
-        .onHover { isHovering = $0 }
-    }
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.button, style: .continuous)
-    }
-}
-
-/// The 38×38 glyph menus ("＋" and "…") at the end of the bottom bar.
+/// The 38×38 glyph menus ("＋" and "…") at the end of the left column's icon row, after Show in Finder and Open in Steam.
 private struct ModalGlyphMenu<Content: View>: View {
     let glyph: String
     let label: Text
@@ -523,13 +459,6 @@ private struct ModalGlyphMenu<Content: View>: View {
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.button, style: .continuous)
-    }
-}
-
-private struct ModalPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? DesignTokens.Opacity.dimmedIcon : 1)
     }
 }
 

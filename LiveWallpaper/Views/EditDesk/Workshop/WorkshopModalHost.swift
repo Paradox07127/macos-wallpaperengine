@@ -221,8 +221,7 @@ struct WorkshopModalHost: View {
             updateState: .unknown,
             isWindowsOnly: entry.origin.requiresWindowsPlugin
                 || entry.origin.originalType == .application || entry.origin.originalType == .unknown,
-            inUseOnDisplayNames: runningOn.map(\.name),
-            localDescription: nil
+            inUseOnDisplayNames: runningOn.map(\.name)
         )
     }
 

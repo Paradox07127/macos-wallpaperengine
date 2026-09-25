@@ -205,18 +205,6 @@ struct EditDeskStageViewTests {
         #expect(StageLayerStyle.white == NSColor.white.cgColor)
     }
 
-    /// The two buttons SCREENS S9 draws inside an empty display, found by the localized title on
-    /// their labels: the group that holds them is private to `DisplayShellLayer`.
-    private func emptyButtons(_ shell: DisplayShellLayer) throws -> [CALayer] {
-        let title = String(localized: "Choose File", bundle: .appLanguage)
-        let group = try #require(shell.content.sublayers?.first { candidate in
-            candidate.sublayers?.contains { button in
-                button.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == title } == true
-            } == true
-        })
-        return try #require(group.sublayers?.filter { $0.borderWidth == 1 })
-    }
-
     @Test("Increase Contrast swaps the stage's stroke tier; Reduce Motion leaves every stroke alone")
     func increaseContrastReachesTheLayers() async throws {
         let model = makeModel()
@@ -241,24 +229,20 @@ struct EditDeskStageViewTests {
 
         let restShell = try #require(wallpapered.normalStroke).alpha
         let restEmpty = try #require(empty.normalStroke).alpha
-        let restButton = try #require(emptyButtons(empty).first?.borderColor).alpha
         let restRing = try #require(card.thumbnail.borderColor).alpha
         // S9 gives the empty display its own `1px dashed .4`; the wallpapered shell stays on .25.
         #expect(restShell == 0.25, Comment(rawValue: "\(restShell)"))
         #expect(restEmpty == 0.40, Comment(rawValue: "\(restEmpty)"))
-        #expect(restButton == 0.08, Comment(rawValue: "\(restButton)"))
         #expect(restRing == 0.10, Comment(rawValue: "\(restRing)"))
 
         model.increaseContrast = true
         await Task.yield()
         let hotShell = try #require(wallpapered.normalStroke).alpha
         let hotEmpty = try #require(empty.normalStroke).alpha
-        let hotButton = try #require(emptyButtons(empty).first?.borderColor).alpha
         let hotRing = try #require(card.thumbnail.borderColor).alpha
         // GAP §6's tiers, and the proof that `Increased` has not drifted from `ink(contrast:)`.
         #expect(hotShell == 0.65, Comment(rawValue: "shell \(restShell) → \(hotShell)"))
         #expect(hotEmpty == 0.80, Comment(rawValue: "empty shell \(restEmpty) → \(hotEmpty)"))
-        #expect(hotButton == 0.35, Comment(rawValue: "empty button \(restButton) → \(hotButton)"))
         #expect(hotRing == 0.35, Comment(rawValue: "inner ring \(restRing) → \(hotRing)"))
 
         // Control: the other accessibility input the stage carries must not move a single stroke.
@@ -268,11 +252,9 @@ struct EditDeskStageViewTests {
         await Task.yield()
         let backShell = try #require(wallpapered.normalStroke).alpha
         let backEmpty = try #require(empty.normalStroke).alpha
-        let backButton = try #require(emptyButtons(empty).first?.borderColor).alpha
         let backRing = try #require(card.thumbnail.borderColor).alpha
         #expect(backShell == restShell, Comment(rawValue: "shell \(restShell) → \(backShell)"))
         #expect(backEmpty == restEmpty, Comment(rawValue: "empty shell \(restEmpty) → \(backEmpty)"))
-        #expect(backButton == restButton, Comment(rawValue: "empty button \(restButton) → \(backButton)"))
         #expect(backRing == restRing, Comment(rawValue: "inner ring \(restRing) → \(backRing)"))
     }
 
@@ -3114,15 +3096,6 @@ struct EditDeskStageViewTests {
         #expect(view.cardLayers["card-5"]?.shakeElapsed != nil, "the shake timer runs on the frame clock too")
     }
 
-    /// A point inside the empty display's own button, in view coordinates.
-    private func emptyPoint(
-        _ view: EditDeskStageView, _ rect: (StageGeometry.EmptyScreenLayout) -> CGRect
-    ) throws -> CGPoint {
-        let shell = try #require(view.displayLayers[2])
-        let layout = try #require(shell.emptyLayout)
-        return shell.content.convert(CGPoint(x: rect(layout).midX, y: rect(layout).midY), to: view.layer)
-    }
-
     @Test("An empty thumbnail opens detail everywhere instead of embedding setup controls")
     func emptyScreenOpensDetail() async throws {
         let model = makeModel()
@@ -3132,7 +3105,6 @@ struct EditDeskStageViewTests {
         view.layoutSubtreeIfNeeded()
         var events = model.events.makeAsyncIterator()
         let shell = try #require(view.displayLayers[2])
-        #expect(shell.emptyLayout == nil)
         let center = shell.content.convert(CGPoint(x: shell.content.bounds.midX, y: shell.content.bounds.midY), to: view.layer)
         view.tap(at: center)
         #expect(await events.next() == .displayTapped(2))
@@ -3167,7 +3139,6 @@ struct EditDeskStageViewTests {
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
         view.layoutSubtreeIfNeeded()
         let shell = try #require(view.displayLayers[2])
-        #expect(shell.emptyLayout == nil, "setup controls live in detail")
         shell.setHovered(true, reduceMotion: true)
         shell.step(dt: 1.0 / 60, reduceMotion: true)
         func layers(_ root: CALayer) -> [CALayer] {
@@ -3245,7 +3216,7 @@ struct EditDeskStageViewTests {
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
         view.layoutSubtreeIfNeeded()
         let shell = try #require(view.displayLayers[1])
-        #expect(textLayers(in: shell.layer).map(\.fontSize).sorted() == [11, 12, 12, 12, 12, 12, 13, 15, 17, 17])
+        #expect(textLayers(in: shell.layer).map(\.fontSize).sorted() == [12, 12, 12, 13, 15, 17, 17])
         model.setProgress(1, animated: false)
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()

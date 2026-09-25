@@ -46,14 +46,6 @@ struct WallpaperModalTests {
         #expect(narrow.maxX == 776, Comment(rawValue: "\(narrow)"))
     }
 
-    @Test("The preview is the panel less a 12pt margin and the 152pt bottom bar")
-    func previewSize() {
-        let design = ModalGeometry.previewSize(inPanel: CGRect(x: 0, y: 0, width: 880, height: 560))
-        #expect(design == CGSize(width: 856, height: 360), Comment(rawValue: "\(design)"))
-        let short = ModalGeometry.previewSize(inPanel: CGRect(x: 0, y: 0, width: 880, height: 554))
-        #expect(short == CGSize(width: 856, height: 354), Comment(rawValue: "\(short)"))
-    }
-
     // MARK: ⌘n
 
     @Test("⌘n selects the display with that shortcut index, and nothing outside the list")
@@ -92,15 +84,5 @@ struct WallpaperModalTests {
             near(ModalBackdrop.blurRadius(forWidth: 160), 12.727, 0.001),
             Comment(rawValue: "\(ModalBackdrop.blurRadius(forWidth: 160))")
         )
-    }
-
-    // MARK: Meta line
-
-    @Test("The meta line drops the parts the wiring left empty rather than printing bare separators")
-    func metaLineSkipsEmptyParts() {
-        #expect(ModalMetaLine.joined(["Steam Workshop", "", "nekomata", "214 MB"]) == "Steam Workshop · nekomata · 214 MB")
-        #expect(ModalMetaLine.joined(["4K"]) == "4K")
-        #expect(ModalMetaLine.joined(["", ""]).isEmpty)
-        #expect(ModalMetaLine.joined([]).isEmpty)
     }
 }

@@ -104,8 +104,7 @@ struct HomePage: View {
         }
     }
 
-    /// The `onChange` fan-out lives in its own modifier: inlined it pushes the body past what the
-    /// type checker will finish.
+    /// The `onChange` fan-out lives in its own modifier: inlined, it slows the body's type-check past the 300 ms warning.
     private struct SyncHooks: ViewModifier {
         let page: HomePage
 
@@ -128,7 +127,7 @@ struct HomePage: View {
         }
     }
 
-    /// Split off `SyncHooks`: one chain of this many `onChange`s stops type-checking in time.
+    /// Split off `SyncHooks`: in one chain with it, these `onChange`s slow its type-check past the 300 ms warning.
     private struct LibraryHooks: ViewModifier {
         let page: HomePage
 
@@ -1494,7 +1493,6 @@ struct LibraryGridTile: View {
     /// Without it the cache fallback below would redraw the image into the off-screen body LazyVGrid keeps.
     @State private var isOffScreen = false
     @State private var isHovering = false
-    @Environment(\.libraryTileSize) private var tileSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
 

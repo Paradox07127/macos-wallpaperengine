@@ -173,12 +173,12 @@ struct NowPlayingBadge: Equatable {
             )
             : String(
                 localized: "In use on \(names)", bundle: .appLanguage,
-                comment: "The displays a wallpaper is set on, drawing it or not: the library modal's meta line, the Workshop inspector, and VoiceOver on a card none of them is playing. Placeholder is a list of display names."
+                comment: "The displays a wallpaper is set on, drawing it or not: the Workshop inspector, and VoiceOver on a wallpaper card none of them is playing. Placeholder is a list of display names."
             )
     }
 }
 
-enum ShelfStyle: String, CaseIterable, Codable, Sendable {
+enum ShelfStyle: String, CaseIterable, Sendable {
     case facingIn
     case crate
     case folders

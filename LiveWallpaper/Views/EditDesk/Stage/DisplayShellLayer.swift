@@ -32,16 +32,9 @@ final class DisplayShellLayer {
     private let hint = CATextLayer()
     private let empty = CALayer()
     private let emptySymbol = CALayer()
-    private let emptyHint = CATextLayer()
-    private let emptyButtons = [CALayer(), CALayer()]
-    private let emptyLabels = [CATextLayer(), CATextLayer()]
-    /// Measured in `update`, where the localized strings are set; `layoutContent` sizes the buttons from it.
-    private var emptyTextWidths: [CGFloat] = [0, 0]
     /// Read by the palette test: the stage keeps resolved CGColors, so an appearance flip that
     /// does not reach this one leaves the whole layer tree painted for the old appearance.
     private(set) var normalStroke: CGColor?
-    /// Also the empty-screen hit target: `nil` means the display is drawn too small for entry points.
-    private(set) var emptyLayout: StageGeometry.EmptyScreenLayout?
     private var hotStroke: CGColor?
     private(set) var display: StageDisplay?
     private var layoutRect: CGRect?
@@ -79,14 +72,7 @@ final class DisplayShellLayer {
         }
         coverGroup.addSublayer(cover)
         empty.addSublayer(emptySymbol)
-        empty.addSublayer(emptyHint)
         emptySymbol.contentsGravity = .resizeAspect
-        for (index, button) in emptyButtons.enumerated() {
-            empty.addSublayer(button)
-            button.addSublayer(emptyLabels[index])
-            button.cornerRadius = DesignTokens.EditDesk.Corner.chip
-            button.borderWidth = 1
-        }
         stateGroup.addSublayer(stateLabel)
         stateGroup.addSublayer(stateSymbol)
         cover.contentsGravity = .resizeAspectFill
@@ -109,15 +95,9 @@ final class DisplayShellLayer {
         StageLayerStyle.text(status, size: 13, mono: true)
         StageLayerStyle.text(stateLabel, size: 12, mono: true)
         StageLayerStyle.text(hint, size: 17, weight: .bold)
-        StageLayerStyle.text(emptyHint, size: 11)
-        for label in emptyLabels {
-            StageLayerStyle.text(label, size: 12, weight: .semibold)
-            label.alignmentMode = .center
-        }
         // The name is the one line that may not shrink, so it loses its middle rather than its end.
         name.truncationMode = .middle
         title.truncationMode = .end
-        emptyHint.alignmentMode = .center
         hint.alignmentMode = .center
         badge.alignmentMode = .center
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
@@ -138,7 +118,6 @@ final class DisplayShellLayer {
         } else {
             increasedContrast ? colors.strokeShellIncreased : colors.strokeShell
         }
-        let regularStroke = increasedContrast ? colors.strokeRegularIncreased : colors.strokeRegular
         normalStroke = NSColor(shellStroke).cgColor
         hotStroke = NSColor(colors.strokeHotShell).cgColor
         shell.strokeColor = normalStroke
@@ -191,20 +170,6 @@ final class DisplayShellLayer {
             "photo", tint: NSColor(colors.emptyScreenPlaceholder),
             pointSize: StageGeometry.emptyScreenSymbolMaxSide
         )
-        // One line so `LocalizationCoverageTests`' `String(localized:` scan still sees this key.
-        emptyHint.string = String(localized: "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project", bundle: .appLanguage)
-        emptyHint.foregroundColor = NSColor(colors.textTertiary).cgColor
-        let entries = [
-            (String(localized: "Choose File", bundle: .appLanguage), colors.fillSecondaryButton, colors.textPrimary),
-            (String(localized: "Paste URL", bundle: .appLanguage), colors.fillTertiaryButton, colors.textSecondary),
-        ]
-        for (index, entry) in entries.enumerated() {
-            emptyLabels[index].string = entry.0
-            emptyLabels[index].foregroundColor = NSColor(entry.2).cgColor
-            emptyButtons[index].backgroundColor = NSColor(entry.1).cgColor
-            emptyButtons[index].borderColor = NSColor(regularStroke).cgColor
-            emptyTextWidths[index] = StageLayerStyle.width(entry.0, size: 12, weight: .semibold)
-        }
         veil.isHidden = true
         stateGroup.backgroundColor = NSColor(colors.background).cgColor
         stateGroup.isHidden = true
@@ -336,15 +301,11 @@ final class DisplayShellLayer {
         stateGroup.cornerRadius = stateGroup.bounds.height / 2
         stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
         stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)
-        // Retired thumbnail actions remain in the model for compatibility; setup now opens in detail.
-        emptyLayout = nil
         empty.frame = content.bounds
         empty.isHidden = display?.state != .empty
         let symbolSide = min(44, min(size.width, size.height) * 0.25)
         emptySymbol.frame = CGRect(x: (size.width - symbolSide) / 2, y: (size.height - symbolSide) / 2,
                                    width: symbolSide, height: symbolSide)
-        emptyHint.isHidden = true
-        emptyButtons.forEach { $0.isHidden = true }
     }
 
     func restoreContent() {
@@ -425,15 +386,6 @@ final class DisplayShellLayer {
         guard !playback.isHidden, playback.opacity > 0 else { return nil }
         let local = CGPoint(x: point.x - content.frame.minX - playback.frame.minX, y: point.y - content.frame.minY - playback.frame.minY)
         return transport.first { $0.enabled && $0.layer.frame.contains(local) }?.action
-    }
-
-    func emptyAction(at point: CGPoint) -> EmptyScreenAction? {
-        guard let emptyLayout else { return nil }
-        let local = CGPoint(x: point.x - content.frame.minX, y: point.y - content.frame.minY)
-        guard let index = [emptyLayout.chooseFile, emptyLayout.pasteURL].firstIndex(where: { $0.contains(local) }) else {
-            return nil
-        }
-        return [EmptyScreenAction.chooseFile, .pasteURL][index]
     }
 
     func crossfade(to image: CGImage, duration: TimeInterval, reduceMotion: Bool = false) {

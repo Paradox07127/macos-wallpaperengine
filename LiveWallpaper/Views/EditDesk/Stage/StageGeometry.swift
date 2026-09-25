@@ -482,57 +482,7 @@ enum StageGeometry {
 
     // MARK: Empty screen (S9)
 
-    /// Where the empty-screen entry points sit inside a display's content layer, in that layer's
-    /// own coordinates.
-    struct EmptyScreenLayout: Equatable {
-        var symbol: CGRect
-        var chooseFile: CGRect
-        var pasteURL: CGRect
-        var hint: CGRect
-    }
-
-    static let emptyScreenMargin: CGFloat = 10
-    static let emptyScreenRowGap: CGFloat = 8
-    static let emptyScreenButtonHeight: CGFloat = 26
-    static let emptyScreenButtonGap: CGFloat = 8
-    static let emptyScreenButtonPadding: CGFloat = 12
-    static let emptyScreenHintHeight: CGFloat = 15
-    /// Side of the placeholder glyph, as a share of the content layer's height so it tracks the
-    /// arrangement's scale, capped where it would stop reading as a background mark.
-    static let emptyScreenSymbolFraction: CGFloat = 0.22
     static let emptyScreenSymbolMaxSide: CGFloat = 64
-
-    /// `nil` once the arrangement draws the display too small to hold the stack: the dashed shell
-    /// is still a drop target, and a tap on it still opens the detail page.
-    static func emptyScreenLayout(
-        content size: CGSize, chooseFileTextWidth: CGFloat, pasteURLTextWidth: CGFloat
-    ) -> EmptyScreenLayout? {
-        let choose = chooseFileTextWidth + 2 * emptyScreenButtonPadding
-        let paste = pasteURLTextWidth + 2 * emptyScreenButtonPadding
-        let row = choose + emptyScreenButtonGap + paste
-        let symbolSide = min(emptyScreenSymbolMaxSide, size.height * emptyScreenSymbolFraction)
-        let column = symbolSide + emptyScreenButtonHeight + emptyScreenHintHeight + 2 * emptyScreenRowGap
-        guard size.width >= row + 2 * emptyScreenMargin, size.height >= column + 2 * emptyScreenMargin else {
-            return nil
-        }
-        let top = (size.height - column) / 2
-        let buttonTop = top + symbolSide + emptyScreenRowGap
-        let left = (size.width - row) / 2
-        return EmptyScreenLayout(
-            symbol: CGRect(
-                x: (size.width - symbolSide) / 2, y: top, width: symbolSide, height: symbolSide
-            ),
-            chooseFile: CGRect(x: left, y: buttonTop, width: choose, height: emptyScreenButtonHeight),
-            pasteURL: CGRect(
-                x: left + choose + emptyScreenButtonGap, y: buttonTop,
-                width: paste, height: emptyScreenButtonHeight
-            ),
-            hint: CGRect(
-                x: emptyScreenMargin, y: buttonTop + emptyScreenButtonHeight + emptyScreenRowGap,
-                width: size.width - 2 * emptyScreenMargin, height: emptyScreenHintHeight
-            )
-        )
-    }
 
     // MARK: Shelf and grid
 

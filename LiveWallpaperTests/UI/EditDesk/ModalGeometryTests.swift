@@ -39,14 +39,6 @@ struct ModalGeometryTests {
         #expect(shorter == CGRect(x: 200, y: 130, width: 880, height: 354), Comment(rawValue: "\(shorter)"))
     }
 
-    @Test("The preview takes whatever the margin and the bottom bar leave in that tier")
-    func previewTakesTheRemainingHeight() {
-        let tall = ModalGeometry.previewSize(inPanel: ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 820)))
-        #expect(tall == CGSize(width: 856, height: 360), Comment(rawValue: "\(tall)"))
-        let short = ModalGeometry.previewSize(inPanel: ModalGeometry.panelFrame(in: CGSize(width: 1040, height: 700)))
-        #expect(short == CGSize(width: 856, height: 354), Comment(rawValue: "\(short)"))
-    }
-
     @Test("Both hosts hang the strip from the one geometry constant")
     func bothHostsShareTheStripTop() throws {
         for path in [

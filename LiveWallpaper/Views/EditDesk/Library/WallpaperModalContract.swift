@@ -14,10 +14,8 @@ struct WallpaperModalContent: Equatable {
     var kind: LibraryItem.Kind
     /// Verbatim glyphs under the preview (Workshop tags, `4K`, `HDR`); never translated.
     var tags: [String]
-    /// Bottom-bar line, joined by the shell with " · ": `{来源} · {作者} · {大小} · {分辨率} · 上次 {时间} → {屏}`.
+    /// `{来源}`, `{作者}`, `{大小}`, `{分辨率}`, `上次 {时间} → {屏}`; the modal lists each non-empty part on its own line.
     var metaParts: [String]
-    /// Scene preset capsule `◈ 预设 {名} ▾`; nil hides the capsule.
-    var presetName: String?
     /// Decoded at the preview's pixel size; nil shows the placeholder. The shell derives its
     /// blurred backdrop from this image itself.
     var preview: CGImage?
@@ -41,7 +39,6 @@ struct WallpaperModalContent: Equatable {
             && lhs.kind == rhs.kind
             && lhs.tags == rhs.tags
             && lhs.metaParts == rhs.metaParts
-            && lhs.presetName == rhs.presetName
             && lhs.preview === rhs.preview
             && lhs.installed == rhs.installed
             && lhs.descriptionText == rhs.descriptionText
@@ -69,8 +66,6 @@ struct InstalledItemExtras: Equatable {
     var isWindowsOnly: Bool
     /// Display names the item is running on; empty when idle.
     var inUseOnDisplayNames: [String]
-    /// `project.json` description for folder imports.
-    var localDescription: String?
 }
 
 /// A display as the ⌘n buttons and the float layer present it. Ordered left→right by `frame.minX`;

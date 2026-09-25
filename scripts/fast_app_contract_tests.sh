@@ -123,7 +123,6 @@ SUITES=(
   # that SCREENS.md S1–S3 pins numerically; both are hardware-free.
   EditDeskStageModelTests
   StageGeometryTests
-  EmptyScreenGeometryTests
   EditDeskShelfContinuityTests
   EditDeskWindowHostTests
   EditDeskRouterTests
