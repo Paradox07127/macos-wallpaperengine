@@ -282,6 +282,12 @@ final class EditDeskStageModel {
     var interactionBlocked = false
     /// Only the wallpaper grid reports this; other library pages do not hand scrolls to the stage.
     var gridAtTop = false
+    /// What the library stacks above the grid's first row inside its scroll view (the onboarding card,
+    /// the display banner), in points; the stage lands its cards that much lower.
+    var gridContentInset: CGFloat = 0
+    /// How far the mounted grid is scrolled from its top, in points. Not observed: it changes on every
+    /// scroll frame, and the stage reads it only as it starts to leave the library.
+    @ObservationIgnored var gridScrollOffset: CGFloat = 0
     /// Localized "drop to replace" label drawn over a display while a card hovers it.
     var dropHintText = ""
     /// How many cards' thumbnails to keep decoded around the visible run.
@@ -307,6 +313,9 @@ final class EditDeskStageModel {
     }
 
     private(set) var snappedIndex = 0
+    /// True from the first frame the stage moves off the library it landed on until it lands again: the
+    /// cards sit on the grid's tiles as it starts, so the grid hides for that stretch.
+    private(set) var leavingLibrary = false
     private(set) var hoveredCard: StageCard.ID?
     /// Where that card is drawn, in stage coordinates. The name rides above it, so the chrome has
     /// to follow the card rather than sit at a fixed spot in the row.
@@ -401,6 +410,12 @@ final class EditDeskStageModel {
     func report(snappedIndex: Int) {
         if self.snappedIndex != snappedIndex {
             self.snappedIndex = snappedIndex
+        }
+    }
+
+    func report(leavingLibrary: Bool) {
+        if self.leavingLibrary != leavingLibrary {
+            self.leavingLibrary = leavingLibrary
         }
     }
 
