@@ -6,6 +6,7 @@ import LiveWallpaperCore
 enum FallbackReason: Equatable, Sendable {
     case unsupportedType
     case sceneParseFailed(String)
+    case sceneLoadFailed(detail: String)
     case sceneShaderUnsupported
     case sceneResourceMissing
     /// Steam workshop IDs to subscribe before retry.

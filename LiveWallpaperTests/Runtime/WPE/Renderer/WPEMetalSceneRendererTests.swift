@@ -1286,6 +1286,47 @@ struct WPEMetalSceneRendererTests {
         }
     }
 
+    @Test("A damaged material file is not a capability gap, and a texture format the GPU can't sample is")
+    func loadDiagnosticSeparatesDamageFromCapabilityGaps() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = SceneDescriptor(
+            workshopID: UUID().uuidString,
+            cacheRelativePath: "wpe-cache/missing-\(UUID().uuidString)",
+            entryFile: "scene.json",
+            capabilityTier: .imageOnly
+        )
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: descriptor,
+            cacheRootURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("WPEMetalDiagnostics-\(UUID().uuidString)", isDirectory: true),
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+        func diagnostic(_ error: any Error) -> SceneLoadDiagnostic {
+            renderer.diagnostic(for: error, fallbackPath: nil, layerName: "L")
+        }
+
+        let damagedJSON = "Couldn't parse m.json as JSON"
+        #expect(diagnostic(SceneResourceResolver.ResolveError.materialUnresolved(reason: damagedJSON)) == .other(layer: "L", message: damagedJSON))
+        for gap in [WPEMetalTextureLoaderError.unsupportedFormat(.rgba1010102), .unsupportedCompressedFormat(.bc7)] {
+            let reason = try #require(gap.errorDescription)
+            #expect(diagnostic(gap) == .materialUnresolved(layer: "L", reason: reason), "\(gap)")
+        }
+
+        // Controls: an executor gap stays a gap; a malformed payload stays unclassified.
+        let noPasses = diagnostic(WPEMetalRenderExecutorError.noRenderablePasses)
+        if case let .materialUnresolved(layer, _) = noPasses {
+            #expect(layer == "L")
+        } else {
+            Issue.record("A scene with no renderable passes no longer reads as a capability gap: \(noPasses)")
+        }
+        let malformed = WPEMetalTextureLoaderError.malformedPayload("x")
+        let malformedMessage = try #require(malformed.errorDescription)
+        #expect(diagnostic(malformed) == .other(layer: "L", message: malformedMessage))
+    }
+
     @Test("Successful reload clears stale loadDiagnostics")
     func reloadClearsStaleDiagnostics() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

@@ -18,14 +18,12 @@ struct SceneFailurePresentation {
 extension FallbackReason {
     var failureClass: WallpaperFailureClass {
         switch self {
-        case .unsupportedType, .sceneShaderUnsupported, .requiresWindowsPlugin, .texContainerUnsupported:
+        case .unsupportedType, .sceneShaderUnsupported, .requiresWindowsPlugin, .texContainerUnsupported, .texUnsupportedFormat:
             .fatal
-        case .sceneParseFailed, .texDecodeFailed:
+        case .sceneParseFailed, .sceneLoadFailed, .texDecodeFailed:
             .blocked
         case .missingDependency, .sceneResourceMissing:
             .needsParts
-        case .texUnsupportedFormat:
-            .degraded
         }
     }
 
@@ -40,6 +38,7 @@ extension FallbackReason {
         case .unsupportedType, .sceneShaderUnsupported: "xmark.octagon.fill"
         case .texContainerUnsupported: "doc.questionmark.fill"
         case .sceneParseFailed: "exclamationmark.octagon.fill"
+        case .sceneLoadFailed: "exclamationmark.triangle.fill"
         case .missingDependency: "puzzlepiece.extension.fill"
         case .sceneResourceMissing: "folder.badge.questionmark"
         case .texUnsupportedFormat, .texDecodeFailed: "photo.badge.exclamationmark"
@@ -50,6 +49,7 @@ extension FallbackReason {
         switch self {
         case .unsupportedType: "WPE_UNSUPPORTED_TYPE"
         case .sceneParseFailed: "WPE_SCENE_PARSE"
+        case .sceneLoadFailed: "WPE_SCENE_LOAD"
         case .sceneShaderUnsupported: "WPE_SHADER_UNSUPPORTED"
         case .sceneResourceMissing: "WPE_RESOURCE_MISS"
         case .missingDependency: "WPE_MISSING_DEPENDENCY"
@@ -64,6 +64,7 @@ extension FallbackReason {
         switch self {
         case let .sceneParseFailed(parserDetail): "scene.json · \(LogPrivacyRedactor.scrub(parserDetail))"
         case let .texContainerUnsupported(magic): ".tex · \(magic)"
+        case let .sceneLoadFailed(loadDetail): LogPrivacyRedactor.scrub(loadDetail)
         case let .texDecodeFailed(decodeDetail): LogPrivacyRedactor.scrub(decodeDetail)
         case .requiresWindowsPlugin: ".dll"
         case .unsupportedType, .sceneShaderUnsupported, .sceneResourceMissing, .missingDependency, .texUnsupportedFormat: nil
@@ -87,7 +88,7 @@ extension FallbackReason {
                 actions.append(.openWorkshop(workshopID))
             }
             return actions
-        case .sceneParseFailed, .texDecodeFailed:
+        case .sceneParseFailed, .sceneLoadFailed, .texDecodeFailed:
             return isSteamItem ? [.retry, .openWorkshop(workshopID)] : [.retry]
         case .unsupportedType, .sceneShaderUnsupported, .requiresWindowsPlugin,
              .texContainerUnsupported, .texUnsupportedFormat:
@@ -124,6 +125,8 @@ extension FallbackReason {
             }
         case .sceneParseFailed:
             return String(localized: "This scene can't be opened", defaultValue: "This scene can't be opened", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+        case .sceneLoadFailed:
+            return String(localized: "This wallpaper didn't load", bundle: .appLanguage)
         case .sceneShaderUnsupported:
             return String(localized: "This scene uses effects Loomscreen can't render", defaultValue: "This scene uses effects Loomscreen can't render", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .sceneResourceMissing:
@@ -135,11 +138,8 @@ extension FallbackReason {
             return String(localized: "Missing \(ids.count) Workshop dependencies", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
         case .requiresWindowsPlugin:
             return String(localized: "This wallpaper only works on Windows", defaultValue: "This wallpaper only works on Windows", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .texContainerUnsupported:
+        case .texContainerUnsupported, .texUnsupportedFormat:
             return String(localized: "This wallpaper uses a file format Loomscreen can't read", defaultValue: "This wallpaper uses a file format Loomscreen can't read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .texUnsupportedFormat:
-            // Not "failed": the renderer skipped one layer and kept going.
-            return String(localized: "Some layers were skipped", defaultValue: "Some layers were skipped", bundle: .appLanguage, comment: "Title for a partial-degradation notice: one texture layer was skipped and the wallpaper is still playing.")
         case .texDecodeFailed:
             return String(localized: "Some images in this scene can't be read", defaultValue: "Some images in this scene can't be read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         }
@@ -158,8 +158,10 @@ extension FallbackReason {
             }
         case .sceneParseFailed:
             return String(localized: "The project file is damaged or incomplete. Re-download the wallpaper in Steam.", defaultValue: "The project file is damaged or incomplete. Re-download the wallpaper in Steam.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .sceneShaderUnsupported:
+        case .sceneLoadFailed:
             return String(localized: "Re-downloading the wallpaper in Steam can help. If it doesn't, this scene isn't supported yet.", defaultValue: "Re-downloading the wallpaper in Steam can help. If it doesn't, this scene isn't supported yet.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
+        case .sceneShaderUnsupported:
+            return Self.unsupportedType.localizedMessage(originalType: .scene, engineAssetsAuthorized: engineAssetsAuthorized)
         case .sceneResourceMissing:
             if engineAssetsAuthorized {
                 return String(localized: "Image layers couldn't be found in this project or in your Wallpaper Engine assets.", defaultValue: "Image layers couldn't be found in this project or in your Wallpaper Engine assets.", bundle: .appLanguage, comment: "Scene resource failure body when shared assets are already linked.")
@@ -173,10 +175,8 @@ extension FallbackReason {
             return String(localized: "Subscribe to \(head) and \(ids.count - 2) more in Steam, then re-import.", bundle: .appLanguage, comment: "Scene dependency recovery hint. Placeholders are Workshop IDs and the remaining count.")
         case .requiresWindowsPlugin:
             return String(localized: "It relies on a Windows plugin that macOS can't run.", defaultValue: "It relies on a Windows plugin that macOS can't run.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .texContainerUnsupported:
+        case .texContainerUnsupported, .texUnsupportedFormat:
             return String(localized: "This project isn't supported yet.", defaultValue: "This project isn't supported yet.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .texUnsupportedFormat:
-            return String(localized: "One layer can't be shown on this Mac. The rest of the scene keeps playing.", defaultValue: "One layer can't be shown on this Mac. The rest of the scene keeps playing.", bundle: .appLanguage, comment: "Texture fallback warning body.")
         case .texDecodeFailed:
             return String(localized: "Re-downloading the wallpaper in Steam usually fixes this.", defaultValue: "Re-downloading the wallpaper in Steam usually fixes this.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         }

@@ -1260,9 +1260,13 @@ extension WPEMetalSceneRenderer {
                 return .other(layer: layerName, message: executorError.errorDescription ?? String(localized: "Metal renderer failed.", bundle: .appLanguage, comment: "Scene load diagnostic fallback when the executor error carries no description."))
             }
         case let loaderError as WPEMetalTextureLoaderError:
+            let detail = loaderError.errorDescription ?? String(localized: "Texture upload failed.", bundle: .appLanguage, comment: "Scene load diagnostic fallback when the texture loader error carries no description.")
             switch loaderError {
-            case .unsupportedFormat, .unsupportedCompressedFormat, .malformedPayload, .textureAllocationFailed:
-                return .other(layer: layerName, message: loaderError.errorDescription ?? String(localized: "Texture upload failed.", bundle: .appLanguage, comment: "Scene load diagnostic fallback when the texture loader error carries no description."))
+            case .unsupportedFormat, .unsupportedCompressedFormat:
+                // A format this GPU can't sample is a capability gap, so it must not offer Retry.
+                return .materialUnresolved(layer: layerName, reason: detail)
+            case .malformedPayload, .textureAllocationFailed:
+                return .other(layer: layerName, message: detail)
             }
         case let resolveError as SceneResourceResolver.ResolveError:
             switch resolveError {
@@ -1271,7 +1275,8 @@ extension WPEMetalSceneRenderer {
             case .pathEscape:
                 return .crossPackageReference(layer: layerName, path: fallbackPath ?? descriptor.entryFile)
             case .materialUnresolved(let reason):
-                return .materialUnresolved(layer: layerName, reason: reason)
+                // Mostly damaged or incomplete material/model JSON, not a renderer gap: keeps the re-download advice.
+                return .other(layer: layerName, message: reason)
             case .texture(let texError):
                 return .texture(layer: layerName, error: texError)
             case .unsupportedTexture:

@@ -10,6 +10,7 @@ struct SceneFailurePresentationTests {
     private static let allReasons: [FallbackReason] = [
         .unsupportedType,
         .sceneParseFailed("boom"),
+        .sceneLoadFailed(detail: "x"),
         .sceneShaderUnsupported,
         .sceneResourceMissing,
         .missingDependency(workshopIDs: ["111", "222"]),
@@ -41,7 +42,7 @@ struct SceneFailurePresentationTests {
             let expected: Color = switch reason.failureClass {
             case .fatal: DesignTokens.Colors.Status.danger
             case .blocked: DesignTokens.Colors.Status.warning
-            case .needsParts, .degraded: DesignTokens.Colors.Status.caution
+            case .needsParts: DesignTokens.Colors.Status.caution
             }
             #expect(reason.tint == expected)
         }
@@ -52,7 +53,7 @@ struct SceneFailurePresentationTests {
         for reason in Self.allReasons {
             let actions = reason.recovery(workshopID: "1234")
             switch reason.failureClass {
-            case .fatal, .degraded:
+            case .fatal:
                 #expect(!actions.contains(.retry))
             case .blocked, .needsParts:
                 #expect(actions.contains(.retry))

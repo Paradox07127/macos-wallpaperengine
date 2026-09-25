@@ -67,6 +67,42 @@ struct WPESceneSectionStateTests {
         #expect(SceneDetailView.mapToFallbackReason(.metalRendererUnsupported(reason: "target format")) == .sceneShaderUnsupported)
     }
 
+    @MainActor
+    @Test("A capability gap never offers Retry, and damage keeps its re-download advice")
+    func diagnosticAdviceMatchesCause() {
+        #expect(SceneDetailView.fallbackReason(for: .materialUnresolved(layer: "scene", reason: "no passes")) == .sceneShaderUnsupported)
+        let capabilityGaps: [SceneLoadDiagnostic] = [
+            .texture(layer: "bg", error: .unsupportedFormat(code: 8)),
+            .texture(layer: "bg", error: .metalUnavailable(format: .bc7)),
+            .texture(layer: "bg", error: .unsupportedAnimation),
+            .legacyUnsupportedTexture(layer: "bg"),
+        ]
+        for diagnostic in capabilityGaps {
+            let reason = SceneDetailView.fallbackReason(for: diagnostic)
+            #expect(reason.failureClass == .fatal, "\(diagnostic)")
+            #expect(!reason.recovery(workshopID: "1234").contains(.retry), "\(diagnostic)")
+        }
+        #expect(
+            FallbackReason.sceneShaderUnsupported.localizedMessage(originalType: .scene, engineAssetsAuthorized: true)
+                == FallbackReason.unsupportedType.localizedMessage(originalType: .scene, engineAssetsAuthorized: true)
+        )
+
+        // Control: a truncated file is damage, not a capability gap.
+        let damaged = SceneDetailView.fallbackReason(for: .texture(layer: "bg", error: .truncatedBlock(block: "TEXB", offset: 42)))
+        #expect(damaged.failureClass == .blocked)
+        #expect(damaged.recovery(workshopID: "1234").contains(.retry))
+    }
+
+    @MainActor
+    @Test("An unclassified load failure is not reported as an unreadable image")
+    func unclassifiedFailureIsNotAnImageDecodeFailure() {
+        let reason = SceneDetailView.fallbackReason(for: .other(layer: "scene", message: "WPE graph asset is not valid JSON: x"))
+        if case .texDecodeFailed = reason {
+            Issue.record("An unclassified load failure still reads as an unreadable image: \(reason)")
+        }
+        #expect(reason == .sceneLoadFailed(detail: "WPE graph asset is not valid JSON: x"))
+    }
+
     @Test("Failure class drives the tint, so a reason cannot carry two colours")
     func tintFollowsFailureClass() {
         let danger = DesignTokens.Colors.Status.danger
@@ -84,8 +120,8 @@ struct WPESceneSectionStateTests {
         #expect(FallbackReason.missingDependency(workshopIDs: ["1"]).failureClass == .needsParts)
         #expect(FallbackReason.missingDependency(workshopIDs: ["1"]).tint == caution)
         #expect(FallbackReason.sceneResourceMissing.tint == caution)
-        // Skipping a layer is not the same event as failing to load a scene.
-        #expect(FallbackReason.texUnsupportedFormat(code: 8).failureClass == .degraded)
+        // Texture diagnostics are only recorded when the whole load failed, so the scene is not playing.
+        #expect(FallbackReason.texUnsupportedFormat(code: 8).failureClass == .fatal)
     }
 
     @Test("Recovery actions match what the reason can actually recover from")
