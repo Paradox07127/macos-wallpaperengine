@@ -44,14 +44,6 @@ enum OverlayAddItem: Identifiable, Equatable {
     }
 }
 
-enum OverlayAddCategory: String, CaseIterable, Identifiable {
-    case all, system, weather, music, clock, effect, agent
-
-    var id: String {
-        rawValue
-    }
-}
-
 /// Which editor the selected object gets. `empty` is the "no selection" placeholder.
 enum OverlayInspectorContent: Equatable {
     case board
@@ -83,18 +75,13 @@ enum OverlayLayerList {
     static let addItems: [OverlayAddItem] =
         MonitorWidgetKind.allCases.map(OverlayAddItem.widget) + [.music, .clock, .effect]
 
-    static func addItems(in category: OverlayAddCategory) -> [OverlayAddItem] {
-        switch category {
-        case .all: addItems
-        case .system: addItems.filter {
-                guard case let .widget(kind) = $0 else { return false }
-                return kind != .weather && kind != .fleet
-            }
-        case .weather: [.widget(.weather), .effect]
-        case .music: [.music]
-        case .clock: [.clock]
-        case .effect: [.effect]
-        case .agent: [.widget(.fleet)]
+    /// Singletons that are already on get a mark on their tile; widgets can be added any number of times.
+    static func isOnCanvas(_ item: OverlayAddItem, musicEnabled: Bool, clockEnabled: Bool, effectVisible: Bool) -> Bool {
+        switch item {
+        case .widget: false
+        case .music: musicEnabled
+        case .clock: clockEnabled
+        case .effect: effectVisible
         }
     }
 

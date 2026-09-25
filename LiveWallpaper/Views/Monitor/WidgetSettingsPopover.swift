@@ -8,26 +8,39 @@ struct WidgetSettingsPopover: View {
     let placement: MonitorWidgetPlacement
     let onUpdate: (MonitorWidgetPlacement) -> Void
     let onRemove: () -> Void
+    /// The Edit Desk inspector: grouped `SettingRow`s, and removal lives in the inspector's header.
     var embedded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            if !embedded {
+        if embedded {
+            VStack(spacing: DesignTokens.Spacing.md) {
+                if placement.kind.allowedSizes.count > 1 {
+                    group { sizePicker }
+                }
+                if hasKindOptions {
+                    group { kindOptions }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                 header
+                if placement.kind.allowedSizes.count > 1 {
+                    sizePicker
+                }
+                if hasKindOptions {
+                    kindOptions
+                }
+                Divider()
+                removeButton
             }
-
-            if placement.kind.allowedSizes.count > 1 {
-                sizePicker
-            }
-
-            if hasKindOptions {
-                kindOptions
-            }
-
-            Divider()
-            removeButton
+            .settingsPopoverChrome(width: Self.preferredWidth)
         }
-        .modifier(WidgetSettingsPresentation(embedded: embedded))
+    }
+
+    private func group(@ViewBuilder _ content: () -> some View) -> some View {
+        GroupBox { content() }
+            .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
     private var header: some View {
@@ -65,13 +78,18 @@ struct WidgetSettingsPopover: View {
         }
     }
 
+    /// Embedded rows share one spacing, with dividers doing the separating.
+    private func spacing(_ popover: CGFloat) -> CGFloat {
+        embedded ? DesignTokens.Spacing.sm : popover
+    }
+
     // MARK: - Size
 
     @ViewBuilder
     private var sizePicker: some View {
         let allowed = placement.kind.allowedSizes
         if allowed.count > 1 {
-            optionRow("Size") {
+            optionRow("Size", icon: "arrow.up.left.and.arrow.down.right", first: true) {
                 GlassSegmentedPicker(
                     selection: Binding(
                         get: { placement.size },
@@ -121,12 +139,14 @@ struct WidgetSettingsPopover: View {
     // MARK: System Overview
 
     private var overviewOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            gpuSamplingPicker
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
+            gpuSamplingPicker(first: true)
             if placement.size == .large {
                 historyWindowPicker(defaultWindow: SystemOverviewOptions.defaultHistoryWindow)
-                toggleRow("Show history curve", isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
-                toggleRow("Show sensors", isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
+                toggleRow("Show history curve", icon: "chart.xyaxis.line",
+                          isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
+                toggleRow("Show sensors", icon: "thermometer.medium",
+                          isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
             }
         }
     }
@@ -135,7 +155,7 @@ struct WidgetSettingsPopover: View {
 
     private var weatherOptions: some View {
         toggleRow(
-            "Show caption",
+            "Show caption", icon: "text.below.photo", first: true,
             isOn: boolBinding(key: WeatherWidgetOptions.showCaptionKey, default: WeatherWidgetOptions.showCaptionDefault)
         )
     }
@@ -143,37 +163,32 @@ struct WidgetSettingsPopover: View {
     // MARK: Processes
 
     private var processesOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            Stepper(
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.md)) {
+            rowsStepper(
                 value: Binding(
                     get: { MonitorWidgetDraft.processCount(placement) },
                     set: { onUpdate(MonitorWidgetDraft.settingProcessCount($0, on: placement)) }
                 ),
-                in: MonitorWidgetDraft.processCountRange
-            ) {
-                HStack {
-                    Text("Rows")
-                    Spacer()
-                    Text(verbatim: "\(MonitorWidgetDraft.processCount(placement))")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            }
-            .controlSize(.small)
+                in: MonitorWidgetDraft.processCountRange, first: true
+            )
         }
     }
 
     // MARK: CPU
 
     private var cpuOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            historyWindowPicker(defaultWindow: MonitorCPUDraft.defaultHistoryWindow(for: placement.size))
-            VStack(spacing: DesignTokens.Spacing.xs) {
-                toggleRow("Show heatmap", isOn: boolBinding(key: MonitorCPUDraft.showHeatmapKey, default: true))
-                toggleRow("Show composition", isOn: boolBinding(key: MonitorCPUDraft.showCompositionKey, default: true))
-                toggleRow("Show sensors", isOn: boolBinding(key: MonitorCPUDraft.showSensorsKey, default: true))
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
+            historyWindowPicker(defaultWindow: MonitorCPUDraft.defaultHistoryWindow(for: placement.size), first: true)
+            VStack(spacing: spacing(DesignTokens.Spacing.xs)) {
+                toggleRow("Show heatmap", icon: "square.grid.3x3.fill",
+                          isOn: boolBinding(key: MonitorCPUDraft.showHeatmapKey, default: true))
+                toggleRow("Show composition", icon: "chart.pie",
+                          isOn: boolBinding(key: MonitorCPUDraft.showCompositionKey, default: true))
+                toggleRow("Show sensors", icon: "thermometer.medium",
+                          isOn: boolBinding(key: MonitorCPUDraft.showSensorsKey, default: true))
                 if placement.size == .small {
-                    toggleRow("Show history curve", isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
+                    toggleRow("Show history curve", icon: "chart.xyaxis.line",
+                              isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
                 }
             }
         }
@@ -182,22 +197,25 @@ struct WidgetSettingsPopover: View {
     // MARK: GPU
 
     private var gpuOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            historyWindowPicker(defaultWindow: 60)
-            gpuSamplingPicker
-            VStack(spacing: DesignTokens.Spacing.xs) {
-                toggleRow("Show load breakdown", isOn: boolBinding(key: MonitorWidgetDraft.showLoadBreakdownKey, default: true))
-                toggleRow("Show sensors", isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
+            historyWindowPicker(defaultWindow: 60, first: true)
+            gpuSamplingPicker()
+            VStack(spacing: spacing(DesignTokens.Spacing.xs)) {
+                toggleRow("Show load breakdown", icon: "chart.bar.xaxis",
+                          isOn: boolBinding(key: MonitorWidgetDraft.showLoadBreakdownKey, default: true))
+                toggleRow("Show sensors", icon: "thermometer.medium",
+                          isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
                 if placement.size == .small {
-                    toggleRow("Show history curve", isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
+                    toggleRow("Show history curve", icon: "chart.xyaxis.line",
+                              isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
                 }
             }
         }
     }
 
     /// GPU IOAccelerator sample cadence (default 6s).
-    private var gpuSamplingPicker: some View {
-        optionRow("Sampling interval") {
+    private func gpuSamplingPicker(first: Bool = false) -> some View {
+        optionRow("Sampling interval", icon: "timer", first: first) {
             GlassSegmentedPicker(
                 selection: Binding(
                     get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? MonitorWidgetDraft.gpuDefaultSeconds },
@@ -218,35 +236,34 @@ struct WidgetSettingsPopover: View {
     // MARK: Memory
 
     private var memoryOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            historyWindowPicker(defaultWindow: placement.size == .large ? 120 : 60)
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
+            historyWindowPicker(defaultWindow: placement.size == .large ? 120 : 60, first: true)
             breakdownPicker
-            VStack(alignment: .leading, spacing: 4) {
-                toggleRow("Show top processes", isOn: boolBinding(key: MonitorWidgetDraft.showTopProcessesKey, default: true))
-                if placement.size != .large {
-                    Text("Top processes are hidden at this size.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            topProcessesRow
         }
     }
 
     // MARK: Disk
 
     private var diskOptions: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            historyWindowPicker(defaultWindow: 120)
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
+            historyWindowPicker(defaultWindow: 120, first: true)
             breakdownPicker
-            VStack(alignment: .leading, spacing: 4) {
-                toggleRow("Show top processes", isOn: boolBinding(key: MonitorWidgetDraft.showTopProcessesKey, default: true))
-                if placement.size != .large {
-                    Text("Top processes are hidden at this size.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            topProcessesRow
+        }
+    }
+
+    /// Embedded, the size note is the row's subtitle; the popover prints it underneath.
+    private var topProcessesRow: some View {
+        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.xs)) {
+            toggleRow("Show top processes", icon: "list.bullet",
+                      note: placement.size == .large ? nil : "Top processes are hidden at this size.",
+                      isOn: boolBinding(key: MonitorWidgetDraft.showTopProcessesKey, default: true))
+            if !embedded, placement.size != .large {
+                Text("Top processes are hidden at this size.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -257,31 +274,73 @@ struct WidgetSettingsPopover: View {
         let fallback = placement.size == .large
             ? AgentSessionWidgetView.largeRowCap
             : AgentSessionWidgetView.mediumRowCap
-        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            providerPicker(key: AgentSessionWidgetView.Option.provider)
-
-            Picker(selection: Binding(
-                get: { AgentSessionWidgetView.sortMode(placement.options) },
-                set: { onUpdate(MonitorWidgetDraft.settingAgentSessionSort($0, on: placement)) }
-            )) {
-                Text("Attention").tag(AgentSessionWidgetView.SortMode.attention)
-                Text("Recent").tag(AgentSessionWidgetView.SortMode.recent)
-            } label: {
-                Text("Sort")
-            }
-            .controlSize(.small)
-
-            Stepper(
+        return VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.md)) {
+            providerPicker(key: AgentSessionWidgetView.Option.provider, first: true)
+            sortPicker
+            rowsStepper(
                 value: Binding(
                     get: { AgentSessionWidgetView.rowCap(placement.options, fallback: fallback) },
                     set: { onUpdate(MonitorWidgetDraft.settingAgentSessionMaxRows($0, fallback: fallback, on: placement)) }
                 ),
-                in: 1...fallback
-            ) {
+                in: 1 ... fallback
+            )
+        }
+    }
+
+    private var sortBinding: Binding<AgentSessionWidgetView.SortMode> {
+        Binding(
+            get: { AgentSessionWidgetView.sortMode(placement.options) },
+            set: { onUpdate(MonitorWidgetDraft.settingAgentSessionSort($0, on: placement)) }
+        )
+    }
+
+    @ViewBuilder
+    private var sortChoices: some View {
+        Text("Attention").tag(AgentSessionWidgetView.SortMode.attention)
+        Text("Recent").tag(AgentSessionWidgetView.SortMode.recent)
+    }
+
+    @ViewBuilder
+    private var sortPicker: some View {
+        if embedded {
+            Divider()
+            SettingRow(icon: "arrow.up.arrow.down", iconColor: .blue, title: "Sort") {
+                Picker("", selection: sortBinding) { sortChoices }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel(Text("Sort"))
+            }
+        } else {
+            Picker(selection: sortBinding) { sortChoices } label: {
+                Text("Sort")
+            }
+            .controlSize(.small)
+        }
+    }
+
+    @ViewBuilder
+    private func rowsStepper(value: Binding<Int>, in range: ClosedRange<Int>, first: Bool = false) -> some View {
+        if embedded {
+            if !first {
+                Divider()
+            }
+            SettingRow(icon: "list.number", iconColor: .blue, title: "Rows") {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Text(verbatim: "\(value.wrappedValue)")
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                    Stepper("", value: value, in: range)
+                        .labelsHidden()
+                        .accessibilityLabel(Text("Rows"))
+                }
+            }
+        } else {
+            Stepper(value: value, in: range) {
                 HStack {
                     Text("Rows")
                     Spacer()
-                    Text(verbatim: "\(AgentSessionWidgetView.rowCap(placement.options, fallback: fallback))")
+                    Text(verbatim: "\(value.wrappedValue)")
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -292,9 +351,8 @@ struct WidgetSettingsPopover: View {
 
     // MARK: Shared controls
 
-    @ViewBuilder
-    private func historyWindowPicker(defaultWindow: Int) -> some View {
-        optionRow("History window") {
+    private func historyWindowPicker(defaultWindow: Int, first: Bool = false) -> some View {
+        optionRow("History window", icon: "clock.arrow.circlepath", first: first) {
             GlassSegmentedPicker(
                 selection: Binding(
                     get: { MonitorWidgetDraft.historyWindowTag(placement, clearValue: defaultWindow) },
@@ -313,7 +371,7 @@ struct WidgetSettingsPopover: View {
     }
 
     private var breakdownPicker: some View {
-        optionRow("Breakdown") {
+        optionRow("Breakdown", icon: "chart.bar") {
             GlassSegmentedPicker(
                 selection: Binding(
                     get: { MonitorWidgetDraft.breakdownCompact(placement) },
@@ -329,8 +387,8 @@ struct WidgetSettingsPopover: View {
         }
     }
 
-    private func providerPicker(key: String) -> some View {
-        optionRow("Provider") {
+    private func providerPicker(key: String, first: Bool = false) -> some View {
+        optionRow("Provider", icon: "person.2", first: first) {
             GlassSegmentedPicker(
                 selection: Binding(
                     get: { MonitorWidgetDraft.providerTag(placement, key: key) },
@@ -362,33 +420,65 @@ struct WidgetSettingsPopover: View {
         )
     }
 
+    /// `first` leaves out the divider an embedded row otherwise draws above itself.
     @ViewBuilder
     private func optionRow<Control: View>(
         _ title: LocalizedStringKey,
+        icon: String,
+        first: Bool = false,
         @ViewBuilder control: () -> Control
     ) -> some View {
         let control = control()
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Text(title).font(.subheadline)
-                Spacer(minLength: DesignTokens.Spacing.sm)
+        if embedded {
+            if !first {
+                Divider()
+            }
+            SettingRow(icon: icon, iconColor: .blue, title: title) {
                 control.fixedSize()
             }
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Text(title).font(.subheadline)
-                control.frame(maxWidth: .infinity)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    Text(title).font(.subheadline)
+                    Spacer(minLength: DesignTokens.Spacing.sm)
+                    control.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                    Text(title).font(.subheadline)
+                    control.frame(maxWidth: .infinity)
+                }
             }
         }
     }
 
-    private func toggleRow(_ title: LocalizedStringKey, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            Text(title).font(.subheadline)
-            Spacer(minLength: 8)
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+    @ViewBuilder
+    private func toggleRow(
+        _ title: LocalizedStringKey,
+        icon: String,
+        first: Bool = false,
+        note: LocalizedStringKey? = nil,
+        isOn: Binding<Bool>
+    ) -> some View {
+        if embedded {
+            if !first {
+                Divider()
+            }
+            SettingRow(icon: icon, iconColor: .orange, title: title, subtitle: note) {
+                Toggle("", isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .accessibilityLabel(Text(title))
+            }
+        } else {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Text(title).font(.subheadline)
+                Spacer(minLength: 8)
+                Toggle("", isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
         }
     }
 
@@ -569,16 +659,5 @@ enum MonitorWidgetDraft {
             next.options[key] = .bool(value)
         }
         return next
-    }
-}
-
-private struct WidgetSettingsPresentation: ViewModifier {
-    let embedded: Bool
-    func body(content: Content) -> some View {
-        if embedded {
-            content.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            content.settingsPopoverChrome(width: WidgetSettingsPopover.preferredWidth)
-        }
     }
 }

@@ -792,6 +792,214 @@ struct S7OverlayFidelityTests {
         expectClose(OverlayGeometry.gridSpacing(forRenderScale: 0), 50, "S7.grid.zeroScale", tolerance: 0)
         expectClose(OverlayGeometry.decorationLineWidth(forRenderScale: 2) * 2, 1, "S7.grid.lineWidth", tolerance: 0.001)
     }
+
+    /// Seven equal tiles a row, both rows, and nothing under them but the 12pt inset.
+    @Test("Add strip lays fourteen tiles out as 7×2 at 1040 and 1280")
+    func addStripGrid() async {
+        for width in [CGFloat(1040), 1280] {
+            let fixture = S7OverlayFixture()
+            let height = AddOverlayDrawer.expandedHeight
+            let image = await ProbeRenderer.render("S7-add-strip-\(Int(width))", size: CGSize(width: width, height: height)) {
+                ZStack(alignment: .top) {
+                    DesignTokens.EditDesk.Colors.background
+                    AddOverlayDrawer(session: fixture.session, isExpanded: .constant(true), height: height) { _ in }
+                }
+            }
+            fixture.close()
+            let base = image.rgb(px: 2, image.height - 2)
+            let pitch = AddOverlayDrawer.tileWidth(containerWidth: width, count: OverlayLayerList.addItems.count) + 8
+            for (row, top) in [(0, CGFloat(38)), (1, 38 + 46 + 8)] {
+                let edges = image.runs(inRow: top + 3) { S7OverlayFixture.differs($0, from: base, by: 10) }
+                let lefts = stride(from: 0, to: edges.count, by: 2).map { edges[$0].x }
+                ProbeRenderer.report("S7.addStrip.\(Int(width)).row\(row).lefts", lefts)
+                #expect(lefts.count == 7, "row \(row) at \(Int(width)) drew \(lefts.count) tiles")
+                if lefts.count == 7 {
+                    expectClose((lefts[6] - lefts[0]) / 6, pitch, "S7.addStrip.\(Int(width)).row\(row).pitch", tolerance: 1)
+                }
+            }
+            let bottom = S7OverlayFixture.lastInkRow(image, width: width, base: base)
+            expectClose(bottom, height - 12, "S7.addStrip.\(Int(width)).contentBottom", tolerance: 1)
+        }
+    }
+
+    /// Every object's groups start on the wallpaper inspector's edge, 12pt under the 44pt header.
+    @Test("Inspector groups share one left edge and top at 372")
+    func inspectorEdges() async throws {
+        let fixture = S7OverlayFixture(widgets: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.3, y: 0.4)])
+        let cpu = try #require(fixture.session.interaction.placements.first)
+        let edge = DesignTokens.Inspector.horizontalPadding(for: 372)
+        let cases: [(String, OverlaySelection)] = [
+            ("board", .board), ("widget", .widget(cpu.id)), ("music", .music), ("clock", .clock), ("effect", .effect),
+        ]
+        for (name, selection) in cases {
+            fixture.session.select(selection)
+            let image = await ProbeRenderer.render("S7-inspector-\(name)-372", size: CGSize(width: 372, height: 604)) {
+                fixture.inspector(width: 372)
+            }
+            let base = image.rgb(px: Int(image.scale * 370), Int(image.scale * 600))
+            // Past the group's 10pt corner radius, where its top edge runs straight.
+            let top = S7OverlayFixture.firstInkRow(image, column: edge + 30, from: ObjectInspector.headerHeight, base: base)
+            expectClose(top, ObjectInspector.headerHeight + 12, "S7.inspector.\(name).groupTop", tolerance: 1)
+            let left = image.runs(inRow: top + 20) { S7OverlayFixture.differs($0, from: base, by: 6) }.first?.x ?? -1
+            expectClose(left, edge, "S7.inspector.\(name).groupLeft", tolerance: 1)
+        }
+        fixture.close()
+    }
+
+    /// A title that wraps grows its row, so the music card's first group keeps its height only if nothing wrapped.
+    @Test("At its 340pt minimum the music inspector wraps no row")
+    func inspectorMinimumWidth() async {
+        let fixture = S7OverlayFixture()
+        fixture.session.select(.music)
+        var heights: [CGFloat] = []
+        for width in [CGFloat(340), 440] {
+            let image = await ProbeRenderer.render("S7-inspector-music-\(Int(width))", size: CGSize(width: width, height: 604)) {
+                fixture.inspector(width: width)
+            }
+            let base = image.rgb(px: Int(image.scale * (width - 2)), Int(image.scale * 2))
+            let column = DesignTokens.Inspector.horizontalPadding(for: width) + 4
+            let top = S7OverlayFixture.firstInkRow(image, column: column, from: ObjectInspector.headerHeight, base: base)
+            let bottom = S7OverlayFixture.firstBaseRow(image, column: column, from: top + 1, base: base)
+            ProbeRenderer.report("S7.inspector.music.\(Int(width)).firstGroup", "\(top)–\(bottom)")
+            heights.append(bottom - top)
+        }
+        fixture.close()
+        expectClose(heights[0], heights[1], "S7.inspector.music.340.firstGroupHeight", tolerance: 1)
+    }
+}
+
+/// An overlay session on a 1728×1117 display with music, clock and the effect off, so no tile carries a mark.
+@MainActor
+private final class S7OverlayFixture {
+    let screen = Screen(nsScreen: S7OverlayTestScreen())
+    let manager: ScreenManager
+    let store: S7OverlayStore
+    let session = OverlayEditorSession(defaults: UserDefaults(suiteName: "S7OverlayFidelityTests") ?? .standard)
+
+    init(widgets: [MonitorWidgetPlacement] = []) {
+        manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
+        ))
+        store = S7OverlayStore(widgets: widgets)
+        manager.monitorOverlays[screen.displayFingerprint] = store.snapshot.overlay
+        session.transition(to: store.identity, store: store, editing: true)
+    }
+
+    func inspector(width: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            DesignTokens.EditDesk.Colors.background
+            ObjectInspector(session: session, screen: screen, screenManager: manager,
+                            placements: session.interaction.placements, height: 604, width: width)
+        }
+        .environment(manager)
+    }
+
+    func close() {
+        session.detach()
+        manager.tearDownForTermination()
+    }
+
+    static func differs(_ color: ProbeColor, from base: ProbeColor, by delta: Int) -> Bool {
+        color.r >= 0 && (abs(color.r - base.r) > delta || abs(color.g - base.g) > delta || abs(color.b - base.b) > delta)
+    }
+
+    /// Lowest row, in points, that holds anything but the background.
+    static func lastInkRow(_ image: ProbeImage, width: CGFloat, base: ProbeColor) -> CGFloat {
+        for y in stride(from: image.height - 1, through: 0, by: -1) {
+            for x in 0 ..< Int(width * image.scale) where differs(image.rgb(px: x, y), from: base, by: 10) {
+                return CGFloat(y + 1) / image.scale
+            }
+        }
+        return 0
+    }
+
+    static func firstInkRow(_ image: ProbeImage, column: CGFloat, from start: CGFloat, base: ProbeColor) -> CGFloat {
+        let x = Int(column * image.scale)
+        for y in Int(start * image.scale) ..< image.height where differs(image.rgb(px: x, y), from: base, by: 6) {
+            return CGFloat(y) / image.scale
+        }
+        return -1
+    }
+
+    static func firstBaseRow(_ image: ProbeImage, column: CGFloat, from start: CGFloat, base: ProbeColor) -> CGFloat {
+        let x = Int(column * image.scale)
+        for y in Int(start * image.scale) ..< image.height where !differs(image.rgb(px: x, y), from: base, by: 3) {
+            return CGFloat(y) / image.scale
+        }
+        return -1
+    }
+}
+
+@MainActor
+private final class S7OverlayStore: OverlayEditorStore {
+    let identity = OverlayEditorIdentity(displayID: 0x57A7_0001, fingerprint: "s7-overlay-fidelity")
+    var snapshot: OverlayEditorSnapshot
+
+    init(widgets: [MonitorWidgetPlacement]) {
+        let configuration = ScreenConfiguration(
+            screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: ParticleEffect.none
+        )
+        snapshot = OverlayEditorSnapshot(
+            overlay: MonitorOverlayConfiguration(enabled: true, board: MonitorBoardConfiguration(widgets: widgets)),
+            configuration: configuration, logicalSize: CGSize(width: 1728, height: 1117), safeArea: .none
+        )
+    }
+
+    var displays: [OverlayEditorIdentity] {
+        [identity]
+    }
+
+    func read(_ identity: OverlayEditorIdentity) -> OverlayEditorSnapshot? {
+        identity == self.identity ? snapshot : nil
+    }
+
+    func writeBoard(_ board: MonitorBoardConfiguration, for _: OverlayEditorIdentity) {
+        snapshot.overlay.board = board
+    }
+
+    func writeOverlayEnabled(_ enabled: Bool, for _: OverlayEditorIdentity) {
+        snapshot.overlay.enabled = enabled
+    }
+
+    func writeMusic(_ music: MusicOverlayConfiguration, for _: OverlayEditorIdentity) {
+        snapshot.overlay.music = music
+    }
+
+    func writeClock(_ clock: ClockOverlayConfiguration, for _: OverlayEditorIdentity) {
+        snapshot.overlay.clock = clock
+    }
+
+    func writeEffect(_ effect: ParticleEffect, for _: OverlayEditorIdentity) {
+        snapshot.configuration?.particleEffect = effect
+    }
+
+    func copy(_: OverlayKind, from _: OverlayEditorIdentity) {}
+}
+
+private final class S7OverlayTestScreen: NSScreen {
+    override var frame: NSRect {
+        NSRect(x: 0, y: 0, width: 1728, height: 1117)
+    }
+
+    override var visibleFrame: NSRect {
+        frame
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): UInt32(0x57A7_0001)]
+    }
+
+    override var localizedName: String {
+        "S7 overlay fidelity"
+    }
+
+    /// `getScreenRefreshRate` falls back to this; AppKit traps when an `init()`-built screen is asked.
+    override var maximumFramesPerSecond: Int {
+        60
+    }
 }
 
 // MARK: - S8a Workshop grid

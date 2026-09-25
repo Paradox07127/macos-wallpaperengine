@@ -10,12 +10,19 @@ struct ObjectInspector: View {
     let height: CGFloat
     var width: CGFloat = DetailGeometry.inspectorWidth
 
+    static let headerHeight: CGFloat = 44
+
     /// `OverlaysInspectorPanel` edits a draft in place; the session's copy is read-only here, so
     /// the panel gets a local mirror that is reseeded whenever the applied configuration changes.
     @State private var draft = DraftState.default
 
     private var content: OverlayInspectorContent {
         OverlayLayerList.inspectorContent(for: session.selection)
+    }
+
+    /// The wallpaper inspector's inset, so both columns start their groups on the same edge.
+    private var padding: CGFloat {
+        DesignTokens.Inspector.horizontalPadding(for: width)
     }
 
     var body: some View {
@@ -34,48 +41,25 @@ struct ObjectInspector: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Text(verbatim: title)
-                    .font(DesignTokens.EditDesk.Typography.stageTitle)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                if let meta {
-                    Text(verbatim: meta)
-                        .font(DesignTokens.EditDesk.Typography.badgeMono)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-                }
-            }
-            .lineLimit(1)
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Text(verbatim: title)
+                .font(DesignTokens.EditDesk.Typography.stageTitle)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                .lineLimit(1)
             Spacer(minLength: 0)
-            if content == .effect {
-                headerToggle
+            if case let .widget(id) = content {
+                Button(role: .destructive) {
+                    session.removeWidget(id: id)
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(DesignTokens.Colors.Status.danger)
             }
         }
-        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
-        .padding(.vertical, DesignTokens.EditDesk.Spacing.s8)
-    }
-
-    @ViewBuilder
-    private var headerToggle: some View {
-        switch content {
-        case .music:
-            toggle(isOn: session.overlay.music.enabled, set: session.setMusicEnabled)
-        case .clock:
-            toggle(isOn: session.overlay.clock.enabled, set: session.setClockEnabled)
-        case .effect:
-            toggle(isOn: session.effectVisible, set: session.setEffectVisible)
-                .disabled(!session.canEditEffect)
-        case .board, .widget, .empty:
-            EmptyView()
-        }
-    }
-
-    private func toggle(isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
-        Toggle("", isOn: Binding(get: { isOn }, set: set))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .accessibilityLabel(Text(verbatim: title))
+        .padding(.horizontal, padding)
+        .frame(height: Self.headerHeight)
     }
 
     private var title: String {
@@ -89,18 +73,6 @@ struct ObjectInspector: View {
         case .effect: String(localized: "Effect Layer", bundle: .appLanguage)
         case .empty: String(localized: "No Selection", bundle: .appLanguage)
         }
-    }
-
-    private var meta: String? {
-        let kind: String? = switch content {
-        case .widget: String(localized: "Widget", bundle: .appLanguage)
-        case .music: String(localized: "Music", bundle: .appLanguage)
-        case .clock: String(localized: "Clock", bundle: .appLanguage)
-        case .effect: String(localized: "Effect", bundle: .appLanguage)
-        case .board, .empty: nil
-        }
-        guard let kind else { return nil }
-        return "\(String(localized: "Selected", bundle: .appLanguage)) · \(kind)"
     }
 
     // MARK: Content
@@ -118,7 +90,7 @@ struct ObjectInspector: View {
         case let .widget(id):
             if let placement = placements.first(where: { $0.id == id }) {
                 scrolling {
-                    VStack(spacing: 0) {
+                    VStack(spacing: DesignTokens.Spacing.md) {
                         if placement.kind == .fleet {
                             AgentFolderAccessSection()
                         }
@@ -156,15 +128,15 @@ struct ObjectInspector: View {
         }
     }
 
+    /// Same insets as `OverlaysInspectorPanel`'s own scroll view, which the effect case uses instead.
     private func scrolling(@ViewBuilder _ builder: () -> some View) -> some View {
         ScrollView {
             builder()
-                .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
-                .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
+                .padding(.horizontal, padding)
+                .padding(.vertical, DesignTokens.Spacing.md)
         }
     }
 
-    /// `OverlaysInspectorPanel` brings its own `ScrollView`, so this case is not wrapped again.
     private func effectPanel(_ screen: Screen) -> some View {
         OverlaysInspectorPanel(
             screen: screen,
@@ -174,6 +146,7 @@ struct ObjectInspector: View {
             inspectorPanelWidth: width,
             backdropAvailable: false,
             showsBackdropControl: false,
+            showsVisibilityControl: false,
             onParticleEffectChange: { effect in write { screenManager.updateParticleEffect(effect, for: screen) } },
             onParticleDensityChange: { density in write { screenManager.updateParticleDensity(density, for: screen) } },
             onWeatherReactiveChange: { on in write { screenManager.setWeatherReactive(on, for: screen) } },

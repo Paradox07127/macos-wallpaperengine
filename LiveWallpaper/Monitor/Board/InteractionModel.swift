@@ -297,20 +297,39 @@ final class InteractionModel: ObservableObject {
     @discardableResult
     func addWidget(kind: MonitorWidgetKind) -> Bool {
         guard isEditing else { return false }
-        let size = Self.defaultSize(for: kind)
-        let footprintSize = geometry.pixelSize(for: kind, size: size)
+        let footprintSize = geometry.pixelSize(for: kind, size: Self.defaultSize(for: kind))
         guard let origin = LayoutEngine.firstFit(
             footprint: footprintSize, geometry: geometry, items: items(excluding: nil)
         ) else {
             return false
         }
+        insert(kind, at: origin)
+        return true
+    }
+
+    /// Lands a new widget at `origin` (board pixels) or on the nearest free spot within one footprint of it;
+    /// false when there is none.
+    @discardableResult
+    func addWidget(kind: MonitorWidgetKind, at origin: CGPoint) -> Bool {
+        guard isEditing, !geometry.isDegenerate else { return false }
+        let footprintSize = geometry.pixelSize(for: kind, size: Self.defaultSize(for: kind))
+        guard let landed = LayoutEngine.land(
+            freeOrigin: origin, snappedOrigin: nil, footprint: footprintSize,
+            geometry: geometry, items: items(excluding: nil), ignoring: nil
+        ) else {
+            return false
+        }
+        insert(kind, at: landed)
+        return true
+    }
+
+    private func insert(_ kind: MonitorWidgetKind, at origin: CGPoint) {
         let normalized = LayoutEngine.normalized(pixelOrigin: origin, boardSize: boardSize)
-        let placement = MonitorWidgetPlacement(kind: kind, size: size, x: normalized.x, y: normalized.y)
+        let placement = MonitorWidgetPlacement(kind: kind, size: Self.defaultSize(for: kind), x: normalized.x, y: normalized.y)
         placements.append(placement)
         select(placement.id)
         isCatalogOpen = false
         emitConfiguration()
-        return true
     }
 
     func updateWidget(_ updated: MonitorWidgetPlacement) {
