@@ -25,15 +25,17 @@ struct OverlayWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var interaction: InteractionModel
     @State private var addExpanded = true
-    @State private var addDrag = OverlayAddDragController()
+    @State private var addDrag: OverlayAddDragController
     @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var previewMode: MonitorBoardPreviewMode = .snapshot
 
     init(session: OverlayEditorSession, cover: CGImage?, screen: Screen, size: CGSize,
          layersVisible: Binding<Bool>, inspectorVisible: Binding<Bool>,
          inspectorWidth: Binding<Double>, liveInspectorWidth: Binding<Double?>,
          topInset: CGFloat = 0, recapture: @escaping () -> Void,
-         swipe: @escaping (DetailSwipeStep) -> Void, switchEdge: HorizontalEdge) {
+         swipe: @escaping (DetailSwipeStep) -> Void, switchEdge: HorizontalEdge,
+         dragController: OverlayAddDragController = OverlayAddDragController()) {
         self.session = session
+        _addDrag = State(initialValue: dragController)
         self.cover = cover
         self.screen = screen
         self.size = size
@@ -89,7 +91,20 @@ struct OverlayWorkspace: View {
             inspectorVisible = session.selection != nil
         }
         .onChange(of: previewMode) { _, _ in session.capturePreview() }
+        .onChange(of: sessionKey) { addDrag.cancel() }
         .onDisappear { addDrag.cancel() }
+    }
+
+    /// A tile drag belongs to one session: it ends when that session is detached or another display's replaces it.
+    private var sessionKey: SessionKey {
+        SessionKey(session: ObjectIdentifier(session), generation: session.gestureGeneration)
+    }
+
+    private struct SessionKey: Equatable {
+        /// A swap to another display's session can arrive with the generation the old one had.
+        let session: ObjectIdentifier
+        /// Bumped by every `detach()`, which the host calls on the old session before switching displays.
+        let generation: Int
     }
 
     private var rows: [OverlayLayerRow] {

@@ -79,16 +79,63 @@ struct OverlayAddDragWindowTests {
         await fixture.settle { false }
         #expect(fixture.session.interaction.placements.count == before, "the cancelled drag still dropped a widget")
     }
+
+    @Test("Detaching the session mid-drag ends the drag: no ghost, one cursor pop, Escape reaches the page again")
+    func detachEndsDrag() async {
+        let fixture = DragWindowFixture(size: Self.size)
+        defer { fixture.close() }
+        await Self.dragThenEndSession(fixture) { fixture.session.detach() }
+    }
+
+    @Test("Handing the workspace another display's session mid-drag ends the drag the same way")
+    func sessionSwapEndsDrag() async {
+        let fixture = DragWindowFixture(size: Self.size)
+        defer { fixture.close() }
+        let other = OverlayEditorSession(defaults: UserDefaults(suiteName: "OverlayAddDragWindowTests") ?? .standard)
+        other.transition(to: fixture.otherStore.identity, store: fixture.otherStore, editing: true)
+        // Detach and swap in one step, as `request` then a synchronous `onShow` would: both sessions now carry the same
+        // generation, so only the session's identity tells the workspace anything changed.
+        await Self.dragThenEndSession(fixture) {
+            fixture.session.detach()
+            fixture.session = other
+        }
+        other.detach()
+    }
+
+    /// Starts a tile drag onto the canvas, runs `end`, then checks the drag let go of everything it held.
+    private static func dragThenEndSession(_ fixture: DragWindowFixture, _ end: () -> Void) async {
+        NSCursor.crosshair.push()
+        defer { NSCursor.pop() }
+        await fixture.press(cpuTile)
+        await fixture.drag(through: [CGPoint(x: cpuTile.x + 20, y: cpuTile.y - 20), onCanvas])
+        #expect(await fixture.settle { fixture.dragController.ghost != nil }, "the drag never started")
+        #expect(NSCursor.current == NSCursor.closedHand, "the drag never took the cursor")
+        end()
+        await fixture.settle { fixture.dragController.ghost == nil }
+        #expect(fixture.dragController.ghost == nil, "the ghost outlived its session")
+        #expect(NSCursor.current == NSCursor.crosshair, "the drag's cursor was not popped exactly once")
+        fixture.escape()
+        #expect(await fixture.settle { fixture.closes == 1 }, "the drag's Escape monitor was still installed")
+        let placements = fixture.session.interaction.placements.count
+        await fixture.release(onCanvas)
+        await fixture.settle { false }
+        #expect(fixture.session.interaction.placements.count == placements, "the ended drag still dropped a widget")
+        #expect(NSCursor.current == NSCursor.crosshair, "the release popped the cursor a second time")
+    }
 }
 
+/// Observable so a test can hand the workspace another display's session, the way the detail host's `onShow` does.
 @MainActor
+@Observable
 private final class DragWindowFixture {
     let screen = Screen(nsScreen: DragWindowTestScreen())
     let manager: ScreenManager
     let store = DragWindowStore()
-    let session: OverlayEditorSession
+    let otherStore = DragWindowStore(identity: OverlayEditorIdentity(displayID: 0xAD0D_0002, fingerprint: "add-drag-window-2"))
+    var session: OverlayEditorSession
+    let dragController = OverlayAddDragController()
     let window: NSWindow
-    var closes = 0
+    @ObservationIgnored var closes = 0
     private let size: CGSize
 
     init(size: CGSize) {
@@ -99,8 +146,9 @@ private final class DragWindowFixture {
             playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
             featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
         ))
-        session = OverlayEditorSession(defaults: UserDefaults(suiteName: "OverlayAddDragWindowTests") ?? .standard)
+        let session = OverlayEditorSession(defaults: UserDefaults(suiteName: "OverlayAddDragWindowTests") ?? .standard)
         session.transition(to: store.identity, store: store, editing: true)
+        self.session = session
         window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: DragWindowHost(fixture: self))
@@ -189,7 +237,7 @@ private struct DragWindowHost: View {
                 size: CGSize(width: 1280, height: 764),
                 layersVisible: .constant(false), inspectorVisible: .constant(false),
                 inspectorWidth: .constant(372), liveInspectorWidth: .constant(nil),
-                recapture: {}, swipe: { _ in }, switchEdge: .trailing
+                recapture: {}, swipe: { _ in }, switchEdge: .trailing, dragController: fixture.dragController
             )
             Button { fixture.closes += 1 } label: { EmptyView() }
                 .keyboardShortcut(.cancelAction)
@@ -203,10 +251,11 @@ private struct DragWindowHost: View {
 
 @MainActor
 private final class DragWindowStore: OverlayEditorStore {
-    let identity = OverlayEditorIdentity(displayID: 0xAD0D_0001, fingerprint: "add-drag-window")
+    let identity: OverlayEditorIdentity
     var snapshot: OverlayEditorSnapshot
 
-    init() {
+    init(identity: OverlayEditorIdentity = OverlayEditorIdentity(displayID: 0xAD0D_0001, fingerprint: "add-drag-window")) {
+        self.identity = identity
         let configuration = ScreenConfiguration(
             screenID: identity.displayID, wallpaper: .html(source: .inline("Test"), config: .default), particleEffect: .snow
         )
