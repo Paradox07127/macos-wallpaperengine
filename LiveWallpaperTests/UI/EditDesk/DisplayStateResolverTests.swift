@@ -22,7 +22,7 @@ struct DisplayStateResolverTests {
             $0.phase = .failed
             $0.failure = WallpaperFailureSnapshot(
                 id: id, title: "Broken scene", workshopID: nil, displayName: harness.screen.name,
-                stage: "loading", cause: cause, previousWallpaper: nil, timestamp: Date(), diagnostics: ""
+                stage: .loading, cause: cause, previousWallpaper: nil, timestamp: Date(), diagnostics: ""
             )
         }
 
@@ -31,6 +31,42 @@ struct DisplayStateResolverTests {
         #expect(harness.manager.configurationStore.revision(for: harness.screen.id) == revision)
         loads.clear(for: harness.screen, matching: id)
         await harness.waitUntil { harness.state == healthy }
+    }
+
+    @Test("A runtime failure leaves an apply's wait alone, a loading failure ends it, and stages keep their logged labels")
+    func failureStageDecidesAnnouncement() async {
+        let harness = Harness(configured: true)
+        defer { harness.close() }
+        let (announced, continuation) = AsyncStream<UUID>.makeStream()
+        let observer = NotificationCenter.default.addObserver(forName: .wallpaperPreparationDidFail, object: nil, queue: nil) { notification in
+            if let id = notification.userInfo?["attemptID"] as? UUID {
+                continuation.yield(id)
+            }
+        }
+        let loads = harness.manager.wallpaperLoads
+        let cause = WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token")
+        let runtime = loads.begin(for: harness.screen, title: "Runtime failure")
+        harness.manager.failWallpaperAttempt(runtime, for: harness.screen, cause: cause, stage: .runtime)
+        let runtimeFailure = loads.attempt(for: harness.screen)?.failure
+        let loading = loads.begin(for: harness.screen, title: "Loading failure")
+        harness.manager.failWallpaperAttempt(loading, for: harness.screen, cause: cause, stage: .loading)
+        loads.clear(for: harness.screen, matching: loading)
+        NotificationCenter.default.removeObserver(observer)
+        continuation.finish()
+        var ids: [UUID] = []
+        for await id in announced {
+            ids.append(id)
+        }
+
+        #expect(!ids.contains(runtime), "a runtime failure ended the wait of an apply that is not running")
+        #expect(ids.count { $0 == loading } == 1, "a loading failure did not end the apply's wait exactly once")
+        #expect(runtimeFailure?.stage.rawValue == "runtime")
+        let firstFrame = WallpaperFailureSnapshot(
+            id: UUID(), title: "Slow scene", workshopID: nil, displayName: harness.screen.name,
+            stage: .firstFrame, cause: cause, previousWallpaper: nil, timestamp: Date(), diagnostics: ""
+        )
+        #expect(firstFrame.diagnosticText.contains("Stage: first-frame"))
+        #expect(firstFrame.issueDiagnosticText.contains("Stage: first-frame"))
     }
 
     @Test("Transient and session runtime errors update and recover without a configuration change", arguments: [true, false])

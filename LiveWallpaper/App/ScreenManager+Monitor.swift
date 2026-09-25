@@ -354,7 +354,7 @@ extension ScreenManager {
                 }
             ) else {
                 if let attemptID {
-                    failWallpaperAttempt(attemptID, for: screen, cause: WallpaperFailureCause(code: "scene.source_unavailable", reason: String(localized: "The scene source could not be opened. Check its location and access permission.", bundle: .appLanguage)), stage: "source")
+                    failWallpaperAttempt(attemptID, for: screen, cause: WallpaperFailureCause(code: "scene.source_unavailable", reason: String(localized: "The scene source could not be opened. Check its location and access permission.", bundle: .appLanguage)), stage: .source)
                 }
                 Logger.warning("Scene wallpaper for screen \(screen.id) (workshop \(descriptor.workshopID)) could not be built — cache missing or descriptor invalid", category: .screenManager)
                 return

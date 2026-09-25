@@ -40,7 +40,7 @@ extension ScreenManager {
                 return
             }
             let diagnostics = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: session.rendererDiagnostics, errorCode: cause.code)
-            failWallpaperAttempt(id, for: screen, cause: cause, stage: "runtime", diagnostics: diagnostics)
+            failWallpaperAttempt(id, for: screen, cause: cause, stage: .runtime, diagnostics: diagnostics)
         }
     }
 
@@ -57,7 +57,7 @@ extension ScreenManager {
                 $0.configuration = config
             }
         }
-        failWallpaperAttempt(attempt.id, for: screen, cause: cause, stage: "import")
+        failWallpaperAttempt(attempt.id, for: screen, cause: cause, stage: .importing)
     }
     #endif
 
@@ -66,7 +66,7 @@ extension ScreenManager {
         return attempt
     }
 
-    func failWallpaperAttempt(_ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: String, diagnostics: String = "") {
+    func failWallpaperAttempt(_ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: WallpaperFailureStage, diagnostics: String = "") {
         guard let attempt = wallpaperLoads.attempt(for: screen), attempt.id == id else { return }
         let failure = WallpaperFailureSnapshot(
             id: id, title: LogPrivacyRedactor.scrub(attempt.title), workshopID: attempt.origin?.workshopID,
@@ -80,7 +80,7 @@ extension ScreenManager {
             $0.failure = failure
         }
         // A runtime failure belongs to a session already on screen, not to the preparation an apply waits for.
-        if stage != "runtime" {
+        if stage != .runtime {
             WallpaperPreparationFailure.announce(cause.reason, on: screen.id, attemptID: id)
         }
         #if !LITE_BUILD

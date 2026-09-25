@@ -89,7 +89,7 @@ struct SceneFailureFlowTests {
     @MainActor
     @Test("A long author title cannot displace the actual cause from the issue URL")
     func reportKeepsCauseUnderBudget() {
-        let failure = WallpaperFailureSnapshot(id: UUID(), title: String(repeating: "场景", count: 6000), workshopID: "1234", displayName: "Display", stage: "loading", cause: WallpaperFailureCause(code: "texture.metal_unavailable", reason: "Missing BC7 support"), previousWallpaper: "A", timestamp: Date(), diagnostics: String(repeating: "log", count: 8000))
+        let failure = WallpaperFailureSnapshot(id: UUID(), title: String(repeating: "场景", count: 6000), workshopID: "1234", displayName: "Display", stage: .loading, cause: WallpaperFailureCause(code: "texture.metal_unavailable", reason: "Missing BC7 support"), previousWallpaper: "A", timestamp: Date(), diagnostics: String(repeating: "log", count: 8000))
         let report = BugReporter.makeReport(activeWallpapers: ["C"], failureContext: failure)
         let body = URLComponents(url: report.issueURL, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "body" }?.value ?? ""
         #expect(body.utf8.count <= 6 * 1024)
@@ -209,7 +209,7 @@ struct SceneFailureFlowTests {
         for (name, cause, previous) in cases {
             let snapshot = WallpaperFailureSnapshot(
                 id: UUID(), title: "Night Sky · Failed Scene B", workshopID: "1234567890",
-                displayName: "Built-in Display", stage: "loading", cause: cause,
+                displayName: "Built-in Display", stage: .loading, cause: cause,
                 previousWallpaper: previous, timestamp: Date(),
                 diagnostics: "Missing source texture", wallpaperType: .scene
             )
@@ -245,7 +245,7 @@ struct SceneFailureFlowTests {
     func historicFailureLayout() throws {
         let snapshot = WallpaperFailureSnapshot(
             id: UUID(), title: "Night Sky · Failed Scene B", workshopID: nil,
-            displayName: "Built-in Display", stage: "runtime",
+            displayName: "Built-in Display", stage: .runtime,
             cause: WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token at line 42 of scene.json.", canRetry: false),
             previousWallpaper: nil, timestamp: Date(), diagnostics: "", wallpaperType: .scene
         )

@@ -142,7 +142,7 @@ extension ScreenManager {
                     }
                     #endif
                     guard isCandidateStillCurrent() else { return }
-                    failWallpaperAttempt(attemptID, for: screen, cause: cause, stage: result == .timedOut ? "first-frame" : "loading", diagnostics: diagnostics)
+                    failWallpaperAttempt(attemptID, for: screen, cause: cause, stage: result == .timedOut ? .firstFrame : .loading, diagnostics: diagnostics)
                 }
             )
 
@@ -156,7 +156,7 @@ extension ScreenManager {
                 fallbackWallpaperType: candidate.wallpaperType
             ) {
                 if let attemptID, wallpaperLoads.attempt(for: screen)?.failure == nil {
-                    failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: "commit")
+                    failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: .commit)
                 }
                 setTransientRuntimeError(error, for: screenID, failedProposal: proposedConfiguration)
                 if attemptID == nil {

@@ -12,6 +12,8 @@ struct WPEProjectCustomSettingsCard: View {
 
     @Environment(ScreenManager.self) private var screenManager
     @AppStorage("Inspector.WPEProjectCustomSettingsExpanded") private var isExpanded = true
+    @AppStorage("Web.Interaction.Acknowledged") private var webInteractionAcknowledged = false
+    @State private var pendingEnable = false
 
     var body: some View {
         GroupBox {
@@ -28,6 +30,15 @@ struct WPEProjectCustomSettingsCard: View {
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
+        .alert("Enable Wallpaper Interaction?", isPresented: $pendingEnable) {
+            Button("Cancel", role: .cancel) {}
+            Button("Enable") {
+                webInteractionAcknowledged = true
+                enableInteraction()
+            }
+        } message: {
+            Text("Clicks and scrolls go to the web page instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
+        }
     }
 
     @ViewBuilder
@@ -60,9 +71,11 @@ struct WPEProjectCustomSettingsCard: View {
                 )
 
                 Button("Enable") {
-                    var next = config
-                    next.allowMouseInteraction = true
-                    apply(next)
+                    if webInteractionAcknowledged {
+                        enableInteraction()
+                    } else {
+                        pendingEnable = true
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -269,6 +282,12 @@ struct WPEProjectCustomSettingsCard: View {
         guard config != next else { return }
         config = next
         screenManager.updateHTMLConfig(next, for: screen)
+    }
+
+    private func enableInteraction() {
+        var next = config
+        next.allowMouseInteraction = true
+        apply(next)
     }
 
     private func resetOverrides(for schema: WallpaperEngineProjectPropertySchema) {

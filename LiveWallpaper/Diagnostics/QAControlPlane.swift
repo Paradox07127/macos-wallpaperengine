@@ -475,7 +475,7 @@ final class QAControlPlane {
                 ]
                 if let failure = attempt.failure {
                     load["failure"] = [
-                        "stage": failure.stage,
+                        "stage": failure.stage.rawValue,
                         "code": failure.cause.code,
                         "reason": failure.cause.reason,
                         "canRetry": failure.cause.canRetry,

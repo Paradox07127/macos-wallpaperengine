@@ -75,7 +75,7 @@ struct AttemptSceneProperties: View {
 
     private func settingsFailure(cause: WallpaperFailureCause) -> WallpaperFailureSnapshot {
         WallpaperFailureSnapshot(id: attempt.id, title: attempt.title, workshopID: attempt.origin?.workshopID,
-                                 displayName: screen.name, stage: "settings", cause: cause,
+                                 displayName: screen.name, stage: .settings, cause: cause,
                                  previousWallpaper: attempt.failure?.previousWallpaper, timestamp: Date(), diagnostics: "")
     }
 }

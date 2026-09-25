@@ -21,12 +21,17 @@ struct WallpaperFailureCause: Equatable, Sendable {
     }
 }
 
+/// The raw value is the label written to diagnostics and QA output; interpolating the case itself prints its Swift name.
+enum WallpaperFailureStage: String, Sendable {
+    case source, importing = "import", loading, firstFrame = "first-frame", commit, runtime, settings
+}
+
 struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
     let id: UUID
     let title: String
     let workshopID: String?
     let displayName: String
-    let stage: String
+    let stage: WallpaperFailureStage
     let cause: WallpaperFailureCause
     let previousWallpaper: String?
     let timestamp: Date
@@ -39,7 +44,7 @@ struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
         LogPrivacyRedactor.scrub("""
         Diagnostic excerpt — use Copy Diagnostics for the complete local report.
         Attempt: \(id.uuidString)
-        Stage: \(stage.prefix(80))
+        Stage: \(stage.rawValue)
         Code: \(cause.code.prefix(160))
         Reason: \(cause.reason.prefix(700))
         Failed wallpaper: \(title.prefix(160))
@@ -60,7 +65,7 @@ struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
         Display: \(displayName)
         Attempt: \(id.uuidString)
         Time: \(timestamp.ISO8601Format())
-        Stage: \(stage)
+        Stage: \(stage.rawValue)
         Code: \(cause.code)
         Reason: \(cause.reason)
         Underlying error: \(cause.details.isEmpty ? "—" : cause.details)
