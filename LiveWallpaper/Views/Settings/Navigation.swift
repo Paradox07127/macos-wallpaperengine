@@ -511,12 +511,6 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         case .workshopSetup:
             return [
                 SettingsNavigationSearchTarget(
-                    label: "Steam Web API key (optional)",
-                    anchor: .workshopSetup,
-                    rows: ["Steam Web API key"],
-                    keywords: ["api key", "steam web api key", "web api", "key"]
-                ),
-                SettingsNavigationSearchTarget(
                     label: "Steam connection",
                     anchor: .workshopConnection,
                     rows: ["Steam library", "SteamCMD", "Steam account", "Subscribed wallpapers"],
@@ -535,6 +529,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     ]
                 ),
                 SettingsNavigationSearchTarget(
+                    label: "Steam Web API key (optional)",
+                    anchor: .workshopSetup,
+                    rows: ["Steam Web API key"],
+                    keywords: ["api key", "steam web api key", "web api", "key"]
+                ),
+                SettingsNavigationSearchTarget(
                     label: "Content",
                     anchor: .workshopContent,
                     rows: [
@@ -542,6 +542,18 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                         "Default sort", "Default time frame",
                     ],
                     keywords: ["mature", "blur mature thumbnails", "hide downloaded", "library"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Thumbnail badges",
+                    anchor: .workshopBadges,
+                    rows: [
+                        "Wallpaper type", "Type badge style", "Rating", "Resolution", "Already installed",
+                        "Update available", "Currently in use",
+                    ],
+                    keywords: [
+                        "badge", "thumbnail badges", "rating", "resolution",
+                        "wallpaper type", "in use", "update available",
+                    ]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Diagnostics",
@@ -559,18 +571,6 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     rows: ["File access", "Steam sign-in", "Web API key", "Where requests go", "Wallpaper Engine assets"],
                     keywords: []
                 ),
-                SettingsNavigationSearchTarget(
-                    label: "Thumbnail badges",
-                    anchor: .workshopBadges,
-                    rows: [
-                        "Wallpaper type", "Type badge style", "Rating", "Resolution", "Already installed",
-                        "Update available", "Currently in use",
-                    ],
-                    keywords: [
-                        "badge", "thumbnail badges", "rating", "resolution",
-                        "wallpaper type", "in use", "update available"
-                    ]
-                )
             ]
         case .systemWallpaper:
             return [

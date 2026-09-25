@@ -142,6 +142,7 @@ private struct CopyVersionButton: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(version, forType: .string)
             didCopy = true
+            AccessibilityNotification.Announcement(String(localized: "Copied", bundle: .appLanguage)).post()
         } label: {
             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                 .font(.caption)

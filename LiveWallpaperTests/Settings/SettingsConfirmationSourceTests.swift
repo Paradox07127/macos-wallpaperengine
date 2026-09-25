@@ -42,6 +42,24 @@ struct SettingsConfirmationSourceTests {
         #expect(addStaysGated, "Add can start a second publish while one is running")
     }
 
+    @Test("Both Copy buttons in Settings tell VoiceOver the copy happened")
+    func copyButtonsAnnounceSuccess() throws {
+        let about = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AboutTab.swift")
+        let advanced = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AdvancedSection.swift")
+        let copyVersion = try Self.slice(about, from: "struct CopyVersionButton", to: "struct AboutAction")
+        let summaryStart = try #require(advanced.range(of: "struct CopyDiagnosticSummaryButton"))
+        let copySummary = advanced[summaryStart.lowerBound...]
+        let announcement = "AccessibilityNotification.Announcement("
+        let versionSliceFound = copyVersion.contains(".accessibilityLabel(Text(\"Copy version\"))")
+        let summarySliceFound = copySummary.contains("\"Copy diagnostic summary\"")
+        let versionAnnounces = copyVersion.contains(announcement)
+        let summaryAnnounces = copySummary.contains(announcement)
+        #expect(versionSliceFound, "the slice no longer covers the Copy version button")
+        #expect(summarySliceFound, "the slice no longer covers the Copy diagnostic summary button")
+        #expect(versionAnnounces, "Copy version only swaps its icon, so VoiceOver hears nothing after copying")
+        #expect(summaryAnnounces, "Copy diagnostic summary only changes its visible title, so VoiceOver hears nothing after copying")
+    }
+
     private static func slice(_ source: String, from start: String, to end: String) throws -> String {
         let startRange = try #require(source.range(of: start))
         let endRange = try #require(source.range(of: end, range: startRange.upperBound ..< source.endIndex))

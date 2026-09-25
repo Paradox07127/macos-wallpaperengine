@@ -153,6 +153,7 @@ private struct CopyDiagnosticSummaryButton: View {
         Button {
             copy()
             didCopy = true
+            AccessibilityNotification.Announcement(String(localized: "Copied", bundle: .appLanguage)).post()
         } label: {
             if didCopy {
                 Text("Copied")
