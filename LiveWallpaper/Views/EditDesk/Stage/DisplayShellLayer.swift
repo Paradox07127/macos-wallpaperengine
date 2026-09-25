@@ -285,7 +285,7 @@ final class DisplayShellLayer {
         title.frame = CGRect(x: 10, y: size.height - 49, width: lineWidth, height: 22)
         meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
         playback.frame = controls.container
-        // Half the height, not `Corner.capsule`: Core Animation does not clamp a larger radius and draws a lens or nothing.
+        // Half the height and no more: Core Animation does not clamp a larger radius and draws a lens or nothing.
         playback.cornerRadius = playback.bounds.height / 2
         for (index, item) in transport.enumerated() {
             item.layer.frame = controls.buttons[index]

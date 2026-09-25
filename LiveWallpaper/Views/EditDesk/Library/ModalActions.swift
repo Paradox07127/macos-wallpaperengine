@@ -405,10 +405,11 @@ final class ModalActions {
         return UInt64(entry.origin.workshopID)
     }
 
-    /// Must change whenever `updateState(for:)` would: the library modal reloads its content only then.
+    /// Must change whenever `updateState(for:)` would, other than `.checking`'s progress, which nothing in the
+    /// library modal shows: the modal reloads its content only when this changes.
     func installedStateKey(for item: LibraryItem) -> String {
         guard let entry = localInfoEntry(for: item), let id = UInt64(entry.origin.workshopID) else { return "" }
-        return "\(inputs.phase(id)) \(inputs.progress(id) ?? -1) \(inputs.installedLibrary.updatedWorkshopIDs.contains(entry.id))"
+        return "\(inputs.phase(id)) \(inputs.installedLibrary.updatedWorkshopIDs.contains(entry.id))"
     }
 
     private func updateState(for entry: WPEHistoryEntry) -> InstalledItemExtras.UpdateState {

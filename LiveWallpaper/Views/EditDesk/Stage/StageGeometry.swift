@@ -40,10 +40,6 @@ enum StageGeometry {
         externalStandDrop + nameRowGap + nameRowHeight
     }
 
-    static var builtinNameDrop: CGFloat {
-        builtinStandDrop + nameRowGap + nameRowHeight
-    }
-
     // MARK: Shelf row (S2)
 
     static let cardSize = CGSize(width: 200, height: 112)
@@ -384,17 +380,6 @@ enum StageGeometry {
             return running
         }
         return starts.map { offsets[rank[$0] ?? 0] }
-    }
-
-    /// Everything a display owns on the stage: the shell, the type badge poking above it and the
-    /// stand plus name row under it. `arrangement` keeps these from touching between displays.
-    static func occupiedRect(content: CGRect, isBuiltin: Bool) -> CGRect {
-        let shell = shellRect(content: content, isBuiltin: isBuiltin)
-        let drop = isBuiltin ? builtinNameDrop : externalNameDrop
-        return CGRect(
-            x: shell.minX, y: shell.minY - badgeOverhang,
-            width: shell.width, height: shell.height + badgeOverhang + drop
-        )
     }
 
     static func shellRect(content: CGRect, isBuiltin: Bool) -> CGRect {

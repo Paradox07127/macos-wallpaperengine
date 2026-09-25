@@ -273,7 +273,7 @@ final class ShelfCardLayer {
 
     private func buildCapsule() {
         let capsule = CALayer()
-        // Half the 18pt height, not `Corner.capsule`: Core Animation bends a larger radius into a lens,
+        // Half the 18pt height and no more: Core Animation bends a larger radius into a lens,
         // or draws nothing once it passes half the width too.
         capsule.cornerRadius = 9
         capsule.cornerCurve = .continuous

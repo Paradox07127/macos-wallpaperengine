@@ -1562,7 +1562,11 @@ struct EditDeskStageViewTests {
         #expect(view.debugFocusedCardIndex == 2)
         let reordered = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
         #expect(reordered.first { $0.accessibilityLabel() == "Card 1 Meta" } === card)
+        try expectArrowsIgnoredOffTheShelfAndDuringDrag(view, model)
+    }
 
+    /// Kept out of `cardAccessibilityAndKeyboardFocus`: inline, it slows that body's type-check past the 300 ms warning in a full build.
+    private func expectArrowsIgnoredOffTheShelfAndDuringDrag(_ view: EditDeskStageView, _ model: EditDeskStageModel) throws {
         model.setProgress(2, animated: false)
         try view.keyDown(with: key(124))
         #expect(view.debugFocusedCardIndex == 2)

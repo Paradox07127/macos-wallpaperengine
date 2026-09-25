@@ -26,6 +26,21 @@ struct StageGeometryTests {
             && near(actual.height, expected.height, tolerance)
     }
 
+    private static var builtinNameDrop: CGFloat {
+        StageGeometry.builtinStandDrop + StageGeometry.nameRowGap + StageGeometry.nameRowHeight
+    }
+
+    /// Everything a display owns on the stage: the shell, the type badge poking above it and the
+    /// stand plus name row under it.
+    private func occupiedRect(content: CGRect, isBuiltin: Bool) -> CGRect {
+        let shell = StageGeometry.shellRect(content: content, isBuiltin: isBuiltin)
+        let drop = isBuiltin ? Self.builtinNameDrop : StageGeometry.externalNameDrop
+        return CGRect(
+            x: shell.minX, y: shell.minY - StageGeometry.badgeOverhang,
+            width: shell.width, height: shell.height + StageGeometry.badgeOverhang + drop
+        )
+    }
+
     @Test("Every tile size lands on the same fixed columns as the visible library")
     func gridSizeHandoff() {
         for size in LibraryTileSize.allCases {
@@ -240,7 +255,7 @@ struct StageGeometryTests {
         for (name, layout) in layouts {
             let a = StageGeometry.arrangement(frames: layout.map(\.0), in: Self.designStage)
             let boxes = a.contentRects.enumerated().map {
-                StageGeometry.occupiedRect(content: $1, isBuiltin: layout[$0].1)
+                occupiedRect(content: $1, isBuiltin: layout[$0].1)
             }
             for i in boxes.indices {
                 for j in boxes.indices where j > i {
@@ -574,7 +589,7 @@ struct StageGeometryTests {
             for frames in layouts {
                 let a = StageGeometry.arrangement(frames: frames, in: stage)
                 for (index, content) in a.contentRects.enumerated() {
-                    let box = StageGeometry.occupiedRect(content: content, isBuiltin: false)
+                    let box = occupiedRect(content: content, isBuiltin: false)
                     #expect(
                         box.minX >= 0 && box.maxX <= size.width && box.minY >= StageGeometry.topBarHeight
                             && box.maxY <= size.height,
