@@ -181,6 +181,7 @@ struct LocalImageCacheReclaimerTests {
         let counter = PurgeCounter()
         let reclaimer = LocalImageCacheReclaimer(delay: Self.testDelay) { counter.record() }
         let wallpaper = makeWallpaperLevelWindow()
+        wallpaper.setFrameOrigin(NSPoint(x: -30000, y: -30000))
         wallpaper.orderFrontRegardless()
         defer { wallpaper.orderOut(nil) }
 

@@ -99,7 +99,6 @@ struct SystemWallpaperTileGeometryTests {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(350))

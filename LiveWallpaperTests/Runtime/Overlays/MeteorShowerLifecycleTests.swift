@@ -9,13 +9,10 @@ final class MeteorShowerLifecycleTests: XCTestCase {
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
             styleMask: [.borderless], backing: .buffered, defer: false
         )
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
         window.isReleasedWhenClosed = false
-        defer { window.orderOut(nil) }
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         view.wantsLayer = true
         window.contentView = view
-        window.orderFrontRegardless()
 
         let shower = MeteorShower()
         try shower.attach(to: XCTUnwrap(view.layer), bounds: view.bounds, density: 1)
