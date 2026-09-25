@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 @MainActor
@@ -203,6 +204,35 @@ struct EditDeskStageModelTests {
         }
         let mixed = [display(1, "Studio", x: 0, .paused(reasonText: "Paused")), display(2, "MPG", x: 1920)]
         #expect(try #require(NowPlayingBadge(on: [1, 2], among: mixed)).isLive, "one display drawing it is enough")
+    }
+
+    @Test("VoiceOver reads the displays drawing a wallpaper apart from the ones it is only set on")
+    func nowPlayingReadsDrawingAndIdleDisplaysApart() throws {
+        func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat, _ state: StageDisplay.State) -> StageDisplay {
+            StageDisplay(
+                id: id, fingerprint: name, frame: CGRect(x: x, y: 0, width: 1920, height: 1080), isBuiltin: false,
+                name: name, badgeText: "", statusText: "", cover: nil, state: state
+            )
+        }
+        func reading(studio: StageDisplay.State, mpg: StageDisplay.State) throws -> String {
+            try #require(NowPlayingBadge(on: [1, 2], among: [display(1, "Studio", x: 1920, studio), display(2, "MPG", x: 0, mpg)])).accessibilityText
+        }
+        func list(_ names: [String]) -> String {
+            names.formatted(.list(type: .and).locale(AppLanguagePreference.current.locale))
+        }
+        let paused = StageDisplay.State.paused(reasonText: "Paused")
+        let mixed = try reading(studio: paused, mpg: .ok)
+        let live = try reading(studio: .ok, mpg: .ok)
+        let idle = try reading(studio: paused, mpg: paused)
+
+        #expect(
+            mixed == String(localized: "Playing on \(list(["MPG"]))", bundle: .appLanguage)
+                + ", " + String(localized: "In use on \(list(["Studio"]))", bundle: .appLanguage),
+            "a paused display was read as playing"
+        )
+        // Control: displays that share a state are read in one sentence, leftmost first.
+        #expect(live == String(localized: "Playing on \(list(["MPG", "Studio"]))", bundle: .appLanguage))
+        #expect(idle == String(localized: "In use on \(list(["MPG", "Studio"]))", bundle: .appLanguage))
     }
 
     /// The name drawn on the screen itself. Each step only fires when the one before it is blank,

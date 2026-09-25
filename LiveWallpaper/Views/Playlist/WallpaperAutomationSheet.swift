@@ -74,6 +74,8 @@ struct WallpaperAutomationSheet: View {
     @State private var error: String?
     @State private var playingEntryID: WallpaperQueueEntry.ID?
     @State private var insertedCurrentID: WallpaperQueueEntry.ID?
+    /// The row "Preview on This Display" put on screen, and the display's automatic-switch serial at that moment.
+    @State private var preview: (entryID: WallpaperQueueEntry.ID, switchSerial: Int?)?
     @State private var thumbnails = ShelfThumbnailCache()
 
     private enum PickTarget: Equatable {
@@ -131,7 +133,12 @@ struct WallpaperAutomationSheet: View {
     }
 
     /// By the cursor, not by content: editing a playing scene's properties changes its content but not its row.
-    static func nowPlayingEntryID(in configuration: ScreenConfiguration?, insertedCurrent: WallpaperQueueEntry.ID?) -> WallpaperQueueEntry.ID? {
+    static func nowPlayingEntryID(
+        in configuration: ScreenConfiguration?, insertedCurrent: WallpaperQueueEntry.ID?, previewing: WallpaperQueueEntry.ID?
+    ) -> WallpaperQueueEntry.ID? {
+        if let previewing {
+            return previewing
+        }
         if let insertedCurrent {
             return insertedCurrent
         }
@@ -175,6 +182,7 @@ struct WallpaperAutomationSheet: View {
                 }
                 Spacer()
                 Button("Cancel") {
+                    preview = nil
                     Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
                     dismiss()
                 }.keyboardShortcut(.cancelAction)
@@ -189,7 +197,13 @@ struct WallpaperAutomationSheet: View {
         .onAppear(perform: load)
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
-            playingEntryID = Self.nowPlayingEntryID(in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID)
+            // A playlist step or schedule switch since the preview began has put another wallpaper on the display.
+            if let started = preview, manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial != started.switchSerial {
+                preview = nil
+            }
+            playingEntryID = Self.nowPlayingEntryID(
+                in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID, previewing: preview?.entryID
+            )
         }
         .onChange(of: mode) { _, mode in
             guard mode == .schedule, slots.isEmpty else { return }
@@ -236,6 +250,7 @@ struct WallpaperAutomationSheet: View {
                             }
                             Spacer()
                             icon("play.fill", "Preview on This Display") {
+                                preview = (entry.id, manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial)
                                 Self.startTrial(entry, shownBeforeTrial: &shownBeforeTrial, manager: manager, screen: screen)
                             }
                             icon("arrow.up", "Move Up") { move(index, by: -1) }.disabled(index == 0)
@@ -542,7 +557,7 @@ struct WallpaperAutomationSheet: View {
             queue.insert(current, at: 0)
             insertedCurrentID = current.id
         }
-        playingEntryID = Self.nowPlayingEntryID(in: config, insertedCurrent: insertedCurrentID)
+        playingEntryID = Self.nowPlayingEntryID(in: config, insertedCurrent: insertedCurrentID, previewing: preview?.entryID)
         slots = (config.scheduleSlots ?? []).map { slot in
             var migrated = slot
             if migrated.wallpaper == nil, let bookmark = migrated.videoBookmarkData {
