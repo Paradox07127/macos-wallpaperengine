@@ -3,7 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-@Suite("Workshop dates follow the app language")
+@Suite("Workshop dates and counts follow the app language")
 @MainActor
 struct WorkshopDateLanguageTests {
     @Test
@@ -32,6 +32,20 @@ struct WorkshopDateLanguageTests {
             shown == japanese.localizedString(for: threeDaysAgo, relativeTo: Date()),
             "the relative date followed the system language, not the app's"
         )
+    }
+
+    @Test
+    func compactCountUsesTheAppLanguageDecimalSeparator() {
+        let shown = AppLanguageOverride.with(.spanish) { WorkshopCountFormatter.compact(1500) }
+
+        #expect(shown == "1,5K", "the compact count took its decimal separator from the system language, not the app's")
+    }
+
+    @Test
+    func detailHeaderSubscriberCountUsesTheAppLanguageDecimalSeparator() {
+        let shown = AppLanguageOverride.with(.spanish) { WorkshopDetailIdentityHeader.formatSubs(1500) }
+
+        #expect(shown.contains("1,5"), "the spelled-out subscriber count took its decimal separator from the system language: \(shown)")
     }
 }
 #endif

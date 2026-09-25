@@ -446,10 +446,10 @@ enum WorkshopCountFormatter {
 
     static func compact(_ count: Int) -> String {
         if count >= 1_000_000 {
-            return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
+            return String(format: "%.1fM", locale: AppLanguagePreference.current.locale, Double(count) / 1_000_000.0)
         }
         if count >= compactFloor {
-            return String(format: "%.1fK", locale: .current, Double(count) / 1000.0)
+            return String(format: "%.1fK", locale: AppLanguagePreference.current.locale, Double(count) / 1000.0)
         }
         return count.formatted()
     }

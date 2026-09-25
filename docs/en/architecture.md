@@ -119,6 +119,10 @@ New Steam API keys go to the login Keychain. Legacy file migration is retained
 for older installations. In-app sign-in passes credentials through XPC to the
 SteamCMD terminal input; Loomscreen does not save the password/Guard code or
 place it in command arguments or logs. SteamCMD manages cached login state.
+Loomscreen's own SteamCMD runs take turns on each account's private profile
+through an advisory lock; a SteamCMD you start in Terminal, including the
+sign-in command shown under Diagnostics, does not take that lock, so the in-app
+sign-in form is the supported path.
 
 HTML has separate local-file and remote/network policy boundaries. Diagnostics
 are local and redacted; online requests still exist for enabled features.

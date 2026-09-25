@@ -285,6 +285,32 @@ struct WorkshopModalTests {
         #expect(result.isFailure)
     }
 
+    /// Pins today's behavior, not a decision: flip it once the product call on stale results is made.
+    @Test("Current behavior: applying the installed item straight to another display leaves the settled ticket's result on the line")
+    func currentBehaviorDirectApplyKeepsTheSettledResult() throws {
+        let queuedTo = "Studio"
+        let report = ApplyReport(outcome: .applied, exitedSpanMode: false)
+        let settledLines: [(DeferredApplyCoordinator.State, String)] = [
+            (.finished(report), DeferredApplyToasts.appliedText(report, screenName: queuedTo)),
+            (.invalidated(.screenUnavailable), DeferredApplyToasts.screenUnavailableText(screenName: queuedTo)),
+            (.invalidated(.newerSelection), DeferredApplyToasts.newerSelectionText(screenName: queuedTo)),
+        ]
+        let host = try RepositoryRoot.source(Self.hostPath)
+        let start = try #require(host.range(of: "private func applyNow("))
+        let end = try #require(host.range(of: "\n    }\n", range: start.upperBound ..< host.endIndex))
+        let applyNow = host[start.lowerBound ..< end.upperBound]
+        #expect(applyNow.contains("router.apply("), "the slice is not the direct apply's body")
+        #expect(
+            !applyNow.contains("wiring") && !applyNow.contains("deferredApply"),
+            "the direct apply now touches the ticket; this pin no longer describes the modal"
+        )
+
+        for (settled, line) in settledLines {
+            #expect(WorkshopModalPress.action(isInstalled: true, ticketState: settled) == .applyNow)
+            #expect(presentation(settled, phase: .succeeded, installed: true, screenName: queuedTo).status == line)
+        }
+    }
+
     @Test("An item already in the library stays installed while it downloads again; its dependency stage does not")
     func libraryEntryStaysInstalledThroughALaterDownload() {
         #expect(WorkshopModalContent.isInstalled(hasLibraryEntry: true, isDownloading: true, isFetchingDependencies: false))

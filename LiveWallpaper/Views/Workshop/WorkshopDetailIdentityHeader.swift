@@ -191,7 +191,7 @@ struct WorkshopDetailIdentityHeader: View {
             ))
         }
         if let subs = item.subscriptionCount, subs > 0 {
-            facts.append(Fact(symbol: "person.2", value: WorkshopCountFormatter.compact(subs), spelledOut: formatSubs(subs)))
+            facts.append(Fact(symbol: "person.2", value: WorkshopCountFormatter.compact(subs), spelledOut: Self.formatSubs(subs)))
         }
         if let favorites = item.favoriteCount, favorites > 0 {
             facts.append(Fact(
@@ -250,15 +250,15 @@ struct WorkshopDetailIdentityHeader: View {
 
     // MARK: - Helpers
 
-    private func formatSubs(_ count: Int) -> String {
+    static func formatSubs(_ count: Int) -> String {
         // The magnitude suffix is formatted first so the catalog key stays a plain
         // "%@M subs" — a %.1f inside a localized key would fight per-locale decimals.
         if count >= 1_000_000 {
-            let scaled = String(format: "%.1f", locale: .current, Double(count) / 1_000_000.0)
+            let scaled = String(format: "%.1f", locale: AppLanguagePreference.current.locale, Double(count) / 1_000_000.0)
             return String(localized: "\(scaled)M subs", bundle: .appLanguage, comment: "Workshop item subscriber count, millions.")
         }
         if count >= 1000 {
-            let scaled = String(format: "%.1f", locale: .current, Double(count) / 1000.0)
+            let scaled = String(format: "%.1f", locale: AppLanguagePreference.current.locale, Double(count) / 1000.0)
             return String(localized: "\(scaled)K subs", bundle: .appLanguage, comment: "Workshop item subscriber count, thousands.")
         }
         return String(localized: "\(count) subs", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item subscriber count.")
