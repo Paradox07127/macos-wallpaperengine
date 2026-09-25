@@ -212,7 +212,7 @@ struct DisplayStateResolverTests {
         #expect(harness.manager.configurationStore.revision(for: harness.screen.id) == revision)
     }
 
-    @Test("The display menu offers rename always, and clear and apply-to-all only when they can act")
+    @Test("The display menu offers rename always, and reload, clear and apply-to-all only when they can act")
     func displayMenuRows() async throws {
         let harness = Harness(configured: true)
         defer {
@@ -223,18 +223,26 @@ struct DisplayStateResolverTests {
         let stage = try #require(harness.stageView?.model)
         let rename = String(localized: "Rename", bundle: .appLanguage)
         let systemName = String(localized: "Use System Name", bundle: .appLanguage)
+        let reload = String(localized: "Reload", bundle: .appLanguage)
         let applyAll = String(localized: "Apply to All Displays", bundle: .appLanguage)
         let clear = String(localized: "Clear Wallpaper", bundle: .appLanguage)
         func rows() -> [[String]] {
             (stage.displayMenu?(harness.screen.id) ?? []).map { $0.map { "\($0.title)=\($0.isEnabled)" } }
         }
         // One display: there is no other display to apply to.
-        #expect(rows() == [["\(rename)=true"], ["\(applyAll)=false", "\(clear)=true"]])
+        let expectedConfigured: [[String]] = [["\(rename)=true"], ["\(reload)=true", "\(applyAll)=false", "\(clear)=true"]]
+        #expect(rows() == expectedConfigured)
         harness.manager.setCustomName("Desk", for: harness.screen)
-        #expect(rows() == [["\(rename)=true", "\(systemName)=true"], ["\(applyAll)=false", "\(clear)=true"]])
+        let expectedRenamed: [[String]] = [
+            ["\(rename)=true", "\(systemName)=true"], ["\(reload)=true", "\(applyAll)=false", "\(clear)=true"],
+        ]
+        #expect(rows() == expectedRenamed)
         harness.manager.clearWallpaperForScreen(harness.screen)
         await harness.waitUntil { harness.state == .empty }
-        #expect(rows() == [["\(rename)=true", "\(systemName)=true"], ["\(applyAll)=false", "\(clear)=false"]])
+        let expectedCleared: [[String]] = [
+            ["\(rename)=true", "\(systemName)=true"], ["\(reload)=false", "\(applyAll)=false", "\(clear)=false"],
+        ]
+        #expect(rows() == expectedCleared)
     }
 
     @Test("A display rename or rearrangement re-labels the shelf's now-playing badge at once")

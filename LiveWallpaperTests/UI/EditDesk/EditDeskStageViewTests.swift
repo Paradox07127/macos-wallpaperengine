@@ -338,6 +338,34 @@ struct EditDeskStageViewTests {
         #expect(view.accessibilityChildren()?.count == 15)
     }
 
+    @Test("⌥-click on a shelf card asks to apply it; a plain click still opens it", .timeLimit(.minutes(1)))
+    func optionClickAppliesTheCard() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        model.setProgress(1, animated: false)
+        var events = model.events.makeAsyncIterator()
+        #expect(await events.next() == .snapped(1))
+        let frame = StageGeometry.hitRect(
+            StageGeometry.cardPlacement(
+                style: model.shelfStyle, index: 3, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
+            ),
+            style: model.shelfStyle
+        )
+        let point = CGPoint(x: frame.minX + 8, y: frame.midY)
+        try #require(view.cardIndex(at: point) == 3)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view, modifiers: .option))
+        try view.mouseUp(with: mouse(.leftMouseUp, at: point, in: view, modifiers: .option))
+        // Bound first: an awaited operand is not printed when the expectation fails.
+        let optionClick = await events.next()
+        #expect(optionClick == .cardApplyRequested("card-3"))
+        try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+        try view.mouseUp(with: mouse(.leftMouseUp, at: point, in: view))
+        let plainClick = await events.next()
+        #expect(plainClick == .cardTapped("card-3"))
+    }
+
     @Test("Focus Row side clicks centre first and only the centred card opens", arguments: [false, true])
     func focusRowSideClickCentresBeforeOpening(reduceMotion: Bool) async throws {
         let model = makeModel()
@@ -974,9 +1002,11 @@ struct EditDeskStageViewTests {
         )
     }
 
-    private func mouse(_ type: NSEvent.EventType, at point: CGPoint, in view: EditDeskStageView) throws -> NSEvent {
+    private func mouse(
+        _ type: NSEvent.EventType, at point: CGPoint, in view: EditDeskStageView, modifiers: NSEvent.ModifierFlags = []
+    ) throws -> NSEvent {
         try #require(NSEvent.mouseEvent(
-            with: type, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+            with: type, location: view.convert(point, to: nil), modifierFlags: modifiers, timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
     }
@@ -2887,6 +2917,14 @@ struct EditDeskStageViewTests {
         #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 2))
         #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.9))
         #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.7))
+    }
+
+    @Test("A quick apply goes to the display the library was opened for, else the main display, else the first")
+    func quickApplyTarget() {
+        #expect(HomePage.quickApplyTarget(displays: [1, 2, 3], main: 2, libraryTarget: 3) == 3)
+        #expect(HomePage.quickApplyTarget(displays: [1, 2, 3], main: 2, libraryTarget: nil) == 2)
+        #expect(HomePage.quickApplyTarget(displays: [1, 2, 3], main: 2, libraryTarget: 9) == 2, "the library's display was unplugged")
+        #expect(HomePage.quickApplyTarget(displays: [1, 2, 3], main: nil, libraryTarget: nil) == 1)
     }
 
     @Test("A re-snap to the grid while cards are still flying waits for them to land before handing over")

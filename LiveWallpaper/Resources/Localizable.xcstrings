@@ -2721,7 +2721,7 @@
       }
     },
     "%lld wallpapers" : {
-      "comment" : "Workshop library status bar: the number of installed wallpapers. %lld is the count.",
+      "comment" : "Library status bar: the number of wallpapers in the library. %lld is the count.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

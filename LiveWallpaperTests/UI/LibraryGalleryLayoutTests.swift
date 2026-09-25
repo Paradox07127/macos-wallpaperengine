@@ -13,6 +13,7 @@ struct LibraryGalleryLayoutTests {
         "LiveWallpaper/Views/Aerials/AerialsLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift",
+        "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift",
     ]
 
     /// The pages whose tiles are square.

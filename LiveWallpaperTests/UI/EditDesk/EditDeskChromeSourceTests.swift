@@ -171,6 +171,23 @@ struct EditDeskChromeSourceTests {
         #expect(!source.contains("await applyCard(cardID, to: displayID, cancellation: $0)\n            case"))
     }
 
+    @Test("An ⌥-click on a grid tile and the stage's apply request go through one quick-apply helper")
+    func gridOptionClickSharesTheQuickApply() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        let start = try #require(source.range(of: "private var wallpaperGrid: some View {"))
+        let grid = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
+        #expect(grid.contains("NSApp.currentEvent?.modifierFlags.contains(.option) == true"), "a grid tile ignores ⌥")
+        #expect(grid.contains("NSApp.currentEvent?.type == .leftMouseUp"), "a VoiceOver press, whose VO key holds ⌥, applies the tile")
+        #expect(grid.contains("quickApply(item.id)"), "an ⌥-click on a grid tile applies on a path of its own")
+        #expect(
+            grid.contains(#".accessibilityAction(named: Text("Apply")) { quickApply(item.id) }"#),
+            "a grid tile offers VoiceOver no Apply, which a shelf card does"
+        )
+        let request = try #require(source.range(of: "case let .cardApplyRequested(cardID):"))
+        let branch = try #require(String(source[request.upperBound...]).components(separatedBy: "\n            case ").first)
+        #expect(branch.contains("quickApply(cardID)"), "the stage's apply request picks its display on its own")
+    }
+
     @Test("The stage's previous-track action reaches the playlist coordinator")
     func previousTrackIsWired() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
