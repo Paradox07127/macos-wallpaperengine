@@ -266,9 +266,10 @@ struct DiskWidgetView: View {
         _ procs: [MonitorProcessSample], scale: Design.TypeScale
     ) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.32) {
-            Text(verbatim: "TOP BY I/O")
+            Text("Top by I/O")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(Design.labelTracking(size: scale.label))
+                .textCase(.uppercase)
                 .foregroundStyle(Design.inkFaint)
             ForEach(Array(procs.enumerated()), id: \.offset) { _, proc in
                 topIORow(proc, scale: scale)

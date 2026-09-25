@@ -207,6 +207,7 @@ SUITES=(
   # Glyph-width arithmetic against the measured gauge centre: a CPU at 100%
   # needed a 0.561 scale against a 0.6 floor and rendered as "1...".
   WidgetReadoutFitTests
+  CPUWidgetTests
   # Source probes over the widget headers: which tiles carry an icon, where it
   # comes from, and that the gauge column cannot strand width beside the ring.
   MonitorWidgetChromeTests

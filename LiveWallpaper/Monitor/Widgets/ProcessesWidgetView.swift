@@ -135,12 +135,12 @@ struct ProcessesWidgetView: View {
         _ text: String, systemImage: String, columnWidth: CGFloat, scale: Design.TypeScale
     ) -> some View {
         if Self.headerFitsText(columnWidth: columnWidth, labelSize: scale.label) {
-            columnLabel(text, scale: scale)
+            localizedColumnLabel(text, scale: scale)
         } else {
             Image(systemName: systemImage)
                 .font(.system(size: scale.label, weight: .semibold))
                 .foregroundStyle(Design.inkFaint)
-                .accessibilityLabel(Text(verbatim: text))
+                .accessibilityLabel(Text(LocalizedStringKey(text)))
         }
     }
 

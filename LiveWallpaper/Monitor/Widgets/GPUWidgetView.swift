@@ -296,7 +296,7 @@ private struct GPUWidgetBody: View {
 
     private func memChip(_ bytes: UInt64) -> some View {
         HStack(spacing: 5) {
-            Text(verbatim: "MEM")
+            Text("MEM")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(scale.label * 0.1)
                 .foregroundStyle(Design.inkFaint)
@@ -430,10 +430,6 @@ private struct GPUWidgetBody: View {
                                   value: MonitorTemperature.valueText(t), unit: MonitorTemperature.symbol)
                 }
                 Spacer(minLength: 0)
-                Text(verbatim: "SMC")
-                    .font(Design.labelFont(size: scale.label))
-                    .tracking(scale.label * 0.1)
-                    .foregroundStyle(Design.inkFaint)
             }
             .lineLimit(1)
             .padding(.top, 3)
@@ -442,6 +438,7 @@ private struct GPUWidgetBody: View {
                     .fill(Design.hairline.opacity(0.5))
                     .frame(height: Design.hairlineWidth)
             }
+            .help(Text("Readings from the System Management Controller (SMC)"))
         )
     }
 

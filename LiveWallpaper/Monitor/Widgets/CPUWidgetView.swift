@@ -249,8 +249,8 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func sectionLabel(_ text: String, scale: Design.TypeScale) -> some View {
-        Text(verbatim: text)
+    private func sectionLabel(_ text: LocalizedStringKey, scale: Design.TypeScale) -> some View {
+        Text(text)
             .font(Design.labelFont(size: scale.label))
             .tracking(Design.labelTracking(size: scale.label))
             .foregroundStyle(Design.inkFaint)
@@ -293,14 +293,14 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func compLegendItem(_ label: String, value: Int, dot: Color,
+    private func compLegendItem(_ label: String.LocalizationValue, value: Int, dot: Color,
                                 scale: Design.TypeScale, sizeScale: CGFloat) -> some View {
         let size = scale.label * sizeScale
         HStack(spacing: size * 0.4) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(dot)
                 .frame(width: size * 0.6, height: size * 0.6)
-            Text(verbatim: "\(label) \(value)%")
+            Self.compositionLegendText(label, percent: value)
                 .font(Design.labelFont(size: size))
                 .foregroundStyle(Design.inkFaint)
         }
@@ -317,12 +317,12 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func legendValue(_ label: String, value: Int, color: Color, scale: Design.TypeScale) -> some View {
+    private func legendValue(_ label: String.LocalizationValue, value: Int, color: Color, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.35) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(color)
                 .frame(width: scale.label * 0.6, height: scale.label * 0.6)
-            Text(verbatim: "\(label) \(value)%")
+            Self.compositionLegendText(label, percent: value)
                 .font(Design.labelFont(size: scale.label * 0.95))
                 .foregroundStyle(Design.inkFaint)
                 .monospacedDigit()
@@ -434,9 +434,10 @@ struct CPUWidgetView: View {
     private func sensorStrip(scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.9) {
             // `inkMuted`: the strip sits on the darkest end of the panel falloff, where `inkFaint` reads as cut off rather than as quiet.
-            Text(verbatim: "SMC")
+            Text("Sensors")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(Design.labelTracking(size: scale.label))
+                .textCase(.uppercase)
                 .foregroundStyle(Design.inkMuted)
             if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
                                                    value: MonitorTemperature.valueText(temp), unit: MonitorTemperature.symbol, scale: scale) }
@@ -451,6 +452,7 @@ struct CPUWidgetView: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Design.hairline.opacity(0.45)).frame(height: 1)
         }
+        .help(Text("Readings from the System Management Controller (SMC)"))
     }
 
     @ViewBuilder
@@ -799,6 +801,10 @@ extension CPUWidgetView {
         let s = Int((min(max(system, 0), 1) * 100).rounded())
         let idle = max(0, 100 - u - s)
         return (u, s, idle)
+    }
+
+    static func compositionLegendText(_ label: String.LocalizationValue, percent: Int) -> Text {
+        Text(verbatim: "\(String(localized: label, bundle: .appLanguage)) \(percent)%")
     }
 
     nonisolated static func topCPUProcesses(_ processes: [MonitorProcessSample]?, limit: Int) -> [MonitorProcessSample]? {

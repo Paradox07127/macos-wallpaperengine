@@ -17803,6 +17803,42 @@
         }
       }
     },
+    "Cores · %@" : {
+      "comment" : "CPU widget L: section label over the per-core load strip; %@ is the number of cores.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cores · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Núcleos · %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コア · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "核心 · %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "核心 · %@"
+          }
+        }
+      }
+    },
     "Could not create a staging directory." : {
       "comment" : "Managed SteamCMD install error.",
       "extractionState" : "manual",
@@ -30034,6 +30070,42 @@
         }
       }
     },
+    "IDLE" : {
+      "comment" : "CPU widget L: composition legend label for idle CPU time, followed by a percentage (IDLE 63%). Written in the same style as USER and SYS.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IDLE"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "INACTIVO"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IDLE"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空闲"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閒置"
+          }
+        }
+      }
+    },
     "Icon" : {
       "comment" : "Type badge style option: icon only.",
       "extractionState" : "manual",
@@ -35600,6 +35672,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "歌詞由 LRCLIB 提供，需要網路連線。"
+          }
+        }
+      }
+    },
+    "MEM" : {
+      "comment" : "Monitor widgets: short memory label (GPU memory in use; the Processes memory column header). Keep it about as short as the English.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MEM"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MEM"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體"
           }
         }
       }
@@ -48959,6 +49067,42 @@
         }
       }
     },
+    "Readings from the System Management Controller (SMC)" : {
+      "comment" : "CPU/GPU widget: tooltip on the temperature and fan readings, naming where they come from.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Readings from the System Management Controller (SMC)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecturas del controlador de gestión del sistema (SMC)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム管理コントローラ（SMC）の読み取り値"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读数来自系统管理控制器（SMC）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀數來自系統管理控制器（SMC）"
+          }
+        }
+      }
+    },
     "Readings unavailable" : {
       "comment" : "Monitor data availability; never substitutes an unknown measurement with zero.",
       "extractionState" : "manual",
@@ -55047,6 +55191,42 @@
         }
       }
     },
+    "SYS" : {
+      "comment" : "CPU widget: composition legend label for system (kernel) CPU time, followed by a percentage (SYS 11%). Must fit the M legend column: at most 2 CJK characters or about 4 capitals.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SYS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIST."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SYS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統"
+          }
+        }
+      }
+    },
     "Sakura" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58062,6 +58242,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sensor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "センサー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "传感器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感測器"
+          }
+        }
+      }
+    },
+    "Sensors" : {
+      "comment" : "CPU widget L: label of the strip showing temperature and fan readings; shown uppercased.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensors"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensores"
           }
         },
         "ja" : {
@@ -72576,6 +72792,78 @@
         }
       }
     },
+    "Top by CPU" : {
+      "comment" : "CPU widget L: section label over the processes using the most CPU.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top by CPU"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Principales por CPU"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CPU 使用率順"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 CPU 占用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依 CPU 佔用"
+          }
+        }
+      }
+    },
+    "Top by I/O" : {
+      "comment" : "Disk widget L: section label over the processes with the most disk I/O; shown uppercased.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top by I/O"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Principales por I/O"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I/O 速度順"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 I/O 速率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依 I/O 速率"
+          }
+        }
+      }
+    },
     "Top processes are hidden at this size." : {
       "comment" : "Widget options current-size status: top processes do not render for the selected Small/Medium widget. The setting remains stored.",
       "extractionState" : "manual",
@@ -73437,6 +73725,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL"
+          }
+        }
+      }
+    },
+    "USER" : {
+      "comment" : "CPU widget: composition legend label for user-mode CPU time, followed by a percentage (USER 26%). Must fit the M legend column: at most 2 CJK characters or about 4 capitals.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USER"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USU."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USER"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用户"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用戶"
           }
         }
       }

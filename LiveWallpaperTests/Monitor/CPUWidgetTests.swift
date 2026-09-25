@@ -1,6 +1,7 @@
-import XCTest
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
+import XCTest
 
 final class CPUWidgetTests: XCTestCase {
     func testCompositionPercentsMirrorMock() {
@@ -14,6 +15,24 @@ final class CPUWidgetTests: XCTestCase {
     func testCompositionPercentsNeverNegativeIdle() {
         let (_, _, idle) = CPUWidgetView.compositionPercents(user: 0.7, system: 0.6)
         XCTAssertEqual(idle, 0)
+    }
+
+    /// Pins both routes the board uses: the string bundle and `\.locale`.
+    @MainActor
+    func testCompositionLegendFollowsTheAppLanguage() {
+        func resolved(_ text: Text, in language: AppLanguagePreference) -> String {
+            var environment = EnvironmentValues()
+            environment.locale = language.locale
+            return text._resolveText(in: environment)
+        }
+        AppLanguageOverride.with(.simplifiedChinese) {
+            XCTAssertEqual(resolved(CPUWidgetView.compositionLegendText("USER", percent: 26), in: .simplifiedChinese), "用户 26%")
+            XCTAssertEqual(resolved(CPUWidgetView.compositionLegendText("SYS", percent: 11), in: .simplifiedChinese), "系统 11%")
+        }
+        // Control: the same call picked in English, so the Chinese above follows the pick, not the key or the host.
+        AppLanguageOverride.with(.english) {
+            XCTAssertEqual(resolved(CPUWidgetView.compositionLegendText("USER", percent: 26), in: .english), "USER 26%")
+        }
     }
 
     func testIdentityLineComposesDynamicGroups() {

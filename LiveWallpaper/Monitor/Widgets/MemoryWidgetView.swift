@@ -146,7 +146,7 @@ struct MemoryWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: 56)
 
-            breakdownBlock(scale: scale, headerLabel: "BREAKDOWN")
+            breakdownBlock(scale: scale, headerLabel: "Breakdown")
 
             if showsTopProcesses {
                 topByMemoryBlock(scale: scale)
@@ -172,7 +172,7 @@ struct MemoryWidgetView: View {
 
     @ViewBuilder
     private func breakdownBlock(
-        scale: Design.TypeScale, headerLabel: String? = nil, legendColumns: Int = 2
+        scale: Design.TypeScale, headerLabel: LocalizedStringKey? = nil, legendColumns: Int = 2
     ) -> some View {
         if let breakdown = system?.memBreakdown, let total = memTotalBytes, total > 0 {
             let segments = MemoryWidgetView.segments(
@@ -180,9 +180,10 @@ struct MemoryWidgetView: View {
             )
             VStack(alignment: .leading, spacing: 4) {
                 if let headerLabel {
-                    Text(verbatim: headerLabel)
+                    Text(headerLabel)
                         .font(Design.labelFont(size: scale.label))
                         .tracking(Design.labelTracking(size: scale.label))
+                        .textCase(.uppercase)
                         .foregroundStyle(Design.inkFaint)
                 }
                 let bar = MemoryBreakdownBar(

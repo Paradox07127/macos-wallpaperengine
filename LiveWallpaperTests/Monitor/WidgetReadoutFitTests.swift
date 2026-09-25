@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import SwiftUI
 import XCTest
 
@@ -496,6 +497,34 @@ final class WidgetReadoutFitTests: XCTestCase {
             - CPUWidgetView.gaugeChromeIdentityRow - CPUWidgetView.gaugeChromeCompositionLegend
         XCTAssertEqual(ringTerm, 71.70, accuracy: 0.01)
         XCTAssertLessThan(ringTerm, 80.00)
+    }
+
+    /// The M legend chip is `lineLimit(1)` with no scale floor, so a translation wider than
+    /// the column `gaugeSide` reserves truncates instead of shrinking.
+    @MainActor
+    func testCompositionLegendFitsItsColumnInEveryLanguage() {
+        var environment = EnvironmentValues()
+        for cellHeight: CGFloat in [85, 106.25, 136] {
+            let label = Design.TypeScale(cellHeight: cellHeight).label
+            let column = CPUWidgetView.gaugeSide(cellHeight: cellHeight, rows: 1,
+                                                 hasIdentityRow: true, hasCompositionLegend: true)
+            // Swatch, its spacing, and the chip's horizontal padding (`legendValue`, `monitorChip`).
+            let chrome = label * (0.6 + 0.35 + 2 * 0.5)
+            for language in AppLanguagePreference.allCases where language != .system {
+                environment.locale = language.locale
+                for key: String.LocalizationValue in ["USER", "SYS"] {
+                    let text = AppLanguageOverride.with(language) {
+                        CPUWidgetView.compositionLegendText(key, percent: 100)._resolveText(in: environment)
+                    }
+                    // Rounded up to whole points, the coarsest pixel grid a board is drawn on.
+                    let needed = width(text, font(label * 0.95, monospacedDigit: true)).rounded(.up) + chrome
+                    XCTAssertLessThanOrEqual(
+                        needed, column + 0.01,
+                        "\(language.rawValue) \"\(text)\" needs \(needed) pt; the M column at cellHeight \(cellHeight) reserves \(column) pt"
+                    )
+                }
+            }
+        }
     }
 
     @MainActor
