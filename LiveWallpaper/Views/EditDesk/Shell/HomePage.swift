@@ -658,7 +658,9 @@ struct HomePage: View {
     }
 
     private var isLibraryOpen: Bool {
-        Self.mountsLibraryGrid(page: router.page, snappedIndex: stage.snappedIndex, progress: stage.progress)
+        Self.mountsLibraryGrid(
+            page: router.page, snappedIndex: stage.snappedIndex, progress: stage.progress, leaving: stage.leavingLibrary
+        )
     }
 
     /// The display the library was opened for, while its banner shows above the grid.
@@ -704,9 +706,10 @@ struct HomePage: View {
 
     /// Not before the landing: mounted mid-swipe the grid covers cards still in flight and sits under the
     /// pointer for the rest of the swipe. Not `progress == 2` either: the first pixel of a return swipe
-    /// would tear it down and lose the scroll position, and a cancelled swipe would rebuild it.
-    static func mountsLibraryGrid(page: EditDeskRouter.Page, snappedIndex: Int, progress: Double) -> Bool {
-        page == .library && snappedIndex == 2 && progress > StageGeometry.libraryHandoffProgress
+    /// would tear it down and lose the scroll position, and a cancelled swipe would rebuild it. `leaving`:
+    /// the stage is carrying the cards off, and the grid stays until they land, however far they have gone.
+    static func mountsLibraryGrid(page: EditDeskRouter.Page, snappedIndex: Int, progress: Double, leaving: Bool = false) -> Bool {
+        page == .library && snappedIndex == 2 && (leaving || progress > StageGeometry.libraryHandoffProgress)
     }
 
     private var statusCapsule: StatusCapsule {
@@ -923,10 +926,28 @@ struct HomePage: View {
     }
 
     private func gridThumbnail(for item: LibraryItem) -> LibraryGridTile.Thumbnail? {
+        Self.gridThumbnail(
+            for: item, stageWidth: stage.stageSize.width, size: tileSize, scale: NSScreen.main?.backingScaleFactor ?? 2
+        )
+    }
+
+    static func gridThumbnail(
+        for item: LibraryItem, stageWidth: CGFloat, size: LibraryTileSize, scale: CGFloat
+    ) -> LibraryGridTile.Thumbnail? {
         guard let request = item.thumbnail else { return nil }
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let tileWidth = StageGeometry.gridCellSize(windowWidth: stage.stageSize.width, size: tileSize).width
+        let tileWidth = StageGeometry.gridCellSize(windowWidth: stageWidth, size: size).width
         return LibraryGridTile.Thumbnail(request, tileWidth: tileWidth, scale: scale)
+    }
+
+    /// Whether a finished decode still belongs on its card. `tile` is the grid tile a grid decode was for, nil for a
+    /// shelf decode. The item's source can change while a decode runs, and so can the pixels its tile asks for; a newer
+    /// decode may have landed by then and must not be painted over.
+    static func decodeIsCurrent(
+        _ request: ShelfThumbnailCache.Request, tile: LibraryGridTile.Thumbnail?, item: LibraryItem,
+        stageWidth: CGFloat, tileSize: LibraryTileSize, scale: CGFloat
+    ) -> Bool {
+        guard let tile else { return item.thumbnail == request }
+        return gridThumbnail(for: item, stageWidth: stageWidth, size: tileSize, scale: scale) == tile
     }
 
     /// The tile's own pixels if anything already decoded them, the shelf's copy otherwise.
@@ -1143,12 +1164,15 @@ struct HomePage: View {
         guard !visible.isEmpty, stage.shelfItems.map(\.id) == visible.map(\.id) else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let grid = stage.visibleGridRange.clamped(to: visible.indices)
-        func land(_ request: ShelfThumbnailCache.Request, pixelSize: CGSize, on id: StageCard.ID) {
+        func land(_ request: ShelfThumbnailCache.Request, pixelSize: CGSize, on id: StageCard.ID, tile: LibraryGridTile.Thumbnail?) {
             Task { @MainActor in
                 guard let image = await thumbnails.image(request, pixelSize: pixelSize, scale: scale),
-                      // The item's source can change while its preview decodes; a stale decode must
-                      // not paint over the newer one.
-                      library.visibleItems.first(where: { $0.id == id })?.thumbnail == request
+                      let item = library.visibleItems.first(where: { $0.id == id }),
+                      // The model, not `tileSize`: this copy of the page was taken when the decode started.
+                      Self.decodeIsCurrent(
+                          request, tile: tile, item: item, stageWidth: stage.stageSize.width, tileSize: stage.gridTileSize,
+                          scale: NSScreen.main?.backingScaleFactor ?? 2
+                      )
                 else { return }
                 stage.landThumbnail(image, for: id)
             }
@@ -1160,7 +1184,7 @@ struct HomePage: View {
         }
         for index in missing where !grid.contains(index) {
             if let request = visible[index].thumbnail {
-                land(request, pixelSize: Self.thumbnailPixelSize, on: visible[index].id)
+                land(request, pixelSize: Self.thumbnailPixelSize, on: visible[index].id, tile: nil)
             }
         }
         // A card bound for the grid wears its tile's own decode, which is the image that tile mounts with.
@@ -1171,7 +1195,7 @@ struct HomePage: View {
                     stage.landThumbnail(image, for: visible[index].id)
                 }
             } else {
-                land(tile.request, pixelSize: tile.pixelSize, on: visible[index].id)
+                land(tile.request, pixelSize: tile.pixelSize, on: visible[index].id, tile: tile)
             }
         }
     }
