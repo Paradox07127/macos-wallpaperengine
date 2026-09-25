@@ -1777,7 +1777,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             element.setAccessibilityRole(.button)
             element.setAccessibilityEnabled(!model.interactionBlocked)
-            element.setAccessibilityLabel(card.title + " " + card.metaLine + (card.nowPlaying.map { ", " + $0.accessibilityText } ?? ""))
+            // `ShelfCardLayer.update(card:)`'s condition: a status badge is drawn in place of the capsule.
+            let nowPlaying = card.statusBadge == nil ? card.nowPlaying : nil
+            element.setAccessibilityLabel(card.title + " " + card.metaLine + (nowPlaying.map { ", " + $0.accessibilityText } ?? ""))
+            element.setAccessibilityValue(card.statusBadge ?? "")
             element.setAccessibilityParent(self)
             element.cardID = id
             return element

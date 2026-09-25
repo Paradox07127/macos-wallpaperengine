@@ -89,7 +89,6 @@ final class DisplayShellLayer {
         }
         stateGroup.addSublayer(stateLabel)
         stateGroup.addSublayer(stateSymbol)
-        stateGroup.cornerRadius = DesignTokens.EditDesk.Corner.capsule
         cover.contentsGravity = .resizeAspectFill
         cover.masksToBounds = true
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
@@ -98,9 +97,7 @@ final class DisplayShellLayer {
             playback.addSublayer(button)
             button.contentsGravity = .center
         }
-        playback.cornerRadius = DesignTokens.EditDesk.Corner.capsule
         playback.borderWidth = 1
-        buttons[1].cornerRadius = DesignTokens.EditDesk.Corner.capsule
         playback.opacity = 0
         highlight.opacity = 0
         highlight.borderWidth = 2
@@ -323,9 +320,12 @@ final class DisplayShellLayer {
         title.frame = CGRect(x: 10, y: size.height - 49, width: lineWidth, height: 22)
         meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
         playback.frame = controls.container
+        // Half the height, not `Corner.capsule`: Core Animation does not clamp a larger radius and draws a lens or nothing.
+        playback.cornerRadius = playback.bounds.height / 2
         for (index, item) in transport.enumerated() {
             item.layer.frame = controls.buttons[index]
         }
+        buttons[1].cornerRadius = buttons[1].bounds.height / 2
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
         let trailing = switch display?.state {
@@ -333,6 +333,7 @@ final class DisplayShellLayer {
         default: false
         }
         stateGroup.frame = CGRect(x: trailing ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        stateGroup.cornerRadius = stateGroup.bounds.height / 2
         stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
         stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)
         // Retired thumbnail actions remain in the model for compatibility; setup now opens in detail.

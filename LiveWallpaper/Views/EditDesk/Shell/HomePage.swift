@@ -118,20 +118,13 @@ struct HomePage: View {
                 .onChange(of: page.tileSize) { page.stage.gridTileSize = page.tileSize }
                 .onChange(of: page.reduceMotion) { page.stage.reduceMotion = page.reduceMotion }
                 .onChange(of: page.contrast, initial: true) { page.stage.increaseContrast = page.contrast == .increased }
-                .onChange(of: page.screenManager.screens.map(\.id)) { page.syncDisplays() }
-                .onChange(of: page.screenManager.suspendReasonsByScreen) { page.refreshAllStates() }
-                .onChange(of: page.screenManager.screens.map { page.screenManager.wallpaperLoads.attempt(for: $0)?.failure }) {
-                    page.refreshAllStates()
-                }
-                .onChange(of: page.screenManager.wallpaperSessionStateVersion) { page.refreshAllStates() }
                 .onChange(of: page.shelfStyleRaw) { page.stage.shelfStyle = page.shelfStyle }
                 .onChange(of: page.backgroundRaw) {
                     page.stage.opaqueBackground = page.backgroundRaw != EditDeskBackground.frosted.rawValue
                 }
                 .onChange(of: page.interactionLock, initial: true) { page.stage.interactionBlocked = page.interactionLock }
                 .onChange(of: page.stageTopInset, initial: true) { page.stage.arrangementTopInset = page.stageTopInset }
-                .onChange(of: page.router.page) { page.syncProgress(to: page.router.page, animated: true) }
-                .onChange(of: page.router.libraryFocus, initial: true) { page.consumeLibraryFocus() }
+                .modifier(DisplayHooks(page: page))
         }
     }
 
@@ -150,6 +143,23 @@ struct HomePage: View {
                 .onChange(of: page.shelfCapacity) { page.syncShelf() }
                 .onChange(of: page.stage.visibleShelfRange) { page.loadShelfThumbnails() }
                 .onChange(of: page.stage.visibleGridRange) { page.loadShelfThumbnails() }
+        }
+    }
+
+    /// Split off `SyncHooks`: in one chain with it, these handlers would push its type-check past the 300 ms warning.
+    private struct DisplayHooks: ViewModifier {
+        let page: HomePage
+
+        func body(content: Content) -> some View {
+            content
+                .onChange(of: page.screenManager.screens.map(\.id)) { page.syncDisplays() }
+                .onChange(of: page.screenManager.suspendReasonsByScreen) { page.refreshAllStates() }
+                .onChange(of: page.screenManager.screens.map { page.screenManager.wallpaperLoads.attempt(for: $0)?.failure }) {
+                    page.refreshAllStates()
+                }
+                .onChange(of: page.screenManager.wallpaperSessionStateVersion) { page.refreshAllStates() }
+                .onChange(of: page.router.page) { page.syncProgress(to: page.router.page, animated: true) }
+                .onChange(of: page.router.libraryFocus, initial: true) { page.consumeLibraryFocus() }
         }
     }
 
