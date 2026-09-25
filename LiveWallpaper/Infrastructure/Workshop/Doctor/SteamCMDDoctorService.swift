@@ -598,12 +598,23 @@ final class SteamCMDDoctorService {
         do {
             let binary = try resolveBinaryURL()
             let didStart = binary.startAccessingSecurityScopedResource()
-            defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
-            guard var executionAuthorization = await trustedExecutionAuthorization(for: binary) else {
+            defer {
+                if didStart {
+                    binary.stopAccessingSecurityScopedResource()
+                }
+            }
+            var executionAuthorization: SteamCMDBinaryExecutionAuthorization
+            switch await trustedExecutionAuthorization(for: binary) {
+            case let .success(authorization):
+                executionAuthorization = authorization
+            case .failure(.untrustedBinary):
                 setProbe(.binaryIdentity, status: .red(
                     message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
+                return
+            case let .failure(error):
+                setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
                 return
             }
 
@@ -614,14 +625,19 @@ final class SteamCMDDoctorService {
                Self.matches(Self.selfUpdatePattern, in: result.stdout) {
                 // That run may have replaced the binary on disk, so re-establish
                 // trust before launching whatever is there now.
-                guard let refreshedAuthorization = await trustedExecutionAuthorization(for: binary) else {
+                switch await trustedExecutionAuthorization(for: binary) {
+                case let .success(refreshedAuthorization):
+                    executionAuthorization = refreshedAuthorization
+                case .failure(.untrustedBinary):
                     setProbe(.binaryIdentity, status: .red(
                         message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                         command: nil
                     ))
                     return
+                case let .failure(error):
+                    setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
+                    return
                 }
-                executionAuthorization = refreshedAuthorization
                 retriedAfterSelfUpdate = true
                 result = await launchSteamCMD(executionAuthorization, args: ["+quit"])
             }
@@ -728,11 +744,18 @@ final class SteamCMDDoctorService {
                 return
             }
 
-            guard let executionAuthorization = await trustedExecutionAuthorization(for: binary) else {
+            let executionAuthorization: SteamCMDBinaryExecutionAuthorization
+            switch await trustedExecutionAuthorization(for: binary) {
+            case let .success(authorization):
+                executionAuthorization = authorization
+            case .failure(.untrustedBinary):
                 setProbe(.gatekeeperQuarantine, status: .red(
                     message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
+                return
+            case let .failure(error):
+                setProbe(.gatekeeperQuarantine, status: .yellow(message: error.localizedDescription, command: nil))
                 return
             }
             let result = await launchSteamCMD(
@@ -1249,20 +1272,35 @@ final class SteamCMDDoctorService {
 
     private func trustedExecutionAuthorization(
         for binary: URL
-    ) async -> SteamCMDBinaryExecutionAuthorization? {
+    ) async -> Result<SteamCMDBinaryExecutionAuthorization, SteamCMDDoctorError> {
         let didStart = binary.startAccessingSecurityScopedResource()
-        defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
-        let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-        guard let inspection = await inspect(path: path),
-              inspection.exists,
-              let currentSHA = inspection.sha256 else {
-            verifiedBinarySHA256 = nil
-            return nil
+        defer {
+            if didStart {
+                binary.stopAccessingSecurityScopedResource()
+            }
         }
-        let decision = Self.evaluateTrust(inspection: inspection, cachedSHA256: verifiedBinarySHA256)
-        verifiedBinarySHA256 = decision.verifiedSHA256
-        guard decision.isTrusted else { return nil }
-        return SteamCMDBinaryExecutionAuthorization(canonicalPath: path, sha256: currentSHA)
+        let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
+        let inspection = await inspect(path: path)
+        let trust = Self.executionTrust(path: path, inspection: inspection, cachedSHA256: verifiedBinarySHA256)
+        verifiedBinarySHA256 = trust.verifiedSHA256
+        return trust.result
+    }
+
+    /// Busy and unreachable are no verdict, so both keep the cached SHA. A busy reply also reads `exists == false`, so nothing may judge existence ahead of `evaluateTrust`.
+    nonisolated static func executionTrust(
+        path: String,
+        inspection: SteamCMDBinaryInspection?,
+        cachedSHA256: String?
+    ) -> (result: Result<SteamCMDBinaryExecutionAuthorization, SteamCMDDoctorError>, verifiedSHA256: String?) {
+        guard let inspection else { return (.failure(.connectorUnavailable), cachedSHA256) }
+        let decision = evaluateTrust(inspection: inspection, cachedSHA256: cachedSHA256)
+        guard inspection.unavailableReason == nil else {
+            return (.failure(.connectorBusy), decision.verifiedSHA256)
+        }
+        guard decision.isTrusted, let currentSHA = inspection.sha256 else {
+            return (.failure(.untrustedBinary), decision.verifiedSHA256)
+        }
+        return (.success(SteamCMDBinaryExecutionAuthorization(canonicalPath: path, sha256: currentSHA)), decision.verifiedSHA256)
     }
 
     /// An unchanged SHA must skip re-verification; a changed SHA must be re-verified against Valve's team identifier before it is trusted again.

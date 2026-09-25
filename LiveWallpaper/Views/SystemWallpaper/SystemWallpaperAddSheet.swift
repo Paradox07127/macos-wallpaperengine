@@ -51,6 +51,8 @@ struct SystemWallpaperAddSheet: View {
                 cancelTitle: "Cancel",
                 cancelAction: { dismiss() }
             )
+            // Publish failures only show in this sheet; closing it mid-publish would lose them.
+            .disabled(isPublishing)
         }
         .frame(width: 620, height: 560)
         .background(DesignTokens.Colors.pageBackground)
@@ -93,6 +95,7 @@ struct SystemWallpaperAddSheet: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
+        .disabled(isPublishing)
     }
 
     private func toggle(_ candidate: SystemWallpaperCandidate) {

@@ -230,6 +230,44 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(SteamCMDDoctorService.bindRefusal(for: Self.inspection(sha: "identity-1")) == nil)
     }
 
+    @Test("A busy or silent connector is no verdict: execution trust keeps the cache and reports why")
+    func executionTrustSeparatesNoVerdictFromRefusal() {
+        let path = "/opt/homebrew/bin/steamcmd"
+
+        let busy = SteamCMDDoctorService.executionTrust(
+            path: path, inspection: .unavailable("queued"), cachedSHA256: "identity-1"
+        )
+        #expect(busy.result == .failure(.connectorBusy), "a busy connector reads as an unverified build")
+        #expect(busy.verifiedSHA256 == "identity-1", "a busy connector cleared the verified SHA")
+
+        let silent = SteamCMDDoctorService.executionTrust(
+            path: path, inspection: nil, cachedSHA256: "identity-1"
+        )
+        #expect(silent.result == .failure(.connectorUnavailable), "an unreachable connector reads as an unverified build")
+        #expect(silent.verifiedSHA256 == "identity-1", "an unreachable connector cleared the verified SHA")
+
+        // Controls: verdicts about the binary still refuse it and drop the cache.
+        let missing = SteamCMDDoctorService.executionTrust(
+            path: path, inspection: .missing, cachedSHA256: "identity-1"
+        )
+        #expect(missing.result == .failure(.untrustedBinary))
+        #expect(missing.verifiedSHA256 == nil)
+
+        let unchanged = SteamCMDDoctorService.executionTrust(
+            path: path, inspection: Self.inspection(sha: "identity-1"), cachedSHA256: "identity-1"
+        )
+        let authorization = SteamCMDDoctorService.SteamCMDBinaryExecutionAuthorization(
+            canonicalPath: path, sha256: "identity-1"
+        )
+        #expect(unchanged.result == .success(authorization))
+
+        let foreign = SteamCMDDoctorService.executionTrust(
+            path: path, inspection: Self.inspection(sha: "identity-2", team: "ATTACKER"), cachedSHA256: "identity-1"
+        )
+        #expect(foreign.result == .failure(.untrustedBinary))
+        #expect(foreign.verifiedSHA256 == nil)
+    }
+
     @Test("codesign output parses, and a timed-out verify never reads as signed")
     func codesignVerdictParsing() {
         let display = "TeamIdentifier=MXGJJ98X76\nflags=0x10000(runtime)"
