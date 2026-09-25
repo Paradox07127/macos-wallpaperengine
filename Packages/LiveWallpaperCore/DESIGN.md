@@ -70,7 +70,7 @@ literal by design; see the W2-B5 ledger for the adjudication.
 
 ## Edit Desk (`DesignTokens.EditDesk`)
 
-Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). Values are literal design px/hex, not the adaptive scale above — the window forces dark and never runs Dynamic Type. Three color tokens carry an Increase Contrast branch (see GAP_ANALYSIS.md §6); everything else is a fixed value.
+Tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). Values are literal px/hex, not the Dynamic Type scale above. Chrome colors follow the appearance and the table gives their dark value; colors drawn over wallpaper artwork are fixed. Five color tokens carry an Increase Contrast tier: `textSecondary`, `strokeRegular` and `strokeShell` (GAP_ANALYSIS.md §6), `strokeEmptyShell` and `cardRimRing`.
 
 | Token | Value | Source |
 | --- | --- | --- |
@@ -88,8 +88,10 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.link` | `#9ab4ff` | README Tokens #3 |
 | `Colors.strokeRegular` | white `.08`; Increase Contrast → `.35` | README Tokens #4; GAP_ANALYSIS §6 |
 | `Colors.strokeShell` | white `.25`; Increase Contrast → `.65` | README Tokens #4; GAP_ANALYSIS §6 |
+| `Colors.strokeEmptyShell` / `strokeEmptyShellIncreased` | white `.40`; Increase Contrast → `.80` | SCREENS S9 (empty display dashed outline); Increase Contrast: `code` |
 | `Colors.strokePanel` | white `.12` | README Tokens #4 |
 | `Colors.strokeBadge` | white `.25` | SCREENS S1 (type badge border) |
+| `Colors.strokeDashedCard` | white `.30` | SCREENS S9 (dashed onboarding card) |
 | `Colors.strokeHotShell` | white `.80` | SCREENS S2 / MOTION (hovered shelf card outline) |
 | `Colors.fillShell` | white `.02` | SCREENS S1 (display shell background) |
 | `Colors.fillNavPill` | white `.05` | SCREENS S1 (nav pill / import capsule) |
@@ -104,16 +106,21 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.cardRimHighlight` | white `.30` (fixed) | shelf-lab v3 `.q-refined` (1px top edge, same two cards) |
 | `Colors.cardRimShade` | black `.35` (fixed) | shelf-lab v3 `.q-refined` (1px bottom edge, same two cards) |
 | `Colors.nowPlayingGlyph` | `#4ade80` (fixed) | shelf-lab v3 `.b-glass` (now-playing capsule: the shelf card's wave bars, the grid and Workshop cards' waveform) |
+| `Colors.shelfScrim` | black `.35`; light `.10` | SCREENS S2 (shelf area bottom gradient) |
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
 | `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9) |
 | `Colors.fillTertiaryButton` | white `.06` | library modal ＋ / … menus (SCREENS S4) |
 | `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | onboarding card primary button (SCREENS S9) |
+| `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) | SCREENS S8 (Workshop grid card info band) |
+| `Colors.inLibraryBadgeFill` | `rgba(74,222,128,.9)` (fixed) | SCREENS S8 (in-library ✓ disc) |
+| `Colors.inLibraryBadgeGlyph` | black (fixed) | SCREENS S8 (in-library ✓ glyph) |
+| `Colors.fillEmptyScreen` | white `.03` | SCREENS S9 (empty display content layer) |
+| `Colors.emptyScreenPlaceholder` | white `.10` | `code` (empty display placeholder glyph) |
 | `Corner.content` | 3 | README Tokens #5 |
 | `Corner.badge` | 3 | SCREENS S1 (type badge) |
 | `Corner.shelfCard` | 6 | README Tokens #5 |
-| `Corner.playbackControl` | 6 | SCREENS S1 (playback buttons) |
 | `Corner.gridCard` | 8 | README Tokens #5 |
 | `Corner.shell` | 8 | README Tokens #5 |
 | `Corner.shellBuiltinTop` | 9 | SCREENS S1 (MacBook shell top) |
@@ -140,6 +147,8 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Spacing.s14` | 14 | README Tokens #7 |
 | `Spacing.gutter` | 24 | README Tokens #7 |
 | `Spacing.topBar` | 56 | README Tokens #7 |
+| `Spacing.workshopCardBandTop` | 24 | SCREENS S8 (Workshop grid card info band, `padding 24 10 10`) |
+| `Spacing.workshopCardBandInset` | 10 | SCREENS S8 (same band's sides and bottom) |
 | `Typography.badgeMono` | 11pt monospaced | README Tokens #2/#8 |
 | `Typography.metaMono` | 11pt monospaced | README Tokens #2/#8 |
 | `Typography.chip` | 12pt | README Tokens #8 |
@@ -151,6 +160,12 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Typography.button` | 15pt bold | library modal ＋ / … menu glyphs (SCREENS S4) |
 | `Typography.floatName` | 11pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 12pt bold | SCREENS S5 (「松手替换」) |
+| `Typography.footnote` | 11pt | SCREENS S9 (onboarding card footnote) |
+| `Typography.onboardingTitle` | 17pt bold | SCREENS S9 (page title over an onboarding card) |
+| `Typography.wizardTitle` | 22pt bold | SCREENS S9 (Steam wizard title) |
+| `Typography.onboardingIcon` | 22pt | SCREENS S9 (onboarding card icon) |
+| `Typography.onboardingButton` | 12pt bold | SCREENS S9 (onboarding card buttons) |
+| `Typography.workshopCardTitle` | 13pt semibold | SCREENS S8 (Workshop grid card title) |
 
 Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
 

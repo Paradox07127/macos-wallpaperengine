@@ -137,7 +137,6 @@ struct DisplayDetailHost: View {
             tags: tags(current: id),
             hero: status,
             heroImage: cover(id),
-            backdropImage: cover(id),
             windowSize: stage.stageSize,
             section: sectionBinding,
             heroVisible: coordinator?.heroVisible ?? false,
@@ -145,7 +144,6 @@ struct DisplayDetailHost: View {
             actions: actions(for: screen),
             hud: { hud(for: screen) },
             inspector: { width in inspector(for: screen, width: width) },
-            overlayLogicalSize: screen.frame.size,
             overlayCanvas: { size in
                 if let overlaySession {
                     OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
@@ -157,7 +155,6 @@ struct DisplayDetailHost: View {
                                      back: router.closeDetail)
                 }
             },
-            overlayTopInset: 0,
             isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
             preview: preview,
             wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },

@@ -50299,6 +50299,7 @@
       }
     },
     "Removes %@ of reclaimable cache files. Active wallpapers keep their source assignments and rebuild cached files when needed." : {
+      "comment" : "Destructive confirm message. Placeholder is a formatted byte size.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
