@@ -1138,7 +1138,7 @@ struct EditDeskStageViewTests {
         let root = try #require(view.layer)
         let shell = try #require(view.displayLayers[2])
         let point = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
-        #expect(view.trackFileDrag(at: point) == 2)
+        #expect(view.trackFileDrag(at: point) == .display(2))
         #expect(model.dropTarget == 2)
         #expect(view.trackFileDrag(at: CGPoint(x: 4, y: 4)) == nil, "off the displays nothing lights")
         #expect(model.dropTarget == nil)
@@ -1157,6 +1157,147 @@ struct EditDeskStageViewTests {
         #expect(view.registeredDraggedTypes.isEmpty, "a covered stage would take the detail page's drops")
         #expect(view.trackFileDrag(at: point) == nil)
         #expect(!view.acceptFileDrop([file], at: point))
+    }
+
+    @Test(
+        "A Finder file in the shelf band raises a hidden shelf and lights the band, and its drop joins the library",
+        .timeLimit(.minutes(1))
+    )
+    func shelfBandRaisesAHiddenShelfAndTakesTheDrop() async {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        // Inside the band, left of both displays.
+        let band = CGPoint(x: 100, y: view.bounds.height - 40)
+        #expect(view.trackFileDrag(at: band) == .shelf)
+        #expect(model.progress == 1, "the file has no shelf to land on")
+        #expect(model.shelfDropTargeted)
+        #expect(model.dropTarget == nil)
+        let file = URL(fileURLWithPath: "/private/tmp/loomscreen-drop/clip.mp4")
+        let accepted = view.acceptFileDrop([file], at: band)
+        #expect(accepted)
+        if accepted {
+            var events = model.events.makeAsyncIterator()
+            #expect(await events.next() == .snapped(1))
+            #expect(await events.next() == .filesDroppedOnShelf([file]))
+        }
+        #expect(!model.shelfDropTargeted)
+        view.endFileDrag(session: 0)
+        #expect(model.progress == 1, "the shelf went down under the card that just joined it")
+    }
+
+    @Test("A shelf raised for a Finder drag goes back down when that drag ends anywhere but on the shelf")
+    func autoRaisedShelfGoesBackWhenTheDragEndsElsewhere() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let band = CGPoint(x: 100, y: view.bounds.height - 40)
+        // Esc, or a drop in another app: the drag leaves the window, then ends.
+        #expect(view.trackFileDrag(at: band) == .shelf)
+        view.trackFileDrag(at: nil)
+        #expect(model.progress == 1, "a drag straying past the window's bottom edge bobs the shelf down and up")
+        view.endFileDrag(session: 0)
+        #expect(model.progress == 0)
+        // A drop on a display applies the file there.
+        #expect(view.trackFileDrag(at: band) == .shelf)
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let onDisplay = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
+        #expect(view.acceptFileDrop([URL(fileURLWithPath: "/private/tmp/loomscreen-drop/clip.mp4")], at: onDisplay))
+        view.endFileDrag(session: 0)
+        #expect(model.progress == 0)
+        // Control: the end of a drag that did not raise it.
+        #expect(view.trackFileDrag(at: band) == .shelf)
+        view.endFileDrag(session: 1)
+        #expect(model.progress == 1, "another drag's end lowered this one's shelf")
+
+        // Control: a shelf the user had open before the drag came in.
+        let opened = makeModel()
+        let other = EditDeskStageView(model: opened)
+        defer { other.detach() }
+        other.frame = view.frame
+        other.layoutSubtreeIfNeeded()
+        opened.setProgress(1, animated: false)
+        #expect(other.trackFileDrag(at: band) == .shelf)
+        other.endFileDrag(session: 0)
+        #expect(opened.progress == 1, "the drag's end closed a shelf the user had opened")
+    }
+
+    @Test("A display reaching into the shelf band takes the file there, and the shelf stays down")
+    func displaysWinOverTheShelfBand() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[2])
+        let rect = shell.layer.convert(shell.layer.bounds, to: root)
+        let top = StageGeometry.shelfDropTop(windowSize: view.bounds.size)
+        try #require(rect.maxY > top, "display 2 no longer reaches into the band; pick a fixture display that does")
+        let point = CGPoint(x: rect.midX, y: (max(rect.minY, top) + rect.maxY) / 2)
+        #expect(view.trackFileDrag(at: point) == .display(2))
+        #expect(model.dropTarget == 2)
+        #expect(!model.shelfDropTargeted)
+        #expect(model.progress == 0, "aiming at a display's lower half raised the shelf")
+    }
+
+    @Test("Nothing takes a file off the displays and the band, over the library grid, or on a covered stage")
+    func nothingElseTakesAFile() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let upper = try #require(view.displayLayers[1]).layer
+        let lower = try #require(view.displayLayers[2]).layer
+        let upperRect = upper.convert(upper.bounds, to: root)
+        let lowerRect = lower.convert(lower.bounds, to: root)
+        let between = CGPoint(x: lowerRect.midX, y: (upperRect.maxY + lowerRect.minY) / 2)
+        try #require(!upperRect.contains(between) && !lowerRect.contains(between))
+        try #require(between.y < StageGeometry.shelfDropTop(windowSize: view.bounds.size))
+        let file = URL(fileURLWithPath: "/private/tmp/loomscreen-drop/clip.mp4")
+        for point in [CGPoint(x: 4, y: 4), between] {
+            #expect(view.trackFileDrag(at: point) == nil)
+            #expect(!view.acceptFileDrop([file], at: point))
+        }
+        #expect(model.progress == 0)
+        #expect(!model.shelfDropTargeted)
+
+        let band = CGPoint(x: 100, y: view.bounds.height - 40)
+        model.setProgress(2, animated: false)
+        #expect(view.trackFileDrag(at: band) == nil, "the library grid took a file")
+        #expect(!view.acceptFileDrop([file], at: band))
+        #expect(model.progress == 2)
+        #expect(!model.shelfDropTargeted)
+
+        model.setProgress(0, animated: false)
+        model.interactionBlocked = true
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(view.trackFileDrag(at: band) == nil)
+        #expect(!view.acceptFileDrop([file], at: band))
+        #expect(model.progress == 0, "a covered stage raised its shelf")
+        #expect(!model.shelfDropTargeted)
+    }
+
+    @Test("A scroll hands a shelf raised for a Finder drag to the user, so the drag's end leaves it up")
+    func userScrollHandsTheShelfBack() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        #expect(view.trackFileDrag(at: CGPoint(x: 100, y: view.bounds.height - 40)) == .shelf)
+        #expect(model.progress == 1)
+        try view.scrollWheel(with: scroll(x: -24))
+        view.endFileDrag(session: 0)
+        #expect(model.progress == 1, "the drag's end took back a shelf the user had started scrolling")
     }
 
     @Test("A rejected Finder drop shakes its display; Reduce Motion pulses it instead")

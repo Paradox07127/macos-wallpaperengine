@@ -183,6 +183,12 @@ enum EmptyScreenAction: Equatable, Sendable {
     case pasteURL
 }
 
+/// What a Finder file over the stage lands on: a display applies it, the shelf only adds it to the library.
+enum StageFileDropTarget: Equatable {
+    case display(StageDisplay.ID)
+    case shelf
+}
+
 enum StageEvent: Equatable, Sendable {
     case cardTapped(StageCard.ID)
     case cardApplyRequested(StageCard.ID)
@@ -191,6 +197,8 @@ enum StageEvent: Equatable, Sendable {
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
     /// Files dragged in from Finder, in drop order; their type is judged only after the drop.
     case filesDropped([URL], onto: StageDisplay.ID)
+    /// The same, dropped on the shelf: they join the library and no display changes.
+    case filesDroppedOnShelf([URL])
     case dropCancelled(card: StageCard.ID)
     case playbackTapped(StageDisplay.ID, StagePlaybackAction)
     case snapped(Int)
@@ -262,6 +270,8 @@ final class EditDeskStageModel {
     private(set) var hoveredCardRect: CGRect?
     private(set) var hoveredDisplay: StageDisplay.ID?
     private(set) var dropTarget: StageDisplay.ID?
+    /// A Finder file is over the shelf band, where a drop only adds it to the library.
+    private(set) var shelfDropTargeted = false
     /// Slice of `shelfItems` the stage has layers for; the owner loads thumbnails for these.
     private(set) var visibleShelfRange = 0 ..< 0
     /// The grid's own slice while the shelf flies to p = 2. Disjoint from `visibleShelfRange` once
@@ -390,6 +400,12 @@ final class EditDeskStageModel {
     func report(dropTarget: StageDisplay.ID?) {
         if self.dropTarget != dropTarget {
             self.dropTarget = dropTarget
+        }
+    }
+
+    func report(shelfDropTargeted: Bool) {
+        if self.shelfDropTargeted != shelfDropTargeted {
+            self.shelfDropTargeted = shelfDropTargeted
         }
     }
 

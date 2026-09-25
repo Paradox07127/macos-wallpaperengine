@@ -68,6 +68,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var tracking: NSTrackingArea?
     private var pressedCard: StageCard.ID?
     private var dragging = false
+    /// `draggingSequenceNumber` of the Finder drag that raised a hidden shelf, so its end lowers the
+    /// shelf again; nil once the drop lands on the shelf, or a scroll, ↑↓ or a covering page takes over.
+    private var raisedForFileDrag: Int?
     private var accessibilityItems: [StageAccessibilityElement] = []
     private var cardAccessibility: [StageCard.ID: StageAccessibilityElement] = [:]
     private var displayAccessibility: [StageDisplay.ID: StageAccessibilityElement] = [:]
@@ -298,6 +301,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 unregisterDraggedTypes()
             }
             clearHover()
+            raisedForFileDrag = nil
             pressedCard = nil
             gesture.mouseUp()
             snapTask?.cancel()
@@ -1120,6 +1124,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     private func handleScroll(_ event: NSEvent, phase: ShelfGestureController.Phase) {
+        raisedForFileDrag = nil
         if phase == .began {
             // Fingers coming down catch a snap in flight: stop it where it is so the gesture tracks
             // from what is on screen, instead of a baseline the spring keeps moving underneath it.
@@ -1227,6 +1232,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             super.keyDown(with: event)
             return
         }
+        raisedForFileDrag = nil
         setProgress(Double(ShelfGestureController.keyTarget(up: event.keyCode == 126, progress: progress.value)), animated: true)
     }
 
@@ -1380,6 +1386,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         model.report(hoveredCard: nil)
         model.report(hoveredDisplay: nil)
         model.report(dropTarget: nil)
+        model.report(shelfDropTargeted: false)
     }
 
     /// The stage covers the window so that scrolling works wherever the pointer is, but the chip
@@ -1517,19 +1524,26 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     // MARK: Finder drops
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        fileDragOperation(sender)
+        // A record from another drag, whose end never reached the stage.
+        if raisedForFileDrag != sender.draggingSequenceNumber {
+            raisedForFileDrag = nil
+        }
+        return fileDragOperation(sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         fileDragOperation(sender)
     }
 
+    /// Leaves a raised shelf up: it sits on the window's bottom edge, and a drag overshooting that
+    /// edge is common enough that lowering here would bob the shelf down and up.
     override func draggingExited(_: (any NSDraggingInfo)?) {
         trackFileDrag(at: nil)
     }
 
-    override func draggingEnded(_: any NSDraggingInfo) {
+    override func draggingEnded(_ sender: any NSDraggingInfo) {
         trackFileDrag(at: nil)
+        endFileDrag(session: sender.draggingSequenceNumber)
     }
 
     override func concludeDragOperation(_: (any NSDraggingInfo)?) {
@@ -1562,25 +1576,61 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         let carriesFiles = sender.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
         )
-        return trackFileDrag(at: carriesFiles ? convert(sender.draggingLocation, from: nil) : nil) == nil ? [] : .copy
+        let point = carriesFiles ? convert(sender.draggingLocation, from: nil) : nil
+        return trackFileDrag(at: point, session: sender.draggingSequenceNumber) == nil ? [] : .copy
     }
 
-    /// Lights the display a Finder file is over with the card drop's frame and label; nil where
-    /// nothing takes it, which also clears the light.
+    /// A display takes the file even where its shell reaches into the shelf band; the band takes it
+    /// only while the shelf is not on its way to the grid.
+    private func fileDropTarget(at point: CGPoint) -> StageFileDropTarget? {
+        if let id = displayID(at: point) {
+            return .display(id)
+        }
+        guard progress.target <= 1, point.y >= StageGeometry.shelfDropTop(windowSize: bounds.size) else { return nil }
+        return .shelf
+    }
+
+    /// Lights what a Finder file is over, a display or the shelf band, and raises a hidden shelf for
+    /// the band; nil where nothing takes it, which also clears the light.
     @discardableResult
-    func trackFileDrag(at point: CGPoint?) -> StageDisplay.ID? {
-        let target = model.interactionBlocked ? nil : point.flatMap(displayID(at:))
-        model.report(dropTarget: target)
+    func trackFileDrag(at point: CGPoint?, session: Int = 0) -> StageFileDropTarget? {
+        let target = model.interactionBlocked ? nil : point.flatMap(fileDropTarget(at:))
+        let display: StageDisplay.ID? = if case let .display(id) = target {
+            id
+        } else {
+            nil
+        }
+        model.report(dropTarget: display)
+        model.report(shelfDropTargeted: target == .shelf)
+        if target == .shelf, progress.target < 1 {
+            raisedForFileDrag = session
+            setProgress(1, animated: !model.reduceMotion)
+        }
         withoutActions { render() }
         startDisplayLinkIfNeeded()
         return target
     }
 
-    /// Any file is taken: an unsupported one is turned down after the drop, with a shake and a toast.
+    /// Lowers a shelf this drag raised: Esc, a drop in another app and a drop on a display all end here.
+    func endFileDrag(session: Int) {
+        guard raisedForFileDrag == session else { return }
+        raisedForFileDrag = nil
+        setProgress(0, animated: !model.reduceMotion)
+    }
+
+    /// Any file is taken: an unsupported one is turned down after the drop, with a toast, and on a
+    /// display with a shake too.
     func acceptFileDrop(_ urls: [URL], at point: CGPoint) -> Bool {
         defer { trackFileDrag(at: nil) }
-        guard !model.interactionBlocked, !urls.isEmpty, let id = displayID(at: point) else { return false }
-        model.emit(.filesDropped(urls, onto: id))
+        guard !model.interactionBlocked, !urls.isEmpty, let target = fileDropTarget(at: point) else { return false }
+        switch target {
+        case let .display(id):
+            model.emit(.filesDropped(urls, onto: id))
+        case .shelf:
+            // The new card lands on this shelf, so the drag's end leaves it up.
+            raisedForFileDrag = nil
+            model.emit(.filesDroppedOnShelf(urls))
+        }
         return true
     }
 
