@@ -10,6 +10,8 @@ struct OverlaysInspectorPanel: View {
     let inspectorPanelWidth: CGFloat
     let backdropAvailable: Bool
     var showsBackdropControl = true
+    /// The weather card's own "Show on This Display"; Edit Desk turns it off from the layer list instead.
+    var showsVisibilityControl = true
     let onParticleEffectChange: (ParticleEffect) -> Void
     let onParticleDensityChange: (Double) -> Void
     let onWeatherReactiveChange: (Bool) -> Void
@@ -48,14 +50,18 @@ struct OverlaysInspectorPanel: View {
     private var weatherCard: some View {
         GroupBox {
             VStack(spacing: 8) {
-                weatherEnabledRow
+                if showsVisibilityControl {
+                    weatherEnabledRow
+                }
 
                 if draft.selectedParticleEffect != .none {
                     particleEffectRow
                     particleDensityRow
                 }
 
-                Divider()
+                if showsVisibilityControl || draft.selectedParticleEffect != .none {
+                    Divider()
+                }
 
                 weatherReactiveRow
 

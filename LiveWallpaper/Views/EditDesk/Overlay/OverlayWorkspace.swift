@@ -1,8 +1,12 @@
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
 /// The layer list floats above the canvas; expanding it never resizes the artwork.
 struct OverlayWorkspace: View {
+    /// Shared by the add strip's tile drags, the canvas frame and the drag ghost.
+    nonisolated static let dragSpace = "overlayWorkspace"
+
     let session: OverlayEditorSession
     let cover: CGImage?
     let screen: Screen
@@ -19,6 +23,7 @@ struct OverlayWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var interaction: InteractionModel
     @State private var addExpanded = true
+    @State private var addDrag = OverlayAddDragController()
     @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var previewMode: MonitorBoardPreviewMode = .snapshot
 
     init(session: OverlayEditorSession, cover: CGImage?, screen: Screen, size: CGSize,
@@ -40,7 +45,7 @@ struct OverlayWorkspace: View {
     }
 
     private var drawerHeight: CGFloat {
-        addExpanded ? 160 : 38
+        addExpanded ? AddOverlayDrawer.expandedHeight : AddOverlayDrawer.collapsedHeight
     }
 
     private var editorHeight: CGFloat {
@@ -54,7 +59,7 @@ struct OverlayWorkspace: View {
                 isMounted: true, isVisible: inspectorVisible,
                 animationTrigger: inspectorVisible, reduceMotion: reduceMotion,
                 storedWidth: $inspectorWidth, liveWidth: $liveInspectorWidth,
-                minWidth: 300, maxWidth: 440, mainFloor: 320,
+                minWidth: 340, maxWidth: 440, mainFloor: 320,
                 onClose: { inspectorVisible = false },
                 main: { canvas }, inspector: { width in
                     ObjectInspector(session: session, screen: screen, screenManager: screenManager,
@@ -64,9 +69,13 @@ struct OverlayWorkspace: View {
                 }
             )
             .frame(height: editorHeight)
-            AddOverlayDrawer(session: session, isExpanded: $addExpanded, height: drawerHeight)
-                .overlay(alignment: .top) { Divider() }
+            AddOverlayDrawer(session: session, isExpanded: $addExpanded, height: drawerHeight) { phase in
+                addDrag.handle(phase, session: session)
+            }
+            .overlay(alignment: .top) { Divider() }
         }
+        .coordinateSpace(name: Self.dragSpace)
+        .overlay(alignment: .topLeading) { ghost }
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: layersVisible)
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: addExpanded)
         .onChange(of: session.selection) { _, selection in
@@ -76,6 +85,7 @@ struct OverlayWorkspace: View {
             inspectorVisible = session.selection != nil
         }
         .onChange(of: previewMode) { _, _ in session.capturePreview() }
+        .onDisappear { addDrag.cancel() }
     }
 
     private var rows: [OverlayLayerRow] {
@@ -96,10 +106,13 @@ struct OverlayWorkspace: View {
 
     private var canvas: some View {
         GeometryReader { proxy in
-            let box = OverlayGeometry.aspectFit(logicalSize: session.logicalSize,
-                                                in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 20, dy: 20))
+            let box = OverlayGeometry.aspectFit(
+                logicalSize: session.logicalSize,
+                in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: OverlayGeometry.canvasInset, dy: OverlayGeometry.canvasInset)
+            )
             OverlayCanvas(session: session, cover: cover, size: box.size)
                 .frame(width: box.width, height: box.height)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.dragSpace)) } action: { addDrag.canvasFrame = $0 }
                 .background {
                     GeometryReader { geometry in
                         Color.clear.preference(key: DetailPreviewFrameKey.self,
@@ -121,6 +134,26 @@ struct OverlayWorkspace: View {
                 .id(screen.id)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: screen.id)
+        }
+    }
+
+    /// Follows the pointer off the canvas; over it the canvas draws the landing instead.
+    @ViewBuilder
+    private var ghost: some View {
+        if let ghost = addDrag.ghost {
+            let shape = RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard, style: .continuous)
+            AddOverlayTileFace(item: ghost.item, onCanvas: false)
+                .background(shape.fill(DesignTokens.EditDesk.Colors.panel))
+                .overlay(shape.strokeBorder(DesignTokens.EditDesk.Colors.strokeHotShell, lineWidth: 1))
+                .frame(width: AddOverlayDrawer.tileWidth(containerWidth: size.width, count: OverlayLayerList.addItems.count),
+                       height: AddOverlayDrawer.tileHeight)
+                .shadow(color: DesignTokens.EditDesk.Shadow.hoverCard.color, radius: DesignTokens.EditDesk.Shadow.hoverCard.radius,
+                        y: DesignTokens.EditDesk.Shadow.hoverCard.y)
+                .opacity(ghost.overCanvas ? 0 : OverlayGeometry.ghostOpacity)
+                .animation(.easeOut(duration: OverlayGeometry.dropDuration), value: ghost.overCanvas)
+                .position(ghost.point)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 
@@ -155,5 +188,90 @@ struct OverlayWorkspace: View {
         .frame(width: 220)
         .clipped()
         .adaptiveGlassSurface(.roundedRectangle(14))
+    }
+}
+
+/// One add-strip drag at a time: where the ghost is, whether the pointer is over the canvas, and Escape.
+@MainActor
+@Observable
+final class OverlayAddDragController {
+    struct Ghost: Equatable {
+        var item: OverlayAddItem
+        var point: CGPoint
+        var overCanvas: Bool
+    }
+
+    private(set) var ghost: Ghost?
+    /// The canvas in `OverlayWorkspace.dragSpace`.
+    @ObservationIgnored var canvasFrame = CGRect.zero
+    /// Set by Escape; the rest of that gesture's events are ignored until its release.
+    @ObservationIgnored private var cancelled = false
+    @ObservationIgnored private var escapeMonitor: Any?
+    @ObservationIgnored private weak var session: OverlayEditorSession?
+
+    func handle(_ phase: OverlayAddDragPhase, session: OverlayEditorSession) {
+        switch phase {
+        case let .began(item, point):
+            finish()
+            self.session = session
+            cancelled = false
+            ghost = Ghost(item: item, point: point, overCanvas: false)
+            watchEscape()
+            track(point)
+        case let .moved(point):
+            guard !cancelled, ghost != nil else { return }
+            track(point)
+        case let .ended(point):
+            guard !cancelled, ghost != nil else {
+                cancelled = false
+                return
+            }
+            track(point)
+            session.endAddDrag(commit: canvasFrame.contains(point))
+            finish()
+        }
+    }
+
+    func cancel() {
+        guard ghost != nil else { return }
+        session?.endAddDrag(commit: false)
+        cancelled = true
+        finish()
+    }
+
+    private func track(_ point: CGPoint) {
+        guard let session, var ghost else { return }
+        ghost.point = point
+        ghost.overCanvas = canvasFrame.contains(point)
+        self.ghost = ghost
+        let scale = OverlayGeometry.validScale(session.renderScale)
+        let boardPoint = ghost.overCanvas
+            ? CGPoint(x: (point.x - canvasFrame.minX) / scale, y: (point.y - canvasFrame.minY) / scale)
+            : nil
+        let flags = NSEvent.modifierFlags
+        session.updateAddDrag(ghost.item, boardPoint: boardPoint, bypassSnap: flags.contains(.command) || flags.contains(.option))
+    }
+
+    private func finish() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
+            NSCursor.pop()
+        }
+        ghost = nil
+    }
+
+    /// A local monitor sees the key before the detail page's Escape shortcut, which would otherwise close the page.
+    private func watchEscape() {
+        NSCursor.closedHand.push()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.ghost != nil else { return false }
+                self.cancel()
+                return true
+            }
+            return consumed ? nil : event
+        }
     }
 }

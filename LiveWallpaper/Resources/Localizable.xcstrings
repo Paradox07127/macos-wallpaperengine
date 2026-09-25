@@ -6423,40 +6423,6 @@
         }
       }
     },
-    "Agent" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agent"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agente"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エージェント"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agent"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agent"
-          }
-        }
-      }
-    },
     "Agent Activity" : {
       "comment" : "Agent session activity monitor.",
       "extractionState" : "manual",
@@ -24091,6 +24057,40 @@
         }
       }
     },
+    "Drag onto the canvas to place it, or click to add it to a free spot." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag onto the canvas to place it, or click to add it to a free spot."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra al lienzo para colocarlo o haz clic para añadirlo en un hueco libre."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンバスにドラッグして位置を指定するか、クリックして空いている場所に追加します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖到画布上放在指定位置，或点按添加到空位。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖到畫布上放在指定位置，或點按加入空位。"
+          }
+        }
+      }
+    },
     "Drag progress to seek" : {
       "comment" : "Now Playing DIY switch: drag the progress line to move the playhead.",
       "extractionState" : "manual",
@@ -24756,40 +24756,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯應用程式例外"
-          }
-        }
-      }
-    },
-    "Effect" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effect"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Efecto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エフェクト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效果"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效果"
           }
         }
       }
@@ -40413,6 +40379,40 @@
         }
       }
     },
+    "No room here. Release over a free spot." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No room here. Release over a free spot."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aquí no cabe. Suéltalo sobre un hueco libre."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここには置けません。空いている場所で放してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这里放不下，请在空位松手。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這裡放不下，請在空位放開。"
+          }
+        }
+      }
+    },
     "No saved access to this item. Choose it again." : {
       "comment" : "Bookmark resolution error.",
       "extractionState" : "manual",
@@ -41953,6 +41953,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉「鎖定時」、隨機播放和輪播\n• 清除排程，改回依播放列表播放\n桌布、播放列表中的項目和場景自訂設定會保留。"
+          }
+        }
+      }
+    },
+    "On Canvas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On Canvas"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el lienzo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンバスに配置済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在画布上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在畫布上"
           }
         }
       }
@@ -49747,6 +49781,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放鬆"
+          }
+        }
+      }
+    },
+    "Release to turn on the effect layer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release to turn on the effect layer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suelta para activar la capa de efectos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放すとエフェクトレイヤーをオンにします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "松手开启效果层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放開以開啟效果層"
           }
         }
       }
@@ -57735,40 +57803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇以設定此顯示器"
-          }
-        }
-      }
-    },
-    "Selected" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selected"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seleccionado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選取"
           }
         }
       }
@@ -78322,40 +78356,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為支援 P3 的顯示器提供廣色域輸出。"
-          }
-        }
-      }
-    },
-    "Widget" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Widget"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Widget"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ウィジェット"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "小组件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "小工具"
           }
         }
       }

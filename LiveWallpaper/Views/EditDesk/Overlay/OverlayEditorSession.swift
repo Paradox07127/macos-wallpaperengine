@@ -105,6 +105,16 @@ final class OverlayEditorSession {
         var didMove = false
     }
 
+    /// What releasing the add strip's drag would do right now. Rects are in board pixels: a widget's
+    /// raw footprint, a singleton's visible rectangle.
+    enum AddDrop: Equatable {
+        case outside
+        case widget(MonitorWidgetKind, landing: CGRect, guideX: MonitorSnapGuide?, guideY: MonitorSnapGuide?)
+        case noRoom(MonitorWidgetKind, footprint: CGRect)
+        case singleton(OverlaySelection, rect: CGRect, guideX: MonitorSnapGuide?, guideY: MonitorSnapGuide?)
+        case effect
+    }
+
     let interaction: InteractionModel
     let data = DataModel()
     private(set) var identity: OverlayEditorIdentity?
@@ -115,6 +125,11 @@ final class OverlayEditorSession {
     private(set) var logicalSize = CGSize(width: 1, height: 1)
     private(set) var safeArea = MonitorSafeAreaInsets.none
     private(set) var drag: Drag?
+    private(set) var addDrop: AddDrop?
+    /// The last add-strip drag was released where no widget fits; cleared by the next drag or board edit.
+    private(set) var addDropRejected = false
+    /// Bumps each time an add or a drop puts an object on the canvas and selects it.
+    private(set) var landingToken = 0
     private(set) var isActive = false
     private(set) var gestureGeneration = 0
     var renderScale: CGFloat = 1 {
@@ -134,6 +149,7 @@ final class OverlayEditorSession {
     @ObservationIgnored private var pendingBoard: MonitorBoardConfiguration?
     @ObservationIgnored private var pendingAddedWidgetIDs: Set<UUID> = []
     @ObservationIgnored private var persistTask: Task<Void, Never>?
+    @ObservationIgnored private var landingUnclaimed = false
     @ObservationIgnored private let defaults: UserDefaults
     private static let persistDebounce: Duration = .milliseconds(250)
 
@@ -169,6 +185,8 @@ final class OverlayEditorSession {
         onLifecycleStep?(.endGestures)
         interaction.endDrag(bypassSnap: !snapEnabled)
         endDrag()
+        addDrop = nil
+        addDropRejected = false
         // Ending a board gesture emits its final placement while the old writer is still bound.
         flushPendingEdits()
         isActive = false
@@ -270,18 +288,49 @@ final class OverlayEditorSession {
     }
 
     /// `overlay.enabled` gates the whole board, so adding into a switched-off board would write a
-    /// widget nothing renders.
+    /// widget nothing renders. `origin` nil = the board's first free spot.
     @discardableResult
-    func addWidget(kind: MonitorWidgetKind) -> Bool {
+    func addWidget(kind: MonitorWidgetKind, at origin: CGPoint? = nil) -> Bool {
         if !overlay.enabled, let identity, let store {
             overlay.enabled = true
             store.writeOverlayEnabled(true, for: identity)
         }
-        let added = interaction.addWidget(kind: kind)
+        let added = origin.map { interaction.addWidget(kind: kind, at: $0) } ?? interaction.addWidget(kind: kind)
         if added, let id = interaction.selectedID {
             pendingAddedWidgetIDs.insert(id)
+            landed()
         }
         return added
+    }
+
+    /// The add strip's click on music or the clock: on where it last was, and selected.
+    func addSingleton(_ selection: OverlaySelection) {
+        let wasOn: Bool
+        switch selection {
+        case .music:
+            wasOn = overlay.music.enabled
+            setMusicEnabled(true)
+        case .clock:
+            wasOn = overlay.clock.enabled
+            setClockEnabled(true)
+        case .board, .widget, .effect:
+            return
+        }
+        select(selection)
+        if !wasOn, selection == .music ? overlay.music.enabled : overlay.clock.enabled {
+            landed()
+        }
+    }
+
+    private func landed() {
+        landingToken += 1
+        landingUnclaimed = true
+    }
+
+    /// The selected object's chrome takes the latest landing once, to play it; later calls get false.
+    func claimLanding() -> Bool {
+        defer { landingUnclaimed = false }
+        return landingUnclaimed
     }
 
     func removeWidget(id: UUID) {
@@ -312,6 +361,7 @@ final class OverlayEditorSession {
             .map { (placement: $0.element, index: $0.offset) }
         overlay.board = board
         pendingBoard = board
+        addDropRejected = false
         persistTask?.cancel()
         persistTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: Self.persistDebounce) } catch { return }
@@ -371,31 +421,42 @@ final class OverlayEditorSession {
         guard var drag, drag.selection == selection else { return }
         guard translation != .zero || drag.didMove else { return }
         drag.didMove = true
-        let free = drag.startRect.offsetBy(dx: translation.width, dy: translation.height)
-        let candidates = overlay.enabled ? interaction.placements.map {
-            MonitorBoardItem(id: $0.id, rect: CGRect(origin: interaction.pixelOrigin(for: $0), size: interaction.footprint(for: $0)))
-        } : []
-        drag.snap = OverlayGeometry.snap(freeRect: free, geometry: interaction.geometry, candidates: candidates,
-                                         renderScale: renderScale, enabled: snapEnabled && !bypassSnap)
+        let placed = place(selection, free: drag.startRect.offsetBy(dx: translation.width, dy: translation.height),
+                           bypassSnap: bypassSnap)
+        drag.rect = placed.rect
+        drag.snap = placed.snap
+        self.drag = drag
+    }
+
+    /// Snaps a music or clock rectangle and keeps it on the board; a guide the clamp moved off is dropped.
+    private func place(_ selection: OverlaySelection, free: CGRect, bypassSnap: Bool) -> (rect: CGRect, snap: MonitorSnapResult) {
+        var snap = OverlayGeometry.snap(freeRect: free, geometry: interaction.geometry,
+                                        candidates: overlay.enabled ? boardItems : [],
+                                        renderScale: renderScale, enabled: snapEnabled && !bypassSnap)
         let origin: CGPoint
         if selection == .music {
             let inset = interaction.geometry.tileInset
             let raw = interaction.geometry.clampOrigin(
-                CGPoint(x: drag.snap.origin.x - inset, y: drag.snap.origin.y - inset),
+                CGPoint(x: snap.origin.x - inset, y: snap.origin.y - inset),
                 footprint: CGSize(width: free.width + 2 * inset, height: free.height + 2 * inset)
             )
             origin = CGPoint(x: raw.x + inset, y: raw.y + inset)
         } else {
-            origin = interaction.geometry.clampOrigin(drag.snap.origin, footprint: free.size)
+            origin = interaction.geometry.clampOrigin(snap.origin, footprint: free.size)
         }
-        if origin.x != drag.snap.origin.x {
-            drag.snap.guideX = nil
+        if origin.x != snap.origin.x {
+            snap.guideX = nil
         }
-        if origin.y != drag.snap.origin.y {
-            drag.snap.guideY = nil
+        if origin.y != snap.origin.y {
+            snap.guideY = nil
         }
-        drag.rect = CGRect(origin: origin, size: free.size)
-        self.drag = drag
+        return (CGRect(origin: origin, size: free.size), snap)
+    }
+
+    private var boardItems: [MonitorBoardItem] {
+        interaction.placements.map {
+            MonitorBoardItem(id: $0.id, rect: CGRect(origin: interaction.pixelOrigin(for: $0), size: interaction.footprint(for: $0)))
+        }
     }
 
     func endDrag() {
@@ -404,24 +465,118 @@ final class OverlayEditorSession {
         guard drag.didMove, let latest = store.read(identity)?.overlay else { return }
         switch drag.selection {
         case .music:
-            // Music persists the raw cell origin; the drag rectangle excludes the gutter.
-            let inset = interaction.geometry.tileInset
-            let origin = CGPoint(x: drag.rect.minX - inset, y: drag.rect.minY - inset)
-            let normalized = LayoutEngine.normalized(pixelOrigin: origin, boardSize: logicalSize)
-            let next = MusicOverlayLayout.setting(x: normalized.x, y: normalized.y, on: latest.music)
+            let next = musicPlaced(at: drag.rect, on: latest.music)
             overlay.music = next
             if next != latest.music {
                 store.writeMusic(next, for: identity)
             }
         case .clock:
-            let next = ClockOverlayLayout.placing(latest.clock, origin: drag.rect.origin, canvas: logicalSize,
-                                                  referenceWidth: 0, safeArea: safeArea)
+            let next = clockPlaced(at: drag.rect, on: latest.clock)
             overlay.clock = next
             if next != latest.clock {
                 store.writeClock(next, for: identity)
             }
         case .board, .widget, .effect: break
         }
+    }
+
+    /// Music persists the raw cell origin; `rect` is the visible rectangle, which excludes the gutter.
+    private func musicPlaced(at rect: CGRect, on music: MusicOverlayConfiguration) -> MusicOverlayConfiguration {
+        let inset = interaction.geometry.tileInset
+        let normalized = LayoutEngine.normalized(pixelOrigin: CGPoint(x: rect.minX - inset, y: rect.minY - inset),
+                                                 boardSize: logicalSize)
+        return MusicOverlayLayout.setting(x: normalized.x, y: normalized.y, on: music)
+    }
+
+    private func clockPlaced(at rect: CGRect, on clock: ClockOverlayConfiguration) -> ClockOverlayConfiguration {
+        ClockOverlayLayout.placing(clock, origin: rect.origin, canvas: logicalSize, referenceWidth: 0, safeArea: safeArea)
+    }
+
+    /// `boardPoint` nil = the pointer is off the canvas.
+    func updateAddDrag(_ item: OverlayAddItem, boardPoint: CGPoint?, bypassSnap: Bool) {
+        guard isActive else { return }
+        addDropRejected = false
+        guard let point = boardPoint else {
+            addDrop = .outside
+            return
+        }
+        switch item {
+        case let .widget(kind):
+            let drop = OverlayGeometry.widgetDrop(kind: kind, at: point, geometry: interaction.geometry, items: boardItems,
+                                                  renderScale: renderScale, snaps: snapEnabled && !bypassSnap)
+            if let landing = drop.landing {
+                addDrop = .widget(kind, landing: CGRect(origin: landing, size: drop.footprint.size),
+                                  guideX: drop.guideX, guideY: drop.guideY)
+            } else {
+                addDrop = .noRoom(kind, footprint: drop.footprint)
+            }
+        case .music, .clock:
+            let selection: OverlaySelection = item == .music ? .music : .clock
+            let size = rect(for: selection).size
+            let free = CGRect(origin: CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2), size: size)
+            let placed = place(selection, free: free, bypassSnap: bypassSnap)
+            addDrop = .singleton(selection, rect: placed.rect, guideX: placed.snap.guideX, guideY: placed.snap.guideY)
+        case .effect:
+            addDrop = canEditEffect ? .effect : .outside
+        }
+    }
+
+    /// `commit` false cancels. True when the release put something on the canvas or turned it on.
+    @discardableResult
+    func endAddDrag(commit: Bool) -> Bool {
+        guard let drop = addDrop else { return false }
+        addDrop = nil
+        guard commit, isActive else { return false }
+        switch drop {
+        case .outside:
+            return false
+        case .noRoom:
+            addDropRejected = true
+            return false
+        case let .widget(kind, landing, _, _):
+            return addWidget(kind: kind, at: landing.origin)
+        case let .singleton(selection, rect, _, _):
+            return placeSingleton(selection, at: rect)
+        case .effect:
+            if !effectVisible {
+                setEffectVisible(true)
+            }
+            select(.effect)
+            return effectVisible
+        }
+    }
+
+    /// Turns music or the clock on at `rect` (its visible rectangle) in one write, and selects it.
+    private func placeSingleton(_ selection: OverlaySelection, at rect: CGRect) -> Bool {
+        guard let identity, let store, let latest = store.read(identity)?.overlay else { return false }
+        switch selection {
+        case .music:
+            var next = musicPlaced(at: rect, on: latest.music)
+            next.enabled = true
+            overlay.music = next
+            if next != latest.music {
+                store.writeMusic(next, for: identity)
+            }
+            if !latest.music.enabled, store.read(identity)?.overlay.music == next {
+                onObjectPersisted?()
+            }
+        case .clock:
+            var clock = latest.clock
+            clock.enabled = true
+            let next = clockPlaced(at: rect, on: clock)
+            overlay.clock = next
+            if next != latest.clock {
+                store.writeClock(next, for: identity)
+            }
+            if !latest.clock.enabled, store.read(identity)?.overlay.clock == next {
+                onObjectPersisted?()
+            }
+        case .board, .widget, .effect:
+            return false
+        }
+        select(selection)
+        landed()
+        return true
     }
 
     var effectVisible: Bool {

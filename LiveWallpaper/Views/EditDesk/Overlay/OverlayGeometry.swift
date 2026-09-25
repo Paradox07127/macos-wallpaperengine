@@ -8,6 +8,46 @@ enum OverlayGeometry {
     static let liftDamping: Double = 0.82
     static let dropDuration: Double = 0.12
     static let reducedMotionDuration: Double = 0.15
+    /// MOTION 15: a new object lands from 1.1× on a 0.3 spring.
+    static let landingScale: CGFloat = 1.1
+    static let landingResponse: Double = 0.3
+    static let canvasInset = DesignTokens.EditDesk.Spacing.s12
+    static let dropPreviewOpacity: Double = 0.85
+    static let ghostOpacity: Double = 0.9
+    static let refusedStrokeScreenWidth: CGFloat = 1.5
+
+    /// A widget dropped from the add strip, in board pixels.
+    struct WidgetDrop: Equatable {
+        /// The raw footprint centred on the pointer and kept on the board: where a refused drop is drawn.
+        var footprint: CGRect
+        /// nil when no legal spot lies within one footprint of the pointer.
+        var landing: CGPoint?
+        var guideX: MonitorSnapGuide?
+        var guideY: MonitorSnapGuide?
+    }
+
+    /// `kind` at its default size, centred on `point`: snapped the way a board drag snaps, then moved to
+    /// the nearest legal spot within one footprint. A guide the move left behind is dropped.
+    @MainActor
+    static func widgetDrop(kind: MonitorWidgetKind, at point: CGPoint, geometry: MonitorBoardGeometry,
+                           items: [MonitorBoardItem], renderScale: CGFloat, snaps: Bool) -> WidgetDrop {
+        let size = geometry.pixelSize(for: kind, size: InteractionModel.defaultSize(for: kind))
+        let free = CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2)
+        let snapped = snap(freeRect: CGRect(origin: free, size: size), geometry: geometry, candidates: items,
+                           renderScale: renderScale, enabled: snaps)
+        let landing = LayoutEngine.land(freeOrigin: free, snappedOrigin: snapped.snapped ? snapped.origin : nil,
+                                        footprint: size, geometry: geometry, items: items, ignoring: nil)
+        return WidgetDrop(
+            footprint: CGRect(origin: geometry.clampOrigin(free, footprint: size), size: size),
+            landing: landing,
+            guideX: landing?.x == snapped.origin.x ? snapped.guideX : nil,
+            guideY: landing?.y == snapped.origin.y ? snapped.guideY : nil
+        )
+    }
+
+    static func refusedStrokeWidth(forRenderScale scale: CGFloat) -> CGFloat {
+        refusedStrokeScreenWidth / validScale(scale)
+    }
 
     static func aspectFit(logicalSize: CGSize, in container: CGRect) -> CGRect {
         guard logicalSize.width > 0, logicalSize.height > 0,

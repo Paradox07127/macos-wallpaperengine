@@ -412,6 +412,225 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
+    // MARK: Dropping from the add strip (board 2400×1800, CPU at (720, 540), scale 1)
+
+    @Test("A GPU dropped at the canvas centre lands centred, with both centre guides")
+    func dropAtCentre() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1200, y: 900), bypassSnap: false)
+        guard case let .widget(kind, landing, guideX, guideY)? = session.addDrop else {
+            Issue.record("no widget landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(kind == .gpu)
+        #expect(Self.same(landing, CGRect(x: 1107, y: 807, width: 186, height: 186)), "landed at \(landing)")
+        #expect(guideX?.position == 1200 && guideY?.position == 900)
+        store.events = []
+        #expect(session.endAddDrag(commit: true))
+        #expect(session.addDrop == nil)
+        let added = try #require(session.interaction.placements.last)
+        #expect(session.interaction.placements.count == 2 && added.kind == .gpu)
+        #expect(abs(added.x - 1107.0 / 2400) < 1e-9 && abs(added.y - 807.0 / 1800) < 1e-9)
+        #expect(session.selection == .widget(added.id))
+        session.flushPendingEdits()
+        #expect(store.events.filter { $0.hasPrefix("board") } == ["board 1"])
+        session.detach()
+    }
+
+    @Test("A GPU dropped just right of the CPU snaps flush against it, top edges aligned")
+    func dropBesideWidget() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1000, y: 640), bypassSnap: false)
+        guard case let .widget(_, landing, guideX, guideY)? = session.addDrop else {
+            Issue.record("no widget landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(Self.same(landing, CGRect(x: 906, y: 540, width: 186, height: 186)), "landed at \(landing)")
+        #expect(guideX == nil)
+        #expect(guideY?.axis == .horizontal && guideY.map { abs($0.position - 540) < 0.001 } == true)
+        session.detach()
+    }
+
+    @Test("A GPU dropped on the CPU lands on the nearest free spot within one tile")
+    func dropOnWidget() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 800, y: 620), bypassSnap: false)
+        guard case let .widget(_, landing, guideX, guideY)? = session.addDrop else {
+            Issue.record("no widget landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(Self.same(landing, CGRect(x: 720, y: 726, width: 186, height: 186)), "landed at \(landing)")
+        #expect(guideX.map { abs($0.position - 720) < 0.001 } == true)
+        #expect(guideY == nil, "the landing moved off the snapped row, so its guide no longer holds")
+        session.detach()
+    }
+
+    @Test("Where nothing fits the drop reports no room, and releasing there adds nothing")
+    func dropWithoutRoom() throws {
+        let store = FakeOverlayStore()
+        let tiles = (0 ..< 12).map {
+            MonitorWidgetPlacement(kind: .cpu, size: .small, x: Double($0 % 4) * 186 / 744, y: Double($0 / 4) * 186 / 558)
+        }
+        store.snapshots[store.displays[1]]?.logicalSize = CGSize(width: 744, height: 558)
+        store.snapshots[store.displays[1]]?.overlay.board = MonitorBoardConfiguration(widgets: tiles)
+        let session = OverlayEditorSession()
+        session.transition(to: store.displays[1], store: store, editing: true)
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 372, y: 279), bypassSnap: false)
+        guard case let .noRoom(kind, footprint)? = session.addDrop else {
+            Issue.record("expected no room: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(kind == .gpu)
+        #expect(Self.same(footprint, CGRect(x: 279, y: 186, width: 186, height: 186)), "footprint at \(footprint)")
+        store.events = []
+        #expect(!session.endAddDrag(commit: true))
+        #expect(session.addDropRejected)
+        #expect(session.interaction.placements.count == 12)
+        session.flushPendingEdits()
+        #expect(!store.events.contains { $0.hasPrefix("board") })
+        try session.removeWidget(id: #require(session.interaction.placements.first?.id))
+        #expect(!session.addDropRejected, "a board edit left the no-room notice up")
+        session.detach()
+    }
+
+    @Test("A drag released outside the canvas cancels without writing anything")
+    func dropOutside() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        session.updateAddDrag(.widget(.gpu), boardPoint: nil, bypassSnap: false)
+        #expect(session.addDrop == .outside)
+        store.events = []
+        #expect(!session.endAddDrag(commit: true))
+        #expect(!session.addDropRejected)
+        #expect(session.interaction.placements.count == 1)
+        session.flushPendingEdits()
+        #expect(store.events.filter { !$0.hasPrefix("read") }.isEmpty)
+        session.detach()
+    }
+
+    @Test("With snapping off, or ⌘ held, the widget centres on the raw pointer")
+    func dropWithoutSnapping() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1000, y: 640), bypassSnap: true)
+        guard case let .widget(_, bypassed, bypassGuideX, bypassGuideY)? = session.addDrop else {
+            Issue.record("no widget landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(Self.same(bypassed, CGRect(x: 907, y: 547, width: 186, height: 186)), "landed at \(bypassed)")
+        #expect(bypassGuideX == nil && bypassGuideY == nil)
+        session.snapEnabled = false
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1000, y: 640), bypassSnap: false)
+        guard case let .widget(_, unsnapped, _, _)? = session.addDrop else {
+            Issue.record("no widget landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(Self.same(unsnapped, CGRect(x: 907, y: 547, width: 186, height: 186)), "landed at \(unsnapped)")
+        session.detach()
+    }
+
+    @Test("Music dropped while off turns on where it is released, in one write")
+    func dropMusic() throws {
+        let store = FakeOverlayStore()
+        store.snapshots[store.displays[0]]?.overlay.music.enabled = false
+        let session = opened(store)
+        session.updateAddDrag(.music, boardPoint: CGPoint(x: 1200, y: 900), bypassSnap: false)
+        guard case let .singleton(selection, rect, _, _)? = session.addDrop else {
+            Issue.record("no music landing: \(String(describing: session.addDrop))")
+            return session.detach()
+        }
+        #expect(selection == .music)
+        #expect(Self.same(rect, CGRect(x: 929, y: 815, width: 542, height: 170)), "landed at \(rect)")
+        store.events = []
+        #expect(session.endAddDrag(commit: true))
+        let music = try #require(store.snapshots[store.displays[0]]?.overlay.music)
+        #expect(music.enabled)
+        #expect(abs(music.x - 921.0 / 2400) < 1e-9 && abs(music.y - 807.0 / 1800) < 1e-9, "stored at (\(music.x), \(music.y))")
+        #expect(store.events.filter { $0.hasPrefix("music") } == ["music 1"])
+        #expect(session.selection == .music)
+        session.detach()
+    }
+
+    @Test("The clock, already on, moves to where it is released")
+    func dropClock() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        store.events = []
+        session.updateAddDrag(.clock, boardPoint: CGPoint(x: 1200, y: 900), bypassSnap: false)
+        #expect(session.endAddDrag(commit: true))
+        let clock = try #require(store.snapshots[store.displays[0]]?.overlay.clock)
+        let height = 480 / ClockOverlayConfiguration.aspectRatio
+        #expect(clock.enabled)
+        #expect(abs(clock.x - 0.4) < 1e-9 && abs(clock.y - (900 - height / 2) / 1800) < 1e-9, "stored at (\(clock.x), \(clock.y))")
+        #expect(store.events.filter { $0.hasPrefix("clock") } == ["clock 1"])
+        #expect(session.selection == .clock)
+        session.detach()
+    }
+
+    @Test("The effect turns on wherever it is dropped; dropping it again writes nothing")
+    func dropEffect() {
+        let store = FakeOverlayStore()
+        store.snapshots[store.displays[0]]?.configuration?.particleEffect = ParticleEffect.none
+        let session = opened(store)
+        #expect(!session.effectVisible)
+        session.updateAddDrag(.effect, boardPoint: CGPoint(x: 10, y: 10), bypassSnap: false)
+        #expect(session.addDrop == .effect)
+        store.events = []
+        #expect(session.endAddDrag(commit: true))
+        #expect(store.events.filter { $0.hasPrefix("effect") } == ["effect 1"])
+        #expect(session.effectVisible && session.selection == .effect)
+        store.events = []
+        session.updateAddDrag(.effect, boardPoint: CGPoint(x: 500, y: 500), bypassSnap: false)
+        #expect(session.endAddDrag(commit: true))
+        #expect(!store.events.contains { $0.hasPrefix("effect") })
+        session.detach()
+    }
+
+    @Test("A widget dropped onto a switched-off board turns the board on first")
+    func dropEnablesBoard() {
+        let store = FakeOverlayStore()
+        store.snapshots[store.displays[0]]?.overlay.enabled = false
+        let session = opened(store)
+        store.events = []
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1200, y: 900), bypassSnap: false)
+        #expect(session.endAddDrag(commit: true))
+        #expect(store.events.contains("enabled 1"))
+        #expect(session.overlay.enabled)
+        #expect(session.interaction.placements.count == 2)
+        session.detach()
+    }
+
+    @Test("Every landing bumps the token once and is claimed once; a cancelled drop or a re-selected singleton does not")
+    func landingToken() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        let start = session.landingToken
+        #expect(session.addWidget(kind: .gpu))
+        #expect(session.landingToken == start + 1)
+        #expect(session.claimLanding())
+        #expect(!session.claimLanding())
+        session.updateAddDrag(.widget(.gpu), boardPoint: CGPoint(x: 1200, y: 400), bypassSnap: false)
+        #expect(session.endAddDrag(commit: true))
+        #expect(session.landingToken == start + 2)
+        session.updateAddDrag(.widget(.gpu), boardPoint: nil, bypassSnap: false)
+        #expect(!session.endAddDrag(commit: true))
+        #expect(session.landingToken == start + 2)
+        session.addSingleton(.clock)
+        #expect(session.landingToken == start + 2 && session.selection == .clock)
+        session.setClockEnabled(false)
+        session.addSingleton(.clock)
+        #expect(session.landingToken == start + 3 && session.overlay.clock.enabled)
+        session.detach()
+    }
+
+    private static func same(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) < 0.001 && abs(lhs.minY - rhs.minY) < 0.001
+            && abs(lhs.width - rhs.width) < 0.001 && abs(lhs.height - rhs.height) < 0.001
+    }
+
     private func opened(_ store: FakeOverlayStore) -> OverlayEditorSession {
         let session = OverlayEditorSession()
         session.transition(to: store.displays[0], store: store, editing: true)
