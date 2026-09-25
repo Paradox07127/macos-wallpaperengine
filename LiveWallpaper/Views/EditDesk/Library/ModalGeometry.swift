@@ -43,7 +43,8 @@ enum ModalGeometry {
     /// The transfer line over the bottom buttons: wide enough for a status and `42% · 40 MB / 95.5 MB · 12 MB/s`.
     static let statusWidth: CGFloat = 560
 
-    /// One primary and at most two secondary apply buttons; the rest go in the Other Displays menu.
+    /// One primary and at most two secondary apply buttons, or three plain ones when no display leads;
+    /// the rest go in the Other Displays menu.
     static let secondaryButtonLimit = 2
 
     struct ApplyButtons {
@@ -59,10 +60,11 @@ enum ModalGeometry {
     static func applyButtons(targets: [ModalDisplayTarget]) -> ApplyButtons {
         let primary = targets.first(where: \.isPrimary)
         let rest = targets.filter { $0.id != primary?.id }
+        let plainCount = primary == nil ? secondaryButtonLimit + 1 : secondaryButtonLimit
         return ApplyButtons(
             primary: primary,
-            secondary: Array(rest.prefix(secondaryButtonLimit)),
-            overflow: Array(rest.dropFirst(secondaryButtonLimit))
+            secondary: Array(rest.prefix(plainCount)),
+            overflow: Array(rest.dropFirst(plainCount))
         )
     }
 }

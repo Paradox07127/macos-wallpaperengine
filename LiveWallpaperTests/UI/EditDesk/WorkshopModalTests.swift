@@ -52,14 +52,16 @@ struct WorkshopModalTests {
 
     private let left = ModalActions.Display(id: 1, name: "Left", frame: CGRect(x: -1440, y: 0, width: 1440, height: 900))
     private let right = ModalActions.Display(id: 2, name: "Right", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+    private let far = ModalActions.Display(id: 3, name: "Far", frame: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
 
+    /// `extra` adds displays to the right of the two every row has.
     private func row(
         installed: Bool = false, canRun: Bool = true, ticket: DeferredApplyCoordinator.State? = nil,
         queued: CGDirectDisplayID? = nil, banned: Bool = false, ready: Bool = true, busy: Bool = false,
-        activeOn: Set<CGDirectDisplayID> = []
+        activeOn: Set<CGDirectDisplayID> = [], extra: [ModalActions.Display] = []
     ) -> WorkshopModalButtonRow {
         WorkshopModalButtonRow.make(
-            targets: WorkshopModalTargets.make(displays: [left, right], activeOn: activeOn),
+            targets: WorkshopModalTargets.make(displays: [left, right] + extra, activeOn: activeOn),
             isInstalled: installed, canRun: canRun, ticketState: ticket, queuedScreenID: queued,
             isBanned: banned, isDownloadReady: ready, isBusy: busy
         )
@@ -77,7 +79,13 @@ struct WorkshopModalTests {
         row.targets.first(where: \.isPrimary)?.id
     }
 
-    @Test("An item not in the library offers download buttons and Save only; a queued display spins and leads the row")
+    /// The buttons as the row draws them, left to right, and what goes under Other Displays.
+    private func layout(_ row: WorkshopModalButtonRow) -> (buttons: [CGDirectDisplayID], menu: [CGDirectDisplayID]) {
+        let split = ModalGeometry.applyButtons(targets: row.targets)
+        return ((split.primary.map { [$0] } ?? []).map(\.id) + split.secondary.map(\.id), split.overflow.map(\.id))
+    }
+
+    @Test("An item not in the library offers download buttons and Save only; a queued display spins in place")
     func downloadRowFollowsTheQueue() {
         let idle = row()
         #expect(idle.mode == .download)
@@ -87,7 +95,9 @@ struct WorkshopModalTests {
         #expect(idle.extras == [.init(kind: .saveOnly)])
 
         let queued = row(ticket: .waiting, queued: 2, busy: true)
-        #expect(leading(queued) == 2)
+        #expect(leading(queued) == nil, "a queued display that took the lead would move another one under the pointer")
+        #expect(layout(queued).buttons == [1, 2])
+        #expect(layout(queued).menu.isEmpty)
         #expect(preparing(queued) == [2])
         #expect(pressable(queued) == [1], "the queued display is taken; the other one moves the apply there")
         #expect(queued.extras == [.init(kind: .cancelAutoApply), .init(kind: .cancelDownload)])
@@ -101,6 +111,7 @@ struct WorkshopModalTests {
     @Test("While the apply runs, or a setup step or Steam blocks the download, no display can be pressed")
     func blockedRowsPressNothing() {
         let applying = row(ticket: .applying, queued: 2)
+        #expect(leading(applying) == nil)
         #expect(pressable(applying).isEmpty)
         #expect(preparing(applying) == [2])
         #expect(applying.extras.isEmpty, "cancelling now would drop the apply halfway")
@@ -124,6 +135,18 @@ struct WorkshopModalTests {
         #expect(pressable(row(installed: true, canRun: false)).isEmpty)
         // A later download of it, such as an update, can still be stopped.
         #expect(row(installed: true, busy: true).extras == [.init(kind: .cancelDownload)])
+    }
+
+    @Test("Three displays with the last one queued stay three buttons in ⌘ order, none of them under Other Displays")
+    func queuedRowKeepsEveryButtonInPlace() {
+        let queued = row(ticket: .waiting, queued: 3, busy: true, extra: [far])
+        #expect(leading(queued) == nil)
+        #expect(layout(queued).buttons == [1, 2, 3])
+        #expect(layout(queued).menu.isEmpty, "the queued display fell into Other Displays")
+        #expect(preparing(queued) == [3])
+        // Control: with nothing queued the leftmost display leads and the other two follow it.
+        #expect(leading(row(extra: [far])) == 1)
+        #expect(layout(row(extra: [far])).buttons == [1, 2, 3])
     }
 
     @Test("A queued display unplugged mid-download is not swapped for another display, and the status line keeps its name")

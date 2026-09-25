@@ -259,7 +259,7 @@ struct WorkshopModalButtonRow: Equatable {
     var extras: [Extra]
 
     /// `queuedScreenID` is the display a waiting or running apply goes to; `isBusy` means a download of
-    /// the item is in flight. The queued display leads the row; unplugged, no display does.
+    /// the item is in flight. While an apply is queued no display leads, so no button moves under the pointer.
     static func make(
         targets: [ModalDisplayTarget], isInstalled: Bool, canRun: Bool, ticketState: DeferredApplyCoordinator.State?,
         queuedScreenID: CGDirectDisplayID?, isBanned: Bool, isDownloadReady: Bool, isBusy: Bool
@@ -268,7 +268,7 @@ struct WorkshopModalButtonRow: Equatable {
         var targets = targets
         if isQueued {
             for index in targets.indices {
-                targets[index].isPrimary = targets[index].id == queuedScreenID
+                targets[index].isPrimary = false
                 targets[index].isPreparing = targets[index].id == queuedScreenID
             }
         }
