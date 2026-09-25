@@ -54,6 +54,7 @@ struct DownloadToastHost: View {
             title: activity.title,
             message: String(
                 localized: "\(activity.completed) of \(activity.total) projects", bundle: .appLanguage,
+                locale: AppLanguagePreference.current.locale,
                 comment: "Folder import progress card. Placeholders are the projects tried so far and the projects found."
             ),
             isSuccess: true

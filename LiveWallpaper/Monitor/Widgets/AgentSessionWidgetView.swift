@@ -707,7 +707,7 @@ private enum AgentSessionStrings {
 
     /// Localize the count and noun together so each language controls their order.
     static func agentCount(_ n: Int) -> String {
-        String(localized: "\(n) agents", bundle: .appLanguage, comment: "Agent Session widget header: number of tracked agent sessions.")
+        String(localized: "\(n) agents", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Agent Session widget header: number of tracked agent sessions.")
     }
 
     static func moreCount(_ n: Int) -> String {

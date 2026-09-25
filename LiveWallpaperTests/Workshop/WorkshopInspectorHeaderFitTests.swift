@@ -97,7 +97,7 @@ struct WorkshopInspectorHeaderFitTests {
         let author = try width(fill(catalog("by %@", locale), [Fixture.author]), subheadline)
             + 3 + symbolWidth("chevron.right", pointSize: 10)
 
-        let ratingCount = try fill(catalog("%@ ratings", locale), [Fixture.ratings.formatted()])
+        let ratingCount = try fill(catalog("%lld ratings", locale), [Fixture.ratings.formatted()])
         let stars = 5 * symbolWidth("star.fill", pointSize: 12) + 4
         let rating = stars
             + DesignTokens.Spacing.sm + width("4.9", body)

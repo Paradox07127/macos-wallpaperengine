@@ -140,7 +140,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .disableSchedule(let count):
             return String(
                 localized: "All \(count) time-based wallpaper rules will be cleared. The current wallpaper stays applied.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the number of schedule rules."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of schedule rules."
             )
         case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
             return String(
@@ -160,12 +160,12 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyConfigurationToAllDisplays(let count):
             return String(
                 localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget, music, and clock overlays are not changed.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the number of other displays."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of other displays."
             )
         case .applyOverlayToAllDisplays(let overlayName, let count):
             return String(
                 localized: "This replaces the \(overlayName) overlay on \(count) other displays. Their wallpapers are left alone.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
             )
         case .clearCurrentWallpaper(let displayName):
             return String(
@@ -211,7 +211,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearTestTempArtifacts(let itemCount, let formattedSize):
             return String(
                 localized: "Deletes \(itemCount) scratch items · \(formattedSize) created by test runs in the container's tmp folder. Nothing else reads them.",
-                bundle: .appLanguage, comment: "DEBUG destructive confirm. Placeholders are item count and formatted size."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "DEBUG destructive confirm. Placeholders are item count and formatted size."
             )
         #endif
         }

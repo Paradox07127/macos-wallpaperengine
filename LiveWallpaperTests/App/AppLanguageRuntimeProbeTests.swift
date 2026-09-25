@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 @testable import LiveWallpaperCore
+import SwiftUI
+import Testing
 
 /// The host process runs under the system locale (en-US), so a Chinese result is only
 /// possible if the API really honours the requested locale.
@@ -71,5 +72,52 @@ struct AppLanguageRuntimeProbeTests {
         AppLanguageOverride.with(.simplifiedChinese) {
             #expect(HTMLSource.inline("<html></html>").displayName == "内嵌网页内容")
         }
+    }
+
+    /// The bundle only picks the table; the `locale:` argument picks the plural rule. With an
+    /// English app on a Chinese Mac that argument defaults to Chinese, which has no `one`.
+    @Test("String(localized:bundle:locale:) picks the plural variant by the locale argument")
+    func pluralVariantFollowsLocaleArgument() {
+        let english = AppLanguagePreference.english.localizationBundle()
+        let spanish = AppLanguagePreference.spanish.localizationBundle()
+        func wallpapers(_ count: Int, _ bundle: Bundle, _ locale: String) -> String {
+            String(localized: "\(count) wallpapers", bundle: bundle, locale: Locale(identifier: locale))
+        }
+        #expect(wallpapers(1, english, "en") == "1 wallpaper")
+        #expect(wallpapers(2, english, "en") == "2 wallpapers")
+        #expect(wallpapers(3094, english, "en") == "3,094 wallpapers")
+        #expect(wallpapers(1, spanish, "es") == "1 fondo de pantalla")
+        #expect(wallpapers(2, spanish, "es") == "2 fondos de pantalla")
+        #expect(wallpapers(1, english, "zh-Hans") == "1 wallpapers")
+        #expect(wallpapers(1, spanish, "zh-Hans") == "1 fondos de pantalla")
+        #expect(String(localized: "\(1) wallpapers", bundle: english) == wallpapers(1, english, Locale.current.identifier))
+    }
+
+    @MainActor
+    @Test("Text picks the plural variant by its \\.locale environment")
+    func textPluralVariantFollowsEnvironmentLocale() {
+        func wallpapers(_ count: Int, _ locale: String) -> String {
+            var environment = EnvironmentValues()
+            environment.locale = Locale(identifier: locale)
+            return Text("\(count) wallpapers")._resolveText(in: environment)
+        }
+        #expect(wallpapers(1, "en") == "1 wallpaper")
+        #expect(wallpapers(2, "en") == "2 wallpapers")
+        #expect(wallpapers(3094, "en") == "3,094 wallpapers")
+        #expect(wallpapers(1, "es") == "1 fondo de pantalla")
+        #expect(wallpapers(2, "es") == "2 fondos de pantalla")
+        #expect(wallpapers(1, "zh-Hans") == "1 个壁纸")
+    }
+
+    /// The form a few call sites use: the catalog value comes back as a raw format that
+    /// `String(format:)` fills in later, with no locale.
+    @Test("A raw plural format passed to String(format:) keeps its variants")
+    func rawPluralFormatKeepsVariants() {
+        let english = String(localized: "Copied to %lld / %lld displays", bundle: AppLanguagePreference.english.localizationBundle())
+        let spanish = String(localized: "Copied to %lld / %lld displays", bundle: AppLanguagePreference.spanish.localizationBundle())
+        #expect(String(format: english, Int64(1), Int64(1)) == "Copied to 1 / 1 display")
+        #expect(String(format: english, Int64(1), Int64(2)) == "Copied to 1 / 2 displays")
+        #expect(String(format: spanish, Int64(1), Int64(1)) == "Copiado a 1 / 1 pantalla")
+        #expect(String(format: spanish, Int64(2), Int64(3)) == "Copiado a 2 / 3 pantallas")
     }
 }

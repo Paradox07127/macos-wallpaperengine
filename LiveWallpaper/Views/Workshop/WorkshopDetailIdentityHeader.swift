@@ -164,7 +164,7 @@ struct WorkshopDetailIdentityHeader: View {
             // S8b writes the modal column's count as `★ 4.9 (n)` — the star beside it is the noun.
             style == .modal
                 ? "(\(votes.formatted()))"
-                : String(localized: "\(votes.formatted()) ratings", bundle: .appLanguage, comment: "Workshop detail rating count. Placeholder is a formatted number such as 3,094.")
+                : String(localized: "\(votes) ratings", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop detail rating count. Placeholder is the number of ratings.")
         }
     }
 
@@ -228,14 +228,18 @@ struct WorkshopDetailIdentityHeader: View {
             facts.append(Fact(
                 symbol: "heart",
                 value: WorkshopCountFormatter.compact(favorites),
-                spelledOut: String(localized: "\(WorkshopCountFormatter.compact(favorites)) favorites", bundle: .appLanguage, comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K.")
+                spelledOut: favorites < WorkshopCountFormatter.compactFloor
+                    ? String(localized: "\(favorites) favorites", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item favorite count below 1,000.")
+                    : String(localized: "\(WorkshopCountFormatter.compact(favorites)) favorites", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K.")
             ))
         }
         if let views = item.viewCount, views > 0 {
             facts.append(Fact(
                 symbol: "eye",
                 value: WorkshopCountFormatter.compact(views),
-                spelledOut: String(localized: "\(WorkshopCountFormatter.compact(views)) views", bundle: .appLanguage, comment: "Workshop item view count. Placeholder is a compact number such as 6.1K.")
+                spelledOut: views < WorkshopCountFormatter.compactFloor
+                    ? String(localized: "\(views) views", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item view count below 1,000.")
+                    : String(localized: "\(WorkshopCountFormatter.compact(views)) views", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item view count. Placeholder is a compact number such as 6.1K.")
             ))
         }
         return facts
@@ -300,7 +304,7 @@ struct WorkshopDetailIdentityHeader: View {
             let scaled = String(format: "%.1f", locale: .current, Double(count) / 1000.0)
             return String(localized: "\(scaled)K subs", bundle: .appLanguage, comment: "Workshop item subscriber count, thousands.")
         }
-        return String(localized: "\(count) subs", bundle: .appLanguage, comment: "Workshop item subscriber count.")
+        return String(localized: "\(count) subs", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item subscriber count.")
     }
 
     private static let dateFormatter: DateFormatter = {

@@ -49,6 +49,7 @@ SUITES=(
   HTMLTrustVerdictTests
   LogPrivacySourceAuditTests
   LocalizationCoverageTests
+  PluralCountCopyTests
   MonitorBoardPlacementAccessibilityCharacterizationTests
   # The inspector lays the board out at the display's point size and draws it
   # down, so edit chrome has to undo that shrink or a 36pt control bar lands

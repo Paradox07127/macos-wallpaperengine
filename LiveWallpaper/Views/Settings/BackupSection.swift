@@ -131,7 +131,7 @@ extension GeneralSettingsView {
         if let count = summary.displayCount {
             lines.append(String(
                 localized: "Restored \(count) display configurations.",
-                bundle: .appLanguage, comment: "Import success line: how many displays were restored."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many displays were restored."
             ))
         }
         if summary.didRestoreGlobalSettings {
@@ -143,13 +143,13 @@ extension GeneralSettingsView {
         if let count = summary.bookmarkCount {
             lines.append(String(
                 localized: "Restored \(count) saved bookmarks.",
-                bundle: .appLanguage, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
             ))
         }
         if let count = summary.schemeCount {
             lines.append(String(
                 localized: "Restored \(count) saved schemes.",
-                bundle: .appLanguage, comment: "Import success line: how many display schemes were restored. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many display schemes were restored. xcstrings provides a pluralized variant."
             ))
         }
         return lines.joined(separator: "\n")
@@ -162,7 +162,7 @@ extension GeneralSettingsView {
         if let count = bundle.screenConfigurations?.count {
             replaced.append(String(
                 localized: "• Every display's complete setup, including its wallpaper, playlist, and schedule (\(count) displays in the file)",
-                bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: every current display setup is replaced. Placeholder is how many displays the file includes."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet under Replaces: every current display setup is replaced. Placeholder is how many displays the file includes."
             ))
         }
         if bundle.globalSettings != nil {
@@ -181,13 +181,13 @@ extension GeneralSettingsView {
         if let count = bundle.wallpaperBookmarks?.count {
             merged.append(String(
                 localized: "• \(count) saved bookmarks",
-                bundle: .appLanguage, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
         if let count = bundle.screenSchemes?.count {
             merged.append(String(
                 localized: "• \(count) saved schemes",
-                bundle: .appLanguage, comment: "Import confirmation bullet: how many display schemes the bundle includes. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet: how many display schemes the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
 

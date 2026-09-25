@@ -15,14 +15,19 @@ Four failures, in descending severity:
      back to English
   4. a language is present but not marked translated — it is a placeholder
      someone still has to write
+  5. PLURAL: a plural lacks a category its language needs (`PLURAL_CATEGORIES`),
+     or `en` varies by plural and `es` does not — that language shows "1 fondos"
+
+A plural entry (`variations.plural`, or `substitutions` filled into its value)
+is checked form by form: every variant is one more value held to the rules above.
 
 Then the copy rules, which keep one wording per language:
 
-  5. TERM: a concept has one name per language (`TERMS`); allowed compounds
+  6. TERM: a concept has one name per language (`TERMS`); allowed compounds
      are blanked out before the banned pattern is searched
-  6. PUNCT: zh-Hans / zh-Hant punctuation, quotes and spacing (`PUNCT`), and
+  7. PUNCT: zh-Hans / zh-Hant punctuation, quotes and spacing (`PUNCT`), and
      UI paths in every translation written as one quoted `A › B` (`PATH_RULES`)
-  7. ELLIPSIS: a translation ends with "…" exactly when its English does
+  8. ELLIPSIS: a translation ends with "…" exactly when its English does
 
 Xcode omits the `en` entry entirely when the key *is* the English string; those
 keys are checked against the key instead, which is the same text.
@@ -37,9 +42,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / 'LiveWallpaper/Resources/Localizable.xcstrings'
 REQUIRED = ('ja', 'zh-Hans', 'zh-Hant', 'es')
+# CLDR plural categories a language cannot do without; a missing `many` in es falls back to `other`
+PLURAL_CATEGORIES = {'en': ('one', 'other'), 'es': ('one', 'other')}
 
 # %@  %1$@  %lld  %2$lld  %.2f  %03d
 PLACEHOLDER = re.compile(r'%(?:\d+\$)?[-+ #0]*[\d.*]*(?:@|lld|ld|d|u|f|s)')
+# %#@name@  %2$#@name@ — where substitution `name` puts its plural variant
+SUBSTITUTION = re.compile(r'%(\d+\$)?#@(\w+)@')
 
 CJK = r'[\u3400-\u9fff\uf900-\ufaff]'
 
@@ -169,29 +178,82 @@ def signature(text):
     return sorted(kinds)
 
 
+def forms(localization, lang):
+    """(texts, units, absent) for one language's entry, which must hold a value or a plural.
+
+    `texts` maps the plural categories chosen to each finished text: a plural's variants,
+    or the value with every `%#@name@` filled by each variant of that substitution, `%arg`
+    becoming the argument. `units` are the stringUnits someone has to write; `absent` the
+    categories `lang` needs that a plural lacks.
+    """
+    required = PLURAL_CATEGORIES.get(lang, ('other',))
+    units, absent = [], []
+
+    def variants(variations):
+        plural = (variations or {}).get('plural') or {}
+        absent.extend(category for category in required if category not in plural)
+        found = {category: variant.get('stringUnit') or {} for category, variant in plural.items()}
+        units.extend(found.values())
+        return {category: unit.get('value', '') for category, unit in found.items()}
+
+    if 'variations' in localization:
+        return {(category,): text for category, text in variants(localization['variations']).items()}, units, absent
+    units.append(localization['stringUnit'])
+    texts = {(): localization['stringUnit'].get('value', '')}
+    for name, substitution in (localization.get('substitutions') or {}).items():
+        spec = substitution.get('formatSpecifier', '')
+        options = variants(substitution.get('variations'))
+        texts = {chosen + (category,): SUBSTITUTION.sub(
+                     lambda m: option.replace('%arg', f'%{m.group(1) or ""}{spec}') if m.group(2) == name else m.group(0),
+                     text)
+                 for chosen, text in texts.items() for category, option in options.items()}
+    return texts, units, absent
+
+
+def written(localization):
+    return bool(localization) and ('stringUnit' in localization or 'variations' in localization)
+
+
+def varies(localization):
+    return bool(localization) and ('variations' in localization or bool(localization.get('substitutions')))
+
+
+def english_text(localizations, key):
+    """The `other` form of the English, the key itself when Xcode left `en` out."""
+    if not written(localizations.get('en')):
+        return key
+    texts = forms(localizations['en'], 'en')[0]
+    return next((text for chosen, text in texts.items() if set(chosen) <= {'other'}), next(iter(texts.values()), key))
+
+
 def audit(catalog):
-    mismatch, missing, untranslated, empty = [], [], [], []
+    mismatch, missing, untranslated, empty, plural = [], [], [], [], []
     for key, entry in catalog.get('strings', {}).items():
         localizations = entry.get('localizations') or {}
         if not localizations:
             continue
-        english = localizations.get('en', {}).get('stringUnit', {}).get('value')
-        english = english if english is not None else key
+        english = english_text(localizations, key)
         base = signature(english)
 
-        for lang in REQUIRED:
-            unit = localizations.get(lang, {}).get('stringUnit')
-            if unit is None:
+        for lang in (['en'] if varies(localizations.get('en')) else []) + list(REQUIRED):
+            localization = localizations.get(lang)
+            if not written(localization):
                 missing.append((key, lang))
                 continue
-            if unit.get('state') != 'translated':
-                untranslated.append((key, lang, unit.get('state')))
-            elif not unit.get('value') and english:
+            texts, units, absent = forms(localization, lang)
+            pending = [unit for unit in units if unit.get('state') != 'translated']
+            if pending or not units:
+                untranslated.append((key, lang, pending[0].get('state') if pending else None))
+            elif english and any(not unit.get('value') for unit in units):
                 empty.append((key, lang))
-            found = signature(unit.get('value', ''))
-            if found != base:
+            if absent:
+                plural.append((key, lang, 'no ' + ', '.join(absent) + ' form'))
+            if lang == 'es' and varies(localizations.get('en')) and not varies(localization):
+                plural.append((key, lang, 'en varies by plural, es does not'))
+            found = next((signature(text) for text in texts.values() if signature(text) != base), None)
+            if found is not None:
                 mismatch.append((key, lang, base, found))
-    return mismatch, missing, untranslated, empty
+    return mismatch, missing, untranslated, empty, plural
 
 
 def blank(text, pattern):
@@ -205,38 +267,37 @@ def copy_audit(catalog):
         localizations = entry.get('localizations') or {}
         if not localizations:
             continue
-        english = localizations.get('en', {}).get('stringUnit', {}).get('value')
-        english = english if english is not None else key
-        value = {lang: (localizations.get(lang, {}).get('stringUnit') or {}).get('value') or ''
-                 for lang in REQUIRED}
+        english = english_text(localizations, key)
+        values = {lang: [text for text in forms(localizations[lang], lang)[0].values() if text.strip()]
+                  if written(localizations.get(lang)) else [] for lang in REQUIRED}
 
         for rule, lang, bad, allow, use in TERMS:
             scope = EN_SCOPE.get((rule, lang))
-            if not value[lang] or (rule, lang, key) in EXEMPT:
+            if (rule, lang, key) in EXEMPT:
                 continue
             if scope and not re.search(scope, english, re.I):
                 continue
-            found = re.search(bad, blank(value[lang], allow))
+            found = next((m for m in (re.search(bad, blank(value, allow)) for value in values[lang]) if m), None)
             if found:
                 terms.append((key, lang, rule, found.group(0), use))
 
         for rule, pattern, use in PUNCT:
             for lang in PUNCT_LANGS:
-                if not value[lang] or (rule, lang) in PUNCT_SKIP or (rule, lang, key) in PUNCT_SKIP:
+                if (rule, lang) in PUNCT_SKIP or (rule, lang, key) in PUNCT_SKIP:
                     continue
-                found = re.search(pattern, blank(value[lang], CODE_SPAN))
+                found = next((m for m in (re.search(pattern, blank(value, CODE_SPAN)) for value in values[lang]) if m), None)
                 if found:
                     punct.append((key, lang, rule, found.group(0), use))
         for rule, pattern, use in PATH_RULES:
             for lang in REQUIRED:
-                found = re.search(pattern, value[lang].replace('← →', ''))  # arrow-key legend, not a path
+                # '← →' is the arrow-key legend, not a path
+                found = next((m for m in (re.search(pattern, value.replace('← →', '')) for value in values[lang]) if m), None)
                 if found:
                     punct.append((key, lang, rule, found.group(0), use))
 
         trails = english.rstrip().endswith(('…', '...'))
         for lang in REQUIRED:
-            text = value[lang].rstrip()
-            if text and text.endswith(('…', '...')) != trails:
+            if any(value.rstrip().endswith(('…', '...')) != trails for value in values[lang]):
                 ellipsis.append((key, lang, trails))
     return terms, punct, ellipsis
 
@@ -289,19 +350,74 @@ def self_test():
             'es': unit(''),
         }},
     }}
-    mismatch, missing, untranslated, empty = audit(drifted)
+    mismatch, missing, untranslated, empty, plural = audit(drifted)
     assert [m[0] for m in mismatch] == ['Linked %lld of %lld'], mismatch
     assert missing == [('Absent language', 'zh-Hant')], missing
     assert [u[0] for u in untranslated] == ['Still a stub'], untranslated
     assert empty == [('Blank but translated', 'ja')], empty
+    assert plural == [], plural
 
     clean = {'strings': {'All good %@': {'localizations': {
         'en': unit('All good %@'), 'ja': unit('問題なし %@'),
         'zh-Hans': unit('没问题 %@'), 'zh-Hant': unit('沒問題 %@'),
         'es': unit('Todo bien %@'),
     }}}}
-    assert audit(clean) == ([], [], [], []), audit(clean)
+    assert audit(clean) == ([], [], [], [], []), audit(clean)
     assert copy_audit(clean) == ([], [], []), copy_audit(clean)
+
+    def plural_of(**variants):
+        return {'variations': {'plural': {category: unit(value) for category, value in variants.items()}}}
+
+    def substituted(value, one, other):
+        return {'stringUnit': {'state': 'translated', 'value': value}, 'substitutions': {'displays': {
+            'argNum': 2, 'formatSpecifier': 'lld', 'variations': plural_of(one=one, other=other)['variations']}}}
+
+    def cjk(value):
+        return {'ja': unit(value), 'zh-Hans': unit(value), 'zh-Hant': unit(value)}
+
+    plurals = {'strings': {
+        '%lld wallpapers': {'localizations': {
+            'en': plural_of(one='%lld wallpaper', other='%lld wallpapers'),
+            'es': plural_of(one='%lld fondo', other='%lld fondos'), **cjk('%lld 个')}},
+        'Copied to %lld / %lld displays': {'localizations': {
+            'en': substituted('Copied to %1$lld / %2$#@displays@', '%arg display', '%arg displays'),
+            'es': substituted('Copiado a %1$lld / %2$#@displays@', '%arg pantalla', '%arg pantallas'),
+            **cjk('%1$lld / %2$lld 台')}},
+    }}
+    assert audit(plurals) == ([], [], [], [], []), audit(plurals)
+    assert copy_audit(plurals) == ([], [], []), copy_audit(plurals)
+
+    broken = {'strings': {
+        'es lacks one': {'localizations': {
+            'en': plural_of(one='%lld item', other='%lld items'), 'es': plural_of(other='%lld fondos'), **cjk('%lld')}},
+        'es variant blank': {'localizations': {
+            'en': plural_of(one='%lld item', other='%lld items'), 'es': plural_of(one='', other='%lld fondos'), **cjk('%lld')}},
+        'es not plural': {'localizations': {
+            'en': plural_of(one='%lld item', other='%lld items'), 'es': unit('%lld fondos'), **cjk('%lld')}},
+        'es variant drops the count': {'localizations': {
+            'en': plural_of(one='%lld item', other='%lld items'), 'es': plural_of(one='un fondo', other='%lld fondos'), **cjk('%lld')}},
+        'en lacks one': {'localizations': {
+            'en': plural_of(other='%lld items'), 'es': plural_of(one='%lld fondo', other='%lld fondos'), **cjk('%lld')}},
+        'substitution lacks one': {'localizations': {
+            'en': substituted('Copied to %1$lld / %2$#@displays@', '%arg display', '%arg displays'),
+            'es': {'stringUnit': unit('Copiado a %1$lld / %2$#@displays@')['stringUnit'], 'substitutions': {'displays': {
+                'argNum': 2, 'formatSpecifier': 'lld', 'variations': plural_of(other='%arg pantallas')['variations']}}},
+            **cjk('%1$lld / %2$lld')}},
+        'Playlist of %lld': {'localizations': {
+            'en': plural_of(one='%lld playlist', other='%lld playlists'),
+            'es': plural_of(one='%lld cola', other='%lld playlists'), **cjk('%lld')}},
+    }}
+    mismatch, missing, untranslated, empty, plural = audit(broken)
+    assert [m[:2] for m in mismatch] == [('es variant blank', 'es'), ('es variant drops the count', 'es')], mismatch
+    assert (missing, untranslated) == ([], []), (missing, untranslated)
+    assert empty == [('es variant blank', 'es')], empty
+    assert plural == [
+        ('es lacks one', 'es', 'no one form'),
+        ('es not plural', 'es', 'en varies by plural, es does not'),
+        ('en lacks one', 'en', 'no one form'),
+        ('substitution lacks one', 'es', 'no one form'),
+    ], plural
+    assert [t[:3] for t in copy_audit(broken)[0]] == [('Playlist of %lld', 'es', 'playlist')], copy_audit(broken)
 
     copy = {'strings': {
         'Copy to Other Displays': {'localizations': {
@@ -368,7 +484,7 @@ def main():
         return 0
 
     catalog = json.loads(CATALOG.read_text())
-    mismatch, missing, untranslated, empty = audit(catalog)
+    mismatch, missing, untranslated, empty, plural = audit(catalog)
     terms, punct, ellipsis = copy_audit(catalog)
 
     for key, lang, base, found in mismatch:
@@ -380,6 +496,9 @@ def main():
         print(f'LANGUAGE ABSENT    {lang:8} {key[:70]!r}')
     for key, lang, state in untranslated:
         print(f'NOT TRANSLATED     {lang:8} [{state}] {key[:60]!r}')
+    for key, lang, problem in plural:
+        print(f'PLURAL FORMS       {lang:8} {key[:70]!r}\n'
+              f'                   {problem}')
     for key, lang, rule, found, use in terms:
         print(f'TERM DRIFT         {lang:8} {key[:70]!r}\n'
               f'                   {rule}: {found!r} -> {use}')
@@ -390,7 +509,7 @@ def main():
         print(f'ELLIPSIS DRIFT     {lang:8} {key[:70]!r}\n'
               f'                   ends with "…": en={trails}  {lang}={not trails}')
 
-    total = (len(mismatch) + len(empty) + len(missing) + len(untranslated)
+    total = (len(mismatch) + len(empty) + len(missing) + len(untranslated) + len(plural)
              + len(terms) + len(punct) + len(ellipsis))
     checked = len(catalog.get('strings', {}))
     if total:
