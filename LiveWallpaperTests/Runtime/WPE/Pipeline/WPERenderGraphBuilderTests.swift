@@ -137,7 +137,9 @@ struct WPERenderGraphBuilderTests {
         ))
         #expect(effectPass.replacingTarget(.scene).authoredJSON.effectIdentity
             == effectPass.authoredJSON.effectIdentity)
-        let metadataOnly = WPEShaderImplementationInventory.graphEntries(graph: graph)
+        let metadataOnly = WPEShaderImplementationInventory.graphEntries(
+            graph: graph, substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+        )
         #expect(metadataOnly.count == 1)
         #expect(metadataOnly.first?.stableEffectID == "7:effect:3")
         #expect(metadataOnly.first?.stablePassID == "7:effect:3:pass:0")

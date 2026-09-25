@@ -1314,6 +1314,12 @@ struct WPEMetalSceneRendererTests {
             let reason = try #require(gap.errorDescription)
             #expect(diagnostic(gap) == .materialUnresolved(layer: "L", reason: reason), "\(gap)")
         }
+        let emptyRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let builtinLayer = try #require(#expect(throws: SceneResourceResolver.ResolveError.self) {
+            _ = try SceneResourceResolver(cacheRootURL: emptyRoot).resolveImage(relativePath: "models/util/solidlayer.json")
+        })
+        let builtinGap = diagnostic(builtinLayer)
+        #expect(!SceneFailureCause.make(builtinGap).canRetry, "a missing built-in layer offers Retry: \(builtinGap)")
 
         // Controls: an executor gap stays a gap; a malformed payload stays unclassified.
         let noPasses = diagnostic(WPEMetalRenderExecutorError.noRenderablePasses)

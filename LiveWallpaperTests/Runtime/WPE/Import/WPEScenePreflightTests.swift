@@ -260,6 +260,62 @@ struct WPEScenePreflightTests {
         #expect(entry.metadataSources == ["effect-override"])
     }
 
+    @Test("A media usertexture on a pass whose route never substitutes stays in the inventory")
+    func mediaOnNonSubstitutingRouteIsReported() throws {
+        // Control: the custom pass does substitute, so its declaration has a consumer.
+        let passes = ["copy", "effects/custom"].enumerated().map { index, shader in
+            WPERenderPass(
+                id: "pass-\(shader)",
+                phase: .effect(file: "effects/media/effect.json"),
+                shader: shader,
+                source: .previous,
+                target: .scene,
+                textures: [:],
+                binds: [:],
+                constants: [:],
+                combos: [:],
+                userTextureBindings: WPERenderUserTextureBindings(
+                    override: [WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system")]
+                ),
+                authoredJSON: WPERenderPassAuthoredJSON(effectIdentity: WPERenderEffectPassIdentity(
+                    objectID: "1",
+                    authoredEffectID: "e",
+                    authoredEffectPath: "effects/media/effect.json",
+                    effectPassIndex: index,
+                    authoredOverrideID: nil
+                )),
+                blending: "normal",
+                cullMode: "nocull",
+                depthTest: "disabled",
+                depthWrite: "disabled"
+            )
+        }
+        let layer = WPERenderLayer(
+            objectID: "1",
+            objectName: "bg",
+            imagePath: "materials/bg.json",
+            materialPath: nil,
+            geometry: WPERenderLayerGeometry(
+                origin: .zero, scale: SIMD3<Double>(1, 1, 1), angles: .zero, alignment: .center,
+                size: nil, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
+            ),
+            compositeA: "a",
+            compositeB: "b",
+            localFBOs: [],
+            passes: passes
+        )
+
+        let entries = WPEShaderImplementationInventory.graphEntries(
+            graph: WPERenderGraph(layers: [layer]),
+            substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+        )
+
+        let entry = try #require(entries.first)
+        #expect(entries.count == 1)
+        #expect(entry.renderPassID == "pass-copy")
+        #expect(entry.metadataSources == ["effect-override"])
+    }
+
     // MARK: - Fixtures
 
     private static func makeProject(requiresWindowsPlugin: Bool = false) -> WallpaperEngineProject {

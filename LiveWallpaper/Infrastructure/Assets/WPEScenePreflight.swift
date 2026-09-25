@@ -161,8 +161,11 @@ enum WPEShaderImplementationInventory {
         }
     }
 
+    /// `substitutesMedia(shader)`: whether the runtime route for that shader name swaps `$media*` slots;
+    /// passed in because the answer lives in Runtime, which Infrastructure must not name.
     static func graphEntries(
-        graph: WPERenderGraph
+        graph: WPERenderGraph,
+        substitutesMedia: (String) -> Bool
     ) -> [WPEShaderImplementationInventoryEntry] {
         graph.layers.flatMap { layer in
             layer.passes.compactMap { pass in
@@ -170,14 +173,18 @@ enum WPEShaderImplementationInventory {
                       let identity = pass.authoredJSON.effectIdentity else {
                     return nil
                 }
+                let mediaConsumed = substitutesMedia(pass.shader)
+                func unconsumed(_ bindings: [WPESceneUserTextureBinding]) -> Bool {
+                    mediaConsumed ? containsUnsupportedUserTexture(bindings) : !bindings.isEmpty
+                }
                 var sources: [String] = []
-                if containsUnsupportedUserTexture(pass.userTextureBindings.material) {
+                if unconsumed(pass.userTextureBindings.material) {
                     sources.append("effect-material")
                 }
-                if containsUnsupportedUserTexture(pass.userTextureBindings.pass) {
+                if unconsumed(pass.userTextureBindings.pass) {
                     sources.append("material-pass")
                 }
-                if containsUnsupportedUserTexture(pass.userTextureBindings.override) {
+                if unconsumed(pass.userTextureBindings.override) {
                     sources.append("effect-override")
                 }
                 guard !sources.isEmpty else { return nil }

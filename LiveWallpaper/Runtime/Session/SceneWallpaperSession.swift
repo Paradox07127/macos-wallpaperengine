@@ -665,13 +665,19 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let cause = SceneFailureCause.make(error)
         loadFailureCause = cause
         if let diagnostic = await renderActor.loadDiagnostics() {
-            loadFailureCause = SceneFailureCause.make(diagnostic)
+            loadFailureCause = Self.failureCause(for: error, diagnostic: diagnostic)
             return .resourceFailed(diagnostic)
         }
         if error is WPESceneDocumentError {
             return .parseFailed(error.localizedDescription)
         }
         return .resourceFailed(.other(layer: "scene", message: cause.reason))
+    }
+
+    /// A non-retryable code from the error itself (e.g. `texture.metal_format`) is finer than the diagnostic's category, so it wins.
+    nonisolated static func failureCause(for error: Error, diagnostic: SceneLoadDiagnostic) -> WallpaperFailureCause {
+        let own = SceneFailureCause.make((error as? WPEMetalTextureLoadContextError)?.underlying ?? error)
+        return own.canRetry ? SceneFailureCause.make(diagnostic) : own
     }
 }
 

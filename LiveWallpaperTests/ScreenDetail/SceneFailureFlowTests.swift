@@ -177,6 +177,26 @@ struct SceneFailureFlowTests {
         #expect(SceneFailureCause.make(WPEMetalTextureLoaderError.textureAllocationFailed).canRetry)
     }
 
+    @Test("A fatal code from the load error is not replaced by the renderer's coarser diagnostic")
+    func loadErrorKeepsItsFatalCode() {
+        let format = WPEMetalTextureLoadContextError(
+            layerName: "B", path: "materials/B.tex", underlying: WPEMetalTextureLoaderError.unsupportedFormat(.bc7)
+        )
+        let gap = SceneLoadDiagnostic.materialUnresolved(layer: "B", reason: "format")
+        let kept = SceneWallpaperSession.failureCause(for: format, diagnostic: gap)
+        #expect(kept.code == "texture.metal_format")
+        #expect(kept.failureClass == .fatal)
+
+        // Control: an error with no specific cause still takes the diagnostic's.
+        let missing = WPEMetalTextureLoadContextError(
+            layerName: "B", path: "materials/B.tex", underlying: SceneResourceResolver.ResolveError.fileMissing
+        )
+        let filled = SceneWallpaperSession.failureCause(
+            for: missing, diagnostic: .fileMissing(layer: "B", path: "materials/B.tex")
+        )
+        #expect(filled.code == "scene.file_missing")
+    }
+
     @MainActor
     @Test("A real malformed source preserves project identity and its parser cause")
     func malformedSource() async throws {

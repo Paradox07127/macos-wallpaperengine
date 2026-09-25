@@ -318,10 +318,10 @@ struct NowPlayingOptions: Equatable, Sendable {
 
     /// Snaps to one of the published choices; a NaN, a 2, or a missing key all
     /// read as the default rather than drawing an unsupported row count.
+    /// Compared as Double: `Int(_:)` traps on a finite value outside Int's range (1e300).
     private static func lyricsLineCount(_ raw: Double?) -> Int {
-        guard let raw, raw.isFinite else { return Defaults.lyricsLines }
-        let value = Int(raw.rounded())
-        return lyricsLineChoices.contains(value) ? value : Defaults.lyricsLines
+        guard let rounded = raw?.rounded() else { return Defaults.lyricsLines }
+        return lyricsLineChoices.first { Double($0) == rounded } ?? Defaults.lyricsLines
     }
 
     private static func clamp(_ value: Double, default def: Double, in range: ClosedRange<Double>) -> Double {

@@ -230,7 +230,7 @@ struct SceneResourceResolverTests {
         }
     }
 
-    @Test("Built-in util model surfaces materialUnresolved with a friendly hint")
+    @Test("A missing built-in util model is a renderer gap, not a damaged material")
     func builtinUtilModelSurfacesPrecisely() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -238,12 +238,12 @@ struct SceneResourceResolverTests {
 
         do {
             _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json").image
-            Issue.record("Expected materialUnresolved")
-        } catch SceneResourceResolver.ResolveError.materialUnresolved(let reason) {
+            Issue.record("Expected builtinLayerUnavailable")
+        } catch let SceneResourceResolver.ResolveError.builtinLayerUnavailable(reason) {
             // 断言路径而非英文措辞:reason 是会本地化的用户文案。
             #expect(reason.contains("models/util/solidlayer.json"))
         } catch {
-            Issue.record("Expected materialUnresolved, got \(error)")
+            Issue.record("Expected builtinLayerUnavailable, got \(error)")
         }
     }
 

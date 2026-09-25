@@ -12,8 +12,10 @@ struct SceneResourceResolver: Sendable {
         case decodeFailed
         case unsupportedTexture
         case texture(WPETexDecodeError)
-        /// image → model/material JSON with no resolvable texture (engine-built layer).
+        /// image → model/material JSON with no resolvable texture.
         case materialUnresolved(reason: String)
+        /// A WPE built-in `models/util/` layer this Mac has no copy of: a renderer gap, not damage.
+        case builtinLayerUnavailable(reason: String)
     }
 
     /// Directory-backed cache root for diagnostics only (reads use `provider`).
@@ -271,7 +273,7 @@ struct SceneResourceResolver: Sendable {
             throw ResolveError.pathEscape
         } catch {
             if relativePath.contains("models/util/") {
-                throw ResolveError.materialUnresolved(reason: String(localized: "Built-in WPE layer \(relativePath) is not available on macOS", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the layer path."))
+                throw ResolveError.builtinLayerUnavailable(reason: String(localized: "Built-in WPE layer \(relativePath) is not available on macOS", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the layer path."))
             }
             throw ResolveError.fileMissing
         }

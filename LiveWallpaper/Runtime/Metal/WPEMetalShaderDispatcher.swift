@@ -107,6 +107,15 @@ struct WPEMetalShaderDispatcher {
         #endif
     }
 
+    /// Whether the route `dispatch` picks for this shader name swaps `$media*` slots (nil kind = custom).
+    /// Name only: an `effect_*` pass whose own source loads runs as custom and does substitute.
+    static func substitutesMedia(shaderName: String) -> Bool {
+        switch WPEBuiltinShaderKind(normalizing: shaderName) {
+        case nil, .genericImage2, .genericImage4, .genericParticle: true
+        default: false
+        }
+    }
+
     func bindObjectQuadVertexUniforms(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,

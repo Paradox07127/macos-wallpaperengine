@@ -1277,6 +1277,8 @@ extension WPEMetalSceneRenderer {
             case .materialUnresolved(let reason):
                 // Mostly damaged or incomplete material/model JSON, not a renderer gap: keeps the re-download advice.
                 return .other(layer: layerName, message: reason)
+            case .builtinLayerUnavailable(let reason):
+                return .materialUnresolved(layer: layerName, reason: reason)
             case .texture(let texError):
                 return .texture(layer: layerName, error: texError)
             case .unsupportedTexture:

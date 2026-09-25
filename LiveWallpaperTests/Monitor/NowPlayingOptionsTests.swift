@@ -254,10 +254,16 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertEqual(Options([Key.lyricsLines: .number(2)]).lyricsLines, 3)
         XCTAssertEqual(Options([Key.lyricsLines: .number(0)]).lyricsLines, 3)
         XCTAssertEqual(Options([Key.lyricsLines: .number(.nan)]).lyricsLines, 3)
+        XCTAssertEqual(Options([Key.lyricsLines: .number(.infinity)]).lyricsLines, 3)
+        XCTAssertEqual(Options([Key.lyricsLines: .number(1e300)]).lyricsLines, 3)
+        XCTAssertEqual(Options([Key.lyricsLines: .number(-1e300)]).lyricsLines, 3)
         XCTAssertEqual(Options([Key.lyricsLines: .string("three")]).lyricsLines, 3)
+        XCTAssertEqual(Options([:]).lyricsLines, 3)
 
         var written = Options()
         written.lyricsLines = 2
+        XCTAssertNil(written.applied(to: [:])[Key.lyricsLines])
+        written.lyricsLines = .max
         XCTAssertNil(written.applied(to: [:])[Key.lyricsLines])
     }
 
