@@ -498,6 +498,33 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.map(\.id) == ["workshop:123"], "the project's tags are not searched")
     }
 
+    @Test("A search left open reads the tags of a project added meanwhile", .timeLimit(.minutes(1)))
+    func openSearchReadsTheTagsOfNewRows() async {
+        @MainActor final class History {
+            var entries: [WPEHistoryEntry] = []
+        }
+        let history = History()
+        history.entries = [WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)]
+        var reads = 0
+        var source = inputs()
+        source.history = { history.entries }
+        source.projectTags = {
+            reads += 1
+            return $0.workshopID == "456" ? ["Nebula"] : []
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.refresh()
+        await settle { reads > 0 }
+        #expect(reads == 0, "a refresh read project tags while the search was empty")
+        model.query = "nebula"
+        await model.loadSearchTags()
+        #expect(model.visibleItems.isEmpty, "a project matched before any project had the tag")
+        history.entries.append(WPEHistoryEntry(origin: origin("456"), importedAt: .distantPast))
+        model.refresh()
+        await settle { !model.visibleItems.isEmpty }
+        #expect(model.visibleItems.map(\.id) == ["workshop:456"], "the tags of a project added while the search was open were never read")
+    }
+
     @Test("A search finds a Workshop project by its ID")
     func searchFindsAWorkshopProjectByItsID() {
         // Not `origin(_:)`: its title contains the ID, so the title alone would match.

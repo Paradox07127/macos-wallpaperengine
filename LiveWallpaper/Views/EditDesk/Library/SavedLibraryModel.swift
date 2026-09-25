@@ -346,6 +346,9 @@ final class SavedLibraryModel {
         if items.contains(where: needsProbe) {
             Task { [weak self] in await self?.probeSources() }
         }
+        if !query.isEmpty {
+            Task { await loadSearchTags() }
+        }
     }
 
     /// Probes the rows never probed or whose source changed since.
