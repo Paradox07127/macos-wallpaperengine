@@ -258,7 +258,7 @@ final class ApplyRouter {
             currentEntry == intendedEntry
                 && (currentData == intendedData || sameResolvedFile(currentData, intendedData))
         case let (.html(currentSource, _)?, .html(intendedSource, _)):
-            currentSource == intendedSource
+            currentSource == intendedSource || sameLocalPage(currentSource, intendedSource)
         case let (.scene(currentScene)?, .scene(intendedScene)):
             currentScene.workshopID == intendedScene.workshopID && currentScene.presetID == intendedScene.presetID
         default:
@@ -279,6 +279,17 @@ final class ApplyRouter {
     private static func sameResolvedFile(_ lhs: Data, _ rhs: Data) -> Bool {
         guard let left = resolvedPath(lhs), let right = resolvedPath(rhs) else { return false }
         return left == right
+    }
+
+    private static func sameLocalPage(_ lhs: HTMLSource, _ rhs: HTMLSource) -> Bool {
+        switch (lhs, rhs) {
+        case let (.file(left), .file(right)):
+            sameResolvedFile(left, right)
+        case let (.folder(left, leftIndex), .folder(right, rightIndex)):
+            leftIndex == rightIndex && sameResolvedFile(left, right)
+        default:
+            false
+        }
     }
 
     static func resolvedPath(_ bookmarkData: Data) -> String? {

@@ -55,6 +55,53 @@ struct LibraryImporterTests {
         #expect(bookmarks.bookmarks.allSatisfy { $0.content.wallpaperType == .video }, "the folder was saved as a web page")
     }
 
+    @Test func sameLocalPageIsSavedOnce() throws {
+        let site = try fixtureFolder()
+        let otherSite = try fixtureFolder()
+        defer {
+            try? FileManager.default.removeItem(at: site)
+            try? FileManager.default.removeItem(at: otherSite)
+        }
+        try Data("<html></html>".utf8).write(to: site.appendingPathComponent("index.html"))
+        let plain = try site.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let named = try site.bookmarkData(options: [], includingResourceValuesForKeys: [.nameKey], relativeTo: nil)
+        try #require(plain != named)
+        func page(_ bookmark: Data, index: String = "index.html") -> WallpaperContent {
+            .html(source: .folder(bookmarkData: bookmark, indexFileName: index), config: .default)
+        }
+
+        #expect(ApplyRouter.saveIfNew(page(plain), label: "Site", in: bookmarks) != nil)
+        #expect(ApplyRouter.saveIfNew(page(named), label: "Site", in: bookmarks) == nil, "the same page was saved twice")
+        #expect(bookmarks.bookmarks.count == 1)
+        // Controls: another page in the same folder, and another folder, are different wallpapers.
+        #expect(ApplyRouter.saveIfNew(page(named, index: "other.html"), label: "Other page", in: bookmarks) != nil)
+        let elsewhere = try otherSite.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        #expect(ApplyRouter.saveIfNew(page(elsewhere), label: "Other site", in: bookmarks) != nil)
+    }
+
+    @Test func sameLocalFileIsSavedOnce() throws {
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("page.html")
+        let otherFile = folder.appendingPathComponent("other.html")
+        for url in [file, otherFile] {
+            try Data("<html></html>".utf8).write(to: url)
+        }
+        let plain = try file.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let named = try file.bookmarkData(options: [], includingResourceValuesForKeys: [.nameKey], relativeTo: nil)
+        try #require(plain != named)
+        func page(_ bookmark: Data) -> WallpaperContent {
+            .html(source: .file(bookmarkData: bookmark), config: .default)
+        }
+
+        #expect(ApplyRouter.saveIfNew(page(plain), label: "Page", in: bookmarks) != nil)
+        #expect(ApplyRouter.saveIfNew(page(named), label: "Page", in: bookmarks) == nil, "the same page was saved twice")
+        #expect(bookmarks.bookmarks.count == 1)
+        // Control: another file in the same folder is a different wallpaper.
+        let other = try otherFile.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        #expect(ApplyRouter.saveIfNew(page(other), label: "Other page", in: bookmarks) != nil)
+    }
+
     private func fixtureFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("LibraryImporterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
