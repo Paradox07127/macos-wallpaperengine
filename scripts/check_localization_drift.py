@@ -147,10 +147,6 @@ PUNCT_SKIP = {
     ('quote-hant', 'zh-Hans'),
     ('space-in-cjk', 'zh-Hans', 'System Normal'),  # capsule headline, design original
     ('space-in-cjk', 'zh-Hant', 'System Normal'),
-    ('space-in-cjk', 'zh-Hans', 'ESC Close · ← → Adjacent wallpapers · Space Play/Pause'),  # key legend: the space separates the key name 空格 from its action, like "ESC 关闭"
-    ('space-in-cjk', 'zh-Hans', 'ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop'),  # same key legend
-    ('space-in-cjk', 'zh-Hant', 'ESC Close · ← → Adjacent wallpapers · Space Play/Pause'),  # same key legend: the key name 空白鍵 and its action, like "ESC 關閉"
-    ('space-in-cjk', 'zh-Hant', 'ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop'),  # same key legend
 }
 # kept half-width: code spans, markdown link targets, format specifiers, URLs, shortcut glyph runs, digit ranges/times
 # A URL or shortcut run stops at whitespace, CJK or full-width punctuation and gives back a trailing , . ; : ! ?
