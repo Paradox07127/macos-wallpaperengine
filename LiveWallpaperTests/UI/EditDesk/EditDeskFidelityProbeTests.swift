@@ -297,7 +297,6 @@ enum ProbeFixtures {
             kind: .scene,
             tags: ["4K", "Scene"],
             metaParts: ["Workshop", "kaze", "214 MB", "3840×2160"],
-            presetName: "Night",
             preview: preview,
             installed: nil
         )
@@ -1254,56 +1253,6 @@ struct S9LocalizationWidthTests {
             }
         }
         #expect(overflowing.isEmpty, Comment(rawValue: "the 446×526 sheet does not hold: \(overflowing)"))
-    }
-
-    /// 6.1c's two buttons live inside a display's content layer, which is at its smallest when the
-    /// 1040 window has to fit three of them.
-    @Test("The empty screen's two buttons and hint fit the smallest shell in all five languages")
-    func emptyScreenFitsTheSmallestShell() throws {
-        let arrangements: [(String, [CGRect])] = [
-            ("single", [CGRect(x: 0, y: 0, width: 1920, height: 1080)]),
-            ("three", (0 ..< 3).map { CGRect(x: CGFloat($0) * 1920, y: 0, width: 1920, height: 1080) }),
-        ]
-        var failures: [String] = []
-        for language in Self.languages {
-            let localized = try bundle(language)
-            let choose = NSLocalizedString("Choose File", bundle: localized, comment: "")
-            let paste = NSLocalizedString("Paste URL", bundle: localized, comment: "")
-            let hint = NSLocalizedString(
-                "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project",
-                bundle: localized, comment: ""
-            )
-            for (name, frames) in arrangements {
-                let content = StageGeometry.arrangement(
-                    frames: frames, in: StageGeometry.stageRect(windowSize: StageGeometry.minimumWindow)
-                ).contentRects[0].size
-                let layout = StageGeometry.emptyScreenLayout(
-                    content: content,
-                    chooseFileTextWidth: StageLayerStyle.width(choose, size: 12, weight: .semibold),
-                    pasteURLTextWidth: StageLayerStyle.width(paste, size: 12, weight: .semibold)
-                )
-                let hintWidth = StageLayerStyle.width(hint, size: 11)
-                ProbeRenderer.report(
-                    "S9.empty.\(language).\(name)",
-                    "content=\(content) buttons=\(layout != nil) hint=\(hintWidth)"
-                )
-                guard let layout else {
-                    failures.append("\(language)/\(name): no room for the buttons")
-                    continue
-                }
-                let bounds = CGRect(origin: .zero, size: content).insetBy(
-                    dx: StageGeometry.emptyScreenMargin, dy: StageGeometry.emptyScreenMargin
-                )
-                if !bounds.contains(layout.chooseFile) || !bounds.contains(layout.pasteURL) {
-                    failures.append("\(language)/\(name): the button row escapes the content layer")
-                }
-                // The hint truncates rather than overflows; record which translations do.
-                if hintWidth > layout.hint.width {
-                    ProbeRenderer.report("S9.empty.\(language).\(name).truncates", true)
-                }
-            }
-        }
-        #expect(failures.isEmpty, Comment(rawValue: "\(failures)"))
     }
 }
 

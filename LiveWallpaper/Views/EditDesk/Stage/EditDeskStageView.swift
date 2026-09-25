@@ -1347,8 +1347,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             let local = shell.layer.convert(point, from: layer)
             if let action = shell.playbackAction(at: local) {
                 model.emit(.playbackTapped(id, action))
-            } else if let action = shell.emptyAction(at: local) {
-                model.emit(.emptyActionTapped(id, action))
             } else {
                 model.emit(.displayTapped(id))
             }

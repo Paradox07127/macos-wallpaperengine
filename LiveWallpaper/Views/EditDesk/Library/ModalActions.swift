@@ -15,7 +15,6 @@ final class ModalActions {
         var displays: @MainActor () -> [Display] = { [] }
         var appendToPlaylist: @MainActor (Data, CGDirectDisplayID) -> Void = { _, _ in }
         var appendWallpaper: (@MainActor (WallpaperQueueEntry, CGDirectDisplayID) -> Void)?
-        var presets: @MainActor () -> [String: ScenePreset] = { [:] }
         #if !LITE_BUILD
         var installedLibrary = InstalledLibraryModel()
         var localInfo: @MainActor (WPEHistoryEntry) async -> LocalProjectInfo? = { await loadWPELocalProjectInfo(for: $0) }
@@ -42,7 +41,6 @@ final class ModalActions {
                       let config = screenManager.getConfiguration(for: screen) else { return }
                 screenManager.replaceWallpaperQueue(config.effectiveWallpaperQueue + [entry], for: screen)
             }
-            inputs.presets = { SettingsManager.shared.loadGlobalSettings().scenePresets }
             return inputs
         }
     }
@@ -139,7 +137,7 @@ final class ModalActions {
     func content(for item: LibraryItem) async -> WallpaperModalContent {
         var content = WallpaperModalContent(
             itemID: item.id, title: item.title, kind: item.kind, tags: [],
-            metaParts: metaParts(for: item), presetName: nil, preview: nil, installed: nil
+            metaParts: metaParts(for: item), preview: nil, installed: nil
         )
         content.canApply = item.isSupported
         #if !LITE_BUILD
@@ -155,9 +153,6 @@ final class ModalActions {
         } else if item.isSourceMissing {
             content.notice = DropFailure.sourceMissing.toastText
         }
-        if case let .bookmark(bookmark) = item.source {
-            content.presetName = bookmark.content.sceneDescriptor?.resolvedPreset(in: inputs.presets())?.name
-        }
         #if !LITE_BUILD
         if let entry = localInfoEntry(for: item) {
             let info = await inputs.localInfo(entry)
@@ -170,8 +165,7 @@ final class ModalActions {
             if case .workshop = item.source {
                 content.installed = InstalledItemExtras(
                     updateState: updateState(for: entry), isWindowsOnly: entry.origin.requiresWindowsPlugin,
-                    inUseOnDisplayNames: inputs.displays().filter { item.onDisplays.contains($0.id) }.map(\.name),
-                    localDescription: info?.cleanedDescription
+                    inUseOnDisplayNames: inputs.displays().filter { item.onDisplays.contains($0.id) }.map(\.name)
                 )
             }
         }

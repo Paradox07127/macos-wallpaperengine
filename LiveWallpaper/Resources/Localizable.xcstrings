@@ -13075,35 +13075,6 @@
         }
       }
     },
-    "Checking for updates" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscando actualizaciones"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデートを確認中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查更新中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢查更新中"
-          }
-        }
-      }
-    },
     "Checking that SteamCMD runs…" : {
       "comment" : "SteamCMD step detail while the connector launches the freshly installed binary to confirm it works.",
       "localizations" : {
@@ -25138,41 +25109,6 @@
         }
       }
     },
-    "ESC Close · ← → Adjacent wallpapers" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC Close · ← → Adjacent wallpapers"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC Cerrar · ← → Fondos adyacentes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 閉じる · ← → 前後の壁紙"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 关闭 · ← → 相邻壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 關閉 · ← → 相鄰桌布"
-          }
-        }
-      }
-    },
     "ESC Close · ← → Adjacent wallpapers · Space Play/Pause" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25198,41 +25134,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ESC 關閉 · ← → 相鄰桌布 · 空白鍵 播放/暫停"
-          }
-        }
-      }
-    },
-    "ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC Cerrar · ← → Fondos adyacentes · Espacio Reproducir/pausar el escritorio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 閉じる · ← → 前後の壁紙 · Space デスクトップ再生/一時停止"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 关闭 · ← → 相邻壁纸 · 空格 播放/暂停桌面壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ESC 關閉 · ← → 相鄰桌布 · 空白鍵 播放/暫停桌面桌布"
           }
         }
       }
@@ -32129,7 +32030,7 @@
       }
     },
     "In use on %@" : {
-      "comment" : "The displays a wallpaper is set on, drawing it or not: the library modal's meta line, the Workshop inspector, and VoiceOver on a card none of them is playing. Placeholder is a list of display names.",
+      "comment" : "The displays a wallpaper is set on, drawing it or not: the Workshop inspector, and VoiceOver on a wallpaper card none of them is playing. Placeholder is a list of display names.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -76650,34 +76551,6 @@
         }
       }
     },
-    "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El tipo se detecta solo · mp4 / mov / html / carpeta / proyecto de Wallpaper Engine"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "種類は自動で判別 · mp4 / mov / html / フォルダ / Wallpaper Engine プロジェクト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "类型自动识别 · mp4 / mov / html / 文件夹 / Wallpaper Engine 项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "類型自動辨識 · mp4 / mov / html / 資料夾 / Wallpaper Engine 項目"
-          }
-        }
-      }
-    },
     "Types are detected automatically — no need to choose. You can swap a display's wallpaper any time." : {
       "localizations" : {
         "es" : {
@@ -89577,35 +89450,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "▶ 預覽 · %@（自動辨識）"
-          }
-        }
-      }
-    },
-    "◈ Preset %@ ▾" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "◈ Preajuste %@ ▾"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "◈ プリセット %@ ▾"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "◈ 预设 %@ ▾"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "◈ 預設 %@ ▾"
           }
         }
       }

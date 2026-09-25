@@ -10,7 +10,6 @@ enum ModalGeometry {
     static let sideMargin: CGFloat = 24
     static let edgeMargin: CGFloat = 16
     static let previewMargin: CGFloat = 12
-    static let bottomBarHeight: CGFloat = 152
     static let headerHeight: CGFloat = 36
     /// R-24 ⑤: both hosts hang the float strip over this panel, so a window too short for `designTop`
     /// stops 12pt under the strip instead of centring into it.
@@ -26,13 +25,6 @@ enum ModalGeometry {
             : max(floatClearance, (windowSize.height - designSize.height) / 2)
         let height = min(designSize.height, windowSize.height - top - edgeMargin)
         return CGRect(x: (windowSize.width - width) / 2, y: top, width: width, height: height)
-    }
-
-    static func previewSize(inPanel panel: CGRect) -> CGSize {
-        CGSize(
-            width: panel.width - 2 * previewMargin,
-            height: panel.height - headerHeight - previewMargin - bottomBarHeight
-        )
     }
 
     /// SCREENS.md S4 gives the bottom bar one primary and at most two secondary apply buttons;

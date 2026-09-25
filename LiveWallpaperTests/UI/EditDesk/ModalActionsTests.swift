@@ -334,25 +334,6 @@ struct ModalActionsTests {
         #expect(fixture.applied.count == 1)
     }
 
-    @Test func presetComesOnlyFromTheItemsOwnSceneBookmark() async {
-        let fixture = Fixture()
-        let preset = ScenePreset.local(name: "Night", baseWorkshopID: "123", values: [:], id: "night")
-        var inputs = fixture.inputs()
-        inputs.presets = { [preset.id: preset] }
-        let descriptor = SceneDescriptor(
-            workshopID: "123", cacheRelativePath: "123", entryFile: "scene.json", capabilityTier: .imageOnly,
-            presetID: preset.id
-        )
-        let modal = fixture.modal(inputs: inputs)
-        let saved = WallpaperBookmark(label: "Scene", content: .scene(descriptor))
-        #expect(await modal.content(for: item(saved)).presetName == "Night")
-        let plain = WallpaperBookmark(label: "Scene", content: .scene(descriptor.withPresetLayer(id: nil, snapshot: [:])))
-        #expect(await modal.content(for: item(plain)).presetName == nil)
-        #if !LITE_BUILD
-        #expect(await modal.content(for: workshop("123")).presetName == nil)
-        #endif
-    }
-
     @Test func previewUsesTheHostsCacheAndRequestedDimensions() async throws {
         let fixture = Fixture()
         let original = try image()
@@ -552,7 +533,6 @@ struct ModalActionsTests {
         #expect(installed.isWindowsOnly)
         #expect(modal.deletesFiles(item))
         #expect(installed.inUseOnDisplayNames == ["Center"])
-        #expect(installed.localDescription == "Description")
         #expect(installed.updateState == .checking(progress: 0.25))
         phase = .failed("Offline")
         #expect(await modal.content(for: item).installed?.updateState == .failed(message: "Offline"))
