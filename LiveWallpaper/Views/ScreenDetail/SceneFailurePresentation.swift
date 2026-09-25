@@ -117,31 +117,28 @@ extension FallbackReason {
         case .unsupportedType:
             switch originalType {
             case .application:
-                return String(localized: "Executable wallpapers can't be imported", defaultValue: "Executable wallpapers can't be imported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+                String(localized: "Executable wallpapers can't be imported", defaultValue: "Executable wallpapers can't be imported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             case .scene:
-                return String(localized: "Unsupported scene format", defaultValue: "Unsupported scene format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+                String(localized: "Unsupported scene format", defaultValue: "Unsupported scene format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             default:
-                return String(localized: "This wallpaper type is not supported", defaultValue: "This wallpaper type is not supported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+                String(localized: "This wallpaper type is not supported", defaultValue: "This wallpaper type is not supported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             }
         case .sceneParseFailed:
-            return String(localized: "This scene can't be opened", defaultValue: "This scene can't be opened", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "This scene can't be opened", defaultValue: "This scene can't be opened", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .sceneLoadFailed:
-            return String(localized: "This wallpaper didn't load", bundle: .appLanguage)
+            String(localized: "This wallpaper didn't load", bundle: .appLanguage)
         case .sceneShaderUnsupported:
-            return String(localized: "This scene uses effects Loomscreen can't render", defaultValue: "This scene uses effects Loomscreen can't render", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "This scene uses effects Loomscreen can't render", defaultValue: "This scene uses effects Loomscreen can't render", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .sceneResourceMissing:
-            return String(localized: "Some scene assets are missing", defaultValue: "Some scene assets are missing", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "Some scene assets are missing", defaultValue: "Some scene assets are missing", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case let .missingDependency(ids):
-            if ids.count == 1 {
-                return String(localized: "Missing 1 Workshop dependency", defaultValue: "Missing 1 Workshop dependency", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-            }
-            return String(localized: "Missing \(ids.count) Workshop dependencies", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
+            String(localized: "Missing \(ids.count) Workshop dependencies", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
         case .requiresWindowsPlugin:
-            return String(localized: "This wallpaper only works on Windows", defaultValue: "This wallpaper only works on Windows", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "This wallpaper only works on Windows", defaultValue: "This wallpaper only works on Windows", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texContainerUnsupported, .texUnsupportedFormat:
-            return String(localized: "This wallpaper uses a file format Loomscreen can't read", defaultValue: "This wallpaper uses a file format Loomscreen can't read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "This wallpaper uses a file format Loomscreen can't read", defaultValue: "This wallpaper uses a file format Loomscreen can't read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texDecodeFailed:
-            return String(localized: "Some images in this scene can't be read", defaultValue: "Some images in this scene can't be read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
+            String(localized: "Some images in this scene can't be read", defaultValue: "Some images in this scene can't be read", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         }
     }
 

@@ -15,8 +15,6 @@ struct PluralCountCopyTests {
         "%@ subs": "no call site",
         "All %@ time-based wallpaper rules will be cleared. The current wallpaper stays applied.": "no call site",
         "Deletes %@ scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them.": "no call site",
-        "Active for %lld apps": "PerformanceSection shows 1 through its own singular key",
-        "Missing %lld Workshop dependencies": "SceneFailurePresentation shows 1 through its own singular key",
         "Skipped %lld displays that changed afterward.": "only for 2 or more; one display gets a message naming it",
         "Created a playlist of %lld videos on %@": "only a drop of 2 or more videos becomes a playlist",
         "Showing the top %lld of %lld presets.": "the total is only shown when it exceeds the one or more loaded",
@@ -77,6 +75,13 @@ struct PluralCountCopyTests {
         #expect(singularMissing.isEmpty, "No one form, so a count of 1 reads \"1 wallpapers\": \(singularMissing.joined(separator: "; "))")
         let stale = Self.exemptKeys.keys.filter { key in catalog.strings[key] == nil || Self.countedNoun(in: key) == nil }
         #expect(stale.isEmpty, "Exempt keys no longer in the catalog or no longer counted: \(stale.sorted())")
+    }
+
+    @Test("A count is never hedged with (s)")
+    func countsAreNotHedged() throws {
+        let catalog = try JSONDecoder().decode(Catalog.self, from: RepositoryRoot.data("LiveWallpaper/Resources/Localizable.xcstrings"))
+        let hedged = catalog.strings.keys.filter { $0.contains(#/%(?:\d+\$)?(?:lld|ld|d|llu|lu|u|@) [A-Za-z'-]+\(s\)/#) }
+        #expect(hedged.isEmpty, "Hedged with (s) where a plural form belongs: \(hedged.sorted())")
     }
 
     private struct Catalog: Decodable {

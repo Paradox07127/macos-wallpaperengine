@@ -144,8 +144,8 @@ public enum DestructiveAction: Identifiable, Equatable {
             )
         case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
             return String(
-                localized: "\(itemCount) video(s) and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
-                bundle: .appLanguage, comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
+                localized: "\(itemCount) videos and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
             )
         case .clearAllStorageCaches(let byteSize):
             return String(

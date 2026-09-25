@@ -359,6 +359,28 @@ struct LocalizationCoverageTests {
         )
     }
 
+    /// An interpolated `String(localized:)` builds its key with plain `%@`/`%lld`, so a key that spells
+    /// `%1$@` is only ever looked up when the source passes that exact text as a literal.
+    @Test("Catalog keys with positional placeholders appear in source as literals")
+    func positionalKeysAppearAsSourceLiterals() throws {
+        func literal(_ key: String) -> String {
+            let escaped = key.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            return "\"\(escaped)\""
+        }
+        #expect(#"format: String(localized: "Say \"%1$@\" to %2$@", bundle: .appLanguage)"#.contains(literal(#"Say "%1$@" to %2$@"#)))
+
+        let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
+        let source = try Self.projectSwiftFiles(["LiveWallpaper", "Packages"])
+            .map { try LocalizedLiteralScan.scannableText(in: String(contentsOfFile: $0, encoding: .utf8)) }
+            .joined(separator: "\n")
+        let unreachable = catalog.strings.keys.sorted().filter { key in
+            key.range(of: #"%\d+\$"#, options: .regularExpression) != nil && !source.contains(literal(key))
+        }
+        #expect(unreachable.isEmpty, "No source literal spells these positional keys, so no lookup ever finds them: \(unreachable.joined(separator: "; "))")
+    }
+
     @Test("Every popover in the app's views opens through the in-app language scope")
     func popoversCarryTheLanguageScope() throws {
         let modifier = "LiveWallpaper/Views/Shared/AppLanguagePopover.swift"
