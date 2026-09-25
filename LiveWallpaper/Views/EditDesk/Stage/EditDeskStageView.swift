@@ -1329,9 +1329,14 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         })
     }
 
-    func tap(at point: CGPoint) {
+    /// `applies`: the click held ⌥, so a card asks to be applied instead of opening; displays ignore it.
+    func tap(at point: CGPoint, applies: Bool = false) {
         guard !model.interactionBlocked else { return }
         if let index = cardIndex(at: point) {
+            if applies {
+                model.emit(.cardApplyRequested(cards[index].id))
+                return
+            }
             if model.shelfStyle == .focusRow, progress.value < StageGeometry.libraryHandoffProgress,
                index != Int(focus.rounded()) {
                 focusCard(at: index)
@@ -1471,7 +1476,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else {
             let point = convert(event.locationInWindow, from: nil)
             if pressedCard == cardIndex(at: point).map({ cards[$0].id }) {
-                tap(at: point)
+                tap(at: point, applies: event.modifierFlags.contains(.option))
             }
         }
         gesture.mouseUp()

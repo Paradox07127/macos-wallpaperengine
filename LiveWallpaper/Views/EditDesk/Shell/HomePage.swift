@@ -458,6 +458,9 @@ struct HomePage: View {
         }
         let configured = screenManager.getConfiguration(for: screen) != nil
         let wallpaper = [
+            StageMenuItem(title: String(localized: "Reload", bundle: .appLanguage), isEnabled: configured) {
+                screenManager.reloadWallpaperForScreen(screen)
+            },
             StageMenuItem(
                 title: String(localized: "Apply to All Displays", bundle: .appLanguage),
                 isEnabled: configured && screenManager.screens.count > 1
@@ -721,7 +724,7 @@ struct HomePage: View {
 
     private var hoverCaption: String? {
         guard let id = stage.hoveredCard, let item = library?.items.first(where: { $0.id == id }) else { return nil }
-        return item.title + " · " + Self.kindName(item.kind)
+        return item.title + " · " + item.kind.localizedName
     }
 
     /// The name rides over the card the pointer is on: inside the thumbnail the card to the right
@@ -768,60 +771,70 @@ struct HomePage: View {
         }
     }
 
-    private static func kindName(_ kind: LibraryItem.Kind) -> String {
-        switch kind {
-        case .video: String(localized: "Video", bundle: .appLanguage)
-        case .web: String(localized: "Web", bundle: .appLanguage)
-        case .scene: String(localized: "Scene", bundle: .appLanguage)
-        case .aerial: String(localized: "Aerial", bundle: .appLanguage)
-        }
-    }
-
     // MARK: Library page
 
     private var wallpaperGrid: some View {
-        ScrollView {
-            if let target = router.libraryTarget, let screen = screenManager.screens.first(where: { $0.id == target }) {
-                libraryTargetBanner(for: screen)
-            }
-            // R-27: eligibility is the page, not what the filter left behind, so the card rides
-            // above an empty result set just as it does above real tiles.
-            if progress?.handled.contains(.library) == false {
-                OnboardingCard(page: .library, perform: performLibraryCardAction)
-                    .frame(height: OnboardingCardMetrics.blockHeight)
-            }
-            if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
-                AerialsSourceStatusCard()
-            } else if let library, library.visibleItems.isEmpty {
-                IllustratedEmptyState(
-                    symbol: library.items.isEmpty ? "square.grid.2x2" : "magnifyingglass",
-                    title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
-                )
-            } else if let library {
-                LibraryGalleryGrid(
-                    size: tileSize, aspect: .wide,
-                    initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
-                ) {
-                    ForEach(library.visibleItems) { item in
-                        let badges = item.cardBadges(
-                            among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
-                        )
-                        Button { presentedItemID = item.id } label: {
-                            LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
-                        .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
-                        .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
-                        .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
-                    }
+        VStack(spacing: 0) {
+            ScrollView {
+                if let target = router.libraryTarget, let screen = screenManager.screens.first(where: { $0.id == target }) {
+                    libraryTargetBanner(for: screen)
                 }
-                .libraryGridPadding()
+                // R-27: eligibility is the page, not what the filter left behind, so the card rides
+                // above an empty result set just as it does above real tiles.
+                if progress?.handled.contains(.library) == false {
+                    OnboardingCard(page: .library, perform: performLibraryCardAction)
+                        .frame(height: OnboardingCardMetrics.blockHeight)
+                }
+                if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
+                    AerialsSourceStatusCard()
+                } else if let library, library.visibleItems.isEmpty {
+                    IllustratedEmptyState(
+                        symbol: library.items.isEmpty ? "square.grid.2x2" : "magnifyingglass",
+                        title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
+                    )
+                } else if let library {
+                    LibraryGalleryGrid(
+                        size: tileSize, aspect: .wide,
+                        initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+                    ) {
+                        ForEach(library.visibleItems) { item in
+                            let badges = item.cardBadges(
+                                among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
+                            )
+                            Button {
+                                // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
+                                if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+                                    quickApply(item.id)
+                                } else {
+                                    presentedItemID = item.id
+                                }
+                            } label: {
+                                LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
+                            .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
+                            .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
+                            .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
+                            .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
+                        }
+                    }
+                    .libraryGridPadding()
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .modifier(GridTopReporter { stage.gridAtTop = $0 })
+            if let library, !library.items.isEmpty {
+                LibraryStatusBar(summary: statusSummary(library))
             }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .modifier(GridTopReporter { stage.gridAtTop = $0 })
         .background(DesignTokens.EditDesk.Colors.background)
+    }
+
+    private func statusSummary(_ library: SavedLibraryModel) -> Text {
+        let total = library.items.count
+        let shown = library.visibleItems.count
+        return shown == total ? Text("\(total) wallpapers") : Text("\(shown) of \(total) shown")
     }
 
     private func libraryTargetBanner(for screen: Screen) -> some View {
@@ -895,7 +908,7 @@ struct HomePage: View {
 
     // MARK: Displays
 
-    /// Its own property: inlined in `LibraryHooks` this filter stops the chain type-checking in time.
+    /// Its own property: inlined in `LibraryHooks`, this filter slows that body's type-check past the 300 ms warning.
     private var drawingDisplayIDs: [CGDirectDisplayID] {
         stage.displays.filter { $0.state == .ok }.map(\.id)
     }
@@ -1091,7 +1104,7 @@ struct HomePage: View {
 
     /// GAP_ANALYSIS §6: `视频 · 4K · 1:32`, `网页 · 域名`, `场景`, `Aerial · 地点`.
     private func metaLine(for item: LibraryItem) -> String {
-        var parts = [Self.kindName(item.kind)]
+        var parts = [item.kind.localizedName]
         switch item.source {
         case let .bookmark(bookmark):
             if case let .html(source, _) = bookmark.content, case let .url(url) = source, let host = url.host() {
@@ -1173,14 +1186,31 @@ struct HomePage: View {
             case let .cardTapped(cardID):
                 presentedItemID = cardID
             case let .cardApplyRequested(cardID):
-                // VoiceOver's "Apply" is the keyboard equivalent of a drop: it lands on the main display.
-                guard let screen = screenManager.screens.first(where: { CGDisplayIsMain($0.id) != 0 })
-                    ?? screenManager.screens.first else { continue }
-                applies.run(for: screen.id) { await applyCard(cardID, to: screen.id, cancellation: $0) }
+                quickApply(cardID)
             case .dropCancelled:
                 continue
             }
         }
+    }
+
+    /// VoiceOver's "Apply" and an ⌥-click: a drop without the drag, onto the display `quickApplyTarget` picks.
+    private func quickApply(_ cardID: StageCard.ID) {
+        let screens = screenManager.screens
+        guard let target = Self.quickApplyTarget(
+            displays: screens.map(\.id),
+            main: screens.first { CGDisplayIsMain($0.id) != 0 }?.id,
+            libraryTarget: router.libraryTarget
+        ) else { return }
+        applies.run(for: target) { await applyCard(cardID, to: target, cancellation: $0) }
+    }
+
+    static func quickApplyTarget(
+        displays: [CGDirectDisplayID], main: CGDirectDisplayID?, libraryTarget: CGDirectDisplayID?
+    ) -> CGDirectDisplayID? {
+        if let libraryTarget, displays.contains(libraryTarget) {
+            return libraryTarget
+        }
+        return main ?? displays.first
     }
 
     private func applyCard(_ cardID: StageCard.ID, to displayID: CGDirectDisplayID, cancellation: ApplyCancellation) async {
