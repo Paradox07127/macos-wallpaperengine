@@ -366,6 +366,7 @@ struct VideoSelectionGateTests {
                     errors += 1
                 }
             },
+            reportPreparationFailure: { _, _, _ in errors += 1 },
             originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { false },
             isRuntimeInstallationAllowed: {
                 lifecycleChecks += 1

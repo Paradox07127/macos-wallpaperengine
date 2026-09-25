@@ -6,7 +6,7 @@ public enum WallpaperSessionActivity: Equatable, Sendable {
     /// User pause — last frame still visible.
     case paused
     /// Held down by system policy (heat, memory, absence, a rule), not by the user.
-    /// Must stay distinct from `.paused`: the play button is drawn from this.
+    /// Must stay distinct from `.paused`: status text names the policy hold only for this case.
     case policySuspended
     /// Rebuilding what a deep hibernate released: nothing is holding it down, so it must
     /// not be reported as suspended.

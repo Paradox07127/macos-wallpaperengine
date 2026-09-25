@@ -431,6 +431,7 @@ extension ScreenManager {
             replacing: expected,
             generation: generation,
             attemptID: attemptID,
+            proposedConfiguration: configuration,
             expectedConfigurationRevision: expectedConfigurationRevision,
             timeout: timeout,
             beforeCommit: transactionalBeforeCommit,

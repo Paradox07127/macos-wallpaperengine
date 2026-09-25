@@ -56643,40 +56643,6 @@
         }
       }
     },
-    "Retry loading the current wallpaper source" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry loading the current wallpaper source"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar la carga del origen del fondo de pantalla actual"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の壁紙ソースの読み込みを再試行"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试加载当前壁纸源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重試載入目前桌布來源"
-          }
-        }
-      }
-    },
     "Retry preview" : {
       "comment" : "A11y label for the corner badge that retries a failed preview load.",
       "localizations" : {

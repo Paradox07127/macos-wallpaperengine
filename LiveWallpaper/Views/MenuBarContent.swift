@@ -149,7 +149,7 @@ struct MenuBarContent: View {
                         subtitleAccessibilityText: displaySubtitleText(for: screen, summary: summary),
                         iconName: WallpaperType.displaySymbolName(for: summary.wallpaperType),
                         visualState: visualState,
-                        isPlaying: summary.activity == .active,
+                        intendsToPlay: screen.playbackController?.userIntendsToPlay == true,
                         supportsPlayback: summary.supportsPlaybackControl,
                         canStepPlaylist: canStepPlaylist(for: screen),
                         screenID: screen.id,
@@ -567,7 +567,7 @@ private struct MenuBarDisplayRow: View {
     let subtitleAccessibilityText: String
     let iconName: String
     let visualState: DisplayVisualState
-    let isPlaying: Bool
+    let intendsToPlay: Bool
     let supportsPlayback: Bool
     let canStepPlaylist: Bool
     /// Keys the volume slider's pending commit to this display (`CoalescedSlider` owner).
@@ -618,8 +618,8 @@ private struct MenuBarDisplayRow: View {
                                 .accessibilityLabel(Text("Previous wallpaper"))
                         }
 
-                        GlassIconButton(isPlaying ? "pause.fill" : "play.fill", action: playbackAction)
-                            .accessibilityLabel(Text(isPlaying ? "Pause wallpaper" : "Play wallpaper"))
+                        GlassIconButton(intendsToPlay ? "pause.fill" : "play.fill", action: playbackAction)
+                            .accessibilityLabel(Text(intendsToPlay ? "Pause wallpaper" : "Play wallpaper"))
 
                         if canStepPlaylist {
                             GlassIconButton("chevron.right", action: nextAction)
