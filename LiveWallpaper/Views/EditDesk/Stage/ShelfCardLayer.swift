@@ -44,7 +44,6 @@ final class ShelfCardLayer {
     var lift = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var hover = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var gridProgress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
-    var staggerRemaining: TimeInterval = 0
     var shakeElapsed: TimeInterval?
     var frame: CGRect {
         layer.frame
@@ -142,8 +141,8 @@ final class ShelfCardLayer {
         perspective.m34 = -1 / StageGeometry.shelfPerspective
         layer.sublayerTransform = perspective
         let size = placement.frame.size
-        let corner = StageGeometry.lerp(DesignTokens.EditDesk.Corner.shelfCard, DesignTokens.Corner.lg, gridMix)
-        let tilted = 1 - gridMix
+        let corner = StageGeometry.lerp(DesignTokens.EditDesk.Corner.shelfCard, DesignTokens.Corner.lg, 1 - placement.pose)
+        let tilted = placement.pose
         // Facing In's middle card faces front, so its spine and contact shadow grow with its turn
         // instead of jumping sides as the card crosses the middle.
         let edged = style == .facingIn

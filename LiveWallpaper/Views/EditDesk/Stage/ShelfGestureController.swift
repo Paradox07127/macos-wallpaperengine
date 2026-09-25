@@ -23,6 +23,8 @@ final class ShelfGestureController {
 
     private let clock: () -> TimeInterval
     private var travel = CGPoint.zero
+    /// Deadband travel the locked axis has not applied yet.
+    private var owed = CGPoint.zero
     private var axis = Axis.undecided
     private var rawRowOffset: CGFloat = 0
     /// Rest state the live gesture started from; it may not travel more than one state either way.
@@ -55,9 +57,11 @@ final class ShelfGestureController {
         deltaX: CGFloat, deltaY: CGFloat, progress: Double,
         phase: Phase, precise: Bool = true, shift: Bool = false
     ) -> Double? {
+        let pointsPerState = precise ? StageGeometry.scrollPointsPerProgress : StageGeometry.wheelPointsPerProgress
         switch phase {
         case .began:
             travel = .zero
+            owed = .zero
             axis = .undecided
             anchor = nil
             startState = StageGeometry.snapTarget(for: progress)
@@ -75,7 +79,8 @@ final class ShelfGestureController {
                 // second ago: decay the sample by how long it has been still.
                 let still = lastEventTime.map { max(0, clock() - $0) } ?? 0
                 let velocity = smoothedVelocity * exp(-still / StageGeometry.velocityWindow)
-                pendingRelease = Self.landing(from: progress, base: base, velocity: velocity)
+                // The travel still owed counts: the landing is judged on the whole swipe.
+                pendingRelease = Self.landing(from: progress - Double(owed.y / pointsPerState), base: base, velocity: velocity)
                 snapDeadline = nil
                 // A finger held still before lifting gets no momentum, so no later phase ends this gesture.
                 endGesture()
@@ -102,7 +107,6 @@ final class ShelfGestureController {
             break
         }
 
-        let pointsPerState = precise ? StageGeometry.scrollPointsPerProgress : StageGeometry.wheelPointsPerProgress
         if touching {
             trackVelocity(deltaY: deltaY, pointsPerState: pointsPerState)
         }
@@ -117,10 +121,17 @@ final class ShelfGestureController {
             travel.y += deltaY
             axis = Self.lock(travel: travel, canScrollRow: (startState ?? StageGeometry.snapTarget(for: progress)) == 1, shift: shift)
             guard axis != .undecided else { return nil }
-            // The deadband's travel is spent on the axis that won it, so the lock does not land as
-            // a notch: dropping it makes the first 16pt of every gesture disappear.
-            stepX = travel.x
-            stepY = travel.y
+            // The deadband's travel is spent on the axis that won it, or the first 16pt of every
+            // gesture disappear; paid out over the next events, the lock does not land as a notch.
+            owed = CGPoint(x: travel.x - deltaX, y: travel.y - deltaY)
+        }
+        if owed != .zero {
+            // Wheel and momentum events pay it at once: the wheel's commit counts `wheelTravel`,
+            // which has to hold the whole burst.
+            let share = touching && hypot(owed.x, owed.y) >= 0.5 ? StageGeometry.deadbandCatchUp : 1
+            stepX += owed.x * share
+            stepY += owed.y * share
+            owed = CGPoint(x: owed.x * (1 - share), y: owed.y * (1 - share))
         }
 
         if axis == .horizontal {
@@ -209,6 +220,7 @@ final class ShelfGestureController {
 
     private func endGesture() {
         travel = .zero
+        owed = .zero
         axis = .undecided
         anchor = nil
         startState = nil

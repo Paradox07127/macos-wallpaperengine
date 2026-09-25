@@ -380,7 +380,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             tile.lift.jump(to: 0)
             tile.hover.jump(to: tile.hover.target)
             tile.gridProgress.jump(to: progress.value)
-            tile.staggerRemaining = 0
             tile.shakeElapsed = nil
         }
         ghost.x.jump(to: ghost.x.target)
@@ -585,12 +584,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             tile.lift.jump(to: 0)
             tile.hover.jump(to: 0)
             tile.shakeElapsed = nil
-            tile.gridProgress.jump(to: progress.value)
+            tile.gridProgress = StageSpring(
+                value: progress.value, target: progress.value, parameters: StageGeometry.gridFlightSpring(rank: 0, of: 1)
+            )
             if staggerToGrid {
                 // Born mid-flight: a card left on the value it was created with sits the animation
                 // out, then gets dragged to the end state when the stagger stops.
-                tile.gridProgress.target = progress.target
-                tile.staggerRemaining = 0
+                tile.gridProgress.launch(to: progress.target, velocity: progress.velocity)
             }
             cardLayers[cards[index].id] = tile
         }
@@ -616,12 +616,21 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// The card's rest slot: everything `render` adds on top (wave lift, shake) is deliberately
     /// left out so hit testing cannot chase a card that is moving.
     private func cardPlacement(style: ShelfStyle, index: Int, count: Int, progress p: Double) -> StageGeometry.CardPlacement {
+        // Judged on the resting shelf, so a card keeps one kind of flight for the whole transition.
+        let revealed = p > 1 && placement(style: style, index: index, count: count, progress: 1, revealedInPlace: false).opacity
+            <= StageGeometry.unseenOpacity
+        return placement(style: style, index: index, count: count, progress: p, revealedInPlace: revealed)
+    }
+
+    private func placement(
+        style: ShelfStyle, index: Int, count: Int, progress p: Double, revealedInPlace: Bool
+    ) -> StageGeometry.CardPlacement {
         var placement = StageGeometry.cardPlacement(
             style: style, index: index, count: count, progress: p, focus: focus, windowSize: bounds.size,
             capacity: model.shelfRenderBudget, gridSize: model.gridTileSize,
-            gridContentInset: model.gridContentInset, gridScrollOffset: gridScrollOffset
+            gridContentInset: model.gridContentInset, gridScrollOffset: gridScrollOffset, revealedInPlace: revealedInPlace
         )
-        guard !style.isCentred else { return placement }
+        guard !style.isCentred, !revealedInPlace else { return placement }
         let flat = CGFloat(1 - StageGeometry.progressSplit(p).t2)
         placement.frame.origin.x += row.value * flat
         let fade = StageGeometry.bandOpacity(
@@ -680,14 +689,17 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 // Build the destination window before any flight frame or stagger is seeded.
                 syncCardWindow(count: cards.count, style: model.shelfStyle)
                 let visible = visibleCardIndices
-                let step = min(0.015, 0.18 / Double(max(1, visible.count - 1)))
                 for (rank, index) in visible.enumerated() {
-                    let tile = cardLayers[cards[index].id]
-                    if !continuing {
-                        tile?.gridProgress.jump(to: progress.value)
-                        tile?.staggerRemaining = Double(rank) * step
+                    guard let tile = cardLayers[cards[index].id] else { continue }
+                    if continuing {
+                        tile.gridProgress.target = target
+                    } else {
+                        tile.gridProgress = StageSpring(
+                            value: progress.value, target: target,
+                            parameters: StageGeometry.gridFlightSpring(rank: rank, of: visible.count)
+                        )
+                        tile.gridProgress.launch(to: target, velocity: velocity)
                     }
-                    tile?.gridProgress.target = target
                 }
                 if progress.isSettled {
                     progress.jump(to: target)
@@ -725,15 +737,24 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
     }
 
-    /// Progress units: across the ~560pt climb from the row to the grid, 0.002 is about a point.
-    private static let landedTolerance = 0.002
+    /// Points between a card as drawn and as it comes to rest.
+    private static let landedDistance: CGFloat = 0.5
 
-    /// Every staggered card within a point of its tile and all but stopped: the grid can fade in over
-    /// them now instead of waiting out the springs' last sub-point creep.
+    /// Every card on screen within half a point of where it comes to rest, so the grid need not wait out the
+    /// springs' creep. Measured as drawn: long flights, short ones and in-place reveals get there at different progress.
     private var cardsHaveLanded: Bool {
-        !staggerToGrid || cardLayers.values.allSatisfy {
-            abs($0.gridProgress.target - $0.gridProgress.value) < Self.landedTolerance
-                && abs($0.gridProgress.velocity) < Self.landedTolerance * 10
+        guard staggerToGrid else { return true }
+        let style = model.shelfStyle
+        return visibleCardIndices.allSatisfy { index in
+            guard let spring = cardLayers[cards[index].id]?.gridProgress else { return true }
+            let now = cardPlacement(style: style, index: index, count: cards.count, progress: spring.value)
+            guard now.opacity > StageGeometry.unseenOpacity else { return true }
+            let drawn = StageGeometry.hitRect(now, style: style)
+            let rest = StageGeometry.hitRect(
+                cardPlacement(style: style, index: index, count: cards.count, progress: spring.target), style: style
+            )
+            return max(abs(drawn.minX - rest.minX), abs(drawn.minY - rest.minY), abs(drawn.maxX - rest.maxX), abs(drawn.maxY - rest.maxY))
+                <= Self.landedDistance
         }
     }
 
@@ -938,9 +959,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     func advance(dt: TimeInterval) {
-        // One clock for the whole frame: the springs clamp a hitch, so the stagger and shake timers
-        // have to as well, or a single stutter spends the entire stagger schedule while the
-        // transition it staggers has barely moved.
+        // One clock for the whole frame: the springs clamp a hitch, so the shake timer has to as well,
+        // or a single stutter ends a shake the cards have barely started.
         let dt = min(dt, StageSpring.maximumStep)
         withoutActions {
             if model.reduceMotion {
@@ -955,10 +975,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 tile.lift.step(dt: dt)
                 tile.hover.step(dt: dt)
                 if staggerToGrid {
-                    tile.staggerRemaining -= dt
-                    if tile.staggerRemaining <= 0 {
-                        tile.gridProgress.step(dt: dt)
-                    }
+                    tile.gridProgress.step(dt: dt)
                 }
                 if let elapsed = tile.shakeElapsed {
                     tile.shakeElapsed = elapsed + dt >= 0.3 ? nil : elapsed + dt
@@ -967,8 +984,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             if staggerToGrid, cardLayers.values.allSatisfy(\.gridProgress.isSettled) {
                 staggerToGrid = false
             }
-            // SwiftUI takes over on the snap event, once the last staggered card has landed.
-            if snapInFlight, progress.isSettled, cardsHaveLanded {
+            // SwiftUI takes over on the snap event, once the last staggered card has landed. Toward the
+            // grid only the cards are drawn, so the global spring's tail is not waited out.
+            if snapInFlight, cardsHaveLanded, progress.isSettled || (staggerToGrid && progress.target == 2) {
                 finishSnap()
             }
             for shell in displayLayers.values {
@@ -1218,7 +1236,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard staggerToGrid else { return }
         for tile in cardLayers.values {
             tile.gridProgress.target = value
-            tile.staggerRemaining = 0
         }
     }
 
@@ -1850,11 +1867,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     var debugStaggerToGrid: Bool {
         staggerToGrid
-    }
-
-    /// The stage's own progress spring only; the staggered cards keep their own.
-    var debugProgressSettled: Bool {
-        progress.isSettled
     }
 
     var debugDragging: Bool {

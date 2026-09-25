@@ -688,18 +688,21 @@ struct EditDeskStageViewTests {
         }
         #expect(model.visibleShelfRange == rowWindow)
         #expect(model.visibleGridRange == gridWindow)
-        let delays = view.cardLayers.values.map(\.staggerRemaining)
-        #expect(try #require(delays.max()) <= 0.35)
-        #expect(try #require(delays.max()) > 0)
+        // No card waits its turn: the stagger is in how fast each card's spring responds.
+        let responses = view.cardLayers.values.map(\.gridProgress.parameters.response)
+        #expect(try #require(responses.max()) <= 0.44 + 1e-9)
+        #expect(try #require(responses.max()) > #require(responses.min()))
+        view.advance(dt: 1 / 120)
+        #expect(view.cardLayers.values.allSatisfy { $0.gridProgress.value > 1 }, "a card sat out the first frame")
         for _ in 0 ..< 480 {
             view.advance(dt: 1 / 120)
             if model.snappedIndex == 2 {
-                // Handed over once landed: within a point of the tile, not necessarily settled on it.
+                // Handed over once landed: within half a point of the tile, not necessarily settled on it.
                 for index in gridWindow {
                     let tile = try #require(view.cardLayers["card-\(index)"]).frame
                     let grid = StageGeometry.gridFrame(index: index, windowWidth: view.bounds.width)
                     let off = max(abs(tile.minX - grid.minX), abs(tile.minY - grid.minY), abs(tile.width - grid.width))
-                    #expect(off <= 1, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover"))
+                    #expect(off <= 0.5, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover"))
                 }
                 break
             }
@@ -2677,7 +2680,7 @@ struct EditDeskStageViewTests {
         let spread = try #require(before.values.max()) - #require(before.values.min())
         #expect(spread > 20, Comment(rawValue: "the stagger only spread the row by \(spread)pt"))
         try view.scrollWheel(with: scroll(phase: .began))
-        #expect(view.cardLayers.values.allSatisfy { $0.staggerRemaining == 0 }, "the fingers have to take the stagger over")
+        #expect(view.cardLayers.values.allSatisfy { $0.gridProgress.target == model.progress }, "the fingers have to take the stagger over")
         for (id, tile) in view.cardLayers {
             let moved = tile.frame.minY - (before[id] ?? tile.frame.minY)
             #expect(abs(moved) < 0.5, Comment(rawValue: "card \(id) jumped \(moved)pt on the frame the fingers landed"))
@@ -2935,7 +2938,7 @@ struct EditDeskStageViewTests {
         #expect(HomePage.quickApplyTarget(displays: [1, 2, 3], main: nil, libraryTarget: nil) == 1)
     }
 
-    @Test("A re-snap to the grid while cards are still flying waits for them to land before handing over")
+    @Test("A re-snap to the grid while cards are still flying keeps them flying and waits for them to land before handing over")
     func snapToTheGridWaitsForTheStagger() throws {
         let model = makeModel()
         model.reduceMotion = false
@@ -2945,30 +2948,35 @@ struct EditDeskStageViewTests {
         view.layoutSubtreeIfNeeded()
         model.setProgress(1, animated: false)
         model.setProgress(2, animated: true)
-        var resnapped = false
+        for _ in 0 ..< 10 {
+            view.advance(dt: 1 / 120)
+        }
+        try #require(view.debugStaggerToGrid && model.snappedIndex != 2, "the cards were not flying at the re-snap, so nothing was tested")
+        let before = view.cardLayers.mapValues(\.frame)
+        // What a second Up arrow asks for mid-flight.
+        model.setProgress(2, animated: true)
+        for (id, tile) in view.cardLayers {
+            let was = try #require(before[id])
+            let jump = max(abs(tile.frame.minX - was.minX), abs(tile.frame.minY - was.minY), abs(tile.frame.width - was.width))
+            #expect(jump < 0.5, Comment(rawValue: "\(id) jumped \(jump)pt on the re-snap"))
+        }
         for _ in 0 ..< 480 {
             view.advance(dt: 1 / 120)
-            if !resnapped, view.debugProgressSettled, view.debugStaggerToGrid {
-                // What a second Up arrow asks for once the stage itself has arrived.
-                model.setProgress(2, animated: true)
-                resnapped = true
-            }
             if model.snappedIndex == 2 {
                 break
             }
         }
-        try #require(resnapped, "the stage never arrived while cards were still flying, so nothing was tested")
         #expect(model.snappedIndex == 2)
-        // Landed, not necessarily settled: within a point of the tile the grid can fade in over the card.
+        // Landed, not necessarily settled: within half a point of the tile the grid can fade in over the card.
         for (index, card) in model.shelfItems.enumerated() {
             let tile = try #require(view.cardLayers[card.id]).frame
             let grid = StageGeometry.gridFrame(index: index, windowWidth: view.bounds.width)
             let off = max(abs(tile.minX - grid.minX), abs(tile.minY - grid.minY), abs(tile.width - grid.width))
-            #expect(off <= 1, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover: \(tile)"))
+            #expect(off <= 0.5, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover: \(tile)"))
         }
     }
 
-    @Test("The grid takes over once every card sits within a point of its tile, not after the springs finish creeping")
+    @Test("The grid takes over once every card sits within half a point of its tile, not after the springs finish creeping")
     func gridTakesOverWhenTheCardsHaveLanded() throws {
         let model = makeModel()
         model.reduceMotion = false
@@ -2992,7 +3000,7 @@ struct EditDeskStageViewTests {
         for (id, frame) in atHandover {
             let settled = try #require(view.cardLayers[id]).frame
             let moved = max(abs(settled.minX - frame.minX), abs(settled.minY - frame.minY), abs(settled.width - frame.width))
-            #expect(moved <= 1, Comment(rawValue: "\(id) moved \(moved)pt under the grid after the handover"))
+            #expect(moved <= 0.5, Comment(rawValue: "\(id) moved \(moved)pt under the grid after the handover"))
         }
     }
 
@@ -3064,7 +3072,7 @@ struct EditDeskStageViewTests {
         #expect(landings == 1, Comment(rawValue: "the stage reported landing on the grid \(landings) times"))
     }
 
-    @Test("Cards leave for the grid at most 15ms apart and all within 0.18s", arguments: [14, 1000])
+    @Test("Cards leave for the grid together, in order on critically damped springs of 0.34s to 0.44s", arguments: [14, 1000])
     func staggerToTheGridIsShort(count: Int) throws {
         let model = makeModel()
         model.reduceMotion = false
@@ -3075,14 +3083,19 @@ struct EditDeskStageViewTests {
         view.layoutSubtreeIfNeeded()
         model.setProgress(1, animated: false)
         model.setProgress(2, animated: true)
-        let delays = view.cardLayers.values.map(\.staggerRemaining).sorted()
-        let last = try #require(delays.last)
-        #expect(last <= 0.18 + 1e-9, Comment(rawValue: "the last of \(delays.count) cards leaves after \(last)s"))
-        let gaps = zip(delays.dropFirst(), delays).map { $0 - $1 }
-        #expect(gaps.allSatisfy { $0 <= 0.015 + 1e-9 }, Comment(rawValue: "\(gaps.max() ?? 0)s between two cards"))
+        let springs = model.shelfItems.compactMap { view.cardLayers[$0.id]?.gridProgress }
+        let responses = springs.map(\.parameters.response)
+        let first = try #require(responses.first)
+        let last = try #require(responses.last)
+        #expect(abs(first - 0.34) < 1e-9 && abs(last - 0.44) < 1e-9, Comment(rawValue: "\(springs.count) cards respond from \(first)s to \(last)s"))
+        #expect(zip(responses.dropFirst(), responses).allSatisfy { $0 >= $1 }, "a later card responds faster than an earlier one")
+        #expect(springs.allSatisfy { $0.parameters.dampingFraction == 1 }, "a card's spring overshoots its tile")
+        view.advance(dt: 1 / 120)
+        let waiting = model.shelfItems.filter { (view.cardLayers[$0.id]?.gridProgress.value ?? 2) <= 1 }.count
+        #expect(waiting == 0, Comment(rawValue: "\(waiting) cards sat out the first frame"))
     }
 
-    @Test("A long hitch moves the stagger schedule and the springs on the same clock")
+    @Test("A long hitch moves every card's flight and the shake timer on the same clock")
     func hitchKeepsEveryTimerOnTheSameClock() throws {
         let model = makeModel()
         model.reduceMotion = false
@@ -3093,10 +3106,13 @@ struct EditDeskStageViewTests {
         model.setProgress(1, animated: false)
         model.setProgress(2, animated: true)
         view.shake(card: "card-5")
-        let before = try #require(view.cardLayers.values.map(\.staggerRemaining).max())
+        var expected = view.cardLayers.mapValues(\.gridProgress)
+        for id in expected.keys {
+            expected[id]?.step(dt: StageSpring.maximumStep)
+        }
         view.advance(dt: 0.3)
-        let after = try #require(view.cardLayers.values.map(\.staggerRemaining).max())
-        #expect(before - after <= 0.1 + 0.000001, Comment(rawValue: "a 300ms hitch spent \(before - after)s of the stagger"))
+        let overran = view.cardLayers.filter { $0.value.gridProgress.value != expected[$0.key]?.value }.map(\.key)
+        #expect(overran.isEmpty, Comment(rawValue: "a 300ms hitch moved \(overran.sorted()) further than one 100ms step"))
         #expect(view.cardLayers["card-5"]?.shakeElapsed != nil, "the shake timer runs on the frame clock too")
     }
 

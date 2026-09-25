@@ -165,6 +165,7 @@ SUITES=(
   SchedulePolicyTests
   WallpaperAutomationCoordinatorTests
   EditDeskStageViewTests
+  ShelfGridFlightTests
   DisplayStateResolverTests
   ApplyRouterTests
   LibraryImporterTests

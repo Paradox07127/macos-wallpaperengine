@@ -528,7 +528,8 @@ struct StageGeometryTests {
             x: (row.minX + grid.minX) / 2, y: (row.minY + grid.minY) / 2,
             width: (row.width + grid.width) / 2, height: (row.height + grid.height) / 2
         )
-        #expect(near(mid.frame, expectedMid) && near(mid.rotationYDegrees, 20, 0.01), Comment(rawValue: "p=1.5 → \(mid)"))
+        // Position and size move linearly; the lean eases out by 70% of the leg, to 1 − smoothstep(0, 0.7, 0.5) halfway.
+        #expect(near(mid.frame, expectedMid) && near(mid.rotationYDegrees, 40 * 0.198251, 0.01), Comment(rawValue: "p=1.5 → \(mid)"))
 
         let full = placement(2)
         #expect(near(full.frame, grid) && near(full.rotationYDegrees, 0, 0.01) && full.opacity == 1, Comment(rawValue: "p=2 → \(full)"))
@@ -683,7 +684,8 @@ struct StageGeometryTests {
             let row = placement(index, 1)
             let half = placement(index, 1.5)
             let grid = placement(index, 2)
-            #expect(near(half.rotationZDegrees, row.rotationZDegrees / 2, 0.0001), Comment(rawValue: "card \(index): \(half)"))
+            // The turn eases out by 70% of the leg: 1 − smoothstep(0, 0.7, 0.5) of it is left halfway.
+            #expect(near(half.rotationZDegrees, row.rotationZDegrees * 0.198251, 0.0001), Comment(rawValue: "card \(index): \(half)"))
             #expect(
                 grid.rotationYDegrees == 0 && grid.rotationZDegrees == 0 && grid.translateZ == 0 && grid.dim == 0
                     && grid.scale == 1,
