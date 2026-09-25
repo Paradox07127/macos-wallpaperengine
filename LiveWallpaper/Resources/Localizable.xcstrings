@@ -6278,35 +6278,6 @@
         }
       }
     },
-    "After downloading\napply to" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tras la descarga\naplicar a"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード後\n適用先"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载完成后\n应用到"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下載完成後\n套用到"
-          }
-        }
-      }
-    },
     "Afternoon" : {
       "comment" : "Default schedule slot name.",
       "localizations" : {
@@ -8227,35 +8198,6 @@
         }
       }
     },
-    "Apply to %@ when done" : {
-      "comment" : "Workshop modal primary button: download now, apply to this display once it lands. Placeholder is the display name.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar a %@ al terminar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完了後に %@ に適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成后应用到 %@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成後套用到 %@"
-          }
-        }
-      }
-    },
     "Apply to All Displays" : {
       "localizations" : {
         "en" : {
@@ -8359,7 +8301,7 @@
       }
     },
     "Applying…" : {
-      "comment" : "Workshop modal button and status line while the downloaded wallpaper is being applied.",
+      "comment" : "Workshop modal status line while the downloaded wallpaper is being applied.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -11782,41 +11724,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法在這台 Mac 上執行"
-          }
-        }
-      }
-    },
-    "Can't run on this Mac: %@" : {
-      "comment" : "Workshop modal status line for an item this Mac cannot run. Placeholder is the reason, such as Windows plugin required.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Can't run on this Mac: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No puede ejecutarse en este Mac: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac では実行できません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机无法运行：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法在這台 Mac 上執行：%@"
           }
         }
       }
@@ -22889,6 +22796,111 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「系統設定 › 背景圖片」中下載空照圖，下載完成後重新整理。"
+          }
+        }
+      }
+    },
+    "Download and apply to" : {
+      "comment" : "Workshop modal caption before the display buttons: pressing one downloads the wallpaper and applies it there.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download and apply to"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar y aplicar en"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードして適用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载并应用到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載並套用到"
+          }
+        }
+      }
+    },
+    "Download and apply to %@" : {
+      "comment" : "Workshop modal display button read out by VoiceOver. Placeholder is the display name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download and apply to %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar y aplicar en %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードして %@ に適用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载并应用到 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載並套用到 %@"
+          }
+        }
+      }
+    },
+    "Download and apply to %@ (⌘%lld)" : {
+      "comment" : "Workshop modal display button tooltip. Placeholders are a display name and its ⌘ shortcut number.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download and apply to %1$@ (⌘%2$lld)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar y aplicar en %1$@ (⌘%2$lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードして %1$@ に適用（⌘%2$lld）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载并应用到 %1$@（⌘%2$lld）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載並套用到 %1$@（⌘%2$lld）"
           }
         }
       }
@@ -57966,35 +57978,6 @@
         }
       }
     },
-    "Selected · %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seleccionado · %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択中 · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 · %@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已選 · %@"
-          }
-        }
-      }
-    },
     "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks." : {
       "comment" : "Web Interaction tooltip. Preserve click/scroll routing and the desktop-icon/Dock click consequence.",
       "extractionState" : "manual",
@@ -78930,7 +78913,7 @@
       }
     },
     "Will apply to %@ when done" : {
-      "comment" : "Workshop modal primary button, disabled while a download is queued to apply to this display. Placeholder is the display name.",
+      "comment" : "Workshop modal status while a download is queued to apply to a display. Placeholder is the display name.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

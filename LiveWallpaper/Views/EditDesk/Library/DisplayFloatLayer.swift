@@ -3,7 +3,7 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// Pure float-layer geometry and per-mode wording — kept static so tests drive it without a window.
+/// Pure float-layer geometry and wording — kept static so tests drive it without a window.
 enum FloatLayerGeometry {
     /// SCREENS S5: the strip rides at top 14. `ModalGeometry` reads it to keep the panel clear of it.
     static let panelTop: CGFloat = 14
@@ -25,8 +25,10 @@ enum FloatLayerGeometry {
     /// The caption box's floor; SCREENS S5 draws it at 70, and zh/ja fit inside that.
     static let captionMinWidth: CGFloat = 70
 
-    static func captionWidth(for mode: FloatLayerMode) -> CGFloat {
-        captionWidth(ofCaption: String(localized: String.LocalizationValue(captionKey(for: mode)), bundle: .appLanguage))
+    static let captionKey = "Drag to a display\nto apply"
+
+    static var captionWidth: CGFloat {
+        captionWidth(ofCaption: String(localized: String.LocalizationValue(captionKey), bundle: .appLanguage))
     }
 
     /// en needs 106pt and es 130 for the same two lines, so the run-in is measured, not assumed.
@@ -43,33 +45,12 @@ enum FloatLayerGeometry {
         count >= 5
     }
 
-    static func captionKey(for mode: FloatLayerMode) -> String {
-        switch mode {
-        case .dropTarget: "Drag to a display\nto apply"
-        case .selectTarget: "After downloading\napply to"
-        }
+    static var highlightLabel: String {
+        String(localized: "Drop to replace", bundle: .appLanguage)
     }
 
-    static func highlightLabel(for mode: FloatLayerMode, displayName: String) -> String {
-        switch mode {
-        case .dropTarget: String(localized: "Drop to replace", bundle: .appLanguage)
-        case .selectTarget: String(localized: "Selected · \(displayName)", bundle: .appLanguage)
-        }
-    }
-
-    /// "All Displays" is a drop-strip affordance; picking one target to apply to later excludes it.
-    static func showsApplyAll(for mode: FloatLayerMode) -> Bool {
-        switch mode {
-        case .dropTarget: true
-        case .selectTarget: false
-        }
-    }
-
-    static func thumbnailAccessibilityLabel(for mode: FloatLayerMode, displayName: String) -> String {
-        switch mode {
-        case .dropTarget: String(localized: "Drop target: \(displayName)", bundle: .appLanguage)
-        case .selectTarget: String(localized: "Apply to \(displayName)", bundle: .appLanguage)
-        }
+    static func thumbnailAccessibilityLabel(displayName: String) -> String {
+        String(localized: "Drop target: \(displayName)", bundle: .appLanguage)
     }
 }
 
@@ -77,10 +58,8 @@ enum FloatLayerGeometry {
 /// and never hit-tests the drag itself — the host owns both the hit test and the apply.
 struct DisplayFloatLayer: View {
     let targets: [ModalDisplayTarget]
-    let mode: FloatLayerMode
     let highlighted: CGDirectDisplayID?
     let windowWidth: CGFloat
-    let onSelect: (CGDirectDisplayID) -> Void
     let onTargetFrame: (FloatTargetFrame) -> Void
     /// The thumbnail run's frame in `EditDeskCoordinateSpace`: with ≥5 displays it clips.
     let onRunFrame: (CGRect) -> Void
@@ -99,12 +78,10 @@ struct DisplayFloatLayer: View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
             caption
             thumbnailRun
-            if FloatLayerGeometry.showsApplyAll(for: mode) {
-                Rectangle()
-                    .fill(DesignTokens.EditDesk.Colors.strokePanel)
-                    .frame(width: 1, height: 60)
-                applyAllTile
-            }
+            Rectangle()
+                .fill(DesignTokens.EditDesk.Colors.strokePanel)
+                .frame(width: 1, height: 60)
+            applyAllTile
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
         .frame(height: FloatLayerGeometry.panelHeight)
@@ -113,7 +90,7 @@ struct DisplayFloatLayer: View {
         .frame(width: isScrolling
             ? FloatLayerGeometry.stripWidth(
                 count: targets.count, windowWidth: windowWidth,
-                captionWidth: FloatLayerGeometry.captionWidth(for: mode)
+                captionWidth: FloatLayerGeometry.captionWidth
             )
             : nil)
         .background(
@@ -132,7 +109,7 @@ struct DisplayFloatLayer: View {
     }
 
     private var caption: some View {
-        Text(LocalizedStringKey(FloatLayerGeometry.captionKey(for: mode)))
+        Text(LocalizedStringKey(FloatLayerGeometry.captionKey))
             .font(DesignTokens.EditDesk.Typography.metaMono)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
             .lineLimit(3)
@@ -160,9 +137,7 @@ struct DisplayFloatLayer: View {
             ForEach(targets) { target in
                 FloatDisplayThumbnail(
                     target: target,
-                    mode: mode,
                     isHighlighted: highlighted == target.id,
-                    onSelect: onSelect,
                     onTargetFrame: onTargetFrame
                 )
             }
@@ -199,39 +174,23 @@ struct DisplayFloatLayer: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: FloatLayerGeometry.thumbnailAccessibilityLabel(
-            for: mode, displayName: String(localized: "All Displays", bundle: .appLanguage)
+            displayName: String(localized: "All Displays", bundle: .appLanguage)
         )))
     }
 }
 
 private struct FloatDisplayThumbnail: View {
     let target: ModalDisplayTarget
-    let mode: FloatLayerMode
     let isHighlighted: Bool
-    let onSelect: (CGDirectDisplayID) -> Void
     let onTargetFrame: (FloatTargetFrame) -> Void
 
-    @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        switch mode {
-        case .dropTarget:
-            tile.allowsHitTesting(false)
-        case .selectTarget:
-            Button { onSelect(target.id) } label: { tile }
-                .buttonStyle(.plain)
-                .onHover { isHovering = $0 }
-                .accessibilityAddTraits(isHighlighted ? [.isButton, .isSelected] : .isButton)
-        }
-    }
-
-    private var tile: some View {
         artwork
             .frame(width: FloatLayerGeometry.thumbnailWidth(aspect: target.aspectRatio), height: FloatLayerGeometry.thumbnailHeight)
             .clipShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip))
             .overlay { highlightOverlay }
-            .overlay { hoverOverlay }
             .overlay(alignment: .bottomLeading) { name }
             .overlay(alignment: .topTrailing) { shortcutBadge }
             .overlay {
@@ -248,7 +207,8 @@ private struct FloatDisplayThumbnail: View {
                 onTargetFrame(FloatTargetFrame(id: target.id, rect: $0))
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: FloatLayerGeometry.thumbnailAccessibilityLabel(for: mode, displayName: target.name)))
+            .accessibilityLabel(Text(verbatim: FloatLayerGeometry.thumbnailAccessibilityLabel(displayName: target.name)))
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -268,20 +228,12 @@ private struct FloatDisplayThumbnail: View {
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip)
                 .fill(DesignTokens.EditDesk.Colors.dropHighlight)
                 .overlay {
-                    Text(verbatim: FloatLayerGeometry.highlightLabel(for: mode, displayName: target.name))
+                    Text(verbatim: FloatLayerGeometry.highlightLabel)
                         .font(DesignTokens.EditDesk.Typography.dropLabel)
                         .foregroundStyle(DesignTokens.Colors.overlayForeground)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 4)
                 }
-        }
-    }
-
-    @ViewBuilder
-    private var hoverOverlay: some View {
-        if isHovering, !isHighlighted {
-            RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip)
-                .fill(DesignTokens.EditDesk.Colors.fillNavPill)
         }
     }
 

@@ -3,7 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-@Suite("DisplayFloatLayer — thumbnail geometry, strip width and per-mode wording")
+@Suite("DisplayFloatLayer — thumbnail geometry, strip width and drop wording")
 struct DisplayFloatLayerTests {
     @Test("A 16:9 display rounds to a 149pt thumbnail")
     func thumbnailWidthSixteenByNine() {
@@ -63,37 +63,17 @@ struct DisplayFloatLayerTests {
         #expect(FloatLayerGeometry.needsScroll(count: 5) == true)
     }
 
-    @Test("Each mode has its own caption key")
-    func captionKeyPerMode() {
-        #expect(FloatLayerGeometry.captionKey(for: .dropTarget) == "Drag to a display\nto apply")
-        #expect(FloatLayerGeometry.captionKey(for: .selectTarget) == "After downloading\napply to")
-    }
-
-    @Test("Drop highlights name no display; selection highlights name the selected one")
-    func highlightLabelPerMode() {
-        #expect(FloatLayerGeometry.highlightLabel(for: .dropTarget, displayName: "MacBook").contains("MacBook") == false)
-        #expect(FloatLayerGeometry.highlightLabel(for: .selectTarget, displayName: "MacBook").contains("MacBook"))
+    @Test("The strip only takes drops: its caption, highlight and thumbnails all say so")
+    func dropWording() {
+        #expect(FloatLayerGeometry.captionKey == "Drag to a display\nto apply")
+        #expect(FloatLayerGeometry.highlightLabel == String(localized: "Drop to replace", bundle: .appLanguage))
+        let name = "MacBook"
+        #expect(FloatLayerGeometry.thumbnailAccessibilityLabel(displayName: name) == String(localized: "Drop target: \(name)", bundle: .appLanguage))
     }
 
     @Test("The drag ghost is the 140×79 card MOTION 7 specifies")
     func ghostSize() {
         #expect(ModalDragGhost.size == CGSize(width: 140, height: 79))
-    }
-
-    @Test("Only the drop strip offers All Displays; picking one target hides it and its divider")
-    func applyAllIsDropOnly() {
-        #expect(FloatLayerGeometry.showsApplyAll(for: .dropTarget))
-        #expect(FloatLayerGeometry.showsApplyAll(for: .selectTarget) == false)
-    }
-
-    @Test("Thumbnails read as drop targets when dropping and as a choice when selecting")
-    func thumbnailAccessibilityLabelPerMode() {
-        let drop = FloatLayerGeometry.thumbnailAccessibilityLabel(for: .dropTarget, displayName: "MacBook")
-        let select = FloatLayerGeometry.thumbnailAccessibilityLabel(for: .selectTarget, displayName: "MacBook")
-        #expect(drop.contains("MacBook"))
-        #expect(select.contains("MacBook"))
-        #expect(drop != select, Comment(rawValue: "Both modes read out \(drop)"))
-        #expect(select.lowercased().contains("drop") == false, Comment(rawValue: select))
     }
 
     @Test("The All Displays tile takes a drop; a thumbnail scrolled out of the run does not")
@@ -114,11 +94,16 @@ struct DisplayFloatLayerTests {
         #expect(target(CGPoint(x: 600, y: 60)) == nil)
     }
 
-    @Test("The view asks the geometry for both mode-dependent affordances instead of branching inline")
-    func viewRoutesThroughTheGeometry() throws {
+    @Test("The strip has one mode: no target picking, no click, no Workshop caption")
+    func stripOnlyTakesDrops() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
-        #expect(source.contains("FloatLayerGeometry.showsApplyAll(for: mode)"))
-        #expect(source.contains("FloatLayerGeometry.thumbnailAccessibilityLabel(for: mode"))
+        #expect(!source.contains("selectTarget"), "the strip still has a target-picking mode")
+        #expect(!source.contains("After downloading"), "the strip still carries the Workshop caption")
+        #expect(!source.contains("onSelect"), "the strip still takes clicks")
+        #expect(!source.contains("FloatLayerMode"), "the strip still switches on a mode")
+        #expect(source.contains("FloatLayerGeometry.thumbnailAccessibilityLabel(displayName:"))
+        let contract = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModalContract.swift")
+        #expect(!contract.contains("enum FloatLayerMode"), "the mode enum outlived its second case")
     }
 
     @Test("The caption box is a floor the text can push, not a 70pt cap that clips it")
@@ -126,6 +111,7 @@ struct DisplayFloatLayerTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
         #expect(!source.contains(".frame(width: 70"), "the caption is still pinned to a 70pt box")
         #expect(source.contains("minWidth: FloatLayerGeometry.captionMinWidth"))
-        #expect(source.contains("captionWidth: FloatLayerGeometry.captionWidth(for: mode)"))
+        #expect(source.contains("captionWidth: FloatLayerGeometry.captionWidth"))
+        #expect(!source.contains("captionWidth(for:"), "the strip still measures a caption per mode")
     }
 }

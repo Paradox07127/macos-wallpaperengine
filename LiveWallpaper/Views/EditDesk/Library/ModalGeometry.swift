@@ -10,7 +10,6 @@ enum ModalGeometry {
     static let verticalAllowance: CGFloat = 100
     /// Clear of the 56pt top bar; a short window pays in height, never in this floor.
     static let minimumTop: CGFloat = 72
-    static let previewMargin: CGFloat = 12
 
     static func panelFrame(in windowSize: CGSize) -> CGRect {
         let width = max(1, min(maximumSize.width, windowSize.width - 2 * sideMargin))

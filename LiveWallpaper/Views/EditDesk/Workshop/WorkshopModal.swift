@@ -2,24 +2,22 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// SCREENS.md S8b: the Workshop variant of the S4 modal. Same chrome as the library's, different
-/// body — a square animated preview on the left, the item's write-up scrolling on the right, and a
-/// bar that turns one download into "apply to the display I picked upstairs".
+/// SCREENS.md S8b: a Workshop item in the library modal's layout. The preview is the animated one,
+/// the rows and chips are Steam's, and a display button downloads the item and applies it there.
 @MainActor
 struct WorkshopModal: View {
     let content: WorkshopModalContent
     let doctor: SteamCMDDoctorService
-    let targets: [ModalDisplayTarget]
+    let facts: [WallpaperFact]
+    let row: WorkshopModalButtonRow
     let download: WorkshopDownloadPresentation
-    let primaryTitle: String
-    let isPrimaryEnabled: Bool
-    /// The button beside the primary one, shown until the item is in the library.
-    let secondaryTitle: String
-    let isSecondaryEnabled: Bool
+    /// The library's copy when this Mac can't run it; the right column says why. nil otherwise.
+    let unsupportedOrigin: WPEOrigin?
     /// The mature reveal lives in the page's `MatureRevealState`, so it survives closing this modal.
     let isRevealed: Bool
     /// The same state, for the dependency and preset rows: R-24 ④ shares one reveal set.
     let matureReveal: MatureRevealState?
+    let navigation: ModalNavigation
     /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
     let windowSize: CGSize
     /// Height the scrim leaves untouched so the traffic lights and window drag still work.
@@ -27,14 +25,11 @@ struct WorkshopModal: View {
     let onDismiss: () -> Void
     let actions: WorkshopModalActions
 
+    @Environment(WorkshopServices.self) private var services
+    @Environment(\.openURL) private var openURL
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blursMature = true
     @State private var showingAgeConfirm = false
-
-    /// SCREENS.md S8b: a 340pt square preview with the write-up beside it.
-    private static let previewSide: CGFloat = 340
-    /// Two rows: the status line over the bar, then the bar and the buttons.
-    private static let bottomBarHeight: CGFloat = 84
-    private static let barPadding: CGFloat = 20
+    @State private var descriptionExpanded = false
 
     private var item: WorkshopQueryItem {
         content.item
@@ -48,25 +43,24 @@ struct WorkshopModal: View {
         EditDeskModalChrome(
             windowSize: windowSize,
             titlebarInset: titlebarInset,
+            title: item.title,
+            actions: [ModalHeaderAction(kind: .openInSteam, perform: actions.openInSteam)],
             onDismiss: onDismiss,
-            onTargetShortcut: selectTargetByShortcut
+            onTargetShortcut: pressByShortcut
         ) { _ in
-            panelBody
-        }
-    }
-
-    // MARK: Panel
-
-    private var panelBody: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: Self.barPadding) {
-                preview
-                details
-            }
-            .padding(.horizontal, ModalGeometry.previewMargin)
-            .padding(.top, ModalGeometry.previewMargin)
-            .frame(maxHeight: .infinity, alignment: .top)
-            bottomBar
+            WallpaperDetailLayout(
+                facts: facts,
+                tags: WallpaperFacts.chips(item.tags),
+                authorLink: authorLink,
+                onSelectTag: actions.selectTag,
+                onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
+                onNext: navigation.canGoNext ? { navigation.next() } : nil,
+                preview: { preview },
+                sidebar: { sidebar },
+                status: { status },
+                buttons: { buttons }
+            )
+            .id(item.id)
         }
         .alert("Show mature content?", isPresented: $showingAgeConfirm) {
             Button(role: .cancel) {} label: { Text("Cancel") }
@@ -87,9 +81,9 @@ struct WorkshopModal: View {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge, style: .continuous)
     }
 
+    /// The whole animation fitted into the layout's 4:3 box. A Button keeps one view identity across the
+    /// reveal: branching on the blur would rebuild the thumbnail and lose its unblur animation.
     private var preview: some View {
-        // A Button keeps one view identity across the reveal: branching on the blur would rebuild
-        // the thumbnail and lose its unblur animation. Hit-testing gates instead of `.disabled`.
         Button {
             guard shouldBlurPreview else { return }
             if MatureContentSettings.isConfirmed {
@@ -98,14 +92,17 @@ struct WorkshopModal: View {
                 showingAgeConfirm = true
             }
         } label: {
-            AnimatedGIFThumbnail(
-                url: item.previewImageURL,
-                playbackMode: .autoPlay,
-                showsPlayingBadge: false,
-                previewSize: .hero,
-                isBlurred: shouldBlurPreview
-            )
-            .frame(width: Self.previewSide, height: Self.previewSide)
+            ZStack {
+                DesignTokens.Colors.surfaceSunken
+                AnimatedGIFThumbnail(
+                    url: item.previewImageURL,
+                    playbackMode: .autoPlay,
+                    showsPlayingBadge: false,
+                    previewSize: .hero,
+                    isBlurred: shouldBlurPreview,
+                    contentMode: .fit
+                )
+            }
             .clipShape(previewShape)
             .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
             .overlay(alignment: .topLeading) {
@@ -132,121 +129,97 @@ struct WorkshopModal: View {
             )
     }
 
-    // MARK: Details
+    /// The inspector's author line picks the same way: Steam's own page when there is no key to browse with.
+    private var authorLink: WallpaperAuthorLink? {
+        guard let author = item.creatorPersonaName, !author.isEmpty, let creatorID = item.creatorID else { return nil }
+        if services.isKeyless {
+            return WallpaperAuthorLink(
+                symbol: "arrow.up.right.square",
+                help: String(localized: "Open \(author)’s Workshop on Steam", bundle: .appLanguage)
+            ) { openURL(WorkshopCommunityURL.creatorWorkshop(steamID: creatorID)) }
+        }
+        guard let browseCreator = actions.browseCreator else { return nil }
+        return WallpaperAuthorLink(
+            symbol: "chevron.right",
+            help: String(localized: "Show more wallpapers from \(author)", bundle: .appLanguage)
+        ) { browseCreator(creatorID, author) }
+    }
 
-    private var details: some View {
-        ScrollView {
-            WorkshopDetailsContent(
-                item: item,
-                doctor: doctor,
-                identityStyle: .modal,
-                // GAP_ANALYSIS §6: two lines folded, and the expanded text scrolls inside 120pt so
-                // a long description cannot push the presets out of the column.
-                descriptionCollapsedLineLimit: 2,
-                descriptionExpandedMaxHeight: 120,
-                onBrowseCreator: actions.browseCreator,
-                onSelectTag: actions.selectTag,
-                onOpenItem: actions.openItem,
-                matureReveal: matureReveal
+    // MARK: Right column
+
+    /// Notices first, then the description, the required items, the presets and the Steam links.
+    @ViewBuilder
+    private var sidebar: some View {
+        if let unsupportedOrigin {
+            UnsupportedProjectNotice(origin: unsupportedOrigin, showsIdentity: true)
+        }
+        if item.isBanned {
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.danger,
+                symbol: "xmark.octagon.fill",
+                title: Text("Unavailable — removed or hidden on Steam")
             )
-            .padding(.trailing, DesignTokens.EditDesk.Spacing.s8)
-            .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        WallpaperDetailSection(title: Text("Description")) {
+            CollapsibleDescription(
+                text: item.shortDescription.isEmpty
+                    ? String(localized: "No description provided.", bundle: .appLanguage, comment: "Placeholder when a Workshop item has no description.")
+                    : item.shortDescription,
+                isExpanded: $descriptionExpanded,
+                collapsedLineLimit: 4
+            )
+        }
+        if !requiredItemIDs.isEmpty {
+            DetailRequiredItemsSection(itemIDs: requiredItemIDs, onOpenItem: actions.openItem, matureReveal: matureReveal)
+        }
+        DetailPresetsSection(
+            wallpaperID: item.id, communityURL: item.steamCommunityURL, doctor: doctor, matureReveal: matureReveal
+        )
+        WorkshopCommunityLinks(itemID: item.id, commentCount: item.commentCount)
     }
 
-    // MARK: Bottom bar
-
-    private var bottomBar: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
-            statusLine
-            HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-                progressBar
-                Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
-                barButtons
-            }
-        }
-        .padding(.horizontal, Self.barPadding)
-        .frame(height: Self.bottomBarHeight)
+    /// The unsupported-project notice already lists the missing ones, so the section would repeat them.
+    private var requiredItemIDs: [UInt64] {
+        guard unsupportedOrigin?.missingDependencyIDs.isEmpty ?? true else { return [] }
+        return item.requiredItemIDs
     }
+
+    // MARK: Bottom
 
     @ViewBuilder
-    private var statusLine: some View {
-        if !download.status.isEmpty || !download.detail.isEmpty {
-            HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-                Text(verbatim: download.status)
-                    .font(DesignTokens.EditDesk.Typography.body)
-                    .foregroundStyle(
-                        download.isFailure
-                            ? DesignTokens.EditDesk.Colors.danger
-                            : DesignTokens.EditDesk.Colors.textSecondary
-                    )
-                    .lineLimit(1)
-                Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
-                Text(verbatim: download.detail)
-                    .font(DesignTokens.EditDesk.Typography.metaMono)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
-                    .lineLimit(1)
-            }
+    private var status: some View {
+        if download != WorkshopDownloadPresentation() {
+            ModalDownloadStatusLine(presentation: download)
         }
     }
 
-    @ViewBuilder
-    private var progressBar: some View {
-        switch download.progress {
-        case .none:
-            EmptyView()
-        case .indeterminate:
-            ProgressView()
-                .progressViewStyle(.linear)
-                .accessibilityLabel(Text("Download progress"))
-        case let .fraction(value):
-            ProgressView(value: value)
-                .progressViewStyle(.linear)
-                .accessibilityLabel(Text("Download progress"))
-                .accessibilityValue(Text(verbatim: download.detail))
-        }
+    private var buttons: some View {
+        ModalDisplayButtons(
+            targets: row.targets,
+            canApply: row.canPress,
+            mode: row.mode,
+            applyTo: actions.press,
+            extras: row.extras.map { extra in
+                ModalExtraButton(title: extra.kind.title, isEnabled: extra.isEnabled, action: perform(extra.kind))
+            }
+        )
     }
 
-    private var barButtons: some View {
-        HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-            Button(action: actions.primary) {
-                Text(verbatim: primaryTitle).lineLimit(1)
-            }
-            .adaptiveGlassButton(.prominent, size: .large)
-            .disabled(!isPrimaryEnabled)
-            if !content.isInstalled {
-                Button(action: actions.saveOnly) {
-                    Text(verbatim: secondaryTitle).lineLimit(1)
-                }
-                .adaptiveGlassButton(.regular, size: .large)
-                .disabled(!isSecondaryEnabled)
-            }
-            if let connectSteam = actions.connectSteam {
-                Button(action: connectSteam) {
-                    Text("Connect Steam").lineLimit(1)
-                }
-                .adaptiveGlassButton(.regular, size: .large)
-            }
-            if let cancelDownload = actions.cancelDownload {
-                Button(action: cancelDownload) {
-                    Text("Cancel download").lineLimit(1)
-                }
-                .adaptiveGlassButton(.regular, size: .large)
-            }
-            GlassIconButton("arrow.up.forward.app", size: .regular, action: actions.openInSteam)
-                .help(Text("Open in Steam"))
-                .accessibilityLabel(Text("Open in Steam"))
+    private func perform(_ kind: WorkshopModalButtonRow.ExtraKind) -> @MainActor () -> Void {
+        switch kind {
+        case .saveOnly, .cancelAutoApply: actions.saveOnly
+        case .cancelDownload: actions.cancelDownload
+        case .connectSteam: actions.connectSteam
         }
     }
 
     // MARK: Keyboard
 
-    /// ⌘1…⌘9 pick the display the finished download will land on. Nothing is applied here: the
-    /// wallpaper is not on this Mac yet, and for one that is, the bar's own button applies it.
-    private func selectTargetByShortcut(_ index: Int) {
-        guard let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
-        actions.selectTarget(target.id)
+    /// ⌘1…⌘9 press that display's button, as a click would.
+    private func pressByShortcut(_ index: Int) {
+        guard let target = ModalKeyMap.target(forShortcut: index, in: row.targets),
+              ModalDisplayButtons.isEnabled(target, canApply: row.canPress, mode: row.mode) else { return }
+        actions.press(target.id)
     }
 }
 #endif

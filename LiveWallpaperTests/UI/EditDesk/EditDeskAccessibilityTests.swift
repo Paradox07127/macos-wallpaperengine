@@ -163,10 +163,14 @@ struct EditDeskAccessibilityTests {
             wizard.contains(#"accessibilityLabel(Text("Step \(progress.stepNumber(of: .workshop)) of \(dots.count)"))"#),
             "VoiceOver would read the design's English STEP n / m"
         )
+        // The Steam button is one of the title row's glyph buttons, each labelled by its own title.
         let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        let arrow = try #require(modal.range(of: #"GlassIconButton("arrow.up.forward.app""#))
-        let labelled = try #require(modal.range(of: #"accessibilityLabel(Text("Open in Steam"))"#))
-        #expect(arrow.lowerBound < labelled.lowerBound, "the glyph button would read as its arrow")
+        #expect(modal.contains("ModalHeaderAction(kind: .openInSteam"), "the Workshop modal draws a Steam button of its own")
+        let chrome = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/EditDeskModalChrome.swift")
+        let glyph = try #require(chrome.range(of: "GlassIconButton(action.symbol"))
+        let labelled = try #require(chrome.range(of: "accessibilityLabel(Text(verbatim: action.title))"))
+        #expect(glyph.lowerBound < labelled.lowerBound, "the glyph button would read as its symbol")
+        #expect(ModalHeaderAction(kind: .openInSteam, perform: {}).title == String(localized: "Open in Steam", bundle: .appLanguage))
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
         #expect(card.contains("accessibilityElement(children: .ignore)"), "the card's badges would each be read out")
         #expect(card.contains("accessibilityLabel(Text(accessibilityLabelText))"))

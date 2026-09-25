@@ -14,8 +14,8 @@ struct WallpaperModalContent: Equatable {
     var kind: LibraryItem.Kind
     /// Rows under the preview, sorted by `WallpaperFact.Kind`; a row with nothing to say is absent.
     var facts: [WallpaperFact] = []
-    /// Chip labels under the rows, already localized; Workshop projects only.
-    var tags: [String] = []
+    /// The chips under the rows; Workshop projects only.
+    var tags: [WallpaperTagChip] = []
     /// Where a file or page without a Workshop page lives; empty for Workshop items.
     var fileFacts: [WallpaperFact] = []
     /// Decoded at the preview's pixel size; nil shows the placeholder.
@@ -93,6 +93,16 @@ struct WallpaperFact: Equatable, Identifiable {
 
     var id: Kind {
         kind
+    }
+}
+
+/// One tag chip: `raw` is the tag as Steam matches it, `label` the localized text drawn.
+struct WallpaperTagChip: Equatable, Identifiable {
+    let raw: String
+    let label: String
+
+    var id: String {
+        raw
     }
 }
 
@@ -323,12 +333,4 @@ struct FloatTargetFrame: Equatable {
 
 enum EditDeskCoordinateSpace {
     static let name = "editDesk"
-}
-
-/// How the float layer treats its thumbnails.
-enum FloatLayerMode: Equatable {
-    /// Library: a drag from the modal preview lands here; `highlighted` follows the drag.
-    case dropTarget
-    /// Workshop: click selects a single target; `highlighted` is the selection.
-    case selectTarget
 }

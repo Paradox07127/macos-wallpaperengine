@@ -411,8 +411,6 @@ struct CollapsibleDescription: View {
     /// nil crops the collapsed text to `collapsedHeight` and fades the cut; a value truncates it to
     /// that many lines instead, for columns too narrow to spend 116pt on a description.
     var collapsedLineLimit: Int?
-    /// nil lets the expanded text take whatever height it needs; a value scrolls it inside that box.
-    var expandedMaxHeight: CGFloat?
 
     /// ~6 lines of body copy before we crop + fade.
     private let collapsedHeight: CGFloat = 116
@@ -469,9 +467,8 @@ struct CollapsibleDescription: View {
         }
     }
 
-    @ViewBuilder
     private func description(collapsed: Bool) -> some View {
-        let cropped = Text(verbatim: text)
+        Text(verbatim: text)
             .font(.body)
             .foregroundStyle(.secondary)
             .lineLimit(collapsed ? collapsedLineLimit : nil)
@@ -487,13 +484,6 @@ struct CollapsibleDescription: View {
             )
             .clipped()
             .mask(collapsed && collapsedLineLimit == nil ? AnyView(fadeMask) : AnyView(Rectangle()))
-
-        if let expandedMaxHeight, isExpanded {
-            ScrollView { cropped }
-                .frame(maxHeight: expandedMaxHeight)
-        } else {
-            cropped
-        }
     }
 
     /// Hidden copies rather than a reader on the visible text: `lineLimit` shortens what the

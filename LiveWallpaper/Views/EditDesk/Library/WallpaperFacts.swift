@@ -142,16 +142,16 @@ extension WallpaperFacts {
         return facts
     }
 
-    /// Genre, then miscellaneous, other and a category other than Wallpaper, localized, each once.
-    static func chips(_ tags: [String]) -> [String] {
+    /// Genre, then miscellaneous, other and a category other than Wallpaper, each label once.
+    static func chips(_ tags: [String]) -> [WallpaperTagChip] {
         let groups = WorkshopTagTaxonomy.grouped(tags: tags)
-        var chips: [String] = []
+        var chips: [WallpaperTagChip] = []
         for group in [WorkshopTagTaxonomy.Group.genre, .miscellaneous, .other, .category] {
             let members = groups.first { $0.group == group }?.tags ?? []
             for tag in members where group != .category || tag.caseInsensitiveCompare("Wallpaper") != .orderedSame {
                 let label = WorkshopTagLocalization.displayName(tag)
-                if !chips.contains(label) {
-                    chips.append(label)
+                if !chips.contains(where: { $0.label == label }) {
+                    chips.append(WallpaperTagChip(raw: tag, label: label))
                 }
             }
         }

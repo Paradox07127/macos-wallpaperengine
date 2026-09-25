@@ -632,7 +632,7 @@ struct ModalActionsTests {
         inputs.progress = { _ in 0.25 }
         let modal = fixture.modal(inputs: inputs)
         let content = await modal.content(for: item)
-        #expect(content.tags == [WorkshopTagLocalization.displayName("Nature")], "the age rating is a row, not a chip")
+        #expect(content.tags.map(\.label) == [WorkshopTagLocalization.displayName("Nature")], "the age rating is a row, not a chip")
         #expect(content.descriptionText == "Description")
         #expect(content.facts.map(\.kind) == [.type, .size, .ageRating, .source, .imported])
         #expect(value(.type, in: content.facts) == entry.origin.localizedDisplayTypeName)
@@ -648,7 +648,7 @@ struct ModalActionsTests {
         var saved = video()
         saved.wpeOrigin = entry.origin
         let bookmarked = await modal.content(for: self.item(saved))
-        #expect(bookmarked.tags == [WorkshopTagLocalization.displayName("Nature")])
+        #expect(bookmarked.tags.map(\.label) == [WorkshopTagLocalization.displayName("Nature")])
         #expect(bookmarked.installed == nil)
         #expect(modal.actions(for: self.item(saved)).openInSteam != nil)
     }
@@ -704,7 +704,8 @@ struct ModalActionsTests {
         let stats = try #require(value(.stats, in: facts))
         let counts = [WorkshopCountFormatter.compact(2900), "134", WorkshopCountFormatter.compact(1300)]
         #expect(counts.allSatisfy { stats.contains($0) }, Comment(rawValue: stats))
-        #expect(WallpaperFacts.chips(tags) == ["Abstract", "Audio responsive"].map(WorkshopTagLocalization.displayName))
+        #expect(WallpaperFacts.chips(tags).map(\.label) == ["Abstract", "Audio responsive"].map(WorkshopTagLocalization.displayName))
+        #expect(WallpaperFacts.chips(tags).map(\.raw) == ["Abstract", "Audio responsive"], "a chip browses by the tag Steam matches")
         // Control: an update on a later day gets its own row.
         let later = try WallpaperFacts.steam(steamItem(tags: tags, updated: Self.posted.addingTimeInterval(3 * 86400)), now: Self.posted, locale: locale)
         #expect(later.map(\.kind).last == .updated)
@@ -719,18 +720,18 @@ struct ModalActionsTests {
             WallpaperFact(kind: .ageRating, value: "Local rating"), WallpaperFact(kind: .source, value: "Steam Workshop"),
             WallpaperFact(kind: .imported, value: "Sep 19"),
         ]
-        content.tags = ["Local tag"]
+        content.tags = [WallpaperTagChip(raw: "Local tag", label: "Local tag")]
         var merged = content
         try merged.mergeSteam(steamItem(tags: ["Everyone", "Abstract"]), now: Self.posted, locale: locale)
         #expect(merged.facts.map(\.kind) == [.type, .author, .rating, .size, .ageRating, .stats, .posted, .source, .imported])
         #expect(value(.type, in: merged.facts) == "Local type")
         #expect(value(.size, in: merged.facts) == "25 MB")
         #expect(value(.ageRating, in: merged.facts) == WorkshopTagLocalization.displayName("Everyone"), "Steam's rating is the current one")
-        #expect(merged.tags == [WorkshopTagLocalization.displayName("Abstract")])
+        #expect(merged.tags.map(\.label) == [WorkshopTagLocalization.displayName("Abstract")])
         // Control: Steam without tags leaves the manifest's chips.
         var untagged = content
         try untagged.mergeSteam(steamItem(tags: []), now: Self.posted, locale: locale)
-        #expect(untagged.tags == ["Local tag"])
+        #expect(untagged.tags.map(\.label) == ["Local tag"])
     }
     #endif
 }

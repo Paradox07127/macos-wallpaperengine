@@ -8,9 +8,13 @@ import SwiftUI
 @MainActor
 struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons: View>: View {
     let facts: [WallpaperFact]
-    /// Chip labels, already localized: the last row under the facts.
-    var tags: [String] = []
-    /// nil greys the arrow out: there is no item that way.
+    /// The last row under the facts.
+    var tags: [WallpaperTagChip] = []
+    /// Makes the author's name a link; nil leaves it text.
+    var authorLink: WallpaperAuthorLink?
+    /// Takes a chip's raw tag; nil leaves the chips unclickable.
+    var onSelectTag: (@MainActor (String) -> Void)?
+    /// nil greys the arrow out and drops its key: there is no item that way.
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
     @ViewBuilder let preview: () -> Preview
@@ -40,6 +44,25 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
             .padding(.horizontal, ModalGeometry.horizontalPadding)
             .padding(.bottom, ModalGeometry.bottomPadding)
         }
+        .overlay { arrowKeys }
+    }
+
+    /// Zero-sized buttons rather than `onKeyPress`: the stage's `NSView` is usually first responder
+    /// and swallows `keyDown` while the modal blocks it.
+    private var arrowKeys: some View {
+        ZStack {
+            if let onPrevious {
+                Button(action: onPrevious) { EmptyView() }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+            }
+            if let onNext {
+                Button(action: onNext) { EmptyView() }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+            }
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     private var leadingColumn: some View {
@@ -58,16 +81,25 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
                     .help(Text("Show Next Wallpaper (→)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same."))
                     .accessibilityLabel(Text("Show Next Wallpaper"))
             }
-            WallpaperFactGrid(facts: facts, tags: tags)
+            WallpaperFactGrid(facts: facts, tags: tags, authorLink: authorLink, onSelectTag: onSelectTag)
                 .frame(width: ModalGeometry.previewSize.width, alignment: .leading)
         }
     }
 }
 
+/// The Workshop author's row as a link: `symbol` trails the name, `help` is its tooltip and spoken name.
+struct WallpaperAuthorLink {
+    let symbol: String
+    let help: String
+    let open: @MainActor () -> Void
+}
+
 /// A detail modal's label / value rows; the tags, when there are any, are the last row.
 struct WallpaperFactGrid: View {
     let facts: [WallpaperFact]
-    var tags: [String] = []
+    var tags: [WallpaperTagChip] = []
+    var authorLink: WallpaperAuthorLink?
+    var onSelectTag: (@MainActor (String) -> Void)?
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: DesignTokens.Spacing.md, verticalSpacing: DesignTokens.Spacing.sm) {
@@ -82,8 +114,8 @@ struct WallpaperFactGrid: View {
                 GridRow {
                     label(Text("Tags", comment: "Wallpaper detail row: the Workshop item's tags."))
                     WorkshopChipFlow(spacing: 6, lineSpacing: 4) {
-                        ForEach(tags, id: \.self) { tag in
-                            StatusChip(verbatim: tag, tint: .secondary)
+                        ForEach(tags) { tag in
+                            tagChip(tag)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,6 +125,22 @@ struct WallpaperFactGrid: View {
         }
     }
 
+    #if !LITE_BUILD
+    @ViewBuilder
+    private func tagChip(_ tag: WallpaperTagChip) -> some View {
+        let name = tag.label
+        if let onSelectTag {
+            Button { onSelectTag(tag.raw) } label: {
+                StatusChip(verbatim: name, tint: .accentColor)
+            }
+            .buttonStyle(.plain)
+            .help(Text("Browse items tagged \(name)"))
+        } else {
+            StatusChip(verbatim: name, tint: .secondary)
+        }
+    }
+    #endif
+
     private func label(_ text: Text) -> some View {
         text
             .font(DesignTokens.EditDesk.Typography.chip)
@@ -100,21 +148,39 @@ struct WallpaperFactGrid: View {
             .gridColumnAlignment(.leading)
     }
 
+    @ViewBuilder
     private func value(_ fact: WallpaperFact) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
-            if fact.kind == .rating {
-                Image(systemName: "star.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(DesignTokens.Colors.rating)
+        if fact.kind == .author, let authorLink {
+            Button(action: authorLink.open) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(verbatim: fact.value)
+                        .lineLimit(1)
+                    Image(systemName: authorLink.symbol)
+                        .imageScale(.small)
+                }
+                .foregroundStyle(Color.accentColor)
             }
-            Text(verbatim: fact.value)
-                .foregroundStyle(DesignTokens.Colors.textPrimary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            .buttonStyle(.plain)
+            .font(DesignTokens.EditDesk.Typography.chip)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(Text(verbatim: authorLink.help))
+            .accessibilityLabel(Text(verbatim: authorLink.help))
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
+                if fact.kind == .rating {
+                    Image(systemName: "star.fill")
+                        .imageScale(.small)
+                        .foregroundStyle(DesignTokens.Colors.rating)
+                }
+                Text(verbatim: fact.value)
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(DesignTokens.EditDesk.Typography.chip)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(FactHelp(text: fact.help))
         }
-        .font(DesignTokens.EditDesk.Typography.chip)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(FactHelp(text: fact.help))
     }
 }
 

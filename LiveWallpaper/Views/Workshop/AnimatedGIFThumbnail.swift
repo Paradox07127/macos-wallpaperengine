@@ -19,6 +19,8 @@ struct AnimatedGIFThumbnail: View {
     var previewSize: WorkshopPreviewSize = .tile
     /// The parent flipping it false resumes play.
     var isBlurred: Bool = false
+    /// `.fit` shows the whole picture inside the frame; `.fill` crops it to cover the frame.
+    var contentMode: ContentMode = .fill
     @Binding var isHovered: Bool
 
     @State private var controller = GIFAnimationController()
@@ -48,6 +50,7 @@ struct AnimatedGIFThumbnail: View {
         showsPlayingBadge: Bool = true,
         previewSize: WorkshopPreviewSize = .tile,
         isBlurred: Bool = false,
+        contentMode: ContentMode = .fill,
         isHovered: Binding<Bool> = .constant(false)
     ) {
         self.url = url
@@ -55,6 +58,7 @@ struct AnimatedGIFThumbnail: View {
         self.showsPlayingBadge = showsPlayingBadge
         self.previewSize = previewSize
         self.isBlurred = isBlurred
+        self.contentMode = contentMode
         self._isHovered = isHovered
     }
 
@@ -114,7 +118,7 @@ struct AnimatedGIFThumbnail: View {
             Image(decorative: frame, scale: 1)
                 .resizable()
                 .interpolation(.medium)
-                .scaledToFill()
+                .aspectRatio(contentMode: contentMode)
                 .clipped()
                 .accessibilityHidden(true)
         } else if phase == .loading, url != nil {
