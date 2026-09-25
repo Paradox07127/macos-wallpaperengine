@@ -214,7 +214,6 @@ struct SystemWallpaperAddMenu: View {
         } label: {
             Label("Add Video", systemImage: "plus")
         }
-        .accessibilityLabel(Text("Add Video"))
         .sheet(isPresented: $showingAddSheet) {
             AppLanguageScope(defaults: .appScoped()) {
                 SystemWallpaperAddSheet()

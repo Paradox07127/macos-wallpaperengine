@@ -105,17 +105,6 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         }
         return AppLanguagePreference(rawValue: rawValue) ?? .system
     }
-
-    public static func save(
-        _ preference: AppLanguagePreference,
-        to defaults: UserDefaults = .standard
-    ) {
-        if preference == .system {
-            defaults.removeObject(forKey: storageKey)
-        } else {
-            defaults.set(preference.rawValue, forKey: storageKey)
-        }
-    }
 }
 
 public struct AppLanguageScope<Content: View>: View {

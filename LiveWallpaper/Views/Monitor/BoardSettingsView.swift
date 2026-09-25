@@ -13,9 +13,6 @@ struct BoardSettingsView: View {
 
     @State private var draft: MonitorBoardConfiguration = .default
 
-    /// Display-only temperature unit for every sensor readout (app-wide, not per-board).
-
-
     var body: some View {
         VStack(spacing: 12) {
             boardSection

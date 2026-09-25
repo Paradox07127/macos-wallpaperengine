@@ -63,21 +63,6 @@ struct AppLanguagePreferenceTests {
         ) == "en-us")
     }
 
-    @Test("Saved language preference round-trips through an injected domain")
-    func savedPreferencePersists() throws {
-        let scratch = try TestScratch.defaultsSuite("AppLanguagePreferenceTests.roundTrip")
-        let defaults = scratch.defaults
-        defer { scratch.discard() }
-
-        #expect(AppLanguagePreference.current(in: defaults) == .system)
-
-        AppLanguagePreference.save(.simplifiedChinese, to: defaults)
-        #expect(AppLanguagePreference.current(in: defaults) == .simplifiedChinese)
-
-        AppLanguagePreference.save(.system, to: defaults)
-        #expect(defaults.object(forKey: AppLanguagePreference.storageKey) == nil)
-    }
-
     @Test("Settings reset clears the saved language")
     func settingsResetClearsSavedLanguage() async throws {
         // Assert on the manager's own domain, not `AppLanguagePreference.current`: that global
