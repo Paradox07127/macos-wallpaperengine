@@ -68,6 +68,7 @@ struct DetailSwipeNavigator: NSViewRepresentable {
                     guard self.enabled, event.window === self.window, self.window?.attachedSheet == nil,
                           event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return false }
                     let step = self.tracker.handle(
+                        hasPhase: !event.phase.isEmpty,
                         began: event.phase.contains(.began) || event.phase.contains(.mayBegin),
                         ended: event.phase.contains(.ended) || event.phase.contains(.cancelled),
                         timestamp: event.timestamp,
@@ -101,10 +102,10 @@ struct DetailSwipeTracker {
 
     /// `began` / `ended`: the event's phase opens (`.began`, `.mayBegin`) or closes (`.ended`, `.cancelled`) a gesture.
     mutating func handle(
-        began: Bool, ended: Bool, timestamp: TimeInterval, startsInside: Bool, dx: CGFloat, dy: CGFloat
+        hasPhase: Bool, began: Bool, ended: Bool, timestamp: TimeInterval, startsInside: Bool, dx: CGFloat, dy: CGFloat
     ) -> DetailSwipeStep? {
-        // Precise events without a phase open a new gesture after 0.25s of silence.
-        let begins = began || (!tracking && timestamp - lastEventTime > 0.25)
+        // Only phaseless events split on 0.25s of silence: fingers can rest mid-gesture between phased events.
+        let begins = began || (!hasPhase && timestamp - lastEventTime > 0.25)
         lastEventTime = timestamp
         if begins {
             tracking = startsInside

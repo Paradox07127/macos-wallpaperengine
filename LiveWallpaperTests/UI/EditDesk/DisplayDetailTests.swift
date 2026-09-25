@@ -83,13 +83,13 @@ struct DisplayDetailTests {
 
     /// `events` scroll events 10ms apart from `start`; the first one carries `.began` when `began` is set.
     private func swipe(
-        _ tracker: inout DetailSwipeTracker, dx: CGFloat, events: Int, from start: TimeInterval,
-        began: Bool = true, startsInside: Bool = true
+        _ tracker: inout DetailSwipeTracker, dx: CGFloat, dy: CGFloat = 0, events: Int, from start: TimeInterval,
+        began: Bool = true, hasPhase: Bool = true, startsInside: Bool = true
     ) -> [DetailSwipeStep] {
         (0 ..< events).compactMap { index in
             tracker.handle(
-                began: began && index == 0, ended: false, timestamp: start + Double(index) * 0.01,
-                startsInside: startsInside, dx: dx, dy: 0
+                hasPhase: hasPhase, began: began && index == 0, ended: false, timestamp: start + Double(index) * 0.01,
+                startsInside: startsInside, dx: dx, dy: dy
             )
         }
     }
@@ -98,7 +98,7 @@ struct DisplayDetailTests {
     func swipeStepsOncePerGesture() {
         var tracker = DetailSwipeTracker()
         #expect(swipe(&tracker, dx: 20, events: 13, from: 1) == [.previous], "260pt of travel is still one step")
-        _ = tracker.handle(began: false, ended: true, timestamp: 1.2, startsInside: true, dx: 0, dy: 0)
+        _ = tracker.handle(hasPhase: true, began: false, ended: true, timestamp: 1.2, startsInside: true, dx: 0, dy: 0)
         #expect(swipe(&tracker, dx: -20, events: 6, from: 2) == [.next])
     }
 
@@ -111,9 +111,25 @@ struct DisplayDetailTests {
     @Test("Precise events without a phase split into gestures on 0.25s of silence")
     func phaselessEventsSplitOnSilence() {
         var tracker = DetailSwipeTracker()
-        #expect(swipe(&tracker, dx: 20, events: 13, from: 10, began: false) == [.previous])
-        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.2, began: false).isEmpty, "0.08s after the last event is the same gesture")
-        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.7, began: false) == [.previous])
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10, began: false, hasPhase: false) == [.previous])
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.2, began: false, hasPhase: false).isEmpty, "0.08s after the last event is the same gesture")
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.7, began: false, hasPhase: false) == [.previous])
+    }
+
+    @Test("A phased gesture that rests after its step takes no second step until it ends")
+    func phasedGestureRestingAfterItsStepStaysSpent() {
+        var tracker = DetailSwipeTracker()
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 1) == [.previous])
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 1.52, began: false).isEmpty, "a 0.4s rest mid-gesture restarted it")
+        _ = tracker.handle(hasPhase: true, began: false, ended: true, timestamp: 1.7, startsInside: true, dx: 0, dy: 0)
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 2) == [.previous])
+    }
+
+    @Test("A phaseless gesture rejected as vertical still ends on 0.25s of silence")
+    func phaselessRejectedGestureEndsOnSilence() {
+        var tracker = DetailSwipeTracker()
+        #expect(swipe(&tracker, dx: 0, dy: 20, events: 6, from: 1, began: false, hasPhase: false).isEmpty)
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 1.35, began: false, hasPhase: false) == [.previous], "the rejected gesture outlived the silence")
     }
 
     @Test("Both canvases keep their swipe tracker outside the per-display identity, so a switch cannot restart the gesture")
