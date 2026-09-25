@@ -93,20 +93,6 @@ struct DetailSwipeNavigator: NSViewRepresentable {
     }
 }
 
-/// Steps back only; a swipe the other way does nothing.
-struct DetailBackSwipe: View {
-    let enabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        DetailSwipeNavigator(enabled: enabled) { step in
-            if step == .previous {
-                action()
-            }
-        }
-    }
-}
-
 /// One step per gesture: once a step fires, the rest of that gesture is ignored until the next one begins.
 struct DetailSwipeTracker {
     private var gesture = DetailSwipeGesture()

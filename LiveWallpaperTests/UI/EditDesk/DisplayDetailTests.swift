@@ -116,14 +116,37 @@ struct DisplayDetailTests {
         #expect(swipe(&tracker, dx: 20, events: 13, from: 10.7, began: false) == [.previous])
     }
 
-    @Test("The preview's swipe tracker sits outside the per-display identity, so a switch cannot restart the gesture")
+    @Test("Both canvases keep their swipe tracker outside the per-display identity, so a switch cannot restart the gesture")
     func swipeTrackerOutlivesDisplaySwitches() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift")
-        let start = try #require(source.range(of: "private var wallpaperPreview: some View {"))
-        let preview = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
-        let identity = try #require(preview.range(of: ".id("), "the preview lost its per-display identity")
-        let navigator = try #require(preview.range(of: "DetailSwipeNavigator("), "the preview has no swipe navigator")
-        #expect(identity.upperBound <= navigator.lowerBound, "inside `.id` the navigator is rebuilt mid-swipe and steps twice")
+        for (path, member) in [
+            ("LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift", "private var wallpaperPreview: some View {"),
+            ("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift", "private var canvas: some View {"),
+        ] {
+            let source = try RepositoryRoot.source(path)
+            let start = try #require(source.range(of: member), Comment(rawValue: "\(path) has no \(member)"))
+            let body = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
+            let identity = try #require(body.range(of: ".id("), Comment(rawValue: "\(path) lost its per-display identity"))
+            let navigator = try #require(body.range(of: "DetailSwipeNavigator("), Comment(rawValue: "\(path) has no swipe navigator"))
+            #expect(
+                identity.upperBound <= navigator.lowerBound,
+                Comment(rawValue: "\(path): inside `.id` the navigator is rebuilt mid-swipe and steps twice")
+            )
+        }
+        let backOnly = try RepositoryRoot.swiftFiles(under: "LiveWallpaper").filter { file in
+            try String(contentsOf: file, encoding: .utf8).contains("DetailBackSwipe")
+        }
+        #expect(backOnly.isEmpty, Comment(rawValue: "back-only swipes left in \(backOnly.map { RepositoryRoot.relativePath(of: $0) })"))
+    }
+
+    @Test("The overlay canvas reports its drop frame from outside its per-display identity, so a switch's slide cannot skew a landing")
+    func dropFrameOutlivesDisplaySwitches() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
+        let start = try #require(source.range(of: "private var canvas: some View {"))
+        let canvas = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
+        let identity = try #require(canvas.range(of: ".id(screen.id)"), "the canvas lost its per-display identity")
+        #expect(canvas.components(separatedBy: "addDrag.canvasFrame =").count - 1 == 1, "one writer, or the old and new canvas race")
+        let report = try #require(canvas.range(of: "addDrag.canvasFrame ="), "the canvas no longer reports its frame for drops")
+        #expect(identity.upperBound <= report.lowerBound, "inside `.id` both canvases report mid-switch, one of them still offset")
     }
 
     @Test("Collapsing or resizing the inspector preserves preview centering and aspect ratio")

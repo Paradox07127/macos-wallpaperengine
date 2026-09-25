@@ -189,7 +189,7 @@ private struct DragWindowHost: View {
                 size: CGSize(width: 1280, height: 764),
                 layersVisible: .constant(false), inspectorVisible: .constant(false),
                 inspectorWidth: .constant(372), liveInspectorWidth: .constant(nil),
-                recapture: {}, back: {}
+                recapture: {}, swipe: { _ in }, switchEdge: .trailing
             )
             Button { fixture.closes += 1 } label: { EmptyView() }
                 .keyboardShortcut(.cancelAction)

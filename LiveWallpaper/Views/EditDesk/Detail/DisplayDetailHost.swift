@@ -154,7 +154,7 @@ struct DisplayDetailHost: View {
                                      inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
                                      topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
                                      recapture: { refreshCover(id); overlaySession.capturePreview() },
-                                     back: router.closeDetail)
+                                     swipe: { swipe($0) }, switchEdge: switchEdge)
                 }
             },
             isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
