@@ -135,6 +135,23 @@ struct WorkshopModalHostTests {
         #expect(downloads.cancelledItems == [42])
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func cancellingADownloadLeavesARunningApplyAlone() async {
+        let wiring = wiring()
+        manager.confirmsImmediately = false
+        let ticket = wiring.applyWhenDownloaded(itemID: 42, to: manager.first.id)
+        downloads.active(42)?.finish(.succeeded(manager.entry))
+        await waitUntil { ticket?.state == .applying }
+
+        wiring.cancelDownload(itemID: 42)
+        #expect(ticket?.state == .applying)
+        #expect(downloads.cancelledItems == [42])
+
+        manager.confirm(manager.entry, on: manager.first)
+        await waitUntil { ticket?.state.isSettled == true }
+        #expect(ticket?.state == .finished(ApplyReport(outcome: .applied, exitedSpanMode: false)))
+    }
+
     private func waitUntil(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(1)
         while !condition(), ContinuousClock.now < deadline {

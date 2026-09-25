@@ -46,19 +46,9 @@ struct LibraryModalHost: View {
     }
 
     #if !LITE_BUILD
-    /// Changes while a Workshop update runs, so the installed extras in `content` reload.
+    /// Changes while a Workshop update runs or the daily check flags the item, so the installed extras in `content` reload.
     private var downloadKey: String {
-        guard let item = presentedItem, let id = Self.workshopID(of: item) else { return "" }
-        let coordinator = WorkshopDownloadCoordinator.shared
-        return "\(coordinator.phase(for: id)) \(coordinator.progress[id] ?? -1)"
-    }
-
-    private static func workshopID(of item: LibraryItem) -> UInt64? {
-        switch item.source {
-        case let .workshop(entry): UInt64(entry.origin.workshopID)
-        case let .bookmark(bookmark): bookmark.wpeOrigin.flatMap { UInt64($0.workshopID) }
-        case .aerial: nil
-        }
+        presentedItem.map(actions.installedStateKey) ?? ""
     }
     #endif
 

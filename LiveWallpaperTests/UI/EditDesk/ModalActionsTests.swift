@@ -76,17 +76,18 @@ struct ModalActionsTests {
         let targets = modal.targets(for: item, covers: [2: cover])
         #expect(targets.map(\.id) == [1, 2, 3])
         #expect(targets.map(\.shortcutIndex) == [1, 2, 3])
-        #expect(targets.filter(\.isPrimary).map(\.id) == [1])
-        #expect(targets.filter(\.isApplied).map(\.id) == [1])
-        #expect(targets.map(\.aspectRatio) == [1920.0 / 1080, 1.6, 1200.0 / 900])
+        #expect(targets.filter(\.isPrimary).map(\.id) == [1] as [CGDirectDisplayID])
+        #expect(targets.filter(\.isApplied).map(\.id) == [1] as [CGDirectDisplayID])
+        let expectedRatios: [CGFloat] = [1920.0 / 1080, 1.6, 1200.0 / 900]
+        #expect(targets.map(\.aspectRatio) == expectedRatios)
         #expect(targets[1].thumbnail === cover)
         #expect(targets[0].thumbnail == nil)
         item.onDisplays = [2]
         let reapplied = modal.targets(for: item)
         #expect(ModalGeometry.applyButtons(targets: reapplied).primary?.id == 1)
-        #expect(reapplied.filter(\.isApplied).map(\.id) == [2])
+        #expect(reapplied.filter(\.isApplied).map(\.id) == [2] as [CGDirectDisplayID])
         item.onDisplays = [1, 2, 3]
-        #expect(modal.targets(for: item).filter(\.isPrimary).map(\.id) == [1])
+        #expect(modal.targets(for: item).filter(\.isPrimary).map(\.id) == [1] as [CGDirectDisplayID])
     }
 
     @Test func preselectedDisplayTakesThePrimaryButton() {
@@ -497,6 +498,34 @@ struct ModalActionsTests {
         remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(await modal.content(for: item).installed?.updateState == .available)
+        model.onDisappear()
+    }
+
+    @Test func installedStateKeyFollowsTheDailyCheck() {
+        let fixture = Fixture()
+        let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
+        let other = workshop("999", importedAt: Date(timeIntervalSince1970: 10))
+        guard case let .workshop(entry) = item.source, case let .workshop(otherEntry) = other.source else { return }
+        var remoteEpochs: [String: Double] = [:]
+        let model = InstalledLibraryModel(dependencies: .init(
+            loadEntries: { [entry, otherEntry] }, loadRemoteUpdateEpochs: { remoteEpochs },
+            saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
+            saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
+            now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
+        ))
+        var inputs = fixture.inputs()
+        inputs.installedLibrary = model
+        let modal = fixture.modal(inputs: inputs)
+        model.onAppear()
+        let before = modal.installedStateKey(for: item)
+        // Control: another item's flag leaves this item's key alone.
+        remoteEpochs = ["999": 20]
+        model.onAppear()
+        #expect(model.updatedWorkshopIDs == ["999"])
+        #expect(modal.installedStateKey(for: item) == before)
+        remoteEpochs = ["123": 20]
+        model.onAppear()
+        #expect(modal.installedStateKey(for: item) != before)
         model.onDisappear()
     }
 

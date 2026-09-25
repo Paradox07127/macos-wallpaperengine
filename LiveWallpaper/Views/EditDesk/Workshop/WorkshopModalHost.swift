@@ -70,7 +70,8 @@ struct WorkshopModalWiring {
     }
 
     private func dropQueuedApply(itemID: UInt64) {
-        guard let ticket = deferredApply.ticket(for: itemID), !ticket.state.isSettled else { return }
+        // Not `!isSettled`: an apply already running no longer waits on this download, and cancelling it would drop its result.
+        guard let ticket = deferredApply.ticket(for: itemID), ticket.state == .waiting else { return }
         deferredApply.cancel(ticket)
     }
 }
