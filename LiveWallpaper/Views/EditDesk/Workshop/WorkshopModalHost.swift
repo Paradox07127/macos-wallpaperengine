@@ -228,6 +228,7 @@ struct WorkshopModalHost: View {
             totalBytes: downloads.progressBytes[item.id]?.total ?? item.fileSizeBytes,
             bytesPerSecond: rateMeter.bytesPerSecond,
             isInstalled: installedExtras(for: item) != nil,
+            reportsSave: true,
             blocker: doctor.downloadBlockerMessage
         )
     }

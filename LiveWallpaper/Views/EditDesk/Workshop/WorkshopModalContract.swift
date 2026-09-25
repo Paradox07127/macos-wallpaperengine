@@ -96,6 +96,7 @@ struct WorkshopDownloadPresentation: Equatable {
 
     /// `screenName` is the ticket's display; `wallpapersOn` is the master switch; `blocker` is the
     /// doctor's missing-step sentence, nil when ready.
+    /// `reportsSave` puts the library line on a finished download; false where the entry was in the library already.
     @MainActor
     static func make(
         ticketState: DeferredApplyCoordinator.State?,
@@ -108,6 +109,7 @@ struct WorkshopDownloadPresentation: Equatable {
         totalBytes: UInt64?,
         bytesPerSecond: Double?,
         isInstalled: Bool,
+        reportsSave: Bool,
         blocker: String?
     ) -> WorkshopDownloadPresentation {
         var presentation = WorkshopDownloadPresentation()
@@ -134,6 +136,12 @@ struct WorkshopDownloadPresentation: Equatable {
             return presentation
         case .downloadOnly(.unsupported) where !isTransferring:
             // The right column's notice says why this Mac can't run it.
+            return presentation
+        case .invalidated(.newerSelection) where !isTransferring:
+            presentation.status = DeferredApplyToasts.newerSelectionText(screenName: screenName)
+            return presentation
+        case .invalidated(.screenUnavailable) where !isTransferring:
+            presentation.status = DeferredApplyToasts.screenUnavailableText(screenName: screenName)
             return presentation
         case .finished, .downloadOnly, .invalidated, .waiting, nil:
             break
@@ -170,8 +178,8 @@ struct WorkshopDownloadPresentation: Equatable {
         case let .failed(message):
             presentation.status = message
             presentation.isFailure = true
-        case .succeeded where isInstalled && ticketState != .waiting:
-            // Saved with no apply queued, or with the queued one dropped; a waiting apply reports next.
+        case .succeeded where reportsSave && isInstalled && ticketState != .waiting:
+            // Saved with no apply queued, or with the queued one cancelled; a waiting apply reports next.
             presentation.status = String(
                 localized: "Added to your library.", bundle: .appLanguage, comment: "Workshop download success toast subtitle."
             )

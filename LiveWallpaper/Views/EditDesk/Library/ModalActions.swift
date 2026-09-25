@@ -213,7 +213,7 @@ final class ModalActions {
             ticketState: nil, screenName: "", wallpapersOn: true, phase: inputs.phase(id),
             isFetchingDependencies: inputs.fetchingDependencies(id), fraction: inputs.progress(id),
             downloadedBytes: bytes?.downloaded, totalBytes: bytes?.total, bytesPerSecond: nil,
-            isInstalled: true, blocker: nil
+            isInstalled: true, reportsSave: false, blocker: nil
         )
         if status.status.isEmpty, status.progress == .none, updateState(for: entry) == .available {
             status.status = String(

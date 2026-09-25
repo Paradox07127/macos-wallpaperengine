@@ -65,11 +65,7 @@ enum DeferredApplyToasts {
             )]
         case .invalidated(.newerSelection):
             return [Message(
-                text: String(
-                    localized: "\(screenName) changed in the meantime, so the download wasn’t applied.",
-                    bundle: .appLanguage,
-                    comment: "Workshop deferred apply dropped because the user applied something else there. Placeholder is a display name."
-                ),
+                text: newerSelectionText(screenName: screenName),
                 style: .info,
                 persists: true,
                 screenID: screenID
@@ -88,11 +84,7 @@ enum DeferredApplyToasts {
             )]
         case .invalidated(.screenUnavailable):
             return [Message(
-                text: String(
-                    localized: "\(screenName) is no longer connected, so the download wasn’t applied.",
-                    bundle: .appLanguage,
-                    comment: "Workshop deferred apply dropped because the target display went away. Placeholder is a display name."
-                ),
+                text: screenUnavailableText(screenName: screenName),
                 style: .info,
                 persists: true
             )]
@@ -114,6 +106,22 @@ enum DeferredApplyToasts {
         case .importingLibrary:
             String(localized: "Importing from folder…", bundle: .appLanguage)
         }
+    }
+
+    static func newerSelectionText(screenName: String) -> String {
+        String(
+            localized: "\(screenName) changed in the meantime, so the download wasn’t applied.",
+            bundle: .appLanguage,
+            comment: "Workshop deferred apply dropped because the user applied something else there. Placeholder is a display name."
+        )
+    }
+
+    static func screenUnavailableText(screenName: String) -> String {
+        String(
+            localized: "\(screenName) is no longer connected, so the download wasn’t applied.",
+            bundle: .appLanguage,
+            comment: "Workshop deferred apply dropped because the target display went away. Placeholder is a display name."
+        )
     }
 
     /// The display as it is named now, or as it was when queued once it is no longer connected.

@@ -675,6 +675,37 @@ struct ModalActionsTests {
         #expect(modal.downloadStatus(for: self.item(video())) == nil)
     }
 
+    @Test("A finished update does not say the item was added: it was in the library already, so only a newer version speaks")
+    func finishedUpdateSaysNothingAboutTheLibrary() {
+        let fixture = Fixture()
+        let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
+        guard case let .workshop(entry) = item.source else { return }
+        var remoteEpochs: [String: Double] = [:]
+        let model = InstalledLibraryModel(dependencies: .init(
+            loadEntries: { [entry] }, loadRemoteUpdateEpochs: { remoteEpochs },
+            saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
+            saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
+            now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
+        ))
+        var inputs = fixture.inputs()
+        inputs.installedLibrary = model
+        inputs.phase = { _ in .succeeded }
+        let modal = fixture.modal(inputs: inputs)
+        model.onAppear()
+        #expect(modal.downloadStatus(for: item) == nil)
+        remoteEpochs = ["123": 20]
+        model.onAppear()
+        #expect(modal.downloadStatus(for: item)?.status == String(localized: "Update available", bundle: .appLanguage))
+        model.onDisappear()
+        // Control: the Workshop modal's Save only, handed the same finished download, reports the library.
+        let saved = WorkshopDownloadPresentation.make(
+            ticketState: nil, screenName: "", wallpapersOn: true, phase: .succeeded, isFetchingDependencies: false,
+            fraction: nil, downloadedBytes: nil, totalBytes: nil, bytesPerSecond: nil, isInstalled: true,
+            reportsSave: true, blocker: nil
+        )
+        #expect(saved.status == String(localized: "Added to your library.", bundle: .appLanguage))
+    }
+
     private static let posted = Date(timeIntervalSince1970: 1_758_283_200)
 
     private func steamItem(
