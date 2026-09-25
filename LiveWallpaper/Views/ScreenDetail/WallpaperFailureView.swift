@@ -220,7 +220,7 @@ struct WallpaperAttemptPreview: View {
             )
             // Whole-page use fills its column; the overlay card sizes to the content instead.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(DesignTokens.Colors.pageBackground)
+            .pageBackground()
             .id(attempt.id)
             .confirmDestructive($pendingDestructive)
             .infoOverlay(item: $detailsFor) { snapshot, dismiss in

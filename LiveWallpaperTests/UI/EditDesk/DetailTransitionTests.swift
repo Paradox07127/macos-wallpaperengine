@@ -168,6 +168,45 @@ struct DetailTransitionTests {
         #expect(!stage.log.contains("fly 1"))
     }
 
+    @Test("The stage is covered in the turn the hero appears and uncovered in the turn it goes")
+    func coveringFollowsTheHero() async throws {
+        let stage = FakeStage()
+        let coordinator = DetailTransitionCoordinator(stage: stage) { .zero }
+        var seen: [(covering: Bool, heroVisible: Bool, concealed: Bool?)] = []
+        stage.onCover = { seen.append(($0, coordinator.heroVisible, stage.concealed[1])) }
+
+        coordinator.request(1)
+        try await settle { stage.log == ["fly 1"] }
+        #expect(!stage.covering, "the stage was covered while its tile was still flying to the hero")
+        stage.land()
+        try await settle { coordinator.phase == .shown }
+        coordinator.request(nil)
+        try await settle { stage.log.last == "return 1" }
+
+        #expect(seen.map(\.covering) == [true, false], Comment(rawValue: "coverings \(seen.map(\.covering))"))
+        #expect(seen.first.map { $0.heroVisible && $0.concealed == true } == true, "covered in another turn than the hero appeared")
+        #expect(seen.last.map { !$0.heroVisible && $0.concealed == false } == true, "uncovered in another turn than the hero went")
+    }
+
+    @Test("Switching displays keeps the stage covered the whole way")
+    func directSwitchKeepsTheStageCovered() async throws {
+        let stage = FakeStage()
+        let coordinator = DetailTransitionCoordinator(stage: stage) { .zero }
+        var trail: [Bool] = []
+        stage.onCover = { trail.append($0) }
+        coordinator.request(1)
+        try await settle { stage.log == ["fly 1"] }
+        stage.land()
+        try await settle { coordinator.phase == .shown }
+        coordinator.request(2)
+        try await settle { stage.log.last == "return 1" }
+        stage.land()
+        try await settle { stage.log.last == "fly 2" }
+        stage.land()
+        try await settle { coordinator.phase == .shown }
+        #expect(trail == [true] && stage.covering, Comment(rawValue: "the switch uncovered the stage under the detail: \(trail)"))
+    }
+
     private func settle(_ condition: () -> Bool) async throws {
         for _ in 0 ..< 200 {
             if condition() {
@@ -204,6 +243,16 @@ private final class FakeStage: DetailStageFlying {
     func setTileConcealed(display: CGDirectDisplayID, _ concealed: Bool) {
         self.concealed[display] = concealed
         log.append("conceal \(display) \(concealed)")
+    }
+
+    /// Kept off `log`, whose exact sequences the flight tests pin.
+    var covering = false
+    /// Runs as the coordinator changes the covering, so a test can read the coordinator at that moment.
+    var onCover: (Bool) -> Void = { _ in }
+
+    func setDetailCovering(_ covering: Bool) {
+        self.covering = covering
+        onCover(covering)
     }
 
     /// Resumes every awaiting flight, like the engine settling all springs at once.

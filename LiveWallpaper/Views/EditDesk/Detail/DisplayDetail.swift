@@ -86,17 +86,17 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                          attemptShown: section == .wallpaper && preview.showsAttempt)
                 .opacity(chromeVisible ? 1 : 0)
                 .offset(y: chromeVisible || reduceMotion ? 0 : -8)
-                .background(DesignTokens.EditDesk.Colors.background.opacity(chromeVisible ? 1 : 0))
                 .allowsHitTesting(heroVisible && chromeVisible)
                 // Above the workspace, whose content can reach up into this strip and take its clicks.
                 .zIndex(1)
             workspace
+                // Scroll views draw up into the top bar's strip, which has no fill to hide them.
+                .clipped()
                 .allowsHitTesting(heroVisible)
         }
-        .background {
-            // All columns share this neutral surface. Cover tint no longer changes only one half.
-            DesignTokens.EditDesk.Colors.background.opacity(heroVisible ? 1 : 0)
-        }
+        // No fill, so the window's canvas shows; the clear shape still takes the clicks that would
+        // otherwise fall through to the hidden overview under the page.
+        .background { Color.clear.contentShape(Rectangle()).allowsHitTesting(heroVisible) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: section)
         .onAppear { setChromeVisible(!returning) }
@@ -121,7 +121,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                     inspector(width)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .overlay(alignment: .leading) { Divider() }
-                        .background(DesignTokens.EditDesk.Colors.background)
+                        .contentColumnBackground()
                         .opacity(chromeVisible ? 1 : 0)
                         .offset(x: chromeVisible || reduceMotion ? 0 : 16)
                 }

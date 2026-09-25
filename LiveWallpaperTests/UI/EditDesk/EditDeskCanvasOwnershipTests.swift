@@ -7,22 +7,20 @@ import Testing
 struct EditDeskCanvasOwnershipTests {
     private static let canvasOwner = "LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift"
 
-    /// Views/EditDesk files that paint a page colour themselves: the canvas, the modal panel, and the
-    /// pages that still cover the overview with their own fill.
+    /// Views/EditDesk files that paint a page colour themselves: the canvas and the modal panel.
     private static let paintsPageColour: Set<String> = [
         canvasOwner,
         "LiveWallpaper/Views/EditDesk/Library/EditDeskModalChrome.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift",
-        "LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift",
-        "LiveWallpaper/Views/EditDesk/Detail/EmptyDisplaySetup.swift",
     ]
 
-    /// The solid content columns: the settings page's right-hand side.
+    /// The solid content columns: the settings page's right-hand side and the display detail's inspectors.
     private static let contentColumns: Set<String> = [
         "LiveWallpaper/Views/Settings/DetailContent.swift",
         "LiveWallpaper/Views/Settings/GeneralSettingsView.swift",
         "LiveWallpaper/Views/Settings/AboutTab.swift",
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/SettingsFormChrome.swift",
+        "LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift",
+        "LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift",
     ]
 
     /// Pages the Edit Desk embeds that paint through `.pageBackground()`.
@@ -30,6 +28,8 @@ struct EditDeskCanvasOwnershipTests {
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/DetailPageScaffold.swift",
         "LiveWallpaper/Views/Settings/Sidebar.swift",
         "LiveWallpaper/Views/Workshop/BrowsePane.swift",
+        "LiveWallpaper/Views/ScreenDetail/WallpaperFailureView.swift",
+        "LiveWallpaper/Views/ScreenDetail/AttemptSceneProperties.swift",
     ]
 
     private static let pageColours = ["EditDesk.Colors.background", "Colors.pageBackground", "windowBackgroundColor"]

@@ -182,6 +182,11 @@ private struct HandoffHost {
         let stageView = stage
         stageView?.isHidden = true
         defer { stageView?.isHidden = false }
+        return try render()
+    }
+
+    /// Everything the page draws, the stage included.
+    func render() throws -> ProbeImage {
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -308,14 +313,6 @@ private func scrollEvent(y: Int32, phase: CGScrollPhase) throws -> NSEvent {
 
 private func sample(_ image: ProbeImage, at point: CGPoint) -> ProbeColor {
     image.rgb(px: Int((point.x * image.scale).rounded(.down)), Int((point.y * image.scale).rounded(.down)))
-}
-
-/// How much of `layer` lies over `backdrop` in `sample`: 0 is the backdrop alone, 1 the layer alone.
-private func coverage(_ sample: ProbeColor, layer: ProbeColor, backdrop: ProbeColor) -> CGFloat {
-    let full = [layer.r - backdrop.r, layer.g - backdrop.g, layer.b - backdrop.b].map { CGFloat($0) }
-    let seen = [sample.r - backdrop.r, sample.g - backdrop.g, sample.b - backdrop.b].map { CGFloat($0) }
-    let norm = full.reduce(0) { $0 + $1 * $1 }
-    return norm > 0 ? zip(full, seen).reduce(0) { $0 + $1.0 * $1.1 } / norm : 0
 }
 
 /// While `holding`, a cover decode waits instead of returning, so a tile shows only what the cache already has.
@@ -782,51 +779,81 @@ struct ShelfGridHandoffTests {
         }
     }
 
-    /// Under the cards the library's own page colour fills in over the flight's last stretch: none of it at p = 1.6,
-    /// all of it by the handoff, never backing off in between, from the grid's top to the window's bottom.
-    @Test("The library's page colour fills in under the cards before the grid takes over", .timeLimit(.minutes(1)))
-    func pageColourFillsInUnderTheCards() async throws {
+    /// Below the grid's top the overview's dots fade out over the flight's last stretch: all of them at p = 1.6, none by
+    /// the handoff, never coming back in between; above it they stay. The landed grid itself sits on the bare canvas.
+    @Test("Below the grid's top the dots fade out before the grid takes over, and the grid sits on the canvas", .timeLimit(.minutes(1)))
+    func dotsFadeBelowTheGridTop() async throws {
         let size = Self.designSize
         let host = try HandoffHost(size: size, backdrop: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
         defer { host.close() }
         try await host.settleOnLibrary()
         let stage = try #require(host.stage)
         let scroll = try #require(host.grid)
-        // The grid's own background, in its left margin where no tile sits.
-        let page = try sample(host.renderWithoutStage(), at: CGPoint(x: 8, y: host.gridFrame(scroll).minY + 7))
+        // The grid's left margin, where no tile sits.
+        let margin = try sample(host.renderWithoutStage(), at: CGPoint(x: 8, y: host.gridFrame(scroll).minY + 7))
+        #expect(margin.isRed, Comment(rawValue: "the landed grid paints over the window's canvas: \(margin)"))
         // Hidden as a return swipe hides it, so what lies under the cards shows.
         stage.model.report(leavingLibrary: true)
-        var renders: [(progress: Double, image: ProbeImage)] = []
+        /// The green a dot adds to the red backdrop: its centre against a spot 6pt off it in the same 24pt cell.
+        func dot(_ image: ProbeImage, at centre: CGPoint) -> Int {
+            sample(image, at: centre).g - sample(image, at: CGPoint(x: centre.x + 6, y: centre.y + 6)).g
+        }
+        // Dot centres, clear of the chip row and the hints at every progress sampled.
+        let below = CGPoint(x: 12 + 24 * 5, y: 12 + 24 * 20)
+        let above = CGPoint(x: 12, y: 12 + 24 * 2)
+        var strengths: [(progress: Double, dot: Int)] = []
+        var landedAbove = 0
         for progress in [1.5, 1.6, 1.7, 1.8, 1.9, 1.95, 2] {
             stage.model.report(progress: progress)
             await host.settle(seconds: 0.15)
             let image = try host.renderWithoutStage()
-            renders.append((progress, image))
+            strengths.append((progress, dot(image, at: below)))
+            landedAbove = dot(image, at: above)
         }
-        let centre = CGPoint(x: size.width / 2, y: 330)
-        let backdrop = sample(renders[0].image, at: centre)
-        try #require(backdrop.isRed, Comment(rawValue: "control: the backdrop at p = 1.5 reads \(backdrop)"))
-        let alphas = renders.map { (progress: $0.progress, alpha: coverage(sample($0.image, at: centre), layer: page, backdrop: backdrop)) }
-        let described = alphas.map { String(format: "%.2f:%.2f", $0.progress, $0.alpha) }.joined(separator: " ")
-        print("UNDERLAY progress:alpha \(described)")
-        let at = Dictionary(uniqueKeysWithValues: alphas.map { ($0.progress, $0.alpha) })
-        #expect((at[1.6] ?? 1) <= 0.02, Comment(rawValue: "the page colour already shows at p = 1.6: \(described)"))
-        #expect((at[2] ?? 0) >= 0.98, Comment(rawValue: "the page colour is not all there at p = 2: \(described)"))
-        #expect((at[1.8] ?? 0) > 0.2 && (at[1.8] ?? 1) < 0.8, Comment(rawValue: "the page colour does not fill in across the stretch: \(described)"))
-        for (earlier, later) in zip(alphas, alphas.dropFirst()) {
+        let described = strengths.map { String(format: "%.2f:%d", $0.progress, $0.dot) }.joined(separator: " ")
+        print("DOTS progress:strength \(described) above=\(landedAbove)")
+        let full = strengths[0].dot
+        try #require(full >= 4, Comment(rawValue: "control: no dot below the grid's top at p = 1.5: \(described)"))
+        let at = Dictionary(uniqueKeysWithValues: strengths.map { ($0.progress, $0.dot) })
+        #expect((at[1.6] ?? 0) >= full - 1, Comment(rawValue: "the dots already fade at p = 1.6: \(described)"))
+        #expect((at[2] ?? full) <= 1, Comment(rawValue: "the dots still show under the landed grid: \(described)"))
+        let middle = Double(at[1.8] ?? 0) / Double(full)
+        #expect(middle > 0.2 && middle < 0.8, Comment(rawValue: "the dots do not fade across the stretch: \(described)"))
+        for (earlier, later) in zip(strengths, strengths.dropFirst()) {
             #expect(
-                later.alpha >= earlier.alpha - 0.02,
-                Comment(rawValue: "the page colour backs off from p = \(earlier.progress) to \(later.progress): \(described)")
+                later.dot <= earlier.dot + 1,
+                Comment(rawValue: "the dots come back from p = \(earlier.progress) to \(later.progress): \(described)")
             )
         }
-        let landed = renders[renders.count - 1].image
-        for point in [CGPoint(x: 12, y: StageGeometry.gridTop + 1), CGPoint(x: 12, y: size.height - 2)] {
-            let alpha = coverage(sample(landed, at: point), layer: page, backdrop: backdrop)
-            #expect(alpha >= 0.98, Comment(rawValue: "at p = 2 the page colour covers only \(alpha) of \(point)"))
+        #expect(landedAbove >= full - 1, Comment(rawValue: "the dots above the grid's top faded too: \(landedAbove) against \(full)"))
+    }
+
+    /// The grid has no fill of its own, so the stage stops drawing its landed cards once the grid covers them: a
+    /// scrolled grid shows the canvas between its rows, not the cards still lying where the grid started.
+    @Test("A scrolled library shows the canvas between its rows, not the landed cards", .timeLimit(.minutes(1)))
+    func scrolledGridShowsTheCanvasBetweenRows() async throws {
+        let size = Self.designSize
+        let host = try HandoffHost(size: size, backdrop: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let stage = try #require(host.stage)
+        let scroll = try #require(host.grid)
+        let scrolled: CGFloat = 70
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: scrolled))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        await host.settle(seconds: 0.3)
+        let tileSize = stage.model.gridTileSize
+        let onScreen = StageGeometry.gridFrame(index: 0, windowWidth: size.width, size: tileSize, scrollOffset: scrolled)
+        let landed = StageGeometry.gridFrame(index: 0, windowWidth: size.width, size: tileSize)
+        let gapY = onScreen.maxY + DesignTokens.LibraryGrid.spacing / 2
+        try #require(gapY > landed.minY + 4 && gapY < landed.maxY - 4, "control: the gap under the first row is not over its landed cards")
+        let image = try host.render()
+        let columns = StageGeometry.gridColumns(windowWidth: size.width, size: tileSize)
+        for column in 0 ..< columns {
+            let x = StageGeometry.gridFrame(index: column, windowWidth: size.width, size: tileSize).midX
+            let seen = sample(image, at: CGPoint(x: x, y: gapY))
+            #expect(seen.isRed, Comment(rawValue: "column \(column): the gap between rows shows \(seen), not the canvas"))
         }
-        let above = CGPoint(x: 12, y: StageGeometry.gridTop - 2)
-        let spill = coverage(sample(landed, at: above), layer: page, backdrop: backdrop)
-        #expect(spill <= 0.02, Comment(rawValue: "the page colour reaches above the grid's top, \(spill) at \(above)"))
     }
 }
 #endif

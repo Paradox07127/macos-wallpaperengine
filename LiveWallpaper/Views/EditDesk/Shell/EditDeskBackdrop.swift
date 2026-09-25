@@ -24,9 +24,23 @@ struct EditDeskBackdrop: View {
 
 /// The overview's and the library's dot texture, drawn by `HomePage` over the window's canvas.
 struct EditDeskDotGrid: View {
+    /// Read per frame in `body`, as `EditDeskShelfScrim` does, so a moving gesture invalidates this view alone.
+    let stage: EditDeskStageModel
+
+    /// Under the grid's top the dots go over the flight's last stretch, so the grid takes over on the bare canvas.
+    static func gridOpacity(_ progress: Double) -> Double {
+        1 - HomeHints.ramp(progress, from: 1.6, to: 2)
+    }
+
     var body: some View {
         Image(nsImage: Self.dotTile)
             .resizable(resizingMode: .tile)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black.frame(height: StageGeometry.gridTop)
+                    Color.black.opacity(Self.gridOpacity(stage.progress))
+                }
+            }
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -49,7 +63,7 @@ struct EditDeskShelfScrim: View {
     let stage: EditDeskStageModel
 
     /// The band's background, so it leads the chrome that sits over it; it leaves with the cards,
-    /// so the grid's opaque page takes over from a clear band.
+    /// so the grid takes over from a clear band.
     static func opacity(_ progress: Double) -> Double {
         HomeHints.ramp(progress, from: 0.05, to: 0.6) * (1 - HomeHints.ramp(progress, from: 1, to: 2))
     }

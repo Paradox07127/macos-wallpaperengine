@@ -3356,4 +3356,39 @@ struct EditDeskStageViewTests {
             }
         }
     }
+
+    @Test("Landed cards stop drawing once the grid covers them, and draw again on the first frame of a return")
+    func gridCoverHidesTheLandedCards() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(2, animated: false)
+        let shelf = try #require(view.cardLayers["card-0"]?.layer.superlayer)
+        #expect(!shelf.isHidden, "control: the landed cards hid before any grid covered them")
+        model.gridCoversCards = true
+        view.advance(dt: 1.0 / 60)
+        #expect(shelf.isHidden, "the landed cards still draw under the grid, and show through between its tiles")
+        model.setProgress(1, animated: true)
+        #expect(model.leavingLibrary, "control: the return never started")
+        #expect(!shelf.isHidden, "the return started with the cards hidden, so nothing shows as the grid goes")
+    }
+
+    @Test("A landed detail page hides the whole stage, and the stage is back the moment it leaves")
+    func detailCoverHidesTheStage() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let shells = try #require(view.displayLayers[1]?.layer.superlayer)
+        let shelf = try #require(view.cardLayers["card-0"]?.layer.superlayer)
+        model.setDetailCovering(true)
+        #expect(shells.isHidden && shelf.isHidden, "the stage still draws under the detail page, which has no fill of its own")
+        model.setDetailCovering(false)
+        #expect(!shells.isHidden && !shelf.isHidden, "the stage stayed hidden after the detail page left")
+    }
 }
