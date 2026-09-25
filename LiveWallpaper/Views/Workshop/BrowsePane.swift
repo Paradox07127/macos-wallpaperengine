@@ -51,6 +51,7 @@ struct BrowsePane: View {
 
     var body: some View {
         layout
+            .modifier(WorkshopBookmarkErrorModifier())
             .onAppear {
                 rateLimitRemaining = currentRateLimitRemaining
                 reloadInstalledIDs()
@@ -368,6 +369,8 @@ struct BrowsePane: View {
             presentation: presentation,
             isRevealed: matureReveal?.isRevealed(item.id) ?? false,
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
+            isBookmarked: WorkshopBookmarkActions.contains(item.id),
+            onBookmark: { WorkshopBookmarkActions.toggle(item) },
             onSelect: {
                 guard presentation != .editDesk else {
                     openItem(item.id)

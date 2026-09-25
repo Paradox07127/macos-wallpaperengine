@@ -418,9 +418,25 @@ final class InstalledLibraryModel {
         NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
 
-    func toggleBookmark(_ entry: WPEHistoryEntry, store: BookmarkStore) {
+    func toggleBookmark(
+        _ entry: WPEHistoryEntry,
+        store: BookmarkStore,
+        workshopStore: WorkshopBookmarkStore = .shared
+    ) {
         errorMessage = nil
         let workshopID = entry.origin.workshopID
+        if let id = UInt64(workshopID), workshopStore.contains(id) {
+            workshopStore.remove(id)
+            guard !workshopStore.hasStorageError else {
+                errorMessage = String(
+                    localized: "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.",
+                    bundle: .appLanguage, comment: "Workshop bookmark persistence failure."
+                )
+                return
+            }
+            store.removeWPEBookmarks(workshopID: workshopID)
+            return
+        }
         if store.containsWPEBookmark(workshopID: workshopID) {
             store.removeWPEBookmarks(workshopID: workshopID)
             return

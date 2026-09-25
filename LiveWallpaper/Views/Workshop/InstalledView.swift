@@ -93,7 +93,7 @@ struct InstalledView: View {
                     screens: screenManager.screens,
                     activeScreenIDs: activeScreenIDs(for: entry),
                     state: WPEInstalledInspectorContent.ItemState(
-                        isBookmarked: bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID),
+                        isBookmarked: WorkshopBookmarkActions.contains(workshopID: entry.origin.workshopID),
                         canBookmark: model.canAddBookmark(entry),
                         hasUpdate: model.updatedWorkshopIDs.contains(entry.origin.workshopID),
                         canUpdate: doctor.isDownloadReady
@@ -217,7 +217,7 @@ struct InstalledView: View {
                 }
                 LibraryGalleryGrid(size: tileSize, aspect: .square) {
                     ForEach(visibleEntries, id: \.id) { entry in
-                        let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
+                        let bookmarked = WorkshopBookmarkActions.contains(workshopID: entry.origin.workshopID)
                         HistoryRow(
                             entry: entry,
                             previewURL: WPEPreviewURLCache.shared.url(for: entry.origin),
