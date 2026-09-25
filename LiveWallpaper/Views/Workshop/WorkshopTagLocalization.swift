@@ -48,6 +48,7 @@ enum WorkshopTagLocalization {
         case "video texture": String(localized: "Video Texture", bundle: .appLanguage, comment: "Workshop tag: the scene plays video inside a texture.")
         case "asset pack": String(localized: "Asset Pack", bundle: .appLanguage, comment: "Workshop tag: reusable assets rather than a finished wallpaper.")
         case "standard definition": String(localized: "Standard Definition", bundle: .appLanguage, comment: "Workshop resolution filter display label.")
+        case "preset": String(localized: "Preset", bundle: .appLanguage)
         // `3D`, `HDR`, `Puppet Warp` deliberately absent — acronyms, and a WPE
         // feature name its own editor leaves untranslated.
         default: tag

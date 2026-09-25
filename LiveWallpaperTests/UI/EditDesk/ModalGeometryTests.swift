@@ -3,40 +3,26 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// R-24 ⑤: the float strip and the modal panel share the top of the window, so the panel's top is
-/// a clearance under the strip rather than a centring that walks into it.
-@Suite("Modal geometry — the panel box against the float strip")
+/// One panel box for the library and Workshop detail modals, whatever window they open in.
+@Suite("Modal geometry — the one panel box both detail modals share")
 struct ModalGeometryTests {
-    private static let tiers = [
-        CGSize(width: 1280, height: 820),
-        CGSize(width: 1040, height: 700),
-        CGSize(width: 1280, height: 500),
-    ]
-
-    @Test("No window tier lets the panel climb under the float strip")
-    func panelClearsTheStripInEveryTier() {
-        for size in Self.tiers {
-            let panel = ModalGeometry.panelFrame(in: size)
-            let stripBottom = FloatLayerGeometry.panelTop + FloatLayerGeometry.panelHeight
-            #expect(
-                panel.minY >= stripBottom + 12,
-                Comment(rawValue: "\(size): panel \(panel) starts above strip bottom \(stripBottom) + 12")
-            )
-            #expect(
-                panel.maxY <= size.height - ModalGeometry.edgeMargin,
-                Comment(rawValue: "\(size): panel \(panel) runs past the \(ModalGeometry.edgeMargin)pt bottom margin")
-            )
+    @Test("The panel is at most 920×680, centred, and never above the 72pt floor")
+    func panelRectanglesPerWindow() {
+        let cases: [(window: CGSize, panel: CGRect)] = [
+            (CGSize(width: 1040, height: 896), CGRect(x: 60, y: 108, width: 920, height: 680)),
+            (CGSize(width: 1280, height: 820), CGRect(x: 180, y: 72, width: 920, height: 680)),
+            (CGSize(width: 1040, height: 700), CGRect(x: 60, y: 72, width: 920, height: 600)),
+            (CGSize(width: 800, height: 600), CGRect(x: 24, y: 72, width: 752, height: 500)),
+        ]
+        for (window, expected) in cases {
+            let panel = ModalGeometry.panelFrame(in: window)
+            #expect(panel == expected, Comment(rawValue: "\(window) → \(panel), expected \(expected)"))
         }
     }
 
-    @Test("820 hangs the panel at 150; 700 drops it to 130 and pays in height, not in margin")
-    func panelRectanglesPerTier() {
-        let tall = ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 820))
-        #expect(tall == CGRect(x: 200, y: 150, width: 880, height: 560), Comment(rawValue: "\(tall)"))
-        let short = ModalGeometry.panelFrame(in: CGSize(width: 1040, height: 700))
-        #expect(short == CGRect(x: 80, y: 130, width: 880, height: 554), Comment(rawValue: "\(short)"))
-        let shorter = ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 500))
-        #expect(shorter == CGRect(x: 200, y: 130, width: 880, height: 354), Comment(rawValue: "\(shorter)"))
+    @Test("The preview is a 340×255 box: 4:3 crops neither a square Workshop preview nor a 16:9 video")
+    func previewBoxIsFourByThree() {
+        #expect(ModalGeometry.previewSize == CGSize(width: 340, height: 255))
     }
 
     @Test("Both hosts hang the strip from the one geometry constant")

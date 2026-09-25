@@ -100,23 +100,21 @@ struct LibraryMetadataSidecarTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
-    @Test("4K uses the long edge and labels use VideoFormatInfo")
+    @Test("Resolution labels use VideoFormatInfo")
     func resolutionLabels() {
-        let cases = [
-            (CGSize(width: 3840, height: 2160), true),
-            (CGSize(width: 1920, height: 1080), false),
-            (CGSize(width: 2160, height: 3840), true),
+        let sizes = [
+            CGSize(width: 3840, height: 2160),
+            CGSize(width: 1920, height: 1080),
+            CGSize(width: 2160, height: 3840),
         ]
-        for (size, expected) in cases {
+        for size in sizes {
             let metadata = LibraryMetadata.video(LibraryMetadata.Video(
                 resolution: size, isHDR: false, duration: nil, fileSize: nil, probedAt: Date()
             ))
-            #expect(metadata.is4K == expected)
             #expect(metadata.resolutionShortLabel == VideoFormatInfo.resolutionShortLabel(
                 width: Int(size.width), height: Int(size.height)
             ))
         }
-        #expect(!LibraryMetadata.notApplicable.is4K)
         #expect(LibraryMetadata.notApplicable.resolutionShortLabel == nil)
     }
 

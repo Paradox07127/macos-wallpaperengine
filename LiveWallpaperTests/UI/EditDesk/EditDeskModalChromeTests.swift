@@ -30,7 +30,7 @@ struct EditDeskModalChromeTests {
             let frame = chrome(windowSize: size).panelFrame
             #expect(frame == ModalGeometry.panelFrame(in: size), Comment(rawValue: "\(size) → \(frame)"))
         }
-        #expect(chrome().panelFrame == CGRect(x: 200, y: 150, width: 880, height: 560))
+        #expect(chrome().panelFrame == CGRect(x: 180, y: 72, width: 920, height: 680))
     }
 
     @Test("The scrim leaves the title bar clickable by default")
@@ -90,7 +90,28 @@ struct EditDeskModalChromeTests {
         #expect(source.contains("EditDeskModalChrome("), "the modal does not build on the shared chrome")
         #expect(!source.contains("modalScrim"), "the modal still paints its own scrim")
         #expect(!source.contains("ModalGeometry.panelFrame("), "the modal still measures its own panel")
+        #expect(!source.contains("LibraryDetailGeometry"), "the library modal still sizes its panel apart from the Workshop one")
+        #expect(!source.contains("panelFrameOverride"), "the library modal still overrides the shared panel box")
         #expect(!source.contains("accessibilityAddTraits(.isModal)"), "the modal still declares the modal trait")
+    }
+
+    @Test("The title and the close button share the header row; no row holds the close button alone")
+    func titleAndCloseShareOneRow() throws {
+        let chrome = try RepositoryRoot.source(Self.chromePath)
+        let header = chrome.range(of: "private var header: some View {")
+        #expect(header != nil, "the chrome draws no header row")
+        if let header {
+            let row = chrome[header.lowerBound...]
+            let title = row.range(of: "Text(verbatim: title)")
+            let close = row.range(of: #"GlassIconButton("xmark""#)
+            #expect(title != nil && close != nil, "the header row lacks the title or the close button")
+            if let title, let close {
+                #expect(title.lowerBound < close.lowerBound, "the title does not lead the row the close button ends")
+            }
+        }
+        #expect(!chrome.contains("ModalGeometry.headerHeight"), "a fixed-height row still holds the close button alone")
+        let modal = try RepositoryRoot.source(Self.modalPath)
+        #expect(modal.contains("title: content.title"), "the library modal does not hand its title to the chrome's row")
     }
 
     @Test("The library modal keeps ⌘n on applyTo and keeps ESC cancelling a drag")

@@ -16,11 +16,6 @@ enum LibraryMetadata: Equatable, Sendable {
         let probedAt: Date
     }
 
-    var is4K: Bool {
-        guard case let .video(video) = self else { return false }
-        return VideoFormatInfo(resolution: video.resolution).is4K
-    }
-
     var resolutionShortLabel: String? {
         guard case let .video(video) = self, let size = video.resolution else { return nil }
         return VideoFormatInfo.resolutionShortLabel(width: Int(size.width), height: Int(size.height))

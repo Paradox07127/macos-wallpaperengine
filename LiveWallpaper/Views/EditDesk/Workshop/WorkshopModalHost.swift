@@ -206,23 +206,13 @@ struct WorkshopModalHost: View {
         WorkshopModalContent(item: item, installed: installedExtras(for: item))
     }
 
-    /// Windows-only takes both readings: the origin's own flag, and an import that produced nothing
-    /// this renderer can show.
     private func installedExtras(for item: WorkshopQueryItem) -> InstalledItemExtras? {
         let entry = installedEntry.flatMap { $0.origin.workshopID == String(item.id) ? $0 : nil }
         guard WorkshopModalContent.isInstalled(
             hasLibraryEntry: entry != nil, isDownloading: downloads.isBusy(item.id),
             isFetchingDependencies: downloads.fetchingDependencies.contains(item.id)
-        ), let entry else { return nil }
-        let runningOn = screenManager.screens.filter {
-            screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == entry.origin.workshopID
-        }
-        return InstalledItemExtras(
-            updateState: .unknown,
-            isWindowsOnly: entry.origin.requiresWindowsPlugin
-                || entry.origin.originalType == .application || entry.origin.originalType == .unknown,
-            inUseOnDisplayNames: runningOn.map(\.name)
-        )
+        ) else { return nil }
+        return InstalledItemExtras(updateState: .unknown)
     }
 
     private func targets(for item: WorkshopQueryItem) -> [ModalDisplayTarget] {

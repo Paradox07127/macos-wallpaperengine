@@ -13,13 +13,13 @@ final class ModalActions {
     struct Inputs {
         var item: @MainActor (String) -> LibraryItem? = { _ in nil }
         var displays: @MainActor () -> [Display] = { [] }
-        var appendToPlaylist: @MainActor (Data, CGDirectDisplayID) -> Void = { _, _ in }
-        var appendWallpaper: (@MainActor (WallpaperQueueEntry, CGDirectDisplayID) -> Void)?
         #if !LITE_BUILD
         var installedLibrary = InstalledLibraryModel()
         var localInfo: @MainActor (WPEHistoryEntry) async -> LocalProjectInfo? = { await loadWPELocalProjectInfo(for: $0) }
         var phase: @MainActor (UInt64) -> WorkshopDownloadCoordinator.DownloadPhase = { _ in .idle }
         var progress: @MainActor (UInt64) -> Double? = { _ in nil }
+        var progressBytes: @MainActor (UInt64) -> WorkshopDownloadCoordinator.DownloadProgressBytes? = { _ in nil }
+        var fetchingDependencies: @MainActor (UInt64) -> Bool = { _ in false }
         var update: @MainActor (WPEHistoryEntry) -> Void = { _ in }
         var cancelUpdate: @MainActor (UInt64) -> Void = { _ in }
         var deleteInstalled: @MainActor (WPEHistoryEntry, InstalledLibraryModel) -> Void = { _, _ in }
@@ -30,16 +30,6 @@ final class ModalActions {
             inputs.item = { id in library.items.first { $0.id == id } }
             inputs.displays = {
                 screenManager.screens.map { Display(id: $0.id, name: $0.name, frame: $0.frame) }
-            }
-            inputs.appendToPlaylist = { data, id in
-                guard let screen = screenManager.screens.first(where: { $0.id == id }),
-                      let configuration = screenManager.getConfiguration(for: screen) else { return }
-                screenManager.updatePlaylistBookmarks((configuration.playlistBookmarks ?? []) + [data], for: screen)
-            }
-            inputs.appendWallpaper = { entry, id in
-                guard let screen = screenManager.screens.first(where: { $0.id == id }),
-                      let config = screenManager.getConfiguration(for: screen) else { return }
-                screenManager.replaceWallpaperQueue(config.effectiveWallpaperQueue + [entry], for: screen)
             }
             return inputs
         }
@@ -92,6 +82,8 @@ final class ModalActions {
         let coordinator = WorkshopDownloadCoordinator.shared
         inputs.phase = { coordinator.phase(for: $0) }
         inputs.progress = { coordinator.progress[$0] }
+        inputs.progressBytes = { coordinator.progressBytes[$0] }
+        inputs.fetchingDependencies = { coordinator.fetchingDependencies.contains($0) }
         inputs.update = { entry in
             guard let id = UInt64(entry.origin.workshopID) else { return }
             coordinator.download(itemID: id, title: entry.origin.title, using: doctor)
@@ -135,10 +127,7 @@ final class ModalActions {
     }
 
     func content(for item: LibraryItem) async -> WallpaperModalContent {
-        var content = WallpaperModalContent(
-            itemID: item.id, title: item.title, kind: item.kind, tags: [],
-            metaParts: metaParts(for: item), preview: nil, installed: nil
-        )
+        var content = WallpaperModalContent(itemID: item.id, title: item.title, kind: item.kind)
         content.canApply = item.isSupported
         #if !LITE_BUILD
         if case let .workshop(entry) = item.source, entry.origin.resourceLocation == .unsupported {
@@ -153,30 +142,15 @@ final class ModalActions {
         } else if item.isSourceMissing {
             content.notice = DropFailure.sourceMissing.toastText
         }
-        #if !LITE_BUILD
-        if let entry = localInfoEntry(for: item) {
-            let info = await inputs.localInfo(entry)
-            content.tags = Array(Set(info?.tags ?? [])).sorted()
-            content.descriptionText = info?.cleanedDescription
-            content.contentRating = info?.contentRating
-            content.importedAt = entry.importedAt
-            content.workshopID = UInt64(entry.origin.workshopID)
-            content.dependencyIDs = entry.origin.dependencyWorkshopIDs
-            if case .workshop = item.source {
-                content.installed = InstalledItemExtras(
-                    updateState: updateState(for: entry), isWindowsOnly: entry.origin.requiresWindowsPlugin,
-                    inUseOnDisplayNames: inputs.displays().filter { item.onDisplays.contains($0.id) }.map(\.name)
-                )
-            }
-        }
+        #if LITE_BUILD
+        content.facts = WallpaperFacts.library(
+            item, sizeBytes: Self.fileSize(of: item), now: Date(), locale: AppLanguagePreference.current.locale
+        )
+        #else
+        await fillProjectDetails(of: item, into: &content)
         #endif
-        if case let .video(video)? = item.metadata {
-            if item.metadata?.is4K == true {
-                content.tags.append("4K")
-            }
-            if video.isHDR {
-                content.tags.append("HDR")
-            }
+        if content.workshopID == nil {
+            content.fileFacts = fileFacts(for: item)
         }
         return content
     }
@@ -219,6 +193,38 @@ final class ModalActions {
         )
     }
 
+    /// The modal's title-row buttons for `item`: the context menu's rows that do not apply.
+    func headerActions(
+        for item: LibraryItem, requestRename: @escaping @MainActor () -> Void,
+        requestDelete: @escaping @MainActor () -> Void
+    ) -> [ModalHeaderAction] {
+        actions(for: item).headerActions(
+            isUpdating: isUpdating(item), requestRename: requestRename, requestDelete: requestDelete
+        )
+    }
+
+    #if !LITE_BUILD
+    /// An installed Workshop item's transfer, or its pending update while nothing moves; nil when there is
+    /// nothing to say. Read in the host's body, so the modal follows every published byte count.
+    func downloadStatus(for item: LibraryItem) -> WorkshopDownloadPresentation? {
+        guard case let .workshop(entry) = item.source, let id = UInt64(entry.origin.workshopID) else { return nil }
+        let bytes = inputs.progressBytes(id)
+        var status = WorkshopDownloadPresentation.make(
+            ticketState: nil, settledScreenName: "", wallpapersOn: true, phase: inputs.phase(id),
+            isFetchingDependencies: inputs.fetchingDependencies(id), fraction: inputs.progress(id),
+            downloadedBytes: bytes?.downloaded, totalBytes: bytes?.total, bytesPerSecond: nil,
+            isInstalled: true, unsupportedOrigin: nil, blocker: nil
+        )
+        if status.status.isEmpty, status.progress == .none, updateState(for: entry) == .available {
+            status.status = String(
+                localized: "Update available", bundle: .appLanguage,
+                comment: "A11y: the installed item has a newer version on Steam."
+            )
+        }
+        return status.status.isEmpty && status.progress == .none ? nil : status
+    }
+    #endif
+
     /// What the delete confirmation says for `item`: whether deleting it frees disk space.
     func deletesFiles(_ item: LibraryItem) -> Bool {
         #if !LITE_BUILD
@@ -251,17 +257,6 @@ final class ModalActions {
                 applyToAll(intent, inputs.displays().map(\.id))
             }
         )
-        if let appendWallpaper = inputs.appendWallpaper, item.isSupported {
-            actions.addToPlaylist = { [self] displayID in
-                guard let current = inputs.item(id), let entry = WallpaperQueueEntry.libraryItem(current) else { return }
-                appendWallpaper(entry, displayID)
-            }
-        } else if Self.playlistBookmarkData(for: item) != nil {
-            actions.addToPlaylist = { [self] displayID in
-                guard let current = inputs.item(id), let data = Self.playlistBookmarkData(for: current) else { return }
-                inputs.appendToPlaylist(data, displayID)
-            }
-        }
         if case .bookmark = item.source {
             actions.removeFromSaved = { [self] in
                 guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source,
@@ -320,55 +315,68 @@ final class ModalActions {
         return actions
     }
 
-    private func metaParts(for item: LibraryItem) -> [String] {
-        let source = if item.kind == .aerial {
-            String(localized: "Aerial", bundle: .appLanguage)
-        } else if item.isSteam {
-            String(localized: "Steam Workshop", bundle: .appLanguage)
-        } else {
-            String(localized: "Local", bundle: .appLanguage)
+    #if !LITE_BUILD
+    /// The rows, chips and description a Workshop project's manifest adds to the library's own rows.
+    private func fillProjectDetails(of item: LibraryItem, into content: inout WallpaperModalContent) async {
+        let now = Date()
+        let locale = AppLanguagePreference.current.locale
+        guard let entry = localInfoEntry(for: item) else {
+            content.facts = WallpaperFacts.library(item, sizeBytes: Self.fileSize(of: item), now: now, locale: locale)
+            return
         }
-        var parts = [source]
-        var bytes: Int64?
-        if case let .video(video)? = item.metadata {
-            bytes = video.fileSize
+        let info = await inputs.localInfo(entry)
+        let tags = info?.tags ?? []
+        var manifestFacts = WallpaperFacts.tagFacts(tags)
+        if let rating = info?.contentRating, !rating.isEmpty {
+            manifestFacts = WallpaperFacts.merged(
+                [WallpaperFact(kind: .ageRating, value: WorkshopTagLocalization.displayName(rating))], manifestFacts
+            )
         }
-        #if !LITE_BUILD
-        if bytes == nil, case let .workshop(entry) = item.source {
-            bytes = entry.sizeBytes
+        let library = WallpaperFacts.library(
+            item, typeName: entry.origin.localizedDisplayTypeName,
+            sizeBytes: Self.fileSize(of: item) ?? entry.sizeBytes ?? info?.sizeBytes, now: now, locale: locale
+        )
+        content.facts = WallpaperFacts.merged(library, manifestFacts)
+        content.tags = WallpaperFacts.chips(tags)
+        content.descriptionText = info?.cleanedDescription ?? ""
+        content.workshopID = UInt64(entry.origin.workshopID)
+        content.dependencyIDs = entry.origin.dependencyWorkshopIDs
+        if case .workshop = item.source {
+            content.installed = InstalledItemExtras(updateState: updateState(for: entry))
         }
-        #endif
-        if let bytes {
-            parts.append(WorkshopByteFormatter.kilobytesAndUp.string(fromByteCount: bytes))
+    }
+    #endif
+
+    /// What the library measured itself: a probed video's file, an aerial's catalog size.
+    private static func fileSize(of item: LibraryItem) -> Int64? {
+        if case let .video(video)? = item.metadata, let size = video.fileSize {
+            return size
         }
-        if let resolution = item.metadata?.resolutionShortLabel {
-            parts.append(resolution)
+        if case let .aerial(asset) = item.source {
+            return asset.fileSize
         }
-        if let lastUsed = item.lastUsedAt {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.locale = AppLanguagePreference.current.locale
-            let now = Date()
-            let relative = now.timeIntervalSince(lastUsed) < 60
-                ? String(localized: "Just now", bundle: .appLanguage)
-                : formatter.localizedString(for: lastUsed, relativeTo: now)
-            parts.append(String(localized: "Last used \(relative)", bundle: .appLanguage))
-        }
-        return parts
+        return nil
     }
 
-    /// Playlists hold plain video bookmarks only, so web, scene and packaged-video items get no row.
-    private static func playlistBookmarkData(for item: LibraryItem) -> Data? {
-        switch item.source {
-        case let .bookmark(bookmark):
-            guard case let .video(data, nil) = bookmark.content else { return nil }
-            return data
-        case let .aerial(asset):
-            return asset.bookmarkData
-        #if !LITE_BUILD
-        case .workshop:
-            return nil
-        #endif
+    /// Where an item without a Workshop page lives: a path for files and folders, the address for a web page.
+    private func fileFacts(for item: LibraryItem) -> [WallpaperFact] {
+        if case let .aerial(asset) = item.source {
+            return [WallpaperFact(kind: .location, value: asset.url.path(percentEncoded: false))]
         }
+        if case let .bookmark(bookmark) = item.source, case let .html(.url(address), _) = bookmark.content {
+            return [WallpaperFact(kind: .webAddress, value: address.absoluteString)]
+        }
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source {
+            return location(of: entry.origin.sourceFolderBookmark)
+        }
+        #endif
+        return Self.revealBookmark(for: item).map(location(of:)) ?? []
+    }
+
+    private func location(of bookmark: Data) -> [WallpaperFact] {
+        guard let resolved = try? SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get() else { return [] }
+        return [WallpaperFact(kind: .location, value: resolved.url.path(percentEncoded: false))]
     }
 
     private static func revealBookmark(for item: LibraryItem) -> Data? {

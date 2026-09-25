@@ -551,7 +551,6 @@ public enum DesignTokens {
             /// Chips over the modal preview and float thumbnails (`bg .6`); fixed like every on-media colour.
             public static let mediaChipFill = Color.black.opacity(0.6)
             public static let fillSecondaryButton = ink("FillSecondaryButton", 0.10)
-            public static let fillTertiaryButton = ink("FillTertiaryButton", 0.06)
             /// S4 primary button: white on black in dark, inverted in light.
             public static let primaryButtonFill = adaptive("PrimaryButtonFill", light: .black, dark: .white)
             public static let primaryButtonText = adaptive("PrimaryButtonText", light: .white, dark: .black)
@@ -642,7 +641,6 @@ public enum DesignTokens {
             public static let stageTitle = Font.system(size: 15, weight: .semibold)
             public static let modalTitle = Font.system(size: 22, weight: .bold)
             public static let navItem = Font.system(size: 13)
-            public static let button = Font.system(size: 15, weight: .bold)
             public static let floatName = Font.system(size: 11, weight: .semibold)
             public static let dropLabel = Font.system(size: 12, weight: .bold)
             public static let footnote = Font.system(size: 11)

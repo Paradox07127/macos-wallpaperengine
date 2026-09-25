@@ -3,7 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Pins SCREENS.md S4's panel box, the ⌘n map and the bottom bar's button budget.
+/// Pins the detail modal's panel box, the ⌘n map, the bottom bar's button budget and its layout.
 @Suite("Library wallpaper modal")
 struct WallpaperModalTests {
     private func near(_ actual: CGFloat, _ expected: CGFloat, _ tolerance: CGFloat = 0.01) -> Bool {
@@ -19,24 +19,18 @@ struct WallpaperModalTests {
 
     // MARK: Panel box
 
-    @Test("The panel is 880×560 at top 150, centred horizontally")
-    func panelAtDesignSize() {
-        #expect(
-            ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 820))
-                == CGRect(x: 200, y: 150, width: 880, height: 560)
-        )
+    @Test("A large window caps the panel at 920×680 and centres it both ways")
+    func panelCapsAtItsLargestSize() {
         #expect(
             ModalGeometry.panelFrame(in: CGSize(width: 1600, height: 1000))
-                == CGRect(x: 360, y: 150, width: 880, height: 560)
+                == CGRect(x: 340, y: 160, width: 920, height: 680)
         )
     }
 
-    @Test("A window too short for top 150 stops under the float strip and gives up height")
-    func panelStopsUnderTheStripInAShortWindow() {
-        let small = ModalGeometry.panelFrame(in: CGSize(width: 1040, height: 700))
-        #expect(small == CGRect(x: 80, y: 130, width: 880, height: 554), Comment(rawValue: "\(small)"))
+    @Test("A short window keeps the 72pt floor and gives up height")
+    func panelKeepsItsFloorInAShortWindow() {
         let short = ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 500))
-        #expect(short == CGRect(x: 200, y: 130, width: 880, height: 354), Comment(rawValue: "\(short)"))
+        #expect(short == CGRect(x: 180, y: 72, width: 920, height: 400), Comment(rawValue: "\(short)"))
     }
 
     @Test("A narrow window keeps 24pt of air on each side")
@@ -76,6 +70,27 @@ struct WallpaperModalTests {
     }
 
     // MARK: Backdrop
+
+    // MARK: Layout
+
+    @Test("No divider over the buttons, ← → beside the preview, no ＋ or … menus, a four-line description")
+    func modalLayoutSourceContract() throws {
+        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
+        // Read leniently: before the shared layout exists this must fail on an expectation, not a missing file.
+        let layout = (try? RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperDetailLayout.swift")) ?? ""
+        #expect(!modal.contains("Divider()"), "a divider still separates the buttons from the body")
+        #expect(!modal.contains("ModalGlyphMenu"), "the ＋ / … glyph menus are still drawn")
+        #expect(modal.contains("WallpaperDetailLayout("), "the modal lays itself out instead of using the shared layout")
+        #expect(modal.contains("collapsedLineLimit: 4"), "the description is not cut to four lines")
+        #expect(!layout.contains("Divider()"))
+        let back = layout.range(of: #"GlassIconButton("chevron.left""#)
+        let preview = layout.range(of: "preview()")
+        let forward = layout.range(of: #"GlassIconButton("chevron.right""#)
+        #expect(back != nil && preview != nil && forward != nil, "the arrows or the preview slot are missing")
+        if let back, let preview, let forward {
+            #expect(back.lowerBound < preview.lowerBound && preview.lowerBound < forward.lowerBound, "← and → do not flank the preview")
+        }
+    }
 
     @Test("The backdrop blur is 8% of the panel width, so a 160px bitmap blurs by 12.7")
     func backdropBlurScales() {

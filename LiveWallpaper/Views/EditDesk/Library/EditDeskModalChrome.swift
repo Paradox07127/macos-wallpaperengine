@@ -2,9 +2,9 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// SCREENS.md S4's modal shell with none of the library's own content: scrim, panel box, open and
-/// close motion, and the two key equivalents every Edit Desk modal shares. The caller draws its
-/// panel in the closure and keeps its own floating layers, gestures and remaining keys outside.
+/// The Edit Desk detail modal's shell: scrim, panel box, the title row that ends in the close button,
+/// open and close motion, and ESC and ⌘n. The caller draws the body in the closure and keeps its own
+/// floating layers, gestures and remaining keys outside.
 @MainActor
 struct EditDeskModalChrome<Panel: View>: View {
     /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
@@ -13,7 +13,10 @@ struct EditDeskModalChrome<Panel: View>: View {
     var titlebarInset: CGFloat = DesignTokens.EditDesk.Spacing.topBar
     /// Source image for the wash behind the panel fill; nil draws the fill alone.
     var backdrop: CGImage?
-    var panelFrameOverride: CGRect?
+    /// Leads the row the close button ends; empty leaves the close button alone on it.
+    var title = ""
+    /// Icon buttons between the title and the close button, in order.
+    var actions: [ModalHeaderAction] = []
     let onDismiss: () -> Void
     /// True when the panel consumed ESC itself, which keeps the modal open.
     var onEscape: () -> Bool = { false }
@@ -28,7 +31,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     }
 
     var panelFrame: CGRect {
-        panelFrameOverride ?? ModalGeometry.panelFrame(in: windowSize)
+        ModalGeometry.panelFrame(in: windowSize)
     }
 
     var body: some View {
@@ -61,18 +64,12 @@ struct EditDeskModalChrome<Panel: View>: View {
     }
 
     private func panelBox(_ frame: CGRect) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                GlassIconButton("xmark", action: escape)
-                    .accessibilityLabel(Text("Close"))
-                    .help(Text("Close"))
-            }
-            .padding(.horizontal, DesignTokens.Spacing.md)
-            .frame(height: ModalGeometry.headerHeight)
+        VStack(spacing: ModalGeometry.sectionGap) {
+            header
             panel(frame)
-                .frame(height: frame.height - ModalGeometry.headerHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .padding(.top, ModalGeometry.topPadding)
         .frame(width: frame.width, height: frame.height)
         .background {
             ZStack {
@@ -89,6 +86,26 @@ struct EditDeskModalChrome<Panel: View>: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
+            Text(verbatim: title)
+                .font(DesignTokens.EditDesk.Typography.modalTitle)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, minHeight: ModalGeometry.iconButtonSize, alignment: .leading)
+            ForEach(actions) { action in
+                GlassIconButton(action.symbol, role: action.isDestructive ? .destructive : nil, action: action.perform)
+                    .help(Text(verbatim: action.title))
+                    .accessibilityLabel(Text(verbatim: action.title))
+            }
+            GlassIconButton("xmark", action: escape)
+                .accessibilityLabel(Text("Close"))
+                .help(Text("Close"))
+                .padding(.leading, DesignTokens.Spacing.sm)
+        }
+        .padding(.horizontal, ModalGeometry.horizontalPadding)
     }
 
     // MARK: Keyboard
