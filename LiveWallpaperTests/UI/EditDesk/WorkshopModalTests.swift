@@ -285,30 +285,48 @@ struct WorkshopModalTests {
         #expect(result.isFailure)
     }
 
-    /// Pins today's behavior, not a decision: flip it once the product call on stale results is made.
-    @Test("Current behavior: applying the installed item straight to another display leaves the settled ticket's result on the line")
-    func currentBehaviorDirectApplyKeepsTheSettledResult() throws {
-        let queuedTo = "Studio"
-        let report = ApplyReport(outcome: .applied, exitedSpanMode: false)
-        let settledLines: [(DeferredApplyCoordinator.State, String)] = [
-            (.finished(report), DeferredApplyToasts.appliedText(report, screenName: queuedTo)),
-            (.invalidated(.screenUnavailable), DeferredApplyToasts.screenUnavailableText(screenName: queuedTo)),
-            (.invalidated(.newerSelection), DeferredApplyToasts.newerSelectionText(screenName: queuedTo)),
-        ]
+    @Test(
+        "Applying the installed item straight to a display drops a settled ticket, so its old result leaves the line; a waiting one stays",
+        .timeLimit(.minutes(1))
+    )
+    func directApplyDropsTheSettledResult() async throws {
         let host = try RepositoryRoot.source(Self.hostPath)
-        let start = try #require(host.range(of: "private func applyNow("))
-        let end = try #require(host.range(of: "\n    }\n", range: start.upperBound ..< host.endIndex))
-        let applyNow = host[start.lowerBound ..< end.upperBound]
-        #expect(applyNow.contains("router.apply("), "the slice is not the direct apply's body")
+        let start = try #require(host.range(of: "case .applyNow:"))
+        let end = try #require(host.range(of: "case .retarget:", range: start.upperBound ..< host.endIndex))
         #expect(
-            !applyNow.contains("wiring") && !applyNow.contains("deferredApply"),
-            "the direct apply now touches the ticket; this pin no longer describes the modal"
+            has("discardIfSettled(itemID: item.id)", in: String(host[start.lowerBound ..< end.lowerBound])),
+            "the direct apply leaves the settled ticket, so the line keeps reporting the display it was queued for"
         )
 
-        for (settled, line) in settledLines {
-            #expect(WorkshopModalPress.action(isInstalled: true, ticketState: settled) == .applyNow)
-            #expect(presentation(settled, phase: .succeeded, installed: true, screenName: queuedTo).status == line)
+        let manager = DeferredWallpaperApplying()
+        let deferredApply = DeferredApplyCoordinator(
+            manager: manager,
+            router: ApplyRouter(
+                manager: manager, bookmarks: BookmarkStore(persistence: DeferredBookmarkPersistence()),
+                sceneCapable: true, confirmationTimeout: .seconds(1)
+            )
+        )
+        let attempt = WorkshopDownloadAttempt(itemID: 42)
+        let ticket = deferredApply.submit(attempt: attempt, target: .init(
+            screen: manager.first, selectionGeneration: manager.beginExplicitWallpaperSelection(for: manager.first)
+        ))
+        deferredApply.discardIfSettled(itemID: 42)
+        #expect(deferredApply.ticket(for: 42) === ticket, "a direct apply dropped an apply still waiting on its download")
+
+        attempt.finish(.succeeded(manager.entry))
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !ticket.state.isSettled, ContinuousClock.now < deadline {
+            await Task.yield()
         }
+        #expect(ticket.state == .finished(ApplyReport(outcome: .applied, exitedSpanMode: false)))
+        #expect(WorkshopModalPress.action(isInstalled: true, ticketState: ticket.state) == .applyNow)
+
+        deferredApply.discardIfSettled(itemID: 42)
+        #expect(
+            presentation(deferredApply.ticket(for: 42)?.state, phase: .succeeded, installed: true, screenName: manager.first.name).status
+                == String(localized: "Added to your library.", bundle: .appLanguage),
+            "the line still reports the settled apply after a direct apply"
+        )
     }
 
     @Test("An item already in the library stays installed while it downloads again; its dependency stage does not")

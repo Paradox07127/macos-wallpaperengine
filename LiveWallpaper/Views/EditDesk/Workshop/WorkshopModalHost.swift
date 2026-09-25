@@ -310,6 +310,7 @@ struct WorkshopModalHost: View {
         switch action {
         case .applyNow:
             if let entry = installedEntry {
+                session.deferredApply.discardIfSettled(itemID: item.id)
                 applyNow(entry, to: screenID)
             }
         case .retarget:

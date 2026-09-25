@@ -124,6 +124,12 @@ final class DeferredApplyCoordinator {
         invalidate(ticket, reason: .cancelled)
     }
 
+    /// Forgets the item's result once settled; a waiting or running apply is left to finish.
+    func discardIfSettled(itemID: UInt64) {
+        guard tickets[itemID]?.state.isSettled == true else { return }
+        tickets[itemID] = nil
+    }
+
     private func invalidate(_ ticket: Ticket, reason: Invalidation) {
         ticket.state = .invalidated(reason)
         tasks.removeValue(forKey: ticket.id)?.cancel()
