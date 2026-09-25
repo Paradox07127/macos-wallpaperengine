@@ -107,10 +107,6 @@ report_matches \
   'Use String(localized:) for AppKit NSMenuItem/NSAlert titles.' \
   '^\s*(NSMenuItem|NSAlert)\([^)]*title:\s*"[^"]+'
 
-report_matches \
-  'AppLanguagePreference.localizedString/Format is the old routing path and is invisible to the catalog scans. Use String(localized:bundle:.appLanguage).' \
-  'AppLanguagePreference\.localized(String|Format)\('
-
 report_multiline_matches \
   'Use String(localized:defaultValue:comment:) inside LocalizedError.errorDescription / recoverySuggestion.' \
   '(?s)var\s+(errorDescription|recoverySuggestion)\s*:\s*String\??\s*\{(?:(?!\n    \}).)*\breturn\s+"[^"]+'

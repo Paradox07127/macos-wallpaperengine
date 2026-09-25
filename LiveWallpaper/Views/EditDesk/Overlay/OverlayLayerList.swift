@@ -110,30 +110,7 @@ enum OverlayLayerList {
     }
 }
 
-/// Column height budget: the layer list is capped, the drawer is fixed per state, and the
-/// object inspector takes what is left.
 enum OverlayColumnLayout {
     static let rowHeight: CGFloat = 30
-    static let headerHeight: CGFloat = 30
-    static let maxVisibleRows = 6
     static let drawerCollapsedHeight: CGFloat = 30
-    static let drawerExpandedHeight: CGFloat = 190
-    static let minInspectorHeight: CGFloat = 200
-
-    struct Heights: Equatable {
-        var layers: CGFloat
-        var inspector: CGFloat
-        var drawer: CGFloat
-    }
-
-    static func heights(total: CGFloat, rowCount: Int, drawerExpanded: Bool, hasSelection: Bool = true) -> Heights {
-        let drawer = drawerExpanded ? drawerExpandedHeight : drawerCollapsedHeight
-        let visibleRows = min(max(rowCount, 0), hasSelection ? maxVisibleRows : max(rowCount, 0))
-        let wanted = headerHeight + CGFloat(visibleRows) * rowHeight
-        let budget = max(total - drawer, 0)
-        // Short windows shrink the layer list, not the inspector: the inspector holds the
-        // controls being edited, the list only navigates to them.
-        let layers = min(wanted, max(budget - minInspectorHeight, 0))
-        return Heights(layers: layers, inspector: budget - layers, drawer: drawer)
-    }
 }

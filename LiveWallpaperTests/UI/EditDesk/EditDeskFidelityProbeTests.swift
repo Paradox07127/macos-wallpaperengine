@@ -753,30 +753,6 @@ struct S6DetailFidelityTests {
 @Suite("Fidelity S7 overlay column and canvas", .serialized)
 @MainActor
 struct S7OverlayFidelityTests {
-    /// R-1…R-8: layers (capped at six rows), inspector (elastic, floor 200), drawer (collapsed 30).
-    @Test("Right column height budget at 764 and 644")
-    func columnHeights() {
-        for (total, label) in [(CGFloat(764), "1280x820"), (CGFloat(644), "1040x700")] {
-            let heights = OverlayColumnLayout.heights(total: total, rowCount: 3, drawerExpanded: false)
-            ProbeRenderer.report("S7.\(label).heights", heights)
-            expectClose(heights.drawer, 30, "S7.\(label).drawer", tolerance: 0)
-            expectClose(heights.layers, 120, "S7.\(label).layers", tolerance: 0)
-            expectClose(heights.layers + heights.inspector + heights.drawer, total, "S7.\(label).sum", tolerance: 0.01)
-            #expect(heights.inspector >= OverlayColumnLayout.minInspectorHeight)
-        }
-        // Six rows is the cap; a seventh does not grow the list.
-        let six = OverlayColumnLayout.heights(total: 764, rowCount: 6, drawerExpanded: false)
-        let seven = OverlayColumnLayout.heights(total: 764, rowCount: 7, drawerExpanded: false)
-        #expect(six == seven)
-        expectClose(six.layers, 210, "S7.layers.cap", tolerance: 0)
-
-        // An expanded drawer takes its 190 from the inspector, never from the list.
-        let expanded = OverlayColumnLayout.heights(total: 644, rowCount: 3, drawerExpanded: true)
-        expectClose(expanded.drawer, 190, "S7.drawerExpanded", tolerance: 0)
-        expectClose(expanded.layers, 120, "S7.drawerExpanded.layers", tolerance: 0)
-        expectClose(expanded.inspector, 334, "S7.drawerExpanded.inspector", tolerance: 0.01)
-    }
-
     /// R-1: the canvas aspect-fits the display's own ratio inside the fixed 16:9 hero box.
     @Test("Canvas aspect-fits into the hero box")
     func canvasFit() {

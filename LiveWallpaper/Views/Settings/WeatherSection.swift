@@ -145,7 +145,7 @@ extension GeneralSettingsView {
         case .notDetermined:
             String(localized: "Grant Access", bundle: .appLanguage, comment: "Button to request Location Services for the first time.")
         default:
-            String(localized: "Open", bundle: .appLanguage, comment: "Open System Settings.")
+            String(localized: "Open", bundle: .appLanguage, comment: "Opens what its row names: System Settings (Location Services, Login Items), the bug report sheet, or the item's Workshop page in the browser.")
         }
     }
 
