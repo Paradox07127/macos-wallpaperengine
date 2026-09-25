@@ -17,7 +17,9 @@ struct OverlayWorkspace: View {
     @Binding var liveInspectorWidth: Double?
     var topInset: CGFloat = 0
     let recapture: () -> Void
-    let back: () -> Void
+    let swipe: (DetailSwipeStep) -> Void
+    /// The side this display's canvas slides in from when another display is switched to.
+    let switchEdge: HorizontalEdge
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -29,7 +31,8 @@ struct OverlayWorkspace: View {
     init(session: OverlayEditorSession, cover: CGImage?, screen: Screen, size: CGSize,
          layersVisible: Binding<Bool>, inspectorVisible: Binding<Bool>,
          inspectorWidth: Binding<Double>, liveInspectorWidth: Binding<Double?>,
-         topInset: CGFloat = 0, recapture: @escaping () -> Void, back: @escaping () -> Void) {
+         topInset: CGFloat = 0, recapture: @escaping () -> Void,
+         swipe: @escaping (DetailSwipeStep) -> Void, switchEdge: HorizontalEdge) {
         self.session = session
         self.cover = cover
         self.screen = screen
@@ -40,7 +43,8 @@ struct OverlayWorkspace: View {
         _liveInspectorWidth = liveInspectorWidth
         self.topInset = topInset
         self.recapture = recapture
-        self.back = back
+        self.swipe = swipe
+        self.switchEdge = switchEdge
         interaction = session.interaction
     }
 
@@ -110,30 +114,37 @@ struct OverlayWorkspace: View {
                 logicalSize: session.logicalSize,
                 in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: OverlayGeometry.canvasInset, dy: OverlayGeometry.canvasInset)
             )
-            OverlayCanvas(session: session, cover: cover, size: box.size)
-                .frame(width: box.width, height: box.height)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.dragSpace)) } action: { addDrag.canvasFrame = $0 }
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.preference(key: DetailPreviewFrameKey.self,
-                                               value: [screen.id: geometry.frame(in: .named(DetailPreviewSpace.name))])
+            ZStack(alignment: .topLeading) {
+                OverlayCanvas(session: session, cover: cover, size: box.size)
+                    .frame(width: box.width, height: box.height)
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: DetailPreviewFrameKey.self,
+                                                   value: [screen.id: geometry.frame(in: .named(DetailPreviewSpace.name))])
+                        }
                     }
-                }
-                .overlay(alignment: .topTrailing) {
-                    GlassIconButton("arrow.clockwise", action: recapture)
-                        .help(Text("Recapture preview"))
-                        .accessibilityLabel(Text("Recapture preview"))
-                        .padding(10)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(DetailBackSwipe(enabled: true, action: back))
-                .overlay(alignment: .topLeading) {
-                    floatingLayers(availableHeight: proxy.size.height)
-                        .padding(12)
-                }
-                .id(screen.id)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: screen.id)
+                    .overlay(alignment: .topTrailing) {
+                        GlassIconButton("arrow.clockwise", action: recapture)
+                            .help(Text("Recapture preview"))
+                            .accessibilityLabel(Text("Recapture preview"))
+                            .padding(10)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topLeading) {
+                        floatingLayers(availableHeight: proxy.size.height)
+                            .padding(12)
+                    }
+                    .id(screen.id)
+                    .transition(.detailSwitch(from: switchEdge, reduceMotion: reduceMotion))
+            }
+            .animation(.detailSwitch(reduceMotion: reduceMotion), value: screen.id)
+            // Off the column, not the canvas: mid-switch the arriving canvas is still sliding and the leaving one still reports.
+            .onGeometryChange(for: CGRect.self) { geometry in
+                let column = geometry.frame(in: .named(Self.dragSpace))
+                return box.offsetBy(dx: column.minX, dy: column.minY)
+            } action: { addDrag.canvasFrame = $0 }
+            // Outside the per-display identity: rebuilt mid-swipe, it would count the rest of the gesture as a second step.
+            .background(DetailSwipeNavigator(enabled: true, navigate: swipe))
         }
     }
 
