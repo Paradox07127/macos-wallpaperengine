@@ -81,6 +81,10 @@ struct WallpaperAutomationSheet: View {
         SchedulePolicy.firstProblem(in: slots)
     }
 
+    private var slotWithoutWallpaper: UUID? {
+        slots.first { $0.wallpaper == nil && $0.videoBookmarkData == nil }?.id
+    }
+
     private var saveTitle: LocalizedStringKey {
         if mode == savedMode {
             return "Save"
@@ -116,6 +120,11 @@ struct WallpaperAutomationSheet: View {
         // The whole configuration, not just the content: a trial also rewrites the remembered page, scene and scene edits.
         manager.beginExplicitWallpaperSelection(for: screen)
         manager.restoreProposedWallpaperSession(for: screen, configuration: shownBeforeTrial)
+    }
+
+    /// 0 and 24 both mean a midnight end; the end picker lists 1–24, so a stored 0 must read as 24.
+    static func endHourBinding(_ hour: Binding<Int>) -> Binding<Int> {
+        Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
     }
 
     var body: some View {
@@ -157,7 +166,7 @@ struct WallpaperAutomationSheet: View {
                 }.keyboardShortcut(.cancelAction)
                 Button(saveTitle) { save(); dismiss() }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(mode == .schedule && (problem != nil || slots.contains { $0.wallpaper == nil && $0.videoBookmarkData == nil }))
+                    .disabled(mode == .schedule && (problem != nil || slotWithoutWallpaper != nil))
             }
             .padding(20)
         }
@@ -239,6 +248,15 @@ struct WallpaperAutomationSheet: View {
                     }
                 }
                 .font(.caption).foregroundStyle(.orange)
+            } else if let id = slotWithoutWallpaper {
+                Label(
+                    String(
+                        localized: "Time slot \(rangeText(for: id)) has no wallpaper yet. Choose one to save the schedule.", bundle: .appLanguage,
+                        comment: "Playlist and schedule panel: why Save is unavailable while a time slot has no wallpaper. Placeholder is the slot's hours, like 06:00–12:00."
+                    ),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption).foregroundStyle(.orange)
             }
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -247,7 +265,7 @@ struct WallpaperAutomationSheet: View {
                             Circle().fill(slotColor(slot.id)).frame(width: 8, height: 8)
                             hourPicker("Start", hour: $slot.startHour, hours: 0 ..< 24)
                             Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            hourPicker("End", hour: $slot.endHour, hours: 1 ..< 25)
+                            hourPicker("End", hour: Self.endHourBinding($slot.endHour), hours: 1 ..< 25)
                             Button {
                                 pickTarget = .slot(slot.id); picking = true
                             } label: {
@@ -289,10 +307,7 @@ struct WallpaperAutomationSheet: View {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.sm).fill(.quaternary)
                     ForEach(slots) { slot in
                         ForEach(Array(slot.timelineSegments().enumerated()), id: \.offset) { _, segment in
-                            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
-                                .fill(slotColor(slot.id).opacity(0.75))
-                                .frame(width: max(1, proxy.size.width * CGFloat(segment.end - segment.start) / 24 - 2))
-                                .offset(x: proxy.size.width * CGFloat(segment.start) / 24)
+                            segmentBar(segment, color: slotColor(slot.id), width: proxy.size.width)
                         }
                     }
                 }
@@ -308,6 +323,15 @@ struct WallpaperAutomationSheet: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("24-hour repeating schedule"))
+    }
+
+    private func segmentBar(_ segment: ScheduleSlot.TimelineSegment, color: Color, width: CGFloat) -> some View {
+        let barWidth: CGFloat = max(1, width * CGFloat(segment.end - segment.start) / 24 - 2)
+        let offset: CGFloat = width * CGFloat(segment.start) / 24
+        return RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
+            .fill(color.opacity(0.75))
+            .frame(width: barWidth)
+            .offset(x: offset)
     }
 
     private var wallpaperPicker: some View {

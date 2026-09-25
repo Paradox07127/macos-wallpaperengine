@@ -75149,6 +75149,41 @@
         }
       }
     },
+    "Time slot %@ has no wallpaper yet. Choose one to save the schedule." : {
+      "comment" : "Playlist and schedule panel: why Save is unavailable while a time slot has no wallpaper. Placeholder is the slot's hours, like 06:00–12:00.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time slot %@ has no wallpaper yet. Choose one to save the schedule."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La franja %@ aún no tiene fondo de pantalla. Elige uno para guardar la programación."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯 %@ の壁紙が選択されていません。スケジュールを保存するには壁紙を選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时段 %@ 尚未选择壁纸，请先选择壁纸再保存计划。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時段 %@ 尚未選擇桌布，請先選擇桌布再儲存排程。"
+          }
+        }
+      }
+    },
     "Time slot %@ starts and ends at the same hour. Choose a different end time." : {
       "localizations" : {
         "en" : {
