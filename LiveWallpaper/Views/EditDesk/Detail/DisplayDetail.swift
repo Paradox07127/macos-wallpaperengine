@@ -44,6 +44,7 @@ struct DetailActions {
     var switchBackToWebPage: (() -> Void)?
     var applyWebSource: (HTMLSource) -> Void = { _ in }
     var reload: () -> Void = {}
+    var swipe: (DetailSwipeStep) -> Void = { _ in }
 }
 
 /// One toolbar and one background shared by the wallpaper and overlay workspaces.
@@ -68,8 +69,9 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     var emptyScreen: Screen?
     var webTransform: DetailWebTransform?
     var schedulePausedUntil: Date?
+    /// The side the shown display's preview slides in from when another display is switched to.
+    var switchEdge: HorizontalEdge = .trailing
     @Binding var inspectorVisible: Bool
-    @Binding var layersVisible: Bool
     @Binding var inspectorWidth: Double
     @Binding var liveInspectorWidth: Double?
 
@@ -79,7 +81,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     var body: some View {
         VStack(spacing: 0) {
             DetailTopBar(tags: tags, section: $section, actions: actions,
-                         inspectorVisible: $inspectorVisible, layersVisible: $layersVisible,
+                         inspectorVisible: $inspectorVisible,
                          hasWallpaper: !isEmpty, schedulePausedUntil: schedulePausedUntil,
                          attemptShown: section == .wallpaper && preview.showsAttempt)
                 .opacity(chromeVisible ? 1 : 0)
@@ -129,48 +131,55 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
 
     private var wallpaperPreview: some View {
         GeometryReader { _ in
-            Group {
-                if preview.showsAttempt {
-                    wallpaperStatus()
-                        .background(previewMeasurement)
-                } else {
-                    VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                Group {
+                    if preview.showsAttempt {
                         wallpaperStatus()
-                        if isEmpty {
-                            if let emptyScreen {
-                                EmptyDisplaySetup(screen: emptyScreen, chooseFile: actions.importFile,
-                                                  applyWebSource: actions.applyWebSource,
-                                                  chooseFromLibrary: actions.chooseFromLibrary)
-                                    .background(previewMeasurement)
-                            }
-                        } else {
-                            // Measured below the notices, so a banner shrinks the hero instead of covering it.
-                            GeometryReader { proxy in
-                                let box = OverlayGeometry.aspectFit(
-                                    logicalSize: CGSize(width: 16, height: 9),
-                                    in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 24, dy: 24)
-                                )
-                                DetailHero(status: hero, image: heroImage, size: box.size, hud: hud,
-                                           playback: actions.playback, webTransform: webTransform)
-                                    .background(previewMeasurement)
-                                    .overlay(alignment: .topTrailing) {
-                                        GlassIconButton("arrow.clockwise", action: actions.recapture)
-                                            .help(Text("Recapture preview"))
-                                            .accessibilityLabel(Text("Recapture preview"))
-                                            .padding(12)
-                                    }
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(previewMeasurement)
+                    } else {
+                        VStack(spacing: 0) {
+                            wallpaperStatus()
+                            if isEmpty {
+                                if let emptyScreen {
+                                    EmptyDisplaySetup(screen: emptyScreen, chooseFile: actions.importFile,
+                                                      applyWebSource: actions.applyWebSource,
+                                                      chooseFromLibrary: actions.chooseFromLibrary)
+                                        .background(previewMeasurement)
+                                }
+                            } else {
+                                // Measured below the notices, so a banner shrinks the hero instead of covering it.
+                                GeometryReader { proxy in
+                                    let box = OverlayGeometry.aspectFit(
+                                        logicalSize: CGSize(width: 16, height: 9),
+                                        in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 24, dy: 24)
+                                    )
+                                    DetailHero(status: hero, image: heroImage, size: box.size, hud: hud,
+                                               playback: actions.playback, webTransform: webTransform)
+                                        .background(previewMeasurement)
+                                        .overlay(alignment: .topTrailing) {
+                                            GlassIconButton("arrow.clockwise", action: actions.recapture)
+                                                .help(Text("Recapture preview"))
+                                                .accessibilityLabel(Text("Recapture preview"))
+                                                .padding(12)
+                                        }
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
                             }
                         }
                     }
                 }
+                .opacity(heroVisible ? 1 : 0)
+                .id(currentDisplayID)
+                .transition(.detailSwitch(from: switchEdge, reduceMotion: reduceMotion))
             }
-            .opacity(heroVisible ? 1 : 0)
-            .background(DetailBackSwipe(enabled: heroVisible, action: actions.back))
-            .id(tags.first(where: \.isCurrent)?.id)
-            .transition(.opacity.combined(with: .offset(x: reduceMotion ? 0 : 16)))
-            .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: tags.first(where: \.isCurrent)?.id)
+            .animation(.detailSwitch(reduceMotion: reduceMotion), value: currentDisplayID)
         }
+        // Outside the per-display identity: rebuilt mid-swipe, it would count the rest of the gesture as a second step.
+        .background(DetailSwipeNavigator(enabled: heroVisible, navigate: actions.swipe))
+    }
+
+    private var currentDisplayID: CGDirectDisplayID? {
+        tags.first(where: \.isCurrent)?.id
     }
 
     private var previewMeasurement: some View {
@@ -184,5 +193,21 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
 
     private func setChromeVisible(_ visible: Bool) {
         withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) { chromeVisible = visible }
+    }
+}
+
+extension AnyTransition {
+    /// The arriving display slides in from `edge` over the leaving one.
+    static func detailSwitch(from edge: HorizontalEdge, reduceMotion: Bool) -> AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        let offset = edge == .trailing ? DesignTokens.Spacing.xl : -DesignTokens.Spacing.xl
+        // The leaving view keeps the transition it was built with, the previous edge, so it only fades.
+        return .asymmetric(insertion: .opacity.combined(with: .offset(x: offset)), removal: .opacity)
+    }
+}
+
+extension Animation {
+    static func detailSwitch(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
     }
 }

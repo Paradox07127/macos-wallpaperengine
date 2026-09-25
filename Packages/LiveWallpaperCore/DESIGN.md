@@ -11,6 +11,19 @@ tokens live in `DesignTokens` (`LiveWallpaperCore/UI/Tokens`). New views
 - **Small accents** (type pills, badges, selection, segmented controls) → liquid-glass (`TypeBadge`, `thumbnailBadgeGlass`).
 - Apple-HIG aligned, modern, restrained. Default SF font design (no `.rounded`) to sit cleanly next to native chrome.
 
+## Toolbar icon groups — `GlassToolbarGroup`
+
+Icon actions in a hand-drawn title-bar strip (the Edit Desk display detail's top bar) share glass the way a macOS 26 toolbar groups its items: one `GlassToolbarGroup` capsule per group of related actions, each action a `GlassToolbarItem`, three groups at most (HIG Toolbars). Geometry is `GlassToolbarMetrics`, measured on a native macOS 27 toolbar: capsule 36pt tall, keys at least 36pt wide (a one-key group is a 36pt circle), groups `Spacing.sm` (8) apart inside one `AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing)` — `Spacing.xs` (4), below the gap, so capsules never melt together at rest. Glyphs are `Typography.body` at `.imageScale(.large)`, the native toolbar size.
+
+| State | Look |
+| --- | --- |
+| rest | `.primary` glyph; a destructive role draws a `Status.danger` glyph and no plate |
+| hover (enabled) | capsule behind the key, inset `Spacing.xxs`, `primary` at `Opacity.hoverFill` |
+| pressed | the same at `Opacity.activeFill` |
+| disabled, or window inactive | `.tertiary` glyph, destructive included |
+
+A segmented control stays a capsule of its own beside the groups; standalone floating icon buttons (canvas, HUD, modals) stay `GlassIconButton`.
+
 ## Typography — `DesignTokens.Typography`
 
 24 ad-hoc sizes collapse into 7 roles (+3 emphasized variants). Dynamic-Type
@@ -178,7 +191,7 @@ Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geomet
 5. **Align to the grid.** Paddings/offsets come from `Spacing.*`, radii from `Corner.*` — no stray numbers.
 6. **No color-only status.** A `Status.*` color must always be paired with text or a distinct glyph — never carry meaning by hue alone (WCAG 1.4.1).
 7. **Glass contrast.** Don't put light text directly on a raw high-luminance `Status.*` fill; let `thumbnailBadgeGlass` / `AdaptiveGlass` manage the tint so text stays ≥4.5:1.
-8. **Button styles follow the decision tree** (`.notes/plan/w1-contracts.md` §1). Short form: custom hit areas (cards/rows/segments) → `.plain` with a visible press state and ≥28x28pt hit region; icon-only actions → `.borderless`, never bare `.plain`; view primary action → `.borderedProminent` (max 1–2 per view, never destructive); secondary → `.bordered` (+ `role: .destructive` for danger); external links → `.link` (never destructive); hero CTAs → `CapsuleButtonStyle`. Row-repeated actions never take prominent.
+8. **Button styles follow the decision tree** (`.notes/plan/w1-contracts.md` §1). Short form: custom hit areas (cards/rows/segments) → `.plain` with a visible press state and ≥28x28pt hit region; icon-only actions → `.borderless`, never bare `.plain`; view primary action → `.borderedProminent` (max 1–2 per view, never destructive); secondary → `.bordered` (+ `role: .destructive` for danger); external links → `.link` (never destructive); hero CTAs → `CapsuleButtonStyle`; toolbar icon groups → `GlassToolbarItem`, which carries its own states. Row-repeated actions never take prominent.
 9. **Expensive sliders coalesce.** A `Slider` whose binding persists config, rebuilds filters/overlays, or touches a render session must be `CoalescedSlider` (or an explicit release-only commit). `step:` detents stay under 1000 (`PropertyValueLogic`). Wide ranges pair the slider with an editable value field.
 10. **Pages use a skeleton template** (contracts §3.1): settings form → `Form` + `.settingsFormChrome()`; library/detail column → `DetailPageScaffold`; sheets → shared header + `SheetFooterBar` (hero-type sheets → `HeroScaffold`); popovers → `.settingsPopoverChrome`; empty states → `IllustratedEmptyState`. New pages that fit none: ask before inventing a skeleton.
 11. **Glass placement is version-tiered by position** (contracts §4): chrome/badges/toasts go through `AdaptiveGlass`; Form content areas and inspectors never take glass (HIG: no Liquid Glass in the content layer); the appex (deploys at 26.0) writes the 26+ path unconditionally. Enforced by `glass_outside_wrapper` / `material_outside_wrapper` / `appex_tautological_availability` lint rules.

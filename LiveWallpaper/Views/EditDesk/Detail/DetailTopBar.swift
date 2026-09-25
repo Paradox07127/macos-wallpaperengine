@@ -23,7 +23,6 @@ struct DetailTopBar: View {
     @Binding var section: DetailSection
     let actions: DetailActions
     @Binding var inspectorVisible: Bool
-    @Binding var layersVisible: Bool
     var hasWallpaper = true
     var schedulePausedUntil: Date?
     /// True while the column shows a load attempt's page, which carries this display's only Clear; the
@@ -36,56 +35,26 @@ struct DetailTopBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Color.clear.frame(width: 68)
-            icon("chevron.left", "Overview", action: actions.back)
-            icon("sidebar.left", "Layers") { layersVisible.toggle() }
-                .disabled(section != .overlay)
-                .opacity(section == .overlay ? 1 : 0)
+            GlassToolbarGroup {
+                icon("chevron.left", "Overview", action: actions.back)
+            }
             Spacer(minLength: 8).background(WindowDragRegion())
             tagRow
             Spacer(minLength: 8).background(WindowDragRegion())
-            sectionPicker
-            if section == .wallpaper, let until = schedulePausedUntil, let resume = actions.resumeSchedule {
-                schedulePause(until: until, resume: resume)
-            }
-            if section == .wallpaper {
-                icon("rectangle.2.swap", "Change Wallpaper") { changeMenuPresented.toggle() }
-                    .appLanguagePopover(isPresented: $changeMenuPresented, arrowEdge: .bottom) { changeMenu }
-                icon("arrow.triangle.2.circlepath", "Reload display", help: Text("Reload display content")) { actions.reload() }
-                    .disabled(!hasWallpaper || attemptShown)
-            }
-            if let openAutomation = actions.openAutomation {
-                icon("list.bullet", "Playlist & Schedule", action: openAutomation)
-                    .disabled(!hasWallpaper || attemptShown)
-            }
-            icon("square.stack", "Scheme") {
-                if schemeStore.schemes.isEmpty {
-                    actions.saveAsScheme()
-                } else {
-                    schemeMenuPresented.toggle()
+            AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing) {
+                HStack(spacing: GlassToolbarMetrics.groupSpacing) {
+                    sectionPicker
+                    if section == .wallpaper, let until = schedulePausedUntil, let resume = actions.resumeSchedule {
+                        schedulePause(until: until, resume: resume)
+                    }
+                    GlassToolbarGroup { displayActions }
+                    GlassToolbarGroup { sharedActions }
+                    GlassToolbarGroup {
+                        icon("sidebar.right", "Settings") { inspectorVisible.toggle() }
+                            .disabled(section == .wallpaper && !hasWallpaper)
+                    }
                 }
             }
-            .disabled(!hasWallpaper || attemptShown)
-            .appLanguagePopover(isPresented: $schemeMenuPresented, arrowEdge: .bottom) { schemeMenu }
-            icon(
-                "square.on.square", section == .overlay ? "Copy to Other Displays" : "Apply to All Displays",
-                help: tags.count < 2 ? Text("Only one display is connected.") : nil
-            ) {
-                section == .overlay ? actions.copyOverlays() : actions.applyToAll()
-            }
-            .disabled(tags.count < 2 || (section == .wallpaper && (!hasWallpaper || attemptShown)))
-            if section == .overlay {
-                icon(actions.snapEnabled.wrappedValue ? "viewfinder" : "viewfinder.circle", "Alignment Snapping") {
-                    actions.snapEnabled.wrappedValue.toggle()
-                }
-                .accessibilityValue(Text(actions.snapEnabled.wrappedValue ? "On" : "Off"))
-            } else {
-                GlassIconButton("trash", size: .regular, tint: .red, role: .destructive, action: actions.clearWallpaper)
-                    .help(Text("Clear Wallpaper"))
-                    .accessibilityLabel(Text("Clear Wallpaper"))
-                    .disabled(!hasWallpaper || attemptShown)
-            }
-            icon("sidebar.right", "Settings") { inspectorVisible.toggle() }
-                .disabled(section == .wallpaper && !hasWallpaper)
         }
         .padding(.horizontal, 16)
         .frame(height: DetailGeometry.topBarHeight)
@@ -94,6 +63,51 @@ struct DetailTopBar: View {
             schemeMenuPresented = false
             changeMenuPresented = false
         }
+    }
+
+    /// First capsule: what this display shows — change, reload, clear; snapping in the overlay section.
+    @ViewBuilder
+    private var displayActions: some View {
+        if section == .wallpaper {
+            icon("rectangle.2.swap", "Change Wallpaper") { changeMenuPresented.toggle() }
+                .appLanguagePopover(isPresented: $changeMenuPresented, arrowEdge: .bottom) { changeMenu }
+            icon("arrow.triangle.2.circlepath", "Reload display", help: Text("Reload display content")) { actions.reload() }
+                .disabled(!hasWallpaper || attemptShown)
+            GlassToolbarItem("trash", role: .destructive, action: actions.clearWallpaper)
+                .help(Text("Clear Wallpaper"))
+                .accessibilityLabel(Text("Clear Wallpaper"))
+                .disabled(!hasWallpaper || attemptShown)
+        } else {
+            icon(actions.snapEnabled.wrappedValue ? "viewfinder" : "viewfinder.circle", "Alignment Snapping") {
+                actions.snapEnabled.wrappedValue.toggle()
+            }
+            .accessibilityValue(Text(actions.snapEnabled.wrappedValue ? "On" : "Off"))
+        }
+    }
+
+    /// Second capsule: what reaches past this display — playlist and schedule, schemes, the other displays.
+    @ViewBuilder
+    private var sharedActions: some View {
+        if let openAutomation = actions.openAutomation {
+            icon("list.bullet", "Playlist & Schedule", action: openAutomation)
+                .disabled(!hasWallpaper || attemptShown)
+        }
+        icon("square.stack", "Scheme") {
+            if schemeStore.schemes.isEmpty {
+                actions.saveAsScheme()
+            } else {
+                schemeMenuPresented.toggle()
+            }
+        }
+        .disabled(!hasWallpaper || attemptShown)
+        .appLanguagePopover(isPresented: $schemeMenuPresented, arrowEdge: .bottom) { schemeMenu }
+        icon(
+            "square.on.square", section == .overlay ? "Copy to Other Displays" : "Apply to All Displays",
+            help: tags.count < 2 ? Text("Only one display is connected.") : nil
+        ) {
+            section == .overlay ? actions.copyOverlays() : actions.applyToAll()
+        }
+        .disabled(tags.count < 2 || (section == .wallpaper && (!hasWallpaper || attemptShown)))
     }
 
     private var tagRow: some View {
@@ -146,6 +160,7 @@ struct DetailTopBar: View {
             ForEach([DetailSection.wallpaper, .overlay], id: \.self) { item in
                 Button { section = item } label: {
                     Image(systemName: item == .wallpaper ? "photo" : "square.3.layers.3d")
+                        .imageScale(.large)
                         .frame(width: 40, height: 28)
                         .background(Capsule().fill(section == item
                                 ? DesignTokens.EditDesk.Colors.fillSelectedChip : .clear))
@@ -255,7 +270,7 @@ struct DetailTopBar: View {
     private func icon(
         _ symbol: String, _ label: LocalizedStringKey, help: Text? = nil, action: @escaping () -> Void
     ) -> some View {
-        GlassIconButton(symbol, size: .regular, action: action)
+        GlassToolbarItem(symbol, action: action)
             .help(help ?? Text(label))
             .accessibilityLabel(Text(label))
             .accessibilityIdentifier("detail.\(symbol)")

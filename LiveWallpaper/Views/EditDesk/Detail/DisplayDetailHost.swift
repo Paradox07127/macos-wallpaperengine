@@ -34,6 +34,8 @@ struct DisplayDetailHost: View {
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @State private var coordinator: DetailTransitionCoordinator?
     @State private var section: DetailSection = .wallpaper
+    /// The side the shown display's preview enters from, set as each switch is requested.
+    @State private var switchEdge: HorizontalEdge = .trailing
     @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = 372.0
     @AppStorage("loomscreen.editDesk.inspectorVisible", store: .appScoped()) private var inspectorVisible = true
     /// The overlay column opens and closes with its selection, so it has its own value: sharing the one
@@ -159,8 +161,8 @@ struct DisplayDetailHost: View {
             preview: preview,
             wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },
             emptyScreen: screen, webTransform: webTransform(for: screen),
-            schedulePausedUntil: draft.schedulePausedUntil,
-            inspectorVisible: sectionInspectorVisible, layersVisible: $layersVisible,
+            schedulePausedUntil: draft.schedulePausedUntil, switchEdge: switchEdge,
+            inspectorVisible: sectionInspectorVisible,
             inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
         )
         .dropDestination(for: URL.self) { urls, _ in
@@ -235,6 +237,9 @@ struct DisplayDetailHost: View {
 
     /// The hooks are reassigned here rather than at init so they capture the installed view.
     private func request(_ id: CGDirectDisplayID?) {
+        if let id, let shown = coordinator?.shownDisplayID, id != shown {
+            switchEdge = Self.switchEdge(from: shown, to: id, in: Self.displayOrder(stage.displays).map(\.id))
+        }
         if id != coordinator?.shownDisplayID {
             overlaySession?.detach()
             confirmsOverlayCopy = false
@@ -594,8 +599,62 @@ struct DisplayDetailHost: View {
     }
 
     private func tags(current: CGDirectDisplayID) -> [DetailDisplayTag] {
-        stage.displays.map { display in
+        Self.displayOrder(stage.displays).map { display in
             DetailDisplayTag(id: display.id, name: display.name, thumbnail: display.cover, isCurrent: display.id == current)
+        }
+    }
+
+    // MARK: Display order and swipes
+
+    enum SwipeTarget: Equatable {
+        case home
+        case display(CGDirectDisplayID)
+    }
+
+    /// Left to right as arranged in System Settings › Displays, the upper of a stacked pair first; tags, ⌘1–9 and swipes share it.
+    static func displayOrder(_ displays: [StageDisplay]) -> [StageDisplay] {
+        displays.sorted { lhs, rhs in
+            if lhs.frame.minX != rhs.frame.minX {
+                return lhs.frame.minX < rhs.frame.minX
+            }
+            if lhs.frame.maxY != rhs.frame.maxY {
+                return lhs.frame.maxY > rhs.frame.maxY
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    /// `nil` past the rightmost display, or when `current` is no longer connected.
+    static func swipeTarget(
+        _ step: DetailSwipeStep, from current: CGDirectDisplayID, in order: [CGDirectDisplayID]
+    ) -> SwipeTarget? {
+        guard let index = order.firstIndex(of: current) else { return nil }
+        switch step {
+        case .previous:
+            return index == 0 ? .home : .display(order[index - 1])
+        case .next:
+            return index + 1 < order.count ? .display(order[index + 1]) : nil
+        }
+    }
+
+    /// A display later in `order` arrives from the trailing side.
+    static func switchEdge(
+        from old: CGDirectDisplayID, to new: CGDirectDisplayID, in order: [CGDirectDisplayID]
+    ) -> HorizontalEdge {
+        guard let from = order.firstIndex(of: old), let to = order.firstIndex(of: new) else { return .trailing }
+        return to > from ? .trailing : .leading
+    }
+
+    /// Ignored while the hero is not up, so a swipe during a flight cannot start another.
+    private func swipe(_ step: DetailSwipeStep) {
+        guard coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
+        switch Self.swipeTarget(step, from: current, in: Self.displayOrder(stage.displays).map(\.id)) {
+        case .home?:
+            router.closeDetail()
+        case let .display(id)?:
+            router.showDetail(id)
+        case nil:
+            break
         }
     }
 
@@ -692,7 +751,8 @@ struct DisplayDetailHost: View {
             switchBackToVideo: switchBack.contains(.video) ? { switchToSaved(.video, on: screen) } : nil,
             switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
             applyWebSource: { apply(.html($0), screen.id) },
-            reload: { screenManager.reloadWallpaperForScreen(screen) }
+            reload: { screenManager.reloadWallpaperForScreen(screen) },
+            swipe: { swipe($0) }
         )
     }
 
@@ -717,7 +777,7 @@ struct DisplayDetailHost: View {
         ZStack {
             Button { pressSpace(on: screen) } label: { EmptyView() }
                 .keyboardShortcut(.space, modifiers: [])
-            ForEach(Array(stage.displays.prefix(9).enumerated()), id: \.element.id) { index, display in
+            ForEach(Array(Self.displayOrder(stage.displays).prefix(9).enumerated()), id: \.element.id) { index, display in
                 Button {
                     // A sheet holds the key window; switching under it would hand it another display.
                     guard NSApp.keyWindow === NSApp.mainWindow else { return }

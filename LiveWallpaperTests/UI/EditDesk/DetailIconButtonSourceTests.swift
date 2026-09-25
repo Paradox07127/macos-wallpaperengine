@@ -19,13 +19,16 @@ struct DetailIconButtonSourceTests {
         #expect(!source.contains("adaptiveGlassSurface(.capsule"))
     }
 
-    @Test("Toolbar actions use the same system glass button and label destructive actions")
-    func toolbarUsesSystemGlass() throws {
+    @Test("Toolbar actions share glass capsules, keep their identifiers, and label the destructive one")
+    func toolbarUsesGlassGroups() throws {
         let source = try RepositoryRoot.source(Self.topBarPath)
-        #expect(source.contains("GlassIconButton"))
+        #expect(source.contains("GlassToolbarGroup {"))
+        #expect(!source.contains("GlassIconButton("), "a top bar action went back to a standalone circle")
         #expect(!source.contains("flatFill:"))
-        #expect(source.contains("role: .destructive"))
+        #expect(source.contains(#"GlassToolbarItem("trash", role: .destructive"#))
         #expect(source.contains("accessibilityLabel(Text(\"Clear Wallpaper\"))"))
+        #expect(source.contains(#".accessibilityIdentifier("detail.\(symbol)")"#))
+        #expect(!source.contains("sidebar.left"), "the layers toggle belongs to the canvas panel alone")
     }
 
     @Test("The top bar's reload button reloads only the display it shows")
