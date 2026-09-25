@@ -480,7 +480,7 @@ final class QAControlPlane {
                         "reason": failure.cause.reason,
                         "canRetry": failure.cause.canRetry,
                         "workshopID": failure.workshopID ?? NSNull(),
-                    ]
+                    ] as [String: Any]
                 }
                 entry["loadAttempt"] = load
             } else {

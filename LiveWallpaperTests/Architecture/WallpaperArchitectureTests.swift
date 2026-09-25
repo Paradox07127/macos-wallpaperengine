@@ -2224,6 +2224,7 @@ struct ScreenConfigurationHelpersTests {
         effects.saturation = 0.7
         let oldBookmark = Data([0x01])
         let newBookmark = Data([0x99])
+        let playlist: [Data] = [Data([0x02]), Data([0x03])]
 
         var config = ScreenConfiguration(
             screenID: 1,
@@ -2231,7 +2232,7 @@ struct ScreenConfigurationHelpersTests {
             particleEffect: .snow,
             effectConfig: effects,
             scheduleSlots: ScheduleSlot.defaultSlots,
-            playlistBookmarks: [Data([0x02]), Data([0x03])],
+            playlistBookmarks: playlist,
             shufflePlaylist: true,
             playlistRotationMinutes: 15,
             playlistCursorIndex: 2
@@ -2245,7 +2246,7 @@ struct ScreenConfigurationHelpersTests {
         #expect(config.particleEffect == .snow)
         #expect(config.effectConfig.saturation == 0.7)
         #expect(config.scheduleSlots?.count == ScheduleSlot.defaultSlots.count)
-        #expect(config.playlistBookmarks == [Data([0x02]), Data([0x03])])
+        #expect(config.playlistBookmarks == playlist)
         #expect(config.shufflePlaylist == true)
         #expect(config.playlistRotationMinutes == 15)
     }

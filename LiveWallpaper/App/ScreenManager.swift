@@ -249,7 +249,7 @@ final class ScreenManager {
             self?.noteAutomaticSwitch(on: screen, source: source)
         }
     )
-    /// Keyed by `displayFingerprint`; read by the Edit Desk's undo to spot a switch it did not make.
+    /// Keyed by `displayFingerprint`; read by the Edit Desk's undo and the playlist sheet's preview to spot a switch they did not make.
     @ObservationIgnored var automaticSwitchMarks: [String: AutomaticSwitchMark] = [:]
     @ObservationIgnored lazy var htmlCoordinator = HTMLWallpaperCoordinator(
         configurationStore: configurationStore,

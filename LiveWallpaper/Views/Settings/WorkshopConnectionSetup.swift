@@ -276,10 +276,6 @@ extension SteamCMDDoctorService {
         return true
     }
 
-    var isBinaryReady: Bool {
-        hasBoundBinary && isGreen(.binaryIdentity)
-    }
-
     /// Bindings persist across launches, probe results do not; bound-but-unprobed offers replacement, not setup.
     var isBinaryPresumedReady: Bool {
         guard hasBoundBinary else { return false }
