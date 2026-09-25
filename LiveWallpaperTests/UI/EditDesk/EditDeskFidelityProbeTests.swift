@@ -291,15 +291,13 @@ func expectClose(
 @MainActor
 enum ProbeFixtures {
     static func libraryContent(preview: CGImage?) -> WallpaperModalContent {
-        WallpaperModalContent(
-            itemID: "probe-item",
-            title: "Painting the Sharks 4K",
-            kind: .scene,
-            tags: ["4K", "Scene"],
-            metaParts: ["Workshop", "kaze", "214 MB", "3840×2160"],
-            preview: preview,
-            installed: nil
-        )
+        var content = WallpaperModalContent(itemID: "probe-item", title: "Painting the Sharks 4K", kind: .scene)
+        content.facts = [
+            WallpaperFact(kind: .type, value: "Scene"), WallpaperFact(kind: .size, value: "214 MB"),
+            WallpaperFact(kind: .resolution, value: "3840 × 2160"),
+        ]
+        content.preview = preview
+        return content
     }
 
     /// 16:9 then 16:10 — the two ratios SCREENS S5 quotes thumbnail widths for.
@@ -315,7 +313,7 @@ enum ProbeFixtures {
     static var libraryActions: WallpaperModalActions {
         WallpaperModalActions(
             applyTo: { _ in }, applyToAllDisplays: {},
-            addToPlaylist: { _ in }, showInFinder: {}, openInSteam: {},
+            showInFinder: {}, openInSteam: {},
             removeFromSaved: {}, checkForUpdate: {}, cancelUpdate: {}, deleteInstalled: {}
         )
     }
@@ -378,15 +376,17 @@ struct S4ModalFidelityTests {
         )
     }
 
-    /// The red preview is the anchor: it opens the leading column 24pt inside the panel, under the
-    /// 36pt header, one `.title2` line and an 18pt gap. The line is read off the font, hence ±3.
+    /// The red preview is the anchor: the 16:9 fill fitted into the 4:3 box sits `letterbox` under the
+    /// box's top, and the box opens past the side padding and the ← slot, under the title row.
     static func panelOrigin(from preview: CGRect) -> CGPoint {
-        let title = NSFont.preferredFont(forTextStyle: .title2)
-        let titleLine = title.ascender - title.descender
-        return CGPoint(x: preview.minX - 24, y: preview.minY - 18 - titleLine - ModalGeometry.headerHeight)
+        let letterbox = (ModalGeometry.previewSize.height - ModalGeometry.previewSize.width * 9 / 16) / 2
+        return CGPoint(
+            x: preview.minX - ModalGeometry.horizontalPadding - ModalGeometry.iconButtonSize - ModalGeometry.arrowGap,
+            y: preview.minY - letterbox - ModalGeometry.contentTop
+        )
     }
 
-    /// `LibraryDetailGeometry`: 920×620 centred, never above 72; a 360pt 16:9 preview.
+    /// `ModalGeometry`: at most 920×680, centred, never above 72; a 340×255 box the 16:9 preview fits into.
     @Test("S4 panel and preview at 1280×820")
     func panelAt1280() async throws {
         let size = CGSize(width: 1280, height: 820)
@@ -397,20 +397,20 @@ struct S4ModalFidelityTests {
         ProbeRenderer.report("S4.1280.previewRect", preview)
         let origin = Self.panelOrigin(from: preview)
         ProbeRenderer.report("S4.1280.panelOrigin", origin)
-        expectClose(origin.y, 100, "S4.1280.panel.top", tolerance: 3)
+        expectClose(origin.y, 72, "S4.1280.panel.top", tolerance: 3)
         expectClose(origin.x, 180, "S4.1280.panel.x", tolerance: 3)
-        expectClose(preview.height, 202.5, "S4.1280.preview.h", tolerance: 3)
-        expectClose(preview.width, 360, "S4.1280.preview.w", tolerance: 3)
+        expectClose(preview.height, 191.25, "S4.1280.preview.h", tolerance: 3)
+        expectClose(preview.width, 340, "S4.1280.preview.w", tolerance: 3)
         // The contract the render is measured against.
-        let contract = LibraryDetailGeometry.panelFrame(in: size)
+        let contract = ModalGeometry.panelFrame(in: size)
         ProbeRenderer.report("S4.contract.1280", contract)
         expectClose(contract.width, 920, "S4.contract.1280.w", tolerance: 0)
-        expectClose(contract.height, 620, "S4.contract.1280.h", tolerance: 0)
-        expectClose(contract.minY, 100, "S4.contract.1280.top", tolerance: 0)
+        expectClose(contract.height, 680, "S4.contract.1280.h", tolerance: 0)
+        expectClose(contract.minY, 72, "S4.contract.1280.top", tolerance: 0)
     }
 
     /// Centred, the 600pt panel would start at 50, so it stops at the 72pt floor.
-    @Test("S4 panel at 1040×700 stops at the 72pt floor and keeps the 360pt preview")
+    @Test("S4 panel at 1040×700 stops at the 72pt floor and keeps the 340pt preview box")
     func panelAt1040() async throws {
         let size = CGSize(width: 1040, height: 700)
         let image = await ProbeRenderer.render("S4-1040-dark", size: size) {
@@ -419,10 +419,10 @@ struct S4ModalFidelityTests {
         let preview = try #require(image.boundingBox { $0.isRed })
         let origin = Self.panelOrigin(from: preview)
         ProbeRenderer.report("S4.1040.panelOrigin", origin)
-        expectClose(preview.width, 360, "S4.1040.preview.w", tolerance: 3)
+        expectClose(preview.width, 340, "S4.1040.preview.w", tolerance: 3)
         expectClose(origin.y, 72, "S4.1040.panel.top", tolerance: 3)
         expectClose(origin.x, 60, "S4.1040.panel.x", tolerance: 3)
-        let contract = LibraryDetailGeometry.panelFrame(in: size)
+        let contract = ModalGeometry.panelFrame(in: size)
         ProbeRenderer.report("S4.contract.1040", contract)
         expectClose(contract.height, 600, "S4.contract.1040.h", tolerance: 0)
     }
@@ -434,7 +434,7 @@ struct S4ModalFidelityTests {
             ZStack { Color(white: 0.5); modal(windowSize: size) }
         }
         let preview = try #require(image.boundingBox { $0.isRed })
-        expectClose(preview.width, 360, "S4.light.preview.w", tolerance: 3)
+        expectClose(preview.width, 340, "S4.light.preview.w", tolerance: 3)
     }
 }
 
@@ -557,10 +557,10 @@ struct S4S5OverlapTests {
         ProbeRenderer.report("S4S5.previewClearance", preview.minY - stripBottom)
         expectClose(panelTop, 72, "S4S5.panelTop", tolerance: 3)
         expectClose(panelTop - stripBottom, -46, "S4S5.verticalClearance", tolerance: 3)
-        // At 1280×820 the panel hangs at 100 and the strip covers its top 18pt.
+        // At 1280×820 the 680pt panel also stops at 72, so the strip covers the same top 46pt.
         expectClose(
-            LibraryDetailGeometry.panelFrame(in: CGSize(width: 1280, height: 820)).minY - stripBottom,
-            -18, "S4S5.clearance1280", tolerance: 0
+            ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 820)).minY - stripBottom,
+            -46, "S4S5.clearance1280", tolerance: 0
         )
     }
 }
@@ -1157,14 +1157,14 @@ struct S8bModalFidelityTests {
     }
 
     /// The 340pt square is the anchor, the way the red preview is in S4: it is a flat fill, it sits
-    /// 12pt inside the panel's top-left corner, and nothing else in that corner shares its colour.
+    /// 12pt inside the panel's body under the title row, and nothing else in that corner shares its colour.
     /// The panel's own fill shades into its drop shadow, so its edges are reported, not asserted.
     private func measure(_ image: ProbeImage, seededBy expected: CGRect, label: String) throws -> (panelOrigin: CGPoint, gif: CGRect) {
         let gifSeed = image.rgb(px: Int((expected.minX + 180) * image.scale), Int((expected.minY + 300) * image.scale))
         ProbeRenderer.report("\(label).gifSeedColour", "\(gifSeed.r),\(gifSeed.g),\(gifSeed.b)")
         // Bounded on three sides: the drop shadow outside the corner and a section fill in the
         // details column (which starts 372pt in) both land on the placeholder's own grey.
-        let corner = CGRect(x: expected.minX + 8, y: expected.minY + 8, width: 358, height: 380)
+        let corner = CGRect(x: expected.minX + 8, y: expected.minY + ModalGeometry.contentTop + 4, width: 358, height: 352)
         let gif = try #require(
             image.boundingBox(in: corner) { $0.matches(gifSeed, tolerance: 3) },
             "the square preview did not render"
@@ -1176,10 +1176,10 @@ struct S8bModalFidelityTests {
         if let row = image.extent(inRow: expected.midY, { $0.matches(panelSeed, tolerance: 2) }) {
             ProbeRenderer.report("\(label).panelFillExtent", "x=\(row.x) w=\(row.width)")
         }
-        return (CGPoint(x: gif.minX - ModalGeometry.previewMargin, y: gif.minY - ModalGeometry.previewMargin - ModalGeometry.headerHeight), gif)
+        return (CGPoint(x: gif.minX - ModalGeometry.previewMargin, y: gif.minY - ModalGeometry.previewMargin - ModalGeometry.contentTop), gif)
     }
 
-    /// SCREENS S8b: the same 880×560 chrome as S4, a 340pt square preview left, 84pt bar. The bar's
+    /// The same panel box as S4 (at most 920×680), a 340pt square preview left, 84pt bar. The bar's
     /// buttons are glass, which an offscreen frame does not draw.
     @Test("S8b panel origin and 340 square at 1280×820")
     func panelAt1280() async throws {
@@ -1190,16 +1190,16 @@ struct S8bModalFidelityTests {
         }
         let contract = ModalGeometry.panelFrame(in: size)
         let boxes = try measure(image, seededBy: contract, label: "S8b.1280")
-        expectClose(boxes.panelOrigin.x, 200, "S8b.1280.panel.x", tolerance: 3)
-        expectClose(boxes.panelOrigin.y, 150, "S8b.1280.panel.top", tolerance: 3)
+        expectClose(boxes.panelOrigin.x, 180, "S8b.1280.panel.x", tolerance: 3)
+        expectClose(boxes.panelOrigin.y, 72, "S8b.1280.panel.top", tolerance: 3)
         expectClose(boxes.gif.width, 340, "S8b.1280.gif.w", tolerance: 3)
         expectClose(boxes.gif.height, 340, "S8b.1280.gif.h", tolerance: 3)
         // The chrome's own box; the render above proves only its origin.
-        expectClose(contract.width, 880, "S8b.1280.chrome.w", tolerance: 0)
-        expectClose(contract.height, 560, "S8b.1280.chrome.h", tolerance: 0)
+        expectClose(contract.width, 920, "S8b.1280.chrome.w", tolerance: 0)
+        expectClose(contract.height, 680, "S8b.1280.chrome.h", tolerance: 0)
     }
 
-    @Test("S8b at 1040×700 keeps the 340 square and stops at the strip's 130 clearance")
+    @Test("S8b at 1040×700 keeps the 340 square and stops at the 72pt floor")
     func panelAt1040() async throws {
         let size = CGSize(width: 1040, height: 700)
         let service = doctor()
@@ -1208,8 +1208,8 @@ struct S8bModalFidelityTests {
         }
         let contract = ModalGeometry.panelFrame(in: size)
         let boxes = try measure(image, seededBy: contract, label: "S8b.1040")
-        expectClose(boxes.panelOrigin.x, 80, "S8b.1040.panel.x", tolerance: 3)
-        expectClose(boxes.panelOrigin.y, 130, "S8b.1040.panel.top", tolerance: 3)
+        expectClose(boxes.panelOrigin.x, 60, "S8b.1040.panel.x", tolerance: 3)
+        expectClose(boxes.panelOrigin.y, 72, "S8b.1040.panel.top", tolerance: 3)
         expectClose(boxes.gif.width, 340, "S8b.1040.gif.w", tolerance: 3)
         expectClose(boxes.gif.height, 340, "S8b.1040.gif.h", tolerance: 3)
     }

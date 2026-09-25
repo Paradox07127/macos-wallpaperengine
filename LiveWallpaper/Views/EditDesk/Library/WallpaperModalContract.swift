@@ -12,18 +12,18 @@ struct WallpaperModalContent: Equatable {
     let itemID: String
     var title: String
     var kind: LibraryItem.Kind
-    /// Verbatim glyphs under the preview (Workshop tags, `4K`, `HDR`); never translated.
-    var tags: [String]
-    /// `{来源}`, `{作者}`, `{大小}`, `{分辨率}`, `上次 {时间} → {屏}`; the modal lists each non-empty part on its own line.
-    var metaParts: [String]
-    /// Decoded at the preview's pixel size; nil shows the placeholder. The shell derives its
-    /// blurred backdrop from this image itself.
+    /// Rows under the preview, sorted by `WallpaperFact.Kind`; a row with nothing to say is absent.
+    var facts: [WallpaperFact] = []
+    /// Chip labels under the rows, already localized; Workshop projects only.
+    var tags: [String] = []
+    /// Where a file or page without a Workshop page lives; empty for Workshop items.
+    var fileFacts: [WallpaperFact] = []
+    /// Decoded at the preview's pixel size; nil shows the placeholder.
     var preview: CGImage?
     /// Present only for installed Workshop items.
     var installed: InstalledItemExtras?
+    /// nil hides the description section; empty shows its placeholder.
     var descriptionText: String?
-    var contentRating: String?
-    var importedAt: Date?
     var workshopID: UInt64?
     var dependencyIDs: [String] = []
     /// False for a type this Mac cannot run: every apply control is disabled.
@@ -32,27 +32,116 @@ struct WallpaperModalContent: Equatable {
     var notice: String?
     /// A Workshop project this Mac can't run; the right column explains why. nil for everything else.
     var unsupportedOrigin: WPEOrigin?
+    /// Steam answered that the item's page is gone or hidden.
+    var isUnavailableOnSteam = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.itemID == rhs.itemID
             && lhs.title == rhs.title
             && lhs.kind == rhs.kind
+            && lhs.facts == rhs.facts
             && lhs.tags == rhs.tags
-            && lhs.metaParts == rhs.metaParts
+            && lhs.fileFacts == rhs.fileFacts
             && lhs.preview === rhs.preview
             && lhs.installed == rhs.installed
             && lhs.descriptionText == rhs.descriptionText
-            && lhs.contentRating == rhs.contentRating
-            && lhs.importedAt == rhs.importedAt
             && lhs.workshopID == rhs.workshopID
             && lhs.dependencyIDs == rhs.dependencyIDs
             && lhs.canApply == rhs.canApply
             && lhs.notice == rhs.notice
             && lhs.unsupportedOrigin == rhs.unsupportedOrigin
+            && lhs.isUnavailableOnSteam == rhs.isUnavailableOnSteam
     }
 }
 
-/// `InstalledInspector`'s own fields, so the library modal loses nothing the old page showed.
+/// One labelled row of the detail modal's facts, the same list for library and Workshop items.
+struct WallpaperFact: Equatable, Identifiable {
+    /// Declaration order is the order the rows are drawn in, whichever source supplied them.
+    enum Kind: Int, CaseIterable, Comparable {
+        case type, author, rating, size, resolution, duration, ageRating, stats, posted, updated, source, imported, lastUsed
+        case location, webAddress
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+
+        var label: String {
+            switch self {
+            case .type: String(localized: "Type", bundle: .appLanguage, comment: "Workshop tag group: Scene / Video / Web.")
+            case .author: String(localized: "Author", bundle: .appLanguage, comment: "Wallpaper detail row: the Workshop item's creator.")
+            case .rating: String(localized: "Rating", bundle: .appLanguage, comment: "Thumbnail badge switch: the Workshop star rating.")
+            case .size: String(localized: "Size", bundle: .appLanguage, comment: "Storage table column header.")
+            case .resolution: String(localized: "Resolution", bundle: .appLanguage, comment: "Workshop tag group.")
+            case .duration: String(localized: "Duration", bundle: .appLanguage, comment: "Wallpaper detail row: a video's running time.")
+            case .ageRating: String(localized: "Age Rating", bundle: .appLanguage, comment: "Workshop tag group: Everyone / Questionable / Mature.")
+            case .stats: String(localized: "Stats", bundle: .appLanguage, comment: "Wallpaper detail row: Workshop subscribers, favorites and views.")
+            case .posted: String(localized: "Posted", bundle: .appLanguage, comment: "Wallpaper detail row: the date the Workshop item was first published.")
+            case .updated: String(localized: "Updated", bundle: .appLanguage, comment: "Wallpaper detail row: the date the Workshop item last changed.")
+            case .source: String(localized: "Source", bundle: .appLanguage)
+            case .imported: String(localized: "Imported", bundle: .appLanguage)
+            case .lastUsed: String(localized: "Last Used", bundle: .appLanguage, comment: "Wallpaper detail row: how long ago the wallpaper was last applied.")
+            case .location: String(localized: "Location", bundle: .appLanguage, comment: "Managed SteamCMD install consent sheet field label for the install path.")
+            case .webAddress: String(localized: "Web Address", bundle: .appLanguage, comment: "Wallpaper detail row: the page a web wallpaper loads.")
+            }
+        }
+    }
+
+    let kind: Kind
+    var value: String
+    /// Tooltip, such as the relative time behind a date; nil shows none.
+    var help: String?
+
+    var id: Kind {
+        kind
+    }
+}
+
+/// A title-row button of the detail modal: one "…" row that is not an apply.
+struct ModalHeaderAction: Identifiable {
+    enum Kind: Equatable {
+        case showInFinder, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
+    }
+
+    let kind: Kind
+    let perform: @MainActor () -> Void
+
+    var id: Kind {
+        kind
+    }
+
+    var isDestructive: Bool {
+        kind == .removeFromLibrary || kind == .delete
+    }
+
+    var symbol: String {
+        switch kind {
+        case .showInFinder: "folder"
+        case .openInSteam: "arrow.up.forward.app"
+        case .rename: "pencil"
+        case .checkForUpdate: "arrow.triangle.2.circlepath"
+        case .cancelUpdate: "xmark.circle"
+        case .removeFromLibrary, .delete: "trash"
+        }
+    }
+
+    var title: String {
+        switch kind {
+        case .showInFinder: String(localized: "Show in Finder", bundle: .appLanguage)
+        case .openInSteam: String(localized: "Open in Steam", bundle: .appLanguage)
+        case .rename:
+            String(
+                localized: "Rename", bundle: .appLanguage,
+                comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."
+            )
+        case .checkForUpdate: String(localized: "Check for updates", bundle: .appLanguage)
+        case .cancelUpdate: String(localized: "Cancel update", bundle: .appLanguage)
+        case .removeFromLibrary: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage)
+        case .delete: String(localized: "Delete", bundle: .appLanguage)
+        }
+    }
+}
+
+/// `InstalledInspector`'s update state, so the library modal loses nothing the old page showed.
 struct InstalledItemExtras: Equatable {
     enum UpdateState: Equatable {
         case unknown
@@ -63,9 +152,6 @@ struct InstalledItemExtras: Equatable {
     }
 
     var updateState: UpdateState
-    var isWindowsOnly: Bool
-    /// Display names the item is running on; empty when idle.
-    var inUseOnDisplayNames: [String]
 }
 
 /// A display as the ⌘n buttons and the float layer present it. Ordered left→right by `frame.minX`;
@@ -99,9 +185,7 @@ struct ModalDisplayTarget: Identifiable, Equatable {
 struct WallpaperModalActions {
     var applyTo: @MainActor (CGDirectDisplayID) -> Void
     var applyToAllDisplays: @MainActor () -> Void
-    /// "＋" button menu.
-    var addToPlaylist: (@MainActor (CGDirectDisplayID) -> Void)?
-    /// "…" menu — the same rows as the shelf card's context menu.
+    /// The context menus' rows and the modal's title-row buttons.
     var showInFinder: (@MainActor () -> Void)?
     var openInSteam: (@MainActor () -> Void)?
     var removeFromSaved: (@MainActor () -> Void)?
@@ -114,7 +198,38 @@ struct WallpaperModalActions {
 }
 
 extension WallpaperModalActions {
-    /// The "…" menu's rows, in order: the modal and the library's context menus all draw these.
+    /// The modal's title-row buttons: every context-menu row that is not an apply, each once. The bottom
+    /// row applies. `requestRename` and `requestDelete` open the presenter's own alert and confirmation.
+    func headerActions(
+        isUpdating: Bool, requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
+    ) -> [ModalHeaderAction] {
+        var actions: [ModalHeaderAction] = []
+        if let showInFinder {
+            actions.append(ModalHeaderAction(kind: .showInFinder, perform: showInFinder))
+        }
+        if let openInSteam {
+            actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
+        }
+        if rename != nil {
+            actions.append(ModalHeaderAction(kind: .rename, perform: requestRename))
+        }
+        if isUpdating, let cancelUpdate {
+            actions.append(ModalHeaderAction(kind: .cancelUpdate, perform: cancelUpdate))
+        } else if let checkForUpdate {
+            actions.append(ModalHeaderAction(kind: .checkForUpdate, perform: checkForUpdate))
+        }
+        if let removeFromSaved {
+            actions.append(ModalHeaderAction(kind: .removeFromLibrary, perform: removeFromSaved))
+        }
+        if deleteInstalled != nil {
+            actions.append(ModalHeaderAction(kind: .delete, perform: requestDelete))
+        }
+        return actions
+    }
+}
+
+extension WallpaperModalActions {
+    /// The context menus' rows, in order: the grid and the shelf both draw these.
     /// `requestRename` and `requestDelete` open the presenter's own rename alert and delete confirmation.
     func menuItems(
         targets: [ModalDisplayTarget], canApply: Bool, isUpdating: Bool,

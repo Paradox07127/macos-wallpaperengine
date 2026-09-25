@@ -122,10 +122,11 @@ struct EditDeskChromeSourceTests {
         #expect(!detail.contains("preferMaterial"), "the section picker is forced back onto material")
         #expect(!glass.contains("preferMaterial"))
 
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
-        #expect(modal.contains("applyButton(primary).adaptiveGlassButton(.prominent, size: .large)"))
-        #expect(modal.contains("applyButton(target).adaptiveGlassButton(.regular, size: .large)"))
-        #expect(!modal.contains(".tint(target.isPrimary"))
+        // Read leniently: before the shared button row exists this must fail on an expectation, not a missing file.
+        let buttons = (try? RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/ModalDisplayButtons.swift")) ?? ""
+        #expect(buttons.contains("applyButton(primary).adaptiveGlassButton(.prominent, size: .large)"))
+        #expect(buttons.contains("applyButton(target).adaptiveGlassButton(.regular, size: .large)"))
+        #expect(!buttons.contains(".tint(target.isPrimary"))
 
         let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
         #expect(workshop.components(separatedBy: ".adaptiveGlassButton(.regular, size: .large)").count - 1 == 3)
@@ -137,7 +138,7 @@ struct EditDeskChromeSourceTests {
         #expect(banner.contains(".adaptiveGlassButton(.prominent, size: .small)"))
         #expect(!banner.contains(".buttonStyle(.borderedProminent)"))
 
-        for (name, source) in [("WallpaperModal", modal), ("WorkshopModal", workshop), ("WallpapersOffBanner", banner)] {
+        for (name, source) in [("ModalDisplayButtons", buttons), ("WorkshopModal", workshop), ("WallpapersOffBanner", banner)] {
             let prominent = source.components(separatedBy: ".adaptiveGlassButton(.prominent").count - 1
             #expect(prominent == 1, Comment(rawValue: "\(name) has \(prominent) prominent buttons"))
         }
@@ -257,11 +258,12 @@ struct EditDeskChromeSourceTests {
         #expect(!homeSweeps, "the sweep would run again each time a page switch remounts HomePage")
     }
 
-    @Test("The modal's … menu and the grid's and shelf's context menus draw the same rows")
+    @Test("The grid's and shelf's context menus draw the … rows; the modal draws the same actions as title-row buttons")
     func libraryMenusShareOneSource() throws {
         let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
         let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(modal.contains("WallpaperMenuRows(items: actions.menuItems("))
+        #expect(modal.contains("actions.headerActions("), "the modal's buttons do not come from the shared actions")
+        #expect(!modal.contains("WallpaperMenuRows(items: actions.menuItems("), "the modal still draws the … menu")
         #expect(!modal.contains("Menu(\"Apply to\")"), "the modal lists its own rows again")
         #expect(home.contains(".contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }"))
         #expect(home.contains("stage.cardMenu = { id in library?.items.first { $0.id == id }.map { [libraryMenu(for: $0)] } ?? [] }"))

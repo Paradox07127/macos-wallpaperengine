@@ -4614,40 +4614,6 @@
         }
       }
     },
-    "About this wallpaper" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "About this wallpaper"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acerca de este fondo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙について"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关于此壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關於此桌布"
-          }
-        }
-      }
-    },
     "Abstract" : {
       "comment" : "Workshop genre tag.",
       "localizations" : {
@@ -5594,35 +5560,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入桌布庫"
-          }
-        }
-      }
-    },
-    "Add to Playlist" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir a la playlist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストに追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入播放列表"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入播放列表"
           }
         }
       }
@@ -9177,6 +9114,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "極光"
+          }
+        }
+      }
+    },
+    "Author" : {
+      "comment" : "Wallpaper detail row: the Workshop item's creator.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Author"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成者"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作者"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作者"
           }
         }
       }
@@ -24645,6 +24617,41 @@
         }
       }
     },
+    "Duration" : {
+      "comment" : "Wallpaper detail row: a video's running time.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duration"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duración"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "長さ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时长"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時長"
+          }
+        }
+      }
+    },
     "Dust" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26842,6 +26849,41 @@
         }
       }
     },
+    "File" : {
+      "comment" : "Wallpaper detail section: where the wallpaper's file or page lives.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檔案"
+          }
+        }
+      }
+    },
     "File access" : {
       "comment" : "Privacy sheet section title about filesystem permissions.",
       "extractionState" : "manual",
@@ -28713,13 +28755,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "类型"
+            "value" : "题材"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "類型"
+            "value" : "題材"
           }
         }
       }
@@ -32443,6 +32485,41 @@
         }
       }
     },
+    "Last Used" : {
+      "comment" : "Wallpaper detail row: how long ago the wallpaper was last applied.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last Used"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último uso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の使用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次使用"
+          }
+        }
+      }
+    },
     "Last activity" : {
       "comment" : "Agent session activity monitor.",
       "extractionState" : "manual",
@@ -32652,35 +32729,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上次更新"
-          }
-        }
-      }
-    },
-    "Last used %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Último uso: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回の使用：%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次使用：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次使用：%@"
           }
         }
       }
@@ -43528,6 +43576,41 @@
         }
       }
     },
+    "Other Displays" : {
+      "comment" : "Wallpaper modal pull-down listing the displays past the first three buttons.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other Displays"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras pantallas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のディスプレイ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他顯示器"
+          }
+        }
+      }
+    },
     "Other options" : {
       "comment" : "Accessibility label for the overflow menu holding a setup step's other routes.",
       "extractionState" : "manual",
@@ -46461,6 +46544,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "直向"
+          }
+        }
+      }
+    },
+    "Posted" : {
+      "comment" : "Wallpaper detail row: the date the Workshop item was first published.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posted"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publicado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公開日"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发表于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "發表於"
           }
         }
       }
@@ -62359,6 +62477,41 @@
         }
       }
     },
+    "Stats" : {
+      "comment" : "Wallpaper detail row: Workshop subscribers, favorites and views.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estadísticas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統計"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "统计"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統計"
+          }
+        }
+      }
+    },
     "Status" : {
       "comment" : "Network widget: connectivity status row label.",
       "extractionState" : "manual",
@@ -65170,37 +65323,37 @@
         }
       }
     },
-    "Still preview · %@" : {
-      "extractionState" : "manual",
+    "Still preview" : {
+      "comment" : "Wallpaper modal chip over a preview that is a still frame, not the moving wallpaper.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Still preview · %@"
+            "value" : "Still preview"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vista previa estática · %@"
+            "value" : "Vista previa estática"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "静止画プレビュー · %@"
+            "value" : "静止画プレビュー"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "静态预览 · %@"
+            "value" : "静态预览"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "靜態預覽 · %@"
+            "value" : "靜態預覽"
           }
         }
       }
@@ -66472,6 +66625,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已標記「%@」"
+          }
+        }
+      }
+    },
+    "Tags" : {
+      "comment" : "Wallpaper detail row: the Workshop item's tags.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etiquetas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タグ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標籤"
           }
         }
       }
@@ -74149,6 +74337,41 @@
         }
       }
     },
+    "Updated" : {
+      "comment" : "Wallpaper detail row: the date the Workshop item last changed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新於"
+          }
+        }
+      }
+    },
     "Updated %@ (%@)" : {
       "comment" : "Workshop detail: last-update date. Placeholders are the absolute date and the relative time.",
       "extractionState" : "manual",
@@ -77784,6 +78007,41 @@
         }
       }
     },
+    "Web Address" : {
+      "comment" : "Wallpaper detail row: the page a web wallpaper loads.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web Address"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dirección web"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web アドレス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網址"
+          }
+        }
+      }
+    },
     "Web Options" : {
       "comment" : "Title of a group of options in the web inspector.",
       "isCommentAutoGenerated" : true,
@@ -78738,35 +78996,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Windows 外掛程式"
-          }
-        }
-      }
-    },
-    "Windows Only" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo Windows"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Windows 専用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅 Windows"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅 Windows"
           }
         }
       }

@@ -124,7 +124,6 @@ Tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). 
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
 | `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9) |
-| `Colors.fillTertiaryButton` | white `.06` | library modal ＋ / … menus (SCREENS S4) |
 | `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | onboarding card primary button (SCREENS S9) |
 | `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) | SCREENS S8 (Workshop grid card info band) |
 | `Colors.inLibraryBadgeFill` | `rgba(74,222,128,.9)` (fixed) | SCREENS S8 (in-library ✓ disc) |
@@ -144,7 +143,7 @@ Tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). 
 | `Corner.statusExpanded` | 14 | SCREENS S1 (status capsule, expanded) |
 | `Corner.modal` | 18 | README Tokens #5 |
 | `Corner.floatPanel` | 16 | SCREENS S5 |
-| `Corner.button` | 9 | library modal ＋ / … menus (SCREENS S4), onboarding card buttons (SCREENS S9) |
+| `Corner.button` | 9 | onboarding card buttons (SCREENS S9) |
 | `Corner.chip` | 5 | SCREENS S4/S5 (preview chips, float thumbnails) |
 | `Shadow.shell` | `0 5px 28px rgba(0,0,0,.22)`; radius = blur ÷ 2 | README Tokens #6 |
 | `Shadow.modal` | `0 10px 48px rgba(0,0,0,.38)`, light `.16`; radius = blur ÷ 2 | README Tokens #6 |
@@ -170,7 +169,6 @@ Tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). 
 | `Typography.stageTitle` | 15pt semibold | README Tokens #8 |
 | `Typography.modalTitle` | 22pt bold | README Tokens #8 |
 | `Typography.navItem` | 13pt | SCREENS S1 (nav pill item) |
-| `Typography.button` | 15pt bold | library modal ＋ / … menu glyphs (SCREENS S4) |
 | `Typography.floatName` | 11pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 12pt bold | SCREENS S5 (「松手替换」) |
 | `Typography.footnote` | 11pt | SCREENS S9 (onboarding card footnote) |

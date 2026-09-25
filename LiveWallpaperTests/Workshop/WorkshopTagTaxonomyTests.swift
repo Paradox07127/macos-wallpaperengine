@@ -56,6 +56,17 @@ struct WorkshopTagTaxonomyTests {
         }
     }
 
+    /// The detail modal and the filter ribbon both label rows with these names: two alike read as one group twice.
+    @Test("No two group names share a translation")
+    func groupNamesAreDistinctInEveryLanguage() throws {
+        let strings = try Self.catalogStrings()
+        let keys = ["Type", "Age Rating", "Genre", "Resolution", "Category", "Miscellaneous", "Other"]
+        for locale in ["en", "zh-Hans", "zh-Hant", "ja", "es"] {
+            let names = keys.map { Self.value(strings, key: $0, locale: locale) ?? $0 }
+            #expect(Set(names).count == names.count, "\(locale): \(names)")
+        }
+    }
+
     static func catalogStrings() throws -> [String: Any] {
         let data = try RepositoryRoot.data("LiveWallpaper/Resources/Localizable.xcstrings")
         let root = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
