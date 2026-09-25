@@ -53,7 +53,6 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     let tags: [DetailDisplayTag]
     let hero: DetailHeroStatus
     let heroImage: CGImage?
-    let backdropImage: CGImage?
     let windowSize: CGSize
     @Binding var section: DetailSection
     let heroVisible: Bool
@@ -61,9 +60,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     let actions: DetailActions
     @ViewBuilder let hud: () -> HUD
     @ViewBuilder let inspector: (CGFloat) -> Inspector
-    let overlayLogicalSize: CGSize
     @ViewBuilder let overlayCanvas: (CGSize) -> Overlay
-    var overlayTopInset: CGFloat = 0
     var isEmpty = false
     var preview: DetailPreviewState = .hero
     /// The attempt's page while `preview` shows one, otherwise the notices above the setup or hero.

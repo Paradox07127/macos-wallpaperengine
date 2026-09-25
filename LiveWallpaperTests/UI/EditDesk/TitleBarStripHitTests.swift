@@ -92,7 +92,6 @@ struct TitleBarStripHitTests {
             tags: [DetailDisplayTag(id: 1, name: "Display", thumbnail: nil, isCurrent: true)],
             hero: DetailHeroStatus(title: "Wallpaper", kindLine: "", intendsToPlay: true),
             heroImage: nil,
-            backdropImage: nil,
             windowSize: windowSize,
             section: .constant(.wallpaper),
             heroVisible: true,
@@ -104,7 +103,6 @@ struct TitleBarStripHitTests {
             inspector: { _ in
                 ScrollView { Color.gray.frame(height: 2000) }
             },
-            overlayLogicalSize: CGSize(width: 1920, height: 1080),
             overlayCanvas: { _ in Color.clear },
             wallpaperStatus: { EmptyView() },
             inspectorVisible: .constant(true), layersVisible: .constant(true),

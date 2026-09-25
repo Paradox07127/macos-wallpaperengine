@@ -383,8 +383,7 @@ public enum DesignTokens {
         reduceMotion ? nil : animation
     }
 
-    /// Edit Desk is forced dark, so these are fixed values; only the three Increase Contrast
-    /// overrides (GAP_ANALYSIS.md §6) resolve through `NSColor(name:)` like `Colors.surfaceRaised`.
+    /// Literal px values, not Dynamic Type steps; chrome colours follow the appearance (see `Colors.adaptive`).
     public enum EditDesk {
         // MARK: Colors
 
