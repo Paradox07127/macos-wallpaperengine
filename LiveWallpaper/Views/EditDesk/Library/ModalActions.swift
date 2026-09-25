@@ -411,6 +411,12 @@ final class ModalActions {
         return UInt64(entry.origin.workshopID)
     }
 
+    /// Must change whenever `updateState(for:)` would: the library modal reloads its content only then.
+    func installedStateKey(for item: LibraryItem) -> String {
+        guard let entry = localInfoEntry(for: item), let id = UInt64(entry.origin.workshopID) else { return "" }
+        return "\(inputs.phase(id)) \(inputs.progress(id) ?? -1) \(inputs.installedLibrary.updatedWorkshopIDs.contains(entry.id))"
+    }
+
     private func updateState(for entry: WPEHistoryEntry) -> InstalledItemExtras.UpdateState {
         guard let id = UInt64(entry.origin.workshopID) else { return .unknown }
         switch inputs.phase(id) {
