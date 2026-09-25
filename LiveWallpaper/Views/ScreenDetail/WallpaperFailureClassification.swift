@@ -11,15 +11,13 @@ enum WallpaperFailureClass: Equatable {
     case blocked
     /// Something is missing; supplying it fixes the wallpaper.
     case needsParts
-    /// One layer was skipped — the wallpaper is still playing.
-    case degraded
 
     /// Follows the DESIGN.md tint gloss.
     var tint: Color {
         switch self {
         case .fatal: DesignTokens.Colors.Status.danger
         case .blocked: DesignTokens.Colors.Status.warning
-        case .needsParts, .degraded: DesignTokens.Colors.Status.caution
+        case .needsParts: DesignTokens.Colors.Status.caution
         }
     }
 
@@ -30,7 +28,6 @@ enum WallpaperFailureClass: Equatable {
         case .fatal: "xmark.octagon.fill"
         case .blocked: "exclamationmark.triangle.fill"
         case .needsParts: "folder.badge.questionmark"
-        case .degraded: "photo.badge.exclamationmark"
         }
     }
 
@@ -40,7 +37,6 @@ enum WallpaperFailureClass: Equatable {
         case .fatal: "Can't run on this Mac"
         case .blocked: "This wallpaper didn't load"
         case .needsParts: "Something is missing"
-        case .degraded: "Some layers were skipped"
         }
     }
 
@@ -50,7 +46,6 @@ enum WallpaperFailureClass: Equatable {
         case .fatal: String(localized: "Can't run on this Mac", bundle: .appLanguage)
         case .blocked: String(localized: "This wallpaper didn't load", bundle: .appLanguage)
         case .needsParts: String(localized: "Something is missing", bundle: .appLanguage)
-        case .degraded: String(localized: "Some layers were skipped", bundle: .appLanguage)
         }
     }
 }

@@ -73,15 +73,11 @@ struct WallpaperFailureClassificationTests {
             (.fatal, DesignTokens.Colors.Status.danger),
             (.blocked, DesignTokens.Colors.Status.warning),
             (.needsParts, DesignTokens.Colors.Status.caution),
-            (.degraded, DesignTokens.Colors.Status.caution),
         ]
         for (failureClass, tint) in expected {
             #expect(failureClass.tint == tint)
             #expect(!failureClass.symbol.isEmpty)
         }
-        // Colour never carries the meaning alone (DESIGN.md rule 6): the two
-        // classes that share `caution` must still differ by glyph.
-        #expect(WallpaperFailureClass.needsParts.symbol != WallpaperFailureClass.degraded.symbol)
     }
 
     @Test("Only a real Steam id earns a Workshop link")

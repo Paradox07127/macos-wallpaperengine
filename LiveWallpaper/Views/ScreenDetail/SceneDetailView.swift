@@ -420,7 +420,6 @@ struct SceneDetailView: View {
             playbackControls
         } actions: {
             HStack(spacing: DesignTokens.Spacing.xs) {
-                SceneSkippedChip(state: state, origin: origin) { showLogSheet = true }
                 workshopLinkButton
                 if hasDiagnosticFindings {
                     SceneDiagnosticsButton { showLogSheet = true }
@@ -651,24 +650,22 @@ struct SceneDetailView: View {
         case .texture(_, let error):
             switch error {
             case .unsupportedContainer(let magic):
-                return .texContainerUnsupported(magic: magic)
+                .texContainerUnsupported(magic: magic)
             case .unsupportedFormat(let code):
-                return .texUnsupportedFormat(code: code)
-            case .metalUnavailable:
-                return .texUnsupportedFormat(code: -1)
-            case .unsupportedAnimation:
-                return .texDecodeFailed(detail: "animation/sequence frames")
+                .texUnsupportedFormat(code: code)
+            case .metalUnavailable, .unsupportedAnimation:
+                .texUnsupportedFormat(code: -1)
             default:
-                return .texDecodeFailed(detail: error.errorDescription ?? "decode failed")
+                .texDecodeFailed(detail: error.errorDescription ?? "decode failed")
             }
         case .legacyUnsupportedTexture:
-            return .texDecodeFailed(detail: "legacy .tex stub")
+            .texUnsupportedFormat(code: -1)
         case .fileMissing, .crossPackageReference:
-            return .sceneResourceMissing
-        case .materialUnresolved(_, let reason):
-            return .texDecodeFailed(detail: reason)
+            .sceneResourceMissing
+        case .materialUnresolved:
+            .sceneShaderUnsupported
         case .other(_, let message):
-            return .texDecodeFailed(detail: message)
+            .sceneLoadFailed(detail: message)
         }
     }
 
@@ -700,8 +697,6 @@ struct SceneDetailView: View {
 
 // MARK: - Render failure pieces
 
-/// `.degraded` means one layer was skipped and the wallpaper is still playing,
-/// so it gets the HUD chip instead of a banner.
 struct SceneRenderFailureBanner: View {
     let state: SceneRenderState
     let origin: WPEOrigin
@@ -710,7 +705,7 @@ struct SceneRenderFailureBanner: View {
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
 
     var body: some View {
-        if case let .error(reason) = state, reason.failureClass != .degraded {
+        if case let .error(reason) = state {
             let presentation = reason.presentation(
                 origin: origin,
                 engineAssetsAuthorized: engineAssets.isAuthorized
@@ -730,34 +725,6 @@ struct SceneRenderFailureBanner: View {
                 )
             }
             .transition(.opacity)
-        }
-    }
-}
-
-struct SceneSkippedChip: View {
-    let state: SceneRenderState
-    let origin: WPEOrigin
-    let onShowLog: () -> Void
-    @State private var engineAssets = WPEEngineAssetsLibrary.shared
-
-    var body: some View {
-        if case let .error(reason) = state, reason.failureClass == .degraded {
-            let detail = reason.localizedMessage(
-                originalType: origin.originalType,
-                engineAssetsAuthorized: engineAssets.isAuthorized
-            )
-            Button(action: onShowLog) {
-                PreviewControlLabel(
-                    systemImage: reason.symbol,
-                    title: "Skipped",
-                    tint: reason.tint
-                )
-            }
-            .buttonStyle(.borderless)
-            .help(Text(verbatim: detail))
-            .accessibilityLabel(Text(verbatim: reason.localizedTitle(originalType: origin.originalType)))
-            .accessibilityValue(Text(verbatim: detail))
-            .accessibilityHint(Text("Open renderer diagnostics"))
         }
     }
 }

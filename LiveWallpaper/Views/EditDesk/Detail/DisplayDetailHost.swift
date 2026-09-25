@@ -316,7 +316,6 @@ struct DisplayDetailHost: View {
            scene.renderFailure != nil {
             hudBar(for: screen) {
                 HStack(spacing: DesignTokens.Spacing.xs) {
-                    SceneSkippedChip(state: scene.state, origin: scene.origin) { showsSceneLog = true }
                     SceneDiagnosticsButton { showsSceneLog = true }
                 }
             }

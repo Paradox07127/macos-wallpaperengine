@@ -43931,41 +43931,6 @@
         }
       }
     },
-    "One layer can't be shown on this Mac. The rest of the scene keeps playing." : {
-      "comment" : "Texture fallback warning body.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "One layer can't be shown on this Mac. The rest of the scene keeps playing."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una capa no se puede mostrar en este Mac. El resto de la escena se sigue reproduciendo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac では表示できないレイヤーが 1 つあります。シーンのほかの部分は再生を続けます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有一个图层无法在本机显示，场景其余部分照常播放。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有一個圖層無法在這台 Mac 上顯示，場景其餘部分照常播放。"
-          }
-        }
-      }
-    },
     "Only one display is connected." : {
       "localizations" : {
         "en" : {
@@ -64134,41 +64099,6 @@
         }
       }
     },
-    "Skipped" : {
-      "comment" : "Short caption on the scene preview bar marking that a layer was skipped. Must stay short.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Skipped"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Omitido"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スキップ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已跳过"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已略過"
-          }
-        }
-      }
-    },
     "Skipped %lld displays that changed afterward." : {
       "comment" : "Toast after Undo or Redo left several displays alone because they changed later. Placeholder is the count.",
       "localizations" : {
@@ -64377,41 +64307,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此場景中的部分影像無法讀取"
-          }
-        }
-      }
-    },
-    "Some layers were skipped" : {
-      "comment" : "Title for a partial-degradation notice: one texture layer was skipped and the wallpaper is still playing.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Some layers were skipped"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se omitieron algunas capas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一部のレイヤーをスキップしました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已跳过部分图层"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已略過部分圖層"
           }
         }
       }
