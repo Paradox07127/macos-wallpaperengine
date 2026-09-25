@@ -313,6 +313,8 @@ struct HomePage: View {
             // leaning or lifting over them is never clipped by a piece of chrome. Landed on the library,
             // the chips go over the grid instead, or it would hide them as a return swipe carries them down.
             libraryBannerMeasure
+            LibraryPageUnderlay(stage: stage)
+                .zIndex(-1)
             EditDeskShelfScrim(stage: stage)
                 .zIndex(-1)
             EditDeskStageRepresentable(model: stage)
@@ -693,7 +695,7 @@ struct HomePage: View {
     }
 
     /// The grid's cross-fade over cards that have already landed on its tiles.
-    private static let libraryFadeDuration: TimeInterval = 0.15
+    private static let libraryFadeDuration: TimeInterval = 0.10
 
     /// True from the landing until the stage snaps back, return swipe included.
     private var landedOnLibrary: Bool {
@@ -1140,21 +1142,36 @@ struct HomePage: View {
         // Indices only line up while the shelf mirrors these rows; `syncShelf()` calls back in after rebuilding it.
         guard !visible.isEmpty, stage.shelfItems.map(\.id) == visible.map(\.id) else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let grid = stage.visibleGridRange.clamped(to: visible.indices)
+        func land(_ request: ShelfThumbnailCache.Request, pixelSize: CGSize, on id: StageCard.ID) {
+            Task { @MainActor in
+                guard let image = await thumbnails.image(request, pixelSize: pixelSize, scale: scale),
+                      // The item's source can change while its preview decodes; a stale decode must
+                      // not paint over the newer one.
+                      library.visibleItems.first(where: { $0.id == id })?.thumbnail == request
+                else { return }
+                stage.landThumbnail(image, for: id)
+            }
+        }
         // A card leaving a scrolled grid may never have been on the shelf: the tile's own decode is what it showed.
         let missing = stage.refreshShelfThumbnails {
             visible[$0].thumbnail.flatMap { thumbnails.cached($0, pixelSize: Self.thumbnailPixelSize, scale: scale) }
                 ?? gridThumbnail(for: visible[$0]).flatMap { Self.gridImage($0, in: thumbnails) }
         }
-        for index in missing {
-            let item = visible[index]
-            guard let request = item.thumbnail else { continue }
-            Task { @MainActor in
-                guard let image = await thumbnails.image(request, pixelSize: Self.thumbnailPixelSize, scale: scale),
-                      // The item's source can change while its preview decodes; a stale decode must
-                      // not paint over the newer one.
-                      library.visibleItems.first(where: { $0.id == item.id })?.thumbnail == request
-                else { return }
-                stage.landThumbnail(image, for: item.id)
+        for index in missing where !grid.contains(index) {
+            if let request = visible[index].thumbnail {
+                land(request, pixelSize: Self.thumbnailPixelSize, on: visible[index].id)
+            }
+        }
+        // A card bound for the grid wears its tile's own decode, which is the image that tile mounts with.
+        for index in grid {
+            guard let tile = gridThumbnail(for: visible[index]) else { continue }
+            if let image = thumbnails.cached(tile.request, pixelSize: tile.pixelSize, scale: tile.scale) {
+                if stage.shelfItems[index].thumbnail !== image {
+                    stage.landThumbnail(image, for: visible[index].id)
+                }
+            } else {
+                land(tile.request, pixelSize: tile.pixelSize, on: visible[index].id)
             }
         }
     }
@@ -1465,6 +1482,20 @@ struct HomePage: View {
     }
 }
 
+/// The grid's page colour under the cards, filling in over the flight's last stretch so the grid takes over on it.
+private struct LibraryPageUnderlay: View {
+    /// Read in this `body`: read in `HomePage.body`, progress would re-run the whole page every frame.
+    let stage: EditDeskStageModel
+
+    var body: some View {
+        DesignTokens.EditDesk.Colors.background
+            .padding(.top, StageGeometry.gridTop)
+            .opacity(HomeHints.ramp(stage.progress, from: 1.6, to: 2))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 /// Rides the filter row on the shelf. `progress` is read here rather than in `HomePage.body` so a
 /// frame of the gesture invalidates this layer alone, and the ride runs on `.offset`/`.opacity`
 /// because a per-frame `.padding` would re-run the page's layout.
@@ -1568,16 +1599,19 @@ struct LibraryGridTile: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                DesignTokens.Colors.surfaceRaised
-                Image(systemName: item.kind == .web ? "globe" : item.kind == .scene ? "cube.transparent" : item.kind == .aerial ? "sparkles" : "play.rectangle")
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            // An overlay, not a ZStack sibling: `scaledToFill` reports the picture's own proportions, which would size the tile.
+            DesignTokens.Colors.surfaceRaised
+                .overlay {
+                    if let image {
+                        Image(decorative: image, scale: 1)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: item.kind == .web ? "globe" : item.kind == .scene ? "cube.transparent" : item.kind == .aerial ? "sparkles" : "play.rectangle")
+                            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
             if item.statusBadge != nil {
                 LibraryTileUnavailableVeil()
             }

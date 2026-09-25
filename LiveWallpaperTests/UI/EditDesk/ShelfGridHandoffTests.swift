@@ -42,9 +42,14 @@ private struct HandoffHost {
     let host: NSView
     let manager: ScreenManager
     let router: EditDeskRouter
+    let library: SavedLibraryModel
     let suiteName: String?
 
-    init(size: CGSize, count: Int = 60, onboarding: Bool = false, target: Bool = false) throws {
+    /// `onLibrary` false opens on the overview instead; `backdrop` paints behind the page.
+    init(
+        size: CGSize, count: Int = 60, onboarding: Bool = false, target: Bool = false, onLibrary: Bool = true,
+        backdrop: NSColor? = nil
+    ) throws {
         let screen = Screen(nsScreen: HandoffScreen())
         manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
@@ -65,13 +70,17 @@ private struct HandoffHost {
         }
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { rows }
-        router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router = EditDeskRouter(
+            initialNavigation: onLibrary ? .bookmarks : nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
+        )
         if target {
             router.libraryTarget = screen.id
         }
-        var root = AnyView(
-            HomePage(router: router, toasts: EditDeskToastCenter(), library: SavedLibraryModel(inputs: inputs)).environment(manager)
-        )
+        library = SavedLibraryModel(inputs: inputs)
+        var root = AnyView(HomePage(router: router, toasts: EditDeskToastCenter(), library: library).environment(manager))
+        if let backdrop {
+            root = AnyView(root.background(Color(nsColor: backdrop).ignoresSafeArea()))
+        }
         if onboarding {
             let name = "handoff.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: name))
@@ -118,6 +127,24 @@ private struct HandoffHost {
 
     var stage: EditDeskStageView? {
         Self.views(host).lazy.compactMap { $0 as? EditDeskStageView }.first
+    }
+
+    /// Every image the page's layers draw, with its pixel size, the stage's own left out. SwiftUI hands an `Image`'s
+    /// `CGImage` to a layer as its contents, the very object, so a picture on screen can be matched by identity.
+    func pictures(excluding stage: EditDeskStageView) -> [ObjectIdentifier: CGSize] {
+        host.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        var found: [ObjectIdentifier: CGSize] = [:]
+        func walk(_ layer: CALayer) {
+            guard layer !== stage.layer else { return }
+            if let contents = layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID {
+                let image = unsafeDowncast(contents as AnyObject, to: CGImage.self)
+                found[ObjectIdentifier(image)] = CGSize(width: image.width, height: image.height)
+            }
+            layer.sublayers?.forEach(walk)
+        }
+        host.layer.map(walk)
+        return found
     }
 
     /// The library grid's scroll view: the only one as wide as the window.
@@ -277,6 +304,39 @@ private func scrollEvent(y: Int32, phase: CGScrollPhase) throws -> NSEvent {
     let event = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: y, wheel2: 0, wheel3: 0))
     event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
     return try #require(NSEvent(cgEvent: event))
+}
+
+private func sample(_ image: ProbeImage, at point: CGPoint) -> ProbeColor {
+    image.rgb(px: Int((point.x * image.scale).rounded(.down)), Int((point.y * image.scale).rounded(.down)))
+}
+
+/// How much of `layer` lies over `backdrop` in `sample`: 0 is the backdrop alone, 1 the layer alone.
+private func coverage(_ sample: ProbeColor, layer: ProbeColor, backdrop: ProbeColor) -> CGFloat {
+    let full = [layer.r - backdrop.r, layer.g - backdrop.g, layer.b - backdrop.b].map { CGFloat($0) }
+    let seen = [sample.r - backdrop.r, sample.g - backdrop.g, sample.b - backdrop.b].map { CGFloat($0) }
+    let norm = full.reduce(0) { $0 + $1 * $1 }
+    return norm > 0 ? zip(full, seen).reduce(0) { $0 + $1.0 * $1.1 } / norm : 0
+}
+
+/// While `holding`, a cover decode waits instead of returning, so a tile shows only what the cache already has.
+@MainActor
+private final class DecodeGate {
+    var holding = false
+
+    func pass() async {
+        while holding {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+}
+
+private func coverItem(_ index: Int) -> LiveWallpaper.LibraryItem {
+    let bookmark = WallpaperBookmark(label: "", content: .video(bookmarkData: Data([1])), coverFileName: "cover-\(index).png")
+    return LiveWallpaper.LibraryItem(
+        id: "bookmark:\(bookmark.id)", title: "Tile \(index)", kind: .video, source: .bookmark(bookmark),
+        isSteam: false, createdAt: bookmark.createdAt, lastUsedAt: nil, onDisplays: [],
+        thumbnail: .bookmark(bookmark), metadata: nil, isVariant: false, parentID: nil, isSupported: true
+    )
 }
 
 /// The shelf hands its cards to the library grid and takes them back: where the stage lands them
@@ -496,6 +556,208 @@ struct ShelfGridHandoffTests {
         #expect(model.progress == 1 && model.snappedIndex == 1, Comment(rawValue: "the second swipe stopped at \(model.progress)"))
         await host.settle(seconds: 0.3)
         #expect(host.grid == nil, "the grid stayed mounted on the shelf")
+    }
+
+    /// The grid takes each card over with the very picture the card is drawing, decoded at the tile's own size, so
+    /// nothing is swapped in once the tiles show. Counted over the grid's first screen.
+    @Test("Each tile the grid mounts shows the picture its card landed with, at the tile's own size", .timeLimit(.minutes(3)))
+    func handoffKeepsTheCardsPicture() async throws {
+        // The crate keeps the most shelf-sized pictures cached beside the grid's, so it presses the cache hardest.
+        for (style, size) in [ShelfStyle.facingIn, .crate].flatMap({ style in Self.sizes.map { (style, $0) } }) {
+            let label = "\(Int(size.width))×\(Int(size.height)) \(style)"
+            let host = try HandoffHost(size: size, onLibrary: false)
+            defer { host.close() }
+            await host.settle(seconds: 2) { host.stage != nil }
+            // Past the page's `onAppear`, which sets the style from the settings.
+            await host.settle(seconds: 0.3)
+            let stage = try #require(host.stage)
+            let model = stage.model
+            model.shelfStyle = style
+            model.setProgress(1, animated: false)
+            // The shelf has been open a while, so its own pictures are in.
+            await host.settle(seconds: 3) {
+                !model.visibleShelfRange.isEmpty && model.visibleShelfRange.allSatisfy { model.shelfItems[$0].thumbnail != nil }
+            }
+            await host.settle(seconds: 0.3)
+            host.router.select(.library)
+            await host.settle(seconds: 1) { stage.debugStaggerToGrid }
+            try #require(stage.debugStaggerToGrid, Comment(rawValue: "\(label): the nav pill never started the flight"))
+            // A frame's wall time per step, so the decodes race the flight as they would on screen.
+            var frames = 0
+            while model.snappedIndex != 2, frames < 240 {
+                stage.advance(dt: 1.0 / 60)
+                try await Task.sleep(for: .milliseconds(16))
+                frames += 1
+            }
+            try #require(model.snappedIndex == 2, Comment(rawValue: "\(label): never handed over"))
+            // What each card of the grid's first screen draws on the frame the grid takes over.
+            let cards = model.visibleGridRange.map { index -> (index: Int, image: CGImage?) in
+                let image = model.shelfItems[index].thumbnail
+                let drawn = stage.cardLayers[model.shelfItems[index].id]?.thumbnail.contents as AnyObject?
+                return (index, drawn === image ? image : nil)
+            }
+            let request = try #require(host.library.visibleItems.first?.thumbnail)
+            let tilePixels = LibraryGridTile.Thumbnail(
+                request, tileWidth: StageGeometry.gridCellSize(windowWidth: size.width, size: model.gridTileSize).width,
+                scale: NSScreen.main?.backingScaleFactor ?? 2
+            ).pixelSize
+            await host.settle(seconds: 1) { host.grid != nil }
+            try #require(host.grid != nil, Comment(rawValue: "\(label): the grid never mounted"))
+            let mounted = host.pictures(excluding: stage)
+            // By now every tile has run its own decode: a picture it had to wait for has replaced the card's.
+            await host.settle(seconds: 0.5)
+            let settled = host.pictures(excluding: stage)
+            let tileSized = settled.values.filter { $0 == tilePixels }.count
+            try #require(
+                tileSized >= cards.count,
+                Comment(rawValue: "\(label): control: the page's layers show \(tileSized) tile-sized pictures for \(cards.count) tiles")
+            )
+            var same = 0
+            var other: [String] = []
+            for card in cards {
+                if let image = card.image, CGFloat(image.width) == tilePixels.width,
+                   mounted[ObjectIdentifier(image)] != nil, settled[ObjectIdentifier(image)] != nil {
+                    same += 1
+                } else {
+                    let drawn = card.image.map { "\($0.width)×\($0.height)" } ?? "none"
+                    let shown = card.image.map { mounted[ObjectIdentifier($0)] != nil ? "shown" : "not shown" } ?? ""
+                    other.append("\(card.index): card \(drawn) \(shown)")
+                }
+            }
+            func sizes(_ pictures: [ObjectIdentifier: CGSize]) -> [String: Int] {
+                Dictionary(grouping: pictures.values) { "\(Int($0.width))×\(Int($0.height))" }.mapValues(\.count)
+            }
+            print("HANDOFF-SAME-PICTURE \(label): \(same)/\(cards.count) after \(frames) frames; mounted \(sizes(mounted)), settled \(sizes(settled)); \(other)")
+            #expect(
+                other.isEmpty,
+                Comment(rawValue: "\(label): \(other.count) of \(cards.count) tiles do not show the picture their card landed with: \(other)")
+            )
+        }
+    }
+
+    /// A tile showing the shelf's 400×224 copy while its own size decodes keeps its column's frame: the copy's
+    /// proportions, 400:224 rather than 16:9, must not size it.
+    @Test("A tile showing the shelf's copy keeps the grid's own frame", .timeLimit(.minutes(1)))
+    func shelfCopyKeepsTheTileFrame() async throws {
+        let blue = ProbeRenderer.solid(ProbeRenderer.thumbnailBlue, size: CGSize(width: 1600, height: 900))
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        for size in Self.sizes {
+            let label = "\(Int(size.width))×\(Int(size.height))"
+            let gate = DecodeGate()
+            var sources = ShelfThumbnailCache.Sources()
+            sources.cover = { _ in
+                await gate.pass()
+                return blue
+            }
+            let cache = ShelfThumbnailCache(sources: sources)
+            let items = (0 ..< 12).map(coverItem)
+            // The shelf's copies are in; every tile's own decode then waits, so the tiles show nothing but those copies.
+            for request in items.compactMap(\.thumbnail) {
+                _ = await cache.image(request, pixelSize: CGSize(width: 400, height: 224), scale: scale)
+            }
+            gate.holding = true
+            defer { gate.holding = false }
+            let cell = StageGeometry.gridCellSize(windowWidth: size.width)
+            let grid = ScrollView {
+                LibraryGalleryGrid(size: .small, aspect: .wide, initialWidth: size.width - 2 * DesignTokens.LibraryGrid.horizontalPadding) {
+                    ForEach(items) { item in
+                        LibraryGridTile(
+                            item: item, thumbnail: item.thumbnail.map { LibraryGridTile.Thumbnail($0, tileWidth: cell.width, scale: scale) },
+                            thumbnails: cache, badges: LibraryCardBadges()
+                        )
+                    }
+                }
+                .libraryGridPadding()
+            }
+            .background(DesignTokens.EditDesk.Colors.background)
+            let hosting = NSHostingView(rootView: grid.frame(width: size.width, height: size.height))
+            hosting.frame = CGRect(origin: .zero, size: size)
+            let window = HandoffWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.isReleasedWhenClosed = false
+            window.contentView = hosting
+            window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+            window.orderBack(nil)
+            defer {
+                window.orderOut(nil)
+                window.contentView = nil
+            }
+            let deadline = Date().addingTimeInterval(0.5)
+            while Date() < deadline {
+                hosting.layoutSubtreeIfNeeded()
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            let bitmap = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            let image = try ProbeImage(cgImage: #require(bitmap.cgImage), viewWidth: size.width)
+            let columns = StageGeometry.gridColumns(windowWidth: size.width)
+            let found = TileFinder.tiles(in: image, scroll: CGRect(origin: .zero, size: size), columnWidth: cell.width)
+                .filter { !$0.clipped }
+            try #require(found.count >= columns, Comment(rawValue: "\(label): found \(found.count) whole tiles"))
+            var worst: (offset: CGFloat, index: Int, drawn: CGRect, frame: CGRect)?
+            for tile in found {
+                let index = tile.row * columns + tile.column
+                let frame = StageGeometry.gridFrame(index: index, windowWidth: size.width).offsetBy(dx: 0, dy: -StageGeometry.gridTop)
+                let offset = max(
+                    edgeOffset(tile.rect, frame), abs(tile.rect.width - frame.width), abs(tile.rect.height - frame.height)
+                )
+                if offset > (worst?.offset ?? -1) {
+                    worst = (offset, index, tile.rect, frame)
+                }
+            }
+            let measured = try #require(worst)
+            #expect(
+                measured.offset <= 0.5,
+                Comment(rawValue: "\(label): tile \(measured.index) draws \(describe(measured.drawn)) on the shelf's copy against the grid's \(describe(measured.frame)), \(String(format: "%.2f", measured.offset))pt off")
+            )
+        }
+    }
+
+    /// Under the cards the library's own page colour fills in over the flight's last stretch: none of it at p = 1.6,
+    /// all of it by the handoff, never backing off in between, from the grid's top to the window's bottom.
+    @Test("The library's page colour fills in under the cards before the grid takes over", .timeLimit(.minutes(1)))
+    func pageColourFillsInUnderTheCards() async throws {
+        let size = Self.designSize
+        let host = try HandoffHost(size: size, backdrop: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let stage = try #require(host.stage)
+        let scroll = try #require(host.grid)
+        // The grid's own background, in its left margin where no tile sits.
+        let page = try sample(host.renderWithoutStage(), at: CGPoint(x: 8, y: host.gridFrame(scroll).minY + 7))
+        // Hidden as a return swipe hides it, so what lies under the cards shows.
+        stage.model.report(leavingLibrary: true)
+        var renders: [(progress: Double, image: ProbeImage)] = []
+        for progress in [1.5, 1.6, 1.7, 1.8, 1.9, 1.95, 2] {
+            stage.model.report(progress: progress)
+            await host.settle(seconds: 0.15)
+            let image = try host.renderWithoutStage()
+            renders.append((progress, image))
+        }
+        let centre = CGPoint(x: size.width / 2, y: 330)
+        let backdrop = sample(renders[0].image, at: centre)
+        try #require(backdrop.isRed, Comment(rawValue: "control: the backdrop at p = 1.5 reads \(backdrop)"))
+        let alphas = renders.map { (progress: $0.progress, alpha: coverage(sample($0.image, at: centre), layer: page, backdrop: backdrop)) }
+        let described = alphas.map { String(format: "%.2f:%.2f", $0.progress, $0.alpha) }.joined(separator: " ")
+        print("UNDERLAY progress:alpha \(described)")
+        let at = Dictionary(uniqueKeysWithValues: alphas.map { ($0.progress, $0.alpha) })
+        #expect((at[1.6] ?? 1) <= 0.02, Comment(rawValue: "the page colour already shows at p = 1.6: \(described)"))
+        #expect((at[2] ?? 0) >= 0.98, Comment(rawValue: "the page colour is not all there at p = 2: \(described)"))
+        #expect((at[1.8] ?? 0) > 0.2 && (at[1.8] ?? 1) < 0.8, Comment(rawValue: "the page colour does not fill in across the stretch: \(described)"))
+        for (earlier, later) in zip(alphas, alphas.dropFirst()) {
+            #expect(
+                later.alpha >= earlier.alpha - 0.02,
+                Comment(rawValue: "the page colour backs off from p = \(earlier.progress) to \(later.progress): \(described)")
+            )
+        }
+        let landed = renders[renders.count - 1].image
+        for point in [CGPoint(x: 12, y: StageGeometry.gridTop + 1), CGPoint(x: 12, y: size.height - 2)] {
+            let alpha = coverage(sample(landed, at: point), layer: page, backdrop: backdrop)
+            #expect(alpha >= 0.98, Comment(rawValue: "at p = 2 the page colour covers only \(alpha) of \(point)"))
+        }
+        let above = CGPoint(x: 12, y: StageGeometry.gridTop - 2)
+        let spill = coverage(sample(landed, at: above), layer: page, backdrop: backdrop)
+        #expect(spill <= 0.02, Comment(rawValue: "the page colour reaches above the grid's top, \(spill) at \(above)"))
     }
 }
 #endif

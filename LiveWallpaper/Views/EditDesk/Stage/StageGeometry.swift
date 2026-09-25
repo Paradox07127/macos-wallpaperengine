@@ -749,10 +749,12 @@ enum StageGeometry {
         )
         let mix = CGFloat(t2)
         if revealedInPlace, mix > 0 {
+            // Flying cards bottom out at 0, or on a centred shelf at its window's far end, half a slot past `(capacity − 1) / 2`.
+            let lowestFlying = min(0, centredOrder(distance: CGFloat(max(capacity - 1, 0) / 2) + 0.5))
             return CardPlacement(
                 frame: grid, rotationYDegrees: 0, opacity: smoothstep(revealFade, mix),
                 scale: revealScale + (1 - revealScale) * smoothstep(revealFade.lowerBound ... 1, mix),
-                depthOrder: CGFloat(index) - 1000, anchorX: 0.5, pose: 0
+                depthOrder: lowestFlying + CGFloat(index - count) - 1, anchorX: 0.5, pose: 0
             )
         }
         let pose = flightPose(mix)
@@ -778,7 +780,7 @@ enum StageGeometry {
         let dim = min(m.maxDim, m.dimStep * (style.isCentred ? distance : alongRow))
         // Dominoes: each card leans away to the right and the next one lies on top of it, so the
         // part left showing is its own near edge. The fan overlaps the same way.
-        let order = style.isCentred && style != .fan ? 100 - distance * 10 : CGFloat(index) * 10
+        let order = style.isCentred && style != .fan ? centredOrder(distance: distance) : CGFloat(index) * 10
         let parked = style.isCentred
             ? centredOpacity(style: style, index: index, focus: focus, windowSize: windowSize, capacity: capacity) : 1
         let reveal: CGFloat = p < 0.02 ? 0 : min(1, CGFloat(t1) * 1.2)
@@ -796,6 +798,10 @@ enum StageGeometry {
             anchorX: isFacingIn ? (signed < 0 ? 0 : 1) : m.anchorX,
             pose: pose
         )
+    }
+
+    private static func centredOrder(distance: CGFloat) -> CGFloat {
+        100 - distance * 10
     }
 
     /// 1 on the shelf, easing to 0 by `flightFlatAt` of the flight to the grid.
@@ -834,7 +840,6 @@ enum StageGeometry {
         } else {
             placement.rotationYDegrees += m.hoverTiltDegrees * leaned
         }
-        placement.scale *= 1 + 0.04 * hover * gridMix
         return placement
     }
 
