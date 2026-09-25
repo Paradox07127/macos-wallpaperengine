@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Tiles pack from the leading edge in fixed-width columns; whatever width is left over
-/// stays empty on the trailing side instead of re-centring or stretching the tiles.
+/// Tiles pack from the leading edge and are never re-centred. `.square` ladder columns keep their width and
+/// leave the slack on the trailing side; `.wide` and a pinned `columnWidth` share the row instead.
 public struct LibraryGalleryGrid<Content: View>: View {
     private let size: LibraryTileSize
     private let aspect: DesignTokens.LibraryGrid.Aspect

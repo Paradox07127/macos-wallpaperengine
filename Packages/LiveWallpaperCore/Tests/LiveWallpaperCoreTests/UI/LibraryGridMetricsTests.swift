@@ -52,23 +52,58 @@ struct LibraryGridMetricsTests {
         }
     }
 
-    @Test("The Edit Desk Workshop preset gives six columns at 1280 and four at 1040")
-    func workshopPresetPacksSixColumns() {
+    @Test("The Edit Desk Workshop preset shares the row: five columns at 1040, six at 1280, eight at 1728")
+    func workshopPresetSharesTheRow() {
         let preset = DesignTokens.LibraryGrid.workshopBrowseColumnWidth
-        #expect(preset == 194)
+        let spacing = DesignTokens.LibraryGrid.spacing
+        #expect(preset == 186)
         let inset = 2 * DesignTokens.Settings.formHorizontalMargin
-        for (window, expected) in [(CGFloat(1280), 6), (1040, 4)] {
-            let columns = DesignTokens.LibraryGrid.columns(
-                for: .medium, aspect: .square, fitting: window - inset, columnWidth: preset
-            )
-            #expect(columns.count == expected, Comment(rawValue: "\(window) wide packed \(columns.count) columns"))
-            for item in columns {
-                guard case let .fixed(width) = item.size else {
-                    Issue.record("the preset did not produce fixed columns")
-                    continue
+        // An always-visible scroller takes its width out of the row.
+        let scroller = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+        for (window, expected) in [(CGFloat(1040), 5), (1280, 6), (1728, 8)] {
+            for available in [window - inset, window - inset - scroller] {
+                // The page ignores the tile-size preference.
+                for size in Self.steps {
+                    let columns = DesignTokens.LibraryGrid.columns(
+                        for: size, aspect: .square, fitting: available, columnWidth: preset
+                    )
+                    #expect(columns.count == expected, Comment(rawValue: "\(available) wide packed \(columns.count) columns"))
+                    let widths = columns.compactMap { item -> CGFloat? in
+                        guard case let .fixed(width) = item.size else { return nil }
+                        return width
+                    }
+                    #expect(widths.count == columns.count, "the preset did not produce fixed columns")
+                    #expect(widths.allSatisfy { $0 >= preset && $0 == widths.first })
+                    let packed = widths.reduce(0, +) + spacing * CGFloat(columns.count - 1)
+                    #expect(abs(packed - available) < 0.01, Comment(rawValue: "\(available) wide left \(available - packed) at the trailing edge"))
+                    #expect(columns.allSatisfy { $0.spacing == spacing })
                 }
-                #expect(width == preset)
-                #expect(item.spacing == DesignTokens.LibraryGrid.spacing)
+            }
+        }
+    }
+
+    @Test("The old window's square ladder keeps fixed columns")
+    func squareLadderKeepsFixedColumns() {
+        // The old window at 1160 / 1280 / 1728 less its 220pt sidebar; Browse insets its grid 18 a side, Installed 24.
+        let expected: [(page: CGFloat, counts: [LibraryTileSize: Int])] = [
+            (940, [.small: 5, .medium: 3, .large: 2]),
+            (1060, [.small: 6, .medium: 4, .large: 3]),
+            (1508, [.small: 8, .medium: 6, .large: 4]),
+        ]
+        for (page, counts) in expected {
+            for inset in [DesignTokens.Settings.formHorizontalMargin, DesignTokens.LibraryGrid.horizontalPadding] {
+                for (size, count) in counts {
+                    let column = DesignTokens.LibraryGrid.columnWidth(for: size, aspect: .square)
+                    let columns = DesignTokens.LibraryGrid.columns(for: size, aspect: .square, fitting: page - 2 * inset)
+                    #expect(columns.count == count, Comment(rawValue: "\(size) at \(page) less \(inset) a side: \(columns.count) columns"))
+                    for item in columns {
+                        guard case let .fixed(width) = item.size else {
+                            Issue.record("\(size) is not a fixed column")
+                            continue
+                        }
+                        #expect(width == column, Comment(rawValue: "\(size) at \(page): \(width) instead of \(column)"))
+                    }
+                }
             }
         }
     }
