@@ -163,6 +163,7 @@ struct EditDeskWindowHostTests {
         #expect(hostType.contains(editDeskEnabled ? "LiveWallpaper.EditDeskRoot" : "LiveWallpaper.ContentView"))
         #expect(!hostType.contains(editDeskEnabled ? "LiveWallpaper.ContentView" : "LiveWallpaper.EditDeskRoot"))
         #expect(window.delegate === delegate)
+        #expect((AppDelegate().windowWillReturnUndoManager(window) is EditDeskMenuUndoManager) == editDeskEnabled)
         #expect(window.title == L10n.Window.settingsTitle)
         #expect(window.accessibilityIdentifier() == "LiveWallpaperSettingsWindow")
         #expect(window.sharingType == .readOnly)
