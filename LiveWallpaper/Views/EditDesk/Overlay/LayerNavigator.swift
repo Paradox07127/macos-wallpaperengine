@@ -1,18 +1,14 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Top section of the overlay column: every object on this display, board order first.
+/// Rows of the overlay workspace's floating Layers panel: every object on this display, board order first.
 struct LayerNavigator: View {
     let session: OverlayEditorSession
     let rows: [OverlayLayerRow]
     let height: CGFloat
-    var showsHeader = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showsHeader {
-                header
-            }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { row in
@@ -24,15 +20,6 @@ struct LayerNavigator: View {
         }
         .frame(height: height, alignment: .top)
         .clipped()
-    }
-
-    private var header: some View {
-        Text(verbatim: "\(String(localized: "Layers", bundle: .appLanguage)) · \(OverlayLayerList.layerCount(rows))")
-            .font(DesignTokens.EditDesk.Typography.metaMono)
-            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-            .lineLimit(1)
-            .frame(height: OverlayColumnLayout.headerHeight, alignment: .leading)
-            .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
     }
 }
 

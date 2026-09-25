@@ -116,19 +116,6 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
             defaults.set(preference.rawValue, forKey: storageKey)
         }
     }
-
-    public static func localizedString(
-        _ key: String,
-        defaultValue: String? = nil,
-        tableName: String? = nil,
-        bundle: Bundle = .main
-    ) -> String {
-        current.localizationBundle(in: bundle).localizedString(
-            forKey: key,
-            value: defaultValue ?? key,
-            table: tableName
-        )
-    }
 }
 
 public struct AppLanguageScope<Content: View>: View {

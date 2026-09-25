@@ -58,13 +58,13 @@ struct OverlayWorkspace: View {
                 onClose: { inspectorVisible = false },
                 main: { canvas }, inspector: { width in
                     ObjectInspector(session: session, screen: screen, screenManager: screenManager,
-                                    placements: interaction.placements, backdropAvailable: cover != nil,
+                                    placements: interaction.placements,
                                     height: editorHeight, width: width)
                         .overlay(alignment: .leading) { Divider() }
                 }
             )
             .frame(height: editorHeight)
-            AddOverlayDrawer(session: session, isExpanded: $addExpanded, height: drawerHeight, horizontal: true)
+            AddOverlayDrawer(session: session, isExpanded: $addExpanded, height: drawerHeight)
                 .overlay(alignment: .top) { Divider() }
         }
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: layersVisible)
@@ -147,7 +147,7 @@ struct OverlayWorkspace: View {
                 Divider().padding(.horizontal, 12)
                 LayerNavigator(session: session, rows: rows,
                                height: min(CGFloat(rows.count) * OverlayColumnLayout.rowHeight,
-                                           max(30, min(300, availableHeight - 76))), showsHeader: false)
+                                           max(30, min(300, availableHeight - 76))))
                     .padding(.vertical, 6)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }

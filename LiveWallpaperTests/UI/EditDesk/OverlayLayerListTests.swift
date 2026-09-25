@@ -54,10 +54,8 @@ struct OverlayLayerListTests {
         // A new display lists the group row and its three default widgets; the off singletons are filtered out.
         #expect(OverlayLayerList.layerCount(Array(rows.prefix(4))) == 3)
         #expect(OverlayLayerList.layerCount(rows) == 6)
-        for file in ["LayerNavigator", "OverlayWorkspace"] {
-            let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/\(file).swift")
-            #expect(source.contains("OverlayLayerList.layerCount(rows)"), "\(file) must count through the shared source")
-        }
+        let workspace = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
+        #expect(workspace.contains("OverlayLayerList.layerCount(rows)"), "OverlayWorkspace must count through the shared source")
     }
 
     @Test("The add grid holds fourteen items and never the decode-only nixie clock")
@@ -103,13 +101,13 @@ struct OverlayLayerListTests {
         let start = try #require(session.range(of: "var effectVisible: Bool {"))
         let end = try #require(session.range(of: "}", range: start.upperBound ..< session.endIndex))
         #expect(session[start.upperBound ..< end.lowerBound].contains("draft.selectedParticleEffect != .none"))
-        for file in ["OverlayInspectorColumn", "LayerNavigator", "ObjectInspector", "AddOverlayDrawer"] {
+        for file in ["OverlayWorkspace", "LayerNavigator", "ObjectInspector", "AddOverlayDrawer"] {
             let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/\(file).swift")
             #expect(!source.contains("overlay.enabled"), "\(file) must not read the monitor overlay switch")
             #expect(!source.contains("@State private var selection"), "\(file) must not own a second selection")
         }
-        let column = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayInspectorColumn.swift")
-        #expect(column.contains("effectVisible: session.effectVisible"))
+        let workspace = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
+        #expect(workspace.contains("effectVisible: session.effectVisible"))
         let navigator = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/LayerNavigator.swift")
         #expect(navigator.contains("session.setEffectVisible("))
     }
@@ -134,31 +132,5 @@ struct OverlayLayerListTests {
         let drawer = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/AddOverlayDrawer.swift")
         #expect(!drawer.contains("Task.sleep"))
         #expect(drawer.contains(".onChange(of: interaction.placements)"))
-    }
-
-    @Test("Column heights cap the layer list, fix the drawer and leave the inspector the rest")
-    func columnHeights() {
-        for total in [644.0, 764.0] as [CGFloat] {
-            for rowCount in [3, 6, 14] {
-                for expanded in [false, true] {
-                    let heights = OverlayColumnLayout.heights(
-                        total: total, rowCount: rowCount, drawerExpanded: expanded
-                    )
-                    #expect(heights.drawer == (expanded ? 190 : 30))
-                    #expect(heights.layers <= 30 + 6 * 30)
-                    #expect(heights.layers == 30 + CGFloat(min(rowCount, 6)) * 30)
-                    #expect(heights.inspector >= 200)
-                    #expect(heights.layers + heights.inspector + heights.drawer == total)
-                }
-            }
-        }
-    }
-
-    @Test("A short column shrinks the layer list before the inspector floor")
-    func columnHeightsUnderPressure() {
-        let heights = OverlayColumnLayout.heights(total: 360, rowCount: 6, drawerExpanded: true)
-        #expect(heights.drawer == 190)
-        #expect(heights.inspector == 170)
-        #expect(heights.layers == 0)
     }
 }

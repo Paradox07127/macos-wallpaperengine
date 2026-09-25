@@ -1,14 +1,12 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Middle section of the overlay column: the controls of whatever the navigator or the canvas
-/// has selected. Each object type reuses the section the old detail page already renders.
+/// Inspector pane of the overlay workspace: the selected object's controls, reusing the old detail page's sections.
 struct ObjectInspector: View {
     let session: OverlayEditorSession
     let screen: Screen?
     let screenManager: ScreenManager
     let placements: [MonitorWidgetPlacement]
-    let backdropAvailable: Bool
     let height: CGFloat
     var width: CGFloat = DetailGeometry.inspectorWidth
 
@@ -113,7 +111,7 @@ struct ObjectInspector: View {
         case .board:
             if let screen {
                 scrolling {
-                    MonitorOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                    MonitorOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: false,
                                           showsVisibilityControl: false, showsBackdropControl: false, editBoard: session.editBoard)
                 }
             }
@@ -138,14 +136,14 @@ struct ObjectInspector: View {
         case .music:
             if let screen {
                 scrolling {
-                    MusicOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                    MusicOverlaySection(screen: screen, screenManager: screenManager,
                                         showsVisibilityControl: false, showsBackdropControl: false)
                 }
             }
         case .clock:
             if let screen {
                 scrolling {
-                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: false,
                                         showsVisibilityControl: false, showsBackdropControl: false)
                 }
             }
@@ -174,7 +172,7 @@ struct ObjectInspector: View {
             screenManager: screenManager,
             kind: .weather,
             inspectorPanelWidth: width,
-            backdropAvailable: backdropAvailable,
+            backdropAvailable: false,
             showsBackdropControl: false,
             onParticleEffectChange: { effect in write { screenManager.updateParticleEffect(effect, for: screen) } },
             onParticleDensityChange: { density in write { screenManager.updateParticleDensity(density, for: screen) } },

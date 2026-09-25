@@ -223,11 +223,6 @@ extension PlaybackCoordinator {
             reportPreparationFailure(screen.id, .wallpaperPreparationFailed(
                 type: configuration.wallpaperType, timedOut: false
             ), configuration)
-        } catch {
-            Logger.error("Failed to apply configuration: \(error.localizedDescription)", category: .screenManager)
-            reportPreparationFailure(screen.id, .wallpaperPreparationFailed(
-                type: configuration.wallpaperType, timedOut: false
-            ), configuration)
         }
     }
 
