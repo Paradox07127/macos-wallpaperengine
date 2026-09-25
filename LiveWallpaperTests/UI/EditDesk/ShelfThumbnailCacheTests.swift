@@ -111,6 +111,38 @@ struct ShelfThumbnailCacheTests {
         }
     }
 
+    /// Two decodes for one card can finish out of order once its tile changes size mid-flight: the one for the tile it has
+    /// now lands, the one for the tile it had is dropped however late it comes.
+    @Test("A grid decode lands only while its tile still asks for those pixels, a shelf decode while the item keeps its source")
+    func staleDecodesDoNotLand() throws {
+        let item = gridItem(cover: "cover.png")
+        let request = try #require(item.thumbnail)
+        let width: CGFloat = 1280
+        let small = try #require(HomePage.gridThumbnail(for: item, stageWidth: width, size: .small, scale: 2))
+        let large = try #require(HomePage.gridThumbnail(for: item, stageWidth: width, size: .large, scale: 2))
+        try #require(small.pixelSize != large.pixelSize, "control: both tile sizes ask for the same pixels")
+        func isCurrent(_ tile: LibraryGridTile.Thumbnail?, scale: CGFloat = 2, now: LiveWallpaper.LibraryItem? = nil) -> Bool {
+            HomePage.decodeIsCurrent(request, tile: tile, item: now ?? item, stageWidth: width, tileSize: .large, scale: scale)
+        }
+
+        // The tile went from small to large: the large decode finishes first, the small one after it.
+        let model = EditDeskStageModel()
+        model.shelfItems = [StageCard(id: item.id, title: "", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true)]
+        model.report(visibleGridRange: 0 ..< 1)
+        let largeImage = try makeImage()
+        let smallImage = try makeImage()
+        for (tile, image) in [(large, largeImage), (small, smallImage)] where isCurrent(tile) {
+            model.landThumbnail(image, for: item.id)
+        }
+        #expect(model.shelfItems[0].thumbnail === largeImage, "the old tile size's decode painted over the new one")
+        #expect(!isCurrent(large, scale: 1), "a decode for another backing scale landed")
+        // A shelf decode answers to the item's source alone; neither kind outlives a new source.
+        #expect(isCurrent(nil))
+        var moved = item
+        moved.thumbnail = .bookmark(bookmark(cover: "other.png"))
+        #expect(!isCurrent(nil, now: moved) && !isCurrent(large, now: moved))
+    }
+
     @Test(
         "Grid tiles keep what they decoded: a cache that holds two of eight stops decoding and every tile still shows its own",
         .timeLimit(.minutes(1))

@@ -558,6 +558,75 @@ struct ShelfGridHandoffTests {
         #expect(host.grid == nil, "the grid stayed mounted on the shelf")
     }
 
+    /// A scrolled grid keeps a downward swipe for itself, so the cards leave it by Esc. Caught well past the handoff
+    /// point and pushed back, they land on the same grid at the same scroll: the grid stays mounted, hidden and out of
+    /// the pointer's way, for as long as the stage is leaving it.
+    @Test("Pushed back from deep in a return, a scrolled grid is the same one at the same scroll", .timeLimit(.minutes(1)))
+    func deepReturnPushedBackKeepsTheScrolledGrid() async throws {
+        let host = try HandoffHost(size: Self.designSize)
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let stage = try #require(host.stage)
+        let scroll = try #require(host.grid)
+        let model = stage.model
+        let scrolled: CGFloat = 500
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: scrolled))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        await host.settle(seconds: 0.5)
+        // Upper third of a tile on screen at that scroll, clear of its title gradient.
+        let tile = StageGeometry.gridFrame(index: 22, windowWidth: Self.designSize.width, scrollOffset: scrolled)
+        let probe = CGPoint(x: tile.midX, y: tile.minY + tile.height * 0.3)
+        let showsScrolled = try TileFinder.isBlue(host.renderWithoutStage(), at: probe)
+        try #require(showsScrolled, "control: the scrolled grid does not show tile 22 where its frame says")
+
+        /// One trackpad event a frame, so the release velocity is measured over real time.
+        func swipe(_ steps: [Int32], phase: CGScrollPhase = .changed) async throws {
+            for y in steps {
+                try host.route(scrollEvent(y: y, phase: phase), at: probe)
+                try await Task.sleep(for: .milliseconds(16))
+            }
+        }
+        /// Offscreen there is no display link, so the frames are stepped here until nothing moves.
+        func land() {
+            for _ in 0 ..< 300 {
+                stage.advance(dt: 1.0 / 60)
+                if !stage.debugNeedsDisplayLink {
+                    return
+                }
+            }
+        }
+
+        _ = model.escape()
+        var frames = 0
+        while model.progress > 1.5, frames < 120 {
+            stage.advance(dt: 1.0 / 60)
+            frames += 1
+        }
+        try #require(model.progress <= 1.5 && model.progress > 1, Comment(rawValue: "the flight home stopped at \(model.progress)"))
+        await host.settle(seconds: 0.1)
+        #expect(host.grid === scroll, Comment(rawValue: "the grid came down at p = \(model.progress) while the cards were still leaving it"))
+        let showsWhileLeaving = try TileFinder.isBlue(host.renderWithoutStage(), at: probe)
+        #expect(!showsWhileLeaving, "the grid shows while the cards leave it")
+        #expect(host.hitView(at: probe)?.isDescendant(of: scroll) != true, "the hidden grid takes the pointer")
+
+        // Caught and pushed back up: the swipe has to get past the hidden grid to the stage.
+        let caughtAt = model.progress
+        try await swipe([-8], phase: .began)
+        try await swipe(Array(repeating: -8, count: 40))
+        try await swipe([0], phase: .ended)
+        land()
+        #expect(model.progress == 2 && model.snappedIndex == 2, Comment(rawValue: "caught at \(caughtAt), the push back stopped at \(model.progress)"))
+        await host.settle(seconds: 0.3)
+        let back = try #require(host.grid, "the grid never came back after the push back")
+        #expect(back === scroll, "the grid was rebuilt by a return that never left the library")
+        #expect(
+            abs(back.contentView.bounds.minY - scrolled) <= 0.5,
+            Comment(rawValue: "the grid came back scrolled to \(back.contentView.bounds.minY), not \(scrolled)")
+        )
+        let showsAgain = try TileFinder.isBlue(host.renderWithoutStage(), at: probe)
+        #expect(showsAgain, "the grid never came back after the push back")
+    }
+
     /// The grid takes each card over with the very picture the card is drawing, decoded at the tile's own size, so
     /// nothing is swapped in once the tiles show. Counted over the grid's first screen.
     @Test("Each tile the grid mounts shows the picture its card landed with, at the tile's own size", .timeLimit(.minutes(3)))

@@ -2918,7 +2918,7 @@ struct EditDeskStageViewTests {
         #expect(Double(model.snappedIndex) == model.progress)
     }
 
-    @Test("The library grid mounts only once the stage has landed on it, and a return swipe takes it down at the handoff")
+    @Test("The library grid mounts only once the stage has landed on it, and stays while the stage carries the cards off it")
     func libraryGridWaitsForTheLanding() {
         // Mid-swipe past the handoff point the cards are still the stage's.
         #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 1, progress: 1.842))
@@ -2928,6 +2928,9 @@ struct EditDeskStageViewTests {
         #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 2))
         #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.9))
         #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.7))
+        // Leaving keeps the grid however deep the return goes, and never mounts it before a landing.
+        #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.2, leaving: true))
+        #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 1, progress: 1.2, leaving: true))
     }
 
     @Test("A quick apply goes to the display the library was opened for, else the main display, else the first")
