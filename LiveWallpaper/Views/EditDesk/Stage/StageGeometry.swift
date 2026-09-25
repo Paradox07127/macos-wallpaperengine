@@ -290,6 +290,12 @@ enum StageGeometry {
         return lerp(riding, chipRowTopFull, CGFloat(crossing))
     }
 
+    /// Top of the band a Finder file joins the library through. Fixed at the half-open filter row's
+    /// top, not the current one: that sits 8pt off the bottom at p = 0, where the band has to raise the shelf.
+    static func shelfDropTop(windowSize: CGSize) -> CGFloat {
+        chipRowTop(progress: 1, windowSize: windowSize)
+    }
+
     // MARK: Arrangement
 
     /// `topInset` is the band the overview onboarding card occupies (R-27); the arrangement gets

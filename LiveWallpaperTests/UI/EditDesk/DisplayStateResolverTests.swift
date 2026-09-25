@@ -135,6 +135,24 @@ struct DisplayStateResolverTests {
         #expect(view.debugShakenDisplays == [harness.screen.id])
     }
 
+    @Test("A Finder drop on the shelf reports the library import and leaves every display alone", .timeLimit(.minutes(1)))
+    func shelfDropImportsWithoutTouchingDisplays() async throws {
+        let harness = Harness(configured: true)
+        defer { harness.close() }
+        await harness.waitUntil { harness.state == .ok }
+        let view = try #require(harness.stageView)
+        let configuration = harness.manager.getConfiguration(for: harness.screen)
+        let revision = harness.manager.configurationStore.revision(for: harness.screen.id)
+        // Unsupported, so the import writes nothing to the shared bookmark store.
+        let summary = try #require(LibraryImporter.Outcome(failed: 1).summary)
+        view.model.emit(.filesDroppedOnShelf([URL(fileURLWithPath: "/private/tmp/loomscreen-drop/notes.txt")]))
+        await harness.waitUntil { harness.toasts.toasts.map(\.text) == [summary] }
+        #expect(harness.toasts.toasts.map(\.style) == [.failure])
+        #expect(view.debugShakenDisplays.isEmpty, "a drop meant for the library shook a display")
+        #expect(harness.manager.getConfiguration(for: harness.screen) == configuration)
+        #expect(harness.manager.configurationStore.revision(for: harness.screen.id) == revision)
+    }
+
     @Test("The display menu offers rename always, and clear and apply-to-all only when they can act")
     func displayMenuRows() async throws {
         let harness = Harness(configured: true)

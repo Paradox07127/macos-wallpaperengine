@@ -131,7 +131,7 @@ struct EditDeskChromeSourceTests {
         #expect(!body.contains("CGDisplayIsMain"), "a vanished target must not silently become the main display")
     }
 
-    @Test("The wallpaper library's two import entries only add to the library")
+    @Test("The wallpaper library's import entries, a drop on the shelf among them, only add to the library")
     func libraryImportEntriesOnlyAdd() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
         #expect(source.contains("onImport: promptLibraryImport"), "+ Import still applies the file to a display")
@@ -139,6 +139,18 @@ struct EditDeskChromeSourceTests {
         let body = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }").first)
         #expect(body.contains("promptLibraryImport()"), "Import More still applies the file to a display")
         #expect(!body.contains("promptImport("))
+        let panel = try #require(source.range(of: "private func promptLibraryImport()"))
+        let panelBody = try #require(String(source[panel.lowerBound...]).components(separatedBy: "\n    }").first)
+        #expect(panelBody.contains("importToLibrary(panel.urls)"), "the panel and the shelf import on two separate paths")
+        let drop = try #require(source.range(of: "case let .filesDroppedOnShelf(urls):"), "a drop on the shelf is ignored")
+        let branch = try #require(String(source[drop.upperBound...]).components(separatedBy: "\n            case ").first)
+        #expect(branch.contains("importToLibrary(urls)"), "a drop on the shelf never joins the library")
+        #expect(!branch.contains("applies.run"), "a drop on the shelf applies the files to a display")
+        let treeStart = try #require(source.range(of: "        ZStack(alignment: .top) {"))
+        let tree = try #require(String(source[treeStart.lowerBound...]).components(separatedBy: "\n        }").first)
+        let stage = try #require(tree.range(of: "EditDeskStageRepresentable(model: stage)"))
+        let highlight = try #require(tree.range(of: "ShelfDropHighlight(stage: stage)"), "the shelf band never lights for a drop")
+        #expect(stage.upperBound <= highlight.lowerBound, "declared under the stage, the band's light hides behind the cards")
     }
 
     @Test("Local and Workshop applies announce success with the same line")

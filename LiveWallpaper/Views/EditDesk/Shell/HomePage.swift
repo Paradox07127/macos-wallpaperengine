@@ -300,6 +300,7 @@ struct HomePage: View {
             EditDeskShelfScrim(stage: stage)
                 .zIndex(-1)
             EditDeskStageRepresentable(model: stage)
+            ShelfDropHighlight(stage: stage)
             HomeHints(stage: stage)
             hoverName
             libraryLayer
@@ -1173,6 +1174,8 @@ struct HomePage: View {
                 guard let screen = screenManager.screens.first(where: { $0.id == displayID }),
                       let intent = ApplyIntent.drop(urls) else { continue }
                 applies.run(for: displayID) { await apply(intent, to: screen, card: nil, shakesDisplay: true, cancellation: $0) }
+            case let .filesDroppedOnShelf(urls):
+                importToLibrary(urls)
             case let .cardTapped(cardID):
                 presentedItemID = cardID
             case let .cardApplyRequested(cardID):
@@ -1361,7 +1364,11 @@ struct HomePage: View {
         )
         guard panel.runModal() == .OK, let first = panel.urls.first else { return }
         SettingsManager.shared.saveLastUsedDirectory(first.deletingLastPathComponent())
-        let outcome = LibraryImporter(bookmarks: BookmarkStore.shared, sceneCapable: featureCatalog.isEnabled(.scene)).add(panel.urls)
+        importToLibrary(panel.urls)
+    }
+
+    private func importToLibrary(_ urls: [URL]) {
+        let outcome = LibraryImporter(bookmarks: BookmarkStore.shared, sceneCapable: featureCatalog.isEnabled(.scene)).add(urls)
         #if !LITE_BUILD
         if !outcome.projectFolders.isEmpty {
             WorkshopFolderImportCoordinator.shared.importProjects(from: outcome.projectFolders)

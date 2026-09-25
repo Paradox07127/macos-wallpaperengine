@@ -61,6 +61,38 @@ struct EditDeskShelfScrim: View {
     }
 }
 
+/// Lights the shelf band while a Finder file over it would only join the library, in the look a
+/// display takes for "drop to replace".
+struct ShelfDropHighlight: View {
+    /// Read per frame in `body`, as `EditDeskShelfScrim` does, so the band rides the rising shelf.
+    let stage: EditDeskStageModel
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge)
+        shape
+            .fill(DesignTokens.EditDesk.Colors.dropHighlight)
+            .overlay { shape.strokeBorder(DesignTokens.EditDesk.Colors.success, lineWidth: 2) }
+            .shadow(color: DesignTokens.EditDesk.Colors.dropHighlightGlow, radius: 30)
+            .overlay {
+                Text("Add to Library")
+                    .font(DesignTokens.EditDesk.Typography.dropLabel)
+                    .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                    .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+            }
+            .opacity(stage.shelfDropTargeted ? 1 : 0)
+            // Inside the placement below, so only the fade animates: the band follows the shelf frame by frame.
+            .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.18), value: stage.shelfDropTargeted)
+            .frame(height: StageGeometry.cardSize.height + 2 * DesignTokens.EditDesk.Spacing.s12)
+            .padding(.horizontal, DesignTokens.EditDesk.Spacing.gutter)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .offset(y: StageGeometry.shelfRowTop(progress: stage.progress, windowSize: stage.stageSize) - DesignTokens.EditDesk.Spacing.s12)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct BehindWindowBlur: NSViewRepresentable {
     func makeNSView(context _: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
