@@ -100,7 +100,7 @@ extension WallpaperFacts {
                 localized: "\(rating.totalVotes) ratings", bundle: .appLanguage, locale: AppLanguagePreference.current.locale,
                 comment: "Workshop detail rating count. Placeholder is the number of ratings."
             )
-            facts.append(WallpaperFact(kind: .rating, value: "\(score) · \(votes)"))
+            facts.append(WallpaperFact(kind: .rating, value: "\(score) · \(votes)", help: voteSplitText(rating)))
         }
         if let size = item.fileSizeBytes, size > 0 {
             facts.append(WallpaperFact(
@@ -156,6 +156,12 @@ extension WallpaperFacts {
             }
         }
         return chips
+    }
+
+    /// The up and down votes behind a score; a star rating carries none.
+    private static func voteSplitText(_ rating: WorkshopRating) -> String? {
+        guard case let .score(_, up, down) = rating else { return nil }
+        return String(localized: "\(up.formatted()) up, \(down.formatted()) down", bundle: .appLanguage)
     }
 
     /// Steam's resolution tags spell the size `3840 x 2160`; the modal writes it the way its own rows do.

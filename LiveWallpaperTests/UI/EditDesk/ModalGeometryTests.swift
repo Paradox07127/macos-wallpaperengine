@@ -25,6 +25,22 @@ struct ModalGeometryTests {
         #expect(ModalGeometry.previewSize == CGSize(width: 340, height: 255))
     }
 
+    @Test("With no display leading, the first three are plain buttons in ⌘ order and the fourth on overflow")
+    func applyButtonsWithoutALeadKeepTheirPlaces() {
+        func target(_ id: CGDirectDisplayID, leads: Bool = false) -> ModalDisplayTarget {
+            ModalDisplayTarget(id: id, name: "\(id)", shortcutIndex: Int(id), aspectRatio: 16.0 / 9, isPrimary: leads)
+        }
+        let plain = ModalGeometry.applyButtons(targets: (1 ... 5).map { target($0) })
+        #expect(plain.primary == nil)
+        #expect(plain.secondary.map(\.id) == [1, 2, 3], Comment(rawValue: "\(plain.secondary.map(\.id))"))
+        #expect(plain.overflow.map(\.id) == [4, 5])
+        // Control: one leading display keeps the library modal's one prominent and two plain buttons.
+        let led = ModalGeometry.applyButtons(targets: [target(1), target(2, leads: true), target(3), target(4)])
+        #expect(led.primary?.id == 2)
+        #expect(led.secondary.map(\.id) == [1, 3])
+        #expect(led.overflow.map(\.id) == [4])
+    }
+
     @Test("Only the library hangs the strip, from the one geometry constant; the Workshop modal has none")
     func onlyTheLibraryHangsTheStrip() throws {
         let library = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryModalHost.swift")

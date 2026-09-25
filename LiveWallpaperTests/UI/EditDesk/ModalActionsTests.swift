@@ -677,12 +677,14 @@ struct ModalActionsTests {
 
     private static let posted = Date(timeIntervalSince1970: 1_758_283_200)
 
-    private func steamItem(tags: [String], updated: Date? = nil) throws -> WorkshopQueryItem {
+    private func steamItem(
+        tags: [String], updated: Date? = nil, rating: WorkshopRating = .score(0.68, votesUp: 36, votesDown: 17)
+    ) throws -> WorkshopQueryItem {
         try WorkshopQueryItem(
             id: 42, rawTitle: "Rain", shortDescription: "", creatorID: "76561198000000000", creatorPersonaName: "kaze",
             previewImageURL: nil, fileSizeBytes: 95_500_000, timeUpdated: updated ?? Self.posted,
             subscriptionCount: 2900, viewCount: 1300, favoriteCount: 134,
-            rating: .score(0.68, votesUp: 36, votesDown: 17), timeCreated: Self.posted, tags: tags,
+            rating: rating, timeCreated: Self.posted, tags: tags,
             visibility: .public, isBanned: false,
             steamCommunityURL: #require(URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=42"))
         )
@@ -709,6 +711,19 @@ struct ModalActionsTests {
         // Control: an update on a later day gets its own row.
         let later = try WallpaperFacts.steam(steamItem(tags: tags, updated: Self.posted.addingTimeInterval(3 * 86400)), now: Self.posted, locale: locale)
         #expect(later.map(\.kind).last == .updated)
+    }
+
+    @Test("The rating row's tooltip splits the up and down votes; a star rating has no split to show")
+    func ratingRowCarriesTheVoteSplit() throws {
+        let locale = AppLanguagePreference.current.locale
+        let scored = try WallpaperFacts.steam(steamItem(tags: []), now: Self.posted, locale: locale)
+        let split = String(localized: "\(36.formatted()) up, \(17.formatted()) down", bundle: .appLanguage)
+        #expect(scored.first { $0.kind == .rating }?.help == split)
+        let starred = try WallpaperFacts.steam(
+            steamItem(tags: [], rating: .stars(4, totalVotes: 20)), now: Self.posted, locale: locale
+        )
+        let row = try #require(starred.first { $0.kind == .rating }, "control: a star rating still gets its row")
+        #expect(row.help == nil)
     }
 
     @Test("Steam fills the rows the library lacks; the library keeps its type, size, source and dates")
