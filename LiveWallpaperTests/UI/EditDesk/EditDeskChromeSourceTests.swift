@@ -330,7 +330,7 @@ struct EditDeskChromeSourceTests {
     @Test("The library grid cross-fades in on its own layer, at once under Reduce Motion")
     func libraryGridFadesOnItsOwnLayer() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(source.contains("private static let libraryFadeDuration: TimeInterval = 0.15"))
+        #expect(source.contains("private static let libraryFadeDuration: TimeInterval = 0.10"))
         let start = try #require(source.range(of: "private var libraryLayer: some View {"))
         let layer = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
         #expect(layer.contains(

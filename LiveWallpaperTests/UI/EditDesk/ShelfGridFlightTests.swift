@@ -69,10 +69,13 @@ struct ShelfGridFlightTests {
         return try #require(NSEvent(cgEvent: event))
     }
 
-    private func makeStage(size: CGSize, style: ShelfStyle, count: Int) -> (EditDeskStageView, EditDeskStageModel) {
+    private func makeStage(
+        size: CGSize, style: ShelfStyle, count: Int, capacity: Int = StageGeometry.shelfCapacity
+    ) -> (EditDeskStageView, EditDeskStageModel) {
         let model = EditDeskStageModel()
         model.reduceMotion = false
         model.shelfStyle = style
+        model.shelfRenderBudget = capacity
         model.displays = [
             StageDisplay(
                 id: 1, fingerprint: "external", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
@@ -223,6 +226,38 @@ struct ShelfGridFlightTests {
         }
     }
 
+    /// The tile under a still pointer takes over at its resting size, so the card hovered as it lands has to be
+    /// drawn at exactly that size.
+    @Test("A card hovered as it lands in the grid is drawn at its tile's size")
+    func hoveredCardLandsAtItsTileSize() throws {
+        for size in Self.sizes {
+            for style in Self.styles {
+                let (view, model) = makeStage(size: size, style: style, count: 60)
+                defer { view.detach() }
+                let label = "\(Int(size.width))×\(Int(size.height)) \(style)"
+                let tile = StageGeometry.gridFrame(index: 0, windowWidth: size.width, size: model.gridTileSize)
+                view.setPointerForTesting(CGPoint(x: tile.midX, y: tile.midY))
+                view.setProgress(2, animated: true, velocity: 0)
+                var worst: (offset: CGFloat, drawn: CGRect)?
+                for _ in 0 ..< 240 {
+                    view.advance(dt: Self.frameTime)
+                    guard model.snappedIndex == 2, let card = view.cardLayers[model.shelfItems[0].id] else { continue }
+                    let offset = edgeOffset(card.hitRect, tile)
+                    if offset > (worst?.offset ?? -1) {
+                        worst = (offset, card.hitRect)
+                    }
+                }
+                let hover = view.cardLayers[model.shelfItems[0].id]?.hover.value ?? 0
+                #expect(hover > 0.99, Comment(rawValue: "\(label): control: card 0 is only \(hover) hovered under the pointer"))
+                let measured = try #require(worst, Comment(rawValue: "\(label): never handed over"))
+                #expect(
+                    measured.offset <= 0.5,
+                    Comment(rawValue: "\(label): the hovered card is drawn at \(measured.drawn) on its \(tile) tile, \(String(format: "%.2f", measured.offset))pt off")
+                )
+            }
+        }
+    }
+
     // MARK: - Cards the shelf never showed
 
     /// A card the resting shelf did not draw has no place on it to fly from: it appears where its tile is,
@@ -258,6 +293,67 @@ struct ShelfGridFlightTests {
                 return card.opacity > 0
             }
             #expect(lingering.isEmpty, Comment(rawValue: "\(run.label): shelf cards \(lingering.sorted()) sit below the window still visible"))
+        }
+    }
+
+    /// Whatever the library's size, the shelf's card budget or how far down the grid the cards set off from, a card
+    /// revealed on its tile stays under every card in flight.
+    @Test("Cards revealed on their tiles stay under every card in flight")
+    func revealedCardsStayUnderFlyingOnes() {
+        let cases: [(label: String, size: CGSize, count: Int, capacity: Int, scrolledRows: Int?)] = [
+            ("1500 cards leaving the grid scrolled to row 300", CGSize(width: 1040, height: 700), 1500, StageGeometry.shelfCapacity, 300),
+            ("20 cards opening a 24-card shelf", CGSize(width: 1728, height: 1080), 20, 24, nil),
+        ]
+        for testCase in cases {
+            let (view, model) = makeStage(size: testCase.size, style: .facingIn, count: testCase.count, capacity: testCase.capacity)
+            defer { view.detach() }
+            if let rows = testCase.scrolledRows {
+                model.setProgress(2, animated: false)
+                let cell = StageGeometry.gridCellSize(windowWidth: testCase.size.width, size: model.gridTileSize)
+                model.gridScrollOffset = CGFloat(rows) * (cell.height + DesignTokens.LibraryGrid.spacing)
+                view.setProgress(1, animated: true)
+            } else {
+                view.setProgress(2, animated: true, velocity: 0)
+            }
+            // Judged as the stage judges it: on the resting shelf, where the row sits at 0.
+            let revealed = Set((0 ..< testCase.count).filter { index in
+                StageGeometry.cardPlacement(
+                    style: .facingIn, index: index, count: testCase.count, progress: 1, focus: 0,
+                    windowSize: testCase.size, capacity: testCase.capacity
+                ).opacity <= StageGeometry.unseenOpacity
+            })
+            let indices = Dictionary(uniqueKeysWithValues: model.shelfItems.enumerated().map { ($1.id, $0) })
+            var sawBoth = false
+            var worst: (gap: CGFloat, revealed: Int, flying: Int, frame: Int)?
+            for frame in 0 ..< 150 {
+                view.advance(dt: Self.frameTime)
+                var highestRevealed: (z: CGFloat, index: Int)?
+                var lowestFlying: (z: CGFloat, index: Int)?
+                for (id, tile) in view.cardLayers where !tile.layer.isHidden {
+                    guard let index = indices[id] else { continue }
+                    let z = tile.layer.zPosition
+                    if revealed.contains(index) {
+                        if z > (highestRevealed?.z ?? -.infinity) {
+                            highestRevealed = (z, index)
+                        }
+                    } else if z < (lowestFlying?.z ?? .infinity) {
+                        lowestFlying = (z, index)
+                    }
+                }
+                guard let highestRevealed, let lowestFlying else { continue }
+                sawBoth = true
+                let gap = lowestFlying.z - highestRevealed.z
+                if gap < (worst?.gap ?? .infinity) {
+                    worst = (gap, highestRevealed.index, lowestFlying.index, frame)
+                }
+            }
+            #expect(sawBoth, Comment(rawValue: "\(testCase.label): control: never had a revealed and a flying card on stage together"))
+            if let worst {
+                #expect(
+                    worst.gap > 0,
+                    Comment(rawValue: "\(testCase.label): revealed card \(worst.revealed) sits \(-worst.gap) above flying card \(worst.flying) in frame \(worst.frame)")
+                )
+            }
         }
     }
 
