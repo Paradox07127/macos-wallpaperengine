@@ -57,11 +57,11 @@ struct ClockOverlayTests {
 
     @Test func scheduleAlignsToWallClockAndStopsWhenSuspended() {
         let date = Date(timeIntervalSince1970: 100.2)
-        var running = ClockOverlaySchedule(suspended: false, blinking: true).entries(from: date, mode: .normal)
+        let running = ClockOverlaySchedule(suspended: false, blinking: true).entries(from: date, mode: .normal)
         #expect(running.next() == date)
         #expect(running.next() == Date(timeIntervalSince1970: 100.5))
         #expect(running.next() == Date(timeIntervalSince1970: 101))
-        var stopped = ClockOverlaySchedule(suspended: true, blinking: true).entries(from: date, mode: .normal)
+        let stopped = ClockOverlaySchedule(suspended: true, blinking: true).entries(from: date, mode: .normal)
         #expect(stopped.next() == date)
         #expect(stopped.next() == nil)
     }

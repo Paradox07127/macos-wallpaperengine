@@ -64,8 +64,8 @@ final class LibraryDragSession {
     /// `nonisolated(unsafe)`: mutated only from MainActor code, but `deinit` runs
     /// on an arbitrary queue and must still take the monitors down.
     private nonisolated(unsafe) let hooks: MonitorHooks
-    private nonisolated(unsafe) var localMonitor: Any?
-    private nonisolated(unsafe) var globalMonitor: Any?
+    @ObservationIgnored private nonisolated(unsafe) var localMonitor: Any?
+    @ObservationIgnored private nonisolated(unsafe) var globalMonitor: Any?
 
     init(hooks: MonitorHooks = .appKit) {
         self.hooks = hooks

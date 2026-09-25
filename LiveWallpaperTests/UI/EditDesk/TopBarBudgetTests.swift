@@ -175,6 +175,19 @@ struct TopBarBudgetTests {
         )
     }
 
+    /// The bar's first frame has not measured the pill yet; a capsule drawn there would vanish on the next.
+    @MainActor
+    @Test("Until the pill is measured the capsule is not drawn")
+    func unmeasuredPillDrawsNoCapsule() throws {
+        let asked = try Self.capsule(pages: 4, language: "zh-Hans")
+        let unmeasured = TopBarBudget.layout(windowWidth: 1040, pillWidth: 0, capsuleWidth: asked, statusWidth: Self.status)
+        #expect(!unmeasured.showsCapsule)
+        // Control: the same bar with its pill measured keeps the capsule.
+        let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: "zh-Hans")
+        let measured = TopBarBudget.layout(windowWidth: 1040, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
+        #expect(measured.showsCapsule)
+    }
+
     /// The width the budget is fed has to be the box the capsule actually draws.
     @Test("The asked-for capsule width is the drawn box in all five languages")
     func capsuleWidthMatchesItsBox() throws {

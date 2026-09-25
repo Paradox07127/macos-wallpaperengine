@@ -35,7 +35,8 @@ enum TopBarBudget {
         capsuleWidth: CGFloat, statusWidth: CGFloat
     ) -> Layout {
         let room = windowWidth / 2 - pillWidth / 2 - gutter
-        let capsule: CGFloat? = capsuleWidth > 0 ? capsuleWidth : nil
+        // pillWidth 0 is the bar's first, unmeasured frame: room there is a guess the next frame can take back.
+        let capsule: CGFloat? = capsuleWidth > 0 && pillWidth > 0 ? capsuleWidth : nil
         let status: CGFloat? = statusWidth > 0 ? statusWidth : nil
         var width = clusterWidth([capsule, status])
         var showsCapsule = capsule != nil

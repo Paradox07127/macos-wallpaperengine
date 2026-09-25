@@ -97,7 +97,7 @@ enum OverlayLayerList {
     }
 }
 
-enum OverlayColumnLayout {
+enum OverlayWorkspaceLayout {
     static let rowHeight: CGFloat = 30
     static let drawerCollapsedHeight: CGFloat = 30
 }

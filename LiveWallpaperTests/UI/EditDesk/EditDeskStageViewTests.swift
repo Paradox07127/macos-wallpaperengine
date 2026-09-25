@@ -3297,6 +3297,41 @@ struct EditDeskStageViewTests {
         #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == nil)
     }
 
+    @Test("VoiceOver offers each transport button the display can use, and runs it as a click would", .timeLimit(.minutes(1)))
+    func playbackAccessibilityActionsFollowCapability() async throws {
+        let model = makeModel()
+        model.displays[0].showsPlaylistControls = true
+        model.displays[0].canChangePlaylistEntry = true
+        model.displays[0].canTogglePlayback = true
+        model.displays[0].intendsToPlay = true
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        func actions() throws -> [NSAccessibilityCustomAction] {
+            let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
+            let display = try #require(children.first { $0.accessibilityLabel()?.hasPrefix("External") == true })
+            return display.accessibilityCustomActions() ?? []
+        }
+        let offered = try actions()
+        #expect(offered.map(\.name) == [
+            String(localized: "Previous Wallpaper", bundle: .appLanguage),
+            String(localized: "Pause", bundle: .appLanguage),
+            String(localized: "Next Wallpaper", bundle: .appLanguage),
+        ])
+        var events = model.events.makeAsyncIterator()
+        for (action, expected) in zip(offered, [StagePlaybackAction.previous, .toggle, .next]) {
+            try #require(action.handler?() == true)
+            #expect(await events.next() == .playbackTapped(1, expected))
+        }
+        // Control: all three buttons still drawn, but dimmed, so none is offered.
+        model.displays[0].canChangePlaylistEntry = false
+        model.displays[0].canTogglePlayback = false
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(try actions().isEmpty)
+    }
+
     @Test("The shell's state pill, transport capsule and main button round to at most half their size")
     func shellCapsulesRoundWithinTheirSize() throws {
         let model = makeModel()

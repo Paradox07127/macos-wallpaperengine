@@ -730,7 +730,7 @@ struct S6DetailFidelityTests {
 
 // MARK: - S7 overlay (static)
 
-@Suite("Fidelity S7 overlay column and canvas", .serialized)
+@Suite("Fidelity S7 overlay inspector and canvas", .serialized)
 @MainActor
 struct S7OverlayFidelityTests {
     /// R-1: the canvas aspect-fits the display's own ratio inside the fixed 16:9 hero box.

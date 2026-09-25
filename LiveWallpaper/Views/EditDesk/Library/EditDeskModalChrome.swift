@@ -11,8 +11,6 @@ struct EditDeskModalChrome<Panel: View>: View {
     let windowSize: CGSize
     /// Height the scrim leaves untouched so the traffic lights and window drag still work.
     var titlebarInset: CGFloat = DesignTokens.EditDesk.Spacing.topBar
-    /// Source image for the wash behind the panel fill; nil draws the fill alone.
-    var backdrop: CGImage?
     /// Leads the row the close button ends; empty leaves the close button alone on it.
     var title = ""
     /// Icon buttons between the title and the close button, in order.

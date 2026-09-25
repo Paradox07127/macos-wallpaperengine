@@ -6,10 +6,6 @@ import Testing
 /// Pins the detail modal's panel box, the ⌘n map, the bottom bar's button budget and its layout.
 @Suite("Library wallpaper modal")
 struct WallpaperModalTests {
-    private func near(_ actual: CGFloat, _ expected: CGFloat, _ tolerance: CGFloat = 0.01) -> Bool {
-        abs(actual - expected) <= tolerance
-    }
-
     private func target(_ index: Int, primary: Bool = false) -> ModalDisplayTarget {
         ModalDisplayTarget(
             id: CGDirectDisplayID(index), name: "Display \(index)", shortcutIndex: index,
@@ -90,14 +86,5 @@ struct WallpaperModalTests {
         if let back, let preview, let forward {
             #expect(back.lowerBound < preview.lowerBound && preview.lowerBound < forward.lowerBound, "← and → do not flank the preview")
         }
-    }
-
-    @Test("The backdrop blur is 8% of the panel width, so a 160px bitmap blurs by 12.7")
-    func backdropBlurScales() {
-        #expect(near(ModalBackdrop.blurRadius(forWidth: 880), 70))
-        #expect(
-            near(ModalBackdrop.blurRadius(forWidth: 160), 12.727, 0.001),
-            Comment(rawValue: "\(ModalBackdrop.blurRadius(forWidth: 160))")
-        )
     }
 }

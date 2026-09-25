@@ -50,7 +50,7 @@ private struct OverlayLayerRowView: View {
         }
         .padding(.leading, indent)
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
-        .frame(height: OverlayColumnLayout.rowHeight)
+        .frame(height: OverlayWorkspaceLayout.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.shelfCard, style: .continuous)
                 .fill(fill)

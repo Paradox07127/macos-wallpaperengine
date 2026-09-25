@@ -1758,13 +1758,31 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         return (displays: !handedOver && arrangementLayer.opacity > 0, cards: !handedOver)
     }
 
-    private func emptyScreenAction(
-        _ name: String, on id: StageDisplay.ID, _ action: EmptyScreenAction
-    ) -> NSAccessibilityCustomAction {
+    private func displayAction(_ name: String, emitting event: StageEvent) -> NSAccessibilityCustomAction {
         StageAccessibilityElement.customAction(name: name) { [weak self] in
             guard let self, !model.interactionBlocked, arrangementLayer.opacity > 0 else { return false }
-            model.emit(.emptyActionTapped(id, action))
+            model.emit(event)
             return true
+        }
+    }
+
+    private func displayActions(for display: StageDisplay) -> [NSAccessibilityCustomAction] {
+        let id = display.id
+        // VoiceOver-only: the stage draws no buttons in an empty display; the visible counterparts are in its detail page's empty state.
+        if display.state == .empty {
+            return [
+                displayAction(String(localized: "Choose File", bundle: .appLanguage), emitting: .emptyActionTapped(id, .chooseFile)),
+                displayAction(String(localized: "Paste URL", bundle: .appLanguage), emitting: .emptyActionTapped(id, .pasteURL)),
+            ]
+        }
+        return (displayLayers[id]?.accessiblePlaybackActions ?? []).map { action in
+            let name = switch action {
+            case .previous: String(localized: "Previous Wallpaper", bundle: .appLanguage)
+            case .toggle where display.intendsToPlay: String(localized: "Pause", bundle: .appLanguage)
+            case .toggle: String(localized: "Play", bundle: .appLanguage)
+            case .next: String(localized: "Next Wallpaper", bundle: .appLanguage)
+            }
+            return displayAction(name, emitting: .playbackTapped(id, action))
         }
     }
 
@@ -1795,11 +1813,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             element.setAccessibilityValue(display.accessibilityValue)
             element.setAccessibilityParent(self)
             element.displayID = id
-            // VoiceOver-only: the stage draws no buttons in an empty display; the visible counterparts are in its detail page's empty state.
-            element.setAccessibilityCustomActions(display.state == .empty ? [
-                emptyScreenAction(String(localized: "Choose File", bundle: .appLanguage), on: id, .chooseFile),
-                emptyScreenAction(String(localized: "Paste URL", bundle: .appLanguage), on: id, .pasteURL),
-            ] : [])
+            element.setAccessibilityCustomActions(displayActions(for: display))
             return element
         } + (accessibilityExposure.cards ? visibleCardIndices.map { cards[$0] } : []).map { card in
             let id = card.id

@@ -206,7 +206,7 @@ struct OverlayWorkspace: View {
             if layersVisible {
                 Divider().padding(.horizontal, 12)
                 LayerNavigator(session: session, rows: rows,
-                               height: min(CGFloat(rows.count) * OverlayColumnLayout.rowHeight,
+                               height: min(CGFloat(rows.count) * OverlayWorkspaceLayout.rowHeight,
                                            max(30, min(300, availableHeight - 76))))
                     .padding(.vertical, 6)
                     .transition(.opacity.combined(with: .move(edge: .top)))

@@ -26,7 +26,7 @@ struct AddOverlayDrawer: View {
     private static let side = DesignTokens.EditDesk.Spacing.s12
     /// Above the header row and between it and the tiles.
     private static let rim = DesignTokens.Spacing.xs
-    static let collapsedHeight = rim + OverlayColumnLayout.drawerCollapsedHeight + rim
+    static let collapsedHeight = rim + OverlayWorkspaceLayout.drawerCollapsedHeight + rim
     static let expandedHeight = collapsedHeight + 2 * tileHeight + gap + side
     /// The modal preview's threshold, so a click that wobbles a little stays a click.
     private static let dragThreshold: CGFloat = 6
@@ -76,7 +76,7 @@ struct AddOverlayDrawer: View {
                     .font(DesignTokens.EditDesk.Typography.body)
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                     .lineLimit(1)
-                    .frame(height: OverlayColumnLayout.drawerCollapsedHeight)
+                    .frame(height: OverlayWorkspaceLayout.drawerCollapsedHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

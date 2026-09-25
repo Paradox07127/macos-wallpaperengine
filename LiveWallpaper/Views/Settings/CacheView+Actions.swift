@@ -51,11 +51,6 @@ extension WPECacheManagementView {
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
     }
 
-
-
-
-
-
     func confirmClearAllCaches() {
         let size = byteFormatter.string(fromByteCount: Int64(totalBytes))
         pendingDestructive = PendingDestructive(.clearAllStorageCaches(byteSize: size)) {

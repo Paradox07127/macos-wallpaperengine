@@ -372,14 +372,19 @@ final class DisplayShellLayer {
         layer.sublayerTransform = CATransform3DIdentity
     }
 
-    /// The transport as drawn: one entry per visible button, in drawing order. Layout, the hit test
-    /// and the dimmed state all read this, so a button that is not drawn keeps no hot spot and a
-    /// button the orchestrator would refuse cannot be pressed.
+    /// The transport as drawn: one entry per visible button, in drawing order. Layout, the hit test,
+    /// the dimmed state and VoiceOver's actions all read this, so a button that is not drawn keeps no
+    /// hot spot and a button the orchestrator would refuse cannot be pressed.
     private var transport: [(layer: CALayer, action: StagePlaybackAction, enabled: Bool)] {
         let toggle = (buttons[1], StagePlaybackAction.toggle, display?.canTogglePlayback == true)
         guard display?.showsPlaylistControls == true else { return [toggle] }
         let canChange = display?.canChangePlaylistEntry == true
         return [(buttons[0], .previous, canChange), toggle, (buttons[2], .next, canChange)]
+    }
+
+    /// The buttons VoiceOver may press, in drawing order; the hover fade that gates a click does not gate these.
+    var accessiblePlaybackActions: [StagePlaybackAction] {
+        playback.isHidden ? [] : transport.filter(\.enabled).map(\.action)
     }
 
     func playbackAction(at point: CGPoint) -> StagePlaybackAction? {

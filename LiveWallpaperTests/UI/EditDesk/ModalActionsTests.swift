@@ -13,6 +13,10 @@ struct ModalActionsTests {
         var applied: [(ApplyIntent, CGDirectDisplayID)] = []
         var appliedToAll: [[CGDirectDisplayID]] = []
         let bookmarks = BookmarkStore(persistence: MemoryBookmarks())
+        #if !LITE_BUILD
+        var phase = WorkshopDownloadCoordinator.DownloadPhase.idle
+        var remoteEpochs: [String: Double] = [:]
+        #endif
 
         func inputs() -> ModalActions.Inputs {
             var inputs = ModalActions.Inputs()
@@ -177,9 +181,8 @@ struct ModalActionsTests {
         )
         #expect(modal.headerActions(for: aerial, requestRename: {}, requestDelete: {}).map(\.kind) == [.showInFinder])
         #if !LITE_BUILD
-        var phase = WorkshopDownloadCoordinator.DownloadPhase.idle
         var inputs = fixture.inputs()
-        inputs.phase = { _ in phase }
+        inputs.phase = { _ in fixture.phase }
         let installedModal = fixture.modal(inputs: inputs)
         let installed = workshop("123")
         let idle = installedModal.headerActions(
@@ -188,7 +191,7 @@ struct ModalActionsTests {
         #expect(idle.map(\.kind) == [.showInFinder, .openInSteam, .checkForUpdate, .delete])
         idle.last?.perform()
         #expect(requested == ["rename", "delete"])
-        phase = .downloading
+        fixture.phase = .downloading
         #expect(
             installedModal.headerActions(for: installed, requestRename: {}, requestDelete: {}).map(\.kind)
                 == [.showInFinder, .openInSteam, .cancelUpdate, .delete]
@@ -556,9 +559,8 @@ struct ModalActionsTests {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         guard case let .workshop(entry) = item.source else { return }
-        var remoteEpochs: [String: Double] = [:]
         let model = InstalledLibraryModel(dependencies: .init(
-            loadEntries: { [entry] }, loadRemoteUpdateEpochs: { remoteEpochs },
+            loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
             now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
@@ -568,7 +570,7 @@ struct ModalActionsTests {
         let modal = fixture.modal(inputs: inputs)
         model.onAppear()
         #expect(await modal.content(for: item).installed?.updateState == .upToDate)
-        remoteEpochs = ["123": 20]
+        fixture.remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(await modal.content(for: item).installed?.updateState == .available)
         model.onDisappear()
@@ -579,9 +581,8 @@ struct ModalActionsTests {
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         let other = workshop("999", importedAt: Date(timeIntervalSince1970: 10))
         guard case let .workshop(entry) = item.source, case let .workshop(otherEntry) = other.source else { return }
-        var remoteEpochs: [String: Double] = [:]
         let model = InstalledLibraryModel(dependencies: .init(
-            loadEntries: { [entry, otherEntry] }, loadRemoteUpdateEpochs: { remoteEpochs },
+            loadEntries: { [entry, otherEntry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
             now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
@@ -592,11 +593,11 @@ struct ModalActionsTests {
         model.onAppear()
         let before = modal.installedStateKey(for: item)
         // Control: another item's flag leaves this item's key alone.
-        remoteEpochs = ["999": 20]
+        fixture.remoteEpochs = ["999": 20]
         model.onAppear()
         #expect(model.updatedWorkshopIDs == ["999"])
         #expect(modal.installedStateKey(for: item) == before)
-        remoteEpochs = ["123": 20]
+        fixture.remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(modal.installedStateKey(for: item) != before)
         model.onDisappear()
@@ -627,8 +628,8 @@ struct ModalActionsTests {
         inputs.localInfo = { _ in
             LocalProjectInfo(cleanedDescription: "Description", tags: ["Nature", "Everyone"], contentRating: "Everyone", sizeBytes: nil)
         }
-        var phase = WorkshopDownloadCoordinator.DownloadPhase.downloading
-        inputs.phase = { _ in phase }
+        fixture.phase = .downloading
+        inputs.phase = { _ in fixture.phase }
         inputs.progress = { _ in 0.25 }
         let modal = fixture.modal(inputs: inputs)
         let content = await modal.content(for: item)
@@ -642,7 +643,7 @@ struct ModalActionsTests {
         let installed = try #require(content.installed)
         #expect(modal.deletesFiles(item))
         #expect(installed.updateState == .checking(progress: 0.25))
-        phase = .failed("Offline")
+        fixture.phase = .failed("Offline")
         #expect(await modal.content(for: item).installed?.updateState == .failed(message: "Offline"))
         #expect(!modal.deletesFiles(workshop("local-folder")))
         var saved = video()
@@ -658,20 +659,20 @@ struct ModalActionsTests {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         var inputs = fixture.inputs()
-        var phase = WorkshopDownloadCoordinator.DownloadPhase.downloading
-        inputs.phase = { _ in phase }
+        fixture.phase = .downloading
+        inputs.phase = { _ in fixture.phase }
         inputs.progress = { _ in 0.25 }
         let modal = fixture.modal(inputs: inputs)
         let downloading = try #require(modal.downloadStatus(for: item))
         #expect(downloading.progress == .fraction(0.25))
         #expect(downloading.status == String(localized: "Downloading…", bundle: .appLanguage))
-        phase = .failed("Offline")
+        fixture.phase = .failed("Offline")
         let failed = try #require(modal.downloadStatus(for: item))
         #expect(failed.status == "Offline" && failed.isFailure)
-        phase = .idle
+        fixture.phase = .idle
         #expect(modal.downloadStatus(for: item) == nil, "an idle, current item has nothing to report")
         // Control: a saved video has no Workshop transfer at all.
-        phase = .downloading
+        fixture.phase = .downloading
         #expect(modal.downloadStatus(for: self.item(video())) == nil)
     }
 
@@ -680,9 +681,8 @@ struct ModalActionsTests {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         guard case let .workshop(entry) = item.source else { return }
-        var remoteEpochs: [String: Double] = [:]
         let model = InstalledLibraryModel(dependencies: .init(
-            loadEntries: { [entry] }, loadRemoteUpdateEpochs: { remoteEpochs },
+            loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
             now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
@@ -693,7 +693,7 @@ struct ModalActionsTests {
         let modal = fixture.modal(inputs: inputs)
         model.onAppear()
         #expect(modal.downloadStatus(for: item) == nil)
-        remoteEpochs = ["123": 20]
+        fixture.remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(modal.downloadStatus(for: item)?.status == String(localized: "Update available", bundle: .appLanguage))
         model.onDisappear()
