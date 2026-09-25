@@ -103,7 +103,8 @@ extension ScreenManager {
         return transientRuntimeErrors[screen.id] ?? screen.runtimeSession?.runtimeError
     }
 
-    func setTransientRuntimeError(_ error: WallpaperRuntimeError?, for screenID: CGDirectDisplayID) {
+    func setTransientRuntimeError(_ error: WallpaperRuntimeError?, for screenID: CGDirectDisplayID, failedProposal: ScreenConfiguration? = nil) {
+        failedProposals[screenID] = error == nil ? nil : failedProposal
         let didChange: Bool
         if let error {
             didChange = transientRuntimeErrors[screenID] != error
@@ -121,6 +122,11 @@ extension ScreenManager {
     func retryRuntimeSession(for screen: Screen) {
         if wallpaperLoads.attempt(for: screen)?.phase == .failed {
             retryWallpaperAttempt(for: screen)
+            return
+        }
+        if let proposal = failedProposals[screen.id] {
+            beginExplicitWallpaperSelection(for: screen)
+            restoreProposedWallpaperSession(for: screen, configuration: proposal)
             return
         }
         Task { @MainActor [weak self, weak screen] in
@@ -273,8 +279,8 @@ extension ScreenManager {
 
     func togglePlayback(for screen: Screen) {
         guard let playback = screen.playbackController else { return }
-        // Pause only when something is really running, otherwise play (a no-op that preserves intent while policy still holds the session down).
-        if playback.userIntendsToPlay, playback.isPlaying {
+        // Per-screen buttons draw intent, so a policy-suspended screen shows Pause and must really pause; unlike `shouldPauseOnToggle` on purpose.
+        if playback.userIntendsToPlay {
             playback.pause()
         } else {
             playback.play()

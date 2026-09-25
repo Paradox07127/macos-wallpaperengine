@@ -281,6 +281,7 @@ struct ProtocolizedDependenciesTests {
         let finalBookmark = Self.activeVideoBookmark(manager.getConfiguration(for: liveScreen))
         #expect(finalBookmark != rejectedBookmark, "Rejected bookmark must not become active")
         #expect(finalBookmark == initialBookmark, "Active bookmark should be unchanged on validation failure")
+        #expect(Self.activeVideoBookmark(manager.failedProposals[liveScreen.id]) == rejectedBookmark, "Retry has no record of the rejected candidate")
     }
 
     @Test("Video facade rejects selections issued after termination")

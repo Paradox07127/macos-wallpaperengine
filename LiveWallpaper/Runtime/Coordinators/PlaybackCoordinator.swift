@@ -44,6 +44,8 @@ final class PlaybackCoordinator {
     /// Invalidates queued scene-property mutations before store revision advances.
     let advanceSceneMutationIntent: @MainActor (CGDirectDisplayID) -> Void
     let reportRuntimeError: @MainActor (CGDirectDisplayID, WallpaperRuntimeError?) -> Void
+    /// A candidate that never committed; the configuration is the one it was preparing (nil only when it had none).
+    let reportPreparationFailure: @MainActor (CGDirectDisplayID, WallpaperRuntimeError, ScreenConfiguration?) -> Void
     let originReconciler: any OriginReconciler
     let isGloballyEnabled: @MainActor () -> Bool
     let isRuntimeInstallationAllowed: @MainActor () -> Bool
@@ -88,6 +90,7 @@ final class PlaybackCoordinator {
         notifyWallpaperSessionChanged: @MainActor @escaping () -> Void,
         refreshOtherAudioLeadership: @MainActor @escaping () -> Void = {},
         reportRuntimeError: @MainActor @escaping (CGDirectDisplayID, WallpaperRuntimeError?) -> Void = { _, _ in },
+        reportPreparationFailure: @MainActor @escaping (CGDirectDisplayID, WallpaperRuntimeError, ScreenConfiguration?) -> Void = { _, _, _ in },
         originReconciler: any OriginReconciler,
         isGloballyEnabled: @MainActor @escaping () -> Bool = { true },
         isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true },
@@ -124,6 +127,7 @@ final class PlaybackCoordinator {
         self.refreshOtherAudioLeadership = refreshOtherAudioLeadership
         self.notifyConfigurationChanged = notifyConfigurationChanged
         self.reportRuntimeError = reportRuntimeError
+        self.reportPreparationFailure = reportPreparationFailure
         self.originReconciler = originReconciler
         self.isGloballyEnabled = isGloballyEnabled
         self.isRuntimeInstallationAllowed = isRuntimeInstallationAllowed

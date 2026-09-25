@@ -357,8 +357,8 @@ struct MenuBarPlaybackControlTests {
         #expect(playback.pauseCount == 0)
     }
 
-    @Test("Tapping play during a policy suspend keeps intent, and playback resumes when it lifts")
-    func playTapDuringPolicySuspendSurvivesAndResumes() {
+    @Test("Tapping Pause during a policy suspend clears intent, and playback stays stopped when it lifts")
+    func pauseTapDuringPolicySuspendStaysPaused() {
         let playback = FakePlaybackController(isPlaying: true)
         guard let screen = makeScreen(installing: playback) else {
             Issue.record("No NSScreen available for test")
@@ -370,11 +370,11 @@ struct MenuBarPlaybackControlTests {
         #expect(playback.userIntendsToPlay, "Policy suspend must not touch user intent")
 
         makeManager().togglePlayback(for: screen)
-        #expect(playback.userIntendsToPlay, "A tap on a Play-labelled button must not clear intent")
-        #expect(playback.pauseCount == 0)
+        #expect(!playback.userIntendsToPlay, "A tap on the Pause-labelled button kept the intent to play")
+        #expect(playback.pauseCount == 1)
 
         playback.applyPerformanceProfile(.quality)
-        #expect(playback.isPlaying, "Playback must resume once the policy suspend lifts")
+        #expect(!playback.isPlaying, "A wallpaper the user paused resumed when the policy suspend lifted")
     }
 
     /// Not two `Screen`s: `Screen.id` comes from the panel, so two on one `NSScreen`
@@ -397,8 +397,8 @@ struct MenuBarPlaybackControlTests {
         #expect(!ScreenManager.globalToggleWantsPause([suspended]))
     }
 
-    @Test("Toggle follows the button label: a policy-suspended wallpaper plays, it does not pause")
-    func toggleFollowsButtonLabelNotIntent() {
+    @Test("Toggle follows the button label, which shows intent: a policy-suspended wallpaper pauses")
+    func toggleFollowsButtonLabelShowingIntent() {
         let playback = FakePlaybackController(isPlaying: false, userIntendsToPlay: true)
         guard let screen = makeScreen(installing: playback) else {
             Issue.record("No NSScreen available for test")
@@ -407,9 +407,9 @@ struct MenuBarPlaybackControlTests {
 
         makeManager().togglePlayback(for: screen)
 
-        #expect(playback.userIntendsToPlay)
-        #expect(playback.pauseCount == 0)
-        #expect(playback.playCount == 1)
+        #expect(!playback.userIntendsToPlay)
+        #expect(playback.pauseCount == 1)
+        #expect(playback.playCount == 0)
     }
 }
 

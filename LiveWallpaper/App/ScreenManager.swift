@@ -46,6 +46,8 @@ final class ScreenManager {
     @ObservationIgnored var lastScreenSignatures: [CGDirectDisplayID: ScreenConfigurationSignature] = [:]
     let wallpaperLoads = WallpaperLoadState()
     @ObservationIgnored var transientRuntimeErrors: [CGDirectDisplayID: WallpaperRuntimeError] = [:]
+    /// Non-nil: that screen's transient error belongs to this candidate, which never committed.
+    @ObservationIgnored var failedProposals: [CGDirectDisplayID: ScreenConfiguration] = [:]
     @ObservationIgnored var renderingActivityToken: (any NSObjectProtocol)?
     enum UserAbsenceReason: Hashable {
         case screenLocked
@@ -149,6 +151,9 @@ final class ScreenManager {
         },
         reportRuntimeError: { [weak self] screenID, error in
             self?.setTransientRuntimeError(error, for: screenID)
+        },
+        reportPreparationFailure: { [weak self] screenID, error, proposal in
+            self?.setTransientRuntimeError(error, for: screenID, failedProposal: proposal)
         },
         originReconciler: originReconciler,
         isGloballyEnabled: { [weak self] in

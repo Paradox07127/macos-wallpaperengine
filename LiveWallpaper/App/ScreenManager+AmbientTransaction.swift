@@ -33,6 +33,7 @@ extension ScreenManager {
         replacing expected: (any WallpaperRuntimeSession)?,
         generation: Int,
         attemptID: UUID? = nil,
+        proposedConfiguration: ScreenConfiguration,
         expectedConfigurationRevision: UInt64,
         timeout: Duration,
         beforeCommit: @MainActor @escaping () -> Bool,
@@ -157,7 +158,7 @@ extension ScreenManager {
                 if let attemptID, wallpaperLoads.attempt(for: screen)?.failure == nil {
                     failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: "commit")
                 }
-                self.setTransientRuntimeError(error, for: screenID)
+                setTransientRuntimeError(error, for: screenID, failedProposal: proposedConfiguration)
                 if attemptID == nil {
                     WallpaperPreparationFailure.announce(error.userMessage, on: screenID, generation: generation)
                 }

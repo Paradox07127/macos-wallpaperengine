@@ -131,6 +131,16 @@ struct MenuBarBehaviorTests {
         #expect(source.contains("invokeAddWallpaper(screen.id)"))
     }
 
+    @Test("The menu-bar play button draws the intent its toggle flips")
+    func playbackButtonDrawsIntent() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
+        let start = try #require(source.range(of: "MenuBarDisplayRow("))
+        let end = try #require(source.range(of: "playbackAction:", range: start.upperBound ..< source.endIndex))
+        let row = String(source[start.upperBound ..< end.lowerBound])
+        #expect(row.contains("userIntendsToPlay"))
+        #expect(!row.contains("activity == .active"), "a policy-suspended display would show Play while its toggle pauses")
+    }
+
     @Test("Manage opens the panorama on the Edit Desk and the first display's detail on the old shell")
     func manageWindowOpensHomeOnEditDesk() throws {
         let menuBar = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")

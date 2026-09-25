@@ -58,6 +58,29 @@ struct DisplayStateResolverTests {
         #expect(harness.manager.configurationStore.revision(for: harness.screen.id) == revision)
     }
 
+    @Test("Retry after a candidate failed re-proposes that candidate, not the wallpaper on screen")
+    func retryReproposesFailedCandidate() async throws {
+        let harness = Harness(configured: true)
+        defer { harness.close() }
+        await harness.waitUntil { harness.state == .ok }
+        let id = harness.screen.id
+        // Unresolvable bookmark: the re-proposed candidate stops at bookmark resolution, before any player exists.
+        let proposal = ScreenConfiguration(screenID: id, videoBookmarkData: Data([1]))
+        harness.manager.setTransientRuntimeError(.networkOffline, for: id, failedProposal: proposal)
+        harness.manager.retryRuntimeSession(for: harness.screen)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.manager.failedProposals[id] == nil)
+        #expect(harness.manager.runtimeError(for: harness.screen) == nil)
+        #expect(harness.target.retryCount == 0, "Retry reloaded the wallpaper on screen instead of the candidate that failed")
+
+        // Control: with no candidate recorded, the same wait lets retry reach the session on screen.
+        let before = harness.target.retryCount
+        harness.manager.setTransientRuntimeError(.networkOffline, for: id)
+        harness.manager.retryRuntimeSession(for: harness.screen)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(harness.target.retryCount == before + 1)
+    }
+
     @Test("Home playback controls and battery policy produce distinguishable pause pills")
     func manualAndPolicyPause() async throws {
         let harness = Harness(configured: true)
@@ -282,10 +305,13 @@ struct DisplayStateResolverTests {
         }
     }
 
+    @MainActor
     private final class RetryTarget: WallpaperPerformanceConfigurable, HTMLWallpaperRetrying {
+        private(set) var retryCount = 0
         func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
         func retryCurrentSource(timeout _: Duration) async -> WallpaperPreparationResult {
-            .ready
+            retryCount += 1
+            return .ready
         }
     }
 }

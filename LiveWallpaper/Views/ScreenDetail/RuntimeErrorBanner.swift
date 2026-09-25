@@ -22,7 +22,7 @@ struct RuntimeErrorBanner: View {
                 Button("Retry", action: onRetry)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .accessibilityHint(Text("Retry loading the current wallpaper source"))
+                    .accessibilityHint(Text("Reloads the wallpaper content for this screen"))
             }
             if canRePick {
                 Button("Re-pick", action: onRePick)

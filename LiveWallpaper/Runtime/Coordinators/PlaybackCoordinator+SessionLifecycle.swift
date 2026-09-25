@@ -115,7 +115,7 @@ extension PlaybackCoordinator {
                           self.transition.isCurrentTransition(generation, for: screenID),
                           self.configurationStore.revision(for: screenID)
                               == expectedConfigurationRevision else { return }
-                    self.reportRuntimeError(screenID, runtimeError)
+                    reportPreparationFailure(screenID, runtimeError, configuration)
                     WallpaperPreparationFailure.announce(runtimeError.userMessage, on: screenID, generation: generation)
                     Logger.error("Failed to setup video: \(message)", category: .screenManager)
                 }
@@ -220,14 +220,14 @@ extension PlaybackCoordinator {
             )
         } catch let error as NSError {
             Logger.error("Failed to apply configuration: \(error.localizedDescription) [domain=\(error.domain) code=\(error.code)]", category: .screenManager)
-            reportRuntimeError(screen.id, .wallpaperPreparationFailed(
+            reportPreparationFailure(screen.id, .wallpaperPreparationFailed(
                 type: configuration.wallpaperType, timedOut: false
-            ))
+            ), configuration)
         } catch {
             Logger.error("Failed to apply configuration: \(error.localizedDescription)", category: .screenManager)
-            reportRuntimeError(screen.id, .wallpaperPreparationFailed(
+            reportPreparationFailure(screen.id, .wallpaperPreparationFailed(
                 type: configuration.wallpaperType, timedOut: false
-            ))
+            ), configuration)
         }
     }
 
@@ -517,7 +517,7 @@ extension PlaybackCoordinator {
                 isStillCurrent: isCandidateStillCurrent()
             ) {
                 let error = session.runtimeError ?? .mediaNotPlayable(url, code: nil)
-                self.reportRuntimeError(screenID, error)
+                reportPreparationFailure(screenID, error, configuration)
                 WallpaperPreparationFailure.announce(error.userMessage, on: screenID, generation: transitionGeneration)
                 Logger.warning(
                     "Video candidate was not committed (\(String(describing: result))) for screen \(screenID); keeping prior session",
