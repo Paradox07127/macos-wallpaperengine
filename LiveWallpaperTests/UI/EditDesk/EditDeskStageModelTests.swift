@@ -177,19 +177,32 @@ struct EditDeskStageModelTests {
         #expect(display.playbackGlyph == "play.fill")
     }
 
-    @Test("The ON badge names the leftmost display it runs on and counts the rest")
-    func onBadgeNamesTheLeftmostDisplay() {
-        func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat) -> StageDisplay {
+    @Test("The now-playing badge names the leftmost display it is set on, counts the rest, and is live only while one draws it")
+    func nowPlayingNamesTheLeftmostDisplay() throws {
+        func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat, _ state: StageDisplay.State = .ok) -> StageDisplay {
             StageDisplay(
                 id: id, fingerprint: name, frame: CGRect(x: x, y: 0, width: 1920, height: 1080), isBuiltin: false,
-                name: name, badgeText: "", statusText: "", cover: nil, state: .ok
+                name: name, badgeText: "", statusText: "", cover: nil, state: state
             )
         }
         let displays = [display(1, "Studio", x: 1920), display(2, "MPG", x: 0), display(3, "Built-in", x: -1728)]
-        #expect(StageCard.onBadge(on: [], among: displays) == nil)
-        #expect(StageCard.onBadge(on: [1], among: displays) == "ON Studio")
-        #expect(StageCard.onBadge(on: [1, 2], among: displays) == "ON MPG +1")
-        #expect(StageCard.onBadge(on: [2, 1, 3], among: displays) == "ON Built-in +2")
+        #expect(NowPlayingBadge(on: [], among: displays) == nil)
+        #expect(NowPlayingBadge(on: [9], among: displays) == nil, "a display that is gone names nothing")
+        let one = try #require(NowPlayingBadge(on: [1], among: displays))
+        let two = try #require(NowPlayingBadge(on: [1, 2], among: displays))
+        let three = try #require(NowPlayingBadge(on: [2, 1, 3], among: displays))
+        #expect(one.text == "Studio" && two.text == "MPG +1" && three.text == "Built-in +2", "\(one.text) · \(two.text) · \(three.text)")
+        #expect(three.displayNames == ["Built-in", "MPG", "Studio"])
+        #expect(one.isLive)
+        // Set but not drawing: the capsule still names the display and its bars stand still.
+        let chip = StageFailureChip(symbol: "exclamationmark.triangle", text: "Failed", tint: CGColor(gray: 0, alpha: 1))
+        let idle: [StageDisplay.State] = [.paused(reasonText: "Paused"), .off(text: "Off"), .preparing(text: "Preparing"), .failed(chip)]
+        for state in idle {
+            let badge = try #require(NowPlayingBadge(on: [1], among: [display(1, "Studio", x: 0, state)]))
+            #expect(!badge.isLive, Comment(rawValue: "\(state) reads as live"))
+        }
+        let mixed = [display(1, "Studio", x: 0, .paused(reasonText: "Paused")), display(2, "MPG", x: 1920)]
+        #expect(try #require(NowPlayingBadge(on: [1, 2], among: mixed)).isLive, "one display drawing it is enough")
     }
 
     /// The name drawn on the screen itself. Each step only fires when the one before it is blank,
@@ -217,7 +230,7 @@ struct EditDeskStageModelTests {
 
     private static func shelf(_ count: Int) -> [StageCard] {
         (0 ..< count).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
     }
 

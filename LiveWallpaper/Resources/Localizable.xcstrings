@@ -107,6 +107,41 @@
         }
       }
     },
+    "%@ +%lld" : {
+      "comment" : "Now-playing capsule on a wallpaper card: the leftmost display's name, then how many more displays the wallpaper is set on. The capsule is narrow.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ +%2$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ +%2$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ +%2$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ +%2$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ +%2$lld"
+          }
+        }
+      }
+    },
     "%@ changed in the meantime, so the download wasn’t applied." : {
       "comment" : "Workshop deferred apply dropped because the user applied something else there. Placeholder is a display name.",
       "localizations" : {
@@ -32095,6 +32130,7 @@
       }
     },
     "In use on %@" : {
+      "comment" : "The displays a wallpaper is set on, drawing it or not: the library modal's meta line, the Workshop inspector, and VoiceOver on a card none of them is playing. Placeholder is a list of display names.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -48284,6 +48320,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在播放"
+          }
+        }
+      }
+    },
+    "Playing on %@" : {
+      "comment" : "VoiceOver on a wallpaper card: the displays drawing it right now. Placeholder is a list of display names.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playing on %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En reproducción en %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で再生中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在 %@ 上播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在 %@ 上播放"
           }
         }
       }

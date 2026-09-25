@@ -514,7 +514,7 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.isEmpty, "a project matched an ID it does not have")
     }
 
-    @Test("Library card badges appear only while their switches are on; other rows keep ON and never need an update")
+    @Test("Library card badges appear only while their switches are on; other rows keep now-playing and never need an update")
     func cardBadgesFollowTheWorkshopSwitches() throws {
         let entry = WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)
         var variant = bookmark("Variant")
@@ -530,16 +530,20 @@ struct SavedLibraryModelTests {
             id: 1, fingerprint: "Studio", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), isBuiltin: false,
             name: "Studio", badgeText: "", statusText: "", cover: nil, state: .ok
         )]
-        let on = try #require(StageCard.onBadge(on: [1], among: displays))
+        let on = try #require(NowPlayingBadge(on: [1], among: displays))
         let shown = GalleryCardPreferences()
         let hidden = GalleryCardPreferences(showsUpdate: false, showsInUse: false)
         func badges(_ item: LibraryItem, _ preferences: GalleryCardPreferences) -> LibraryCardBadges {
             item.cardBadges(among: displays, updatedWorkshopIDs: ["123"], preferences: preferences)
         }
-        #expect(badges(workshop, shown) == LibraryCardBadges(onBadge: on, needsUpdate: true))
+        #expect(badges(workshop, shown) == LibraryCardBadges(nowPlaying: on, needsUpdate: true))
         #expect(badges(workshop, hidden) == LibraryCardBadges(), "a switch that is off still shows its badge")
-        #expect(badges(saved, shown) == LibraryCardBadges(onBadge: on), "only an installed project needs an update")
-        #expect(badges(saved, hidden) == LibraryCardBadges(onBadge: on), "the Workshop switches hide a saved row's ON")
+        #expect(badges(saved, shown) == LibraryCardBadges(nowPlaying: on), "only an installed project needs an update")
+        #expect(badges(saved, hidden) == LibraryCardBadges(nowPlaying: on), "the Workshop switches hide a saved row's now-playing badge")
+        // The tile reads the capsule the way a shelf card does.
+        let playing = String(localized: "Playing on \("Studio")", bundle: .appLanguage)
+        let reading = LibraryCardBadges(nowPlaying: on).accessibilityLabel(title: "Variant")
+        #expect(reading == "Variant, \(playing)", Comment(rawValue: reading))
     }
     #endif
 

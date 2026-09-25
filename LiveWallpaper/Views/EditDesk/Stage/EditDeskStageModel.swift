@@ -123,10 +123,10 @@ struct StageCard: Identifiable, Equatable {
     var title: String
     var metaLine: String
     var thumbnail: CGImage?
-    /// `ON MPG` while the card's wallpaper is running on a display; nil otherwise.
-    var onBadge: String?
+    /// The displays the card's wallpaper is set on; nil when it is set on none.
+    var nowPlaying: NowPlayingBadge?
     var isDraggable: Bool
-    /// Why the card's wallpaper cannot play here; drawn in place of `onBadge`.
+    /// Why the card's wallpaper cannot play here; drawn in place of `nowPlaying`.
     var statusBadge: String?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -134,16 +134,47 @@ struct StageCard: Identifiable, Equatable {
             && lhs.title == rhs.title
             && lhs.metaLine == rhs.metaLine
             && lhs.thumbnail === rhs.thumbnail
-            && lhs.onBadge == rhs.onBadge
+            && lhs.nowPlaying == rhs.nowPlaying
             && lhs.isDraggable == rhs.isDraggable
             && lhs.statusBadge == rhs.statusBadge
     }
+}
 
-    /// Names the leftmost of the displays `ids` run on, the modal's ⌘n order, and counts the rest.
-    static func onBadge(on ids: [StageDisplay.ID], among displays: [StageDisplay]) -> String? {
-        let names = displays.filter { ids.contains($0.id) }.sorted { $0.frame.minX < $1.frame.minX }.map(\.name)
-        guard let first = names.first else { return nil }
-        return names.count == 1 ? "ON \(first)" : "ON \(first) +\(names.count - 1)"
+/// What a card's now-playing capsule says: the displays its wallpaper is set on, and whether one of
+/// them is drawing it right now.
+struct NowPlayingBadge: Equatable {
+    /// Leftmost first, the modal's ⌘n order; never empty.
+    let displayNames: [String]
+    /// One of those displays is `.ok`. Paused, off, preparing or failed ones still name themselves.
+    let isLive: Bool
+
+    /// nil when the wallpaper is set on none of `displays`.
+    init?(on ids: [StageDisplay.ID], among displays: [StageDisplay]) {
+        let set = displays.filter { ids.contains($0.id) }.sorted { $0.frame.minX < $1.frame.minX }
+        guard !set.isEmpty else { return nil }
+        displayNames = set.map(\.name)
+        isLive = set.contains { $0.state == .ok }
+    }
+
+    var text: String {
+        guard displayNames.count > 1 else { return displayNames[0] }
+        return String(
+            localized: "\(displayNames[0]) +\(displayNames.count - 1)", bundle: .appLanguage,
+            comment: "Now-playing capsule on a wallpaper card: the leftmost display's name, then how many more displays the wallpaper is set on. The capsule is narrow."
+        )
+    }
+
+    var accessibilityText: String {
+        let names = displayNames.formatted(.list(type: .and).locale(AppLanguagePreference.current.locale))
+        return isLive
+            ? String(
+                localized: "Playing on \(names)", bundle: .appLanguage,
+                comment: "VoiceOver on a wallpaper card: the displays drawing it right now. Placeholder is a list of display names."
+            )
+            : String(
+                localized: "In use on \(names)", bundle: .appLanguage,
+                comment: "The displays a wallpaper is set on, drawing it or not: the library modal's meta line, the Workshop inspector, and VoiceOver on a card none of them is playing. Placeholder is a list of display names."
+            )
     }
 }
 

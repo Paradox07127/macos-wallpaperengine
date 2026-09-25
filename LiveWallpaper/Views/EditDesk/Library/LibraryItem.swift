@@ -55,30 +55,30 @@ struct LibraryItem: Identifiable, Equatable {
     func cardBadges(
         among displays: [StageDisplay], updatedWorkshopIDs: Set<String>, preferences: GalleryCardPreferences
     ) -> LibraryCardBadges {
-        let onBadge = StageCard.onBadge(on: onDisplays, among: displays)
+        let nowPlaying = NowPlayingBadge(on: onDisplays, among: displays)
         #if !LITE_BUILD
         if case let .workshop(entry) = source {
             return LibraryCardBadges(
-                onBadge: preferences.showsInUse ? onBadge : nil,
+                nowPlaying: preferences.showsInUse ? nowPlaying : nil,
                 needsUpdate: preferences.showsUpdate && updatedWorkshopIDs.contains(entry.id)
             )
         }
         #endif
-        return LibraryCardBadges(onBadge: onBadge)
+        return LibraryCardBadges(nowPlaying: nowPlaying)
     }
 }
 
 /// What a library grid tile draws over its thumbnail.
 struct LibraryCardBadges: Equatable {
-    /// `ON Studio` while the item runs on a display; nil otherwise, or while its switch hides it.
-    var onBadge: String?
+    /// The displays the item is set on; nil when none, or while its switch hides it.
+    var nowPlaying: NowPlayingBadge?
     var needsUpdate = false
 
     /// VoiceOver's reading of a tile titled `title` that carries these badges.
     func accessibilityLabel(title: String) -> String {
         var parts = [title]
-        if onBadge != nil {
-            parts.append(String(localized: "Currently in use", bundle: .appLanguage, comment: "A11y: this wallpaper is the active one."))
+        if let nowPlaying {
+            parts.append(nowPlaying.accessibilityText)
         }
         if needsUpdate {
             parts.append(String(localized: "Update available", bundle: .appLanguage, comment: "A11y: the installed item has a newer version on Steam."))

@@ -15,10 +15,19 @@ final class ShelfCardLayer {
     let sheen = CAGradientLayer()
     let rimTop = CALayer()
     let rimBottom = CALayer()
-    private let badge = CATextLayer()
+    let badge = CATextLayer()
     private let outline = CALayer()
     private let shade = CALayer()
     private let tab = CALayer()
+    /// Built for the first card set on a display. It sits above the thumbnail, not inside it, so the
+    /// wave never re-composites the rounded clip.
+    private(set) var capsule: CALayer?
+    private var capsuleText: CATextLayer?
+    private(set) var waveBars: [CALayer] = []
+    private var capsuleWidth: CGFloat = 0
+    /// The capsule shown names a display that is drawing the wallpaper.
+    private var isLive = false
+    private var isWaving = false
     /// `GalleryTileChrome`'s stroke at full strength; the card fades it in as it lands in the grid.
     private var gridStroke: CGColor?
     /// The shadow tokens' shared hue at full alpha; their two alphas ride `shadowOpacity` instead,
@@ -90,17 +99,19 @@ final class ShelfCardLayer {
         if self.card?.id != card?.id {
             layer.removeAnimation(forKey: "opacity")
             outline.removeAnimation(forKey: "opacity")
+            setWaving(false)
         }
         self.card = card
         thumbnail.contents = card?.thumbnail
-        let badgeText = card?.statusBadge ?? card?.onBadge
-        // A long display name truncates inside the card instead of running off its edge.
-        badgeWidth = min(StageLayerStyle.width(badgeText ?? "", size: 11, mono: true) + 12, StageGeometry.cardSize.width - 16)
-        badge.string = badgeText
-        badge.isHidden = badgeText == nil
+        let status = card?.statusBadge
+        // A long reason truncates inside the card instead of running off its edge.
+        badgeWidth = min(StageLayerStyle.width(status ?? "", size: 11, mono: true) + 12, StageGeometry.cardSize.width - 16)
+        badge.string = status
+        badge.isHidden = status == nil
+        showNowPlaying(status == nil ? card?.nowPlaying : nil)
         let colors = DesignTokens.EditDesk.Colors.self
         badge.foregroundColor = StageLayerStyle.black
-        badge.backgroundColor = NSColor(card?.statusBadge == nil ? colors.success : colors.warning).cgColor
+        badge.backgroundColor = NSColor(colors.warning).cgColor
         thumbnail.backgroundColor = NSColor(DesignTokens.Colors.surfaceRaised).cgColor
         thumbnail.borderColor = NSColor(increasedContrast ? colors.cardRimRingIncreased : colors.cardRimRing).cgColor
         rimTop.backgroundColor = NSColor(colors.cardRimHighlight).cgColor
@@ -172,7 +183,14 @@ final class ShelfCardLayer {
         face.borderWidth = DesignTokens.Card.strokeWidth
         face.borderColor = gridStroke.flatMap { $0.copy(alpha: $0.alpha * gridMix) }
         gradient.frame = CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
-        badge.frame = CGRect(x: 8, y: 8, width: badgeWidth, height: 18)
+        // Facing In's right half leaves each card's right side showing, so both badges move over with its turn.
+        let side = placement.anchorX > 0.5 ? edged : 0
+        badge.frame = CGRect(x: 8 + (size.width - 16 - badgeWidth) * side, y: 8, width: badgeWidth, height: 18)
+        if let capsule, !capsule.isHidden {
+            capsule.frame = CGRect(x: 8 + (size.width - 16 - capsuleWidth) * side, y: 8, width: capsuleWidth, height: 18)
+            capsuleText?.frame = CGRect(x: 19, y: 3, width: max(0, capsuleWidth - 25), height: 12)
+        }
+        setWaving(isLive && !reduceMotion && placement.opacity > 0 && gridMix < 1)
         outline.frame = face.bounds
         outline.cornerRadius = corner
         let outlineOpacity = outline.opacity
@@ -213,6 +231,80 @@ final class ShelfCardLayer {
             edgeShadow.shadowPath = path
             shadowSize = size
         }
+    }
+
+    /// Starts or stops the capsule's wave. The render server runs it, so it never asks for a frame.
+    func setWaving(_ waving: Bool) {
+        guard waving != isWaving else { return }
+        isWaving = waving
+        for (index, bar) in waveBars.enumerated() {
+            if waving {
+                // shelf-lab's 0.9s ease-in-out bounce, bars delayed 0 / −0.3 / −0.6s.
+                let wave = CABasicAnimation(keyPath: "transform.scale.y")
+                wave.fromValue = 1.0 / 3
+                wave.toValue = 1
+                wave.duration = 0.45
+                wave.autoreverses = true
+                wave.repeatCount = .infinity
+                wave.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                wave.timeOffset = 0.3 * Double(index)
+                bar.add(wave, forKey: "wave")
+            } else {
+                bar.removeAnimation(forKey: "wave")
+            }
+        }
+    }
+
+    private func showNowPlaying(_ nowPlaying: NowPlayingBadge?) {
+        isLive = nowPlaying?.isLive ?? false
+        guard let nowPlaying else {
+            capsule?.isHidden = true
+            setWaving(false)
+            return
+        }
+        if capsule == nil {
+            buildCapsule()
+        }
+        capsule?.isHidden = false
+        capsuleText?.string = nowPlaying.text
+        // 6pt insets, 9pt of bars and a 4pt gap: the text starts at 19.
+        capsuleWidth = min(StageLayerStyle.width(nowPlaying.text, size: 10, weight: .semibold) + 25, StageGeometry.cardSize.width - 16)
+    }
+
+    private func buildCapsule() {
+        let capsule = CALayer()
+        // Half the 18pt height, not `Corner.capsule`: Core Animation bends a larger radius into a lens,
+        // or draws nothing once it passes half the width too.
+        capsule.cornerRadius = 9
+        capsule.cornerCurve = .continuous
+        capsule.backgroundColor = NSColor(DesignTokens.EditDesk.Colors.mediaChipFill).cgColor
+        capsule.borderWidth = 0.5
+        capsule.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        let glyph = NSColor(DesignTokens.EditDesk.Colors.nowPlayingGlyph).cgColor
+        // 2×9pt bars 1.5pt apart after the 6pt inset, standing on the line that centres 9pt in 18pt;
+        // at rest they are 5, 9 and 6pt tall.
+        let restingScales: [CGFloat] = [5.0 / 9, 1, 6.0 / 9]
+        waveBars = restingScales.enumerated().map { index, rest -> CALayer in
+            let bar = CALayer()
+            bar.backgroundColor = glyph
+            bar.cornerRadius = 1
+            bar.cornerCurve = .continuous
+            bar.anchorPoint = CGPoint(x: 0.5, y: 1)
+            bar.bounds = CGRect(x: 0, y: 0, width: 2, height: 9)
+            bar.position = CGPoint(x: 7 + 3.5 * CGFloat(index), y: 13.5)
+            bar.transform = CATransform3DMakeScale(1, rest, 1)
+            capsule.addSublayer(bar)
+            return bar
+        }
+        let text = CATextLayer()
+        StageLayerStyle.text(text, size: 10, weight: .semibold)
+        // Middle, so a long display name never truncates the "+N" count away.
+        text.truncationMode = .middle
+        text.foregroundColor = StageLayerStyle.white
+        capsule.addSublayer(text)
+        face.insertSublayer(capsule, above: thumbnail)
+        self.capsule = capsule
+        capsuleText = text
     }
 }
 

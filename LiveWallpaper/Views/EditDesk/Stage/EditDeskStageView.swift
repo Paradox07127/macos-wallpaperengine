@@ -559,6 +559,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             // building a card means ten sublayers and two fonts.
             if reserve.count < Self.reserveLimit {
                 tile.layer.isHidden = true
+                // A parked tile is never placed, so `place` would not stop its wave.
+                tile.setWaving(false)
                 reserve.append(tile)
             } else {
                 tile.layer.removeFromSuperlayer()
@@ -1770,7 +1772,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             element.setAccessibilityRole(.button)
             element.setAccessibilityEnabled(!model.interactionBlocked)
-            element.setAccessibilityLabel(card.title + " " + card.metaLine)
+            element.setAccessibilityLabel(card.title + " " + card.metaLine + (card.nowPlaying.map { ", " + $0.accessibilityText } ?? ""))
             element.setAccessibilityParent(self)
             element.cardID = id
             return element

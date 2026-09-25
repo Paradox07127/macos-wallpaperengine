@@ -47,8 +47,8 @@ struct BrowsePane: View {
     @State private var pageJumpText: String = "1"
     @State private var installedWorkshopIDs: Set<String> = []
     @State private var importedAtByWorkshopID: [String: Date] = [:]
-    /// Workshop ID → the ON badge of the displays running that project.
-    @State private var inUseBadges: [String: String] = [:]
+    /// Workshop ID → the displays that project is set on.
+    @State private var inUseBadges: [String: NowPlayingBadge] = [:]
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -776,7 +776,7 @@ struct BrowsePane: View {
     }
 
     private func reloadInUseBadges() {
-        // `onBadge` reads only each display's id, frame and name.
+        // `NowPlayingBadge` reads each display's id, frame and name; the Workshop card's capsule never moves, so `state` is moot.
         let displays = screenManager.screens.map { screen in
             StageDisplay(
                 id: screen.id, fingerprint: screen.displayFingerprint, frame: screen.frame, isBuiltin: false,
@@ -789,7 +789,7 @@ struct BrowsePane: View {
                 running[workshopID, default: []].append(screen.id)
             }
         }
-        inUseBadges = running.compactMapValues { StageCard.onBadge(on: $0, among: displays) }
+        inUseBadges = running.compactMapValues { NowPlayingBadge(on: $0, among: displays) }
     }
 
     private static func countdown(_ seconds: TimeInterval) -> String {

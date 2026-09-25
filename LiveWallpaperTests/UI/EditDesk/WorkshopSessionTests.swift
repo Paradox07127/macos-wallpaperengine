@@ -110,9 +110,15 @@ struct BrowseCardEqualityTests {
         )
     }
 
+    /// Set on one drawing display, "Studio".
+    private static let studio = NowPlayingBadge(on: [1], among: [StageDisplay(
+        id: 1, fingerprint: "Studio", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), isBuiltin: false,
+        name: "Studio", badgeText: "", statusText: "", cover: nil, state: .ok
+    )])
+
     private static func card(
         presentation: BrowsePresentation = .legacy, isRevealed: Bool = false, isInLibrary: Bool = false,
-        hasUpdate: Bool = false, inUseBadge: String? = nil,
+        hasUpdate: Bool = false, inUseBadge: NowPlayingBadge? = nil,
         preferences: GalleryCardPreferences = GalleryCardPreferences(), tags: [String] = []
     ) -> BrowseCard {
         BrowseCard(
@@ -139,7 +145,7 @@ struct BrowseCardEqualityTests {
     @Test("The update and in-use badges are part of equality, or EquatableView would swallow the refresh")
     func badgesEnterEquality() {
         #expect(Self.card(hasUpdate: false) != Self.card(hasUpdate: true))
-        #expect(Self.card(inUseBadge: nil) != Self.card(inUseBadge: "ON Studio"))
+        #expect(Self.card(inUseBadge: nil) != Self.card(inUseBadge: Self.studio))
     }
 
     @Test("An Edit Desk browse card reads out only the marks it draws")
@@ -148,7 +154,7 @@ struct BrowseCardEqualityTests {
         let inUse = String(localized: "Currently in use", bundle: .appLanguage)
         let update = String(localized: "Update available", bundle: .appLanguage)
 
-        let drawn = Self.card(presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: "ON Studio")
+        let drawn = Self.card(presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio)
             .accessibilityLabelText
         #expect(drawn.contains(update) && drawn.contains(inUse), "a drawn badge is not read: \(drawn)")
         #expect(!drawn.contains(inLibrary), "the check that Needs Update replaced is still read: \(drawn)")
@@ -161,7 +167,7 @@ struct BrowseCardEqualityTests {
         #expect(!switchedOff.contains(inLibrary), "the check is read with its switch off: \(switchedOff)")
 
         let blurred = Self.card(
-            presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: "ON Studio", tags: ["Mature"]
+            presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio, tags: ["Mature"]
         ).accessibilityLabelText
         #expect(![inLibrary, inUse, update].contains { blurred.contains($0) }, "a blurred card draws no marks but reads: \(blurred)")
 
