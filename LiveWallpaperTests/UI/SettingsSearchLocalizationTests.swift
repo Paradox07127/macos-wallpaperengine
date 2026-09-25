@@ -101,7 +101,7 @@ struct SettingsSearchLocalizationTests {
     @Test("The shelf's current style names reach the Shelf style section", arguments: languages)
     func shelfStyleNamesReachTheShelfSection(language: String) throws {
         let bundle = try bundle(for: language)
-        for style in ["Fan", "Focus Row"] {
+        for style in ["Facing In", "Crate", "Folders", "Fan", "Focus Row"] {
             let query = style.localized(in: bundle)
             let anchor = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
                 .first { $0.destination == .general }?.anchor

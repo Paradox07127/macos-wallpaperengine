@@ -21173,6 +21173,7 @@
       }
     },
     "Delete preset" : {
+      "comment" : "Scene preset menu item: delete the applied preset, whether saved by the user or downloaded from the Workshop.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

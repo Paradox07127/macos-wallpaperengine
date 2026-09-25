@@ -31,7 +31,7 @@
 | **Wallpaper Engine 场景** | Pro | 原生 Metal 渲染 `scene.pkg` 项目 —— 粒子、着色器特效、木偶变形动画、音频反应图层、光标特效。支持导入本地项目文件夹，或通过 Steam Workshop 下载场景及社区预设；兼容程度随项目而异。 |
 | **视频** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`，平滑循环，HDR 感知色彩管线，可逐屏播放或跨所有屏幕铺展。 |
 | **网页** | Lite + Pro | 沙盒化 `WKWebView`，支持 JavaScript 开关、跟踪器拦截、自定义 CSS、定时自动刷新。 |
-| **Apple Aerials** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
+| **Apple 航拍** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
 
 ## 实际效果
 
@@ -58,7 +58,7 @@
 
 | | **Lite** | **Pro** |
 |---|:---:|:---:|
-| 视频 / 网页 / Apple Aerials、播放列表、计划、叠加层、快捷键 | ✅ | ✅ |
+| 视频 / 网页 / Apple 航拍、播放列表、计划、叠加层、快捷键 | ✅ | ✅ |
 | Wallpaper Engine 场景渲染与导入 | — | ✅ |
 | Steam 创意工坊在线浏览与下载 | — | ✅ |
 | 场景预设（创意工坊预设 + 自己保存的参数） | — | ✅ |
@@ -68,7 +68,7 @@
 | 音乐层、天气组件和整屏方案 | ✅ | ✅ |
 | 系统壁纸视频 provider（macOS 26+，有兼容性检查） | ✅ | ✅ |
 
-Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、Aerials 的保真度与 Pro 完全一致。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
+Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、航拍的保真度与 Pro 完全一致。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
 
 ## 安装
 
