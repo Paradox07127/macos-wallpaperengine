@@ -16,8 +16,13 @@ enum DisplayKind: Equatable {
 /// (design handoff SCREENS.md S1: "类型角标" / "名称行").
 enum ScreenPresentation {
     /// Verbatim glyphs, not translated — same rule as `VideoFormatBadge.displayLabel`.
-    static func badgeText(kind: DisplayKind, diagonalInches: Double?, refreshRate: Int) -> String {
+    /// `systemName`: macOS's own name for a renamed display, standing in for EXTERNAL; nil when it was not renamed.
+    static func badgeText(kind: DisplayKind, systemName: String? = nil, diagonalInches: Double?, refreshRate: Int) -> String {
         var segments = [prefix(for: kind)]
+        if kind == .external, let systemName, !systemName.isEmpty {
+            let name = systemName.uppercased()
+            segments[0] = name.count > systemNameLimit ? String(name.prefix(systemNameLimit)) + "…" : name
+        }
         if let diagonalInches {
             segments.append("\(Int(diagonalInches.rounded()))″")
         }
@@ -59,6 +64,9 @@ enum ScreenPresentation {
         return .external
     }
 
+    /// The badge is not bounded by the shell's width, so a longer name would run off a narrow display.
+    private static let systemNameLimit = 20
+
     private static func prefix(for kind: DisplayKind) -> String {
         switch kind {
         case .macBookPro: "MACBOOK PRO"
@@ -77,12 +85,18 @@ enum ScreenPresentation {
         if productName.isEmpty {
             productName = hardwareModelIdentifier()
         }
+        let localizedName = screen.nsScreen.localizedName
         let displayKind = kind(
             isBuiltin: CGDisplayIsBuiltin(screen.id) != 0,
-            localizedName: screen.nsScreen.localizedName,
+            localizedName: localizedName,
             productName: productName
         )
-        let badge = badgeText(kind: displayKind, diagonalInches: screen.diagonalInches, refreshRate: refreshRate)
+        // An empty `localizedName` leaves `systemName` as a geometry string, which is no model name.
+        let renamed = screen.name != screen.systemName && !localizedName.isEmpty
+        let badge = badgeText(
+            kind: displayKind, systemName: renamed ? localizedName : nil,
+            diagonalInches: screen.diagonalInches, refreshRate: refreshRate
+        )
         let status = statusText(pointSize: screen.frame.size, isMain: CGDisplayIsMain(screen.id) != 0)
         return (badge, status)
     }

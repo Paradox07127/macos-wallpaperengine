@@ -95,6 +95,28 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.thermalBarFraction(.critical) == 1)
     }
 
+    // MARK: Memory and battery
+
+    private static let gib: UInt64 = 1 << 30
+
+    @Test("The memory row and dial read this app in the App scope and the whole system otherwise")
+    func memoryReadoutFollowsTheScope() {
+        let app = StatusCapsuleModel.memoryReadout(scope: "app", systemFraction: 0.5, appBytes: Self.gib, totalBytes: 16 * Self.gib)
+        #expect(app.fraction == 1.0 / 16)
+        #expect(app.text.hasPrefix(FormatUtils.formatBytes(Self.gib)), Comment(rawValue: app.text))
+        let system = StatusCapsuleModel.memoryReadout(scope: "system", systemFraction: 0.5, appBytes: Self.gib, totalBytes: 16 * Self.gib)
+        #expect(system.fraction == 0.5)
+        #expect(system.text == "\(FormatUtils.formatBytes(8 * Self.gib)) / \(FormatUtils.formatBytes(16 * Self.gib))")
+    }
+
+    @Test("On battery the footer carries the charge and its icon; on external power it says nothing")
+    func batteryReadoutOnlyOnBattery() {
+        let battery = StatusCapsuleModel.batteryReadout(.battery(level: 0.72))
+        #expect(battery?.text == FormatUtils.formatFractionAsPercent(0.72))
+        #expect(battery?.symbol == "battery.75")
+        #expect(StatusCapsuleModel.batteryReadout(.external) == nil)
+    }
+
     // MARK: Dismissal hit testing
 
     /// WP 7B: the click arrives from AppKit in window coordinates (y up from the content view's

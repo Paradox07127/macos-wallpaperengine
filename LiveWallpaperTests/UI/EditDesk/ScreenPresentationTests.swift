@@ -25,6 +25,28 @@ struct ScreenPresentationTests {
         #expect(ScreenPresentation.badgeText(kind: .macBookPro, diagonalInches: 15.6, refreshRate: 120) == "MACBOOK PRO · 16″ · 120 Hz")
     }
 
+    @Test("A renamed external display shows macOS's own name in the badge, cut to 20 characters")
+    func renamedExternalBadgeShowsTheSystemName() {
+        #expect(
+            ScreenPresentation.badgeText(kind: .external, systemName: "Dell U2720Q", diagonalInches: 27, refreshRate: 60)
+                == "DELL U2720Q · 27″ · 60 Hz"
+        )
+        let long = String(repeating: "ABCDEFGHIJ", count: 3)
+        #expect(
+            ScreenPresentation.badgeText(kind: .external, systemName: long, diagonalInches: nil, refreshRate: 60)
+                == "ABCDEFGHIJABCDEFGHIJ… · 60 Hz"
+        )
+    }
+
+    @Test("A built-in display keeps its model word, and an external one without a system name keeps EXTERNAL")
+    func systemNameLeavesOtherBadgesAlone() {
+        #expect(
+            ScreenPresentation.badgeText(kind: .macBookPro, systemName: "Built-in Retina Display", diagonalInches: 16, refreshRate: 120)
+                == "MACBOOK PRO · 16″ · 120 Hz"
+        )
+        #expect(ScreenPresentation.badgeText(kind: .external, systemName: nil, diagonalInches: 27, refreshRate: 60) == "EXTERNAL · 27″ · 60 Hz")
+    }
+
     @Test("Built-in classification reads the raw model-identifier prefix when that's all it's given")
     func builtinClassification() {
         #expect(ScreenPresentation.kind(isBuiltin: true, localizedName: "Built-in Retina Display", productName: "MacBookPro18,3") == .macBookPro)

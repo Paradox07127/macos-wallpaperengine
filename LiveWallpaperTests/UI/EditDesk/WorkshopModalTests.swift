@@ -451,5 +451,33 @@ struct WorkshopModalTests {
             )
         }
     }
+
+    // MARK: Copy link / Copy ID
+
+    @MainActor
+    private final class CopyRecorder {
+        var texts: [String] = []
+    }
+
+    private func actions(copyText: (@MainActor (String) -> Void)?) -> WorkshopModalActions {
+        WorkshopModalActions(
+            press: { _ in }, saveOnly: {}, cancelDownload: {}, connectSteam: {},
+            openInSteam: {}, reveal: {}, openItem: { _ in }, copyText: copyText
+        )
+    }
+
+    @Test("The title row offers Copy link and Copy ID ahead of Open in Steam, each copying its own text")
+    func titleRowCopiesTheLinkAndTheID() throws {
+        let item = try item(posted: Date(timeIntervalSince1970: 0))
+        let recorder = CopyRecorder()
+        let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item)
+        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam])
+        for action in header.prefix(2) {
+            action.perform()
+        }
+        #expect(recorder.texts == [item.steamCommunityURL.absoluteString, "42"])
+        // Control: a host that cannot copy draws only the Steam button.
+        #expect(actions(copyText: nil).headerActions(for: item).map(\.kind) == [.openInSteam])
+    }
 }
 #endif

@@ -294,6 +294,11 @@ struct WorkshopModalHost: View {
             browseCreator: { steamID, name in
                 presentedItemID = nil
                 Task { await session.browse.browseCreator(steamID: steamID, name: name) }
+            },
+            copyText: { text in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                toasts.post(String(localized: "Copied", bundle: .appLanguage), style: .success)
             }
         )
     }

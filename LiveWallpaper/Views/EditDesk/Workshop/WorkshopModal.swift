@@ -44,7 +44,7 @@ struct WorkshopModal: View {
             windowSize: windowSize,
             titlebarInset: titlebarInset,
             title: item.title,
-            actions: [ModalHeaderAction(kind: .openInSteam, perform: actions.openInSteam)],
+            actions: actions.headerActions(for: item),
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut
         ) { _ in
@@ -220,6 +220,18 @@ struct WorkshopModal: View {
         guard let target = ModalKeyMap.target(forShortcut: index, in: row.targets),
               ModalDisplayButtons.isEnabled(target, canApply: row.canPress, mode: row.mode) else { return }
         actions.press(target.id)
+    }
+}
+
+extension WorkshopModalActions {
+    func headerActions(for item: WorkshopQueryItem) -> [ModalHeaderAction] {
+        var actions: [ModalHeaderAction] = []
+        if let copyText {
+            actions.append(ModalHeaderAction(kind: .copyLink) { copyText(item.steamCommunityURL.absoluteString) })
+            actions.append(ModalHeaderAction(kind: .copyID) { copyText(String(item.id)) })
+        }
+        actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
+        return actions
     }
 }
 #endif

@@ -109,7 +109,7 @@ struct WallpaperTagChip: Equatable, Identifiable {
 /// A title-row button of the detail modal: one "…" row that is not an apply.
 struct ModalHeaderAction: Identifiable {
     enum Kind: Equatable {
-        case showInFinder, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
+        case showInFinder, copyLink, copyID, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
     }
 
     let kind: Kind
@@ -126,6 +126,8 @@ struct ModalHeaderAction: Identifiable {
     var symbol: String {
         switch kind {
         case .showInFinder: "folder"
+        case .copyLink: "link"
+        case .copyID: "doc.on.doc"
         case .openInSteam: "arrow.up.forward.app"
         case .rename: "pencil"
         case .checkForUpdate: "arrow.triangle.2.circlepath"
@@ -137,6 +139,8 @@ struct ModalHeaderAction: Identifiable {
     var title: String {
         switch kind {
         case .showInFinder: String(localized: "Show in Finder", bundle: .appLanguage)
+        case .copyLink: String(localized: "Copy link", bundle: .appLanguage)
+        case .copyID: String(localized: "Copy ID", bundle: .appLanguage)
         case .openInSteam: String(localized: "Open in Steam", bundle: .appLanguage)
         case .rename:
             String(

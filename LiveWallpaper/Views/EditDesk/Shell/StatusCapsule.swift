@@ -80,6 +80,26 @@ enum StatusCapsuleModel {
         wallpapersEnabled ? configured : 0
     }
 
+    /// `scope` is `RAMScopePicker`'s value: "app" reads this process, anything else the whole system.
+    static func memoryReadout(
+        scope: String, systemFraction: Double, appBytes: UInt64, totalBytes: UInt64
+    ) -> (fraction: Double, text: String) {
+        let total = FormatUtils.formatBytes(totalBytes)
+        if scope == "app" {
+            // `SystemMonitor` reports 0 total until its first sample.
+            let fraction = totalBytes > 0 ? Double(appBytes) / Double(totalBytes) : 0
+            return (fraction, "\(FormatUtils.formatBytes(appBytes)) / \(total)")
+        }
+        let used = UInt64(Double(totalBytes) * systemFraction)
+        return (systemFraction, "\(FormatUtils.formatBytes(used)) / \(total)")
+    }
+
+    /// nil on external power: the footer names the battery only while the Mac runs on it.
+    static func batteryReadout(_ source: PowerMonitor.PowerSource) -> (symbol: String, text: String)? {
+        guard case let .battery(level) = source else { return nil }
+        return (source.iconName, FormatUtils.formatFractionAsPercent(level))
+    }
+
     /// SCREENS S1: TEMP bar fills in four fixed steps, one per thermal state.
     static func thermalBarFraction(_ state: ProcessInfo.ThermalState) -> Double {
         switch state {
@@ -106,6 +126,8 @@ struct StatusCapsule: View {
     @State private var capsuleFrame: CGRect = .zero
     @FocusState private var panelFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("Dashboard.RAMScope", store: .appScoped()) private var ramScope = "system"
+    @State private var powerSource = PowerMonitor.shared.currentPowerSource
 
     private var monitor: SystemMonitor {
         SystemMonitor.shared
@@ -119,10 +141,22 @@ struct StatusCapsule: View {
         )
     }
 
+    private var memory: (fraction: Double, text: String) {
+        StatusCapsuleModel.memoryReadout(
+            scope: ramScope, systemFraction: monitor.systemMemoryUsage,
+            appBytes: monitor.memoryUsage, totalBytes: monitor.totalMemory
+        )
+    }
+
     var body: some View {
         contentView
             .onAppear { SystemMonitor.shared.startMonitoring() }
             .onDisappear { SystemMonitor.shared.stopMonitoring() }
+            .onReceive(NotificationCenter.default.publisher(for: PowerMonitor.powerSourceDidChangeNotification)) { notification in
+                if let source = notification.userInfo?["newSource"] as? PowerMonitor.PowerSource {
+                    powerSource = source
+                }
+            }
     }
 
     @ViewBuilder
@@ -216,14 +250,15 @@ struct StatusCapsule: View {
                 if let gpu = monitor.gpuUsage {
                     dial("GPU", fraction: gpu / 100) { Text(verbatim: percentText(gpu)) }
                 }
-                dial("MEM", fraction: monitor.systemMemoryUsage) {
-                    Text(verbatim: percentText(monitor.systemMemoryUsage * 100))
+                dial("MEM", fraction: memory.fraction) {
+                    Text(verbatim: percentText(memory.fraction * 100))
                 }
                 dial("TEMP", fraction: StatusCapsuleModel.thermalBarFraction(monitor.thermalState)) {
                     Image(systemName: "thermometer.medium")
                         .accessibilityLabel(Text(LocalizedStringKey(StatusCapsuleModel.thermalLabelKey(monitor.thermalState))))
                 }
             }
+            memoryRow
             Rectangle()
                 .fill(DesignTokens.EditDesk.Colors.strokePanel)
                 .frame(height: 1)
@@ -288,11 +323,37 @@ struct StatusCapsule: View {
         return fraction >= Design.Load.elevated ? DesignTokens.Colors.Gauge.medium : DesignTokens.Colors.Gauge.low
     }
 
+    private var memoryRow: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "memorychip")
+            Text(verbatim: memory.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: DesignTokens.EditDesk.Spacing.s8)
+            RAMScopePicker(selection: $ramScope)
+                .fixedSize()
+        }
+        .font(DesignTokens.EditDesk.Typography.metaMono)
+        .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
+    }
+
     private var footerRow: some View {
         HStack(spacing: 4) {
             Text("\(renderingScreenCount) Displays Rendering")
             Text(verbatim: "·")
             Text(batterySaverOn ? "Power Saver" : "Performance")
+            if let battery = StatusCapsuleModel.batteryReadout(powerSource) {
+                Text(verbatim: "·")
+                HStack(spacing: 2) {
+                    Image(systemName: battery.symbol)
+                    Text(verbatim: battery.text)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(
+                    "Battery at \(battery.text)",
+                    comment: "Power source accessibility summary. The placeholder is the formatted battery percent."
+                ))
+            }
         }
         .lineLimit(1)
         .minimumScaleFactor(0.8)

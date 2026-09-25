@@ -350,5 +350,7 @@ struct WorkshopModalActions {
     var openItem: @MainActor (UInt64) -> Void
     var selectTag: (@MainActor (String) -> Void)?
     var browseCreator: (@MainActor (String, String?) -> Void)?
+    /// Puts the item's link or ID on the pasteboard; nil leaves both copy buttons out of the title row.
+    var copyText: (@MainActor (String) -> Void)?
 }
 #endif

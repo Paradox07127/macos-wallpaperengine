@@ -227,7 +227,7 @@ struct PowerStatusCard: View {
             }
 
             VStack(spacing: 1) {
-                Image(systemName: iconName)
+                Image(systemName: powerSource.iconName)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(statusColor)
                 Text(verbatim: powerSource.valueLabel)
@@ -245,19 +245,6 @@ struct PowerStatusCard: View {
         }
         .frame(width: 54, height: 54)
         .frame(maxWidth: .infinity)
-    }
-
-    private var iconName: String {
-        switch powerSource {
-        case .battery(let level):
-            if level <= 0.1 { return "battery.0" }
-            if level <= 0.25 { return "battery.25" }
-            if level <= 0.5 { return "battery.50" }
-            if level <= 0.75 { return "battery.75" }
-            return "battery.100"
-        case .external:
-            return "bolt.fill"
-        }
     }
 
     private var statusColor: Color {
@@ -297,17 +284,40 @@ private extension PowerMonitor.PowerSource {
     }
 }
 
-struct RAMScopePicker: View {
+public extension PowerMonitor.PowerSource {
+    var iconName: String {
+        switch self {
+        case let .battery(level):
+            if level <= 0.1 {
+                return "battery.0"
+            }
+            if level <= 0.25 {
+                return "battery.25"
+            }
+            if level <= 0.5 {
+                return "battery.50"
+            }
+            if level <= 0.75 {
+                return "battery.75"
+            }
+            return "battery.100"
+        case .external:
+            return "bolt.fill"
+        }
+    }
+}
+
+public struct RAMScopePicker: View {
     @Binding var selection: String
     var maxWidth: CGFloat?
 
 
-    init(selection: Binding<String>, maxWidth: CGFloat? = nil) {
+    public init(selection: Binding<String>, maxWidth: CGFloat? = nil) {
         self._selection = selection
         self.maxWidth = maxWidth
     }
 
-    var body: some View {
+    public var body: some View {
         GlassSegmentedPicker(
             selection: $selection,
             values: ["system", "app"],
