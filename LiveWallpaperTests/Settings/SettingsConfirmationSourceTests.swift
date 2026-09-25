@@ -28,4 +28,23 @@ struct SettingsConfirmationSourceTests {
         #expect(presentsSheet, "the settings page presents no sheet of its own")
         #expect(hostsAddSheet, "the settings page's sheet does not host SystemWallpaperAddSheet")
     }
+
+    @Test("The Add Video sheet cannot be closed while it publishes")
+    func addVideoSheetStaysOpenWhilePublishing() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift")
+        let footer = try Self.slice(source, from: "SheetFooterBar(", to: ".frame(width:")
+        let chooseFiles = try Self.slice(source, from: "private var chooseFilesRow", to: "private func toggle")
+        let footerLocks = footer.contains(".disabled(isPublishing)")
+        let chooseFilesLocks = chooseFiles.contains(".disabled(isPublishing)")
+        let addStaysGated = footer.contains("primaryDisabled: selection.isEmpty || isPublishing")
+        #expect(footerLocks, "Cancel and its Esc shortcut close the sheet mid-publish, so later failures have nowhere to show")
+        #expect(chooseFilesLocks, "Choose Files closes the sheet mid-publish, so later failures have nowhere to show")
+        #expect(addStaysGated, "Add can start a second publish while one is running")
+    }
+
+    private static func slice(_ source: String, from start: String, to end: String) throws -> String {
+        let startRange = try #require(source.range(of: start))
+        let endRange = try #require(source.range(of: end, range: startRange.upperBound ..< source.endIndex))
+        return String(source[startRange.lowerBound ..< endRange.lowerBound])
+    }
 }
