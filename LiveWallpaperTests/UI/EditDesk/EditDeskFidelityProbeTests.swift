@@ -580,7 +580,7 @@ struct S6DetailFidelityTests {
             ],
             hero: DetailHeroStatus(
                 title: "Painting the Sharks 4K", kindLine: "Scene · auto-detected",
-                intendsToPlay: true, performanceLine: "▶ 60 FPS · GPU 18%"
+                intendsToPlay: true
             ),
             heroImage: ProbeRenderer.solid(ProbeRenderer.heroMagenta),
             backdropImage: nil,
@@ -701,6 +701,50 @@ struct S6DetailFidelityTests {
         ProbeRenderer.report("S6.contract.stage1280", stage)
         expectClose(stage.minY, 56, "S6.contract.stage.top", tolerance: 0)
         expectClose(stage.width, 908, "S6.contract.stage.w", tolerance: 0)
+    }
+
+    @Test("S6-B facts chip keeps the dark-appearance warning tint in a light app")
+    func factsChipWarningTint() async throws {
+        let size = CGSize(width: 480, height: 270)
+        let status = DetailHeroStatus(
+            title: "Probe", kindLine: "", intendsToPlay: nil, facts: [DetailFact(text: "████", isWarning: true)]
+        )
+        let image = await ProbeRenderer.render(nil, size: size, appearance: .aqua, settle: 0.3) {
+            DetailHero(status: status, image: ProbeRenderer.solid(.black), size: size, hud: { EmptyView() })
+        }
+        let dark = await Self.warningSwatch(.darkAqua)
+        let light = await Self.warningSwatch(.aqua)
+        let drawn = try #require(Self.warmestPixel(in: image), "the chip drew no warning glyph")
+        ProbeRenderer.report("S6.factsChip.warning", "drawn \(drawn), dark \(dark), light \(light)")
+        #expect(drawn.matches(dark, tolerance: 6), "the chip drew \(drawn); the dark-appearance tint is \(dark)")
+        // mediaChipFill over a black backdrop is the darkest the chip can get.
+        let fill = try #require(NSColor(DesignTokens.EditDesk.Colors.mediaChipFill).usingColorSpace(.sRGB))
+        let darkest = SIMD3(Double(fill.redComponent), Double(fill.greenComponent), Double(fill.blueComponent))
+            * Double(fill.alphaComponent)
+        let ratio = WPEMediaArtworkPalette.contrastRatio(SIMD3(Double(drawn.r), Double(drawn.g), Double(drawn.b)) / 255, darkest)
+        ProbeRenderer.report("S6.factsChip.contrastOnDarkest", ratio)
+        #expect(ratio >= 4.5, "contrast \(ratio)")
+    }
+
+    private static func warningSwatch(_ appearance: NSAppearance.Name) async -> ProbeColor {
+        let image = await ProbeRenderer.render(nil, size: CGSize(width: 16, height: 16), appearance: appearance, settle: 0.1) {
+            Rectangle().fill(DesignTokens.EditDesk.Colors.warning)
+        }
+        return image.rgb(px: image.width / 2, image.height / 2)
+    }
+
+    /// The warning glyphs are the only warm marks in the frame, and a fully covered pixel carries the tint itself.
+    private static func warmestPixel(in image: ProbeImage) -> ProbeColor? {
+        var warmest: ProbeColor?
+        for y in 0 ..< image.height {
+            for x in 0 ..< image.width {
+                let pixel = image.rgb(px: x, y)
+                if pixel.r - pixel.b > (warmest.map { $0.r - $0.b } ?? 60) {
+                    warmest = pixel
+                }
+            }
+        }
+        return warmest
     }
 }
 

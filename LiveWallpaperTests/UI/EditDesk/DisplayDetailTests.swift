@@ -193,4 +193,92 @@ struct DisplayDetailTests {
         #expect(split.visible.map(\.id) == [1, 2, 5])
         #expect(split.overflow == 2)
     }
+
+    // MARK: Hero facts
+
+    @Test("A 4K HDR video lists its badges, pixel size, frame rate and file size in the old overlay's order")
+    @MainActor
+    func videoFactsKeepTheOldOrder() {
+        let bytes: Int64 = 1_500_000_000
+        let uhd = VideoFormatInfo(isHDR: true, resolution: CGSize(width: 3840, height: 2160), frameRate: 60)
+        let size = WorkshopByteFormatter.kilobytesAndUp.string(fromByteCount: bytes)
+        #expect(DetailFacts.video(format: uhd, fileSize: bytes).map(\.text) == ["4K", "HDR", "3840×2160", "60 FPS", size])
+        let sdr = VideoFormatInfo(resolution: CGSize(width: 1920, height: 1080), frameRate: 30)
+        #expect(DetailFacts.video(format: sdr, fileSize: nil).map(\.text) == ["1920×1080", "30 FPS"])
+    }
+
+    @Test("A video the player has not probed yet, with no size on record, lists nothing")
+    @MainActor
+    func unprobedVideoHasNoFacts() {
+        #expect(DetailFacts.video(format: nil, fileSize: nil).isEmpty)
+        #expect(DetailFacts.video(format: VideoFormatInfo(), fileSize: nil).isEmpty)
+    }
+
+    @Test("A web page flags plain HTTP and disabled JavaScript as warnings")
+    @MainActor
+    func webFactsFlagHTTPAndNoJavaScript() throws {
+        var config = HTMLConfig.default
+        config.allowJavaScript = false
+        config.physicalPixelLayout = true
+        config.allowMouseInteraction = true
+        let http = try #require(URL(string: "http://example.com"))
+        let facts = DetailFacts.web(source: .url(http), config: config)
+        #expect(facts.map(\.text) == [
+            "HTTP",
+            String(localized: "No JS", bundle: .appLanguage),
+            String(localized: "Phys PX", bundle: .appLanguage),
+            String(localized: "Clicks", bundle: .appLanguage),
+        ])
+        #expect(facts.map(\.isWarning) == [true, true, false, false])
+        let https = try #require(URL(string: "https://example.com"))
+        #expect(DetailFacts.web(source: .url(https), config: .default).map(\.text) == ["JS"])
+    }
+
+    @Test("A local page with JavaScript on has nothing to flag")
+    @MainActor
+    func localWebPageHasNoFacts() {
+        let folder = HTMLSource.folder(bookmarkData: Data(), indexFileName: "index.html")
+        #expect(DetailFacts.web(source: folder, config: .default).isEmpty)
+    }
+
+    #if !LITE_BUILD
+    @Test("A scene flags its Windows plugin and names its source folder and dependency count")
+    @MainActor
+    func sceneFactsFlagTheWindowsPlugin() {
+        let facts = DetailFacts.scene(
+            origin: sceneOrigin(requiresWindowsPlugin: true),
+            descriptor: sceneDescriptor(assetStorage: .sourceDirectory, dependencies: ["2", "3"])
+        )
+        #expect(facts.map(\.text) == [
+            String(localized: "Win plugin", bundle: .appLanguage),
+            String(localized: "Folder", bundle: .appLanguage),
+            "\(String(localized: "Dependencies", bundle: .appLanguage)) 2",
+        ])
+        #expect(facts.map(\.isWarning) == [true, false, false])
+    }
+
+    @Test("A cached scene with no dependencies has nothing to flag")
+    @MainActor
+    func cachedSceneHasNoFacts() {
+        let facts = DetailFacts.scene(
+            origin: sceneOrigin(requiresWindowsPlugin: false),
+            descriptor: sceneDescriptor(assetStorage: .cache, dependencies: [])
+        )
+        #expect(facts.isEmpty)
+    }
+
+    private func sceneOrigin(requiresWindowsPlugin: Bool) -> WPEOrigin {
+        WPEOrigin(
+            workshopID: "1", title: "Scene", originalType: .scene, sourceFolderBookmark: Data(),
+            cacheRelativePath: nil, previewFileName: nil, requiresWindowsPlugin: requiresWindowsPlugin
+        )
+    }
+
+    private func sceneDescriptor(assetStorage: SceneAssetStorage, dependencies: [String]) -> SceneDescriptor {
+        SceneDescriptor(
+            workshopID: "1", cacheRelativePath: "wpe-cache/1", entryFile: "scene.json",
+            capabilityTier: .imageOnly, assetStorage: assetStorage, dependencyWorkshopIDs: dependencies
+        )
+    }
+    #endif
 }

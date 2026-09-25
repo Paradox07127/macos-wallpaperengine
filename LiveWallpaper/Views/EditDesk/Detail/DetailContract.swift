@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import LiveWallpaperCore
 import SwiftUI
 
 // Seam for M3: the half-immersive display detail. Pure geometry and value types only; the
@@ -111,7 +112,70 @@ struct DetailHeroStatus: Equatable {
     var intendsToPlay: Bool?
     /// Why a policy holds the desktop session stopped; nil while none does.
     var pauseReason: String?
-    /// nil hides the `▶ {fps} FPS · GPU {x}%` chip.
-    var performanceLine: String?
     var canNavigatePlaylist = false
+    var facts: [DetailFact] = []
+}
+
+struct DetailFact: Equatable {
+    let text: String
+    var isWarning = false
+}
+
+/// The facts the old page's information overlays show over its preview, with their rules and order.
+@MainActor
+enum DetailFacts {
+    /// `fileSize` in bytes; nil leaves it out.
+    static func video(format: VideoFormatInfo?, fileSize: Int64?) -> [DetailFact] {
+        var facts = (format?.badges ?? []).map { DetailFact(text: $0.displayLabel) }
+        if let resolution = format?.resolution {
+            facts.append(DetailFact(text: "\(Int(resolution.width))×\(Int(resolution.height))"))
+        }
+        if let frameRate = format?.frameRate {
+            facts.append(DetailFact(text: "\(Int(frameRate)) FPS"))
+        }
+        if let fileSize {
+            facts.append(DetailFact(text: WorkshopByteFormatter.kilobytesAndUp.string(fromByteCount: fileSize)))
+        }
+        return facts
+    }
+
+    static func web(source: HTMLSource?, config: HTMLConfig) -> [DetailFact] {
+        guard let source else { return [] }
+        var facts: [DetailFact] = []
+        if source.isInsecureURL {
+            facts.append(DetailFact(text: "HTTP", isWarning: true))
+        }
+        if case .url = source, config.allowJavaScript {
+            facts.append(DetailFact(text: "JS"))
+        } else if !config.allowJavaScript {
+            facts.append(DetailFact(text: String(localized: "No JS", bundle: .appLanguage), isWarning: true))
+        }
+        if config.physicalPixelLayout {
+            facts.append(DetailFact(text: String(localized: "Phys PX", bundle: .appLanguage)))
+        }
+        if config.allowMouseInteraction {
+            facts.append(DetailFact(text: String(localized: "Clicks", bundle: .appLanguage)))
+        }
+        return facts
+    }
+
+    #if !LITE_BUILD
+    static func scene(origin: WPEOrigin, descriptor: SceneDescriptor) -> [DetailFact] {
+        var facts: [DetailFact] = []
+        if origin.requiresWindowsPlugin || descriptor.preflightFeatureFlags.contains(.windowsPlugin) {
+            facts.append(DetailFact(text: String(localized: "Win plugin", bundle: .appLanguage), isWarning: true))
+        }
+        if descriptor.capabilityTier == .unsupported {
+            facts.append(DetailFact(text: descriptor.capabilityTier.localizedLabel, isWarning: true))
+        }
+        if descriptor.assetStorage == .sourceDirectory {
+            facts.append(DetailFact(text: String(localized: "Folder", bundle: .appLanguage)))
+        }
+        if !descriptor.dependencyWorkshopIDs.isEmpty {
+            let dependencies = String(localized: "Dependencies", bundle: .appLanguage)
+            facts.append(DetailFact(text: "\(dependencies) \(descriptor.dependencyWorkshopIDs.count)"))
+        }
+        return facts
+    }
+    #endif
 }

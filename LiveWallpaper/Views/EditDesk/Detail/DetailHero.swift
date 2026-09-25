@@ -40,12 +40,10 @@ struct DetailHero<HUD: View>: View {
                 VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
                     titleChip
                     pauseReasonChip
+                    factsChip
                 }
                 .frame(maxWidth: max(1, size.width - 76), alignment: .leading)
                 .padding(DesignTokens.EditDesk.Spacing.s12)
-            }
-            .overlay(alignment: .topTrailing) {
-                performanceChip.padding(DesignTokens.EditDesk.Spacing.s12)
             }
             .overlay(alignment: .bottom) { bottomBar }
             .overlay { transport }
@@ -131,13 +129,31 @@ struct DetailHero<HUD: View>: View {
     }
 
     @ViewBuilder
-    private var performanceChip: some View {
-        if let line = status.performanceLine {
+    private var factsChip: some View {
+        if !status.facts.isEmpty {
             chip {
-                Text(verbatim: line)
+                Text(Self.factsLine(status.facts))
                     .font(DesignTokens.EditDesk.Typography.metaMono)
             }
+            .accessibilityElement(children: .combine)
+            // Always a dark surface over media: a light app's warning tint would be unreadable on it.
+            .environment(\.colorScheme, .dark)
         }
+    }
+
+    private static func factsLine(_ facts: [DetailFact]) -> AttributedString {
+        var line = AttributedString()
+        for (index, fact) in facts.enumerated() {
+            if index > 0 {
+                line += AttributedString(" · ")
+            }
+            var item = AttributedString(fact.text)
+            if fact.isWarning {
+                item.foregroundColor = DesignTokens.EditDesk.Colors.warning
+            }
+            line += item
+        }
+        return line
     }
 
     private func chip(@ViewBuilder _ content: () -> some View) -> some View {

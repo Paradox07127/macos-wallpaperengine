@@ -245,6 +245,9 @@ struct DisplayDetailHost: View {
                 if cover(target) == nil {
                     refreshCover(target)
                 }
+                if let library, let item = libraryItem(on: target), item.metadata == nil {
+                    Task { await library.probeMetadata(for: [item.id]) }
+                }
                 let session = overlaySessions[screen.displayFingerprint] ?? OverlayEditorSession()
                 overlaySessions[screen.displayFingerprint] = session
                 session.onObjectPersisted = { progress?.record(.overlay) }
@@ -311,20 +314,24 @@ struct DisplayDetailHost: View {
     /// The actions zone draws a leading divider unless it is exactly `EmptyView`, so the whole bar branches.
     @ViewBuilder
     private func hud(for screen: Screen) -> some View {
-        #if !LITE_BUILD
-        if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)),
-           scene.renderFailure != nil {
+        if draft.selectedWallpaperType == .html, let source = draft.htmlSource {
             hudBar(for: screen) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    SceneDiagnosticsButton { showsSceneLog = true }
-                }
+                WebRenderingButton(screen: screen, source: source, config: draft.htmlConfig)
             }
         } else {
+            #if !LITE_BUILD
+            if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)),
+               scene.renderFailure != nil {
+                hudBar(for: screen) {
+                    SceneDiagnosticsButton { showsSceneLog = true }
+                }
+            } else {
+                hudBar(for: screen) { EmptyView() }
+            }
+            #else
             hudBar(for: screen) { EmptyView() }
+            #endif
         }
-        #else
-        hudBar(for: screen) { EmptyView() }
-        #endif
     }
 
     private func hudBar(for screen: Screen, @ViewBuilder actions: () -> some View) -> some View {
@@ -585,15 +592,41 @@ struct DisplayDetailHost: View {
 
     private func heroStatus(_ screen: Screen) -> DetailHeroStatus {
         let configuration = screenManager.getConfiguration(for: screen)
-        let item = library?.items.first { $0.onDisplays.contains(screen.id) }
+        let item = libraryItem(on: screen.id)
         return DetailHeroStatus(
             title: item?.title ?? screen.name,
             kindLine: Self.kindLine(configuration?.activeWallpaper),
             intendsToPlay: screen.playbackController?.userIntendsToPlay,
             pauseReason: SuspendReasonText.localized(for: screenManager.suspendReasonsByScreen[screen.id] ?? []),
-            performanceLine: nil,
-            canNavigatePlaylist: featureCatalog.isEnabled(.playlists) && configuration?.canNavigatePlaylist == true
+            canNavigatePlaylist: featureCatalog.isEnabled(.playlists) && configuration?.canNavigatePlaylist == true,
+            facts: facts(for: screen, configuration: configuration, item: item)
         )
+    }
+
+    private func libraryItem(on displayID: CGDirectDisplayID) -> LibraryItem? {
+        library?.items.first { $0.onDisplays.contains(displayID) }
+    }
+
+    private func facts(for screen: Screen, configuration: ScreenConfiguration?, item: LibraryItem?) -> [DetailFact] {
+        switch configuration?.activeWallpaper {
+        case .video:
+            var fileSize: Int64?
+            if case let .video(video)? = item?.metadata {
+                fileSize = video.fileSize
+            }
+            return DetailFacts.video(format: screen.videoPlayer?.formatInfo, fileSize: fileSize)
+        case .html:
+            return DetailFacts.web(source: draft.htmlSource, config: draft.htmlConfig)
+        case .scene:
+            #if !LITE_BUILD
+            if let scene = DetailSceneStatus(screen: screen, configuration: configuration) {
+                return DetailFacts.scene(origin: scene.origin, descriptor: scene.descriptor)
+            }
+            #endif
+            return []
+        case nil:
+            return []
+        }
     }
 
     /// Also the stage's on-screen type line, so both pages name a wallpaper's kind the same way.
@@ -709,5 +742,27 @@ struct DisplayDetailHost: View {
             style: result.copied == result.total ? .success : .info
         )
         reloadDraft(for: screen)
+    }
+}
+
+private struct WebRenderingButton: View {
+    let screen: Screen
+    let source: HTMLSource
+    let config: HTMLConfig
+    @State private var isPresented = false
+
+    var body: some View {
+        Button { isPresented = true } label: {
+            PreviewControlLabel(systemImage: "ruler", title: "Web Rendering")
+        }
+        .buttonStyle(.borderless)
+        .help(Text("Web Rendering"))
+        .accessibilityLabel(Text("Web Rendering"))
+        .appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {
+            HTMLRenderingDiagnosticsGrid(diagnostics: HTMLRenderingDiagnostics(screen: screen, source: source, config: config))
+                .accessibilityElement(children: .combine)
+                // Two 172pt grid columns and their 12pt gap, plus the chrome's 16pt padding on each side.
+                .settingsPopoverChrome(width: 388)
+        }
     }
 }
