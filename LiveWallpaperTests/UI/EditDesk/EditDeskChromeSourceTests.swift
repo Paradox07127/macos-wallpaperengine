@@ -80,6 +80,69 @@ struct EditDeskChromeSourceTests {
         #expect(!bar.contains("LibrarySearchField("), "the top bar still carries a search field")
     }
 
+    @Test("The Edit Desk controls moved onto Liquid Glass stay on it, with one prominent button per view")
+    func glassControlsFollowTheContract() throws {
+        /// A member's body, cut at its own closing brace.
+        func member(_ source: String, _ signature: String) throws -> String {
+            let start = try #require(source.range(of: signature), Comment(rawValue: "no \(signature)"))
+            return try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }").first)
+        }
+        let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
+        #expect(row.contains(#"GlassIconButton("plus", size: .regular, action: onImport)"#))
+        #expect(row.contains(#".accessibilityLabel(Text("Add to Library"))"#))
+        #expect(row.contains(".adaptiveGlassButton(.regular, shape: .capsule, size: .regular)"))
+        #expect(row.contains(".appLanguagePopover(isPresented: $sortPresented, arrowEdge: .bottom) { sortMenu }"))
+        #expect(row.contains(".onChange(of: stage.snappedIndex) { sortPresented = false }"), "the popover outlives a swipe")
+        #expect(row.contains(".settingsPopoverChrome(width: 200)"))
+        #expect(!row.contains("Menu {"), "a Menu cannot take glass")
+        #expect(!row.contains("\"+ Import\""))
+
+        let status = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
+        let collapsed = try member(status, "private var collapsedCapsule: some View {")
+        #expect(collapsed.contains(".adaptiveGlassSurface(.capsule, interactive: true)"))
+        #expect(collapsed.contains(".buttonStyle(.plain)"))
+        #expect(!collapsed.contains("Capsule().fill("), "a flat fill under the glass hides it")
+        #expect(!collapsed.contains("strokeBorder("))
+
+        let onboarding = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift")
+        let capsule = try member(onboarding, "private func capsule(_ dots: [Bool]) -> some View {")
+        #expect(capsule.contains(".adaptiveGlassSurface(.capsule, interactive: true)"))
+        #expect(!capsule.contains("Capsule().fill("), "a flat fill under the glass hides it")
+        #expect(!capsule.contains("strokePanel"), "only the hover edge stays")
+        #expect(onboarding.contains(".buttonStyle(OnboardingPressStyle())"))
+
+        let float = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
+        let applyAll = try member(float, "private var applyAllTile: some View {")
+        #expect(applyAll.contains(".adaptiveGlassSurface(.roundedRectangle(DesignTokens.EditDesk.Corner.gridCard))"))
+        #expect(!applyAll.contains("fillFloatButton"))
+
+        let detail = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift")
+        let glass = try RepositoryRoot.source("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/AdaptiveGlass.swift")
+        #expect(detail.contains(".adaptiveGlassSurface(.capsule)"))
+        #expect(!detail.contains("preferMaterial"), "the section picker is forced back onto material")
+        #expect(!glass.contains("preferMaterial"))
+
+        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
+        #expect(modal.contains("applyButton(primary).adaptiveGlassButton(.prominent, size: .large)"))
+        #expect(modal.contains("applyButton(target).adaptiveGlassButton(.regular, size: .large)"))
+        #expect(!modal.contains(".tint(target.isPrimary"))
+
+        let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
+        #expect(workshop.components(separatedBy: ".adaptiveGlassButton(.regular, size: .large)").count - 1 == 3)
+        #expect(workshop.contains(#"GlassIconButton("arrow.up.forward.app", size: .regular, action: actions.openInSteam)"#))
+        #expect(!workshop.contains("WorkshopBarButton"))
+        #expect(!workshop.contains("Opacity.dimmedIcon"), "a disabled glass button dims itself")
+
+        let banner = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/WallpapersOffBanner.swift")
+        #expect(banner.contains(".adaptiveGlassButton(.prominent, size: .small)"))
+        #expect(!banner.contains(".buttonStyle(.borderedProminent)"))
+
+        for (name, source) in [("WallpaperModal", modal), ("WorkshopModal", workshop), ("WallpapersOffBanner", banner)] {
+            let prominent = source.components(separatedBy: ".adaptiveGlassButton(.prominent").count - 1
+            #expect(prominent == 1, Comment(rawValue: "\(name) has \(prominent) prominent buttons"))
+        }
+    }
+
     @Test("No token-bypass literals in the files this package owns")
     func noTokenBypassLiterals() throws {
         for path in Self.ownedFiles {
@@ -134,7 +197,7 @@ struct EditDeskChromeSourceTests {
     @Test("The wallpaper library's import entries, a drop on the shelf among them, only add to the library")
     func libraryImportEntriesOnlyAdd() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(source.contains("onImport: promptLibraryImport"), "+ Import still applies the file to a display")
+        #expect(source.contains("onImport: promptLibraryImport"), "the row's + still applies the file to a display")
         let start = try #require(source.range(of: "private func performLibraryCardAction"))
         let body = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }").first)
         #expect(body.contains("promptLibraryImport()"), "Import More still applies the file to a display")

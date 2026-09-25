@@ -35,7 +35,6 @@ struct WorkshopModal: View {
     /// Two rows: the status line over the bar, then the bar and the buttons.
     private static let bottomBarHeight: CGFloat = 84
     private static let barPadding: CGFloat = 20
-    private static let buttonHeight: CGFloat = 38
 
     private var item: WorkshopQueryItem {
         content.item
@@ -211,52 +210,33 @@ struct WorkshopModal: View {
 
     private var barButtons: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-            WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.primaryButtonFill, action: actions.primary) {
-                Text(verbatim: primaryTitle)
-                    .font(DesignTokens.EditDesk.Typography.button)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.primaryButtonText)
-                    .lineLimit(1)
-                    .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+            Button(action: actions.primary) {
+                Text(verbatim: primaryTitle).lineLimit(1)
             }
+            .adaptiveGlassButton(.prominent, size: .large)
             .disabled(!isPrimaryEnabled)
-            .opacity(isPrimaryEnabled ? 1 : DesignTokens.Opacity.dimmedIcon)
             if !content.isInstalled {
-                WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillSecondaryButton, action: actions.saveOnly) {
-                    Text(verbatim: secondaryTitle)
-                        .font(DesignTokens.EditDesk.Typography.button)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                        .lineLimit(1)
-                        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+                Button(action: actions.saveOnly) {
+                    Text(verbatim: secondaryTitle).lineLimit(1)
                 }
+                .adaptiveGlassButton(.regular, size: .large)
                 .disabled(!isSecondaryEnabled)
-                .opacity(isSecondaryEnabled ? 1 : DesignTokens.Opacity.dimmedIcon)
             }
             if let connectSteam = actions.connectSteam {
-                WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillSecondaryButton, action: connectSteam) {
-                    Text("Connect Steam")
-                        .font(DesignTokens.EditDesk.Typography.button)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                        .lineLimit(1)
-                        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+                Button(action: connectSteam) {
+                    Text("Connect Steam").lineLimit(1)
                 }
+                .adaptiveGlassButton(.regular, size: .large)
             }
             if let cancelDownload = actions.cancelDownload {
-                WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillTertiaryButton, action: cancelDownload) {
-                    Text("Cancel download")
-                        .font(DesignTokens.EditDesk.Typography.button)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                        .lineLimit(1)
-                        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+                Button(action: cancelDownload) {
+                    Text("Cancel download").lineLimit(1)
                 }
+                .adaptiveGlassButton(.regular, size: .large)
             }
-            WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillTertiaryButton, action: actions.openInSteam) {
-                Text(verbatim: "↗")
-                    .font(DesignTokens.EditDesk.Typography.button)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                    .frame(width: Self.buttonHeight)
-            }
-            .help(Text("Open in Steam"))
-            .accessibilityLabel(Text("Open in Steam"))
+            GlassIconButton("arrow.up.forward.app", size: .regular, action: actions.openInSteam)
+                .help(Text("Open in Steam"))
+                .accessibilityLabel(Text("Open in Steam"))
         }
     }
 
@@ -267,46 +247,6 @@ struct WorkshopModal: View {
     private func selectTargetByShortcut(_ index: Int) {
         guard let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
         actions.selectTarget(target.id)
-    }
-}
-
-/// SCREENS.md S8b's bottom-bar button skin: a flat token fill, so hover and press are drawn here
-/// rather than inherited from a system style.
-private struct WorkshopBarButton<Label: View>: View {
-    let fill: Color
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-
-    private static var height: CGFloat {
-        38
-    }
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .frame(height: Self.height)
-                .background(shape.fill(fill))
-                .overlay(
-                    shape.strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
-                        .opacity(isHovering ? 1 : 0)
-                )
-                .contentShape(shape)
-        }
-        .buttonStyle(WorkshopBarPressStyle())
-        .onHover { isHovering = $0 }
-    }
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.button, style: .continuous)
-    }
-}
-
-private struct WorkshopBarPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? DesignTokens.Opacity.dimmedIcon : 1)
     }
 }
 #endif

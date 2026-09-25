@@ -27,7 +27,6 @@ struct EditDeskLibraryStateTests {
         let labels = Dictionary(uniqueKeysWithValues: fixtures.map { ("bookmark:\($0.id)", $0.label) })
         // The language the window's `AppLanguageScope` renders in.
         let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
-        let sortTitles = ["Recently Used", "Name", "Type"].map { NSLocalizedString($0, bundle: bundle, comment: "") }
 
         try await withWindow(navigation: .bookmarks) { window, workshop in
             @MainActor func shelf() -> [String] {
@@ -40,8 +39,9 @@ struct EditDeskLibraryStateTests {
             try #require(window.makeFirstResponder(field))
             let editor = try #require(field.currentEditor() as? NSTextView)
             editor.insertText("S4b", replacementRange: NSRange(location: NSNotFound, length: 0))
-            let sort = try #require(Self.sortButton(in: window, titles: sortTitles))
-            try #require(Self.pick(sortTitles[1], in: sort))
+            // Name: the popover lists Recently Used, Name, Type.
+            let picked = await Self.pickSort(row: 1, in: window, rowMidY: field.convert(field.bounds, to: nil).midY)
+            try #require(picked, "the sort button never opened its popover")
             let filtered = await Self.settle(window) { shelf() == ["S4b Alpha", "S4b Beta"] }
             try #require(filtered, Comment(rawValue: "control: Recent, S4b, by name never showed — the shelf is \(shelf())"))
 
@@ -58,7 +58,6 @@ struct EditDeskLibraryStateTests {
                 Comment(rawValue: "the shelf is \(shelf()): All adds Gamma, Recently Used puts Beta first")
             )
             #expect(Self.searchField(in: window)?.stringValue == "S4b", "the search came back empty")
-            #expect(Self.sortButton(in: window, titles: sortTitles)?.title == sortTitles[1], "the sort came back as Recently Used")
         }
     }
 
@@ -335,9 +334,24 @@ struct EditDeskLibraryStateTests {
         views(in: window).lazy.compactMap { $0 as? NSTextField }.first(where: \.isEditable)
     }
 
-    /// The filter row's sort menu, whose button shows the sort's title.
-    private static func sortButton(in window: NSWindow, titles: [String]) -> NSPopUpButton? {
-        views(in: window).lazy.compactMap { $0 as? NSPopUpButton }.first { titles.contains($0.title) }
+    /// Clicks the sort button 8pt inside its trailing end — the row ends one gutter in, after the
+    /// "+" and an 8pt gap — then the popover's `index`th row from the top. The rows carry no title.
+    private static func pickSort(row index: Int, in window: NSWindow, rowMidY: CGFloat) async -> Bool {
+        let plus = NSHostingView(rootView: GlassIconButton("plus", size: .regular) {}).fittingSize.width
+        let trailing = (window.contentView?.bounds.width ?? 0) - DesignTokens.EditDesk.Spacing.gutter - plus - DesignTokens.EditDesk.Spacing.s8
+        click(NSPoint(x: trailing - 8, y: rowMidY), in: window)
+        var rows: [NSButton] = []
+        await settle(window) {
+            rows = NSApp.windows
+                .filter { $0 !== window && NSStringFromClass(type(of: $0)).contains("Popover") }
+                .flatMap { views(in: $0) }
+                .compactMap { $0 as? NSButton }
+                .sorted { $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY }
+            return rows.count > index
+        }
+        guard rows.count > index else { return false }
+        rows[index].performClick(nil)
+        return true
     }
 
     /// The release goes on the queue first, where a control that tracks the press takes it. A SwiftUI
@@ -355,16 +369,6 @@ struct EditDeskLibraryStateTests {
         if let queued = NSApp.nextEvent(matching: .leftMouseUp, until: Date(), inMode: .default, dequeue: true) {
             NSApp.sendEvent(queued)
         }
-    }
-
-    /// SwiftUI fills a `Menu`'s items only while it is open; they stay once the scheduled cancel closes it.
-    private static func pick(_ title: String, in popup: NSPopUpButton) -> Bool {
-        guard let menu = popup.menu else { return false }
-        menu.perform(#selector(NSMenu.cancelTracking), with: nil, afterDelay: 0.2, inModes: [.common])
-        popup.performClick(nil)
-        guard let index = menu.items.firstIndex(where: { $0.title == title }) else { return false }
-        menu.performActionForItem(at: index)
-        return true
     }
 
     /// `NavPill` at `navItem` 13 in `GlassSegmentedPicker`'s editDesk shell (3pt outer padding, 14pt

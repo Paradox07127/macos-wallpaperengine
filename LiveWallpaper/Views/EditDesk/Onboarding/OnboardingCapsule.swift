@@ -74,11 +74,11 @@ struct OnboardingCapsule: View {
         }
         .padding(.horizontal, OnboardingCapsuleFit.horizontalPadding)
         .frame(height: Self.height)
-        .background(Capsule().fill(DesignTokens.EditDesk.Colors.panel))
-        .overlay(Capsule().strokeBorder(
-            isHovering ? DesignTokens.EditDesk.Colors.strokeRegular : DesignTokens.EditDesk.Colors.strokePanel,
-            lineWidth: 1
-        ))
+        .adaptiveGlassSurface(.capsule, interactive: true)
+        .overlay(
+            Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
+                .opacity(isHovering ? 1 : 0)
+        )
         .accessibilityElement(children: .ignore)
     }
 

@@ -1,6 +1,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 /// R-28 / 6.1b: the nav pill is centred in the window and sized by its own titles, and the trailing
@@ -79,37 +80,55 @@ struct TopBarBudgetTests {
         }
     }
 
-    /// The row as its parts lay out inside the shelf chrome's gutters: each `FilterChip` is its
-    /// caption title plus 10pt a side, 8pt between parts, a 12pt spacer, the search field at its
-    /// floor, the widest sort title with its 2pt-spaced ▾, and + Import with 10pt a side.
+    private static let sortOrders: [SavedLibraryModel.Sort] = [.recentlyUsed, .name, .type]
+
+    /// The real filter row laid out in one language: the glass controls have no size to add up.
     @MainActor
-    @Test("At 1040 the filter row fits its chips, the search field at its floor, sort and import in all five languages")
+    private static func filterRow(language: String, sort: SavedLibraryModel.Sort) -> NSSize {
+        let row = LibraryChipsRow(
+            chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
+            selection: .constant("all"),
+            searchText: .constant(""),
+            searchPrompt: "Search by name",
+            stage: EditDeskStageModel(),
+            sort: .constant(sort),
+            onImport: {}
+        )
+        return NSHostingView(rootView: row.environment(\.locale, Locale(identifier: language))).fittingSize
+    }
+
+    @MainActor
+    @Test("At 1040 the filter row fits its chips, the search field at its floor, sort and add in all five languages")
     func filterRowFitsAt1040() throws {
         let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
         let search = try #require(row.range(of: "LibrarySearchField("), "the filter row carries no search field")
         let sort = try #require(row.range(of: "\n            sortControl\n"))
-        #expect(search.upperBound <= sort.lowerBound, "the sum below reads the field ahead of sort and import")
+        #expect(search.upperBound <= sort.lowerBound, "the row measured below carries the field ahead of sort and add")
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
-        let gap = DesignTokens.EditDesk.Spacing.s8
-        let caption = NSFont.preferredFont(forTextStyle: .caption1).pointSize
-        func width(_ text: String, size: CGFloat) -> CGFloat {
-            ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
-        }
+        // Laid out at its ideal width, the field can still give back everything above its floor.
+        let give = DesignTokens.LibraryFilterBar.searchIdealWidth - DesignTokens.LibraryFilterBar.searchMinWidth
+        #expect(
+            Self.filterRow(language: "es", sort: .recentlyUsed).width > Self.filterRow(language: "en", sort: .recentlyUsed).width,
+            "control: the row did not lay out in Spanish, so every language below measured English"
+        )
         for language in Self.languages {
-            let bundle = try Self.bundle(language)
-            func localized(_ key: String) -> String {
-                NSLocalizedString(key, bundle: bundle, comment: "")
-            }
-            let chips = SavedLibraryModel.Chip.allCases.map { width(localized(HomePage.chipTitle($0).probeKey), size: caption) + 2 * 10 }
-            // Sort and + Import set `EditDesk.Typography.chip`, 12pt.
-            let sortTitle = try #require(["Recently Used", "Name", "Type"].map { width(localized($0), size: 12) }.max())
-            let sort = sortTitle + 2 + width("▾", size: 12)
-            let importButton = width(localized("+ Import"), size: 12) + 2 * 10
-            let needed = chips.reduce(0, +) + CGFloat(chips.count - 1) * gap
-                + gap + DesignTokens.EditDesk.Spacing.s12 + gap
-                + DesignTokens.LibraryFilterBar.searchMinWidth + gap + sort + gap + importButton
+            let needed = try #require(Self.sortOrders.map { Self.filterRow(language: language, sort: $0).width }.max()) - give
             print("FILTERROW 1040/\(language) = needs \(needed) of \(available)")
             #expect(needed <= available, Comment(rawValue: "\(language): the row needs \(needed)pt of \(available)"))
+        }
+    }
+
+    /// The row hangs a fixed `StageGeometry.chipRowGap` above the shelf's cards; a taller control closes that gap.
+    @MainActor
+    @Test("The filter row's glass controls stand no taller than its search field in any language")
+    func filterRowGlassControlsStayWithinTheRowHeight() {
+        let field = NSHostingView(rootView: LibrarySearchField(text: .constant(""), prompt: "Search by name")).fittingSize.height
+        for language in Self.languages {
+            for sort in Self.sortOrders {
+                let height = Self.filterRow(language: language, sort: sort).height
+                print("FILTERROW height \(language)/\(sort) = row \(height) field \(field)")
+                #expect(height <= field, Comment(rawValue: "\(language)/\(sort): the row is \(height)pt, the field \(field)pt"))
+            }
         }
     }
 

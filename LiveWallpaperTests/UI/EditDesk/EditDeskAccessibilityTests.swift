@@ -164,7 +164,7 @@ struct EditDeskAccessibilityTests {
             "VoiceOver would read the design's English STEP n / m"
         )
         let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        let arrow = try #require(modal.range(of: #"Text(verbatim: "↗")"#))
+        let arrow = try #require(modal.range(of: #"GlassIconButton("arrow.up.forward.app""#))
         let labelled = try #require(modal.range(of: #"accessibilityLabel(Text("Open in Steam"))"#))
         #expect(arrow.lowerBound < labelled.lowerBound, "the glyph button would read as its arrow")
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")

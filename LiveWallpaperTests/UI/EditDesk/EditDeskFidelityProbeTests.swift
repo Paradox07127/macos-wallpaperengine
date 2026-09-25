@@ -934,8 +934,9 @@ struct S8bModalFidelityTests {
         return (CGPoint(x: gif.minX - ModalGeometry.previewMargin, y: gif.minY - ModalGeometry.previewMargin - ModalGeometry.headerHeight), gif)
     }
 
-    /// SCREENS S8b: the same 880×560 chrome as S4, a 340pt square preview left, 84pt bar.
-    @Test("S8b panel origin, 340 square and 38pt primary button at 1280×820")
+    /// SCREENS S8b: the same 880×560 chrome as S4, a 340pt square preview left, 84pt bar. The bar's
+    /// buttons are glass, which an offscreen frame does not draw.
+    @Test("S8b panel origin and 340 square at 1280×820")
     func panelAt1280() async throws {
         let size = CGSize(width: 1280, height: 820)
         let service = doctor()
@@ -951,17 +952,6 @@ struct S8bModalFidelityTests {
         // The chrome's own box; the render above proves only its origin.
         expectClose(contract.width, 880, "S8b.1280.chrome.w", tolerance: 0)
         expectClose(contract.height, 560, "S8b.1280.chrome.h", tolerance: 0)
-
-        // The primary button is the only pure-white fill inside the 84pt bar in dark mode.
-        let bar = CGRect(x: contract.minX, y: contract.maxY - 84, width: contract.width, height: 84)
-        let button = try #require(
-            image.boundingBox(in: bar) { $0.r > 240 && $0.g > 240 && $0.b > 240 },
-            "the primary bar button did not render inside the 84pt bar"
-        )
-        ProbeRenderer.report("S8b.1280.primaryButtonRect", button)
-        expectClose(button.height, 38, "S8b.1280.primaryButton.h", tolerance: 2)
-        ProbeRenderer.report("S8b.1280.buttonBottomToPanelBottom", contract.maxY - button.maxY)
-        ProbeRenderer.report("S8b.1280.buttonTrailingReserve", contract.maxX - button.maxX)
     }
 
     @Test("S8b at 1040×700 keeps the 340 square and stops at the strip's 130 clearance")
@@ -988,7 +978,6 @@ struct S8bModalFidelityTests {
         #expect(modalSource.contains("descriptionExpandedMaxHeight: 120"))
         #expect(modalSource.contains("previewSide: CGFloat = 340"))
         #expect(modalSource.contains("bottomBarHeight: CGFloat = 84"))
-        #expect(modalSource.contains("buttonHeight: CGFloat = 38"))
         // "Save only" and its queued twin are worded by the contract; the bar draws whichever it is handed.
         #expect(modalSource.contains("Text(verbatim: secondaryTitle)"))
         let contractSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift")

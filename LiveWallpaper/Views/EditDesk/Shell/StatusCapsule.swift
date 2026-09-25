@@ -195,8 +195,7 @@ struct StatusCapsule: View {
             headlineRow(showsChevron: true)
                 .padding(.horizontal, 10)
                 .frame(width: 118, height: 28)
-                .background(Capsule().fill(DesignTokens.EditDesk.Colors.panel))
-                .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
+                .adaptiveGlassSurface(.capsule, interactive: true)
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)

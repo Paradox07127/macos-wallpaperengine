@@ -571,7 +571,6 @@ public enum DesignTokens {
             public static let tagChipFill = Color.black.opacity(0.55)
             public static let fillSecondaryButton = ink("FillSecondaryButton", 0.10)
             public static let fillTertiaryButton = ink("FillTertiaryButton", 0.06)
-            public static let fillFloatButton = ink("FillFloatButton", 0.08)
             /// S4 primary button: white on black in dark, inverted in light.
             public static let primaryButtonFill = adaptive("PrimaryButtonFill", light: .black, dark: .white)
             public static let primaryButtonText = adaptive("PrimaryButtonText", light: .white, dark: .black)

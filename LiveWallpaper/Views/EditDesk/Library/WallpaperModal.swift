@@ -225,19 +225,24 @@ struct WallpaperModal: View {
     private var applyControls: some View {
         let split = ModalGeometry.applyButtons(targets: targets)
         return HStack(spacing: 10) {
-            ForEach(([split.primary].compactMap(\.self)) + split.secondary) { target in
-                Button { actions.applyTo(target.id) } label: {
-                    Label { Text(verbatim: target.name) } icon: { targetIcon(target) }
-                        .lineLimit(1).truncationMode(.middle)
-                }
-                .buttonStyle(.bordered).controlSize(.large)
-                .tint(target.isPrimary ? .accentColor : nil)
-                .disabled(!content.canApply)
-                .help(applyHelp(target))
-                .accessibilityLabel(Text("Apply to \(target.name)"))
-                .accessibilityValue(targetValue(target))
+            if let primary = split.primary {
+                applyButton(primary).adaptiveGlassButton(.prominent, size: .large)
+            }
+            ForEach(split.secondary) { target in
+                applyButton(target).adaptiveGlassButton(.regular, size: .large)
             }
         }
+    }
+
+    private func applyButton(_ target: ModalDisplayTarget) -> some View {
+        Button { actions.applyTo(target.id) } label: {
+            Label { Text(verbatim: target.name) } icon: { targetIcon(target) }
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .disabled(!content.canApply)
+        .help(applyHelp(target))
+        .accessibilityLabel(Text("Apply to \(target.name)"))
+        .accessibilityValue(targetValue(target))
     }
 
     /// ⌘1…⌘9 are the only display shortcuts; a tenth display's button names none.
