@@ -265,7 +265,6 @@ struct DisplayStateResolverTests {
             )
             window.isReleasedWhenClosed = false
             window.contentView = host
-            window.orderFront(nil)
         }
 
         var stageView: EditDeskStageView? {

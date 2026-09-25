@@ -404,7 +404,6 @@ struct InstalledPreviewPlaybackLifecycleTests {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
         defer { window.close() }
         await GIFTestFixtures.waitUntil { imageView(in: host)?.layer?.contents != nil }
         let view = try #require(imageView(in: host))
@@ -463,7 +462,6 @@ struct InstalledPreviewPlaybackLifecycleTests {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
         defer { window.close() }
         func width() -> Int? {
             guard let contents = imageView(in: host)?.layer?.contents else { return nil }
@@ -512,7 +510,6 @@ struct InstalledPreviewPlaybackLifecycleTests {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
         defer { window.close() }
 
         func topLeftImageView() -> NSView? {

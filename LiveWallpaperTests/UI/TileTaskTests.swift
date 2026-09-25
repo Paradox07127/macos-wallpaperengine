@@ -67,7 +67,6 @@ struct TileTaskTests {
             window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host
-            window.orderFront(nil)
         }
 
         func close() {

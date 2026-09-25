@@ -109,9 +109,8 @@ SUITES=(
   ThumbnailServiceAdmissionTests
   # Cancelled playlist media work must not repopulate an invalidated cache.
   PlaylistMetadataLifecycleTests
-  # InstalledPreviewPlaybackLifecycleTests drives a real CALayer animation in an ordered-front
-  # window; it needs the compositor and has been red on the CI runner since 829750a, so it stays
-  # in the opt-in full app run.
+  # InstalledPreviewPlaybackLifecycleTests stays in the opt-in full app run: the hosted runner
+  # image turns Reduce Motion on, which vetoes preview playback, so its "must animate" checks fail.
   WPEPreviewURLCacheTests
   TileTaskTests
   PreviewFrameTimingTests
