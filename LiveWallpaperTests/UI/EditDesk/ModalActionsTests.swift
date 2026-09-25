@@ -510,6 +510,20 @@ struct ModalActionsTests {
         model.onDisappear()
     }
 
+    @Test func installedStateKeyIgnoresDownloadProgress() {
+        let fixture = Fixture()
+        let item = workshop("123")
+        func stateKey(_ phase: WorkshopDownloadCoordinator.DownloadPhase, _ progress: Double?) -> String {
+            var inputs = fixture.inputs()
+            inputs.phase = { _ in phase }
+            inputs.progress = { _ in progress }
+            return fixture.modal(inputs: inputs).installedStateKey(for: item)
+        }
+        #expect(stateKey(.downloading, 0.25) == stateKey(.downloading, 0.75))
+        // Control: the phase still moves the key.
+        #expect(stateKey(.downloading, 0.25) != stateKey(.failed("Offline"), 0.25))
+    }
+
     @Test func installedContentKeepsLocalMetadataAndUpdateProgress() async throws {
         let fixture = Fixture()
         fixture.displays = displays()
