@@ -90,7 +90,7 @@ struct TitleBarStripHitTests {
         DisplayDetail(
             displayName: "Display",
             tags: [DetailDisplayTag(id: 1, name: "Display", thumbnail: nil, isCurrent: true)],
-            hero: DetailHeroStatus(title: "Wallpaper", kindLine: "", intendsToPlay: true, performanceLine: nil),
+            hero: DetailHeroStatus(title: "Wallpaper", kindLine: "", intendsToPlay: true),
             heroImage: nil,
             backdropImage: nil,
             windowSize: windowSize,

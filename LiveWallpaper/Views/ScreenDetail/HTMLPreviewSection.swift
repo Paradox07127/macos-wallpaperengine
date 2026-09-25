@@ -400,7 +400,7 @@ struct HTMLRenderingDiagnosticsOverlay: View {
         if source != nil {
             if isExpanded {
                 let diagnostics = HTMLRenderingDiagnostics(screen: screen, source: source, config: config)
-                content(diagnostics: diagnostics)
+                HTMLRenderingDiagnosticsGrid(diagnostics: diagnostics)
                     .foregroundStyle(DesignTokens.Colors.overlayForeground)
                     .padding(.horizontal, DesignTokens.Spacing.md)
                     .padding(.vertical, DesignTokens.Spacing.sm)
@@ -427,12 +427,17 @@ struct HTMLRenderingDiagnosticsOverlay: View {
     private func toggle() {
         withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
     }
+}
+
+/// Shared by the old preview's overlay and the Edit Desk HUD's Web Rendering popover.
+struct HTMLRenderingDiagnosticsGrid: View {
+    let diagnostics: HTMLRenderingDiagnostics
 
     private let columns = [
         GridItem(.adaptive(minimum: 172), spacing: DesignTokens.Spacing.md, alignment: .leading)
     ]
 
-    private func content(diagnostics: HTMLRenderingDiagnostics) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 Image(systemName: "ruler")
