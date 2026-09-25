@@ -29,6 +29,13 @@ struct SavedLibraryModelTests {
         ))
     }
 
+    private var hd: LibraryMetadata {
+        .video(.init(
+            resolution: CGSize(width: 1920, height: 1080), isHDR: false,
+            duration: 60, fileSize: 100, probedAt: .distantPast
+        ))
+    }
+
     private func inputs(_ bookmarks: [WallpaperBookmark] = [], aerials: [AerialAsset] = []) -> SavedLibraryModel.Inputs {
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { bookmarks }
@@ -232,6 +239,69 @@ struct SavedLibraryModelTests {
         #expect(model.items.first { $0.id == "bookmark:\(first.id)" }?.metadata == fourK)
         #expect(model.items.first { $0.id == "bookmark:\(second.id)" }?.metadata == nil)
         #expect(model.items.first { $0.id == "aerial:/sky.mov" }?.metadata == nil)
+    }
+
+    @Test("A refresh keeps an unchanged row's metadata without reading it again")
+    func refreshKeepsUnchangedMetadataWithoutReadingIt() {
+        var reads = 0
+        var source = inputs([bookmark("Saved")], aerials: [aerial()])
+        source.metadata = { _ in
+            reads += 1
+            return fourK
+        }
+        #if !LITE_BUILD
+        let entry = WPEHistoryEntry(origin: origin("123", type: .video), importedAt: .distantPast)
+        var contentReads = 0
+        source.history = { [entry] }
+        source.workshopContent = { _ in
+            contentReads += 1
+            return .video(bookmarkData: Data("workshop film".utf8))
+        }
+        #endif
+        let model = SavedLibraryModel(inputs: source)
+        let first = reads
+        model.refresh()
+        #if !LITE_BUILD
+        #expect(first == 3)
+        #expect(contentReads == 1, "the refresh bookmarked the Workshop video anew to read it again")
+        #else
+        #expect(first == 2)
+        #endif
+        #expect(reads == first, "the refresh read every unchanged row's metadata again")
+        #expect(model.items.allSatisfy { $0.metadata == fourK })
+    }
+
+    @Test("A row whose bookmark changed is read again")
+    func changedBookmarkIsReadAgain() {
+        let replaced = Data("replaced film".utf8)
+        var saved = bookmark("Saved")
+        var source = inputs(aerials: [aerial()])
+        source.bookmarks = { [saved] }
+        source.metadata = { $0.content.activeVideoBookmarkData == replaced ? hd : fourK }
+        let model = SavedLibraryModel(inputs: source)
+        saved.content = .video(bookmarkData: replaced)
+        model.refresh()
+        #expect(model.items.first { $0.id == "bookmark:\(saved.id)" }?.metadata == hd, "a row whose bookmark changed kept the old file's metadata")
+        #expect(model.items.first { $0.kind == .aerial }?.metadata == fourK)
+    }
+
+    @Test("A tile probe's new answer replaces a kept one and survives the next refresh")
+    func probedMetadataSurvivesTheNextRefresh() async {
+        let saved = bookmark("Saved")
+        let row = "bookmark:\(saved.id)"
+        var record = fourK
+        var source = inputs([saved])
+        source.metadata = { _ in record }
+        source.probeMetadata = { _ in
+            record = hd
+            return record
+        }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.items.first { $0.id == row }?.metadata == fourK)
+        await model.probeMetadata(for: [row])
+        #expect(model.items.first { $0.id == row }?.metadata == hd, "the tile probe's answer did not reach the row")
+        model.refresh()
+        #expect(model.items.first { $0.id == row }?.metadata == hd, "the refresh put back the metadata the probe replaced")
     }
 
     @Test func missingSourcesAreMarkedAndProbedOnce() async {

@@ -278,6 +278,7 @@ final class SavedLibraryModel {
 
     func refresh() {
         filePaths = [:]
+        let previous = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var merged: [LibraryItem] = []
         #if !LITE_BUILD
         merged = inputs.history().map { entry in
@@ -291,7 +292,7 @@ final class SavedLibraryModel {
                 id: "workshop:\(entry.id)", title: entry.origin.title, kind: kind, source: source,
                 isSteam: isSteam(entry.id), createdAt: entry.importedAt, lastUsedAt: entry.lastUsedAt,
                 onDisplays: inputs.nowPlaying(nil, entry), thumbnail: .workshop(entry),
-                metadata: metadataBookmark(for: source).flatMap(inputs.metadata), isVariant: false, parentID: nil,
+                metadata: nil, isVariant: false, parentID: nil,
                 isSupported: entry.origin.originalType != .application && entry.origin.originalType != .unknown
             )
         }
@@ -321,7 +322,7 @@ final class SavedLibraryModel {
                 id: "bookmark:\(bookmark.id)", title: bookmark.label, kind: kind, source: .bookmark(bookmark),
                 isSteam: isSteam(bookmark.wpeOrigin?.workshopID), createdAt: bookmark.createdAt,
                 lastUsedAt: bookmark.lastUsedAt, onDisplays: displays(for: bookmark.content),
-                thumbnail: .bookmark(bookmark), metadata: inputs.metadata(bookmark),
+                thumbnail: .bookmark(bookmark), metadata: nil,
                 isVariant: parentID != nil, parentID: parentID, isSupported: true
             ))
         }
@@ -333,13 +334,19 @@ final class SavedLibraryModel {
                 id: "aerial:\(asset.url.path)", title: asset.displayName, kind: .aerial, source: source,
                 isSteam: false, createdAt: .distantPast, lastUsedAt: nil,
                 onDisplays: active.filter { aerial(asset, matches: $0.content) }.map(\.display), thumbnail: .aerial(.init(asset)),
-                metadata: metadataBookmark(for: source).flatMap(inputs.metadata),
+                metadata: nil,
                 isVariant: false, parentID: nil, isSupported: true
             )
         }
         for index in merged.indices {
             if let probe = probedSources[merged[index].id], Self.sameSource(probe.source, merged[index].source) {
                 merged[index].isSourceMissing = !probe.available
+            }
+            // An unchanged source keeps its last answer: only `probeMetadata(for:)` reads a kept row's file again.
+            if let kept = previous[merged[index].id], Self.sameSource(kept.source, merged[index].source) {
+                merged[index].metadata = kept.metadata
+            } else {
+                merged[index].metadata = metadataBookmark(for: merged[index].source).flatMap(inputs.metadata)
             }
         }
         items = merged

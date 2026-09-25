@@ -702,7 +702,7 @@ struct S6DetailFidelityTests {
         expectClose(stage.width, 908, "S6.contract.stage.w", tolerance: 0)
     }
 
-    @Test("S6-B facts chip keeps the dark-appearance warning tint in a light app")
+    @Test("S6-B facts chip marks a warning with a dark-appearance amber triangle and keeps its text white in a light app")
     func factsChipWarningTint() async throws {
         let size = CGSize(width: 480, height: 270)
         let status = DetailHeroStatus(
@@ -713,16 +713,27 @@ struct S6DetailFidelityTests {
         }
         let dark = await Self.warningSwatch(.darkAqua)
         let light = await Self.warningSwatch(.aqua)
-        let drawn = try #require(Self.warmestPixel(in: image), "the chip drew no warning glyph")
-        ProbeRenderer.report("S6.factsChip.warning", "drawn \(drawn), dark \(dark), light \(light)")
-        #expect(drawn.matches(dark, tolerance: 6), "the chip drew \(drawn); the dark-appearance tint is \(dark)")
-        // mediaChipFill over a black backdrop is the darkest the chip can get.
+        let triangle = try #require(Self.warmestPixel(in: image), "the chip drew no warning glyph")
+        let mark = try #require(image.boundingBox { $0.r - $0.b > 60 })
+        // The line's last ink is the warning text's last block; the hero's .25 stroke stays under 128.
+        let ink = try #require(image.extent(inRow: mark.midY) { max($0.r, $0.g, $0.b) > 128 })
+        let textX = ink.x + ink.width - 2
+        let text = image.rgb(px: Int(textX * image.scale), Int(mark.midY * image.scale))
+        ProbeRenderer.report("S6.factsChip.warning", "triangle \(triangle), text \(text), dark \(dark), light \(light)")
+        #expect(text.matches(ProbeColor(r: 255, g: 255, b: 255), tolerance: 6), "the warning's text drew \(text), not the other facts' white")
+        #expect(triangle.matches(dark, tolerance: 6), "the triangle drew \(triangle); the dark-appearance tint is \(dark)")
+        #expect(mark.maxX < textX, "the amber mark \(mark) reaches the text at x \(textX) instead of standing before it")
+        // mediaChipFill over a white backdrop is the brightest the chip can get.
         let fill = try #require(NSColor(DesignTokens.EditDesk.Colors.mediaChipFill).usingColorSpace(.sRGB))
-        let darkest = SIMD3(Double(fill.redComponent), Double(fill.greenComponent), Double(fill.blueComponent))
-            * Double(fill.alphaComponent)
-        let ratio = WPEMediaArtworkPalette.contrastRatio(SIMD3(Double(drawn.r), Double(drawn.g), Double(drawn.b)) / 255, darkest)
-        ProbeRenderer.report("S6.factsChip.contrastOnDarkest", ratio)
-        #expect(ratio >= 4.5, "contrast \(ratio)")
+        let alpha = Double(fill.alphaComponent)
+        let brightest = SIMD3(Double(fill.redComponent), Double(fill.greenComponent), Double(fill.blueComponent)) * alpha
+            + SIMD3(repeating: 1 - alpha)
+        func ratio(_ color: ProbeColor) -> Double {
+            WPEMediaArtworkPalette.contrastRatio(SIMD3(Double(color.r), Double(color.g), Double(color.b)) / 255, brightest)
+        }
+        ProbeRenderer.report("S6.factsChip.contrastOnBrightest", "triangle \(ratio(triangle)), text \(ratio(text))")
+        #expect(ratio(triangle) >= 3, "a graphic needs 3:1; the triangle has \(ratio(triangle))")
+        #expect(ratio(text) >= 4.5, "text needs 4.5:1; the warning's text has \(ratio(text))")
     }
 
     private static func warningSwatch(_ appearance: NSAppearance.Name) async -> ProbeColor {
