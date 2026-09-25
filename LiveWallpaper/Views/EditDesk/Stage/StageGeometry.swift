@@ -684,23 +684,31 @@ enum StageGeometry {
         gridFrame(index: 0, windowWidth: windowWidth, size: size).size
     }
 
-    static func gridFrame(index: Int, windowWidth: CGFloat, size: LibraryTileSize = .defaultSize) -> CGRect {
+    /// `contentInset`: what the library stacks above the first row inside its scroll view.
+    /// `scrollOffset`: how far that scroll view is scrolled from its top. Both in points.
+    static func gridFrame(
+        index: Int, windowWidth: CGFloat, size: LibraryTileSize = .defaultSize,
+        contentInset: CGFloat = 0, scrollOffset: CGFloat = 0
+    ) -> CGRect {
         DesignTokens.LibraryGrid.tileFrame(
             index: index, size: size, aspect: .wide,
             fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding,
             tileAspectRatio: cardAspectRatio
         ).offsetBy(
             dx: DesignTokens.LibraryGrid.horizontalPadding,
-            dy: gridTop + DesignTokens.LibraryGrid.verticalPadding
+            dy: gridTop + contentInset + DesignTokens.LibraryGrid.verticalPadding - scrollOffset
         )
     }
 
-    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat, size: LibraryTileSize = .defaultSize) -> Range<Int> {
+    static func visibleGridCards(
+        count: Int, windowSize: CGSize, scrollOffset: CGFloat, size: LibraryTileSize = .defaultSize,
+        contentInset: CGFloat = 0
+    ) -> Range<Int> {
         guard count > 0, windowSize.height > gridTop else { return 0 ..< 0 }
         let columns = gridColumns(windowWidth: windowSize.width, size: size)
         let cell = gridCellSize(windowWidth: windowSize.width, size: size)
         let pitch = cell.height + DesignTokens.LibraryGrid.spacing
-        let top = scrollOffset - DesignTokens.LibraryGrid.verticalPadding
+        let top = scrollOffset - DesignTokens.LibraryGrid.verticalPadding - contentInset
         let firstRow = max(0, Int(floor((top - cell.height) / pitch)) + 1)
         let endRow = max(firstRow, Int(ceil((top + windowSize.height - gridTop) / pitch)))
         return min(count, firstRow * columns) ..< min(count, endRow * columns)
@@ -708,7 +716,8 @@ enum StageGeometry {
 
     static func cardPlacement(
         style: ShelfStyle, index: Int, count: Int, progress: Double, focus: Double, windowSize: CGSize,
-        capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .defaultSize
+        capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .defaultSize,
+        gridContentInset: CGFloat = 0, gridScrollOffset: CGFloat = 0
     ) -> CardPlacement {
         let p = clampProgress(progress)
         let (t1, t2) = progressSplit(p)
@@ -716,7 +725,10 @@ enum StageGeometry {
         let row = rowFrame(
             style: style, index: index, count: count, focus: focus, windowSize: windowSize, capacity: capacity
         )
-        let grid = gridFrame(index: index, windowWidth: windowSize.width, size: gridSize)
+        let grid = gridFrame(
+            index: index, windowWidth: windowSize.width, size: gridSize,
+            contentInset: gridContentInset, scrollOffset: gridScrollOffset
+        )
         let mix = CGFloat(t2)
         let flat = 1 - mix
         // From the resting row top, not the card's own: measured from the card, the fan's arc flattens.

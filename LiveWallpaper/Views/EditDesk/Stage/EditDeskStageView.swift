@@ -61,6 +61,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var lastGridWheelTime: TimeInterval?
     private var snapInFlight = false
     private var staggerToGrid = false
+    /// The grid's scroll, in points, as the stage started to leave the library.
+    private var leavingScrollOffset: CGFloat = 0
     private var snapTask: Task<Void, Never>?
     private var displayLink: CADisplayLink?
     private var linkTarget: DisplayLinkTarget?
@@ -173,6 +175,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             _ = model.shelfRenderBudget
             _ = model.opaqueBackground
             _ = model.arrangementTopInset
+            _ = model.gridContentInset
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeInputs()
@@ -547,7 +550,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         )
         var grid = 0 ..< 0
         if staggerToGrid || progress.value > 1 {
-            grid = StageGeometry.visibleGridCards(count: count, windowSize: bounds.size, scrollOffset: 0, size: model.gridTileSize)
+            grid = StageGeometry.visibleGridCards(
+                count: count, windowSize: bounds.size, scrollOffset: gridScrollOffset, size: model.gridTileSize,
+                contentInset: model.gridContentInset
+            )
         }
         guard window != cardWindow || grid != gridWindow else { return }
         cardWindow = window
@@ -593,11 +599,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         rebuildAccessibility()
     }
 
-    /// Both runs, each index once and in ascending order — the grid window always starts at the top
-    /// of the library. Layers are coordinated by card identity, so an index in both must not be
+    /// Both runs, each index once and in ascending order — sorted, since leaving a scrolled grid puts its
+    /// window past the shelf's. Layers are coordinated by card identity, so an index in both must not be
     /// built, ranked or exposed twice.
     private var visibleCardIndices: [Int] {
-        Array(gridWindow) + cardWindow.filter { !gridWindow.contains($0) }
+        (Array(gridWindow) + cardWindow.filter { !gridWindow.contains($0) }).sorted()
     }
 
     /// The centred styles' middle slot. Driven by the row offset, never by hover — moving the run
@@ -612,7 +618,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func cardPlacement(style: ShelfStyle, index: Int, count: Int, progress p: Double) -> StageGeometry.CardPlacement {
         var placement = StageGeometry.cardPlacement(
             style: style, index: index, count: count, progress: p, focus: focus, windowSize: bounds.size,
-            capacity: model.shelfRenderBudget, gridSize: model.gridTileSize
+            capacity: model.shelfRenderBudget, gridSize: model.gridTileSize,
+            gridContentInset: model.gridContentInset, gridScrollOffset: gridScrollOffset
         )
         guard !style.isCentred else { return placement }
         let flat = CGFloat(1 - StageGeometry.progressSplit(p).t2)
@@ -624,6 +631,17 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         // Only the row is banded; the grid spreads across the whole window.
         placement.opacity *= 1 - (1 - fade) * flat
         return placement
+    }
+
+    /// The grid scroll the cards are placed against: the pinned one while they leave the library, else 0.
+    private var gridScrollOffset: CGFloat {
+        model.leavingLibrary ? leavingScrollOffset : 0
+    }
+
+    private func beginLeavingLibrary(toward value: Double) {
+        guard model.snappedIndex == 2, value < 2, !model.leavingLibrary else { return }
+        leavingScrollOffset = model.gridScrollOffset
+        model.report(leavingLibrary: true)
     }
 
     private func rowLimits(count: Int, style: ShelfStyle) -> ClosedRange<CGFloat> {
@@ -649,6 +667,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     func setProgress(_ value: Double, animated: Bool, velocity: Double) {
         snapTask?.cancel()
         let target = StageGeometry.clampProgress(value)
+        beginLeavingLibrary(toward: target)
         withoutActions {
             // A stagger already under way keeps running whatever the new target is: its cards are
             // spread across the transition, and both re-seeding them from the global progress and
@@ -723,6 +742,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         if progress.target == progress.target.rounded() {
             let index = Int(progress.target)
             model.report(snappedIndex: index)
+            model.report(leavingLibrary: false)
             model.emit(.snapped(index))
         }
     }
@@ -1144,6 +1164,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 deltaX: event.scrollingDeltaX * unit, deltaY: event.scrollingDeltaY * unit, progress: progress.value,
                 phase: phase, precise: precise, shift: event.modifierFlags.contains(.shift)
             ) {
+                beginLeavingLibrary(toward: value)
                 progress.jump(to: value)
                 snapInFlight = false
                 redirectStagger(to: value)

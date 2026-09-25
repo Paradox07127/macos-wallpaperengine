@@ -43,6 +43,8 @@ struct HomePage: View {
     @State private var pastedAddress = ""
     /// The wallpapers-off banner's measured height; the arrangement moves down by it.
     @State private var offBannerHeight: CGFloat = 0
+    /// The library's display banner as laid out above the grid, its top padding included; the stage lands its cards below it.
+    @State private var libraryBannerHeight: CGFloat = 0
     /// The display the rename alert is open for; nil closes it.
     @State private var renameTarget: CGDirectDisplayID?
     @State private var renameDraft = ""
@@ -259,11 +261,13 @@ struct HomePage: View {
         let page: HomePage
 
         func body(content: Content) -> some View {
-            content.onChange(of: page.router.libraryTarget) { _, target in
-                if target != nil {
-                    page.library?.chip = .all
+            content
+                .onChange(of: page.router.libraryTarget) { _, target in
+                    if target != nil {
+                        page.library?.chip = .all
+                    }
                 }
-            }
+                .onChange(of: page.gridContentInset, initial: true) { page.stage.gridContentInset = page.gridContentInset }
         }
     }
 
@@ -308,6 +312,7 @@ struct HomePage: View {
             // Order matters: the shelf's scrim and the filter chips belong *under* the cards, so a card
             // leaning or lifting over them is never clipped by a piece of chrome. Landed on the library,
             // the chips go over the grid instead, or it would hide them as a return swipe carries them down.
+            libraryBannerMeasure
             EditDeskShelfScrim(stage: stage)
                 .zIndex(-1)
             EditDeskStageRepresentable(model: stage)
@@ -638,7 +643,12 @@ struct HomePage: View {
             if isLibraryOpen {
                 wallpaperGrid
                     .padding(.top, StageGeometry.gridTop)
-                    .transition(.opacity)
+                    // Hidden rather than unmounted while the stage carries the cards off: unmounting here would
+                    // lose the scroll position, and a swipe pushed back would rebuild the grid at its top.
+                    .opacity(stage.leavingLibrary ? 0 : 1)
+                    .allowsHitTesting(!stage.leavingLibrary)
+                    .accessibilityHidden(stage.leavingLibrary)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             }
         }
         // On this layer only: the top bar changes in the same update and keeps its own transaction.
@@ -647,6 +657,39 @@ struct HomePage: View {
 
     private var isLibraryOpen: Bool {
         Self.mountsLibraryGrid(page: router.page, snappedIndex: stage.snappedIndex, progress: stage.progress)
+    }
+
+    /// The display the library was opened for, while its banner shows above the grid.
+    private var libraryTargetScreen: Screen? {
+        router.libraryTarget.flatMap { target in screenManager.screens.first { $0.id == target } }
+    }
+
+    /// Between the display banner, the onboarding card and the grid inside the library's scroll view.
+    private static let libraryStackSpacing = DesignTokens.Spacing.sm
+
+    /// What the library stacks above the grid's first row inside its scroll view.
+    private var gridContentInset: CGFloat {
+        var inset: CGFloat = 0
+        if libraryTargetScreen != nil {
+            inset += libraryBannerHeight + Self.libraryStackSpacing
+        }
+        if progress?.handled.contains(.library) == false {
+            inset += OnboardingCardMetrics.blockHeight + Self.libraryStackSpacing
+        }
+        return inset
+    }
+
+    /// The display banner laid out unseen at the grid's width, so its height is known before the grid mounts.
+    @ViewBuilder
+    private var libraryBannerMeasure: some View {
+        if let screen = libraryTargetScreen {
+            libraryTargetBanner(for: screen)
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { libraryBannerHeight = $0 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     /// The grid's cross-fade over cards that have already landed on its tiles.
@@ -785,54 +828,57 @@ struct HomePage: View {
     private var wallpaperGrid: some View {
         VStack(spacing: 0) {
             ScrollView {
-                if let target = router.libraryTarget, let screen = screenManager.screens.first(where: { $0.id == target }) {
-                    libraryTargetBanner(for: screen)
-                }
-                // R-27: eligibility is the page, not what the filter left behind, so the card rides
-                // above an empty result set just as it does above real tiles.
-                if progress?.handled.contains(.library) == false {
-                    OnboardingCard(page: .library, perform: performLibraryCardAction)
-                        .frame(height: OnboardingCardMetrics.blockHeight)
-                }
-                if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
-                    AerialsSourceStatusCard()
-                } else if let library, library.visibleItems.isEmpty {
-                    IllustratedEmptyState(
-                        symbol: library.items.isEmpty ? "square.grid.2x2" : "magnifyingglass",
-                        title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
-                    )
-                } else if let library {
-                    LibraryGalleryGrid(
-                        size: tileSize, aspect: .wide,
-                        initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
-                    ) {
-                        ForEach(library.visibleItems) { item in
-                            let badges = item.cardBadges(
-                                among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
-                            )
-                            Button {
-                                // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
-                                if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
-                                    quickApply(item.id)
-                                } else {
-                                    presentedItemID = item.id
-                                }
-                            } label: {
-                                LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
-                            .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
-                            .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
-                            .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
-                            .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
-                        }
+                // Spaced explicitly: `gridContentInset` has to know how far down the first row starts.
+                VStack(spacing: Self.libraryStackSpacing) {
+                    if let screen = libraryTargetScreen {
+                        libraryTargetBanner(for: screen)
                     }
-                    .libraryGridPadding()
+                    // R-27: eligibility is the page, not what the filter left behind, so the card rides
+                    // above an empty result set just as it does above real tiles.
+                    if progress?.handled.contains(.library) == false {
+                        OnboardingCard(page: .library, perform: performLibraryCardAction)
+                            .frame(height: OnboardingCardMetrics.blockHeight)
+                    }
+                    if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
+                        AerialsSourceStatusCard()
+                    } else if let library, library.visibleItems.isEmpty {
+                        IllustratedEmptyState(
+                            symbol: library.items.isEmpty ? "square.grid.2x2" : "magnifyingglass",
+                            title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
+                        )
+                    } else if let library {
+                        LibraryGalleryGrid(
+                            size: tileSize, aspect: .wide,
+                            initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+                        ) {
+                            ForEach(library.visibleItems) { item in
+                                let badges = item.cardBadges(
+                                    among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
+                                )
+                                Button {
+                                    // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
+                                    if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+                                        quickApply(item.id)
+                                    } else {
+                                        presentedItemID = item.id
+                                    }
+                                } label: {
+                                    LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
+                                .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
+                                .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
+                                .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
+                                .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
+                            }
+                        }
+                        .libraryGridPadding()
+                    }
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .modifier(GridTopReporter { stage.gridAtTop = $0 })
+            .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
             }
@@ -1094,8 +1140,10 @@ struct HomePage: View {
         // Indices only line up while the shelf mirrors these rows; `syncShelf()` calls back in after rebuilding it.
         guard !visible.isEmpty, stage.shelfItems.map(\.id) == visible.map(\.id) else { return }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
+        // A card leaving a scrolled grid may never have been on the shelf: the tile's own decode is what it showed.
         let missing = stage.refreshShelfThumbnails {
             visible[$0].thumbnail.flatMap { thumbnails.cached($0, pixelSize: Self.thumbnailPixelSize, scale: scale) }
+                ?? gridThumbnail(for: visible[$0]).flatMap { Self.gridImage($0, in: thumbnails) }
         }
         for index in missing {
             let item = visible[index]
@@ -1153,6 +1201,10 @@ struct HomePage: View {
                 let screen = screenManager.screens.first { $0.id == id }
                 router.showDetail(id, failureID: screen.flatMap { screenManager.wallpaperLoads.attempt(for: $0)?.failure?.id })
             case let .snapped(index):
+                if index < 2 {
+                    // Here, not when the grid disappears: the nav pill unmounts it before the stage reads where the cards leave from.
+                    stage.gridScrollOffset = 0
+                }
                 // The slide the nav pill runs when it is clicked.
                 withAnimation(DesignTokens.motion(stage.reduceMotion, .snappy(duration: 0.18))) {
                     if index == 2, router.page == .home {
@@ -1439,22 +1491,32 @@ struct ShelfChromeRide: ViewModifier {
 }
 
 /// Tells the stage whether the grid sits at its top, which is what lets a pull-down hand the
-/// gesture back to it. Below macOS 15 there is no scroll geometry, so the handoff stays off.
+/// gesture back to it, and how far it is scrolled, which is where the cards leave from. Below
+/// macOS 15 there is no scroll geometry: the handoff stays off and the cards leave from the top.
 private struct GridTopReporter: ViewModifier {
-    let report: (Bool) -> Void
+    let atTop: (Bool) -> Void
+    let offset: (CGFloat) -> Void
 
     func body(content: Content) -> some View {
         if #available(macOS 15, *) {
             content
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y <= geometry.contentInsets.top + 0.5
-                } action: { _, atTop in
-                    report(atTop)
+                } action: { _, isAtTop in
+                    atTop(isAtTop)
                 }
-                .onAppear { report(true) }
-                .onDisappear { report(false) }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+                } action: { _, scrolled in
+                    offset(scrolled)
+                }
+                .onAppear {
+                    atTop(true)
+                    offset(0)
+                }
+                .onDisappear { atTop(false) }
         } else {
-            content.onAppear { report(false) }
+            content.onAppear { atTop(false) }
         }
     }
 }
