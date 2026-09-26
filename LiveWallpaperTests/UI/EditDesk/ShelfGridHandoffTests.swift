@@ -45,10 +45,11 @@ private struct HandoffHost {
     let library: SavedLibraryModel
     let suiteName: String?
 
-    /// `onLibrary` false opens on the overview instead; `backdrop` paints behind the page.
+    /// `onLibrary` false opens on the overview instead; `backdrop` paints behind the page; `tileSize` drives the
+    /// page's tile size, left at the default when nil.
     init(
         size: CGSize, count: Int = 60, onboarding: Bool = false, target: Bool = false, onLibrary: Bool = true,
-        backdrop: NSColor? = nil
+        backdrop: NSColor? = nil, tileSize: TileSizeBox? = nil
     ) throws {
         let screen = Screen(nsScreen: HandoffScreen())
         manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
@@ -80,6 +81,9 @@ private struct HandoffHost {
         var root = AnyView(HomePage(router: router, toasts: EditDeskToastCenter(), library: library).environment(manager))
         if let backdrop {
             root = AnyView(root.background(Color(nsColor: backdrop).ignoresSafeArea()))
+        }
+        if let tileSize {
+            root = AnyView(TileSized(box: tileSize, content: root))
         }
         if onboarding {
             let name = "handoff.\(UUID().uuidString)"
@@ -313,6 +317,22 @@ private func scrollEvent(y: Int32, phase: CGScrollPhase) throws -> NSEvent {
 
 private func sample(_ image: ProbeImage, at point: CGPoint) -> ProbeColor {
     image.rgb(px: Int((point.x * image.scale).rounded(.down)), Int((point.y * image.scale).rounded(.down)))
+}
+
+/// The Settings tile-size picker as the page sees it: an environment value that changes under a mounted page.
+@MainActor
+@Observable
+private final class TileSizeBox {
+    var value = LibraryTileSize.defaultSize
+}
+
+private struct TileSized: View {
+    let box: TileSizeBox
+    let content: AnyView
+
+    var body: some View {
+        content.environment(\.libraryTileSize, box.value)
+    }
 }
 
 /// While `holding`, a cover decode waits instead of returning, so a tile shows only what the cache already has.
@@ -854,6 +874,42 @@ struct ShelfGridHandoffTests {
             let seen = sample(image, at: CGPoint(x: x, y: gapY))
             #expect(seen.isRed, Comment(rawValue: "column \(column): the gap between rows shows \(seen), not the canvas"))
         }
+    }
+
+    /// Three rows fit on screen at either size, so the grid's range stays put while the tiles change size.
+    @Test("A tile size change that keeps the grid's range still re-decodes the cards at the new size", .timeLimit(.minutes(1)))
+    func tileSizeChangeRedecodesTheCards() async throws {
+        let size = Self.designSize
+        let tileSize = TileSizeBox()
+        let host = try HandoffHost(size: size, count: 3, tileSize: tileSize)
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let model = try #require(host.stage).model
+        let request = try #require(host.library.visibleItems.first?.thumbnail)
+        func tilePixels(_ tile: LibraryTileSize) -> Int {
+            let width = StageGeometry.gridCellSize(windowWidth: size.width, size: tile).width
+            return Int(LibraryGridTile.Thumbnail(request, tileWidth: width, scale: NSScreen.main?.backingScaleFactor ?? 2).pixelSize.width)
+        }
+        func cardPixels() -> [Int?] {
+            model.visibleGridRange.map { model.shelfItems[$0].thumbnail?.width }
+        }
+        let range = model.visibleGridRange
+        let before = tileSize.value
+        await host.settle(seconds: 2) { cardPixels().allSatisfy { $0 == tilePixels(before) } }
+        try #require(range.count == 3, Comment(rawValue: "control: the grid lists \(range), not all three rows"))
+        try #require(
+            cardPixels().allSatisfy { $0 == tilePixels(before) },
+            Comment(rawValue: "control: before the change the cards wear \(cardPixels()), not the \(tilePixels(before))px tile decode")
+        )
+        tileSize.value = .large
+        await host.settle(seconds: 2) { cardPixels().allSatisfy { $0 == tilePixels(.large) } }
+        try #require(model.gridTileSize == .large, "the page never handed the stage the new size")
+        try #require(tilePixels(.large) != tilePixels(before), "control: both sizes decode the same pixels")
+        #expect(model.visibleGridRange == range, "the range moved, which is not the case under test")
+        #expect(
+            cardPixels().allSatisfy { $0 == tilePixels(.large) },
+            Comment(rawValue: "the cards still wear \(cardPixels()) for \(tilePixels(.large))px tiles")
+        )
     }
 }
 #endif

@@ -114,7 +114,11 @@ struct HomePage: View {
                 #if !LITE_BUILD
                 .modifier(InstalledLibraryHooks(page: page))
                 #endif
-                .onChange(of: page.tileSize) { page.stage.gridTileSize = page.tileSize }
+                .onChange(of: page.tileSize) {
+                    page.stage.gridTileSize = page.tileSize
+                    // The grid's range can stay put while its tiles change size, and only a range change reloads.
+                    page.loadShelfThumbnails()
+                }
                 .onChange(of: page.reduceMotion) { page.stage.reduceMotion = page.reduceMotion }
                 .onChange(of: page.contrast, initial: true) { page.stage.increaseContrast = page.contrast == .increased }
                 .onChange(of: page.shelfStyleRaw) { page.stage.shelfStyle = page.shelfStyle }

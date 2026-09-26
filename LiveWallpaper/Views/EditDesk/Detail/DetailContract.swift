@@ -11,31 +11,6 @@ import SwiftUI
 enum DetailGeometry {
     static let topBarHeight: CGFloat = 56
     static let inspectorWidth: CGFloat = 372
-    static let sideMargin: CGFloat = 24
-    /// Fixed 16:9, never the display's own ratio.
-    static let heroAspect: CGFloat = 16 / 9
-
-    /// Everything left of the inspector and below the top bar.
-    static func stageRect(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
-        CGRect(
-            x: 0, y: topBarHeight,
-            width: windowSize.width - inspectorWidth,
-            height: windowSize.height - topBarHeight
-        )
-    }
-
-    static func heroFrame(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
-        let stage = stageRect(in: windowSize, inspectorWidth: inspectorWidth)
-        let verticalBudget = max(1, stage.height - 2 * sideMargin)
-        let width = max(1, min(stage.width - 2 * sideMargin, verticalBudget * heroAspect))
-        let height = width / heroAspect
-        let blockHeight = height
-        return CGRect(
-            x: stage.minX + (stage.width - width) / 2,
-            y: stage.minY + (stage.height - blockHeight) / 2,
-            width: width, height: height
-        )
-    }
 }
 
 /// What the detail top bar shows for every display, current one included.

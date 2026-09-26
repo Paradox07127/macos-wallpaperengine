@@ -38,8 +38,8 @@ struct DisplayDetailHost: View {
     @State private var switchEdge: HorizontalEdge = .trailing
     @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = 372.0
     @AppStorage("loomscreen.editDesk.inspectorVisible", store: .appScoped()) private var inspectorVisible = true
-    /// The overlay column opens and closes with its selection, so it has its own value: sharing the one
-    /// above would hide the wallpaper column on every display after one visit to the overlays.
+    /// The overlay inspector opens and closes with its selection, so it has its own value: sharing the one
+    /// above would hide the wallpaper inspector on every display after one visit to the overlays.
     @State private var overlayInspectorVisible = false
     @AppStorage("loomscreen.editDesk.layersVisible", store: .appScoped()) private var layersVisible = true
     @State private var liveInspectorWidth: Double?

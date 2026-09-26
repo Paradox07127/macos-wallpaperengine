@@ -3,7 +3,7 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
-@Suite("Overlay layer column")
+@Suite("Overlay layers, add strip and inspector")
 struct OverlayLayerListTests {
     private func placement(_ kind: MonitorWidgetKind) -> MonitorWidgetPlacement {
         MonitorWidgetPlacement(kind: kind, size: .small, x: 0.1, y: 0.1)

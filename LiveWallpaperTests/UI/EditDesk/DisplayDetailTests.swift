@@ -4,6 +4,34 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
+/// The design's boxes, held on the test side only: `DisplayDetail` lays out from its measured columns, not from these.
+extension DetailGeometry {
+    static let sideMargin: CGFloat = 24
+    /// Fixed 16:9, never the display's own ratio.
+    static let heroAspect: CGFloat = 16 / 9
+
+    /// Everything left of the inspector and below the top bar.
+    static func stageRect(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
+        CGRect(
+            x: 0, y: topBarHeight,
+            width: windowSize.width - inspectorWidth,
+            height: windowSize.height - topBarHeight
+        )
+    }
+
+    static func heroFrame(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
+        let stage = stageRect(in: windowSize, inspectorWidth: inspectorWidth)
+        let verticalBudget = max(1, stage.height - 2 * sideMargin)
+        let width = max(1, min(stage.width - 2 * sideMargin, verticalBudget * heroAspect))
+        let height = width / heroAspect
+        return CGRect(
+            x: stage.minX + (stage.width - width) / 2,
+            y: stage.minY + (stage.height - height) / 2,
+            width: width, height: height
+        )
+    }
+}
+
 /// Pins GAP_ANALYSIS.md §8.2's layout B: 16:9 hero on the left, 372 inspector on the right.
 @Suite("Display detail shell")
 struct DisplayDetailTests {

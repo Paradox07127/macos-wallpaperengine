@@ -1334,6 +1334,112 @@ struct S8bLocalizationWidthTests {
         }
     }
 
+    /// SwiftUI backs each focusable control with an AppKit focus-ring view, the one place its laid-out frame shows
+    /// offscreen: the accessibility tree is empty there. Frames are in the host's points, left to right.
+    private func focusRings(_ view: some View, width: CGFloat, expecting count: Int) async -> [CGRect] {
+        let host = NSHostingView(rootView: view)
+        host.frame = CGRect(x: 0, y: 0, width: width, height: 80)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+        window.orderBack(nil)
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+        }
+        func rings(_ view: NSView) -> [CGRect] {
+            let own = String(describing: type(of: view)) == "_FocusRingView" ? [view.convert(view.bounds, to: host)] : []
+            return own + view.subviews.flatMap(rings)
+        }
+        var found: [CGRect] = []
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, found.count < count {
+            host.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(20))
+            found = rings(host)
+        }
+        return found.sorted { $0.minX < $1.minX }
+    }
+
+    /// The queued row with a third display runs past the panel in Spanish and Japanese. The display names are the ones
+    /// meant to give way, truncating in the middle, while the caption and both cancels keep their whole text.
+    @Test("Three displays and both cancels in Spanish and Japanese: only the display names give way, and the row stays in the panel")
+    func queuedThreeDisplaysTruncateOnlyTheNames() async throws {
+        for language in ["es", "ja"] {
+            let localized = try bundle(language)
+            func text(_ key: String) -> String {
+                NSLocalizedString(key, bundle: localized, comment: "")
+            }
+            let caption = text("Download and apply to")
+            let cancels = [text("Cancel Auto-Apply"), text("Cancel download")]
+            let natural = row(caption: caption, displays: 3, symbol: "arrow.down.circle", extras: cancels)
+            try #require(natural > Self.rowBudget, Comment(rawValue: "control: \(language) fits whole at \(natural)pt, nothing has to give way"))
+            var targets = (1 ... 3).map { index in
+                ModalDisplayTarget(
+                    id: CGDirectDisplayID(index), name: Self.displayName, shortcutIndex: index,
+                    aspectRatio: 16.0 / 9, thumbnail: nil, isPrimary: index == 1
+                )
+            }
+            targets[2].isPreparing = true
+            let rings = await focusRings(
+                ModalDisplayButtons(
+                    targets: targets, canApply: true, mode: .download, applyTo: { _ in },
+                    extras: cancels.map { ModalExtraButton(title: $0, action: {}) }
+                )
+                .environment(\.locale, Locale(identifier: language))
+                .frame(width: Self.rowBudget),
+                width: Self.rowBudget, expecting: 5
+            )
+            try #require(rings.count == 5, Comment(rawValue: "control: \(language): \(rings.count) focus rings, not three displays and two cancels"))
+            /// The same button alone at its natural size, measured the same way.
+            func alone(_ title: String, symbol: String? = nil) async -> CGRect? {
+                let button = Button {} label: {
+                    if let symbol {
+                        Label { Text(verbatim: title) } icon: { Image(systemName: symbol) }
+                    } else {
+                        Text(verbatim: title)
+                    }
+                }
+                .adaptiveGlassButton(.regular, size: .large)
+                .fixedSize()
+                return await focusRings(button, width: 800, expecting: 1).first
+            }
+            let name = try #require(await alone(Self.displayName, symbol: "arrow.down.circle"))
+            var cancelRings: [CGRect] = []
+            for title in cancels {
+                let ring = try #require(await alone(title))
+                cancelRings.append(ring)
+            }
+            // A ring stands proud of its button by the same margin on each side.
+            let outset = (name.width - button(Self.displayName, symbol: "arrow.down.circle")) / 2
+            let captionRoom = rings[0].minX + outset - DesignTokens.Spacing.sm
+            let idealCaption = width(Text(verbatim: caption).font(DesignTokens.EditDesk.Typography.chip))
+            ProbeRenderer.report(
+                "S8b.queued3.\(language)",
+                "natural=\(natural) rings=\(rings.map { "\(Int($0.minX))...\(Int($0.maxX))" }) alone name=\(name.width) "
+                    + "cancels=\(cancelRings.map(\.width)) outset=\(outset) caption=\(captionRoom)/\(idealCaption) budget=\(Self.rowBudget)"
+            )
+            #expect(
+                rings.allSatisfy { $0.minX >= -outset - 0.5 && $0.maxX <= Self.rowBudget + outset + 0.5 },
+                Comment(rawValue: "\(language): a button leaves the panel: \(rings.map { "\($0.minX)...\($0.maxX)" })")
+            )
+            #expect(captionRoom >= idealCaption - 1, Comment(rawValue: "\(language): the caption has \(captionRoom)pt of \(idealCaption)pt"))
+            withKnownIssue("The cancels give way while the names keep their width; wrapping the cancels or cutting the names sooner is undecided") {
+                for (index, ring) in rings.suffix(2).enumerated() {
+                    #expect(
+                        ring.width >= cancelRings[index].width - 1,
+                        Comment(rawValue: "\(language): \(cancels[index]) is cut to \(ring.width)pt of \(cancelRings[index].width)pt")
+                    )
+                }
+                #expect(
+                    rings.prefix(3).allSatisfy { $0.width < name.width - 1 },
+                    Comment(rawValue: "\(language): the names \(rings.prefix(3).map(\.width)) kept their \(name.width)pt")
+                )
+            }
+        }
+    }
+
     /// The caption box is a 70pt floor the text can push, so no translation is clipped. This goes
     /// red if the box goes back to a cap, and if the strip stops budgeting for the wider ones.
     @Test("The float strip caption box fits every translation and widens the strip with it")
