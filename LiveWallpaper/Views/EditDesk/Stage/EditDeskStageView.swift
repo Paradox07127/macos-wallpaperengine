@@ -20,6 +20,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var cutRow = false
     private let flightLayer = CALayer()
     private let ghost = DragGhostLayer()
+    let previewPlayer = ShelfPreviewPlayer()
+    /// Settings → hover to play preview, read each time a card settles.
+    var previewAutoplayEnabled: () -> Bool = {
+        UserDefaults.appScoped().object(forKey: EditDeskPreferences.hoverAutoplayPreview) as? Bool
+            ?? EditDeskPreferences.hoverAutoplayPreviewDefault
+    }
+
     private var displays: [StageDisplay] = []
     private var cards: [StageCard] = []
     /// Slice of `cards` the row draws; the row is as long as the whole library.
@@ -515,6 +522,38 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             StageLayerStyle.fadeOpacity(shelfLayer, from: 0)
         }
         cutRow = false
+        syncPreviewPlayback()
+    }
+
+    /// The shelf is up, still and uncovered: the only state in which a card may play its preview.
+    private var shelfAtRest: Bool {
+        !model.interactionBlocked && !detailCovering && flights.isEmpty
+            && abs(progress.value - 1) < StageGeometry.waveProgressBand
+    }
+
+    /// Only the card the pointer rests on may play; another card, a covering page, a flight or Reduce
+    /// Motion stops it at once.
+    private func syncPreviewPlayback() {
+        let target = window != nil && !dragging && !model.reduceMotion && shelfAtRest ? model.hoveredCard : nil
+        guard target != previewPlayer.cardID else { return }
+        previewPlayer.stop()
+        guard let target, let card = cards.first(where: { $0.id == target }), let tile = cardLayers[target] else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let maxPixelSize = Int((max(StageGeometry.cardSize.width, StageGeometry.cardSize.height) * scale).rounded())
+        previewPlayer.play(card, on: tile.thumbnail, maxPixelSize: maxPixelSize) { [weak self] in
+            self?.previewPlays(target) ?? false
+        }
+    }
+
+    private func previewPlays(_ id: StageCard.ID) -> Bool {
+        guard let card = cards.first(where: { $0.id == id }) else { return false }
+        return ShelfPreviewPlayback.plays(
+            displaysGIF: ShelfPreviewPlayback.displaysGIF(card),
+            hoverSettled: model.hoveredCard == id,
+            autoplayEnabled: previewAutoplayEnabled(),
+            reduceMotion: model.reduceMotion,
+            covered: !shelfAtRest
+        )
     }
 
     /// Reduce Motion turns a row slide into a cut, and the cut takes the fade the slide would have
@@ -1067,6 +1106,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     func detach() {
         attached = false
         removeGridScrollMonitor()
+        previewPlayer.stop()
         withoutActions {
             if dragging {
                 endDrag(cancelled: true)

@@ -1204,7 +1204,8 @@ struct HomePage: View {
                 thumbnail: item.thumbnail.flatMap { thumbnails.cached($0, pixelSize: Self.thumbnailPixelSize, scale: scale) },
                 nowPlaying: NowPlayingBadge(on: item.onDisplays, among: stage.displays),
                 isDraggable: item.isSupported,
-                statusBadge: item.statusBadge
+                statusBadge: item.statusBadge,
+                previewOrigin: item.thumbnail?.scenePreviewOrigin
             )
         }
         loadShelfThumbnails()

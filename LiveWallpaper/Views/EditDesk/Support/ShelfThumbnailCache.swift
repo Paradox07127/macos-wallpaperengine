@@ -24,6 +24,24 @@ final class ShelfThumbnailCache {
             #endif
             }
         }
+
+        /// The scene whose preview file `sourceImage(for:)` draws for this request; nil when a saved
+        /// cover, a video poster or a web snapshot is drawn instead.
+        var scenePreviewOrigin: WPEOrigin? {
+            #if LITE_BUILD
+            return nil
+            #else
+            switch self {
+            case let .bookmark(bookmark):
+                guard bookmark.coverFileName == nil, case .scene = bookmark.content else { return nil }
+                return bookmark.wpeOrigin
+            case .aerial:
+                return nil
+            case let .workshop(entry):
+                return entry.origin
+            }
+            #endif
+        }
     }
 
     struct AerialPreview: Equatable, Sendable {
