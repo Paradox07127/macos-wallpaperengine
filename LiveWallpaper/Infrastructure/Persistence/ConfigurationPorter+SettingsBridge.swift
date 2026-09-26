@@ -67,15 +67,33 @@ extension ConfigurationPorter {
         imported: [WallpaperBookmark]
     ) -> [WallpaperBookmark] {
         var merged = existing
+        var ids = Set(existing.map(\.id))
+        var contents = Dictionary(grouping: existing.map(\.content), by: mergeBucket)
         for candidate in imported {
-            let alreadyPresent = merged.contains {
-                $0.id == candidate.id || $0.content == candidate.content
-            }
-            if !alreadyPresent {
-                merged.append(candidate)
-            }
+            let bucket = mergeBucket(candidate.content)
+            guard !ids.contains(candidate.id), !(contents[bucket] ?? []).contains(candidate.content) else { continue }
+            merged.append(candidate)
+            ids.insert(candidate.id)
+            contents[bucket, default: []].append(candidate.content)
         }
         return merged
+    }
+
+    /// Built only from fields `WallpaperContent.==` compares, so equal contents always share a bucket.
+    private static func mergeBucket(_ content: WallpaperContent) -> [AnyHashable] {
+        switch content {
+        case let .video(bookmarkData, packageEntryName):
+            ["video", bookmarkData, packageEntryName]
+        case let .html(source, _):
+            switch source {
+            case let .file(bookmarkData): ["html.file", bookmarkData]
+            case let .folder(bookmarkData, indexFileName): ["html.folder", bookmarkData, indexFileName]
+            case let .url(url): ["html.url", url]
+            case let .inline(html): ["html.inline", html]
+            }
+        case let .scene(descriptor):
+            ["scene", descriptor.workshopID, descriptor.cacheRelativePath]
+        }
     }
 
     /// Same merge rule as bookmarks: an existing scheme wins over an imported

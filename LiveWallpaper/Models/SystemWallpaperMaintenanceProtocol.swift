@@ -35,6 +35,35 @@ struct SystemWallpaperMaintenanceReport: Codable, Sendable, Equatable {
 enum SystemWallpaperRegistrationPolicy {
     static let hostIDs: Set<String> = ["com.loomscreen", "com.loomscreen.pro"]
 
+    /// Caps the kept lines, not the dump: they run ~5% of a `-dump Bundle`, so this still bounds the helper's memory.
+    static let maxRegistrationTextBytes = 8 * 1024 * 1024
+    /// Exactly the line starts `registrations(in:)` reads; everything else is dropped unread.
+    private static let registrationLinePrefixes = ["--------", "path:", "identifier:"].map { Data($0.utf8) }
+
+    /// Streams an `lsregister -dump` capture, keeping only the lines `registrations(in:)` reads.
+    static func registrationText(from file: FileHandle) throws -> String {
+        var kept = Data()
+        var pending = Data()
+        func keep(_ line: Data) throws {
+            guard registrationLinePrefixes.contains(where: { line.starts(with: $0) }) else { return }
+            kept.append(line)
+            kept.append(0x0A)
+            guard kept.count <= maxRegistrationTextBytes else { throw CocoaError(.fileReadTooLarge) }
+        }
+        while let chunk = try file.read(upToCount: 1 << 20), !chunk.isEmpty {
+            pending.append(chunk)
+            var start = pending.startIndex
+            while let newline = pending[start...].firstIndex(of: 0x0A) {
+                try keep(pending[start ..< newline])
+                start = pending.index(after: newline)
+            }
+            pending.removeSubrange(..<start)
+        }
+        try keep(pending)
+        guard let text = String(bytes: kept, encoding: .utf8) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
+        return text
+    }
+
     static func registrations(in dump: String) -> [(path: String, bundleID: String)] {
         var path: String?
         var identifier: String?

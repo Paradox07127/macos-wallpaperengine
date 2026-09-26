@@ -43,6 +43,57 @@ struct SystemWallpaperMaintenanceTests {
         #expect(records.isEmpty)
     }
 
+    @Test func registrationsSurviveADumpLargerThanThirtyTwoMebibytes() throws {
+        let noise = String(repeating: "    claimed schemes:           x-noise:\n", count: 1 << 15)
+        let dump = try Self.dumpFile { writer in
+            try writer.write(contentsOf: Data(Self.record("/tmp/First/Pro.app", "com.loomscreen.pro").utf8))
+            while try writer.offset() <= 33 * 1024 * 1024 {
+                try writer.write(contentsOf: Data(noise.utf8))
+            }
+            try writer.write(contentsOf: Data(Self.record("/tmp/Last/Loomscreen.app", "com.loomscreen").utf8))
+        }
+        defer { try? FileManager.default.removeItem(at: dump) }
+
+        let records = try Self.parse(dump)
+        #expect(records == ["/tmp/First/Pro.app|com.loomscreen.pro", "/tmp/Last/Loomscreen.app|com.loomscreen"])
+    }
+
+    @Test func readingAnOrdinaryDumpParsesLikeTheRawText() throws {
+        let raw = Self.record("/tmp/Pro.app", "com.loomscreen.pro")
+            + "    path: /tmp/Indented.app\nidentifier-like: com.loomscreen\n"
+            + Self.record("/tmp/Pro.app/Contents/Extensions/Provider.appex", "com.loomscreen.pro.wallpaper")
+            + Self.record("/tmp/Lite.app", "com.loomscreen")
+        let dump = try Self.dumpFile { try $0.write(contentsOf: Data(raw.utf8)) }
+        defer { try? FileManager.default.removeItem(at: dump) }
+
+        let expected = SystemWallpaperRegistrationPolicy.registrations(in: raw).map { $0.path + "|" + $0.bundleID }
+        #expect(try Self.parse(dump) == expected)
+        #expect(expected == ["/tmp/Lite.app|com.loomscreen", "/tmp/Pro.app|com.loomscreen.pro"])
+    }
+
+    private static func record(_ path: String, _ identifier: String) -> String {
+        "--------------------------------------------------------------------------------\n"
+            + "bundle id:                  Host (0x1)\npath:                       \(path) (0x2)\n"
+            + "identifier:                 \(identifier)\n"
+    }
+
+    private static func dumpFile(_ fill: (FileHandle) throws -> Void) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+        let writer = try FileHandle(forWritingTo: url)
+        defer { try? writer.close() }
+        try fill(writer)
+        return url
+    }
+
+    private static func parse(_ dump: URL) throws -> [String] {
+        let reader = try FileHandle(forReadingFrom: dump)
+        defer { try? reader.close() }
+        return try SystemWallpaperRegistrationPolicy.registrations(
+            in: SystemWallpaperRegistrationPolicy.registrationText(from: reader)
+        ).map { $0.path + "|" + $0.bundleID }
+    }
+
     @Test func preservesCurrentAndSeparatelyInstalledEdition() {
         let current = "/Applications/Loomscreen Pro.app"
         func removes(_ path: String, _ id: String, exists: Bool = true) -> Bool {

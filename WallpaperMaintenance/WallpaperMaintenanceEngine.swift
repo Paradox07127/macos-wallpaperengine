@@ -88,7 +88,7 @@ struct WallpaperMaintenanceEngine: Sendable {
         guard result.code == 0 || result.code == 1 else { throw Failure.command }
     }
 
-    enum Failure: Error { case refused, command, timeout, outputTooLarge }
+    enum Failure: Error { case refused, command, timeout }
 }
 
 enum WallpaperMaintenanceProcess {
@@ -121,10 +121,8 @@ enum WallpaperMaintenanceProcess {
         }
         let reader = try FileHandle(forReadingFrom: outputURL)
         defer { try? reader.close() }
-        let maximum = 32 * 1024 * 1024
-        let data = try reader.read(upToCount: maximum + 1) ?? Data()
-        guard data.count <= maximum else { throw WallpaperMaintenanceEngine.Failure.outputTooLarge }
-        guard let text = String(bytes: data, encoding: .utf8) else { throw WallpaperMaintenanceEngine.Failure.command }
-        return .init(code: process.terminationStatus, output: text)
+        // Only `inspect` reads `output`, so every command keeps just the registration lines.
+        let captured = try SystemWallpaperRegistrationPolicy.registrationText(from: reader)
+        return .init(code: process.terminationStatus, output: captured)
     }
 }

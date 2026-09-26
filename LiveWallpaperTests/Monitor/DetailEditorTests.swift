@@ -74,4 +74,63 @@ struct DetailEditorTests {
             #expect(!WidgetFactory.icon(kind).isEmpty)
         }
     }
+
+    @Test("A layout file over the byte or widget budget is refused; an ordinary one imports")
+    func layoutImportBudget() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func file(_ name: String, _ data: Data) throws -> URL {
+            let url = folder.appendingPathComponent(name)
+            try data.write(to: url)
+            return url
+        }
+        func layout(widgets count: Int) throws -> Data {
+            try JSONEncoder().encode(MonitorBoardConfiguration(
+                widgets: (0 ..< count).map { _ in MonitorWidgetPlacement(kind: .cpu, size: .small) }
+            ))
+        }
+
+        let oversized = try file("bytes.json", Data(#"{"widgets":[]}"#.utf8) + Data(repeating: 0x20, count: BoardLayoutImporter.maxBytes))
+        let crowded = try file("widgets.json", layout(widgets: BoardLayoutImporter.maxWidgets + 1))
+        for url in [oversized, crowded] {
+            let error = #expect(throws: CocoaError.self, "\(url.lastPathComponent) was imported") {
+                try BoardLayoutImporter.decode(contentsOf: url)
+            }
+            #expect(error?.code == .fileReadTooLarge)
+        }
+        // Control: an ordinary layout still imports.
+        let ordinary = try file("ordinary.json", layout(widgets: 2))
+        #expect(try BoardLayoutImporter.decode(contentsOf: ordinary).widgets.count == 2)
+    }
+
+    @MainActor
+    @Test("A layout import that finishes after a newer one does not land", .timeLimit(.minutes(1)))
+    func staleLayoutImportDoesNotLand() async {
+        let importer = BoardLayoutImporter()
+        let landed = LandedLayouts()
+        let gate = DispatchSemaphore(value: 0)
+        let older = importer.load(URL(fileURLWithPath: "/older.json"), decode: { _ in
+            _ = gate.wait(timeout: .now() + 30)
+            return MonitorBoardConfiguration(widgets: [])
+        }, completion: landed.record)
+        let newer = importer.load(URL(fileURLWithPath: "/newer.json"), decode: { _ in
+            MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu)])
+        }, completion: landed.record)
+        await newer.value
+        gate.signal()
+        await older.value
+        #expect(landed.widgetCounts == [1], "the older import overwrote the newer one")
+    }
+
+    @MainActor
+    private final class LandedLayouts {
+        var widgetCounts: [Int] = []
+
+        func record(_ result: Result<MonitorBoardConfiguration, Error>) {
+            if case let .success(layout) = result {
+                widgetCounts.append(layout.widgets.count)
+            }
+        }
+    }
 }

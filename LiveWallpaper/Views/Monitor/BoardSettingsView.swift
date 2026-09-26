@@ -12,6 +12,7 @@ struct BoardSettingsView: View {
     @AppStorage("Monitor.SettingsExpanded") private var isExpanded = true
 
     @State private var draft: MonitorBoardConfiguration = .default
+    @State private var layoutImporter = BoardLayoutImporter()
 
     var body: some View {
         VStack(spacing: 12) {
@@ -205,17 +206,13 @@ struct BoardSettingsView: View {
         panel.canChooseDirectories = false
         panel.title = String(localized: "Import Widget Layout", bundle: .appLanguage, comment: "Open-panel title for importing a widget board layout.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let data = try Data(contentsOf: url)
-            let imported = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: data)
-            var next = imported
-            next.widgets = imported.widgets.map { w in
-                MonitorWidgetPlacement(kind: w.kind, size: w.size, x: w.x, y: w.y, options: w.options)
+        layoutImporter.load(url) { result in
+            switch result {
+            case let .success(next):
+                commit { $0 = next }
+            case let .failure(error):
+                presentLayoutError(error, isImport: true)
             }
-            next.schemaVersion = MonitorBoardConfiguration.currentSchemaVersion
-            commit { $0 = next }
-        } catch {
-            presentLayoutError(error, isImport: true)
         }
     }
 
@@ -301,5 +298,59 @@ enum ReduceMotionChoice: Hashable {
         case .on: return true
         case .off: return false
         }
+    }
+}
+
+// MARK: - Layout import
+
+/// Reads and decodes a layout file off the main actor; only the newest import's result lands.
+@MainActor
+final class BoardLayoutImporter {
+    /// A real export is a few KB; the cap keeps a mistaken or hostile pick off the decoder.
+    nonisolated static let maxBytes = 1 << 20
+    /// Above a 3840×2160-pt board's 20×11 = 220 small tiles at the 186-pt cell pitch.
+    nonisolated static let maxWidgets = 256
+
+    private var latestRequest = 0
+    private var inFlight: Task<Void, Never>?
+
+    @discardableResult
+    func load(
+        _ url: URL,
+        decode: @escaping @Sendable (URL) throws -> MonitorBoardConfiguration = { try BoardLayoutImporter.decode(contentsOf: $0) },
+        completion: @escaping @MainActor (Result<MonitorBoardConfiguration, Error>) -> Void
+    ) -> Task<Void, Never> {
+        inFlight?.cancel()
+        latestRequest += 1
+        let request = latestRequest
+        let task = Task {
+            let result: Result<MonitorBoardConfiguration, Error>
+            do {
+                result = try await .success(CancellableBackgroundWork.run { try decode(url) })
+            } catch {
+                result = .failure(error)
+            }
+            guard request == latestRequest else { return }
+            completion(result)
+        }
+        inFlight = task
+        return task
+    }
+
+    nonisolated static func decode(contentsOf url: URL) throws -> MonitorBoardConfiguration {
+        let tooLarge = CocoaError(.fileReadTooLarge, userInfo: [NSURLErrorKey: url])
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > maxBytes {
+            throw tooLarge
+        }
+        let data = try Data(contentsOf: url)
+        guard data.count <= maxBytes else { throw tooLarge }
+        let imported = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: data)
+        guard imported.widgets.count <= maxWidgets else { throw tooLarge }
+        var next = imported
+        next.widgets = imported.widgets.map { w in
+            MonitorWidgetPlacement(kind: w.kind, size: w.size, x: w.x, y: w.y, options: w.options)
+        }
+        next.schemaVersion = MonitorBoardConfiguration.currentSchemaVersion
+        return next
     }
 }

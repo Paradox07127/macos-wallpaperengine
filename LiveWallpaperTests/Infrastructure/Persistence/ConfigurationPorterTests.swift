@@ -318,6 +318,35 @@ struct ConfigurationPorterBookmarkMergeTests {
         #expect(merged.first?.label == "Mine")
     }
 
+    @Test("Merge dedupes imports against each other and keeps same-source HTML with a different config")
+    func mergeSemanticsAcrossImports() throws {
+        let site = try HTMLSource.url(#require(URL(string: "https://example.com/wall")))
+        var tinted = HTMLConfig.default
+        tinted.customCSS = "body { filter: hue-rotate(90deg); }"
+        let existing = WallpaperBookmark(label: "Mine", content: .video(bookmarkData: Data([0x01])))
+        let fresh = WallpaperBookmark(label: "Fresh", content: .video(bookmarkData: Data([0x02])))
+        let freshAgain = WallpaperBookmark(label: "Fresh again", content: .video(bookmarkData: Data([0x02])))
+        let freshSameID = WallpaperBookmark(label: "Fresh id", content: .video(bookmarkData: Data([0x03])), id: fresh.id)
+        let plain = WallpaperBookmark(label: "Plain", content: .html(source: site, config: .default))
+        let styled = WallpaperBookmark(label: "Styled", content: .html(source: site, config: tinted))
+
+        let merged = ConfigurationPorter.mergingWallpaperBookmarks(
+            existing: [existing],
+            imported: [fresh, freshAgain, freshSameID, plain, styled]
+        )
+
+        #expect(merged.map(\.label) == ["Mine", "Fresh", "Plain", "Styled"])
+    }
+
+    @Test("Merge looks each import up in an index instead of rescanning the merged list")
+    func mergeIsIndexed() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Persistence/ConfigurationPorter+SettingsBridge.swift")
+        let start = try #require(source.range(of: "static func mergingWallpaperBookmarks("))
+        let end = try #require(source.range(of: "static func mergingScreenSchemes(", range: start.upperBound ..< source.endIndex))
+        let body = source[start.upperBound ..< end.lowerBound]
+        #expect(!body.contains("merged.contains"), "every import rescans every merged bookmark: O(existing × imported)")
+    }
+
     @Test("apply merges backup bookmarks into the current library instead of replacing it")
     func applyMergesBookmarksIntoLibrary() {
         let manager = SettingsManager.shared

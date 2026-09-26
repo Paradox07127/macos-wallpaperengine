@@ -91,8 +91,9 @@ private enum EngineChecks {
         let stoppedReview = try stopped.inspect()
         try check(stopped.repair(revision: stoppedReview.revision).outcome == .repaired,
                   "repair completes when the agent was already gone")
-        let output = try WallpaperMaintenanceProcess.run("/usr/bin/printf", ["maintenance-probe"])
-        try check(output.code == 0 && output.output == "maintenance-probe", "real process output captured")
+        let output = try WallpaperMaintenanceProcess.run("/usr/bin/printf", ["noise\\npath: /probe.app\\nidentifier: probe"])
+        try check(output.code == 0 && output.output == "path: /probe.app\nidentifier: probe\n",
+                  "real process output captured, registration lines only")
         print("Wallpaper maintenance engine: \(passed) checks passed, 0 failed")
     }
 }
