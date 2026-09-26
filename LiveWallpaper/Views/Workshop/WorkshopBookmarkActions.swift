@@ -111,7 +111,11 @@ struct WorkshopBookmarkErrorModifier: ViewModifier {
                 }
                 Button("OK") { store.dismissStorageError() }
             } message: {
-                Text("Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.")
+                if store.isArchiveUnreadable {
+                    Text("Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved.")
+                } else {
+                    Text("Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.")
+                }
             }
     }
 }

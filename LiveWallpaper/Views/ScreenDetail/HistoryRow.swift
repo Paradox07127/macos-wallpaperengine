@@ -34,7 +34,6 @@ struct HistoryRow: View {
 
     @State private var isHovering = false
     @State private var showingFileActions = false
-    @State private var bookmarkHovering = false
     @State private var resolutionLabel: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.galleryCardPreferences) private var cardPreferences
@@ -106,7 +105,7 @@ struct HistoryRow: View {
                             )
                         }
                         if let onBookmark {
-                            bookmarkControl(onBookmark)
+                            ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)
                         }
                     }
                 }
@@ -145,25 +144,6 @@ struct HistoryRow: View {
                 }
             }
         }
-    }
-
-    private func bookmarkControl(_ toggle: @escaping () -> Void) -> some View {
-        Button(action: toggle) {
-            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                .font(.system(size: 11))
-                .foregroundStyle(isBookmarked
-                    ? DesignTokens.Colors.rating
-                    : DesignTokens.Colors.overlayForeground)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // Explicit 0.72 rather than the 0.18/0.32 default: the default backing
-        // disappears into bright wallpaper stills.
-        .floatingGlyphGlass(hovered: bookmarkHovering, opacity: 0.72)
-        .onHover { bookmarkHovering = $0 }
-        .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
-        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
     }
 
     private var fileActionsPopover: some View {

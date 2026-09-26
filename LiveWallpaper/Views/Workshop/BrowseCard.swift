@@ -49,7 +49,6 @@ struct BrowseCard: View, Equatable {
     var onDownload: () -> Void = {}
 
     @State private var isHovered = false
-    @State private var bookmarkHovering = false
     /// Ephemeral by design — recreated tiles (paging, filter change, relaunch) blur again.
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
@@ -237,7 +236,8 @@ struct BrowseCard: View, Equatable {
                             ThumbnailBadge(verbatim: resolutionLabel)
                         }
                         if let onBookmark {
-                            bookmarkControl(onBookmark)
+                            ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)
+                                .disabled(item.isBanned && !isBookmarked)
                         }
                     }
                 }
@@ -273,24 +273,6 @@ struct BrowseCard: View, Equatable {
 
     private var showsResolutionBadge: Bool {
         resolutionLabel != nil && cardPreferences.showsResolution
-    }
-
-    private func bookmarkControl(_ toggle: @escaping () -> Void) -> some View {
-        Button(action: toggle) {
-            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                .font(.system(size: 11))
-                .foregroundStyle(isBookmarked
-                    ? DesignTokens.Colors.rating
-                    : DesignTokens.Colors.overlayForeground)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .floatingGlyphGlass(hovered: bookmarkHovering, opacity: 0.72)
-        .onHover { bookmarkHovering = $0 }
-        .disabled(item.isBanned && !isBookmarked)
-        .help(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
-        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
     }
 
     private static let inLibraryGreen = DesignTokens.Colors.badgeActive

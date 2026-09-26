@@ -5,12 +5,17 @@ import LiveWallpaperCore
 extension ConfigurationPorter {
     static func currentBundle() -> ConfigurationBundle {
         let manager = SettingsManager.shared
-        return ConfigurationBundle(
+        var bundle = ConfigurationBundle(
             screenConfigurations: manager.loadConfigurations(),
             globalSettings: manager.loadGlobalSettings(),
             wallpaperBookmarks: manager.loadWallpaperBookmarks(),
             screenSchemes: manager.loadScreenSchemes()
         )
+        #if !LITE_BUILD
+        let workshopBookmarks = WorkshopBookmarkStore.shared.bookmarks
+        bundle.workshopBookmarks = workshopBookmarks.isEmpty ? nil : workshopBookmarks
+        #endif
+        return bundle
     }
 
     @discardableResult
@@ -52,6 +57,10 @@ extension ConfigurationPorter {
             SchemeStore.shared.reload()
             summary.schemeCount = schemes.count
         }
+
+        #if !LITE_BUILD
+        bundle.mergeWorkshopBookmarks(into: .shared)
+        #endif
 
         Logger.info(
             "Configuration import applied (displays=\(summary.displayCount ?? 0), global=\(summary.didRestoreGlobalSettings), bookmarks=\(summary.bookmarkCount ?? 0), schemes=\(bundle.screenSchemes?.count ?? 0))",

@@ -505,3 +505,30 @@ struct SettingsManagerMigrationTests {
         return url
     }
 }
+
+#if !LITE_BUILD
+@MainActor
+extension ConfigurationPorterTests {
+    @Test("A backup carries the Workshop bookmarks, and restoring one merges them by Workshop id")
+    func workshopBookmarksRoundTripThroughApply() {
+        let store = WorkshopBookmarkStore.shared
+        let existing = WorkshopBookmark(id: 9_100_001, rawTitle: "Mine", previewImageURL: nil, tags: [])
+        let incoming = WorkshopBookmark(id: 9_100_002, rawTitle: "FromBackup", previewImageURL: nil, tags: [])
+        defer {
+            store.remove(existing.id)
+            store.remove(incoming.id)
+        }
+        store.add(existing)
+
+        #expect(ConfigurationPorter.currentBundle().workshopBookmarks?.contains(existing) == true, "the export leaves Workshop bookmarks out")
+
+        _ = ConfigurationPorter.apply(ConfigurationBundle(workshopBookmarks: [
+            WorkshopBookmark(id: existing.id, rawTitle: "Backup copy", previewImageURL: nil, tags: []),
+            incoming,
+        ]))
+
+        #expect(store.contains(incoming.id), "the restore drops the backup's Workshop bookmarks")
+        #expect(store.bookmarks.first { $0.id == existing.id }?.rawTitle == "Mine", "the backup overwrote a saved bookmark")
+    }
+}
+#endif

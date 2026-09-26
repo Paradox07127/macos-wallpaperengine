@@ -85621,6 +85621,42 @@
           }
         }
       }
+    },
+    "Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved." : {
+      "comment" : "Workshop bookmark alert when the saved bookmarks can't be decoded; the Reset button discards them.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer los marcadores del Workshop. «Restablecer» los descarta para poder guardar marcadores nuevos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップのブックマークを読み込めませんでした。「リセット」するとこれらのブックマークは破棄され、新しいブックマークを保存できるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取创意工坊书签。“重置”会丢弃这些书签，之后即可保存新书签。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取工作坊書籤。「重設」會捨棄這些書籤，之後即可儲存新書籤。"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

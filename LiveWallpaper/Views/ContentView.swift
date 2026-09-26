@@ -715,5 +715,8 @@ struct DetailContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DesignTokens.Colors.pageBackground)
+        #if !LITE_BUILD
+        .modifier(WorkshopBookmarkErrorModifier())
+        #endif
     }
 }

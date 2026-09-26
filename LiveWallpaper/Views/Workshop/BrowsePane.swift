@@ -113,7 +113,6 @@ struct BrowsePane: View {
                 inspector: { width in inspectorColumn(width: width) }
             )
             .pageBackground()
-            .modifier(WorkshopBookmarkErrorModifier())
             .toolbar {
                 if session.selectedID != nil {
                     ToolbarItem(placement: .primaryAction) {

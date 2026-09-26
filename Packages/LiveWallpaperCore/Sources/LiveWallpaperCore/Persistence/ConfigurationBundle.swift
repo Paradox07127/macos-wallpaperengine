@@ -40,6 +40,8 @@ public struct ConfigurationBundle: Codable, Sendable {
     /// Absent in every backup written before schemes existed. Optional, so an
     /// old `.lwconfig` still decodes — it just restores no schemes.
     public var screenSchemes: [ScreenScheme]?
+    /// nil = the backup carries no Workshop bookmarks: written before they existed, by Lite, or with none saved.
+    public var workshopBookmarks: [WorkshopBookmark]?
 
     public init(
         schemaVersion: Int = ConfigurationBundle.currentSchemaVersion,
@@ -49,7 +51,8 @@ public struct ConfigurationBundle: Codable, Sendable {
         screenConfigurations: [ScreenConfiguration]? = nil,
         globalSettings: GlobalSettings? = nil,
         wallpaperBookmarks: [WallpaperBookmark]? = nil,
-        screenSchemes: [ScreenScheme]? = nil
+        screenSchemes: [ScreenScheme]? = nil,
+        workshopBookmarks: [WorkshopBookmark]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.appBundleID = appBundleID
@@ -59,5 +62,16 @@ public struct ConfigurationBundle: Codable, Sendable {
         self.globalSettings = globalSettings
         self.wallpaperBookmarks = wallpaperBookmarks
         self.screenSchemes = screenSchemes
+        self.workshopBookmarks = workshopBookmarks
+    }
+}
+
+public extension ConfigurationBundle {
+    /// Import merges by Workshop id: a bookmark already saved keeps its entry, and nothing saved is cleared.
+    @MainActor
+    func mergeWorkshopBookmarks(into store: WorkshopBookmarkStore) {
+        for bookmark in workshopBookmarks ?? [] {
+            store.add(bookmark)
+        }
     }
 }

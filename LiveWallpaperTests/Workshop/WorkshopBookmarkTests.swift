@@ -187,7 +187,19 @@ struct WorkshopBookmarkTests {
         #expect(!card.contains(".padding(.bottom, DesignTokens.Spacing.xl + DesignTokens.Spacing.md)"))
         let thumbnail = try #require(card.range(of: "private var thumbnailArea: some View {"))
         let pills = try #require(card.range(of: "private func typePill("))
-        #expect(card[thumbnail.upperBound ..< pills.lowerBound].contains("bookmarkControl(onBookmark)"))
+        #expect(card[thumbnail.upperBound ..< pills.lowerBound].contains("ThumbnailBookmarkButton("))
+    }
+
+    @Test("Browse cards and installed rows draw one shared bookmark glyph")
+    func bookmarkGlyphIsShared() throws {
+        for path in [
+            "LiveWallpaper/Views/Workshop/BrowseCard.swift",
+            "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift",
+        ] {
+            let source = try RepositoryRoot.source(path)
+            #expect(source.contains("ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)"), Comment(rawValue: path))
+            #expect(!source.contains("Image(systemName: isBookmarked"), Comment(rawValue: "\(path) draws its own bookmark glyph"))
+        }
     }
 
     @Test("Saved bookmarks use square tiles, stacked with the local grid")
@@ -207,22 +219,35 @@ struct WorkshopBookmarkTests {
         #expect(inspector.contains("|| item.isBanned || !allowsDownload)"))
     }
 
-    @Test("The storage alert is mounted once per legacy page and observes the flag in body")
+    @Test("The storage alert is mounted once, above every legacy page, and observes the flag in body")
     func errorAlertMounting() throws {
-        let mounts = try RepositoryRoot.swiftFiles(under: "LiveWallpaper").filter {
-            try String(contentsOf: $0, encoding: .utf8).contains(".modifier(WorkshopBookmarkErrorModifier())")
-        }.map { RepositoryRoot.relativePath(of: $0) }
-        #expect(mounts.sorted() == [
-            "LiveWallpaper/Views/Bookmarks/LibraryView.swift",
-            "LiveWallpaper/Views/Workshop/BrowsePane.swift",
-        ])
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        let body = try #require(pane.range(of: "var body: some View {"))
-        let layout = try #require(pane.range(of: "private var layout: some View {"))
-        #expect(!pane[body.upperBound ..< layout.lowerBound].contains("WorkshopBookmarkErrorModifier"), "the Edit Desk branch gets the alert too")
+        let mount = ".modifier(WorkshopBookmarkErrorModifier())"
+        var mounts: [String] = []
+        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper") {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            mounts += Array(repeating: RepositoryRoot.relativePath(of: file), count: source.components(separatedBy: mount).count - 1)
+        }
+        #expect(mounts == ["LiveWallpaper/Views/ContentView.swift"])
+        let content = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
+        let detail = try #require(content.range(of: "struct DetailContent: View {"))
+        #expect(content[detail.upperBound...].contains(mount), "the alert sits outside the pages' common parent")
 
         let modifier = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
         #expect(modifier.contains(".onChange(of: store.hasStorageError, initial: true)"))
+    }
+
+    @Test("An unreadable archive gets its own message, one that agrees with Reset")
+    func unreadableArchiveMessage() throws {
+        let modifier = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
+        let message = try #require(modifier.range(of: "} message: {"))
+        let tail = modifier[message.upperBound...]
+        let unreadable = try #require(tail.range(of: "if store.isArchiveUnreadable {"))
+        let read = try #require(tail.range(of: "Text(\"Couldn't read Workshop bookmarks. Reset discards them"))
+        let otherwise = try #require(tail.range(of: "} else {"))
+        let kept = try #require(tail.range(of: "Your existing bookmarks have been kept."))
+        #expect(unreadable.lowerBound < read.lowerBound)
+        #expect(read.lowerBound < otherwise.lowerBound)
+        #expect(otherwise.lowerBound < kept.lowerBound)
     }
 }
 #endif

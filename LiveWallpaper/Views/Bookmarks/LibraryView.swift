@@ -19,9 +19,6 @@ struct LibraryView: View {
     var body: some View {
         DetailPageScaffold { content }
             .confirmDestructive($pendingDestructive)
-            #if !LITE_BUILD
-            .modifier(WorkshopBookmarkErrorModifier())
-            #endif
     }
 
     // MARK: - Content
