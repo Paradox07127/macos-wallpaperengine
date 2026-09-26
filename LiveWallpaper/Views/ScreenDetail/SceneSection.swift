@@ -263,14 +263,14 @@ struct SceneHistoryHeaderActions: View {
 
     var body: some View {
         if featureCatalog.isEnabled(.wpeImport) {
-            GlassIconButton("cube.transparent.fill", size: .regular) {
+            GlassIconButton("cube.transparent.fill") {
                 NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
             }
             .help(Text("Browse all in Workshop"))
             .accessibilityLabel(Text("Browse all in Workshop"))
             .accessibilityHint(Text("Opens the Steam Workshop tab to browse and manage your full library"))
         }
-        GlassIconButton("plus", size: .regular) {
+        GlassIconButton("plus") {
             guard let url = WPEFolderPicker.chooseImportFolder() else { return }
             Task { @MainActor in
                 await screenManager.importWallpaperEngineProject(at: url, for: screen)

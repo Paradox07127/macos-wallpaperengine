@@ -143,8 +143,8 @@ custom_rules:
     severity: warning
   circle_button_outside_wrapper:
     name: "Hand-rolled circular button"
-    regex: '\.buttonBorderShape\(\.circle\)'
-    message: "Circular icon buttons go through GlassIconButton — hand-rolled shapes miss the macOS 26 glass tier (w5-p2-spec §R1)"
+    regex: '\.buttonBorderShape\(\.circle\)|adaptiveGlassButton\([^)]*shape:\s*\.circle'
+    message: "Circular icon buttons go through GlassIconButton — its circle is DesignTokens.iconButtonDiameter; a hand-rolled one sizes itself from its glyph or misses the macOS 26 glass tier (w5-p2-spec §R1)"
     excluded: '.*/(AdaptiveGlass|GlassIconButton)\.swift'
     severity: warning
   # W5 (2026-08-31): a `Menu` with `.menuStyle(.borderlessButton)` is an AppKit

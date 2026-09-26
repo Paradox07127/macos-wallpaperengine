@@ -131,13 +131,13 @@ struct AerialsSourceControls: View {
 
     var body: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-            GlassIconButton("arrow.clockwise", size: .small) {
+            GlassIconButton("arrow.clockwise", size: .regular) {
                 Task { await library.refresh() }
             }
             .help(Text("Refresh Aerials library"))
             .accessibilityLabel(Text("Refresh Aerials library"))
             .disabled(library.isScanning)
-            GlassIconButton("folder.badge.minus", size: .small, tint: DesignTokens.Colors.Status.danger, role: .destructive) {
+            GlassIconButton("folder.badge.minus", size: .regular, tint: DesignTokens.Colors.Status.danger, role: .destructive) {
                 pendingDestructive = PendingDestructive(.disconnectAerialsLibrary) {
                     library.clearAccess()
                 }

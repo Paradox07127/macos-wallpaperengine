@@ -62,10 +62,13 @@ public struct GlassIconButton: View {
 
     @ViewBuilder
     private var glass: some View {
+        let diameter = DesignTokens.iconButtonDiameter(size)
         let button = Button(role: role, action: action) {
-            Image(systemName: systemImage)
+            // As the label, the symbol's own bounds would size the circle; the overlay keeps them out of layout.
+            Color.clear.overlay { Image(systemName: systemImage) }
         }
         .adaptiveGlassButton(prominence, shape: .circle, size: size)
+        .frame(width: diameter, height: diameter)
         if let tint {
             button.tint(tint)
         } else {

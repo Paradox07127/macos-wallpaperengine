@@ -385,6 +385,18 @@ public enum DesignTokens {
         reduceMotion ? nil : animation
     }
 
+    /// `GlassIconButton`'s circle: the one glass draws around a square symbol at that size;
+    /// 20 and 28 are the HIG macOS minimum and default control sizes.
+    public static func iconButtonDiameter(_ size: ControlSize) -> CGFloat {
+        switch size {
+        case .mini, .small: 20
+        case .regular: 24
+        case .large: 28
+        case .extraLarge: 36
+        @unknown default: 28
+        }
+    }
+
     /// Literal px values, not Dynamic Type steps; chrome colours follow the appearance (see `Colors.adaptive`).
     public enum EditDesk {
         // MARK: Colors

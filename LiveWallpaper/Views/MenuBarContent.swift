@@ -607,22 +607,22 @@ private struct MenuBarDisplayRow: View {
                 .accessibilityLabel(Text("\(title), \(subtitleAccessibilityText), \(visualState.accessibilityLabel)"))
                 .accessibilityElement(children: .combine)
 
-                // All four at the component's default `.large`, all on plain glass: mixing sizes or tinting the two main ones `.prominent` would make a transport cluster read as three unrelated controls.
+                // All four at `.regular`, all on plain glass: mixing sizes or tinting the two main ones `.prominent` would make a transport cluster read as three unrelated controls.
                 if let addAction {
-                    GlassIconButton("plus", action: addAction)
+                    GlassIconButton("plus", size: .regular, action: addAction)
                         .accessibilityLabel(Text("Add wallpaper to this display"))
                 } else if supportsPlayback {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if canStepPlaylist {
-                            GlassIconButton("chevron.left", action: previousAction)
+                            GlassIconButton("chevron.left", size: .regular, action: previousAction)
                                 .accessibilityLabel(Text("Previous wallpaper"))
                         }
 
-                        GlassIconButton(intendsToPlay ? "pause.fill" : "play.fill", action: playbackAction)
+                        GlassIconButton(intendsToPlay ? "pause.fill" : "play.fill", size: .regular, action: playbackAction)
                             .accessibilityLabel(Text(intendsToPlay ? "Pause wallpaper" : "Play wallpaper"))
 
                         if canStepPlaylist {
-                            GlassIconButton("chevron.right", action: nextAction)
+                            GlassIconButton("chevron.right", size: .regular, action: nextAction)
                                 .accessibilityLabel(Text("Next wallpaper"))
                         }
                     }

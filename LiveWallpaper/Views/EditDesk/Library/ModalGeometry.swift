@@ -1,5 +1,7 @@
 import CoreGraphics
 import Foundation
+import LiveWallpaperCore
+import SwiftUI
 
 /// The detail modal's box arithmetic, kept out of the view so the numbers are testable headlessly.
 /// Sizes are window points: the host passes the stage's own `bounds.size`, title bar included.
@@ -28,7 +30,7 @@ enum ModalGeometry {
     /// Between the title row and the body, and between the body and the bottom buttons.
     static let sectionGap: CGFloat = 16
     /// The slot a large glass icon button takes: the title row's floor and each ← → beside the preview.
-    static let iconButtonSize: CGFloat = 28
+    static let iconButtonSize = DesignTokens.iconButtonDiameter(.large)
     /// Where the panel closure's content starts under a one-line title.
     static var contentTop: CGFloat {
         topPadding + iconButtonSize + sectionGap

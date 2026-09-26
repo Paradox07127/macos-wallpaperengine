@@ -24,6 +24,19 @@ Icon actions in a hand-drawn title-bar strip (the Edit Desk display detail's top
 
 A segmented control stays a capsule of its own beside the groups; standalone floating icon buttons (canvas, HUD, modals) stay `GlassIconButton`.
 
+## Icon buttons — `GlassIconButton`
+
+A standalone round glass icon button is one `GlassIconButton`, and its circle is `DesignTokens.iconButtonDiameter(size)` whatever the symbol:
+
+| `ControlSize` | Circle | Basis |
+| --- | --- | --- |
+| `.small` (and `.mini`) | 20 | HIG macOS minimum control size |
+| `.regular` | 24 | the glass circle around a square symbol (`gearshape`) at this size |
+| `.large` (default) | 28 | HIG macOS default control size; the detail modal's icon slot (`ModalGeometry.iconButtonSize`) |
+| `.extraLarge` | 36 | `GlassToolbarMetrics.height`, a one-key toolbar group |
+
+The symbol rides an overlay, so its own bounds never size the glass. Its point size is the control size's own (11pt small, 13pt otherwise) for every symbol: SF Symbols already balance their visual weight at one point size, so no per-symbol scale. Keep one size per row. A `.frame` at the call site moves the slot, not the circle — change the size or the token instead. The `circle_button_outside_wrapper` lint rule flags a circular `adaptiveGlassButton` or `.buttonBorderShape(.circle)` anywhere else.
+
 ## Typography — `DesignTokens.Typography`
 
 24 ad-hoc sizes collapse into 7 roles (+3 emphasized variants). Dynamic-Type
