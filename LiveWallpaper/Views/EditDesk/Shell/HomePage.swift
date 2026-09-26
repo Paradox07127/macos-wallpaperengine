@@ -171,6 +171,9 @@ struct HomePage: View {
                 .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
                     page.installedLibrary.historyDidChange()
                 }
+                .onChange(of: page.installedLibrary.updatedWorkshopIDs, initial: true) {
+                    page.library?.updatedWorkshopIDs = page.installedLibrary.updatedWorkshopIDs
+                }
         }
     }
     #endif
@@ -770,6 +773,7 @@ struct HomePage: View {
                     searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
                     stage: stage,
                     sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
+                    filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
                     onImport: promptLibraryImport
                 )
                 if library?.chip == .aerials, library?.aerialsStatus.isAuthorized == true {

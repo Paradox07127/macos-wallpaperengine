@@ -80,11 +80,13 @@ struct TopBarBudgetTests {
         }
     }
 
-    private static let sortOrders: [SavedLibraryModel.Sort] = [.recentlyUsed, .name, .type]
+    private static let sortOrders = SavedLibraryModel.Sort.allCases
+    /// No filter, then every filter whose name the sort button carries after the sort's.
+    private static let filters: [SavedLibraryModel.Filter?] = [nil, .unsupported, .storage(.managed), .storage(.linked)]
 
     /// The real filter row laid out in one language: the glass controls have no size to add up.
     @MainActor
-    private static func filterRow(language: String, sort: SavedLibraryModel.Sort) -> NSSize {
+    private static func filterRow(language: String, sort: SavedLibraryModel.Sort, filter: SavedLibraryModel.Filter? = nil) -> NSSize {
         let row = LibraryChipsRow(
             chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
             selection: .constant("all"),
@@ -92,13 +94,14 @@ struct TopBarBudgetTests {
             searchPrompt: "Search by name",
             stage: EditDeskStageModel(),
             sort: .constant(sort),
+            filter: .constant(filter),
             onImport: {}
         )
         return NSHostingView(rootView: row.environment(\.locale, Locale(identifier: language))).fittingSize
     }
 
     @MainActor
-    @Test("At 1040 the filter row fits its chips, the search field at its floor, sort and add in all five languages")
+    @Test("At 1040 the filter row fits its chips, the search field at its floor, sort with any filter named, and add in all five languages")
     func filterRowFitsAt1040() throws {
         let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
         let search = try #require(row.range(of: "LibrarySearchField("), "the filter row carries no search field")
@@ -111,8 +114,13 @@ struct TopBarBudgetTests {
             Self.filterRow(language: "es", sort: .recentlyUsed).width > Self.filterRow(language: "en", sort: .recentlyUsed).width,
             "control: the row did not lay out in Spanish, so every language below measured English"
         )
+        #expect(
+            Self.filterRow(language: "en", sort: .name, filter: .unsupported).width > Self.filterRow(language: "en", sort: .name).width,
+            "control: the sort button did not carry the filter's name, so no row below measured one"
+        )
         for language in Self.languages {
-            let needed = try #require(Self.sortOrders.map { Self.filterRow(language: language, sort: $0).width }.max()) - give
+            let widths = Self.sortOrders.flatMap { sort in Self.filters.map { Self.filterRow(language: language, sort: sort, filter: $0).width } }
+            let needed = try #require(widths.max()) - give
             print("FILTERROW 1040/\(language) = needs \(needed) of \(available)")
             #expect(needed <= available, Comment(rawValue: "\(language): the row needs \(needed)pt of \(available)"))
         }
@@ -125,9 +133,14 @@ struct TopBarBudgetTests {
         let field = NSHostingView(rootView: LibrarySearchField(text: .constant(""), prompt: "Search by name")).fittingSize.height
         for language in Self.languages {
             for sort in Self.sortOrders {
-                let height = Self.filterRow(language: language, sort: sort).height
-                print("FILTERROW height \(language)/\(sort) = row \(height) field \(field)")
-                #expect(height <= field, Comment(rawValue: "\(language)/\(sort): the row is \(height)pt, the field \(field)pt"))
+                for filter in Self.filters {
+                    let height = Self.filterRow(language: language, sort: sort, filter: filter).height
+                    print("FILTERROW height \(language)/\(sort)/\(String(describing: filter)) = row \(height) field \(field)")
+                    #expect(
+                        height <= field,
+                        Comment(rawValue: "\(language)/\(sort)/\(String(describing: filter)): the row is \(height)pt, the field \(field)pt")
+                    )
+                }
             }
         }
     }

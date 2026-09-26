@@ -474,10 +474,10 @@ struct SavedLibraryModelTests {
         }
     }
 
-    private func origin(_ id: String, type: WPEType = .scene) -> WPEOrigin {
+    private func origin(_ id: String, type: WPEType = .scene, location: WPEResourceLocation? = nil) -> WPEOrigin {
         WPEOrigin(
             workshopID: id, title: "Installed \(id)", originalType: type,
-            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil
+            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil, resourceLocation: location
         )
     }
 
@@ -641,6 +641,45 @@ struct SavedLibraryModelTests {
         let playing = String(localized: "Playing on \("Studio")", bundle: .appLanguage)
         let reading = LibraryCardBadges(nowPlaying: on).accessibilityLabel(title: "Variant")
         #expect(reading == "Variant, \(playing)", Comment(rawValue: reading))
+    }
+
+    @Test("Needs Update puts the projects with an update first, then sorts by name")
+    func needsUpdateSortPutsUpdatedProjectsFirst() {
+        var source = inputs([bookmark("Saved", used: 5)])
+        source.history = {
+            [
+                WPEHistoryEntry(origin: origin("123"), importedAt: Date(timeIntervalSince1970: 2)),
+                WPEHistoryEntry(origin: origin("456"), importedAt: Date(timeIntervalSince1970: 1)),
+            ]
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.updatedWorkshopIDs = ["456"]
+        model.sort = .needsUpdate
+        #expect(model.visibleItems.map(\.title) == ["Installed 456", "Installed 123", "Saved"])
+    }
+
+    @Test("The linked-folder filter keeps only installed projects outside the app's copy")
+    func linkedFolderFilterKeepsLinkedProjects() {
+        var source = inputs([bookmark("Saved")], aerials: [aerial()])
+        source.history = {
+            [
+                WPEHistoryEntry(origin: origin("123", location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("456", location: .sourceFolder), importedAt: .distantPast),
+            ]
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.filter = .storage(.linked)
+        #expect(model.visibleItems.map(\.id) == ["workshop:456"])
+    }
+
+    @Test("The Unsupported filter keeps only the project types this Mac cannot run")
+    func unsupportedFilterKeepsUnsupportedProjects() {
+        let types: [WPEType] = [.video, .web, .scene, .application, .unknown]
+        var source = inputs([bookmark("Saved")])
+        source.history = { types.map { WPEHistoryEntry(origin: origin($0.rawValue, type: $0), importedAt: .distantPast) } }
+        let model = SavedLibraryModel(inputs: source)
+        model.filter = .unsupported
+        #expect(Set(model.visibleItems.map(\.id)) == ["workshop:application", "workshop:unknown"])
     }
     #endif
 

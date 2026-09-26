@@ -24,6 +24,7 @@ struct LibraryChipsRow: View {
     /// Drives the search field's reveal; the rest of the row rides the shelf in `ShelfChromeRide`.
     let stage: EditDeskStageModel
     @Binding var sort: SavedLibraryModel.Sort
+    @Binding var filter: SavedLibraryModel.Filter?
     let onImport: () -> Void
 
     @State private var sortPresented = false
@@ -46,7 +47,7 @@ struct LibraryChipsRow: View {
     private var sortControl: some View {
         Button { sortPresented.toggle() } label: {
             HStack(spacing: 2) {
-                Text(Self.sortTitle(sort))
+                sortLabel
                 Text(verbatim: "▾")
             }
             .font(DesignTokens.EditDesk.Typography.chip)
@@ -55,19 +56,45 @@ struct LibraryChipsRow: View {
         .adaptiveGlassButton(.regular, shape: .capsule, size: .regular)
         .fixedSize()
         .accessibilityLabel(Text("Sort"))
-        .accessibilityValue(Text(Self.sortTitle(sort)))
+        .accessibilityValue(sortLabel)
         .appLanguagePopover(isPresented: $sortPresented, arrowEdge: .bottom) { sortMenu }
         .onChange(of: stage.snappedIndex) { sortPresented = false }
     }
 
+    private var sortLabel: Text {
+        guard let filter else { return Text(Self.sortTitle(sort)) }
+        return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
+    }
+
     private var sortMenu: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            ForEach([SavedLibraryModel.Sort.recentlyUsed, .name, .type], id: \.self) { order in
+            ForEach(SavedLibraryModel.Sort.allCases, id: \.self) { order in
                 Button(Self.sortTitle(order)) {
                     sort = order
                     sortPresented = false
                 }
             }
+            #if !LITE_BUILD
+            Divider()
+            Text("Filters")
+                .font(DesignTokens.Typography.badge)
+                .foregroundStyle(.secondary)
+            ForEach([SavedLibraryModel.Filter.unsupported] + InstalledStorageKind.allCases.map { .storage($0) }, id: \.self) { option in
+                Button {
+                    filter = filter == option ? nil : option
+                    sortPresented = false
+                } label: {
+                    HStack {
+                        Self.filterTitle(option)
+                        Spacer()
+                        if filter == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                .accessibilityAddTraits(filter == option ? .isSelected : [])
+            }
+            #endif
         }
         .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -85,6 +112,18 @@ struct LibraryChipsRow: View {
         case .recentlyUsed: "Recently Used"
         case .name: "Name"
         case .type: "Type"
+        #if !LITE_BUILD
+        case .needsUpdate: "Needs Update"
+        #endif
+        }
+    }
+
+    private static func filterTitle(_ filter: SavedLibraryModel.Filter) -> Text {
+        switch filter {
+        case .unsupported: Text("Unsupported")
+        #if !LITE_BUILD
+        case let .storage(kind): Text(verbatim: kind.title)
+        #endif
         }
     }
 }

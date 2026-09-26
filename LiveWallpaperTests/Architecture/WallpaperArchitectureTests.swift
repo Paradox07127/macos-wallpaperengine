@@ -1477,6 +1477,52 @@ struct WallpaperAutomationCoordinatorTests {
 
         #expect(store.get(for: screen.id)?.scheduleFallback?.content == .video(bookmarkData: primary))
     }
+
+    private static let morningAndAfternoon = [
+        ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"), ScheduleSlot(startHour: 12, endHour: 18, label: "Afternoon"),
+    ]
+
+    @Test("A preset adds its own hours when they are free, and nothing when they overlap a slot")
+    func presetAddsItsHoursOnlyWhenFree() throws {
+        let evening = try #require(WallpaperAutomationSheet.presetSlot(.evening, in: Self.morningAndAfternoon))
+        #expect(evening.startHour == 18 && evening.endHour == 22)
+        #expect(WallpaperAutomationSheet.presetSlot(.midday, in: Self.morningAndAfternoon) == nil, "an overlapping preset was added")
+    }
+
+    @Test("Dragging a slot's end handle reaches midnight as 24")
+    func trailingHandleReachesTwentyFour() {
+        let hours = TimelineDragSession(slotID: UUID(), kind: .edge(.trailingEdge), originalStart: 18, originalEnd: 24, deltaHours: 0)
+            .proposedHours
+        #expect(hours.start == 18 && hours.end == 24)
+    }
+
+    @Test("A slot with a wallpaper and no old video bookmark is drawn as assigned")
+    func slotWithWallpaperIsAssigned() {
+        let page = WallpaperQueueEntry(title: "Page", content: .html(source: .inline("page"), config: .default))
+        #expect(!TimelineEditor.isUnassigned(ScheduleSlot(startHour: 6, endHour: 12, label: "Morning", wallpaper: page)))
+    }
+
+    @Test("A drag onto another slot's hours is dropped; a drag into free hours moves the slot")
+    func retimingRejectsOverlaps() throws {
+        let slots = Self.morningAndAfternoon
+        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 10, end: 16) == nil, "an overlapping drag was kept")
+        let moved = try #require(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 13, end: 19))
+        #expect(moved.map { [$0.startHour, $0.endHour] } == [[6, 12], [13, 19]])
+    }
+
+    @Test("A double-click inserts two hours, or one where two do not fit")
+    func insertFallsBackToOneHour() throws {
+        let slots = [ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"), ScheduleSlot(startHour: 13, endHour: 18, label: "Afternoon")]
+        let inserted = try #require(WallpaperAutomationSheet.insertedSlot(atHour: 12, in: slots))
+        #expect(inserted.startHour == 12 && inserted.endHour == 13)
+    }
+
+    @Test("Each page's add button is named for what it adds: a wallpaper to the playlist, a time slot to the schedule")
+    func addButtonsAreNamedForWhatTheyAdd() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift")
+        #expect(source.contains(#"addButton("Add Wallpaper") { pickTarget = .queue"#), "the playlist page's add button lost its name")
+        #expect(source.contains(#"addButton("Add schedule slot") { presetsPresented = true }"#), "the schedule page's add button reads as adding a wallpaper")
+    }
 }
 
 @Suite("Wallpaper automation absence")

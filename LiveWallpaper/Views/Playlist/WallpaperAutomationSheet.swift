@@ -69,6 +69,8 @@ struct WallpaperAutomationSheet: View {
     @State private var shownBeforeTrial: ScreenConfiguration?
     @State private var search = ""
     @State private var picking = false
+    @State private var presetsPresented = false
+    @State private var openedHour = Calendar.current.component(.hour, from: .now)
     @State private var pickTarget: PickTarget = .queue
     @State private var added: [LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
     @State private var error: String?
@@ -130,6 +132,31 @@ struct WallpaperAutomationSheet: View {
     /// 0 and 24 both mean a midnight end; the end picker lists 1–24, so a stored 0 must read as 24.
     static func endHourBinding(_ hour: Binding<Int>) -> Binding<Int> {
         Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
+    }
+
+    static func presetSlot(_ preset: Preset, in slots: [ScheduleSlot]) -> ScheduleSlot? {
+        preset.conflicts(with: slots) ? nil : preset.makeSlot()
+    }
+
+    /// nil when the new hours overlap another slot: the timeline then drops the drag.
+    static func retimed(_ slots: [ScheduleSlot], id: UUID, start: Int, end: Int) -> [ScheduleSlot]? {
+        guard let index = slots.firstIndex(where: { $0.id == id }) else { return nil }
+        var retimed = slots
+        retimed[index].startHour = start
+        retimed[index].endHour = end
+        return SchedulePolicy.conflicts(slot: retimed[index], against: retimed).isEmpty ? retimed : nil
+    }
+
+    static func insertedSlot(atHour hour: Int, in slots: [ScheduleSlot]) -> ScheduleSlot? {
+        let label = Preset.suggestion(forStartHour: hour).labelKey
+        for length in [2, 1] {
+            let end = hour + length
+            let slot = ScheduleSlot(startHour: hour, endHour: end > 24 ? end - 24 : end, label: label)
+            if SchedulePolicy.conflicts(slot: slot, against: slots).isEmpty {
+                return slot
+            }
+        }
+        return nil
     }
 
     /// By the cursor, not by content: editing a playing scene's properties changes its content but not its row.
@@ -230,7 +257,7 @@ struct WallpaperAutomationSheet: View {
                         Text("Every \(value) min").tag(value)
                     }
                 }.frame(width: 180)
-                addButton { pickTarget = .queue; added = [:]; picking = true }
+                addButton("Add Wallpaper") { pickTarget = .queue; added = [:]; picking = true }
             }
             if queue.isEmpty {
                 ContentUnavailableView("Your playlist is empty", systemImage: "list.bullet", description: Text("Add wallpapers from your library to play them in sequence."))
@@ -276,7 +303,9 @@ struct WallpaperAutomationSheet: View {
                 Label("Repeats every day", systemImage: "arrow.clockwise")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
-                addButton { addSlot() }.disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
+                addButton("Add schedule slot") { presetsPresented = true }
+                    .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
+                    .appLanguagePopover(isPresented: $presetsPresented, arrowEdge: .bottom) { presetMenu }
             }
             timeline
             if let problem {
@@ -342,37 +371,53 @@ struct WallpaperAutomationSheet: View {
     }
 
     private var timeline: some View {
-        VStack(spacing: 8) {
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm).fill(.quaternary)
-                    ForEach(slots) { slot in
-                        ForEach(Array(slot.timelineSegments().enumerated()), id: \.offset) { _, segment in
-                            segmentBar(segment, color: slotColor(slot.id), width: proxy.size.width)
-                        }
-                    }
+        TimelineEditor(
+            slots: slots, currentHour: openedHour, palette: Self.slotPalette,
+            onCommitTimeChange: { id, start, end in
+                if let retimed = Self.retimed(slots, id: id, start: start, end: end) {
+                    slots = retimed
                 }
-            }.frame(height: 38)
-            HStack {
-                ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
-                    Text(verbatim: String(format: "%02d:00", hour)).font(.caption.monospacedDigit())
-                    if hour != 24 {
-                        Spacer()
-                    }
+            },
+            onRequestInsert: { hour in
+                if let slot = Self.insertedSlot(atHour: hour, in: slots) {
+                    slots.append(slot)
+                    error = nil
+                } else {
+                    error = String(
+                        localized: "No room here. Drag a neighbouring slot edge first.", bundle: .appLanguage,
+                        comment: "Schedule error shown when a double-tap insertion would collide with neighbours."
+                    )
                 }
-            }.foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("24-hour repeating schedule"))
+            }
+        )
     }
 
-    private func segmentBar(_ segment: ScheduleSlot.TimelineSegment, color: Color, width: CGFloat) -> some View {
-        let barWidth: CGFloat = max(1, width * CGFloat(segment.end - segment.start) / 24 - 2)
-        let offset: CGFloat = width * CGFloat(segment.start) / 24
-        return RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
-            .fill(color.opacity(0.75))
-            .frame(width: barWidth)
-            .offset(x: offset)
+    private var presetMenu: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ForEach(Preset.allCases) { preset in
+                let slot = Self.presetSlot(preset, in: slots)
+                Button {
+                    presetsPresented = false
+                    if let slot {
+                        slots.append(slot)
+                    }
+                } label: {
+                    let hours = String(format: "%02d:00–%02d:00", preset.hours.start, preset.hours.end)
+                    Label("\(preset.localized) · \(hours)", systemImage: preset.systemImage)
+                }
+                .disabled(slot == nil)
+            }
+            Divider()
+            Button {
+                presetsPresented = false
+                addSlot()
+            } label: {
+                Label("Custom", systemImage: "slider.horizontal.below.rectangle")
+            }
+        }
+        .buttonStyle(.borderless)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .settingsPopoverChrome(width: 240)
     }
 
     private var wallpaperPicker: some View {
@@ -449,13 +494,14 @@ struct WallpaperAutomationSheet: View {
             .buttonStyle(.borderless).help(Text(label)).accessibilityLabel(Text(label))
     }
 
-    private func addButton(action: @escaping () -> Void) -> some View {
-        GlassIconButton("plus", size: .regular, action: action).help(Text("Add Wallpaper")).accessibilityLabel(Text("Add Wallpaper"))
+    private func addButton(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        GlassIconButton("plus", size: .regular, action: action).help(Text(title)).accessibilityLabel(Text(title))
     }
 
+    private static let slotPalette: [Color] = [.blue, .teal, .indigo, .orange, .purple, .mint]
+
     private func slotColor(_ id: UUID) -> Color {
-        let palette: [Color] = [.blue, .teal, .indigo, .orange, .purple, .mint]
-        return palette[(slots.firstIndex(where: { $0.id == id }) ?? 0) % palette.count]
+        Self.slotPalette[(slots.firstIndex(where: { $0.id == id }) ?? 0) % Self.slotPalette.count]
     }
 
     private func move(_ index: Int, by offset: Int) {

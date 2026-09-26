@@ -3781,40 +3781,6 @@
         }
       }
     },
-    "24-hour repeating schedule" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24-hour repeating schedule"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Programación recurrente de 24 horas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24時間の繰り返しスケジュール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24 小时循环计划"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24 小時循環排程"
-          }
-        }
-      }
-    },
     "2K" : {
       "comment" : "Workshop resolution filter: 2560 x 1440.",
       "extractionState" : "manual",

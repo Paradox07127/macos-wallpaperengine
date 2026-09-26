@@ -7,7 +7,19 @@ import Observation
 @MainActor @Observable
 final class SavedLibraryModel {
     enum Chip: CaseIterable { case all, recent, steam, local, aerials }
-    enum Sort { case recentlyUsed, name, type }
+    enum Sort: CaseIterable {
+        case recentlyUsed, name, type
+        #if !LITE_BUILD
+        case needsUpdate
+        #endif
+    }
+
+    enum Filter: Hashable {
+        case unsupported
+        #if !LITE_BUILD
+        case storage(InstalledStorageKind)
+        #endif
+    }
 
     struct AerialsState {
         var assets: [AerialAsset] = []
@@ -118,6 +130,10 @@ final class SavedLibraryModel {
 
     var chip: Chip = .all
     var sort: Sort = .recentlyUsed
+    var filter: Filter?
+    #if !LITE_BUILD
+    var updatedWorkshopIDs: Set<String> = []
+    #endif
     var query = ""
     private(set) var items: [LibraryItem] = []
     private(set) var aerialsStatus = AerialsState()
@@ -186,7 +202,7 @@ final class SavedLibraryModel {
         case .local: items.filter { !$0.isSteam && $0.kind != .aerial }
         case .aerials: items.filter { $0.kind == .aerial }
         }
-        let sorted = filtered.sorted { lhs, rhs in
+        let sorted = filtered.filter(matchesFilter).sorted { lhs, rhs in
             switch sort {
             case .recentlyUsed: return recentlyUsed(lhs, rhs)
             case .name: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
@@ -196,10 +212,36 @@ final class SavedLibraryModel {
                     return kinds.firstIndex(of: lhs.kind)! < kinds.firstIndex(of: rhs.kind)!
                 }
                 return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            #if !LITE_BUILD
+            case .needsUpdate:
+                if needsUpdate(lhs) != needsUpdate(rhs) {
+                    return needsUpdate(lhs)
+                }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            #endif
             }
         }
         return sorted.filter { query.isEmpty || matchesQuery($0) }
     }
+
+    private func matchesFilter(_ item: LibraryItem) -> Bool {
+        switch filter {
+        case nil: return true
+        case .unsupported: return !item.isSupported
+        #if !LITE_BUILD
+        case let .storage(kind):
+            guard case let .workshop(entry) = item.source else { return false }
+            return kind.matches(entry)
+        #endif
+        }
+    }
+
+    #if !LITE_BUILD
+    private func needsUpdate(_ item: LibraryItem) -> Bool {
+        guard case let .workshop(entry) = item.source else { return false }
+        return updatedWorkshopIDs.contains(entry.id)
+    }
+    #endif
 
     private func matchesQuery(_ item: LibraryItem) -> Bool {
         if item.title.range(of: query, options: .caseInsensitive) != nil || queryIsWhole(item.kind.localizedName) {

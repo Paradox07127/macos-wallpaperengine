@@ -166,6 +166,10 @@ struct TimelineEditor: View {
         return (slot.startHour, slot.endHour)
     }
 
+    static func isUnassigned(_ slot: ScheduleSlot) -> Bool {
+        slot.wallpaper == nil && slot.videoBookmarkData == nil
+    }
+
     @ViewBuilder
     private func segmentBlock(
         slot: ScheduleSlot,
@@ -180,7 +184,7 @@ struct TimelineEditor: View {
         let proposedConflict = isPreview && drag?.conflictsKnown == true && drag?.hasConflict == true
         let fill: Color = proposedConflict
             ? DesignTokens.Colors.Status.danger.opacity(0.55)
-            : (slot.videoBookmarkData == nil ? accent.opacity(DesignTokens.Opacity.dimmedContent) : accent.opacity(0.70))
+            : (Self.isUnassigned(slot) ? accent.opacity(DesignTokens.Opacity.dimmedContent) : accent.opacity(0.70))
 
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 3)
@@ -365,7 +369,7 @@ struct TimelineDragSession: Equatable, Sendable {
                 newEnd = max(minEnd, min(maxEnd, originalEnd + deltaHours))
             } else {
                 let minEnd = originalStart + 1
-                let maxEnd = 23
+                let maxEnd = 24
                 newEnd = max(minEnd, min(maxEnd, originalEnd + deltaHours))
             }
             return (originalStart, newEnd)
