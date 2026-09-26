@@ -418,30 +418,31 @@ final class InstalledLibraryModel {
         NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
 
+    /// Toggles the playable local bookmark. A Workshop entry saved for later does not count as one:
+    /// tapping it adds the local bookmark, and removing that bookmark clears both.
     func toggleBookmark(
         _ entry: WPEHistoryEntry,
         store: BookmarkStore,
-        workshopStore: WorkshopBookmarkStore = .shared
+        workshopStore: WorkshopBookmarkStore = .shared,
+        resolver: WPECachedContentResolver = WPECachedContentResolver()
     ) {
         errorMessage = nil
         let workshopID = entry.origin.workshopID
-        if let id = UInt64(workshopID), workshopStore.contains(id) {
-            workshopStore.remove(id)
-            guard !workshopStore.hasStorageError else {
-                errorMessage = String(
-                    localized: "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.",
-                    bundle: .appLanguage, comment: "Workshop bookmark persistence failure."
-                )
-                return
+        if store.containsWPEBookmark(workshopID: workshopID) {
+            if let id = UInt64(workshopID), workshopStore.contains(id) {
+                workshopStore.remove(id)
+                guard !workshopStore.hasStorageError else {
+                    errorMessage = String(
+                        localized: "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.",
+                        bundle: .appLanguage, comment: "Workshop bookmark persistence failure."
+                    )
+                    return
+                }
             }
             store.removeWPEBookmarks(workshopID: workshopID)
             return
         }
-        if store.containsWPEBookmark(workshopID: workshopID) {
-            store.removeWPEBookmarks(workshopID: workshopID)
-            return
-        }
-        guard let content = WPECachedContentResolver().content(for: entry.origin) else {
+        guard let content = resolver.content(for: entry.origin) else {
             errorMessage = String(
                 localized: "Couldn't add \(entry.origin.title) to Bookmarks.",
                 bundle: .appLanguage, comment: "Workshop installed bookmark failure. Placeholder is the wallpaper title."

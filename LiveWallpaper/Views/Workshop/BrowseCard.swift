@@ -43,11 +43,13 @@ struct BrowseCard: View, Equatable {
     /// nil keeps the reveal in this card's own `@State`.
     var onReveal: (() -> Void)?
     var isBookmarked: Bool = false
-    var onBookmark: () -> Void = {}
+    /// nil hides every bookmark affordance: the Edit Desk has nowhere to show Workshop bookmarks.
+    var onBookmark: (() -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
 
     @State private var isHovered = false
+    @State private var bookmarkHovering = false
     /// Ephemeral by design — recreated tiles (paging, filter change, relaunch) blur again.
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
@@ -88,22 +90,6 @@ struct BrowseCard: View, Equatable {
         .shadow(color: editDeskRingShadow?.color ?? .clear, radius: editDeskRingShadow?.radius ?? 0, y: editDeskRingShadow?.y ?? 0)
         .shadow(color: editDeskRestShadow?.color ?? .clear, radius: editDeskRestShadow?.radius ?? 0, y: editDeskRestShadow?.y ?? 0)
         .shadow(color: editDeskShadow?.color ?? .clear, radius: editDeskShadow?.radius ?? 0, y: editDeskShadow?.y ?? 0)
-        .overlay(alignment: .bottomTrailing) {
-            if !shouldBlur {
-                Button(action: onBookmark) {
-                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .foregroundStyle(isBookmarked ? DesignTokens.Colors.rating : Color.primary)
-                        .padding(DesignTokens.Spacing.sm)
-                        .adaptiveGlassOverMedia(.circle)
-                }
-                .buttonStyle(.borderless)
-                .disabled(item.isBanned && !isBookmarked)
-                .help(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
-                .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
-                .padding(.trailing, DesignTokens.Spacing.sm)
-                .padding(.bottom, DesignTokens.Spacing.xl + DesignTokens.Spacing.md)
-            }
-        }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
         .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
@@ -113,9 +99,13 @@ struct BrowseCard: View, Equatable {
         .accessibilityHint(shouldBlur
             ? Text("Mature content hidden. Activate to reveal.")
             : Text("Show details"))
-        .accessibilityAction(named: Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark")) {
-            guard isBookmarked || !item.isBanned else { return }
-            onBookmark()
+        .accessibilityActions {
+            if let onBookmark {
+                Button(isBookmarked ? "Remove Bookmark" : "Add Bookmark") {
+                    guard isBookmarked || !item.isBanned else { return }
+                    onBookmark()
+                }
+            }
         }
         .accessibilityAction(named: Text("Download")) {
             guard canDownload, !item.isBanned else { return }
@@ -240,9 +230,18 @@ struct BrowseCard: View, Equatable {
                     )
                     .padding(DesignTokens.Spacing.sm)
                 }
-            } else if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
-                ThumbnailBadge(verbatim: resolutionLabel)
-                    .padding(DesignTokens.Spacing.sm)
+            } else if !shouldBlur, showsResolutionBadge || onBookmark != nil {
+                AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        if let resolutionLabel, showsResolutionBadge {
+                            ThumbnailBadge(verbatim: resolutionLabel)
+                        }
+                        if let onBookmark {
+                            bookmarkControl(onBookmark)
+                        }
+                    }
+                }
+                .padding(DesignTokens.Spacing.sm)
             }
         }
         .overlay(alignment: .bottom) {
@@ -270,6 +269,28 @@ struct BrowseCard: View, Equatable {
             verbatim: rating.formatted(.number.precision(.fractionLength(1))),
             systemImage: "star.fill"
         )
+    }
+
+    private var showsResolutionBadge: Bool {
+        resolutionLabel != nil && cardPreferences.showsResolution
+    }
+
+    private func bookmarkControl(_ toggle: @escaping () -> Void) -> some View {
+        Button(action: toggle) {
+            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                .font(.system(size: 11))
+                .foregroundStyle(isBookmarked
+                    ? DesignTokens.Colors.rating
+                    : DesignTokens.Colors.overlayForeground)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .floatingGlyphGlass(hovered: bookmarkHovering, opacity: 0.72)
+        .onHover { bookmarkHovering = $0 }
+        .disabled(item.isBanned && !isBookmarked)
+        .help(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
     }
 
     private static let inLibraryGreen = DesignTokens.Colors.badgeActive
@@ -356,13 +377,15 @@ struct BrowseCard: View, Equatable {
 
     @ViewBuilder
     private var contextMenuItems: some View {
-        Button(action: onBookmark) {
-            Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
-                  systemImage: isBookmarked ? "bookmark.fill" : "bookmark")
-        }
-        .disabled(item.isBanned && !isBookmarked)
+        if let onBookmark {
+            Button(action: onBookmark) {
+                Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                      systemImage: isBookmarked ? "bookmark.fill" : "bookmark")
+            }
+            .disabled(item.isBanned && !isBookmarked)
 
-        Divider()
+            Divider()
+        }
 
         Button(action: onDownload) {
             Label("Download", systemImage: "arrow.down.circle")

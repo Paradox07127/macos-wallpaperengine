@@ -51,7 +51,6 @@ struct BrowsePane: View {
 
     var body: some View {
         layout
-            .modifier(WorkshopBookmarkErrorModifier())
             .onAppear {
                 rateLimitRemaining = currentRateLimitRemaining
                 reloadInstalledIDs()
@@ -114,6 +113,7 @@ struct BrowsePane: View {
                 inspector: { width in inspectorColumn(width: width) }
             )
             .pageBackground()
+            .modifier(WorkshopBookmarkErrorModifier())
             .toolbar {
                 if session.selectedID != nil {
                     ToolbarItem(placement: .primaryAction) {
@@ -320,9 +320,10 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
+                        let bookmarkedIDs: Set<UInt64> = presentation == .editDesk ? [] : WorkshopBookmarkActions.bookmarkedIDs()
                         LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: gridColumnWidth) {
                             ForEach(viewModel.displayedItems) { item in
-                                browseCard(for: item)
+                                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
                                     .equatable()
                                     .id(item.id)
                             }
@@ -356,7 +357,7 @@ struct BrowsePane: View {
         }
     }
 
-    private func browseCard(for item: WorkshopQueryItem) -> BrowseCard {
+    private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
@@ -369,8 +370,8 @@ struct BrowsePane: View {
             presentation: presentation,
             isRevealed: matureReveal?.isRevealed(item.id) ?? false,
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
-            isBookmarked: WorkshopBookmarkActions.contains(item.id),
-            onBookmark: { WorkshopBookmarkActions.toggle(item) },
+            isBookmarked: isBookmarked,
+            onBookmark: presentation == .editDesk ? nil : { WorkshopBookmarkActions.toggle(item) },
             onSelect: {
                 guard presentation != .editDesk else {
                     openItem(item.id)

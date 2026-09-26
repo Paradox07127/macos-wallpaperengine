@@ -17,9 +17,14 @@ extension WorkshopBookmark {
         return nil
     }
 
+    var displayTitle: String {
+        WorkshopQueryItem.displayTitle(rawTitle, id: id)
+    }
+
+    /// Rebuilt from what was saved: `isBanned` is not known until a live lookup, so callers keep Download off until then.
     var queryItem: WorkshopQueryItem {
         WorkshopQueryItem(
-            id: id, rawTitle: title, shortDescription: "", creatorID: nil,
+            id: id, rawTitle: rawTitle, shortDescription: "", creatorID: nil,
             previewImageURL: previewImageURL, fileSizeBytes: nil, timeUpdated: nil,
             subscriptionCount: nil, rating: nil, tags: tags, visibility: .unknown,
             isBanned: false, steamCommunityURL: WorkshopCommunityURL.item(itemID: id)
@@ -32,7 +37,6 @@ struct WorkshopBookmarkGallery: View {
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(\.galleryCardPreferences) private var cardPreferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(SteamCMDDoctorService.self) private var doctor
     @State private var selectedBookmark: WorkshopBookmark?
 
     var body: some View {
@@ -42,21 +46,15 @@ struct WorkshopBookmarkGallery: View {
             Text("Saved for later. Open a wallpaper to download or apply it.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
-            LibraryGalleryGrid(size: tileSize, aspect: .wide) {
+            LibraryGalleryGrid(size: tileSize, aspect: .square) {
                 ForEach(bookmarks) { bookmark in
                     BrowseCard(
                         item: bookmark.queryItem,
                         cardPreferences: cardPreferences,
                         reduceMotion: reduceMotion,
-                        canDownload: doctor.isDownloadReady,
                         isBookmarked: true,
                         onBookmark: { WorkshopBookmarkActions.toggle(bookmark.queryItem) },
-                        onSelect: { selectedBookmark = bookmark },
-                        onDownload: {
-                            WorkshopDownloadCoordinator.shared.download(
-                                itemID: bookmark.id, title: bookmark.title, using: doctor
-                            )
-                        }
+                        onSelect: { selectedBookmark = bookmark }
                     )
                 }
             }
@@ -88,11 +86,12 @@ private struct WorkshopBookmarkDetail: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, DesignTokens.Spacing.lg)
             }
-            WorkshopInspectorContent(item: currentItem ?? bookmark.queryItem, doctor: doctor)
+            WorkshopInspectorContent(
+                item: currentItem ?? bookmark.queryItem, doctor: doctor, allowsDownload: currentItem != nil
+            )
             SheetFooterBar(primaryTitle: "Done", primaryAction: { dismiss() })
         }
         .frame(width: SteamSheetWidth.dense, height: DesignTokens.LibraryPage.minHeight)
-        .modifier(WorkshopBookmarkErrorModifier())
         .task(id: bookmark.id) {
             await doctor.autoConfirmDownloadReadinessIfNeeded()
             let result = await services.itemDetails.load(ids: [bookmark.id])

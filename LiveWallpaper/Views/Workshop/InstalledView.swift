@@ -93,7 +93,7 @@ struct InstalledView: View {
                     screens: screenManager.screens,
                     activeScreenIDs: activeScreenIDs(for: entry),
                     state: WPEInstalledInspectorContent.ItemState(
-                        isBookmarked: WorkshopBookmarkActions.contains(workshopID: entry.origin.workshopID),
+                        isBookmarked: bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID),
                         canBookmark: model.canAddBookmark(entry),
                         hasUpdate: model.updatedWorkshopIDs.contains(entry.origin.workshopID),
                         canUpdate: doctor.isDownloadReady
@@ -217,7 +217,7 @@ struct InstalledView: View {
                 }
                 LibraryGalleryGrid(size: tileSize, aspect: .square) {
                     ForEach(visibleEntries, id: \.id) { entry in
-                        let bookmarked = WorkshopBookmarkActions.contains(workshopID: entry.origin.workshopID)
+                        let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(
                             entry: entry,
                             previewURL: WPEPreviewURLCache.shared.url(for: entry.origin),
@@ -411,8 +411,8 @@ struct InstalledView: View {
         model.performDelete(
             entry,
             services: InstalledLibraryModel.DeleteServices(
-                containsBookmark: { bookmarkStore.containsWPEBookmark(workshopID: $0) },
-                removeBookmarks: { bookmarkStore.removeWPEBookmarks(workshopID: $0) },
+                containsBookmark: { WorkshopBookmarkActions.contains(workshopID: $0, store: bookmarkStore) },
+                removeBookmarks: { WorkshopBookmarkActions.removeAll(workshopID: $0, store: bookmarkStore) },
                 removeImportIfMatching: {
                     screenManager.removeWPEImport(
                         workshopID: $0.workshopID,

@@ -150,6 +150,7 @@ SUITES=(
   BrowsePaginationMetadataTests
   BrowseRequestShapeTests
   BrowseFilterTests
+  WorkshopBookmarkTests
   BrowseCardEqualityTests
   WorkshopPageSourceTests
   GalleryCardPreferencesTests

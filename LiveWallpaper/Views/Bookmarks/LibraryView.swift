@@ -70,43 +70,45 @@ struct LibraryView: View {
             )
         } else {
             ScrollView {
-                LibraryGalleryGrid(size: tileSize, aspect: .wide) {
-                    ForEach(visible) { bookmark in
-                        BookmarkTile(
-                            bookmark: bookmark,
-                            screens: screenManager.screens,
-                            isRenaming: renamingID == bookmark.id,
-                            renameDraft: $renameDraft,
-                            onApply: { screen in screenManager.applyBookmark(bookmark, to: screen) },
-                            onApplyToAll: { applyToAll(bookmark) },
-                            onStartRename: {
-                                renamingID = bookmark.id
-                                renameDraft = bookmark.label
-                            },
-                            onCommitRename: {
-                                store.rename(bookmark.id, to: renameDraft)
-                                renamingID = nil
-                            },
-                            onCancelRename: { renamingID = nil },
-                            onDelete: {
-                                pendingDestructive = PendingDestructive(
-                                    .deleteBookmark(bookmarkName: bookmark.label)
-                                ) { removeBookmark(bookmark) }
+                VStack {
+                    LibraryGalleryGrid(size: tileSize, aspect: .wide) {
+                        ForEach(visible) { bookmark in
+                            BookmarkTile(
+                                bookmark: bookmark,
+                                screens: screenManager.screens,
+                                isRenaming: renamingID == bookmark.id,
+                                renameDraft: $renameDraft,
+                                onApply: { screen in screenManager.applyBookmark(bookmark, to: screen) },
+                                onApplyToAll: { applyToAll(bookmark) },
+                                onStartRename: {
+                                    renamingID = bookmark.id
+                                    renameDraft = bookmark.label
+                                },
+                                onCommitRename: {
+                                    store.rename(bookmark.id, to: renameDraft)
+                                    renamingID = nil
+                                },
+                                onCancelRename: { renamingID = nil },
+                                onDelete: {
+                                    pendingDestructive = PendingDestructive(
+                                        .deleteBookmark(bookmarkName: bookmark.label)
+                                    ) { removeBookmark(bookmark) }
+                                }
+                            )
+                            .onDrag {
+                                NSItemProvider(object: dragSession.begin(payload: bookmark.id.uuidString) as NSString)
+                            } preview: {
+                                LibraryDragPreview(systemImage: bookmark.iconName)
                             }
-                        )
-                        .onDrag {
-                            NSItemProvider(object: dragSession.begin(payload: bookmark.id.uuidString) as NSString)
-                        } preview: {
-                            LibraryDragPreview(systemImage: bookmark.iconName)
                         }
                     }
+                    .libraryGridPadding()
+                    #if !LITE_BUILD
+                    if !visibleWorkshopBookmarks.isEmpty {
+                        WorkshopBookmarkGallery(bookmarks: visibleWorkshopBookmarks)
+                    }
+                    #endif
                 }
-                .libraryGridPadding()
-                #if !LITE_BUILD
-                if !visibleWorkshopBookmarks.isEmpty {
-                    WorkshopBookmarkGallery(bookmarks: visibleWorkshopBookmarks)
-                }
-                #endif
             }
             .overlay(alignment: .top) {
                 if dragSession.isDragging, !screenManager.screens.isEmpty {
@@ -211,9 +213,7 @@ struct LibraryView: View {
 
     #if !LITE_BUILD
     private var workshopBookmarks: [WorkshopBookmark] {
-        WorkshopBookmarkStore.shared.bookmarks.filter {
-            !store.containsWPEBookmark(workshopID: String($0.id))
-        }
+        WorkshopBookmarkActions.notSavedLocally(WorkshopBookmarkStore.shared.bookmarks, store: store)
     }
 
     private var visibleWorkshopBookmarks: [WorkshopBookmark] {
@@ -223,7 +223,7 @@ struct LibraryView: View {
         }
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            result = result.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+            result = result.filter { $0.displayTitle.localizedCaseInsensitiveContains(trimmed) }
         }
         return result.sorted { lhs, rhs in
             if sortOrder == .recent {
@@ -232,7 +232,7 @@ struct LibraryView: View {
             if sortOrder == .type, lhs.wallpaperType != rhs.wallpaperType {
                 return (lhs.wallpaperType?.rawValue ?? "") < (rhs.wallpaperType?.rawValue ?? "")
             }
-            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
         }
     }
     #endif
@@ -256,13 +256,10 @@ struct LibraryView: View {
 
     private func removeBookmark(_ bookmark: WallpaperBookmark) {
         #if !LITE_BUILD
-        if let workshopID = bookmark.wpeOrigin?.workshopID ?? bookmark.content.sceneDescriptor?.workshopID,
-           let id = UInt64(workshopID), WorkshopBookmarkStore.shared.contains(id) {
-            WorkshopBookmarkStore.shared.remove(id)
-            guard !WorkshopBookmarkStore.shared.hasStorageError else { return }
-        }
-        #endif
+        WorkshopBookmarkActions.remove(bookmark, store: store)
+        #else
         store.remove(bookmark.id)
+        #endif
     }
 
     // MARK: - Apply

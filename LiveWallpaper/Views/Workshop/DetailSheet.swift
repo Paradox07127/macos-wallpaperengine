@@ -12,6 +12,8 @@ struct WorkshopInspectorContent: View {
     var onSelectTag: ((String) -> Void)?
     /// Opens another item in this inspector (Required items rows); nil hides the section.
     var onOpenItem: ((UInt64) -> Void)?
+    /// False while the item's ban state is unknown (a saved bookmark before its live lookup).
+    var allowsDownload = true
 
     @Environment(\.openURL) private var openURL
     @Environment(ScreenManager.self) private var screenManager
@@ -198,7 +200,7 @@ struct WorkshopInspectorContent: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
-            .disabled(!doctor.isDownloadReady || item.isBanned)
+            .disabled(!doctor.isDownloadReady || item.isBanned || !allowsDownload)
 
             if !item.isBanned, let reason = doctor.downloadBlockerMessage {
                 Text(verbatim: reason)

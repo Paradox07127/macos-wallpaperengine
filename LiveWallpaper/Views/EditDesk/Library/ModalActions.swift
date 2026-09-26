@@ -91,8 +91,8 @@ final class ModalActions {
         inputs.cancelUpdate = { coordinator.cancel($0) }
         inputs.deleteInstalled = { entry, model in
             model.performDelete(entry, services: InstalledLibraryModel.DeleteServices(
-                containsBookmark: { store.containsWPEBookmark(workshopID: $0) },
-                removeBookmarks: { store.removeWPEBookmarks(workshopID: $0) },
+                containsBookmark: { WorkshopBookmarkActions.contains(workshopID: $0, store: store) },
+                removeBookmarks: { WorkshopBookmarkActions.removeAll(workshopID: $0, store: store) },
                 removeImportIfMatching: {
                     screenManager.removeWPEImport(workshopID: $0.workshopID, matchingImportedAt: $0.importedAt)
                 },
