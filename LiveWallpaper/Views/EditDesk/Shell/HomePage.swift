@@ -38,6 +38,8 @@ struct HomePage: View {
     @State private var applies = ApplyQueue()
     /// The library item the S4 modal shows; nil when closed.
     @State private var presentedItemID: String?
+    /// A wallpaper dragged from the modal's preview or a grid tile toward the displays.
+    @State private var libraryDrag = LibraryDragController()
     /// The detail host reports its tile flights so the stage stays locked while a tile returns.
     @State private var detailBusy = false
     /// The empty display the paste-URL alert is open for; nil closes it.
@@ -376,7 +378,7 @@ struct HomePage: View {
             )
             if let library, let modalActions {
                 LibraryModalHost(
-                    library: library, stage: stage, actions: modalActions,
+                    library: library, stage: stage, drag: libraryDrag, actions: modalActions,
                     requestRename: requestRename, requestDelete: requestDelete,
                     presentedItemID: $presentedItemID, preferredTarget: router.libraryTarget, applying: applies.inFlight,
                     currentCovers: currentCoverDisplays
@@ -385,6 +387,8 @@ struct HomePage: View {
         }
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
         .ignoresSafeArea()
+        // Here, over both: a grid tile's drag is hit-tested against a strip `LibraryModalHost` draws.
+        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         .onAppear {
             if modalActions == nil, let library {
                 modalActions = makeModalActions(library: library)
@@ -905,6 +909,7 @@ struct HomePage: View {
                                     LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
                                 }
                                 .buttonStyle(.plain)
+                                .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
                                 .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
                                 .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
                                 .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
@@ -961,6 +966,14 @@ struct HomePage: View {
     private func gridThumbnail(for item: LibraryItem) -> LibraryGridTile.Thumbnail? {
         Self.gridThumbnail(
             for: item, stageWidth: stage.stageSize.width, size: tileSize, scale: NSScreen.main?.backingScaleFactor ?? 2
+        )
+    }
+
+    private func dragPayload(for item: LibraryItem) -> LibraryDragController.Payload? {
+        guard let modalActions else { return nil }
+        return LibraryDragController.Payload(
+            item: item, image: gridThumbnail(for: item).flatMap { Self.gridImage($0, in: thumbnails) },
+            actions: modalActions.actions(for: item)
         )
     }
 

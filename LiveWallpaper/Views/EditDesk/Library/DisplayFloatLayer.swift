@@ -54,8 +54,8 @@ enum FloatLayerGeometry {
     }
 }
 
-/// SCREENS S5: the drop strip that rides above the modal. It reports where each thumbnail landed
-/// and never hit-tests the drag itself — the host owns both the hit test and the apply.
+/// SCREENS S5: the drop strip a library drag brings in over the modal or the grid. It reports where each
+/// thumbnail landed and never hit-tests the drag itself — `LibraryDragController` owns the hit test and the apply.
 struct DisplayFloatLayer: View {
     let targets: [ModalDisplayTarget]
     let highlighted: CGDirectDisplayID?

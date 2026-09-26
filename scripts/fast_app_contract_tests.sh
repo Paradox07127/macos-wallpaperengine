@@ -183,6 +183,7 @@ SUITES=(
   StatusCapsuleTests
   EditDeskChromeSourceTests
   EditDeskCanvasOwnershipTests
+  LibraryDragControllerTests
   EditDeskPageSeparatorSourceTests
   EditDeskBrowseSeparatorRenderTests
   SheetSeparatorSourceTests

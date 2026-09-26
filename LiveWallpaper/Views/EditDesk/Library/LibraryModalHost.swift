@@ -2,12 +2,12 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// S4 + S5 over the home page: opens the modal for one library item, keeps the float strip's
-/// drop targets, hit-tests the modal's drag against them and applies on release. The modal,
-/// strip and ghost only share `EditDeskCoordinateSpace`, which this view's root defines.
+/// S4 + S5 over the home page: opens the modal for one library item, and draws the float strip and
+/// ghost of `drag`, whether the modal's preview or a grid tile started it.
 struct LibraryModalHost: View {
     let library: SavedLibraryModel
     let stage: EditDeskStageModel
+    let drag: LibraryDragController
     /// Shared with the home page's context menus, whose rows the modal draws as title-row buttons.
     let actions: ModalActions
     /// Open the home page's rename alert and delete confirmation for an item, the ones its context menus open.
@@ -24,22 +24,11 @@ struct LibraryModalHost: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @State private var content: WallpaperModalContent?
-    @State private var dragPoint: CGPoint?
-    @State private var dropTarget: ModalDropTarget?
-    @State private var targetFrames: [CGDirectDisplayID: CGRect] = [:]
-    @State private var applyAllFrame: CGRect?
-    @State private var shakeTrigger = 0
-    @State private var dragEndTask: Task<Void, Never>?
-    /// The thumbnail run's visible box; a thumbnail scrolled out of it is not a drop target.
-    @State private var runFrame: CGRect?
     #if !LITE_BUILD
     @Environment(WorkshopServices.self) private var services: WorkshopServices?
     /// What Steam answered per Workshop ID this session, so paging back and reloads ask it once.
     @State private var steamLookups: [UInt64: SteamLookup] = [:]
     #endif
-
-    /// SCREENS.md S5: the strip enters from −130 above its resting top.
-    private static let floatHiddenTop: CGFloat = -130
 
     /// What the modal is showing right now: the loaded content's item, so a navigation whose
     /// content is still decoding keeps title, preview and actions on the same wallpaper.
@@ -63,40 +52,21 @@ struct LibraryModalHost: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let item = presentedItem, let content {
-                let targets = actions.targets(for: item, covers: covers, preferred: preferredTarget).map { target in
-                    var target = target
-                    target.isPreparing = applying.contains(target.id)
-                    return target
-                }
-                modal(for: item, content: content, targets: targets)
-                if dragPoint != nil {
-                    DisplayFloatLayer(
-                        targets: targets,
-                        highlighted: highlightedDisplay,
-                        windowWidth: stage.stageSize.width,
-                        onTargetFrame: { targetFrames[$0.id] = $0.rect },
-                        onRunFrame: { runFrame = $0 },
-                        applyAllHighlighted: dropTarget == .allDisplays,
-                        onApplyAllFrame: { applyAllFrame = $0 }
-                    )
-                    .padding(.top, FloatLayerGeometry.panelTop)
-                    .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))
-                }
-                if let dragPoint {
-                    ModalDragGhost(image: content.preview, isOverTarget: dropTarget != nil, shakeTrigger: shakeTrigger)
-                        .position(dragPoint)
-                }
+                modal(for: item, content: content, targets: targets(for: item))
             }
+            LibraryDragOverlay(
+                drag: drag, targets: drag.payload.map { targets(for: $0.item) } ?? [], windowWidth: stage.stageSize.width
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: presentedItemID != nil)
         .onChange(of: presentedItemID, initial: true) { _, id in
             if id == nil {
                 content = nil
-                clearDrag()
+                drag.clear()
             }
         }
+        .onChange(of: reduceMotion, initial: true) { drag.reduceMotion = reduceMotion }
         .task(id: presentedItemID) { await load() }
         .onChange(of: library.items) {
             // The shown item can be removed from under the modal (Remove from Wallpaper Library, delete): the
@@ -118,6 +88,14 @@ struct LibraryModalHost: View {
         Dictionary(uniqueKeysWithValues: stage.displays.compactMap { display in
             display.cover.map { (display.id, $0) }
         })
+    }
+
+    private func targets(for item: LibraryItem) -> [ModalDisplayTarget] {
+        actions.targets(for: item, covers: covers, preferred: preferredTarget).map { target in
+            var target = target
+            target.isPreparing = applying.contains(target.id)
+            return target
+        }
     }
 
     private func modal(for item: LibraryItem, content: WallpaperModalContent, targets: [ModalDisplayTarget]) -> WallpaperModal {
@@ -231,72 +209,18 @@ struct LibraryModalHost: View {
 
     // MARK: Drag
 
+    /// No `watchesEscape`: the modal's own Escape cancels its gesture, and a monitor here would swallow that key first.
     private func handleDrag(_ phase: ModalDragPhase) {
         switch phase {
         case let .began(point):
-            dragEndTask?.cancel()
-            withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.25, dampingFraction: 0.82))) {
-                dragPoint = point
-            }
-            dropTarget = target(at: point)
+            guard let item = presentedItem else { return }
+            drag.begin(.init(item: item, image: content?.preview, actions: actions.actions(for: item)), at: point)
         case let .moved(point):
-            dragPoint = point
-            dropTarget = target(at: point)
+            drag.move(to: point)
         case let .ended(point):
-            if let target = target(at: point), let item = presentedItem {
-                let modalActions = actions.actions(for: item)
-                switch target {
-                case let .display(id):
-                    modalActions.applyTo(id)
-                case .allDisplays:
-                    modalActions.applyToAllDisplays()
-                }
-                clearDrag()
-            } else {
-                // MOTION 9: a miss shakes the ghost before it goes.
-                shakeTrigger += 1
-                dragEndTask = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(320))
-                    guard !Task.isCancelled else { return }
-                    clearDrag()
-                }
-            }
+            drag.end(at: point)
         case .cancelled:
-            clearDrag()
-        }
-    }
-
-    private func target(at point: CGPoint) -> ModalDropTarget? {
-        Self.dropTarget(at: point, thumbnails: targetFrames, run: runFrame, applyAll: applyAllFrame)
-    }
-
-    private var highlightedDisplay: CGDirectDisplayID? {
-        switch dropTarget {
-        case let .display(id)?: id
-        default: nil
-        }
-    }
-
-    /// `run` is the thumbnail run's visible box: a thumbnail scrolled out of it takes no drop.
-    static func dropTarget(
-        at point: CGPoint, thumbnails: [CGDirectDisplayID: CGRect], run: CGRect?, applyAll: CGRect?
-    ) -> ModalDropTarget? {
-        let display = thumbnails.first { _, rect in
-            let visible = run.map { rect.intersection($0) } ?? rect
-            return visible.contains(point)
-        }
-        if let display {
-            return .display(display.key)
-        }
-        return applyAll?.contains(point) == true ? .allDisplays : nil
-    }
-
-    private func clearDrag() {
-        dragEndTask?.cancel()
-        dragEndTask = nil
-        withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.25, dampingFraction: 0.82))) {
-            dragPoint = nil
-            dropTarget = nil
+            drag.clear()
         }
     }
 }

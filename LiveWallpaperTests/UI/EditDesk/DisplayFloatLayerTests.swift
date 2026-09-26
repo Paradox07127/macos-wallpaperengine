@@ -87,7 +87,7 @@ struct DisplayFloatLayerTests {
         let run = CGRect(x: 90, y: 24, width: 400, height: 84)
         let applyAll = CGRect(x: 700, y: 51, width: 120, height: 30)
         func target(_ point: CGPoint) -> ModalDropTarget? {
-            LibraryModalHost.dropTarget(at: point, thumbnails: thumbnails, run: run, applyAll: applyAll)
+            LibraryDragController.dropTarget(at: point, thumbnails: thumbnails, run: run, applyAll: applyAll)
         }
         #expect(target(CGPoint(x: 150, y: 60)) == .display(1))
         #expect(target(CGPoint(x: 760, y: 66)) == .allDisplays)

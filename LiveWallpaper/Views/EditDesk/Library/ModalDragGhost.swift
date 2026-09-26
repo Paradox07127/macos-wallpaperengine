@@ -2,8 +2,8 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// MOTION 7–9: the card that follows a modal-preview drag. The host positions it and owns the
-/// drop; this only reflects the two states the drag can report back.
+/// MOTION 7–9: the card that follows a library drag, from the modal's preview or a grid tile. The host
+/// positions it and owns the drop; this only reflects the two states the drag can report back.
 struct ModalDragGhost: View {
     static let size = CGSize(width: 140, height: 79)
 
