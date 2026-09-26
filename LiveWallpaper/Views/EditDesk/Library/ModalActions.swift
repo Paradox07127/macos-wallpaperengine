@@ -23,6 +23,8 @@ final class ModalActions {
         var update: @MainActor (WPEHistoryEntry) -> Void = { _ in }
         var cancelUpdate: @MainActor (UInt64) -> Void = { _ in }
         var deleteInstalled: @MainActor (WPEHistoryEntry, InstalledLibraryModel) -> Void = { _, _ in }
+        /// The video a Workshop row plays when its project is one; its still is a frame of that file.
+        var workshopVideo: @MainActor (LibraryItem) -> WallpaperContent? = { _ in nil }
         #endif
 
         static func live(library: SavedLibraryModel, screenManager: ScreenManager) -> Inputs {
@@ -31,6 +33,9 @@ final class ModalActions {
             inputs.displays = {
                 screenManager.screens.map { Display(id: $0.id, name: $0.name, frame: $0.frame) }
             }
+            #if !LITE_BUILD
+            inputs.workshopVideo = { library.workshopVideo(for: $0) }
+            #endif
             return inputs
         }
     }
@@ -177,9 +182,25 @@ final class ModalActions {
         }
     }
 
-    func preview(for item: LibraryItem, pixelSize: CGSize, scale: CGFloat) async -> CGImage? {
+    /// `box` is in pixels. `liveStill` is the preview as it is when the item is on a display: nothing is decoded.
+    func preview(for item: LibraryItem, box: CGSize, liveStill: CGImage?) async -> CGImage? {
+        if let liveStill {
+            return liveStill
+        }
         guard let request = item.thumbnail else { return nil }
-        return await thumbnails.image(request, pixelSize: pixelSize, scale: scale)
+        #if LITE_BUILD
+        return await thumbnails.still(request, box: box)
+        #else
+        return await thumbnails.still(request, box: box, video: inputs.workshopVideo(item))
+        #endif
+    }
+
+    /// `current`: the displays whose newest cover capture has landed. Any other cover may still show the wallpaper
+    /// that ran there before, so it never stands in for the item.
+    static func liveStill(
+        showingOn displays: [CGDirectDisplayID], covers: [CGDirectDisplayID: CGImage], current: Set<CGDirectDisplayID>
+    ) -> CGImage? {
+        displays.lazy.filter { current.contains($0) }.compactMap { covers[$0] }.first
     }
 
     /// The modal's "…" rows for `item`, as its context menus show them.

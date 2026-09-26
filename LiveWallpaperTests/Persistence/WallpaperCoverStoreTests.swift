@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Testing
+import UniformTypeIdentifiers
 
 @MainActor
 @Suite("Wallpaper cover store", .serialized)
@@ -173,6 +175,39 @@ struct WallpaperCoverStoreTests {
         #expect(await reader.cover(named: name)?.size == NSSize(width: 12, height: 9))
         reader.remove(named: name)
         #expect(await reader.cover(named: name) == nil)
+    }
+
+    @Test("A Workshop cover is named by its project and the import it shows; an ID that is not one file name gets none")
+    func workshopCoverNames() {
+        let importedAt = Date(timeIntervalSince1970: 1_727_000_000.123)
+        #expect(
+            WallpaperCoverStore.workshopFileName(workshopID: "3413921910", importedAt: importedAt)
+                == "workshop-3413921910-1727000000123.jpg"
+        )
+        for unsafe in ["", ".", "..", "a/b", "a\\b"] {
+            #expect(WallpaperCoverStore.workshopFileName(workshopID: unsafe, importedAt: importedAt) == nil, Comment(rawValue: unsafe))
+        }
+    }
+
+    @Test("A Workshop cover is stored as a JPEG at most 1024 pixels wide and decodes straight to the size a card asks for")
+    func workshopCoverIsASmallJPEG() async throws {
+        let (store, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = try #require(CGContext(
+            data: nil, width: 2048, height: 1152, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(srgbRed: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2048, height: 1152))
+        let frame = try #require(context.makeImage())
+        let name = try #require(store.storeWorkshopCover(frame, workshopID: "7", importedAt: Date(timeIntervalSince1970: 0)))
+        let source = try #require(CGImageSourceCreateWithURL(root.appendingPathComponent("Covers/\(name)") as CFURL, nil))
+        #expect(CGImageSourceGetType(source) as String? == UTType.jpeg.identifier)
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        #expect(properties?[kCGImagePropertyPixelWidth] as? Int == 1024)
+        #expect(properties?[kCGImagePropertyPixelHeight] as? Int == 576)
+        let card = try #require(await store.cover(named: name, maxPixelSize: 256))
+        #expect(card.width == 256 && card.height == 144, Comment(rawValue: "\(card.width)×\(card.height)"))
     }
 
     private actor CoverReadBlocker {

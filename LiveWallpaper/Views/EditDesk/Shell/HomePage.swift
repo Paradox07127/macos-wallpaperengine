@@ -33,6 +33,8 @@ struct HomePage: View {
     @State private var pageChangeFromStage = false
     /// Bumped per display before each capture; a capture that finishes after a newer one started is dropped.
     @State private var coverGenerations: [CGDirectDisplayID: Int] = [:]
+    /// The generation whose capture last became a display's cover; behind `coverGenerations` while a newer one is out.
+    @State private var landedCoverGenerations: [CGDirectDisplayID: Int] = [:]
     @State private var applies = ApplyQueue()
     /// The library item the S4 modal shows; nil when closed.
     @State private var presentedItemID: String?
@@ -376,7 +378,8 @@ struct HomePage: View {
                 LibraryModalHost(
                     library: library, stage: stage, actions: modalActions,
                     requestRename: requestRename, requestDelete: requestDelete,
-                    presentedItemID: $presentedItemID, preferredTarget: router.libraryTarget, applying: applies.inFlight
+                    presentedItemID: $presentedItemID, preferredTarget: router.libraryTarget, applying: applies.inFlight,
+                    currentCovers: currentCoverDisplays
                 )
             }
         }
@@ -1161,7 +1164,14 @@ struct HomePage: View {
                 stage.crossfadeCover(display: id, to: image, duration: DesignTokens.Motion.wallpaperCrossfadeDuration)
             }
             stage.displays[index].cover = image
+            landedCoverGenerations[id] = generation
         }
+    }
+
+    /// A cover shows what its display runs now only once the newest capture asked for has landed: until then,
+    /// and for good when a capture fails, it is the wallpaper the display ran before.
+    private var currentCoverDisplays: Set<CGDirectDisplayID> {
+        Set(coverGenerations.compactMap { id, generation in landedCoverGenerations[id] == generation ? id : nil })
     }
 
     // MARK: Shelf

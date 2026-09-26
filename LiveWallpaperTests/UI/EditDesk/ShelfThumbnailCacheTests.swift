@@ -15,6 +15,9 @@ struct ShelfThumbnailCacheTests {
         var cover: CGImage?
         var video: CGImage?
         var web: CGImage?
+        /// What the box-sized video frame source hands back, and the boxes it was asked for.
+        var frame: CGImage?
+        var frameBoxes: [CGSize] = []
         #if !LITE_BUILD
         var scene: CGImage?
         #endif
@@ -33,6 +36,11 @@ struct ShelfThumbnailCacheTests {
             sources.video = { _, _, _ in
                 self.calls.append("video")
                 return self.video
+            }
+            sources.videoFrame = { _, _, box in
+                self.calls.append("frame")
+                self.frameBoxes.append(box)
+                return self.frame
             }
             sources.web = { _, _ in
                 self.calls.append("web")
@@ -63,6 +71,17 @@ struct ShelfThumbnailCacheTests {
         }
         return try #require(context.makeImage())
     }
+
+    private func makeImage(width: Int, height: Int) throws -> CGImage {
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try #require(context.makeImage())
+    }
+
+    /// The modal preview's box on a 2× display: 340×255 points.
+    private let box = CGSize(width: 680, height: 510)
 
     private func gridItem(cover: String) -> LiveWallpaper.LibraryItem {
         let bookmark = bookmark(cover: cover)
@@ -527,4 +546,89 @@ struct ShelfThumbnailCacheTests {
         #expect(fixture.calls == ["cover"])
         #expect(cache.cached(request, pixelSize: size, scale: 1) === firstImage)
     }
+
+    // MARK: The modal's still
+
+    @Test("The modal's still keeps the whole picture: a square fits the box and a wide one fits its width")
+    func stillFitsTheWholePicture() async throws {
+        let fixture = Fixture()
+        fixture.cover = try makeImage(width: 1024, height: 1024)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let square = try #require(await cache.still(.bookmark(bookmark(cover: "square.png")), box: box))
+        #expect(square.width == 510 && square.height == 510, Comment(rawValue: "a square still came out \(square.width)×\(square.height)"))
+        fixture.cover = try makeImage()
+        let wide = try #require(await cache.still(.bookmark(bookmark(cover: "wide.png")), box: box))
+        #expect(wide.width == 680 && wide.height == 381, Comment(rawValue: "a 1000×560 still came out \(wide.width)×\(wide.height)"))
+    }
+
+    @Test("The modal's still never enlarges a source smaller than its box")
+    func stillNeverEnlarges() async throws {
+        let fixture = Fixture()
+        fixture.cover = try makeImage(width: 192, height: 192)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let still = try #require(await cache.still(.bookmark(bookmark(cover: "small.png")), box: box))
+        #expect(still.width == 192 && still.height == 192, Comment(rawValue: "a 192×192 source came out \(still.width)×\(still.height)"))
+    }
+
+    @Test("Modal stills never enter the card cache, and only the last three are kept", .timeLimit(.minutes(1)))
+    func stillsStayOutOfTheCardCache() async throws {
+        let fixture = Fixture()
+        fixture.cover = try makeImage()
+        // Room for three 200×112 card thumbnails; a single modal still is several times that.
+        let cache = ShelfThumbnailCache(sources: fixture.sources(), costLimit: 3 * 200 * 4 * 112)
+        let cards = ["card-0.png", "card-1.png"].map { ShelfThumbnailCache.Request.bookmark(bookmark(cover: $0)) }
+        for card in cards {
+            _ = await cache.image(card, pixelSize: size, scale: 2)
+        }
+        try #require(cards.allSatisfy { cache.cached($0, pixelSize: size, scale: 2) != nil }, "control: the two cards are not both cached")
+        let stills = (0 ..< 4).map { ShelfThumbnailCache.Request.bookmark(bookmark(cover: "still-\($0).png")) }
+        for still in stills {
+            _ = await cache.still(still, box: box)
+        }
+        #expect(cards.allSatisfy { cache.cached($0, pixelSize: size, scale: 2) != nil }, "paging the modal evicted a card's thumbnail")
+        #expect(stills.allSatisfy { cache.cached($0, pixelSize: box, scale: 1) == nil }, "a modal still landed in the card cache")
+        fixture.calls.removeAll()
+        for still in stills.dropFirst() {
+            _ = await cache.still(still, box: box)
+        }
+        #expect(fixture.calls.isEmpty, Comment(rawValue: "the three newest stills decoded again: \(fixture.calls)"))
+        _ = await cache.still(stills[0], box: box)
+        #expect(fixture.calls == ["cover:still-0.png"], Comment(rawValue: "the oldest of four stills was still kept: \(fixture.calls)"))
+    }
+
+    @Test("A saved video and an Apple Aerials file take their still from a frame at the box's size, not the card poster")
+    func videoStillsAreFramesAtTheBox() async throws {
+        let fixture = Fixture()
+        fixture.video = try makeImage(width: 480, height: 270)
+        fixture.frame = try makeImage(width: 680, height: 382)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let saved = try #require(await cache.still(.bookmark(bookmark()), box: box))
+        let aerial = AerialAsset(
+            id: "sky", url: URL(fileURLWithPath: "/Aerials/sky.mov"), displayName: "Sky", category: nil, fileSize: 100,
+            bookmarkData: Data([1])
+        )
+        let sky = try #require(await cache.still(.aerial(.init(aerial)), box: box))
+        #expect(saved.width == 680 && sky.width == 680, Comment(rawValue: "stills \(saved.width) and \(sky.width) wide"))
+        #expect(fixture.calls == ["frame", "frame"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(fixture.frameBoxes == [box, box])
+    }
+
+    #if !LITE_BUILD
+    @Test("A Workshop video's still is a frame of the video it plays, not the author's small preview")
+    func workshopVideoStillIsAFrame() async throws {
+        let fixture = Fixture()
+        fixture.scene = try makeImage(width: 160, height: 160)
+        fixture.frame = try makeImage(width: 680, height: 382)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let origin = WPEOrigin(
+            workshopID: "3441187616", title: "", originalType: .video, sourceFolderBookmark: Data([2]),
+            cacheRelativePath: nil, previewFileName: "preview.gif", entryFile: "cabin.mp4"
+        )
+        let entry = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
+        let still = try #require(await cache.still(.workshop(entry), box: box, video: .video(bookmarkData: Data([7]))))
+        #expect(still.width == 680 && still.height == 382, Comment(rawValue: "\(still.width)×\(still.height)"))
+        #expect(fixture.calls == ["frame"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(fixture.frameBoxes == [box])
+    }
+    #endif
 }

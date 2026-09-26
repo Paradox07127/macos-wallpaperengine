@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ImageIO
 import LiveWallpaperCore
+import UniformTypeIdentifiers
 
 @MainActor
 final class WallpaperCoverStore {
@@ -15,6 +16,7 @@ final class WallpaperCoverStore {
     }()
 
     private let reads: PreviewRequestPool<CGImage>
+    private let readGate: PreviewWorkGate
     private var readGenerations: [String: UUID] = [:]
 
     private let root: URL
@@ -27,6 +29,7 @@ final class WallpaperCoverStore {
     ) {
         root = directory.root.appendingPathComponent("Covers", isDirectory: true)
         self.fileManager = fileManager
+        self.readGate = readGate
         reads = PreviewRequestPool(gate: readGate)
     }
 
@@ -64,6 +67,21 @@ final class WallpaperCoverStore {
         return image
     }
 
+    /// Decoded straight to at most `maxPixelSize` on the long side and not cached: cards ask for many covers at
+    /// once, and full-size decodes would push each other out of `cache`.
+    func cover(named fileName: String, maxPixelSize: Int) async -> CGImage? {
+        let url = root.appendingPathComponent(fileName, isDirectory: false)
+        return await readGate.runDetached {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            ] as CFDictionary)
+        }
+    }
+
     private func invalidateRead(_ fileName: String) {
         readGenerations.removeValue(forKey: fileName)
         reads.invalidate(fileName)
@@ -75,7 +93,19 @@ final class WallpaperCoverStore {
     @discardableResult
     func store(_ image: NSImage, for id: UUID) -> String? {
         guard let data = Self.pngData(from: image) else { return nil }
-        let fileName = Self.fileName(for: id)
+        return write(data, named: Self.fileName(for: id), image: image)
+    }
+
+    /// A JPEG at most `workshopCoverWidth` wide; nil when the ID is not one file name or the encode or write failed.
+    @discardableResult
+    func storeWorkshopCover(_ image: CGImage, workshopID: String, importedAt: Date) -> String? {
+        guard let fileName = Self.workshopFileName(workshopID: workshopID, importedAt: importedAt),
+              let cover = Self.scaled(image, toWidthAtMost: Self.workshopCoverWidth),
+              let data = Self.jpegData(from: cover) else { return nil }
+        return write(data, named: fileName, image: NSImage(cgImage: cover, size: NSSize(width: cover.width, height: cover.height)))
+    }
+
+    private func write(_ data: Data, named fileName: String, image: NSImage) -> String? {
         let url = root.appendingPathComponent(fileName, isDirectory: false)
         do {
             try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
@@ -115,6 +145,39 @@ final class WallpaperCoverStore {
     /// there is never a second file to garbage-collect for the same entry.
     static func fileName(for id: UUID) -> String {
         "\(id.uuidString).png"
+    }
+
+    /// The name carries the import it shows: re-importing an update renames it, and the orphan sweep takes the old
+    /// file. nil for an ID that is not one file name.
+    static func workshopFileName(workshopID: String, importedAt: Date) -> String? {
+        guard !workshopID.isEmpty, workshopID != ".", workshopID != "..",
+              !workshopID.contains("/"), !workshopID.contains("\\"), !workshopID.contains("\0") else { return nil }
+        return "workshop-\(workshopID)-\(Int64((importedAt.timeIntervalSince1970 * 1000).rounded())).jpg"
+    }
+
+    /// Past the modal preview's 680-pixel box on a 2× display, and as wide as the stage's own covers.
+    static let workshopCoverWidth = 1024
+
+    private static func scaled(_ image: CGImage, toWidthAtMost width: Int) -> CGImage? {
+        guard image.width > width else { return image }
+        let height = max(1, Int((CGFloat(image.height) * CGFloat(width) / CGFloat(image.width)).rounded()))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
+    private static func jpegData(from image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
     }
 
     private static func pngData(from image: NSImage) -> Data? {

@@ -429,26 +429,72 @@ struct ModalActionsTests {
         #expect(fixture.applied.count == 1)
     }
 
-    @Test func previewUsesTheHostsCacheAndRequestedDimensions() async throws {
+    @Test("The preview is the host cache's own still: the whole picture inside the box, decoded once, kept out of the card cache")
+    func previewIsTheHostsStill() async throws {
         let fixture = Fixture()
         let original = try image()
         var loads = 0
         var sources = ShelfThumbnailCache.Sources()
-        sources.video = { _, _, _ in loads += 1; return original }
+        sources.videoFrame = { _, _, _ in loads += 1; return original }
         let cache = ShelfThumbnailCache(sources: sources)
         let modal = fixture.modal(cache: cache)
         var item = item(video())
-        let size = CGSize(width: 80, height: 45)
+        let box = CGSize(width: 80, height: 80)
         let request = try #require(item.thumbnail)
-        #expect(cache.cached(request, pixelSize: size, scale: 2) == nil)
-        let preview = try #require(await modal.preview(for: item, pixelSize: size, scale: 2))
-        #expect(preview.width == 80 && preview.height == 45)
-        #expect(cache.cached(request, pixelSize: size, scale: 2) === preview)
-        #expect(await modal.preview(for: item, pixelSize: size, scale: 2) === preview)
+        let preview = try #require(await modal.preview(for: item, box: box, liveStill: nil))
+        #expect(preview.width == 80 && preview.height == 45, Comment(rawValue: "\(preview.width)×\(preview.height)"))
+        #expect(cache.cached(request, pixelSize: box, scale: 1) == nil, "the modal's still went into the card cache")
+        #expect(await modal.preview(for: item, box: box, liveStill: nil) === preview)
         #expect(loads == 1)
         item.thumbnail = nil
-        #expect(await modal.preview(for: item, pixelSize: size, scale: 2) == nil)
+        #expect(await modal.preview(for: item, box: box, liveStill: nil) == nil)
     }
+
+    @Test("A running item's modal shows the frame its display captured last, and only while that capture is the newest asked for")
+    func liveStillNeedsACurrentCover() throws {
+        let left = try image()
+        let right = try image()
+        let covers: [CGDirectDisplayID: CGImage] = [1: left, 2: right]
+        #expect(ModalActions.liveStill(showingOn: [1, 2], covers: covers, current: [1, 2]) === left)
+        #expect(
+            ModalActions.liveStill(showingOn: [1, 2], covers: covers, current: [2]) === right,
+            "a cover whose display was still being recaptured stood in for the item"
+        )
+        #expect(ModalActions.liveStill(showingOn: [1, 2], covers: covers, current: []) == nil)
+        #expect(ModalActions.liveStill(showingOn: [], covers: covers, current: [1, 2]) == nil)
+    }
+
+    @Test("A live frame handed to the modal is its preview, and nothing is decoded")
+    func livePreviewSkipsTheDecode() async throws {
+        let fixture = Fixture()
+        var loads = 0
+        var sources = ShelfThumbnailCache.Sources()
+        sources.videoFrame = { _, _, _ in loads += 1; return nil }
+        sources.video = { _, _, _ in loads += 1; return nil }
+        let modal = fixture.modal(cache: ShelfThumbnailCache(sources: sources))
+        let live = try image()
+        let preview = await modal.preview(for: item(video()), box: CGSize(width: 680, height: 510), liveStill: live)
+        #expect(preview === live)
+        #expect(loads == 0)
+    }
+
+    #if !LITE_BUILD
+    @Test("A Workshop video row's preview is a frame of the video it plays")
+    func workshopVideoPreviewUsesItsVideo() async throws {
+        let fixture = Fixture()
+        let frame = try image()
+        var played: [Data] = []
+        var sources = ShelfThumbnailCache.Sources()
+        sources.videoFrame = { data, _, _ in played.append(data); return frame }
+        sources.scene = { _, _ in nil }
+        var inputs = fixture.inputs()
+        inputs.workshopVideo = { _ in .video(bookmarkData: Data([9])) }
+        let modal = fixture.modal(inputs: inputs, cache: ShelfThumbnailCache(sources: sources))
+        let preview = await modal.preview(for: workshop("3441187616"), box: CGSize(width: 680, height: 510), liveStill: nil)
+        #expect(preview === frame)
+        #expect(played == [Data([9])])
+    }
+    #endif
 
     private func image() throws -> CGImage {
         let context = try #require(CGContext(

@@ -53,38 +53,22 @@ final class ShelfThumbnailCache {
             }.value
             guard let resolved else { return nil }
             if let packageEntryName {
-                return await Task.detached(priority: .utility) { () -> CGImage? in
-                    let url = resolved.url
-                    let didStart = url.startAccessingSecurityScopedResource()
-                    defer {
-                        if didStart {
-                            url.stopAccessingSecurityScopedResource()
-                        }
-                    }
-                    guard let result = try? InMemoryVideoAssetLoader.loadPackageEntry(
-                        packageURL: url, entryName: packageEntryName
-                    ) else { return nil }
-                    let asset = AVURLAsset(url: result.customURL, options: [
-                        AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
-                        AVURLAssetAllowsCellularAccessKey: false,
-                        AVURLAssetAllowsExpensiveNetworkAccessKey: false,
-                        AVURLAssetAllowsConstrainedNetworkAccessKey: false,
-                    ])
-                    asset.resourceLoader.setDelegate(result.loader, queue: DispatchQueue(
-                        label: "app.livewallpaper.shelf-thumbnail-loader", qos: .utility
-                    ))
-                    // AVFoundation holds its resource-loader delegate weakly during image generation.
-                    defer { withExtendedLifetime(result.loader) {} }
-                    let generator = AVAssetImageGenerator(asset: asset)
-                    generator.appliesPreferredTrackTransform = true
-                    generator.maximumSize = CGSize(width: 480, height: 270)
-                    generator.requestedTimeToleranceBefore = .zero
-                    generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
-                    return try? await generator.image(at: .zero).image
-                }.value
+                return await ShelfThumbnailCache.frame(
+                    of: resolved.url, packageEntryName: packageEntryName, maximumSize: CGSize(width: 480, height: 270)
+                )
             }
             let image = await WallpaperThumbnailService.shared.videoPosterImage(for: resolved.url, cacheKey: cacheKey)
             return image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+
+        /// A frame at most `box` pixels, its own aspect kept: the modal's still. Not `WallpaperThumbnailService`,
+        /// whose cache key has no size and would hand back the 480×270 card poster.
+        var videoFrame: @MainActor (Data, String?, CGSize) async -> CGImage? = { bookmarkData, packageEntryName, box in
+            let resolved = await Task.detached(priority: .utility) {
+                try? SecurityScopedBookmarkResolver.shared.resolve(bookmarkData, target: .transient).get()
+            }.value
+            guard let url = resolved?.url else { return nil }
+            return await ShelfThumbnailCache.frame(of: url, packageEntryName: packageEntryName, maximumSize: box)
         }
 
         var web: @MainActor (HTMLSource, HTMLConfig) async -> CGImage? = { source, config in
@@ -143,8 +127,12 @@ final class ShelfThumbnailCache {
     }
 
     private let cache = NSCache<Key, CGImage>()
+    /// The modal's newest stills, oldest first. Apart from `cache`, so paging the modal never evicts a card's thumbnail.
+    private var stills: [(key: Key, image: CGImage)] = []
+    private static let stillLimit = 3
 
     private var inFlight: [Key: Task<CGImage?, Never>] = [:]
+    private var stillsInFlight: [Key: Task<CGImage?, Never>] = [:]
     private let sources: Sources
 
     /// `costLimit` is in bytes of decoded pixels.
@@ -178,6 +166,36 @@ final class ShelfThumbnailCache {
             return image
         }
         inFlight[key] = task
+        return await task.value
+    }
+
+    /// The modal's still: the whole picture inside `box` (pixels), never enlarged past its source's own pixels.
+    /// `video` is the file a Workshop row plays when its project is a video.
+    func still(_ request: Request, box: CGSize, video: WallpaperContent? = nil) async -> CGImage? {
+        let key = Key(request, pixelSize: box, scale: 1)
+        if let index = stills.firstIndex(where: { $0.key == key }) {
+            let hit = stills.remove(at: index)
+            stills.append(hit)
+            return hit.image
+        }
+        if let task = stillsInFlight[key] {
+            return await task.value
+        }
+        let task = Task { () -> CGImage? in
+            defer { stillsInFlight[key] = nil }
+            guard let source = await stillSource(for: request, box: box, video: video) else { return nil }
+            let image = await Task.detached(priority: .utility) {
+                Self.fitted(source, inside: box)
+            }.value
+            if let image {
+                stills.append((key, image))
+                if stills.count > Self.stillLimit {
+                    stills.removeFirst()
+                }
+            }
+            return image
+        }
+        stillsInFlight[key] = task
         return await task.value
     }
 
@@ -219,6 +237,97 @@ final class ShelfThumbnailCache {
             return await sources.scene(entry.origin, pixelSize)
         #endif
         }
+    }
+
+    private func stillSource(for request: Request, box: CGSize, video: WallpaperContent?) async -> CGImage? {
+        switch request {
+        case let .bookmark(bookmark):
+            if let name = bookmark.coverFileName, let image = await sources.cover(name) {
+                return image
+            }
+            switch bookmark.content {
+            case let .video(data, packageEntryName):
+                if let image = await sources.videoFrame(data, packageEntryName, box) {
+                    return image
+                }
+            case let .html(source, config):
+                if let image = await sources.web(source, config) {
+                    return image
+                }
+            case .scene:
+                break
+            }
+            #if !LITE_BUILD
+            if let origin = bookmark.wpeOrigin {
+                return await sources.scene(origin, box)
+            }
+            #endif
+            return nil
+        case let .aerial(preview):
+            return await sources.videoFrame(preview.bookmarkData, nil, box)
+        #if !LITE_BUILD
+        case let .workshop(entry):
+            if case let .video(data, packageEntryName)? = video,
+               let image = await sources.videoFrame(data, packageEntryName, box) {
+                return image
+            }
+            return await sources.scene(entry.origin, box)
+        #endif
+        }
+    }
+
+    /// A source already inside `box` comes back as it is: the still is never enlarged.
+    private nonisolated static func fitted(_ image: CGImage, inside box: CGSize) -> CGImage? {
+        let scale = min(box.width / CGFloat(image.width), box.height / CGFloat(image.height), 1)
+        guard scale < 1 else { return image }
+        let width = max(1, Int((CGFloat(image.width) * scale).rounded()))
+        let height = max(1, Int((CGFloat(image.height) * scale).rounded()))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
+    /// `url` is the video file, or the package when `packageEntryName` names an entry inside it.
+    nonisolated static func frame(of url: URL, packageEntryName: String?, maximumSize: CGSize) async -> CGImage? {
+        await Task.detached(priority: .utility) { () -> CGImage? in
+            let didStart = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStart {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let asset: AVURLAsset
+            var loader: InMemoryVideoAssetLoader?
+            if let packageEntryName {
+                guard let result = try? InMemoryVideoAssetLoader.loadPackageEntry(
+                    packageURL: url, entryName: packageEntryName
+                ) else { return nil }
+                asset = AVURLAsset(url: result.customURL, options: [
+                    AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
+                    AVURLAssetAllowsCellularAccessKey: false,
+                    AVURLAssetAllowsExpensiveNetworkAccessKey: false,
+                    AVURLAssetAllowsConstrainedNetworkAccessKey: false,
+                ])
+                asset.resourceLoader.setDelegate(result.loader, queue: DispatchQueue(
+                    label: "app.livewallpaper.shelf-thumbnail-loader", qos: .utility
+                ))
+                loader = result.loader
+            } else {
+                asset = AVURLAsset(url: url)
+            }
+            // AVFoundation holds its resource-loader delegate weakly during image generation.
+            defer { withExtendedLifetime(loader) {} }
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = maximumSize
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
+            return try? await generator.image(at: .zero).image
+        }.value
     }
 
     private nonisolated static func downscale(_ image: CGImage, pixelSize: CGSize) -> CGImage? {

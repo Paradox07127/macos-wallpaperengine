@@ -268,8 +268,19 @@ final class SavedLibraryModel {
     /// covers directory, and a scan that comes back empty would start the next one. `kept`: covers
     /// of entries that are gone but that undo can still bring back.
     func prepareLibrary(alsoKeeping kept: Set<String>) {
-        inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept))
+        inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept).union(workshopCoverFileNames))
         inputs.scanAerials()
+    }
+
+    /// A Workshop cover is named from its import alone: no saved entry names it, so the sweep would take it for an orphan.
+    private var workshopCoverFileNames: [String] {
+        #if LITE_BUILD
+        []
+        #else
+        inputs.history().compactMap {
+            WallpaperCoverStore.workshopFileName(workshopID: $0.origin.workshopID, importedAt: $0.importedAt)
+        }
+        #endif
     }
 
     /// Freezes "Recently Used" until `endBrowsing()`: a row used meanwhile keeps its place.
@@ -486,6 +497,15 @@ final class SavedLibraryModel {
         #endif
         }
     }
+
+    #if !LITE_BUILD
+    /// The video a Workshop row plays when its project is one; nil for every other row.
+    func workshopVideo(for item: LibraryItem) -> WallpaperContent? {
+        guard case .workshop = item.source, let content = metadataBookmark(for: item.source)?.content,
+              case .video = content else { return nil }
+        return content
+    }
+    #endif
 
     /// Every scan bookmarks each file anew, so an aerial matches content whose bookmark resolves to the aerial's file.
     func aerial(_ asset: AerialAsset, matches content: WallpaperContent?) -> Bool {

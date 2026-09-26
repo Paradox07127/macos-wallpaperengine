@@ -18,8 +18,11 @@ struct LibraryModalHost: View {
     var preferredTarget: CGDirectDisplayID?
     /// Displays with an apply still preparing.
     var applying: Set<CGDirectDisplayID> = []
+    /// Displays whose newest cover capture has landed: only their covers show what runs there now.
+    var currentCovers: Set<CGDirectDisplayID> = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var content: WallpaperModalContent?
     @State private var dragPoint: CGPoint?
     @State private var dropTarget: ModalDropTarget?
@@ -147,9 +150,9 @@ struct LibraryModalHost: View {
         }
         var loaded = await actions.content(for: item)
         let preview = ModalGeometry.previewSize
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
         loaded.preview = await actions.preview(
-            for: item, pixelSize: CGSize(width: preview.width * scale, height: preview.height * scale), scale: scale
+            for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale),
+            liveStill: ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)
         )
         // The item can change under a slow preview decode; a stale load must not replace the newer one.
         guard presentedItemID == item.id else { return }
