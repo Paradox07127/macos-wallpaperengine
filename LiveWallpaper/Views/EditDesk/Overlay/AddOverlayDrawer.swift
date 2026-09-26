@@ -181,7 +181,7 @@ struct AddOverlayTileFace: View {
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
             Text(verbatim: Self.name(item))
                 .font(DesignTokens.EditDesk.Typography.footnote)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }

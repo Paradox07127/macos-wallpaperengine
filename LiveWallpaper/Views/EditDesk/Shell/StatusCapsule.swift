@@ -311,7 +311,7 @@ struct StatusCapsule: View {
             .frame(width: Self.dialSize, height: Self.dialSize)
             Text(verbatim: label)
                 .font(DesignTokens.EditDesk.Typography.metaMono)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
         }
         .accessibilityElement(children: .combine)
     }
@@ -334,7 +334,7 @@ struct StatusCapsule: View {
                 .fixedSize()
         }
         .font(DesignTokens.EditDesk.Typography.metaMono)
-        .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
+        .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
     }
 
     private var footerRow: some View {
@@ -359,7 +359,7 @@ struct StatusCapsule: View {
         .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .font(DesignTokens.EditDesk.Typography.metaMono)
-        .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
+        .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
     }
 
     private func percentText(_ value: Double) -> String {

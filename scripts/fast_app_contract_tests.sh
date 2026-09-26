@@ -183,6 +183,7 @@ SUITES=(
   StatusCapsuleTests
   EditDeskChromeSourceTests
   EditDeskCanvasOwnershipTests
+  SettingsSidebarLegibilityTests
   DisplayFloatLayerTests
   WallpaperModalTests
   ModalActionsTests

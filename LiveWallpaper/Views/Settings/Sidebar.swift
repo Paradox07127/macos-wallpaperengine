@@ -101,10 +101,10 @@ struct SettingsSidebar: View {
 
     private func rows(for results: [SettingsNavigationSearchResult]) -> some View {
         ForEach(results) { result in
-            NavigationLink(value: result.destination) {
-                SettingsSidebarRow(result: result, searchText: searchText)
-            }
-            .accessibilityHint(Text("Open settings category"))
+            // A tag, not a NavigationLink: the Edit Desk hosts this list outside any navigation container, where links draw disabled.
+            SettingsSidebarRow(result: result, searchText: searchText)
+                .tag(result.destination)
+                .accessibilityHint(Text("Open settings category"))
         }
     }
 
@@ -184,6 +184,8 @@ private struct SettingsSidebarRow: View {
                 }
             }
         }
+        // Explicit: left to the list, the row dims to the secondary colour whenever the window is not key.
+        .foregroundStyle(.primary)
     }
 }
 

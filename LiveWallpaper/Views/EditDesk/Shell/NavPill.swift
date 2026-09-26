@@ -22,7 +22,7 @@ struct NavPill: View {
         ) { item, isSelected in
             Text(Self.title(for: item))
                 .font(DesignTokens.EditDesk.Typography.navItem)
-                .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textSecondary)
+                .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
         }
         .fixedSize()
     }

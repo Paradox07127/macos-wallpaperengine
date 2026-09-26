@@ -111,7 +111,7 @@ struct LibraryDragApplyBar: View {
         VStack(spacing: DesignTokens.Spacing.sm) {
             Text("Drop onto a display to apply")
                 .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
 
             DisplayArrangementMap(
                 items: screens.map { DisplayArrangementItem(id: $0.id, frame: $0.frame) },
@@ -154,7 +154,7 @@ struct LibraryDragApplyBar: View {
                     if size.height >= 46 {
                         Text(verbatim: screen.name)
                             .font(DesignTokens.Typography.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .padding(.horizontal, 4)
                     }
