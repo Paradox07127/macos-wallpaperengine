@@ -210,6 +210,37 @@ struct WallpaperCoverStoreTests {
         #expect(card.width == 256 && card.height == 144, Comment(rawValue: "\(card.width)×\(card.height)"))
     }
 
+    @Test("A cover's revision is new with every write of it, a cover already on disk has one, a removed one has none")
+    func coverRevisions() throws {
+        let (writer, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = try #require(CGContext(
+            data: nil, width: 64, height: 36, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let frame = try #require(context.makeImage())
+        let importedAt = Date(timeIntervalSince1970: 0)
+        let name = try #require(writer.storeWorkshopCover(frame, workshopID: "7", importedAt: importedAt))
+        #expect(writer.revision(of: name) != nil, "the store that wrote the cover has no revision for it")
+
+        // A fresh store only has the directory to go by.
+        let store = WallpaperCoverStore(directory: ConfigurationDirectory(root: root))
+        var seen = try [#require(store.revision(of: name), "a cover already on disk has no revision")]
+        #expect(store.revision(of: "workshop-8-0.jpg") == nil)
+        for _ in 0 ..< 2 {
+            _ = try #require(store.storeWorkshopCover(frame, workshopID: "7", importedAt: importedAt))
+            let revision = try #require(store.revision(of: name))
+            #expect(!seen.contains(revision), Comment(rawValue: "a rewrite kept revision \(revision), seen \(seen)"))
+            seen.append(revision)
+        }
+        store.remove(named: name)
+        #expect(store.revision(of: name) == nil, "a removed cover kept its revision")
+        store.removeAll()
+        _ = try #require(store.storeWorkshopCover(frame, workshopID: "7", importedAt: importedAt))
+        let afterReset = try #require(store.revision(of: name))
+        #expect(!seen.contains(afterReset), Comment(rawValue: "a cover written after a reset reused revision \(afterReset)"))
+    }
+
     private actor CoverReadBlocker {
         private var opened = false
         private var continuation: CheckedContinuation<Void, Never>?

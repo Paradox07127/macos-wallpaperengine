@@ -18,8 +18,12 @@ struct ShelfThumbnailCacheTests {
         /// What the box-sized video frame source hands back, and the boxes it was asked for.
         var frame: CGImage?
         var frameBoxes: [CGSize] = []
+        var frameVideos: [WallpaperContent] = []
         #if !LITE_BUILD
         var scene: CGImage?
+        /// What the card-sized cover decode hands back; logged with the long side it was asked for.
+        var coverThumbnail: CGImage?
+        var workshopContent: WallpaperContent?
         #endif
         /// While true a cover decode is logged but does not return, so a test can look at the tiles before it lands.
         var holding = false
@@ -37,9 +41,10 @@ struct ShelfThumbnailCacheTests {
                 self.calls.append("video")
                 return self.video
             }
-            sources.videoFrame = { _, _, box in
+            sources.videoFrame = { data, entryName, box in
                 self.calls.append("frame")
                 self.frameBoxes.append(box)
+                self.frameVideos.append(.video(bookmarkData: data, packageEntryName: entryName))
                 return self.frame
             }
             sources.web = { _, _ in
@@ -50,6 +55,14 @@ struct ShelfThumbnailCacheTests {
             sources.scene = { _, _ in
                 self.calls.append("scene")
                 return self.scene
+            }
+            sources.coverThumbnail = { name, maxPixelSize in
+                self.calls.append("coverThumbnail:\(name):\(maxPixelSize)")
+                return self.coverThumbnail
+            }
+            sources.workshopContent = { _ in
+                self.calls.append("content")
+                return self.workshopContent
             }
             #endif
             return sources
@@ -465,6 +478,46 @@ struct ShelfThumbnailCacheTests {
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
         #expect(await cache.image(.workshop(entry), pixelSize: size, scale: 1) != nil)
         #expect(fixture.calls == ["scene"])
+    }
+
+    private func workshopEntry(_ type: WPEType) -> WPEHistoryEntry {
+        WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "3441187616", title: "", originalType: type, sourceFolderBookmark: Data([2]),
+            cacheRelativePath: nil, previewFileName: "preview.gif", entryFile: type == .video ? "cabin.mp4" : "scene.json"
+        ), importedAt: Date(timeIntervalSince1970: 1_727_000_000))
+    }
+
+    @Test("A Workshop card with a saved cover draws that cover decoded at the card's size, not the author's preview")
+    func workshopCardDrawsItsSavedCover() async throws {
+        let fixture = Fixture()
+        fixture.scene = try makeImage(width: 192, height: 192)
+        fixture.coverThumbnail = try makeImage(width: 200, height: 113)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let entry = workshopEntry(.scene)
+        let name = try #require(WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt))
+        let card = try #require(await cache.image(.workshop(entry, coverRevision: 1), pixelSize: size, scale: 2))
+        #expect(card.width == 200 && card.height == 112)
+        // Not `cover:`, the full-size decode the modal keeps in the store's cache.
+        #expect(fixture.calls == ["coverThumbnail:\(name):200"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(cache.cached(.workshop(entry, coverRevision: 1), pixelSize: size, scale: 2) === card)
+        #expect(cache.cached(.workshop(entry, coverRevision: 2), pixelSize: size, scale: 2) == nil, "a rewritten cover kept the card's old decode")
+    }
+
+    @Test("A Workshop video card draws a frame of the video it plays at the card's size; a scene card without a cover keeps the author's preview")
+    func workshopVideoCardDrawsAFrame() async throws {
+        let fixture = Fixture()
+        fixture.scene = try makeImage(width: 160, height: 160)
+        fixture.frame = try makeImage(width: 200, height: 112)
+        let played = WallpaperContent.video(bookmarkData: Data([7]), packageEntryName: "cabin.mp4")
+        fixture.workshopContent = played
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        _ = try #require(await cache.image(.workshop(workshopEntry(.video)), pixelSize: size, scale: 2))
+        #expect(fixture.calls == ["content", "frame"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(fixture.frameVideos == [played])
+        #expect(fixture.frameBoxes == [size])
+        fixture.calls.removeAll()
+        _ = try #require(await cache.image(.workshop(workshopEntry(.scene)), pixelSize: size, scale: 2))
+        #expect(fixture.calls == ["scene"], Comment(rawValue: "control: \(fixture.calls)"))
     }
     #endif
 

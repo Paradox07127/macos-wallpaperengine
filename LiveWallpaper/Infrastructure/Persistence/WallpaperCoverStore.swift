@@ -18,6 +18,9 @@ final class WallpaperCoverStore {
     private let reads: PreviewRequestPool<CGImage>
     private let readGate: PreviewWorkGate
     private var readGenerations: [String: UUID] = [:]
+    /// Covers by file name: 0 for one found on disk, the write count at its write for one written since; nil until read.
+    private var revisions: [String: Int]?
+    private var writeCount = 0
 
     private let root: URL
     private let fileManager: FileManager
@@ -82,6 +85,15 @@ final class WallpaperCoverStore {
         }
     }
 
+    /// New with every write of `fileName`; nil while no such cover is stored.
+    func revision(of fileName: String) -> Int? {
+        if revisions == nil {
+            let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
+            revisions = Dictionary(uniqueKeysWithValues: names.map { ($0, 0) })
+        }
+        return revisions?[fileName]
+    }
+
     private func invalidateRead(_ fileName: String) {
         readGenerations.removeValue(forKey: fileName)
         reads.invalidate(fileName)
@@ -116,12 +128,15 @@ final class WallpaperCoverStore {
         }
         invalidateRead(fileName)
         cache.setObject(image, forKey: fileName as NSString, cost: Self.cost(of: image))
+        writeCount += 1
+        revisions?[fileName] = writeCount
         return fileName
     }
 
     func remove(named fileName: String) {
         invalidateRead(fileName)
         cache.removeObject(forKey: fileName as NSString)
+        revisions?[fileName] = nil
         try? fileManager.removeItem(at: root.appendingPathComponent(fileName, isDirectory: false))
     }
 
@@ -136,6 +151,7 @@ final class WallpaperCoverStore {
         readGenerations.removeAll()
         reads.invalidateAll()
         cache.removeAllObjects()
+        revisions = [:]
         try? fileManager.removeItem(at: root)
     }
 

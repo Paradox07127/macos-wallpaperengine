@@ -39,6 +39,8 @@ final class SavedLibraryModel {
         /// Content is nil for installed rows, which match by origin instead.
         var nowPlaying: @MainActor (WallpaperContent?, WPEHistoryEntry?) -> [CGDirectDisplayID] = { _, _ in [] }
         var workshopContent: @MainActor (WPEHistoryEntry) -> WallpaperContent? = { _ in nil }
+        /// The revision of the saved cover of the import `entry` shows; nil while it has none.
+        var workshopCoverRevision: @MainActor (WPEHistoryEntry) -> Int? = { _ in nil }
         /// The `tags` of a project's `project.json`; empty when the file cannot be read.
         var projectTags: @MainActor (WPEOrigin) async -> [String] = { _ in [] }
         #else
@@ -74,6 +76,10 @@ final class SavedLibraryModel {
             #if !LITE_BUILD
             inputs.history = { SettingsManager.shared.loadGlobalSettings().recentWPEImports }
             inputs.workshopContent = { WPECachedContentResolver().content(for: $0.origin) }
+            inputs.workshopCoverRevision = { entry in
+                WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt)
+                    .flatMap { WallpaperCoverStore.shared.revision(of: $0) }
+            }
             inputs.projectTags = { await loadWPEProjectTags(for: $0) }
             inputs.nowPlaying = { content, entry in
                 screenManager.screens.compactMap { screen in
@@ -344,7 +350,8 @@ final class SavedLibraryModel {
             return LibraryItem(
                 id: "workshop:\(entry.id)", title: entry.origin.title, kind: kind, source: source,
                 isSteam: isSteam(entry.id), createdAt: entry.importedAt, lastUsedAt: entry.lastUsedAt,
-                onDisplays: inputs.nowPlaying(nil, entry), thumbnail: .workshop(entry),
+                onDisplays: inputs.nowPlaying(nil, entry),
+                thumbnail: .workshop(entry, coverRevision: inputs.workshopCoverRevision(entry)),
                 metadata: nil, isVariant: false, parentID: nil,
                 isSupported: entry.origin.originalType != .application && entry.origin.originalType != .unknown
             )

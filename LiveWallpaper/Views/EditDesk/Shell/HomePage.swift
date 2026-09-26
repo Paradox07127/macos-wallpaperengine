@@ -1185,8 +1185,85 @@ struct HomePage: View {
             }
             stage.displays[index].cover = image
             landedCoverGenerations[id] = generation
+            #if !LITE_BUILD
+            await saveWorkshopCover(for: id, generation: generation, afterSwitch: crossfade)
+            #endif
         }
     }
+
+    #if !LITE_BUILD
+    /// After a switch, how long the frame saved as the library cover waits: past an opening animation or fade-in.
+    static let workshopCoverDelay: Duration = .seconds(10)
+
+    /// `afterSwitch`: the capture followed a wallpaper change, so the frame saved waits `workshopCoverDelay`.
+    private func saveWorkshopCover(for id: CGDirectDisplayID, generation: Int, afterSwitch: Bool) async {
+        func running() -> (screen: Screen, configuration: ScreenConfiguration)? {
+            guard let screen = screenManager.screens.first(where: { $0.id == id }),
+                  let configuration = screenManager.getConfiguration(for: screen) else { return nil }
+            return (screen, configuration)
+        }
+        await Self.saveWorkshopCover(
+            after: afterSwitch ? Self.workshopCoverDelay : .zero,
+            isNewest: { coverGenerations[id] == generation },
+            target: {
+                running().flatMap {
+                    Self.workshopCoverEntry(running: $0.configuration, in: SettingsManager.shared.loadGlobalSettings().recentWPEImports)
+                }
+            },
+            capture: {
+                guard let display = running() else { return nil }
+                return await WallpaperCoverCapture.wallpaperFrame(screen: display.screen, configuration: display.configuration)?
+                    .cgImage(forProposedRect: nil, context: nil, hints: nil)
+            },
+            store: { frame, entry in
+                guard let name = WallpaperCoverStore.shared.storeWorkshopCover(
+                    frame, workshopID: entry.origin.workshopID, importedAt: entry.importedAt
+                ) else { return }
+                // Decoded before the rows change: a shelf card whose request is not cached yet draws blank.
+                let card = ShelfThumbnailCache.Request.workshop(entry, coverRevision: WallpaperCoverStore.shared.revision(of: name))
+                Task {
+                    _ = await thumbnails.image(card, pixelSize: Self.thumbnailPixelSize, scale: NSScreen.main?.backingScaleFactor ?? 2)
+                    library?.refresh()
+                }
+            }
+        )
+    }
+
+    /// `isNewest`: no newer capture was asked for since. `target` is read again once the frame is in, so a switch, an
+    /// edit or a re-import meanwhile drops the save; `store` gets the entry as read then.
+    static func saveWorkshopCover(
+        after delay: Duration,
+        isNewest: () -> Bool,
+        target: () -> WPEHistoryEntry?,
+        capture: () async -> CGImage?,
+        store: (CGImage, WPEHistoryEntry) -> Void
+    ) async {
+        guard let planned = target() else { return }
+        if delay > .zero {
+            try? await Task.sleep(for: delay)
+        }
+        guard isNewest(), let frame = await capture(), isNewest(),
+              let current = target(), current.id == planned.id, current.importedAt == planned.importedAt else { return }
+        store(frame, current)
+    }
+
+    /// The history entry of the Workshop project `configuration` runs as its author made it: a scene with no
+    /// property edits or preset, a web page with none of its own settings changed. nil for anything else.
+    static func workshopCoverEntry(running configuration: ScreenConfiguration, in history: [WPEHistoryEntry]) -> WPEHistoryEntry? {
+        guard let origin = configuration.wpeOrigin, let entry = history.first(where: { $0.id == origin.workshopID }) else {
+            return nil
+        }
+        switch configuration.activeWallpaper {
+        case let .scene(descriptor):
+            return descriptor.propertyOverrides.isEmpty && descriptor.presetID == nil ? entry : nil
+        case let .html(source, config):
+            let key = WallpaperEngineProjectIdentity.key(source: source, origin: origin)
+            return config.projectWallpaperEngineProperties(forProjectKey: key).isEmpty ? entry : nil
+        case .video:
+            return entry
+        }
+    }
+    #endif
 
     /// A cover shows what its display runs now only once the newest capture asked for has landed: until then,
     /// and for good when a capture fails, it is the wallpaper the display ran before.

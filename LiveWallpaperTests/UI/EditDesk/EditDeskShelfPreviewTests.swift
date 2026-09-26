@@ -226,5 +226,20 @@ extension EditDeskStageViewTests {
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
         #expect(ShelfThumbnailCache.Request.workshop(entry).scenePreviewOrigin == origin)
     }
+
+    @Test("A Workshop card showing its saved cover or its video's frame plays no GIF; one showing the author's GIF still does")
+    func workshopCardPlaysOnlyTheAuthorsGIF() {
+        let entry = WPEHistoryEntry(origin: Self.sceneOrigin(preview: "preview.gif"), importedAt: Date(timeIntervalSince1970: 0))
+        let video = WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "456", title: "Video", originalType: .video, sourceFolderBookmark: Data([2]),
+            cacheRelativePath: nil, previewFileName: "preview.gif", entryFile: "clip.mp4"
+        ), importedAt: Date(timeIntervalSince1970: 0))
+        func playsGIF(_ request: ShelfThumbnailCache.Request) -> Bool {
+            ShelfPreviewPlayback.displaysGIF(showsPicture: true, previewOrigin: request.scenePreviewOrigin)
+        }
+        #expect(playsGIF(.workshop(entry)), "control: the author's GIF no longer plays")
+        #expect(!playsGIF(.workshop(entry, coverRevision: 1)), "a card showing its saved cover played the author's GIF")
+        #expect(!playsGIF(.workshop(video)), "a card showing its video's frame played the author's GIF")
+    }
     #endif
 }

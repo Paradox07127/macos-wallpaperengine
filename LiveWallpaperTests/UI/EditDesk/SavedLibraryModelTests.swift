@@ -737,6 +737,54 @@ struct SavedLibraryModelTests {
         #expect(FileManager.default.fileExists(atPath: covers.appendingPathComponent(current).path), "the sweep deleted the current import's cover")
         #expect(!FileManager.default.fileExists(atPath: covers.appendingPathComponent(stale).path), "the cover of the replaced import outlived the sweep")
     }
+
+    @Test("A Workshop card draws the saved cover of the import it lists: each write decodes it again, and a re-import leaves the old cover unread")
+    func workshopCardFollowsItsSavedCover() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("workshop-card-cover-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = WallpaperCoverStore(directory: ConfigurationDirectory(root: root))
+        let context = try #require(CGContext(
+            data: nil, width: 64, height: 36, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let frame = try #require(context.makeImage())
+        let imported = WPEHistoryEntry(origin: origin("42"), importedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        var history = [imported]
+        var source = inputs()
+        source.history = { history }
+        source.workshopCoverRevision = { entry in
+            WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt)
+                .flatMap { store.revision(of: $0) }
+        }
+        let model = SavedLibraryModel(inputs: source)
+        var decodes: [String] = []
+        var sources = ShelfThumbnailCache.Sources()
+        sources.scene = { _, _ in decodes.append("author"); return frame }
+        sources.coverThumbnail = { name, _ in decodes.append(name); return frame }
+        let cache = ShelfThumbnailCache(sources: sources)
+        func drawCard() async throws {
+            let request = try #require(model.items.first { $0.id == "workshop:42" }?.thumbnail)
+            _ = try #require(await cache.image(request, pixelSize: CGSize(width: 64, height: 36), scale: 2))
+        }
+
+        try await drawCard()
+        #expect(decodes == ["author"], "control: with no cover saved the card draws the author's preview")
+        let name = try #require(store.storeWorkshopCover(frame, workshopID: "42", importedAt: imported.importedAt))
+        model.refresh()
+        try await drawCard()
+        #expect(decodes == ["author", name], Comment(rawValue: "after the cover was saved the card drew \(decodes)"))
+        _ = try #require(store.storeWorkshopCover(frame, workshopID: "42", importedAt: imported.importedAt))
+        model.refresh()
+        try await drawCard()
+        try await drawCard()
+        #expect(decodes == ["author", name, name], Comment(rawValue: "a rewritten cover, drawn twice, decoded as \(decodes)"))
+
+        history = [WPEHistoryEntry(origin: origin("42"), importedAt: Date(timeIntervalSince1970: 1_727_000_000))]
+        model.refresh()
+        try await drawCard()
+        #expect(decodes.last == "author", Comment(rawValue: "the re-imported project drew \(decodes)"))
+    }
     #endif
 
     @Test("Preparing the library sweeps covers against every saved entry, once")

@@ -825,5 +825,130 @@ struct ModalActionsTests {
         try untagged.mergeSteam(steamItem(tags: []), now: Self.posted, locale: locale)
         #expect(untagged.tags.map(\.label) == ["Local tag"])
     }
+
+    // MARK: A Workshop project's saved cover
+
+    @Test("The modal takes a Workshop row's saved cover before the frame of the video it plays; a live frame still comes first")
+    func savedWorkshopCoverLeadsTheModal() async throws {
+        let fixture = Fixture()
+        let cover = try image()
+        let frame = try image()
+        var decodes: [String] = []
+        var sources = ShelfThumbnailCache.Sources()
+        sources.cover = { name in decodes.append(name); return cover }
+        sources.videoFrame = { _, _, _ in decodes.append("frame"); return frame }
+        sources.scene = { _, _ in decodes.append("author"); return nil }
+        var inputs = fixture.inputs()
+        inputs.workshopVideo = { _ in .video(bookmarkData: Data([9])) }
+        let modal = fixture.modal(inputs: inputs, cache: ShelfThumbnailCache(sources: sources))
+        var item = workshop("3441187616", importedAt: Date(timeIntervalSince1970: 1_727_000_000))
+        guard case let .workshop(entry) = item.source else {
+            Issue.record("not a Workshop row")
+            return
+        }
+        let name = try #require(WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt))
+        let box = CGSize(width: 680, height: 510)
+
+        item.thumbnail = .workshop(entry, coverRevision: 1)
+        let saved = await modal.preview(for: item, box: box, liveStill: nil)
+        #expect(saved === cover, Comment(rawValue: "the modal decoded \(decodes)"))
+        let live = try image()
+        #expect(await modal.preview(for: item, box: box, liveStill: live) === live)
+        item.thumbnail = .workshop(entry)
+        #expect(await modal.preview(for: item, box: box, liveStill: nil) === frame, "control: without a saved cover the video's frame is next")
+        #expect(decodes == [name, "frame"], Comment(rawValue: "\(decodes)"))
+    }
+
+    private func coverEntry() -> WPEHistoryEntry {
+        WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "3413921910", title: "Meteors", originalType: .scene, sourceFolderBookmark: Data([4]),
+            cacheRelativePath: nil, previewFileName: "preview.gif"
+        ), importedAt: Date(timeIntervalSince1970: 1_727_000_000))
+    }
+
+    private func running(_ content: WallpaperContent, project: String = "3413921910", type: WPEType = .scene) -> ScreenConfiguration {
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: content)
+        configuration.wpeOrigin = WPEOrigin(
+            workshopID: project, title: "", originalType: type, sourceFolderBookmark: Data([4]),
+            cacheRelativePath: nil, previewFileName: nil, entryFile: "index.html"
+        )
+        return configuration
+    }
+
+    @Test("Only a display running a Workshop project as its author made it saves that project's cover: an edit, a preset, a saved variant or a web page's own settings do not")
+    func onlyAnUnmodifiedRunSavesTheCover() {
+        let entry = coverEntry()
+        func target(_ configuration: ScreenConfiguration) -> WPEHistoryEntry? {
+            HomePage.workshopCoverEntry(running: configuration, in: [entry])
+        }
+        let scene = SceneDescriptor(workshopID: "3413921910", cacheRelativePath: "3413921910", entryFile: "scene.json", capabilityTier: .imageOnly)
+        #expect(target(running(.scene(scene))) == entry, "control: the project as its author made it")
+        #expect(target(running(.scene(scene.withPropertyOverrides(["speed": .number(2)])))) == nil, "a property edit")
+        #expect(target(running(.scene(scene.withPresetLayer(id: "calm", snapshot: ["speed": .number(1)])))) == nil, "a preset")
+        let variant = WallpaperBookmark(label: "Variant", content: .scene(
+            scene.withPresetLayer(id: "calm", snapshot: ["speed": .number(1)]).withPropertyOverrides(["color": .string("1 0 0")])
+        ), wpeOrigin: entry.origin)
+        #expect(target(running(variant.content)) == nil, "a saved variant")
+
+        let page = HTMLSource.folder(bookmarkData: Data([5]), indexFileName: "index.html")
+        var edited = HTMLConfig()
+        edited.setWallpaperEngineProjectProperties(["schemecolor": .string("1 0 0")], forProjectKey: WallpaperEngineProjectIdentity.key(source: page))
+        #expect(target(running(.html(source: page, config: HTMLConfig()), type: .web)) == entry, "control: a web page with none of its settings changed")
+        #expect(target(running(.html(source: page, config: edited), type: .web)) == nil, "a web page with its own settings changed")
+        #expect(target(running(.video(bookmarkData: Data([6])), type: .video)) == entry, "a video, which has nothing to change")
+
+        #expect(target(running(.scene(scene), project: "999")) == nil, "a project the library does not list")
+        #expect(target(ScreenConfiguration(screenID: 1, wallpaper: .scene(scene))) == nil, "a scene with no Workshop project")
+    }
+
+    @Test("A cover save waits out its delay, and a newer capture asked for by then or during its own capture drops it")
+    func aNewerCaptureDropsTheCoverSave() async throws {
+        let entry = coverEntry()
+        let frame = try image()
+        var captures = 0
+        var stored: [WPEHistoryEntry] = []
+        let start = ContinuousClock.now
+        await HomePage.saveWorkshopCover(
+            after: .milliseconds(50), isNewest: { true }, target: { entry },
+            capture: { captures += 1; return frame }, store: { stored.append($1) }
+        )
+        #expect(ContinuousClock.now - start >= .milliseconds(50), "the frame was taken before the delay ran out")
+        #expect(captures == 1 && stored == [entry], "control: a save nothing overtook stored nothing")
+
+        await HomePage.saveWorkshopCover(
+            after: .milliseconds(1), isNewest: { false }, target: { entry },
+            capture: { captures += 1; return frame }, store: { stored.append($1) }
+        )
+        #expect(captures == 1, "a save a newer capture overtook during its wait still took a frame")
+        var newest = true
+        await HomePage.saveWorkshopCover(
+            after: .zero, isNewest: { newest }, target: { entry },
+            capture: { newest = false; return frame }, store: { stored.append($1) }
+        )
+        #expect(stored == [entry], Comment(rawValue: "an overtaken save was stored: \(stored.count) saves"))
+    }
+
+    @Test("A cover save is dropped when, by the time its frame is in, the display runs another project or the project was re-imported")
+    func aChangedTargetDropsTheCoverSave() async throws {
+        let entry = coverEntry()
+        let frame = try image()
+        var stored: [WPEHistoryEntry] = []
+        let reimported = WPEHistoryEntry(origin: entry.origin, importedAt: entry.importedAt.addingTimeInterval(60))
+        for later in [reimported, nil] {
+            var now: WPEHistoryEntry? = entry
+            await HomePage.saveWorkshopCover(
+                after: .zero, isNewest: { true }, target: { now },
+                capture: { now = later; return frame }, store: { stored.append($1) }
+            )
+        }
+        #expect(stored.isEmpty, Comment(rawValue: "\(stored.count) saves outlived a change of project or import"))
+        // Control: a use recorded meanwhile leaves the import as it was; the save carries the entry as it reads now.
+        var now = entry
+        await HomePage.saveWorkshopCover(
+            after: .zero, isNewest: { true }, target: { now },
+            capture: { now.lastUsedAt = Date(); return frame }, store: { stored.append($1) }
+        )
+        #expect(stored == [now])
+    }
     #endif
 }

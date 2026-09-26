@@ -43,7 +43,8 @@ enum WallpaperCoverCapture {
 
     // MARK: - Sources
 
-    private static func wallpaperFrame(
+    /// The wallpaper's own frame at its own aspect, not placed on the display-shaped canvas the covers above use.
+    static func wallpaperFrame(
         screen: Screen,
         configuration: ScreenConfiguration
     ) async -> NSImage? {

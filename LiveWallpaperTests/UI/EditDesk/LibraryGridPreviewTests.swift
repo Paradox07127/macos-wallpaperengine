@@ -44,7 +44,8 @@ private final class GridPreviewScreen: NSScreen {
 /// Which frame of the test GIF a sample shows: cyan is its first frame, the poster. Judged by hue, so it
 /// still reads through the dimming a dragged tile takes.
 private enum FrameHue: Equatable {
-    case cyan, yellow, magenta, other
+    /// `blue` is none of the GIF's frames: the saved cover a Workshop tile draws.
+    case cyan, yellow, magenta, blue, other
 
     init(_ color: ProbeColor) {
         let margin = 25
@@ -55,6 +56,8 @@ private enum FrameHue: Equatable {
             self = .yellow
         } else if r - g > margin, b - g > margin, abs(r - b) < margin {
             self = .magenta
+        } else if b - r > margin, b - g > margin {
+            self = .blue
         } else {
             self = .other
         }
@@ -73,10 +76,16 @@ private struct GridPreviewScenes {
         case gif, otherGIF, still
     }
 
+    /// Workshop projects with a preview GIF like `.gif`'s; a host lists them only when asked to.
+    enum Project: CaseIterable {
+        case covered, plain
+    }
+
     static let frames = [ProbeRenderer.hudCyan, ProbeRenderer.inspectorYellow, ProbeRenderer.heroMagenta]
 
     let root: URL
     let bookmarks: [Row: WallpaperBookmark]
+    let projects: [Project: WPEHistoryEntry]
 
     init() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("grid-preview-\(UUID().uuidString)", isDirectory: true)
@@ -97,6 +106,19 @@ private struct GridPreviewScenes {
             bookmarks[row] = WallpaperBookmark(label: "\(row)", content: .scene(scene), wpeOrigin: origin)
         }
         self.bookmarks = bookmarks
+        var projects: [Project: WPEHistoryEntry] = [:]
+        for project in Project.allCases {
+            let folder = root.appendingPathComponent("\(project)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Self.encode(Self.frames, as: .gif, to: folder.appendingPathComponent("preview.gif"))
+            let origin = try WPEOrigin(
+                workshopID: "grid-preview-\(project)-\(UUID().uuidString)", title: "\(project)", originalType: .scene,
+                sourceFolderBookmark: folder.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil),
+                cacheRelativePath: nil, previewFileName: "preview.gif"
+            )
+            projects[project] = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
+        }
+        self.projects = projects
     }
 
     private static func encode(_ colors: [NSColor], as type: UTType, to url: URL) throws {
@@ -137,12 +159,15 @@ private final class GridPreviewHost {
     let library: SavedLibraryModel
     let preview = LibraryGridPreview()
     private let scenes: GridPreviewScenes
+    /// The covered project's cover in the shared store, which the page's own thumbnail cache reads.
+    private var savedCover: String?
     /// Settings → hover to play preview, as the page reads it.
     var autoplay = true
     /// Every frame load the grid asked for, by its long edge in pixels.
     private(set) var loads: [Int] = []
 
-    init() throws {
+    /// `listsProjects`: the library also lists the Workshop projects, `.covered` with a blue saved cover.
+    init(listsProjects: Bool = false) throws {
         scenes = try GridPreviewScenes()
         manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
@@ -155,6 +180,20 @@ private final class GridPreviewHost {
         let rows = GridPreviewScenes.Row.allCases.compactMap { bookmarks[$0] }
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { rows }
+        if listsProjects {
+            let entries = scenes.projects
+            let projects = GridPreviewScenes.Project.allCases.compactMap { entries[$0] }
+            let covered = try #require(entries[.covered])
+            savedCover = try #require(WallpaperCoverStore.shared.storeWorkshopCover(
+                ProbeRenderer.solid(ProbeRenderer.thumbnailBlue, size: CGSize(width: 1024, height: 576)),
+                workshopID: covered.origin.workshopID, importedAt: covered.importedAt
+            ))
+            inputs.history = { projects }
+            inputs.workshopCoverRevision = { entry in
+                WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt)
+                    .flatMap { WallpaperCoverStore.shared.revision(of: $0) }
+            }
+        }
         library = SavedLibraryModel(inputs: inputs)
         let router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
         let page = HomePage(router: router, toasts: EditDeskToastCenter(), library: library, gridPreview: preview)
@@ -192,6 +231,9 @@ private final class GridPreviewHost {
         window.close()
         manager.tearDownForTermination()
         try? FileManager.default.removeItem(at: scenes.root)
+        if let savedCover {
+            WallpaperCoverStore.shared.remove(named: savedCover)
+        }
     }
 
     private static func views(_ root: NSView) -> [NSView] {
@@ -238,9 +280,18 @@ private final class GridPreviewHost {
 
     func tile(_ row: GridPreviewScenes.Row) throws -> Tile {
         let bookmark = try #require(scenes.bookmarks[row])
+        return try tile(id: "bookmark:\(bookmark.id)")
+    }
+
+    func tile(_ project: GridPreviewScenes.Project) throws -> Tile {
+        let entry = try #require(scenes.projects[project])
+        return try tile(id: "workshop:\(entry.id)")
+    }
+
+    private func tile(id: String) throws -> Tile {
         let model = try #require(stage?.model)
-        let found = library.visibleItems.firstIndex { $0.id == "bookmark:\(bookmark.id)" }
-        let index = try #require(found, "no tile for \(row)")
+        let found = library.visibleItems.firstIndex { $0.id == id }
+        let index = try #require(found, "no tile for \(id)")
         let item = library.visibleItems[index]
         let frame = StageGeometry.gridFrame(index: index, windowWidth: Self.size.width, size: model.gridTileSize)
         let thumbnail = try #require(HomePage.gridThumbnail(
@@ -455,6 +506,36 @@ struct LibraryGridPreviewTests {
         #expect(clickOpens, "a click on a playing tile no longer opens its detail")
         let covered = host.preview.covered
         #expect(covered, "the detail over the grid leaves the preview free to play")
+    }
+
+    @Test("A Workshop tile showing its saved cover never plays the author's GIF, nor does its shelf card name one; the author's GIF beside it still plays", .timeLimit(.minutes(1)))
+    func savedCoverTileStaysStill() async throws {
+        let host = try GridPreviewHost(listsProjects: true)
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let covered = try host.tile(.covered)
+        let plain = try host.tile(.plain)
+        let drawn = await host.settle(seconds: 3) {
+            (try? host.hue(at: covered.sample)) == .blue && (try? host.hue(at: plain.sample)) == .cyan
+        }
+        let coveredHue = try? host.hue(at: covered.sample)
+        #expect(drawn, Comment(rawValue: "the covered tile shows \(String(describing: coveredHue)), not its saved cover, or the plain one lacks its GIF's first frame"))
+        let cards = host.stage?.model.shelfItems ?? []
+        let coveredCardNamesGIF = cards.first { $0.id == covered.id }?.previewOrigin != nil
+        let plainCardNamesGIF = cards.first { $0.id == plain.id }?.previewOrigin != nil
+        #expect(!coveredCardNamesGIF, "the covered project's shelf card still names the author's GIF")
+        #expect(plainCardNamesGIF, "control: the plain project's shelf card no longer names its GIF")
+
+        host.preview.settledID = covered.id
+        let seen = await host.hues(at: covered.sample, for: 0.6)
+        let still = !seen.isEmpty && seen.allSatisfy { $0 == .blue }
+        #expect(still, Comment(rawValue: "the settled covered tile showed \(seen)"))
+        let loads = host.loads.count
+        #expect(loads == 0, "the covered tile still decoded the author's GIF")
+
+        host.preview.settledID = plain.id
+        let played = await host.plays(at: plain.sample)
+        #expect(played, "control: the author's GIF tile beside it never played")
     }
 }
 #endif

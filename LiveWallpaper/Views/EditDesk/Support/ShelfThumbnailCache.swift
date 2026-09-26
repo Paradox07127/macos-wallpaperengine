@@ -12,7 +12,8 @@ final class ShelfThumbnailCache {
         case bookmark(WallpaperBookmark)
         case aerial(AerialPreview)
         #if !LITE_BUILD
-        case workshop(WPEHistoryEntry)
+        /// `coverRevision`: the revision of the import's saved cover, new with every write of it; nil while it has none.
+        case workshop(WPEHistoryEntry, coverRevision: Int? = nil)
         #endif
 
         fileprivate var identity: String {
@@ -20,7 +21,7 @@ final class ShelfThumbnailCache {
             case let .bookmark(bookmark): "bookmark:\(bookmark.id)"
             case let .aerial(preview): preview.key.previewKey
             #if !LITE_BUILD
-            case let .workshop(entry): "workshop:\(entry.id)"
+            case let .workshop(entry, _): "workshop:\(entry.id)"
             #endif
             }
         }
@@ -37,7 +38,8 @@ final class ShelfThumbnailCache {
                 return bookmark.wpeOrigin
             case .aerial:
                 return nil
-            case let .workshop(entry):
+            case let .workshop(entry, coverRevision):
+                guard coverRevision == nil, entry.origin.originalType != .video else { return nil }
                 return entry.origin
             }
             #endif
@@ -115,6 +117,13 @@ final class ShelfThumbnailCache {
                 }
             }.value
         }
+
+        /// A saved cover decoded straight to at most the given long side, outside the store's full-size cache.
+        var coverThumbnail: @MainActor (String, Int) async -> CGImage? = { name, maxPixelSize in
+            await WallpaperCoverStore.shared.cover(named: name, maxPixelSize: maxPixelSize)
+        }
+
+        var workshopContent: @MainActor (WPEOrigin) -> WallpaperContent? = { WPECachedContentResolver().content(for: $0) }
         #endif
     }
 
@@ -251,7 +260,17 @@ final class ShelfThumbnailCache {
         case let .aerial(preview):
             return await sources.video(preview.bookmarkData, nil, "shelf.\(preview.key.previewKey)")
         #if !LITE_BUILD
-        case let .workshop(entry):
+        case let .workshop(entry, coverRevision):
+            if coverRevision != nil,
+               let name = WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt),
+               let image = await sources.coverThumbnail(name, Int(max(pixelSize.width, pixelSize.height))) {
+                return image
+            }
+            if entry.origin.originalType == .video,
+               case let .video(data, packageEntryName)? = sources.workshopContent(entry.origin),
+               let image = await sources.videoFrame(data, packageEntryName, pixelSize) {
+                return image
+            }
             return await sources.scene(entry.origin, pixelSize)
         #endif
         }
@@ -284,7 +303,12 @@ final class ShelfThumbnailCache {
         case let .aerial(preview):
             return await sources.videoFrame(preview.bookmarkData, nil, box)
         #if !LITE_BUILD
-        case let .workshop(entry):
+        case let .workshop(entry, coverRevision):
+            if coverRevision != nil,
+               let name = WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt),
+               let image = await sources.cover(name) {
+                return image
+            }
             if case let .video(data, packageEntryName)? = video,
                let image = await sources.videoFrame(data, packageEntryName, box) {
                 return image
