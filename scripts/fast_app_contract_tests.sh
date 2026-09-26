@@ -78,6 +78,7 @@ SUITES=(
   WorkshopFolderImportCoordinatorTests
   DesktopPictureFrameExtractorTests
   WorkshopDateLanguageTests
+  SparkleUpdaterOwnershipTests
   SystemMemoryPressureWatcherTests
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests

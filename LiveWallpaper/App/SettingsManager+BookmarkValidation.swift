@@ -35,6 +35,7 @@ extension SettingsManager {
             if resolved.didRefresh {
                 let updatedConfig = configuration.withUpdatedActiveBookmark(resolved.bookmarkData)
                 saveConfiguration(updatedConfig)
+                SchemeStore.shared.replaceVideoBookmark(matching: bookmarkData, with: resolved.bookmarkData)
                 Logger.info("Refreshed stale bookmark for screen \(screenID)", category: .fileAccess)
             }
 

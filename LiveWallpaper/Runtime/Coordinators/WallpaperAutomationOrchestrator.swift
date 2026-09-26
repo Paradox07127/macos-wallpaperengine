@@ -217,6 +217,9 @@ final class WallpaperAutomationOrchestrator {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let updated = config.withUpdatedActiveBookmark(bookmarkData)
         saveConfiguration(updated)
+        if let original = config.activeWallpaper.activeVideoBookmarkData {
+            SchemeStore.shared.replaceVideoBookmark(matching: original, with: bookmarkData)
+        }
     }
 
     func updateWallpaperMode(_ mode: WallpaperMode, for screen: Screen) {

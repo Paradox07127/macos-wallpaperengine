@@ -231,4 +231,35 @@ struct GlobalSettingsTests {
         let old = Data("{\"pauseOnFullScreen\": true}".utf8)
         #expect(try JSONDecoder().decode(GlobalSettings.self, from: old).screenNames.isEmpty)
     }
+
+    private static let shortcutOverrides: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?] = [
+        GlobalShortcutAction.togglePlayback.rawAction: GlobalShortcutBinding(keyCode: 49, modifiers: [.command, .shift]),
+        GlobalShortcutAction.toggleMute.rawAction: .none,
+        "retiredAction": GlobalShortcutBinding(keyCode: 1, modifiers: [.option]),
+    ]
+
+    @Test("One unreadable shortcut binding costs that action only, not every override")
+    func unreadableShortcutBindingDropsOnlyItself() throws {
+        var settings = GlobalSettings()
+        settings.globalShortcuts = Self.shortcutOverrides
+        settings.globalShortcuts[GlobalShortcutAction.nextWallpaper.rawAction] = GlobalShortcutBinding(keyCode: 124, modifiers: [.control])
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        var shortcuts = try #require(json["globalShortcuts"] as? [String: Any])
+        shortcuts[GlobalShortcutAction.nextWallpaper.rawAction] = ["keyCode": "not-a-key-code"]
+        json["globalShortcuts"] = shortcuts
+
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: JSONSerialization.data(withJSONObject: json))
+
+        #expect(decoded.globalShortcuts == Self.shortcutOverrides, "one bad binding reset every shortcut to its default")
+    }
+
+    @Test("Readable overrides round-trip, including a cleared one and an action this build does not know")
+    func readableShortcutOverridesRoundTrip() throws {
+        var settings = GlobalSettings()
+        settings.globalShortcuts = Self.shortcutOverrides
+
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: JSONEncoder().encode(settings))
+
+        #expect(decoded.globalShortcuts == Self.shortcutOverrides)
+    }
 }

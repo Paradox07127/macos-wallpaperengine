@@ -67,13 +67,17 @@ final class SparkleUpdaterController {
         availableVersion = version
     }
 
-    /// A completed check that turned up nothing — the only thing that withdraws a pending update.
+    /// A completed check that turned up nothing withdraws a pending update.
     func noteNoUpdateFound() {
         availableVersion = nil
     }
 
-    /// Deliberately leaves `availableVersion` alone. Clearing it here would make dismissing the alert look like already current.
-    func noteUpdateSessionFinished() {}
+    /// Remind Me Later and Skip This Version both end here; only a skip, recorded in Sparkle's defaults, withdraws the version.
+    func noteUpdateSessionFinished(defaults: UserDefaults = .standard) {
+        if let skipped = defaults.string(forKey: Self.sparkleSkippedVersionKey), skipped == availableVersion {
+            availableVersion = nil
+        }
+    }
 
     /// Kept out of `init` so construction never reaches the network.
     func start() {
@@ -94,6 +98,8 @@ final class SparkleUpdaterController {
     nonisolated static let legacyCheckAtLaunchKey = "loomscreen.update.checkAtLaunch.v1"
     /// Read from the user-defaults layer alone. `SUEnableAutomaticChecks` is also in both Info.plists, so Sparkle's merged value is never unset.
     nonisolated static let sparkleAutomaticChecksKey = "SUEnableAutomaticChecks"
+    /// Holds the skipped item's `sparkle:version`; `generate-appcast.sh` keeps that equal to the display version compared against it.
+    nonisolated static let sparkleSkippedVersionKey = "SUSkippedVersion"
 
     nonisolated static func legacyOptOutToCarryOver(
         defaults: UserDefaults,

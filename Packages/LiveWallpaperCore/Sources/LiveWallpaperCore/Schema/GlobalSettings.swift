@@ -145,7 +145,7 @@ public struct GlobalSettings: Codable, Sendable {
         showInDock = try c.decodeIfPresent(Bool.self, forKey: .showInDock) ?? false
         weatherLocation = (try? c.decodeIfPresent(WeatherLocationPreference.self, forKey: .weatherLocation)) ?? .default
         globalShortcutsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .globalShortcutsEnabled)) ?? true
-        globalShortcuts = (try? c.decodeIfPresent([GlobalShortcutAction.RawAction: GlobalShortcutBinding?].self, forKey: .globalShortcuts)) ?? [:]
+        globalShortcuts = c.decodeLossyStringDictionary(forKey: .globalShortcuts) ?? [:]
         recentWPEImports = Self.decodeLossyArray(WPEHistoryEntry.self, from: c, forKey: .recentWPEImports)
         deletedWorkshopIDs = (try? c.decodeIfPresent([String].self, forKey: .deletedWorkshopIDs)) ?? []
         applicationPerformanceRules = Self.decodeLossyArray(ApplicationPerformanceRule.self, from: c, forKey: .applicationPerformanceRules)

@@ -283,6 +283,27 @@ struct SchemeStoreTests {
 
         #expect(store.schemes.isEmpty)
     }
+
+    @Test("A refreshed video grant reaches the scheme that archives it and leaves the others alone")
+    func videoBookmarkRefreshReachesTheMatchingScheme() {
+        let (store, persistence) = makeStore()
+        let stale = Data([0x01])
+        let refreshed = Data([0x02])
+        let holder = store.add(
+            name: "Holder", configuration: ScreenConfiguration(screenID: 1, videoBookmarkData: stale), overlay: .default
+        )
+        let other = store.add(
+            name: "Other", configuration: ScreenConfiguration(screenID: 1, videoBookmarkData: Data([0x03])), overlay: .default
+        )
+
+        store.replaceVideoBookmark(matching: stale, with: refreshed)
+
+        #expect(
+            persistence.stored.first { $0.id == holder.id }?.configuration.videoBookmarkData == refreshed,
+            "the scheme still archives the stale grant after the video was refreshed"
+        )
+        #expect(store.schemes.first { $0.id == other.id }?.configuration == other.configuration)
+    }
 }
 
 @Suite("ScreenScheme decode resilience")

@@ -235,4 +235,22 @@ struct SparkleUpdaterOwnershipTests {
 
         #expect(updater.availableVersion == nil)
     }
+
+    @MainActor
+    @Test("Skip This Version withdraws the found version; an older skip leaves a newer one standing")
+    func skippingTheFoundVersionWithdrawsIt() throws {
+        let updater = SparkleUpdaterController.shared
+        defer { updater.noteNoUpdateFound() }
+        let sparkle = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.SparkleUpdater")
+        defer { sparkle.discard() }
+        updater.noteUpdateFound(version: "0.6.2")
+
+        sparkle.defaults.set("0.6.1", forKey: "SUSkippedVersion")
+        updater.noteUpdateSessionFinished(defaults: sparkle.defaults)
+        #expect(updater.availableVersion == "0.6.2", "a skip of an older version withdrew a newer update")
+
+        sparkle.defaults.set("0.6.2", forKey: "SUSkippedVersion")
+        updater.noteUpdateSessionFinished(defaults: sparkle.defaults)
+        #expect(updater.availableVersion == nil, "the version the user skipped still shows as available")
+    }
 }

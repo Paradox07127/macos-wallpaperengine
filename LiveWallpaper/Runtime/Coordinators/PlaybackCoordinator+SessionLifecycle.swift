@@ -175,6 +175,7 @@ extension PlaybackCoordinator {
             let effectiveConfiguration: ScreenConfiguration
             if resolved.didRefresh {
                 effectiveConfiguration = configuration.withUpdatedActiveBookmark(resolved.bookmarkData)
+                SchemeStore.shared.replaceVideoBookmark(matching: bookmarkData, with: resolved.bookmarkData)
             } else {
                 effectiveConfiguration = configuration
             }

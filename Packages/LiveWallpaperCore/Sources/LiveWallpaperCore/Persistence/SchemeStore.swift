@@ -146,6 +146,20 @@ public final class SchemeStore {
         return changed
     }
 
+    /// Matches a scheme whose active video is the refreshed grant, the same rewrite the screen's own refresh makes.
+    @discardableResult
+    public func replaceVideoBookmark(matching original: Data, with refreshed: Data) -> Int {
+        var changed = 0
+        for index in schemes.indices where schemes[index].configuration.activeWallpaper.activeVideoBookmarkData == original {
+            schemes[index].configuration = schemes[index].configuration.withUpdatedActiveBookmark(refreshed)
+            changed += 1
+        }
+        if changed > 0 {
+            persist()
+        }
+        return changed
+    }
+
     private func persist() {
         persistence.save(schemes)
     }
