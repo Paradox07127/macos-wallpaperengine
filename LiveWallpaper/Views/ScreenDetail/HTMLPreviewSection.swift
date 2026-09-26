@@ -206,20 +206,17 @@ struct HTMLPreviewSection: View {
 }
 
 enum HTMLPreviewKey {
+    /// Process-local: `hashValue` changes every launch, so this key must never be persisted.
     static func key(for source: HTMLSource, config: HTMLConfig) -> String {
-        let sourceKey: String
-        switch source {
+        let sourceKey = switch source {
         case .url(let url):
-            sourceKey = "html.url::" + url.absoluteString
+            "html.url::" + url.absoluteString
         case .file(let bookmark):
-            sourceKey = "html.file::" + String(bookmark.base64EncodedString().prefix(40))
+            "html.file::" + String(bookmark.hashValue)
         case .folder(let bookmark, let index):
-            sourceKey = "html.folder::"
-                + String(bookmark.base64EncodedString().prefix(40))
-                + "::"
-                + index
+            "html.folder::" + String(bookmark.hashValue) + "::" + index
         case .inline(let html):
-            sourceKey = "html.inline::" + String(html.hashValue)
+            "html.inline::" + String(html.hashValue)
         }
         return sourceKey + "::config::" + configurationFingerprint(config)
     }
@@ -305,7 +302,10 @@ enum HTMLPreviewKey {
     }
 
     private static func configurationFingerprint(_ config: HTMLConfig) -> String {
-        guard let data = try? JSONEncoder().encode(config) else {
+        let encoder = JSONEncoder()
+        // Without `.sortedKeys` the key order varies between encodes of one value, so the key would flap.
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(config) else {
             return String(describing: config)
         }
         // Process-local cache, so Swift's per-process randomized hash is fine and

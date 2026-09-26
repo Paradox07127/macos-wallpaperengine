@@ -731,6 +731,22 @@ struct HTMLPreviewLoadStateTests {
         let didFinishInvalidatedLoad = state.finish(load)
         #expect(!didFinishInvalidatedLoad)
     }
+
+    @Test("Bookmarks sharing a long prefix get distinct preview keys; one bookmark keeps one key")
+    func previewKeyCoversTheWholeBookmark() {
+        let sharedPrefix = Data(repeating: 0x42, count: 64)
+        let first = sharedPrefix + Data([1])
+        let second = sharedPrefix + Data([2])
+        let config = HTMLConfig.default
+
+        #expect(HTMLPreviewKey.key(for: .file(bookmarkData: first), config: config)
+            != HTMLPreviewKey.key(for: .file(bookmarkData: second), config: config))
+        #expect(HTMLPreviewKey.key(for: .folder(bookmarkData: first, indexFileName: "index.html"), config: config)
+            != HTMLPreviewKey.key(for: .folder(bookmarkData: second, indexFileName: "index.html"), config: config))
+        // Control: evaluating the same bookmark twice is one identity.
+        #expect(HTMLPreviewKey.key(for: .file(bookmarkData: first), config: config)
+            == HTMLPreviewKey.key(for: .file(bookmarkData: Data(first)), config: config))
+    }
 }
 
 @Suite("HTML live preview capture identity")

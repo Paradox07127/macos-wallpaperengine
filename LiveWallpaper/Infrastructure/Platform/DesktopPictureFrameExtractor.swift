@@ -13,6 +13,8 @@ enum DesktopPictureFrameExtractor {
         case encodingFailed
         /// macOS refused the new desktop picture, or the file could not be written.
         case installFailed
+        /// A later request for the same screen started while this one decoded; that one installs.
+        case superseded
     }
 
     static func applyCurrentFrame(
@@ -30,8 +32,29 @@ enum DesktopPictureFrameExtractor {
         let currentTime = player.currentTime()
         nonisolated(unsafe) let generator = imageGenerator
 
+        return await applyFrame(
+            { try await generator.image(at: currentTime).image },
+            screenID: screenID,
+            nsScreen: nsScreen,
+            install: { url, screen in try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:]) }
+        )
+    }
+
+    /// Newest request number per screen; a request that finds a larger one after its decode is stale.
+    private static var latestRequest: [CGDirectDisplayID: UInt64] = [:]
+
+    /// `frame` and `install` are the two side effects tests replace.
+    static func applyFrame(
+        _ frame: @MainActor () async throws -> CGImage,
+        screenID: CGDirectDisplayID,
+        nsScreen: NSScreen?,
+        install: @MainActor (URL, NSScreen) throws -> Void
+    ) async -> Outcome {
+        let request = (latestRequest[screenID] ?? 0) &+ 1
+        latestRequest[screenID] = request
         do {
-            let (cgImage, _) = try await generator.image(at: currentTime)
+            let cgImage = try await frame()
+            guard latestRequest[screenID] == request else { return .superseded }
             let nsImage = NSImage(
                 cgImage: cgImage,
                 size: NSSize(width: cgImage.width, height: cgImage.height)
@@ -48,7 +71,8 @@ enum DesktopPictureFrameExtractor {
             }
 
             do {
-                try pngData.write(to: tempURL)
+                // `.atomic` writes a uniquely named sibling and renames it over the target, so the system never reads a half-written PNG.
+                try pngData.write(to: tempURL, options: .atomic)
             } catch {
                 // Distinct from the decode failure below: the frame was read
                 // fine and the disk refused it.
@@ -58,7 +82,7 @@ enum DesktopPictureFrameExtractor {
 
             guard let nsScreen else { return .installFailed }
             do {
-                try NSWorkspace.shared.setDesktopImageURL(tempURL, for: nsScreen, options: [:])
+                try install(tempURL, nsScreen)
                 Logger.info("Updated desktop picture for screen \(screenID)", category: .screenManager)
                 return .captured
             } catch {
