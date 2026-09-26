@@ -276,6 +276,10 @@ struct DisplayDetailTests {
         #expect(DetailFacts.video(format: VideoFormatInfo(), fileSize: nil).isEmpty)
     }
 
+    private func trust(_ source: HTMLSource, trusted: Set<TrustedHTMLOrigin> = []) -> HTMLTrust {
+        HTMLTrust.evaluate(source: source, trustedOrigins: trusted)
+    }
+
     @Test("A web page flags plain HTTP and disabled JavaScript as warnings")
     @MainActor
     func webFactsFlagHTTPAndNoJavaScript() throws {
@@ -283,24 +287,40 @@ struct DisplayDetailTests {
         config.allowJavaScript = false
         config.physicalPixelLayout = true
         config.allowMouseInteraction = true
-        let http = try #require(URL(string: "http://example.com"))
-        let facts = DetailFacts.web(source: .url(http), config: config)
+        let http = try #require(URL(string: "http://192.168.1.10"))
+        let origin = try #require(TrustedHTMLOrigin(url: http))
+        let facts = DetailFacts.web(source: .url(http), config: config, trust: trust(.url(http), trusted: [origin]), sharedWith: 0)
         #expect(facts.map(\.text) == [
             "HTTP",
+            String(localized: "Trusted", bundle: .appLanguage),
             String(localized: "No JS", bundle: .appLanguage),
             String(localized: "Phys PX", bundle: .appLanguage),
             String(localized: "Clicks", bundle: .appLanguage),
         ])
-        #expect(facts.map(\.isWarning) == [true, true, false, false])
+        #expect(facts.map(\.isWarning) == [true, false, true, false, false])
+    }
+
+    @Test("An untrusted page says so in place of JS, a loopback server says Local, and a page on other displays counts them")
+    @MainActor
+    func webFactsNameTheTrustAndTheSharedDisplays() throws {
         let https = try #require(URL(string: "https://example.com"))
-        #expect(DetailFacts.web(source: .url(https), config: .default).map(\.text) == ["JS"])
+        let untrusted = DetailFacts.web(source: .url(https), config: .default, trust: trust(.url(https)), sharedWith: 0)
+        #expect(untrusted.map(\.text) == [String(localized: "Untrusted", bundle: .appLanguage)])
+        #expect(untrusted.map(\.isWarning) == [true])
+        let server = try #require(URL(string: "http://localhost:3000"))
+        let loopback = DetailFacts.web(source: .url(server), config: .default, trust: trust(.url(server)), sharedWith: 1)
+        #expect(loopback.map(\.text) == [
+            String(localized: "Local", bundle: .appLanguage),
+            "JS",
+            String(localized: "\(2)× Active", bundle: .appLanguage),
+        ])
     }
 
     @Test("A local page with JavaScript on has nothing to flag")
     @MainActor
     func localWebPageHasNoFacts() {
         let folder = HTMLSource.folder(bookmarkData: Data(), indexFileName: "index.html")
-        #expect(DetailFacts.web(source: folder, config: .default).isEmpty)
+        #expect(DetailFacts.web(source: folder, config: .default, trust: trust(folder), sharedWith: 0).isEmpty)
     }
 
     #if !LITE_BUILD
@@ -327,6 +347,21 @@ struct DisplayDetailTests {
             descriptor: sceneDescriptor(assetStorage: .cache, dependencies: [])
         )
         #expect(facts.isEmpty)
+    }
+
+    @Test("The Workshop button searches for a Steam item by its title, and no other ID gets one")
+    @MainActor
+    func workshopSearchNeedsASteamID() {
+        func origin(_ workshopID: String) -> WPEOrigin {
+            WPEOrigin(
+                workshopID: workshopID, title: "Rain", originalType: .scene, sourceFolderBookmark: Data(),
+                cacheRelativePath: nil, previewFileName: nil
+            )
+        }
+        #expect(DetailSceneStatus.workshopSearchQuery(for: origin("3448877775")) == "Rain")
+        // Control: a local import or a missing ID has nothing to search for.
+        #expect(DetailSceneStatus.workshopSearchQuery(for: origin("local-abc")) == nil)
+        #expect(DetailSceneStatus.workshopSearchQuery(for: origin("")) == nil)
     }
 
     private func sceneOrigin(requiresWindowsPlugin: Bool) -> WPEOrigin {

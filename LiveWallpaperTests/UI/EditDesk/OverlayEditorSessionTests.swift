@@ -113,6 +113,22 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
+    @Test("Copying one kind copies only it, and a target counts as done once that kind matches")
+    func copyOneKind() throws {
+        let store = FakeOverlayStore()
+        store.snapshots[store.displays[1]]?.overlay.music.x = 0.2
+        let session = opened(store)
+        let id = try #require(session.interaction.placements.first?.id)
+        session.interaction.moveWidget(id: id, direction: .right)
+        // Display 3 has no wallpaper, which only an effect copy needs.
+        #expect(session.copyToOtherDisplays([.music]) == OverlayEditorSession.CopyResult(copied: 2, total: 2))
+        #expect(store.copiedKinds == [.music])
+        let source = try #require(store.snapshots[store.displays[0]]?.overlay)
+        #expect(store.snapshots[store.displays[1]]?.overlay.music == source.music)
+        #expect(store.snapshots[store.displays[1]]?.overlay.board != source.board, "the widgets went along with the music")
+        session.detach()
+    }
+
     @Test("Music can overlap a widget without moving it; music and clock write only on release")
     func overlayDoesNotResolveBoardCollisions() throws {
         let store = FakeOverlayStore()

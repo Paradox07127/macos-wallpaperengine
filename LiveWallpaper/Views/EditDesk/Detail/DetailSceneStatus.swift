@@ -27,6 +27,11 @@ struct DetailSceneStatus {
         }
     }
 
+    /// What the Workshop button searches for; nil unless the ID is a Steam one, all digits.
+    static func workshopSearchQuery(for origin: WPEOrigin) -> String? {
+        !origin.workshopID.isEmpty && origin.workshopID.allSatisfy(\.isNumber) ? origin.title : nil
+    }
+
     func logSheet(onDismiss: @escaping () -> Void) -> DiagnosticLogSheet {
         DiagnosticLogSheet(
             title: origin.title,

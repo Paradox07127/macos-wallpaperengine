@@ -6,13 +6,15 @@ struct LayerNavigator: View {
     let session: OverlayEditorSession
     let rows: [OverlayLayerRow]
     let height: CGFloat
+    /// Copies one top-level layer's kind to the other displays, given the row's name; nil offers no copy.
+    var copyLayer: ((OverlayKind, String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { row in
-                        OverlayLayerRowView(session: session, row: row)
+                        OverlayLayerRowView(session: session, row: row, copyLayer: copyLayer)
                     }
                 }
                 .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
@@ -26,6 +28,8 @@ struct LayerNavigator: View {
 private struct OverlayLayerRowView: View {
     let session: OverlayEditorSession
     let row: OverlayLayerRow
+    let copyLayer: ((OverlayKind, String) -> Void)?
+    @Environment(ScreenManager.self) private var screenManager
     @State private var hovered = false
 
     var body: some View {
@@ -56,6 +60,23 @@ private struct OverlayLayerRowView: View {
                 .fill(fill)
         )
         .onHover { hovered = $0 }
+        .contextMenu {
+            if let copyLayer, let kind = copiedKind {
+                Button("Copy to Other Displays") { copyLayer(kind, name) }
+                    .disabled(screenManager.screens.count < 2 || (isEffect && !session.canEditEffect))
+            }
+        }
+    }
+
+    /// nil for a single widget: the copy moves the whole board.
+    private var copiedKind: OverlayKind? {
+        switch row.kind {
+        case .board: .monitor
+        case .clock: .clock
+        case .music: .music
+        case .effect: .weather
+        case .widget: nil
+        }
     }
 
     @ViewBuilder

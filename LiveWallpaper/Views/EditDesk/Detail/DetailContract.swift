@@ -122,22 +122,39 @@ enum DetailFacts {
         return facts
     }
 
-    static func web(source: HTMLSource?, config: HTMLConfig) -> [DetailFact] {
-        guard let source else { return [] }
+    /// `sharedWith`: how many other displays run the same page.
+    static func web(source: HTMLSource, config: HTMLConfig, trust: HTMLTrust, sharedWith: Int) -> [DetailFact] {
         var facts: [DetailFact] = []
         if source.isInsecureURL {
             facts.append(DetailFact(text: "HTTP", isWarning: true))
         }
-        if case .url = source, config.allowJavaScript {
-            facts.append(DetailFact(text: "JS"))
-        } else if !config.allowJavaScript {
-            facts.append(DetailFact(text: String(localized: "No JS", bundle: .appLanguage), isWarning: true))
+        var scriptsFollowConfig = true
+        switch trust {
+        case .localContent:
+            break
+        case let .trustedRemote(origin):
+            let label = origin.isLoopback ? String(localized: "Local", bundle: .appLanguage) : String(localized: "Trusted", bundle: .appLanguage)
+            facts.append(DetailFact(text: label))
+        case .untrustedRemote:
+            facts.append(DetailFact(text: String(localized: "Untrusted", bundle: .appLanguage), isWarning: true))
+            // `HTMLTrust.effectiveAllowJavaScript` turns scripts off here whatever the config asks.
+            scriptsFollowConfig = false
+        }
+        if scriptsFollowConfig {
+            if case .url = source, config.allowJavaScript {
+                facts.append(DetailFact(text: "JS"))
+            } else if !config.allowJavaScript {
+                facts.append(DetailFact(text: String(localized: "No JS", bundle: .appLanguage), isWarning: true))
+            }
         }
         if config.physicalPixelLayout {
             facts.append(DetailFact(text: String(localized: "Phys PX", bundle: .appLanguage)))
         }
         if config.allowMouseInteraction {
             facts.append(DetailFact(text: String(localized: "Clicks", bundle: .appLanguage)))
+        }
+        if sharedWith > 0 {
+            facts.append(DetailFact(text: String(localized: "\(sharedWith + 1)× Active", bundle: .appLanguage)))
         }
         return facts
     }

@@ -50,7 +50,7 @@ struct DisplayDetailHost: View {
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
     @State private var showAutomation = false
-    @State private var confirmsOverlayCopy = false
+    @State private var overlayCopy: OverlayCopyRequest?
     @State private var pendingDestructive: PendingDestructive?
     /// Set by Manage Schemes and Choose from Library: their page opens once the tile is home, not under
     /// the return flight.
@@ -67,6 +67,12 @@ struct DisplayDetailHost: View {
         case schemes
         /// The wallpaper grid, choosing for this display.
         case wallpapers(for: CGDirectDisplayID)
+    }
+
+    /// The top bar copies every kind; a layer row's menu copies its own, named as the row names it.
+    private enum OverlayCopyRequest {
+        case all
+        case kind(OverlayKind, name: String)
     }
 
     var body: some View {
@@ -122,7 +128,7 @@ struct DisplayDetailHost: View {
             if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
                 overlaySession?.detach()
                 overlaySession = nil
-                confirmsOverlayCopy = false
+                overlayCopy = nil
             }
         }
         .onDisappear {
@@ -154,7 +160,8 @@ struct DisplayDetailHost: View {
                                      inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
                                      topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
                                      recapture: { refreshCover(id); overlaySession.capturePreview() },
-                                     swipe: { swipe($0) }, switchEdge: switchEdge)
+                                     swipe: { swipe($0) }, switchEdge: switchEdge,
+                                     copyLayer: { requestOverlayCopy(.kind($0, name: $1)) })
                 }
             },
             isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
@@ -199,11 +206,22 @@ struct DisplayDetailHost: View {
                 }
             }
             .confirmDestructive($pendingDestructive)
-            .confirmationDialog("Copy overlays to other displays?", isPresented: $confirmsOverlayCopy, titleVisibility: .visible) {
-                Button("Copy to Other Displays") { copyOverlays(on: screen) }
+            .confirmationDialog(
+                "Copy overlays to other displays?",
+                isPresented: overlayCopyPresented, titleVisibility: .visible, presenting: overlayCopy
+            ) { request in
+                Button("Copy to Other Displays") { copyOverlays(request, on: screen) }
                 Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper.")
+            } message: { request in
+                switch request {
+                case .all:
+                    Text("This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper.")
+                case let .kind(_, name):
+                    Text(
+                        "This replaces the \(name) overlay on \(screenManager.screens.count - 1) other displays. Their wallpapers are left alone.",
+                        comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
+                    )
+                }
             }
             #if !LITE_BUILD
             .infoOverlay(isPresented: $showsSceneLog) { dismiss in
@@ -242,7 +260,7 @@ struct DisplayDetailHost: View {
         }
         if id != coordinator?.shownDisplayID {
             overlaySession?.detach()
-            confirmsOverlayCopy = false
+            overlayCopy = nil
             webTransformArmed = false
             closeShownFailure()
         } else if let session = overlaySession, section == .overlay, !session.isActive {
@@ -335,9 +353,14 @@ struct DisplayDetailHost: View {
         } else {
             #if !LITE_BUILD
             if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)),
-               scene.renderFailure != nil {
+               DetailSceneStatus.workshopSearchQuery(for: scene.origin) != nil || scene.renderFailure != nil {
                 hudBar(for: screen) {
-                    SceneDiagnosticsButton { showsSceneLog = true }
+                    if let query = DetailSceneStatus.workshopSearchQuery(for: scene.origin) {
+                        WorkshopSearchButton(workshopID: scene.origin.workshopID, query: query)
+                    }
+                    if scene.renderFailure != nil {
+                        SceneDiagnosticsButton { showsSceneLog = true }
+                    }
                 }
             } else {
                 hudBar(for: screen) { EmptyView() }
@@ -684,7 +707,12 @@ struct DisplayDetailHost: View {
             }
             return DetailFacts.video(format: screen.videoPlayer?.formatInfo, fileSize: fileSize)
         case .html:
-            return DetailFacts.web(source: draft.htmlSource, config: draft.htmlConfig)
+            guard let source = draft.htmlSource else { return [] }
+            return DetailFacts.web(
+                source: source, config: draft.htmlConfig,
+                trust: HTMLTrust.evaluate(source: source, trustedOrigins: TrustedHostStore.shared.originSet),
+                sharedWith: screenManager.htmlCoordinator.screensRunningSameSource(as: source, excluding: screen.id).count
+            )
         case .scene:
             #if !LITE_BUILD
             if let scene = DetailSceneStatus(screen: screen, configuration: configuration) {
@@ -728,12 +756,7 @@ struct DisplayDetailHost: View {
                 }
             },
             recapture: { refreshCover(screen.id) },
-            copyOverlays: {
-                if let session = overlaySession {
-                    session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
-                }
-                confirmsOverlayCopy = true
-            },
+            copyOverlays: { requestOverlayCopy(.all) },
             snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 }),
             openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil,
             resumeSchedule: { screenManager.resumeSchedule(for: screen) },
@@ -804,8 +827,27 @@ struct DisplayDetailHost: View {
         }
     }
 
-    private func copyOverlays(on screen: Screen) {
-        guard let result = overlaySession?.copyToOtherDisplays() else { return }
+    private var overlayCopyPresented: Binding<Bool> {
+        Binding(get: { overlayCopy != nil }, set: { presented in
+            if !presented {
+                overlayCopy = nil
+            }
+        })
+    }
+
+    private func requestOverlayCopy(_ request: OverlayCopyRequest) {
+        if let session = overlaySession {
+            session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
+        }
+        overlayCopy = request
+    }
+
+    private func copyOverlays(_ request: OverlayCopyRequest, on screen: Screen) {
+        let kinds: [OverlayKind] = switch request {
+        case .all: OverlayKind.allCases
+        case let .kind(kind, _): [kind]
+        }
+        guard let result = overlaySession?.copyToOtherDisplays(kinds) else { return }
         toasts.post(
             String(format: String(localized: "Copied to %lld / %lld displays", bundle: .appLanguage),
                    Int64(result.copied), Int64(result.total)),
@@ -836,3 +878,25 @@ private struct WebRenderingButton: View {
         }
     }
 }
+
+#if !LITE_BUILD
+private struct WorkshopSearchButton: View {
+    let workshopID: String
+    let query: String
+
+    var body: some View {
+        Button {
+            WorkshopDeepLink.requestSearch(query)
+            NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
+        } label: {
+            PreviewControlLabel(systemImage: "cube.transparent.fill", title: "Workshop")
+        }
+        .buttonStyle(.borderless)
+        .help(Text("Find this item in the Workshop"))
+        .accessibilityLabel(Text(
+            "Workshop ID \(workshopID). Find in Workshop.",
+            comment: "A11y label for the Workshop button on the scene preview bar. The placeholder is the numeric Workshop ID."
+        ))
+    }
+}
+#endif

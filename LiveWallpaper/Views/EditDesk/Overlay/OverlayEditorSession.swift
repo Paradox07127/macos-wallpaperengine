@@ -599,22 +599,37 @@ final class OverlayEditorSession {
         refreshAppliedConfiguration()
     }
 
-    func copyToOtherDisplays() -> CopyResult {
+    func copyToOtherDisplays(_ kinds: [OverlayKind] = OverlayKind.allCases) -> CopyResult {
         guard let identity, let store else { return CopyResult(copied: 0, total: 0) }
         let editing = isActive
         transition(to: identity, store: store, editing: editing)
         let targets = store.displays.filter { $0 != identity }
         let source = store.read(identity)
-        for kind in OverlayKind.allCases {
+        for kind in kinds {
             store.copy(kind, from: identity)
         }
         let copied = targets.filter { target in
-            guard let source, let actual = store.read(target), actual.overlay == source.overlay,
-                  let sourceConfig = source.configuration, let targetConfig = actual.configuration else { return false }
+            guard let source, let actual = store.read(target) else { return false }
+            return kinds.allSatisfy { Self.copied($0, from: source, to: actual) }
+        }.count
+        return CopyResult(copied: copied, total: targets.count)
+    }
+
+    /// The fields `ScreenManager.applyOverlayToAllDisplays` writes for each kind.
+    private static func copied(_ kind: OverlayKind, from source: OverlayEditorSnapshot, to target: OverlayEditorSnapshot) -> Bool {
+        switch kind {
+        case .monitor:
+            return target.overlay.enabled == source.overlay.enabled && target.overlay.level == source.overlay.level
+                && target.overlay.board == source.overlay.board
+        case .music:
+            return target.overlay.music == source.overlay.music
+        case .clock:
+            return target.overlay.clock == source.overlay.clock
+        case .weather:
+            guard let sourceConfig = source.configuration, let targetConfig = target.configuration else { return false }
             var expected = targetConfig
             expected.adoptWeatherOverlay(from: sourceConfig)
             return expected == targetConfig
-        }.count
-        return CopyResult(copied: copied, total: targets.count)
+        }
     }
 }

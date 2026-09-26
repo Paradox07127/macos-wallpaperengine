@@ -20,6 +20,7 @@ struct OverlayWorkspace: View {
     let swipe: (DetailSwipeStep) -> Void
     /// The side this display's canvas slides in from when another display is switched to.
     let switchEdge: HorizontalEdge
+    let copyLayer: ((OverlayKind, String) -> Void)?
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -33,8 +34,10 @@ struct OverlayWorkspace: View {
          inspectorWidth: Binding<Double>, liveInspectorWidth: Binding<Double?>,
          topInset: CGFloat = 0, recapture: @escaping () -> Void,
          swipe: @escaping (DetailSwipeStep) -> Void, switchEdge: HorizontalEdge,
-         dragController: OverlayAddDragController = OverlayAddDragController()) {
+         dragController: OverlayAddDragController = OverlayAddDragController(),
+         copyLayer: ((OverlayKind, String) -> Void)? = nil) {
         self.session = session
+        self.copyLayer = copyLayer
         _addDrag = State(initialValue: dragController)
         self.cover = cover
         self.screen = screen
@@ -207,7 +210,8 @@ struct OverlayWorkspace: View {
                 Divider().padding(.horizontal, 12)
                 LayerNavigator(session: session, rows: rows,
                                height: min(CGFloat(rows.count) * OverlayWorkspaceLayout.rowHeight,
-                                           max(30, min(300, availableHeight - 76))))
+                                           max(30, min(300, availableHeight - 76))),
+                               copyLayer: copyLayer)
                     .padding(.vertical, 6)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
