@@ -83,8 +83,6 @@ struct WorkshopPrivacySheet: View {
             .padding(.top, DesignTokens.Spacing.xl)
             .padding(.bottom, DesignTokens.Spacing.lg)
 
-            Divider()
-
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                     ForEach(WorkshopLegalContent.points) { point in

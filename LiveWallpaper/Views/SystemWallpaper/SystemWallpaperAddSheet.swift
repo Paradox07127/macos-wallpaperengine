@@ -31,7 +31,6 @@ struct SystemWallpaperAddSheet: View {
                 .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
                 .padding(.vertical, DesignTokens.Spacing.md)
 
-            Divider()
             body(for: candidates)
             if !failures.isEmpty {
                 Text(verbatim: failures.joined(separator: "\n"))
@@ -41,8 +40,6 @@ struct SystemWallpaperAddSheet: View {
                     .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
                     .padding(.vertical, DesignTokens.Spacing.sm)
             }
-
-            Divider()
 
             SheetFooterBar(
                 primaryTitle: "Add",

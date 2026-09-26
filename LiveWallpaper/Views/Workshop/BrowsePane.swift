@@ -42,6 +42,7 @@ struct BrowsePane: View {
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
     @AppStorage("Workshop.Browse.InspectorWidth", store: .appScoped()) private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
     @State private var liveInspectorWidth: Double?
 
@@ -187,7 +188,9 @@ struct BrowsePane: View {
     private var gridColumn: some View {
         VStack(spacing: 0) {
             filterBand
-            Divider()
+            if !windowPaintsCanvas {
+                Divider()
+            }
             keyRejectedBanner
             content
                 .overlay(alignment: .top) { rateLimitBanner }

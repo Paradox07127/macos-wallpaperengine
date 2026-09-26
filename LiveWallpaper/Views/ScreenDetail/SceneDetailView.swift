@@ -757,7 +757,6 @@ struct DiagnosticLogSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             terminal
         }
         .frame(minWidth: 540, idealWidth: 680, minHeight: 380, idealHeight: 540)

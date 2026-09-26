@@ -36,7 +36,6 @@ struct AgentActivityPanel: View {
                 .padding(DesignTokens.Spacing.lg)
             filters
             sourceHealth
-            Divider()
             HSplitView {
                 sessionList.frame(minWidth: 260, idealWidth: 290, maxWidth: 360)
                 detail.frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)

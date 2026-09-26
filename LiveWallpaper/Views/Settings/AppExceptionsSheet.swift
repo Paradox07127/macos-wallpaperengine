@@ -12,7 +12,6 @@ struct AppExceptionsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             content
             footer
         }

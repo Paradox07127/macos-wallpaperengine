@@ -183,6 +183,9 @@ SUITES=(
   StatusCapsuleTests
   EditDeskChromeSourceTests
   EditDeskCanvasOwnershipTests
+  EditDeskPageSeparatorSourceTests
+  EditDeskBrowseSeparatorRenderTests
+  SheetSeparatorSourceTests
   SettingsSidebarLegibilityTests
   DisplayFloatLayerTests
   WallpaperModalTests

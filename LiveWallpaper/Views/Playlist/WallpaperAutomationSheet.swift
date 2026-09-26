@@ -192,7 +192,6 @@ struct WallpaperAutomationSheet: View {
                 .pickerStyle(.segmented).labelsHidden().frame(width: 270)
             }
             .padding(24)
-            Divider()
             Group {
                 if mode == .playlist {
                     queuePage
@@ -202,7 +201,6 @@ struct WallpaperAutomationSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.easeInOut(duration: reduceMotion ? 0 : 0.18), value: mode)
-            Divider()
             HStack {
                 if let error {
                     Text(verbatim: error).font(.caption).foregroundStyle(.red).lineLimit(2)

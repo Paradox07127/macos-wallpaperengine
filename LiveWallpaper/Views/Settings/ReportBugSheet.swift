@@ -16,8 +16,6 @@ struct ReportBugSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
-                Divider()
-
                 diagnosticPreview
             }
             .padding(20)

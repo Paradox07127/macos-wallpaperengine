@@ -5,6 +5,7 @@ import SwiftUI
 struct SchemeLibraryView: View {
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(ScreenManager.self) private var screenManager
+    @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
     @State private var store = SchemeStore.shared
     @State private var renamingID: UUID?
     @State private var renameDraft: String = ""
@@ -37,7 +38,9 @@ struct SchemeLibraryView: View {
             let visible = filteredSchemes
             VStack(spacing: 0) {
                 filterBar
-                Divider()
+                if !windowPaintsCanvas {
+                    Divider()
+                }
                 gallery(visible)
                 LibraryStatusBar(summary: statusSummary(shown: visible.count))
             }
