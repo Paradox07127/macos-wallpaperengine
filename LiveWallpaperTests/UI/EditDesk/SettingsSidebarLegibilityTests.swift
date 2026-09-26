@@ -61,6 +61,7 @@ struct SettingsSidebarLegibilityTests {
     }
 
     /// `ShortcutsView` is the only settings page that mounts `KeyCaptureMonitor` (one per shortcut row).
+    /// Its `makeNSView` returns a plain `NSView`; the name matches SwiftUI's host view, whose generic type carries the representable's.
     private static func showsShortcutsPage(_ window: NSWindow) -> Bool {
         guard let root = window.contentView else { return false }
         return views(root).contains { String(describing: type(of: $0)).contains("KeyCaptureMonitor") }
