@@ -101,19 +101,12 @@ enum StageWallpaperName {
     }
 }
 
-/// Failure chip drawn inside a display's content layer. Values are already resolved
-/// so the CALayer engine never touches SwiftUI types.
+/// Failure chip drawn inside a display's content layer. It carries the class, not a colour: the
+/// stage resolves the tint in `StagePalette`, under its window's appearance.
 struct StageFailureChip: Equatable {
     var symbol: String
     var text: String
-    var tint: CGColor
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.symbol == rhs.symbol
-            && lhs.text == rhs.text
-            && lhs.tint.components == rhs.tint.components
-            && lhs.tint.colorSpace?.name == rhs.tint.colorSpace?.name
-    }
+    var failureClass: WallpaperFailureClass
 }
 
 struct StageCard: Identifiable, Equatable {

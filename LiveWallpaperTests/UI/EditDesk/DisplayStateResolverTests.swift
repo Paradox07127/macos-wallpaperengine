@@ -33,6 +33,56 @@ struct DisplayStateResolverTests {
         await harness.waitUntil { harness.state == healthy }
     }
 
+    /// The main thread's drawing appearance after General → Appearance turns the window dark: AppKit
+    /// leaves it on light, and HomePage's `onReceive` / `onChange` actions run under it.
+    private static func offTier(_ body: () -> Void) {
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance(body)
+    }
+
+    @Test("After an appearance switch a failed display's next input update draws its chip for the window's appearance")
+    func failureChipFollowsTheWindowAppearance() async throws {
+        let harness = Harness(configured: true)
+        defer {
+            harness.manager.setCustomName(nil, for: harness.screen)
+            harness.close()
+        }
+        await harness.waitUntil { harness.state == .ok }
+        Self.offTier { harness.window.appearance = NSAppearance(named: .darkAqua) }
+        let stage = try #require(harness.stageView)
+        let shell = try #require(stage.displayLayers[harness.screen.id])
+        let darkName = try #require(StagePaint.resolved(DesignTokens.EditDesk.Colors.textPrimary, in: .darkAqua))
+        await harness.waitUntil { StagePaint.nameColor(shell) == darkName }
+        let loads = harness.manager.wallpaperLoads
+        let id = loads.begin(for: harness.screen, title: "Broken scene")
+        let cause = WallpaperFailureCause.runtime(.wallpaperPreparationFailed(type: .scene, timedOut: false))
+        loads.update(id, for: harness.screen) {
+            $0.phase = .failed
+            $0.failure = WallpaperFailureSnapshot(
+                id: id, title: "Broken scene", workshopID: nil, displayName: harness.screen.name,
+                stage: .loading, cause: cause, previousWallpaper: nil, timestamp: Date(), diagnostics: ""
+            )
+        }
+        await harness.waitUntil {
+            guard case .failed? = harness.state else { return false }
+            return true
+        }
+
+        // The rename is the failed display's input update; `onReceive` rebuilds every display's state on
+        // the spot, so HomePage reads the failure under the thread's appearance, not the window's.
+        Self.offTier {
+            harness.manager.setCustomName("Renamed", for: harness.screen)
+            NotificationCenter.default.post(name: .screensRefreshed, object: nil)
+        }
+        await harness.waitUntil { shell.display?.name == "Renamed" }
+        let failure = cause.failureClass
+        let expected = try #require(StagePaint.resolved(failure.tint, in: .darkAqua))
+        let chip = try #require(StagePaint.failureChip(of: shell))
+        #expect(chip.text.foregroundColor == expected, "the chip's text left the window's tier")
+        #expect(chip.dot.fillColor == expected, "the name row's dot left the window's tier")
+        let wantedGlyph = StageLayerStyle.symbol(failure.symbol, tint: expected)?.dataProvider?.data as Data?
+        #expect(StagePaint.bitmap(chip.glyph) == wantedGlyph, "the chip's glyph left the window's tier")
+    }
+
     @Test("A runtime failure leaves an apply's wait alone, a loading failure ends it, and stages keep their logged labels")
     func failureStageDecidesAnnouncement() async {
         let harness = Harness(configured: true)
@@ -269,7 +319,7 @@ struct DisplayStateResolverTests {
     private static func failed(_ cause: WallpaperFailureCause) -> StageDisplay.State {
         let classification = cause.failureClass
         return .failed(StageFailureChip(
-            symbol: classification.symbol, text: classification.kickerText, tint: NSColor(classification.tint).cgColor
+            symbol: classification.symbol, text: classification.kickerText, failureClass: classification
         ))
     }
 

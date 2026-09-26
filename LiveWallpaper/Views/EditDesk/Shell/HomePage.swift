@@ -1065,7 +1065,7 @@ struct HomePage: View {
             ?? screenManager.runtimeError(for: screen).map(WallpaperFailureCause.runtime) {
             let failureClass = cause.failureClass
             return .failed(StageFailureChip(
-                symbol: failureClass.symbol, text: failureClass.kickerText, tint: NSColor(failureClass.tint).cgColor
+                symbol: failureClass.symbol, text: failureClass.kickerText, failureClass: failureClass
             ))
         }
         guard screenManager.getConfiguration(for: screen) != nil else { return .empty }

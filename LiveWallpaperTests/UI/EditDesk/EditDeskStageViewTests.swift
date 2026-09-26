@@ -56,7 +56,7 @@ struct EditDeskStageViewTests {
         #expect(manual != policy)
         for text in [manual, policy] {
             display.state = .paused(reasonText: text)
-            shell.update(display: display, dropHint: "", increasedContrast: false)
+            shell.update(display: display, dropHint: "", palette: palette())
             shell.layoutContent()
             let group = try #require(shell.content.sublayers?.first { layer in
                 layer.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == text } == true
@@ -1470,6 +1470,9 @@ struct EditDeskStageViewTests {
             (.preparing(text: "Preparing"), { NSColor(colors.textSecondary).cgColor }),
             (.off(text: "Off"), { NSColor(colors.textTertiary).cgColor }),
             (.empty, { NSColor(colors.textTertiary).cgColor }),
+            (.failed(StageFailureChip(symbol: "xmark.octagon.fill", text: "Failed", failureClass: .fatal)), {
+                NSColor(WallpaperFailureClass.fatal.tint).cgColor
+            }),
         ]
         var display = model.displays[0]
         for (state, token) in cases {
@@ -1477,16 +1480,12 @@ struct EditDeskStageViewTests {
             var drawn: CGColor?
             var wanted: CGColor?
             NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
-                shell.update(display: display, dropHint: "", increasedContrast: false)
+                shell.update(display: display, dropHint: "", palette: palette())
                 drawn = dot.fillColor
                 wanted = token()
             }
             #expect(drawn == wanted, Comment(rawValue: "\(state)"))
         }
-        let chip = StageFailureChip(symbol: "xmark.octagon.fill", text: "Failed", tint: CGColor(red: 1, green: 0.2, blue: 0.2, alpha: 1))
-        display.state = .failed(chip)
-        shell.update(display: display, dropHint: "", increasedContrast: false)
-        #expect(dot.fillColor == chip.tint, "a failure's dot takes its chip's colour")
     }
 
     @Test("VoiceOver hears what each display plays and its state")
@@ -1675,7 +1674,7 @@ struct EditDeskStageViewTests {
             NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
                 tile.update(
                     card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
-                    increasedContrast: false
+                    palette: palette(appearance)
                 )
                 restColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).usingColorSpace(.sRGB)
                 hotColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCardHover.color).usingColorSpace(.sRGB)
@@ -1709,7 +1708,7 @@ struct EditDeskStageViewTests {
         let tile = ShelfCardLayer()
         tile.update(
             card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
-            increasedContrast: false
+            palette: palette()
         )
         func place(_ style: ShelfStyle, _ index: Int) -> (spine: CALayer, shadow: CGFloat) {
             let placement = StageGeometry.cardPlacement(
@@ -1738,7 +1737,7 @@ struct EditDeskStageViewTests {
         let tile = ShelfCardLayer()
         tile.update(
             card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
-            increasedContrast: false
+            palette: palette()
         )
         func place(_ progress: Double) -> CGSize {
             let placement = StageGeometry.cardPlacement(
@@ -1765,13 +1764,15 @@ struct EditDeskStageViewTests {
 
     private func refinedTile(_ appearance: NSAppearance.Name = .darkAqua, increasedContrast: Bool = false) -> ShelfCardLayer {
         let tile = ShelfCardLayer()
-        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
-            tile.update(
-                card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
-                increasedContrast: increasedContrast
-            )
-        }
+        tile.update(
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
+            palette: palette(appearance, increasedContrast: increasedContrast)
+        )
         return tile
+    }
+
+    private func palette(_ appearance: NSAppearance.Name = .darkAqua, increasedContrast: Bool = false) -> StagePalette {
+        StagePalette(appearance: NSAppearance(named: appearance)!, increasedContrast: increasedContrast)
     }
 
     /// Places `tile` the way `render` does, with `gridMix` read off `progress`.
@@ -1974,7 +1975,7 @@ struct EditDeskStageViewTests {
 
     private func badgedTile(on ids: [StageDisplay.ID], status: String? = nil) -> ShelfCardLayer {
         let tile = ShelfCardLayer()
-        tile.update(card: badgedCard(on: ids, status: status), increasedContrast: false)
+        tile.update(card: badgedCard(on: ids, status: status), palette: palette())
         return tile
     }
 
@@ -2083,7 +2084,7 @@ struct EditDeskStageViewTests {
         still("with the shelf down")
         pose(tile)
         #expect(tile.waveBars.allSatisfy { $0.animation(forKey: "wave") != nil }, "back on the shelf the bars stay still")
-        tile.update(card: badgedCard(on: [2]), increasedContrast: false)
+        tile.update(card: badgedCard(on: [2]), palette: palette())
         pose(tile)
         still("on a paused display")
     }
@@ -2450,7 +2451,7 @@ struct EditDeskStageViewTests {
         let tile = ShelfCardLayer()
         tile.update(
             card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
-            increasedContrast: false
+            palette: palette()
         )
         for focus in [6.0, 6.4] {
             for index in [2, 4, 5, 6, 7, 9] {
@@ -3222,7 +3223,7 @@ struct EditDeskStageViewTests {
         var display = model.displays[0]
         display.wallpaperTitle = "Aurora"
         display.wallpaperKind = "Video"
-        shell.update(display: display, dropHint: "", increasedContrast: false)
+        shell.update(display: display, dropHint: "", palette: palette())
         shell.layoutContent()
         let lines = try #require(shell.content.sublayers?.compactMap { $0 as? CATextLayer })
         #expect(lines.count == 2)
@@ -3260,7 +3261,7 @@ struct EditDeskStageViewTests {
 
         func show(_ configure: (inout StageDisplay) -> Void) {
             configure(&display)
-            shell.update(display: display, dropHint: "", increasedContrast: false)
+            shell.update(display: display, dropHint: "", palette: palette())
             shell.layoutContent()
             shell.setHovered(true, reduceMotion: true)
         }
@@ -3344,7 +3345,7 @@ struct EditDeskStageViewTests {
         display.state = .paused(reasonText: "Paused")
         display.showsPlaylistControls = true
         display.canTogglePlayback = true
-        shell.update(display: display, dropHint: "", increasedContrast: false)
+        shell.update(display: display, dropHint: "", palette: palette())
         shell.layoutContent()
         shell.setHovered(true, reduceMotion: true)
         let layout = StageGeometry.playbackLayout(content: shell.content.bounds.size, showsPlaylistControls: true)
@@ -3376,7 +3377,7 @@ struct EditDeskStageViewTests {
 
         for showsPlaylistControls in [true, false] {
             display.showsPlaylistControls = showsPlaylistControls
-            shell.update(display: display, dropHint: "", increasedContrast: false)
+            shell.update(display: display, dropHint: "", palette: palette())
             shell.layoutContent()
             let size = shell.content.bounds.size
             let container = StageGeometry.playbackLayout(

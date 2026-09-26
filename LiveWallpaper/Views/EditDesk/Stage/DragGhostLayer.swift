@@ -15,9 +15,9 @@ final class DragGhostLayer {
     var destination: CGRect?
     var flightOrigin = CGRect.zero
 
-    /// CGColors are resolved once, so an appearance change has to re-resolve them by hand.
-    func refreshPalette() {
-        image.borderColor = NSColor(DesignTokens.EditDesk.Colors.strokeHotShell).cgColor
+    func refreshPalette(_ palette: StagePalette) {
+        image.borderColor = palette.strokeHotShell
+        layer.shadowColor = palette.hoverCardShadow
     }
 
     init() {
@@ -26,8 +26,6 @@ final class DragGhostLayer {
         image.masksToBounds = true
         image.cornerRadius = DesignTokens.EditDesk.Corner.shelfCard
         image.borderWidth = 2
-        refreshPalette()
-        layer.shadowColor = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).cgColor
         layer.shadowRadius = DesignTokens.EditDesk.Shadow.hoverCard.radius
         layer.shadowOffset = CGSize(width: 0, height: DesignTokens.EditDesk.Shadow.hoverCard.y)
         layer.shadowOpacity = 1

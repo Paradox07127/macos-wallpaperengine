@@ -32,6 +32,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private static let reserveLimit = 8
     private var shelfStyle = ShelfStyle.crate
     private var highContrast = false
+    private lazy var palette = StagePalette(appearance: effectiveAppearance, increasedContrast: highContrast)
     /// A display's detail page has landed over the stage.
     private var detailCovering = false
     private var dropHint = ""
@@ -135,27 +136,22 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// CALayer keeps resolved CGColors, so every dynamic colour has to be re-read by hand when the
     /// window's appearance flips between light and dark, or when Increase Contrast changes tier.
     private func applyPalette() {
-        // Not every caller is a drawing callback: a contrast flip arrives on a plain observation
-        // task, where the current appearance is the app's rather than this view's.
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            cardFocusRing.borderColor = NSColor.keyboardFocusIndicatorColor.cgColor
-            ghost.refreshPalette()
-            for display in displays {
-                displayLayers[display.id]?.update(display: display, dropHint: dropHint, increasedContrast: highContrast)
-            }
-            for card in cards {
-                cardLayers[card.id]?.update(card: card, increasedContrast: highContrast)
-            }
+        palette = StagePalette(appearance: effectiveAppearance, increasedContrast: highContrast)
+        cardFocusRing.borderColor = palette.focusRing
+        ghost.refreshPalette(palette)
+        for display in displays {
+            displayLayers[display.id]?.update(display: display, dropHint: dropHint, palette: palette)
+        }
+        for card in cards {
+            cardLayers[card.id]?.update(card: card, palette: palette)
         }
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            withoutActions {
-                applyPalette()
-                render()
-            }
+        withoutActions {
+            applyPalette()
+            render()
         }
         startDisplayLinkIfNeeded()
     }
@@ -229,7 +225,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 arrangementLayer.addSublayer(shell.layer)
             }
             if displays.first(where: { $0.id == display.id }) != display || dropHint != model.dropHintText {
-                shell.update(display: display, dropHint: model.dropHintText, increasedContrast: highContrast)
+                shell.update(display: display, dropHint: model.dropHintText, palette: palette)
             }
         }
         let live = Set(nextCards.map(\.id))
@@ -244,7 +240,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         for card in nextCards where cardLayers[card.id] != nil {
             if cards.first(where: { $0.id == card.id }) != card {
-                cardLayers[card.id]?.update(card: card, increasedContrast: highContrast)
+                cardLayers[card.id]?.update(card: card, palette: palette)
             }
         }
         if cards.map(\.id) != nextCards.map(\.id) {
@@ -579,7 +575,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 tile = ShelfCardLayer()
                 shelfLayer.addSublayer(tile.layer)
             }
-            tile.update(card: cards[index], increasedContrast: highContrast)
+            tile.update(card: cards[index], palette: palette)
             tile.lift.jump(to: 0)
             tile.hover.jump(to: 0)
             tile.shakeElapsed = nil

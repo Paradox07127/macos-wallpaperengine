@@ -106,72 +106,65 @@ final class DisplayShellLayer {
         shell.lineWidth = 1
     }
 
-    func update(display: StageDisplay, dropHint: String, increasedContrast: Bool) {
+    func update(display: StageDisplay, dropHint: String, palette: StagePalette) {
         if self.display?.cover !== display.cover, coverFade == nil {
             cover.contents = display.cover
         }
         self.display = display
         layoutRect = nil
-        let colors = DesignTokens.EditDesk.Colors.self
-        let shellStroke = if display.state == .empty {
-            increasedContrast ? colors.strokeEmptyShellIncreased : colors.strokeEmptyShell
-        } else {
-            increasedContrast ? colors.strokeShellIncreased : colors.strokeShell
-        }
-        normalStroke = NSColor(shellStroke).cgColor
-        hotStroke = NSColor(colors.strokeHotShell).cgColor
+        normalStroke = display.state == .empty ? palette.emptyShellStroke : palette.shellStroke
+        hotStroke = palette.strokeHotShell
         shell.strokeColor = normalStroke
-        shell.fillColor = NSColor(colors.fillShell).cgColor
-        shell.shadowColor = NSColor(DesignTokens.EditDesk.Shadow.shell.color).cgColor
+        shell.fillColor = palette.fillShell
+        shell.shadowColor = palette.shellShadow
         shell.shadowRadius = DesignTokens.EditDesk.Shadow.shell.radius
         shell.shadowOffset = CGSize(width: 0, height: DesignTokens.EditDesk.Shadow.shell.y)
         // An empty display is a dashed outline, not an object, so it has nothing to cast.
         shell.shadowOpacity = display.state == .empty ? 0 : 1
-        stand.backgroundColor = NSColor(colors.strokeShell).withAlphaComponent(0.28).cgColor
+        stand.backgroundColor = palette.stand
         base.backgroundColor = stand.backgroundColor
-        notch.fillColor = NSColor(colors.background).cgColor
+        notch.fillColor = palette.background
         badge.string = display.badgeText
-        badge.backgroundColor = NSColor(colors.background).cgColor
-        badge.borderColor = NSColor(colors.strokeBadge).cgColor
-        badge.foregroundColor = NSColor(colors.textCapsule).cgColor
+        badge.backgroundColor = palette.background
+        badge.borderColor = palette.strokeBadge
+        badge.foregroundColor = palette.textCapsule
         title.string = display.wallpaperTitle
         title.foregroundColor = StageLayerStyle.white
         meta.string = display.wallpaperKind
         meta.foregroundColor = NSColor(cgColor: StageLayerStyle.white)?.withAlphaComponent(0.7).cgColor
         name.string = display.name
-        name.foregroundColor = NSColor(colors.textPrimary).cgColor
+        name.foregroundColor = palette.textPrimary
         status.string = display.statusText
-        status.foregroundColor = NSColor(increasedContrast ? colors.textCapsule : colors.textSecondary).cgColor
-        dot.fillColor = Self.statusDotColor(for: display.state)
-        gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientStageBottom).cgColor]
-        veil.backgroundColor = NSColor(colors.gradientCardBottom).cgColor
-        highlight.backgroundColor = NSColor(colors.dropHighlight).cgColor
-        highlight.borderColor = NSColor(colors.success).cgColor
-        highlight.shadowColor = NSColor(colors.dropHighlightGlow).cgColor
+        status.foregroundColor = palette.status
+        dot.fillColor = Self.statusDotColor(for: display.state, in: palette)
+        gradient.colors = [StageLayerStyle.clear, palette.gradientStageBottom]
+        veil.backgroundColor = palette.gradientCardBottom
+        highlight.backgroundColor = palette.dropHighlight
+        highlight.borderColor = palette.success
+        highlight.shadowColor = palette.dropHighlightGlow
         highlight.shadowRadius = 40
         highlight.shadowOpacity = 1
         hint.string = dropHint
         hint.foregroundColor = StageLayerStyle.white
-        playback.backgroundColor = NSColor(colors.playbackControlFill).cgColor
-        playback.borderColor = NSColor(colors.strokeBadge).withAlphaComponent(0.2).cgColor
+        playback.backgroundColor = palette.playbackControlFill
+        playback.borderColor = palette.playbackStroke
         for (index, glyph) in ["backward.fill", display.playbackGlyph, "forward.fill"].enumerated() {
             let button = buttons[index]
             button.backgroundColor = index == 1 ? StageLayerStyle.white : nil
-            let tint = NSColor(cgColor: index == 1 ? StageLayerStyle.black : StageLayerStyle.white) ?? NSColor(colors.textPrimary)
-            button.contents = StageLayerStyle.symbol(glyph, tint: tint)
+            button.contents = StageLayerStyle.symbol(glyph, tint: index == 1 ? StageLayerStyle.black : StageLayerStyle.white)
             button.isHidden = true
         }
         for item in transport {
             item.layer.isHidden = false
             item.layer.opacity = item.enabled ? 1 : Float(DesignTokens.Opacity.dimmedContent)
         }
-        empty.backgroundColor = NSColor(colors.fillEmptyScreen).cgColor
+        empty.backgroundColor = palette.fillEmptyScreen
         emptySymbol.contents = StageLayerStyle.symbol(
-            "photo", tint: NSColor(colors.emptyScreenPlaceholder),
+            "photo", tint: palette.emptyScreenPlaceholder,
             pointSize: StageGeometry.emptyScreenSymbolMaxSide
         )
         veil.isHidden = true
-        stateGroup.backgroundColor = NSColor(colors.background).cgColor
+        stateGroup.backgroundColor = palette.background
         stateGroup.isHidden = true
         stateLabel.isHidden = true
         stateSymbol.isHidden = true
@@ -187,21 +180,21 @@ final class DisplayShellLayer {
             stateLabel.isHidden = false
             stateSymbol.isHidden = false
             stateLabel.string = chip.text
-            stateLabel.foregroundColor = chip.tint
-            stateSymbol.contents = StageLayerStyle.symbol(chip.symbol, tint: NSColor(cgColor: chip.tint) ?? NSColor(colors.danger))
+            stateLabel.foregroundColor = palette.tint(for: chip.failureClass)
+            stateSymbol.contents = StageLayerStyle.symbol(chip.symbol, tint: palette.tint(for: chip.failureClass))
         case let .paused(text), let .preparing(text), let .off(text):
             veil.isHidden = false
             stateGroup.isHidden = false
             stateLabel.isHidden = false
             stateSymbol.isHidden = false
             stateLabel.string = text
-            stateLabel.foregroundColor = NSColor(colors.textCapsule).cgColor
+            stateLabel.foregroundColor = palette.textCapsule
             let glyph = switch display.state {
             case .preparing: "hourglass"
             case .off: "power"
             default: "pause.fill"
             }
-            stateSymbol.contents = StageLayerStyle.symbol(glyph, tint: NSColor(colors.textCapsule))
+            stateSymbol.contents = StageLayerStyle.symbol(glyph, tint: palette.textCapsule)
         case .ok, .empty:
             break
         }
@@ -209,14 +202,13 @@ final class DisplayShellLayer {
     }
 
     /// The name row's dot: green only while the wallpaper runs.
-    static func statusDotColor(for state: StageDisplay.State) -> CGColor {
-        let colors = DesignTokens.EditDesk.Colors.self
-        return switch state {
-        case .ok: NSColor(colors.success).cgColor
-        case .paused: NSColor(colors.warning).cgColor
-        case let .failed(chip): chip.tint
-        case .preparing: NSColor(colors.textSecondary).cgColor
-        case .off, .empty: NSColor(colors.textTertiary).cgColor
+    static func statusDotColor(for state: StageDisplay.State, in palette: StagePalette) -> CGColor {
+        switch state {
+        case .ok: palette.success
+        case .paused: palette.warning
+        case let .failed(chip): palette.tint(for: chip.failureClass)
+        case .preparing: palette.textSecondary
+        case .off, .empty: palette.textTertiary
         }
     }
 

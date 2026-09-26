@@ -159,12 +159,12 @@ struct EditDeskStageModelTests {
             #expect(changed != base)
         }
 
-        let chip = StageFailureChip(symbol: "xmark.octagon.fill", text: "Can't run on this Mac", tint: CGColor(gray: 0.5, alpha: 1))
+        let chip = StageFailureChip(symbol: "xmark.octagon.fill", text: "Can't run on this Mac", failureClass: .fatal)
         var failed = base
         failed.state = .failed(chip)
         var failedAgain = base
-        failedAgain.state = .failed(StageFailureChip(symbol: chip.symbol, text: chip.text, tint: CGColor(gray: 0.5, alpha: 1)))
-        #expect(failed == failedAgain, "Equal chips compare by value, not by CGColor identity")
+        failedAgain.state = .failed(StageFailureChip(symbol: chip.symbol, text: chip.text, failureClass: .fatal))
+        #expect(failed == failedAgain, "Equal chips compare by value")
     }
 
     @Test("The transport glyph offers the opposite of what the user asked for, a policy pause included")
@@ -200,7 +200,7 @@ struct EditDeskStageModelTests {
         #expect(three.displayNames == ["Built-in", "MPG", "Studio"])
         #expect(one.isLive)
         // Set but not drawing: the capsule still names the display and its bars stand still.
-        let chip = StageFailureChip(symbol: "exclamationmark.triangle", text: "Failed", tint: CGColor(gray: 0, alpha: 1))
+        let chip = StageFailureChip(symbol: "exclamationmark.triangle", text: "Failed", failureClass: .blocked)
         let idle: [StageDisplay.State] = [.paused(reasonText: "Paused"), .off(text: "Off"), .preparing(text: "Preparing"), .failed(chip)]
         for state in idle {
             let badge = try #require(NowPlayingBadge(on: [1], among: [display(1, "Studio", x: 0, state)]))

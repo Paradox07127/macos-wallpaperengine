@@ -91,10 +91,9 @@ final class ShelfCardLayer {
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
         badge.masksToBounds = true
         badge.alignmentMode = .center
-        update(card: nil, increasedContrast: false)
     }
 
-    func update(card: StageCard?, increasedContrast: Bool) {
+    func update(card: StageCard?, palette: StagePalette) {
         if self.card?.id != card?.id {
             layer.removeAnimation(forKey: "opacity")
             outline.removeAnimation(forKey: "opacity")
@@ -108,27 +107,25 @@ final class ShelfCardLayer {
         badge.string = status
         badge.isHidden = status == nil
         showNowPlaying(status == nil ? card?.nowPlaying : nil)
-        let colors = DesignTokens.EditDesk.Colors.self
         badge.foregroundColor = StageLayerStyle.black
-        badge.backgroundColor = NSColor(colors.warning).cgColor
-        thumbnail.backgroundColor = NSColor(DesignTokens.Colors.surfaceRaised).cgColor
-        thumbnail.borderColor = NSColor(increasedContrast ? colors.cardRimRingIncreased : colors.cardRimRing).cgColor
-        rimTop.backgroundColor = NSColor(colors.cardRimHighlight).cgColor
-        rimBottom.backgroundColor = NSColor(colors.cardRimShade).cgColor
+        badge.backgroundColor = palette.warning
+        thumbnail.backgroundColor = palette.surfaceRaised
+        thumbnail.borderColor = palette.cardRimRing
+        rimTop.backgroundColor = palette.cardRimHighlight
+        rimBottom.backgroundColor = palette.cardRimShade
         outline.borderColor = StageLayerStyle.white
-        spine.colors = [
-            NSColor(colors.strokeHotShell).withAlphaComponent(0.55).cgColor,
-            NSColor.black.withAlphaComponent(0.35).cgColor,
-        ]
-        tab.backgroundColor = NSColor(colors.strokeHotShell).withAlphaComponent(0.2).cgColor
-        gridStroke = NSColor(Color.primary.opacity(DesignTokens.Card.strokeOpacity)).cgColor
-        let restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
-        let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCardHover.color).cgColor
-        shadowTint = restShadow.copy(alpha: 1)
-        restShadowAlpha = restShadow.alpha
-        hotShadowAlpha = hotShadow.alpha
-        edgeShadow.shadowColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCardEdge.color).cgColor
-        gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientCardBottom).cgColor]
+        spine.colors = [palette.spine, NSColor.black.withAlphaComponent(0.35).cgColor]
+        tab.backgroundColor = palette.folderTab
+        gridStroke = palette.gridStroke
+        shadowTint = palette.shelfCardShadow.copy(alpha: 1)
+        restShadowAlpha = palette.shelfCardShadow.alpha
+        hotShadowAlpha = palette.shelfCardHoverShadow.alpha
+        edgeShadow.shadowColor = palette.shelfCardEdgeShadow
+        gradient.colors = [StageLayerStyle.clear, palette.gradientCardBottom]
+        capsule?.backgroundColor = palette.mediaChipFill
+        for bar in waveBars {
+            bar.backgroundColor = palette.nowPlayingGlyph
+        }
     }
 
     func place(_ placement: StageGeometry.CardPlacement, style: ShelfStyle, gridMix: CGFloat, dragged: Bool, reduceMotion: Bool) {
@@ -276,16 +273,13 @@ final class ShelfCardLayer {
         // or draws nothing once it passes half the width too.
         capsule.cornerRadius = 9
         capsule.cornerCurve = .continuous
-        capsule.backgroundColor = NSColor(DesignTokens.EditDesk.Colors.mediaChipFill).cgColor
         capsule.borderWidth = 0.5
         capsule.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
-        let glyph = NSColor(DesignTokens.EditDesk.Colors.nowPlayingGlyph).cgColor
         // 2×9pt bars 1.5pt apart after the 6pt inset, standing on the line that centres 9pt in 18pt;
         // at rest they are 5, 9 and 6pt tall.
         let restingScales: [CGFloat] = [5.0 / 9, 1, 6.0 / 9]
         waveBars = restingScales.enumerated().map { index, rest -> CALayer in
             let bar = CALayer()
-            bar.backgroundColor = glyph
             bar.cornerRadius = 1
             bar.cornerCurve = .continuous
             bar.anchorPoint = CGPoint(x: 0.5, y: 1)
@@ -362,8 +356,8 @@ enum StageLayerStyle {
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    static func symbol(_ name: String, tint: NSColor, pointSize: CGFloat = 11) -> CGImage? {
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+    static func symbol(_ name: String, tint: CGColor, pointSize: CGFloat = 11) -> CGImage? {
+        guard let tint = NSColor(cgColor: tint), let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))?
             .withSymbolConfiguration(.init(paletteColors: [tint])) else { return nil }
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
