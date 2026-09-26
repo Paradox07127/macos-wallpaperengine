@@ -40,6 +40,8 @@ struct HomePage: View {
     @State private var presentedItemID: String?
     /// A wallpaper dragged from the modal's preview or a grid tile toward the displays.
     @State private var libraryDrag = LibraryDragController()
+    /// Which grid tile plays its GIF preview on hover.
+    @State var gridPreview = LibraryGridPreview()
     /// The detail host reports its tile flights so the stage stays locked while a tile returns.
     @State private var detailBusy = false
     /// The empty display the paste-URL alert is open for; nil closes it.
@@ -906,7 +908,10 @@ struct HomePage: View {
                                         presentedItemID = item.id
                                     }
                                 } label: {
-                                    LibraryGridTile(item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges)
+                                    LibraryGridTile(
+                                        item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges,
+                                        preview: gridPreview
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
@@ -923,6 +928,8 @@ struct HomePage: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
+            .onChange(of: interactionLock || libraryDrag.payload != nil, initial: true) { gridPreview.covered = $1 }
+            .onChange(of: reduceMotion, initial: true) { gridPreview.reduceMotion = $1 }
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
             }
@@ -1659,6 +1666,8 @@ struct LibraryGridTile: View {
     let thumbnail: Thumbnail?
     let thumbnails: ShelfThumbnailCache
     let badges: LibraryCardBadges
+    /// nil for a tile that never plays its preview.
+    var preview: LibraryGridPreview?
     /// Held by the tile because the shared cache can evict it while the tile is still on screen.
     @State private var loaded: (thumbnail: Thumbnail, image: CGImage)?
     /// Bumped each time the tile comes back on screen: `tileTask` runs once per id, so that appearance loads again.
@@ -1682,10 +1691,8 @@ struct LibraryGridTile: View {
             // An overlay, not a ZStack sibling: `scaledToFill` reports the picture's own proportions, which would size the tile.
             DesignTokens.Colors.surfaceRaised
                 .overlay {
-                    if let image {
-                        Image(decorative: image, scale: 1)
-                            .resizable()
-                            .scaledToFill()
+                    if let image, let thumbnail {
+                        LibraryGridTilePicture(poster: image, id: item.id, thumbnail: thumbnail, preview: preview)
                     } else {
                         Image(systemName: item.kind == .web ? "globe" : item.kind == .scene ? "cube.transparent" : item.kind == .aerial ? "sparkles" : "play.rectangle")
                             .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
@@ -1741,7 +1748,10 @@ struct LibraryGridTile: View {
         }
         .aspectRatio(StageGeometry.cardAspectRatio, contentMode: .fit)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
-        .settledHover { isHovering = $0 }
+        .settledHover {
+            isHovering = $0
+            preview?.settle(item.id, hovering: $0)
+        }
         .accessibilityLabel(Text(verbatim: item.title))
         // LazyVGrid may keep a scrolled-away tile alive, and any image the tile holds with it.
         .onAppear {

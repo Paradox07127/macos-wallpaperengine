@@ -11,7 +11,12 @@ enum ShelfPreviewPlayback {
     }
 
     static func displaysGIF(_ card: StageCard) -> Bool {
-        card.thumbnail != nil && card.previewOrigin?.previewFileName?.lowercased().hasSuffix(".gif") == true
+        displaysGIF(showsPicture: card.thumbnail != nil, previewOrigin: card.previewOrigin)
+    }
+
+    /// `showsPicture`: the card draws its decoded picture rather than a placeholder.
+    static func displaysGIF(showsPicture: Bool, previewOrigin: WPEOrigin?) -> Bool {
+        showsPicture && previewOrigin?.previewFileName?.lowercased().hasSuffix(".gif") == true
     }
 }
 
