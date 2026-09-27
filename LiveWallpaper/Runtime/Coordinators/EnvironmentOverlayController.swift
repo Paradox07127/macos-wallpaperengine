@@ -43,7 +43,7 @@ final class EnvironmentOverlayController {
         }
 
         let host = hosts[screenID] ?? makeHost(screenID: screenID, screenFrame: screenFrame)
-        host.window.setFrame(screenFrame, display: true)
+        host.window.setFrame(TestHostWindowParking.parkedFrame(screenFrame), display: true)
         host.view.frame = NSRect(origin: .zero, size: screenFrame.size)
         host.view.setEffect(effect, density: CGFloat(density), tiltRadians: CGFloat(tiltRadians))
         host.view.setSuspended(reduceMotion.isReduced, for: .reduceMotion)
@@ -54,7 +54,7 @@ final class EnvironmentOverlayController {
     /// change) without touching the effect or rebuilding the emitter.
     func updateFrame(screenID: CGDirectDisplayID, frame: NSRect) {
         guard let host = hosts[screenID] else { return }
-        host.window.setFrame(frame, display: true)
+        host.window.setFrame(TestHostWindowParking.parkedFrame(frame), display: true)
         host.view.frame = NSRect(origin: .zero, size: frame.size)
     }
 
@@ -85,7 +85,6 @@ final class EnvironmentOverlayController {
         if host.view.isSuspended {
             host.window.orderOut(nil)
         } else {
-            TestHostWindowParking.park(host.window)
             host.window.orderFrontRegardless()
         }
     }
@@ -106,7 +105,11 @@ final class EnvironmentOverlayController {
     }
 
     func debugWindowFrame(screenID: CGDirectDisplayID) -> NSRect? {
-        hosts[screenID]?.window.frame
+        hosts[screenID].map { TestHostWindowParking.logicalFrame($0.window) }
+    }
+
+    func debugWindow(screenID: CGDirectDisplayID) -> NSWindow? {
+        hosts[screenID]?.window
     }
 
     func debugSuspensionReasons(screenID: CGDirectDisplayID) -> ParticleSuspensionReasons? {

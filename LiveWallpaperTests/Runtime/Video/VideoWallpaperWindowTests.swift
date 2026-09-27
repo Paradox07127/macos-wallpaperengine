@@ -56,6 +56,24 @@ struct VideoWallpaperWindowTests {
         #expect(makeOverlay().canHide == false)
     }
 
+    @Test("Reframing a wallpaper window in the test host keeps it off every display")
+    func updateFrameKeepsWindowParked() {
+        let window = VideoWallpaperWindow(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        defer { window.close() }
+        let target = CGRect(x: 100, y: 50, width: 640, height: 360)
+
+        window.updateFrame(target)
+        #expect(TestHostWindowParking.logicalFrame(window) == target)
+        #expect(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+
+        let parked = window.frame
+        // Every path past the early return resets the level, so it shows whether that return was taken.
+        window.level = .normal
+        window.updateFrame(target)
+        #expect(window.frame == parked)
+        #expect(window.level == .normal, "an unchanged frame went through the full reframe")
+    }
+
     @Test("Capture updates reach active and still-retiring video windows",
           .enabled(if: !CaptureSharingTestHost.isAdHocSigned, "Window sharing updates require the project signing environment; ad-hoc hosted execution is not a capture-policy verdict"))
     func policyReachesActiveAndRetiringVideoWindows() throws {

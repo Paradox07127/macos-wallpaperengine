@@ -51,7 +51,7 @@ final class OverlayWindow: NSPanel {
     }
 
     func applyFrame(_ frame: NSRect) {
-        setFrame(frame, display: true)
+        setFrame(TestHostWindowParking.parkedFrame(frame), display: true)
     }
 
     override var canBecomeKey: Bool { true }

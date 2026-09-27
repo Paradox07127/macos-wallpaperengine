@@ -683,6 +683,18 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         #expect(window.ignoresMouseEvents)
     }
 
+    @Test("Reframing a parked overlay keeps it off every display")
+    @MainActor
+    func applyFrameKeepsParkedOverlayOffDisplays() {
+        let window = OverlayWindow(screenFrame: NSRect(x: 0, y: 0, width: 400, height: 300), level: .desktop)
+        TestHostWindowParking.park(window)
+        let target = NSRect(x: 100, y: 50, width: 800, height: 600)
+
+        window.applyFrame(target)
+        #expect(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        #expect(TestHostWindowParking.logicalFrame(window) == target)
+    }
+
     private func occursBefore(_ first: String, _ second: String, in source: String) -> Bool {
         guard let firstRange = source.range(of: first),
               let secondRange = source.range(of: second) else {

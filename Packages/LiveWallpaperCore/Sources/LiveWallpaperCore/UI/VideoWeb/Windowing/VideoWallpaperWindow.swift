@@ -59,7 +59,7 @@ public final class VideoWallpaperWindow: NSWindow {
             return
         }
 
-        super.setFrame(frameRect, display: flag)
+        super.setFrame(TestHostWindowParking.parkedFrame(frameRect), display: flag)
         level = NSWindow.Level(rawValue: wallpaperWindowLevel)
     }
 
@@ -112,7 +112,7 @@ extension VideoWallpaperWindow {
             return
         }
 
-        if self.frame == frame {
+        if TestHostWindowParking.logicalFrame(self) == frame {
             return
         }
 
@@ -122,7 +122,7 @@ extension VideoWallpaperWindow {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.3
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                animator().setFrame(frame, display: true, animate: true)
+                animator().setFrame(TestHostWindowParking.parkedFrame(frame), display: true, animate: true)
             }
         } else {
             setFrame(frame, display: true)

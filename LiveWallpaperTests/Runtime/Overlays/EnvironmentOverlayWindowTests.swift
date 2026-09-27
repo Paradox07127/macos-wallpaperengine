@@ -52,6 +52,29 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         XCTAssertEqual(updatedFrame, newFrame, "particle overlay frame did not follow the resolution/arrangement change")
     }
 
+    @MainActor
+    func testParticleOverlayStaysOffDisplaysAfterResolutionChange() throws {
+        let controller = EnvironmentOverlayController()
+        let screenID = CGDirectDisplayID(1)
+        defer { controller.teardownAll() }
+
+        controller.apply(
+            effect: .rain, density: 1, screenID: screenID,
+            screenFrame: NSRect(x: 0, y: 0, width: 200, height: 200)
+        )
+        let newFrame = NSRect(x: 100, y: 50, width: 400, height: 300)
+        controller.updateFrame(screenID: screenID, frame: newFrame)
+
+        let window = try XCTUnwrap(controller.debugWindow(screenID: screenID))
+        for screen in NSScreen.screens {
+            XCTAssertFalse(
+                screen.frame.intersects(window.frame),
+                "a reframed overlay at \(window.frame) landed on display \(screen.frame)"
+            )
+        }
+        XCTAssertEqual(controller.debugWindowFrame(screenID: screenID), newFrame)
+    }
+
     /// `NSWindow.canHide` defaults to YES, so cmd+H would take the particle overlay
     /// down with the app's UI even though it is desktop decoration.
     @MainActor
