@@ -144,6 +144,7 @@ SUITES=(
   OverlayRuntimeContractTests
   OverlayObjectRemoveWindowTests
   EditDeskModalChromeTests
+  PopoverEscapeTests
   MatureRevealStateTests
   DeferredApplyCoordinatorTests
   CollapsibleDescriptionTests
