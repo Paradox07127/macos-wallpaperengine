@@ -30,14 +30,16 @@ enum ScreenPresentation {
         return segments.joined(separator: " · ")
     }
 
-    static func statusText(pointSize: CGSize, isMain: Bool) -> String {
-        let resolution = "\(Int(pointSize.width.rounded()))×\(Int(pointSize.height.rounded()))"
-        guard isMain else { return resolution }
+    static func statusText(pixelSize: CGSize?, isMain: Bool) -> String {
+        let resolution = pixelSize.map {
+            "\(Int($0.width.rounded()))×\(Int($0.height.rounded()))"
+        }
+        guard isMain else { return resolution ?? "" }
         let mainLabel = String(
             localized: "Main", bundle: .appLanguage,
             comment: "Short status suffix marking the main display on the Edit Desk stage."
         )
-        return resolution + " · " + mainLabel
+        return [resolution, mainLabel].compactMap(\.self).joined(separator: " · ")
     }
 
     /// `productName` is the IORegistry marketing name ("MacBook Pro") when available; Apple
@@ -97,7 +99,7 @@ enum ScreenPresentation {
             kind: displayKind, systemName: renamed ? localizedName : nil,
             diagonalInches: screen.diagonalInches, refreshRate: refreshRate
         )
-        let status = statusText(pointSize: screen.frame.size, isMain: CGDisplayIsMain(screen.id) != 0)
+        let status = statusText(pixelSize: screen.pixelSize, isMain: CGDisplayIsMain(screen.id) != 0)
         return (badge, status)
     }
 

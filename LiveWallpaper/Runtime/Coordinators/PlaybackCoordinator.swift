@@ -7,6 +7,7 @@ final class PlaybackCoordinator {
     let transition = PlaybackTransitionRegistry()
 
     let configurationStore: WallpaperConfigurationStore
+    let configurationCommands: any DisplayConfigurationCommitting
     let playableVideoLoader: any PlayableVideoLoading
     let bookmarkResolver: SecurityScopedBookmarkResolver
     let makeVideoPlayer: VideoWallpaperSession.RetryPlayerFactory
@@ -40,9 +41,6 @@ final class PlaybackCoordinator {
     let resetPlaybackStateMachine: @MainActor (Screen) -> Void
     let notifyWallpaperSessionChanged: @MainActor () -> Void
     let refreshOtherAudioLeadership: @MainActor () -> Void
-    let notifyConfigurationChanged: @MainActor (CGDirectDisplayID) -> Void
-    /// Invalidates queued scene-property mutations before store revision advances.
-    let advanceSceneMutationIntent: @MainActor (CGDirectDisplayID) -> Void
     let reportRuntimeError: @MainActor (CGDirectDisplayID, WallpaperRuntimeError?) -> Void
     /// A candidate that never committed; the configuration is the one it was preparing (nil only when it had none).
     let reportPreparationFailure: @MainActor (CGDirectDisplayID, WallpaperRuntimeError, ScreenConfiguration?) -> Void
@@ -52,6 +50,7 @@ final class PlaybackCoordinator {
 
     init(
         configurationStore: WallpaperConfigurationStore,
+        configurationCommands: any DisplayConfigurationCommitting,
         playableVideoLoader: any PlayableVideoLoading,
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
         makeVideoPlayer: @escaping VideoWallpaperSession.RetryPlayerFactory = { url, frame, fitMode, entryName in
@@ -93,21 +92,10 @@ final class PlaybackCoordinator {
         reportPreparationFailure: @MainActor @escaping (CGDirectDisplayID, WallpaperRuntimeError, ScreenConfiguration?) -> Void = { _, _, _ in },
         originReconciler: any OriginReconciler,
         isGloballyEnabled: @MainActor @escaping () -> Bool = { true },
-        isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true },
-        advanceSceneMutationIntent: @MainActor @escaping (
-            CGDirectDisplayID
-        ) -> Void = { _ in },
-        notifyConfigurationChanged: @MainActor @escaping (CGDirectDisplayID) -> Void = { screenID in
-            Task { @MainActor in
-                NotificationCenter.default.post(
-                    name: .wallpaperConfigurationDidChange,
-                    object: nil,
-                    userInfo: ["screenID": screenID]
-                )
-            }
-        }
+        isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true }
     ) {
         self.configurationStore = configurationStore
+        self.configurationCommands = configurationCommands
         self.playableVideoLoader = playableVideoLoader
         self.bookmarkResolver = bookmarkResolver
         self.makeVideoPlayer = makeVideoPlayer
@@ -125,12 +113,10 @@ final class PlaybackCoordinator {
         self.resetPlaybackStateMachine = resetPlaybackStateMachine
         self.notifyWallpaperSessionChanged = notifyWallpaperSessionChanged
         self.refreshOtherAudioLeadership = refreshOtherAudioLeadership
-        self.notifyConfigurationChanged = notifyConfigurationChanged
         self.reportRuntimeError = reportRuntimeError
         self.reportPreparationFailure = reportPreparationFailure
         self.originReconciler = originReconciler
         self.isGloballyEnabled = isGloballyEnabled
         self.isRuntimeInstallationAllowed = isRuntimeInstallationAllowed
-        self.advanceSceneMutationIntent = advanceSceneMutationIntent
     }
 }

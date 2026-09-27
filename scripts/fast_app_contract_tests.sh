@@ -96,6 +96,7 @@ SUITES=(
   # each one covers a defect that shipped: a lost settings generation, a refused
   # Lite/Pro restore, a main-thread library walk.
   AtomicFileStoreTests
+  DisplayConfigurationControllerTests
   BookmarkContentOnlyTests
   ConfigurationPorterTests
   ScreenSchemePersistenceTests
@@ -157,6 +158,7 @@ SUITES=(
   BrowseRequestShapeTests
   BrowseFilterTests
   WorkshopBookmarkTests
+  WorkshopBookmarkMetadataTests
   BrowseCardEqualityTests
   WorkshopPageSourceTests
   GalleryCardPreferencesTests

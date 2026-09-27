@@ -163,11 +163,10 @@ extension PlaybackCoordinator {
             return
         }
 
-        guard let player = screen.videoPlayer, player.videoFrameRate > 0 else { return }
+        guard let player = screen.videoPlayer else { return }
 
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
             frameRateLimit: frameRateLimit,
-            videoFrameRate: player.videoFrameRate,
             screenRefreshRate: Double(screenRefreshRate)
         )
 

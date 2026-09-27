@@ -26,11 +26,13 @@ protocol UndoRestoring: WallpaperApplying {
 @Observable
 final class EditDeskUndoStack {
     enum Action: Equatable {
-        case applyWallpaper, applyToAllDisplays, clearWallpaper, resetDisplaySettings
+        case applyWallpaper, applyToAllDisplays, clearWallpaper, resetDisplaySettings, moveOverlayObject
         case removeFromSaved, renameWallpaper, removeWidget, removeAllObjects, changePreset, resetSceneSettings
 
         var name: String {
             switch self {
+            case .moveOverlayObject:
+                String(localized: "Move Overlay Object", bundle: .appLanguage)
             case .applyWallpaper:
                 String(
                     localized: "Apply Wallpaper", bundle: .appLanguage,
@@ -79,8 +81,16 @@ final class EditDeskUndoStack {
         /// Gives the entry with this ID this label.
         case bookmarkLabel(id: UUID, label: String)
         case widgets(WidgetEdit)
+        case movement(MovementEdit)
         case objects(ObjectsEdit)
         case scene(SceneEdit)
+    }
+
+    struct MovementEdit {
+        let fingerprint: String
+        let name: String
+        let move: OverlayPositionMove
+        let flush: @MainActor () async -> Void
     }
 
     /// Widgets on one display's overlay board.
@@ -172,6 +182,8 @@ final class EditDeskUndoStack {
     @ObservationIgnored private var unsettledDisplays = 0
     /// Moves with every recorded step and with `removeAll`; an undo that sees it move keeps its result off the redo stack.
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored weak var overlayEditor: OverlayEditorSession?
+    @ObservationIgnored private var movementCoalescingStep: UUID?
     @ObservationIgnored private var lastCommand: Task<Outcome?, Never>?
     @ObservationIgnored private var settleWaiter: CheckedContinuation<Void, Never>?
 
@@ -192,6 +204,7 @@ final class EditDeskUndoStack {
 
     /// Snapshots `displays` before a change; `includesOverlay` snapshots their overlays too, which a scheme replaces.
     func begin(_ action: Action, displays: [Screen], includesOverlay: Bool = false) -> UndoRecording {
+        movementCoalescingStep = nil
         let recording = UndoRecording(stack: self, action: action, displays: displays.map { screen in
             (screen.id, Display(
                 fingerprint: screen.displayFingerprint, name: screen.name,
@@ -222,9 +235,36 @@ final class EditDeskUndoStack {
     }
 
     func removeAll() {
+        movementCoalescingStep = nil
         undoSteps.removeAll()
         redoSteps.removeAll()
         generation += 1
+    }
+
+    var canUndo: Bool {
+        !undoSteps.isEmpty || overlayEditor?.hasUnrecordedMovement == true
+    }
+
+    /// Appends immediately, so Undo is available before the board's disk debounce runs.
+    /// Only consecutive repeats from the same physical press may amend the last step.
+    func recordMove(_ move: OverlayPositionMove, from screen: Screen, flush: @escaping @MainActor () async -> Void) {
+        guard move.before != move.after else { return }
+        let edit = MovementEdit(fingerprint: screen.displayFingerprint, name: screen.name, move: move, flush: flush)
+        if let group = move.keyboardGroup, let last = undoSteps.last, movementCoalescingStep == last.id,
+           case let .movement(previous) = last.change,
+           previous.fingerprint == edit.fingerprint, previous.move.selection == move.selection,
+           previous.move.keyboardGroup == group, previous.move.after == move.before {
+            let merged = OverlayPositionMove(selection: move.selection, before: previous.move.before,
+                                             after: move.after, keyboardGroup: group)
+            undoSteps[undoSteps.count - 1] = Step(id: last.id, action: .moveOverlayObject,
+                                                  change: .movement(MovementEdit(fingerprint: edit.fingerprint, name: edit.name, move: merged, flush: flush)))
+            redoSteps.removeAll()
+            generation += 1
+            return
+        }
+        let step = Step(id: UUID(), action: .moveOverlayObject, change: .movement(edit))
+        append(step)
+        movementCoalescingStep = move.keyboardGroup == nil ? nil : step.id
     }
 
     // MARK: Recording changes that are already done
@@ -339,6 +379,7 @@ final class EditDeskUndoStack {
     }
 
     private func append(_ step: Step) {
+        movementCoalescingStep = nil
         push(step)
         redoSteps.removeAll()
         generation += 1
@@ -357,6 +398,8 @@ final class EditDeskUndoStack {
     }
 
     private func run(isRedo: Bool, expecting stepID: UUID?) async -> Outcome? {
+        overlayEditor?.prepareForUndo()
+        movementCoalescingStep = nil
         await waitForPendingRecordings()
         guard let step = isRedo ? redoSteps.last : undoSteps.last, stepID == nil || stepID == step.id else { return nil }
         if isRedo {
@@ -374,6 +417,8 @@ final class EditDeskUndoStack {
             relabel(id, to: label)
         case let .widgets(edit):
             await restore(edit)
+        case let .movement(edit):
+            await restore(edit)
         case let .objects(edit):
             await restore(edit)
         case let .scene(edit):
@@ -387,6 +432,7 @@ final class EditDeskUndoStack {
                 redoSteps.append(inverse)
             }
         }
+        overlayEditor?.refreshAppliedConfiguration()
         return Outcome(
             stepID: step.id, isRedo: isRedo, action: step.action, restored: ran.restored, skipped: ran.skipped,
             failed: ran.failed
@@ -460,6 +506,26 @@ final class EditDeskUndoStack {
         }
         bookmarks.rename(id, to: label)
         return Ran(inverse: .bookmarkLabel(id: id, label: current.label), restored: [label])
+    }
+
+    private func restore(_ edit: MovementEdit) async -> Ran {
+        guard let screen = connectedScreen(edit.fingerprint) else {
+            return Ran(skipped: [.init(name: edit.name, reason: .disconnected)])
+        }
+        await edit.flush()
+        let current = manager.monitorOverlay(for: screen)
+        guard OverlayObjectPosition.read(edit.move.selection, in: current) == edit.move.after,
+              let next = edit.move.before.applying(to: edit.move.selection, in: current) else {
+            return Ran(skipped: [.init(name: screen.name, reason: .changedAfterward)])
+        }
+        manager.setMonitorOverlay(next, for: screen)
+        guard OverlayObjectPosition.read(edit.move.selection, in: manager.monitorOverlay(for: screen)) == edit.move.before else {
+            return Ran(failed: [screen.name])
+        }
+        let inverse = OverlayPositionMove(selection: edit.move.selection, before: edit.move.after,
+                                          after: edit.move.before, keyboardGroup: nil)
+        return Ran(inverse: .movement(MovementEdit(fingerprint: edit.fingerprint, name: screen.name,
+                                                   move: inverse, flush: edit.flush)), restored: [screen.name])
     }
 
     private func restore(_ edit: WidgetEdit) async -> Ran {

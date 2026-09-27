@@ -375,7 +375,7 @@ struct WorkshopModalTests {
         let lookupsByRecordedID = [".workshopID ==", "wpeOrigin?.workshopID {"]
         for path in [
             Self.hostPath, "LiveWallpaper/Views/Workshop/BrowsePane.swift",
-            "LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift",
+            "LiveWallpaper/Application/Workshop/WorkshopDownloadCoordinator.swift",
         ] {
             let source = try RepositoryRoot.source(path)
             for needle in lookupsByRecordedID {

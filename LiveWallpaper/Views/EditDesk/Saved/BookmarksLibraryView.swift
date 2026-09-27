@@ -162,9 +162,10 @@ final class SavedBookmarks {
         return tags.contains("web") ? .html : nil
     }
 
-    /// What was saved with it, which the Workshop card draws until the modal asks Steam.
+    /// Known metadata survives offline reopening; legacy references remain usable.
     static func queryItem(_ bookmark: WorkshopBookmark) -> WorkshopQueryItem {
-        WorkshopQueryItem(
+        if let item = bookmark.queryItemSnapshot { return item }
+        return WorkshopQueryItem(
             id: bookmark.id, rawTitle: bookmark.rawTitle, shortDescription: "", creatorID: nil,
             previewImageURL: bookmark.previewImageURL, fileSizeBytes: nil, timeUpdated: nil,
             subscriptionCount: nil, rating: nil, tags: bookmark.tags, visibility: .unknown,

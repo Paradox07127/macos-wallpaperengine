@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import CryptoKit
 import Foundation
+import LiveWallpaperCore
 
 actor WorkshopQueryCache {
 
@@ -75,7 +76,7 @@ private struct CachedPagePayload: Codable {
     static let currentSchemaVersion = 4
 
     let schemaVersion: Int?
-    let items: [CachedItemPayload]
+    let items: [WorkshopItemSnapshot]
     let nextCursor: String?
     let totalAvailable: Int?
     let sourceItemCount: Int
@@ -83,7 +84,7 @@ private struct CachedPagePayload: Codable {
 
     init(page: WorkshopQueryPage) {
         schemaVersion = Self.currentSchemaVersion
-        items = page.items.map(CachedItemPayload.init(item:))
+        items = page.items.map(WorkshopItemSnapshot.init(item:))
         nextCursor = page.nextCursor
         totalAvailable = page.totalAvailable
         sourceItemCount = page.sourceItemCount
@@ -104,7 +105,7 @@ private struct CachedPagePayload: Codable {
     }
 }
 
-private struct CachedItemPayload: Codable {
+struct WorkshopItemSnapshot: Codable {
     let id: UInt64
     /// The wire title, `nil` when untitled — never the localized fallback.
     let title: String?
@@ -172,6 +173,50 @@ private struct CachedItemPayload: Codable {
             isBanned: isBanned,
             steamCommunityURL: communityURL
         )
+    }
+}
+
+extension WorkshopQueryItem {
+    var bookmarkDetailsSnapshot: Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(WorkshopItemSnapshot(item: self))
+    }
+
+    /// Detail endpoints can omit browse-only facts. Missing values must not
+    /// erase the description, persona or vote data already observed for this id.
+    func preservingDetails(from previous: WorkshopQueryItem?) -> WorkshopQueryItem {
+        guard let previous, previous.id == id else { return self }
+        func nonempty(_ value: String?) -> String? {
+            value.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        }
+        let sameCreator = creatorID == nil || previous.creatorID == nil || creatorID == previous.creatorID
+        return WorkshopQueryItem(
+            id: id, rawTitle: nonempty(rawTitle) ?? previous.rawTitle,
+            shortDescription: nonempty(shortDescription) ?? previous.shortDescription,
+            creatorID: creatorID ?? previous.creatorID,
+            creatorPersonaName: nonempty(creatorPersonaName) ?? (sameCreator ? previous.creatorPersonaName : nil),
+            previewImageURL: previewImageURL ?? previous.previewImageURL,
+            fileSizeBytes: fileSizeBytes ?? previous.fileSizeBytes,
+            timeUpdated: timeUpdated ?? previous.timeUpdated,
+            subscriptionCount: subscriptionCount ?? previous.subscriptionCount,
+            viewCount: viewCount ?? previous.viewCount, favoriteCount: favoriteCount ?? previous.favoriteCount,
+            rating: rating ?? previous.rating, timeCreated: timeCreated ?? previous.timeCreated,
+            commentCount: commentCount ?? previous.commentCount,
+            requiredItemIDs: requiredItemIDs.isEmpty ? previous.requiredItemIDs : requiredItemIDs,
+            tags: tags.isEmpty ? previous.tags : tags,
+            visibility: visibility, isBanned: isBanned, steamCommunityURL: steamCommunityURL
+        )
+    }
+}
+
+extension WorkshopBookmark {
+    var queryItemSnapshot: WorkshopQueryItem? {
+        guard let detailsSnapshot,
+              let item = (try? JSONDecoder().decode(WorkshopItemSnapshot.self, from: detailsSnapshot))?.item,
+              item.id == id,
+              item.steamCommunityURL == WorkshopCommunityURL.item(itemID: id) else { return nil }
+        return item
     }
 }
 #endif

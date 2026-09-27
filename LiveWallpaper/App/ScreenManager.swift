@@ -88,6 +88,7 @@ final class ScreenManager {
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
     @ObservationIgnored lazy var playbackCoordinator = PlaybackCoordinator(
         configurationStore: configurationStore,
+        configurationCommands: configurationController,
         playableVideoLoader: playableVideoLoader,
         applyPolicy: { [weak self] screen in
             self?.applyPerformancePolicy(to: screen)
@@ -162,9 +163,6 @@ final class ScreenManager {
         isRuntimeInstallationAllowed: { [weak self] in
             guard let self else { return false }
             return !self.isTerminating
-        },
-        advanceSceneMutationIntent: { [weak self] screenID in
-            self?.advanceScenePropertyMutationIntent(for: screenID)
         }
     )
     #if !LITE_BUILD
@@ -195,7 +193,7 @@ final class ScreenManager {
         }
     )
     #endif
-    @ObservationIgnored lazy var persistence = WallpaperPersistenceCoordinator(
+    @ObservationIgnored lazy var configurationController = DisplayConfigurationController(
         store: configurationStore,
         bookmarkDisplayNameCache: bookmarkDisplayNameCache,
         releaseRuntimeSession: { [weak self] screenID in
@@ -206,6 +204,9 @@ final class ScreenManager {
         },
         notifyWallpaperSessionChanged: { [weak self] in
             self?.notifyWallpaperSessionChanged()
+        },
+        advanceSceneMutationIntent: { [weak self] screenID in
+            self?.advanceScenePropertyMutationIntent(for: screenID)
         }
     )
     @ObservationIgnored var transitionRegistry: PlaybackTransitionRegistry {

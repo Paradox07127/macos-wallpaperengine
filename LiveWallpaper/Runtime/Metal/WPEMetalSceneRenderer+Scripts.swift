@@ -53,6 +53,7 @@ extension WPEMetalSceneRenderer {
         scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) {
         layerTransformMutationJournal.removeAll()
+        liveLayerPresentation = [:]
         layerScriptInstances = [:]
         layerAlphaScriptInstances = [:]
         particleAlphaScriptInstances = [:]
@@ -123,6 +124,9 @@ extension WPEMetalSceneRenderer {
                     canvasSize: scriptCanvasSize,
                     screenSize: scriptScreenSize,
                     ownLayerName: object.name,
+                    createdLayerBridge: Self.createdLayerBridgeConfiguration(
+                        document: document, pipeline: pipeline, ownerName: object.name
+                    ),
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 layerScriptInstances[object.id] = instance
@@ -148,6 +152,9 @@ extension WPEMetalSceneRenderer {
                     initialVisible: object.visible,
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
+                    createdLayerBridge: Self.createdLayerBridgeConfiguration(
+                        document: document, pipeline: pipeline, ownerName: object.name
+                    ),
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 layerScriptInstances[object.id] = instance
@@ -475,6 +482,35 @@ extension WPEMetalSceneRenderer {
         return result
     }
 
+    static func createdLayerBridgeConfiguration(
+        document: WPESceneDocument,
+        pipeline: WPEPreparedRenderPipeline,
+        ownerName: String
+    ) -> WPECreatedLayerBridgeConfiguration {
+        let scripts = document.imageObjects.compactMap { object in
+            object.visibleScript.map { (object.name, $0) }
+        } + document.scriptHostObjects.map { ($0.name, $0.visibleScript) }
+        let namesByID: [String: String] = Dictionary(
+            (document.imageObjects.map { ($0.id, $0.name) }
+                + document.scriptHostObjects.map { ($0.id, $0.name) }
+                + document.soundObjects.map { ($0.id, $0.name) }
+                + document.transformHostObjects.map { ($0.id, $0.name) }),
+            uniquingKeysWith: { first, _ in first }
+        )
+        let names = namesByID.keys.sorted {
+            (document.objectPaintOrder[$0] ?? Int.max) < (document.objectPaintOrder[$1] ?? Int.max)
+        }.compactMap { namesByID[$0] }
+        return WPECreatedLayerBridgeConfiguration(
+            imagePaths: Set(createdLayerTemplatesByImagePath(pipeline).keys),
+            orderedLayerNames: names,
+            allowsSorting: scripts.count == 1 && scripts.first?.0 == ownerName
+                && document.imageObjects.allSatisfy { $0.alphaScript == nil }
+                && Set(names).count == names.count && !names.contains("")
+                && document.particleObjects.isEmpty && document.textObjects.isEmpty
+                && pipeline.layers.allSatisfy(\.permitsIndependentImageReordering)
+        )
+    }
+
     static func createdLayerTemplatesByImagePath(
         _ pipeline: WPEPreparedRenderPipeline
     ) -> [String: WPEPreparedRenderLayer] {
@@ -483,8 +519,7 @@ extension WPEMetalSceneRenderer {
             let path = layer.graphLayer.imagePath
             guard !path.isEmpty,
                   templates[path] == nil,
-                  layer.puppetModel == nil,
-                  layer.passes.count == 1 else {
+                  layer.createdImagePassLayout != nil else {
                 continue
             }
             templates[path] = layer
@@ -775,6 +810,10 @@ extension WPEMetalSceneRenderer {
                 generation: loadGeneration
             )
         }
+        for (name, mutation) in output.presentation {
+            guard let id = name.isEmpty ? ownObjectID : layerObjectIDByName[name] else { continue }
+            liveLayerPresentation[id, default: .init()].merge(mutation)
+        }
         for created in output.created {
             guard !created.imagePath.isEmpty else { continue }
             var state = created
@@ -818,6 +857,9 @@ extension WPEMetalSceneRenderer {
 
     var staticCacheExcludedLayerIDs: Set<String> {
         var ids = installedScriptLayerIDs
+        ids.formUnion(liveLayerPresentation.compactMap { id, mutation in
+            mutation.alignment != nil || mutation.parallaxDepth != nil ? id : nil
+        })
         ids.formUnion(textScriptInstances.keys)
         ids.formUnion(textRenderPlans.lazy.filter(\.copiesSceneBackground).map { $0.object.id })
         guard !liveCreatedLayers.isEmpty || !liveLayerAlpha.isEmpty else { return ids }

@@ -7,6 +7,70 @@ enum OverlaySelection: Hashable {
     case board, widget(UUID), music, clock
 }
 
+/// Position-only history: restoring a move must not revert style, size, enable state or other objects.
+struct OverlayObjectPosition: Equatable {
+    let x: Double
+    let y: Double
+
+    static func read(_ selection: OverlaySelection, in overlay: MonitorOverlayConfiguration) -> Self? {
+        switch selection {
+        case .board: return nil
+        case let .widget(id):
+            guard overlay.enabled, let item = overlay.board.widgets.first(where: { $0.id == id }), !item.isHidden else { return nil }
+            return Self(x: item.x, y: item.y)
+        case .music:
+            return overlay.music.enabled ? Self(x: overlay.music.x, y: overlay.music.y) : nil
+        case .clock:
+            return overlay.clock.enabled ? Self(x: overlay.clock.x, y: overlay.clock.y) : nil
+        }
+    }
+
+    func applying(to selection: OverlaySelection, in overlay: MonitorOverlayConfiguration) -> MonitorOverlayConfiguration? {
+        guard Self.read(selection, in: overlay) != nil else { return nil }
+        var next = overlay
+        switch selection {
+        case .board: return nil
+        case let .widget(id):
+            guard let index = next.board.widgets.firstIndex(where: { $0.id == id }) else { return nil }
+            next.board.widgets[index].x = x
+            next.board.widgets[index].y = y
+        case .music:
+            next.music.x = x
+            next.music.y = y
+        case .clock:
+            next.clock.x = x
+            next.clock.y = y
+        }
+        return next
+    }
+}
+
+struct OverlayPositionMove {
+    let selection: OverlaySelection
+    let before: OverlayObjectPosition
+    let after: OverlayObjectPosition
+    /// One physical key-down/repeat/up sequence. Pointer gestures never merge.
+    var keyboardGroup: UUID?
+
+    static func widgetMove(from before: MonitorBoardConfiguration, to after: MonitorBoardConfiguration) -> Self? {
+        guard before.widgets.count == after.widgets.count else { return nil }
+        var changed: Int?
+        for index in before.widgets.indices where before.widgets[index] != after.widgets[index] {
+            guard changed == nil else { return nil }
+            changed = index
+        }
+        guard let index = changed else { return nil }
+        let old = before.widgets[index], new = after.widgets[index]
+        var expected = before
+        expected.widgets[index].x = new.x
+        expected.widgets[index].y = new.y
+        // Reject add/delete/reorder/resize/style changes, including resize-induced repositioning.
+        guard expected == after else { return nil }
+        return Self(selection: .widget(old.id), before: .init(x: old.x, y: old.y),
+                    after: .init(x: new.x, y: new.y))
+    }
+}
+
 struct OverlayEditorIdentity: Hashable {
     let displayID: CGDirectDisplayID
     let fingerprint: String
@@ -164,6 +228,15 @@ final class OverlayEditorSession {
     @ObservationIgnored var onWidgetsRemoved: (@MainActor ([(placement: MonitorWidgetPlacement, index: Int)]) -> Void)?
     /// What Remove All took off, as it was just before; `onWidgetsRemoved` stays silent for it.
     @ObservationIgnored var onObjectsRemoved: (@MainActor (OverlayObjects) -> Void)?
+    @ObservationIgnored var onObjectMoved: (@MainActor (OverlayEditorIdentity, OverlayPositionMove) -> Void)?
+    private struct KeyboardMove {
+        let selection: OverlaySelection
+        let direction: MonitorBoardPlacementDirection
+        let id = UUID()
+    }
+
+    @ObservationIgnored private var keyboardMove: KeyboardMove?
+    @ObservationIgnored private var keyboardMoveInProgress = false
     @ObservationIgnored private var store: (any OverlayEditorStore)?
     @ObservationIgnored private var pendingBoard: MonitorBoardConfiguration?
     @ObservationIgnored private var pendingAddedWidgetIDs: Set<UUID> = []
@@ -199,6 +272,7 @@ final class OverlayEditorSession {
     }
 
     func detach() {
+        endKeyboardMove()
         onLifecycleStep?(.flush)
         flushPendingEdits()
         onLifecycleStep?(.endGestures)
@@ -235,6 +309,10 @@ final class OverlayEditorSession {
         interaction.onConfigurationEdited = { [weak self] board in self?.scheduleBoard(board) }
         interaction.onSelectionChanged = { [weak self] id in
             guard let self else { return }
+            let next = id.map(OverlaySelection.widget)
+            if next != selection {
+                endKeyboardMove()
+            }
             if let id {
                 selection = .widget(id)
             } else if case .widget = selection {
@@ -252,11 +330,15 @@ final class OverlayEditorSession {
         canEditEffect = snapshot.configuration != nil
         guard pendingBoard == nil, interaction.drag == nil, drag == nil else { return }
         if snapshot.overlay != overlay || snapshot.logicalSize != logicalSize || snapshot.safeArea != safeArea {
+            endKeyboardMove()
             load(snapshot)
         }
     }
 
     func select(_ next: OverlaySelection?) {
+        if next != selection {
+            endKeyboardMove()
+        }
         if case let .widget(id) = next {
             interaction.select(id)
         } else {
@@ -275,6 +357,7 @@ final class OverlayEditorSession {
     }
 
     func deleteSelection() {
+        endKeyboardMove()
         guard isActive, case let .widget(id) = selection else { return }
         interaction.perform(.delete(id: id))
     }
@@ -284,6 +367,7 @@ final class OverlayEditorSession {
     }
 
     func setBoardEnabled(_ enabled: Bool) {
+        endKeyboardMove()
         guard let identity, let store, let persisted = store.read(identity)?.overlay.enabled, persisted != enabled else {
             return
         }
@@ -292,6 +376,7 @@ final class OverlayEditorSession {
     }
 
     func setMusicEnabled(_ enabled: Bool) {
+        endKeyboardMove()
         guard let identity, let store, var next = store.read(identity)?.overlay.music, next.enabled != enabled else {
             return
         }
@@ -304,6 +389,7 @@ final class OverlayEditorSession {
     }
 
     func setClockEnabled(_ enabled: Bool) {
+        endKeyboardMove()
         guard let identity, let store, var next = store.read(identity)?.overlay.clock, next.enabled != enabled else {
             return
         }
@@ -319,6 +405,7 @@ final class OverlayEditorSession {
     /// widget nothing renders. `origin` nil = the board's first free spot.
     @discardableResult
     func addWidget(kind: MonitorWidgetKind, at origin: CGPoint? = nil) -> Bool {
+        endKeyboardMove()
         if !overlay.enabled, let identity, let store {
             overlay.enabled = true
             store.writeOverlayEnabled(true, for: identity)
@@ -362,6 +449,7 @@ final class OverlayEditorSession {
     }
 
     func removeWidget(id: UUID) {
+        endKeyboardMove()
         guard isActive else { return }
         interaction.perform(.delete(id: id))
     }
@@ -373,6 +461,7 @@ final class OverlayEditorSession {
 
     /// Takes every widget, the clock, music and the effect off this display.
     func removeAllObjects() {
+        endKeyboardMove()
         guard isActive, let identity, let store else { return }
         flushPendingEdits()
         guard let snapshot = store.read(identity) else { return }
@@ -392,11 +481,33 @@ final class OverlayEditorSession {
         onObjectsRemoved?(removed)
     }
 
-    func moveSelection(_ direction: MonitorBoardPlacementDirection) {
-        guard isActive else { return }
+    var hasUnrecordedMovement: Bool {
+        drag?.didMove == true || interaction.drag?.didMove == true
+    }
+
+    func endKeyboardMove() {
+        keyboardMove = nil
+    }
+
+    /// Finish a live gesture before the stack chooses its newest command.
+    func prepareForUndo() {
+        endKeyboardMove()
+        interaction.endDrag(bypassSnap: !snapEnabled)
+        endDrag()
+        flushPendingEdits()
+        gestureGeneration += 1 // Reject callbacks from the pre-Undo pointer gesture.
+    }
+
+    func moveSelection(_ direction: MonitorBoardPlacementDirection, isRepeat: Bool = false) {
+        guard isActive, let selection else { return }
+        if !isRepeat || keyboardMove?.selection != selection || keyboardMove?.direction != direction {
+            keyboardMove = KeyboardMove(selection: selection, direction: direction)
+        }
+        keyboardMoveInProgress = true
+        defer { keyboardMoveInProgress = false }
         if case let .widget(id) = selection {
             interaction.moveWidget(id: id, direction: direction)
-        } else if let selection, selection == .music || selection == .clock {
+        } else if selection == .music || selection == .clock {
             let delta = switch direction {
             case .left: CGSize(width: -10, height: 0)
             case .right: CGSize(width: 10, height: 0)
@@ -409,6 +520,11 @@ final class OverlayEditorSession {
     }
 
     private func scheduleBoard(_ board: MonitorBoardConfiguration) {
+        var movement = OverlayPositionMove.widgetMove(from: overlay.board, to: board)
+        if !keyboardMoveInProgress {
+            endKeyboardMove()
+        }
+        movement?.keyboardGroup = keyboardMoveInProgress ? keyboardMove?.id : nil
         let kept = Set(board.widgets.map(\.id))
         let removed = overlay.board.widgets.enumerated()
             .filter { !kept.contains($0.element.id) }
@@ -421,6 +537,11 @@ final class OverlayEditorSession {
             do { try await Task.sleep(for: Self.persistDebounce) } catch { return }
             guard !Task.isCancelled else { return }
             self?.flushPendingEdits()
+        }
+        if let movement, let identity {
+            onObjectMoved?(identity, movement)
+        } else {
+            endKeyboardMove()
         }
         if !removed.isEmpty {
             onWidgetsRemoved?(removed)
@@ -446,6 +567,7 @@ final class OverlayEditorSession {
 
     /// Flushes first: the debounced canvas write carries the whole board and would revert this edit.
     func editBoard(_ edit: (inout MonitorBoardConfiguration) -> Void) {
+        endKeyboardMove()
         flushPendingEdits()
         guard let identity, let store, var board = store.read(identity)?.overlay.board else { return }
         edit(&board)
@@ -467,6 +589,9 @@ final class OverlayEditorSession {
     func updateDrag(_ selection: OverlaySelection, translation: CGSize, bypassSnap: Bool) {
         guard isActive, selection == .music || selection == .clock else { return }
         if drag == nil {
+            if !keyboardMoveInProgress {
+                endKeyboardMove()
+            }
             select(selection)
             let start = rect(for: selection)
             drag = Drag(selection: selection, startRect: start, rect: start,
@@ -517,6 +642,7 @@ final class OverlayEditorSession {
         guard let drag, let identity, let store else { return }
         self.drag = nil
         guard drag.didMove, let latest = store.read(identity)?.overlay else { return }
+        let before = OverlayObjectPosition.read(drag.selection, in: latest)
         switch drag.selection {
         case .music:
             let next = musicPlaced(at: drag.rect, on: latest.music)
@@ -531,6 +657,11 @@ final class OverlayEditorSession {
                 store.writeClock(next, for: identity)
             }
         case .board, .widget: break
+        }
+        if let onObjectMoved, let before, let persisted = store.read(identity)?.overlay,
+           let after = OverlayObjectPosition.read(drag.selection, in: persisted), before != after {
+            onObjectMoved(identity, OverlayPositionMove(selection: drag.selection, before: before, after: after,
+                                                        keyboardGroup: keyboardMoveInProgress ? keyboardMove?.id : nil))
         }
     }
 
@@ -576,6 +707,7 @@ final class OverlayEditorSession {
     /// `commit` false cancels. True when the release put something on the canvas or turned it on.
     @discardableResult
     func endAddDrag(commit: Bool) -> Bool {
+        endKeyboardMove()
         guard let drop = addDrop else { return false }
         addDrop = nil
         guard commit, isActive else { return false }
@@ -630,6 +762,7 @@ final class OverlayEditorSession {
     }
 
     func setEffectVisible(_ visible: Bool) {
+        endKeyboardMove()
         guard canEditEffect, let identity, let store else { return }
         let key = "Overlay.LastParticleEffect.\(identity.fingerprint)"
         let next: ParticleEffect
@@ -646,6 +779,7 @@ final class OverlayEditorSession {
     }
 
     func copyToOtherDisplays(_ kinds: [OverlayKind] = OverlayKind.allCases) -> CopyResult {
+        endKeyboardMove()
         guard let identity, let store else { return CopyResult(copied: 0, total: 0) }
         let editing = isActive
         transition(to: identity, store: store, editing: editing)

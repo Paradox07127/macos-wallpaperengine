@@ -6,6 +6,20 @@ import CoreVideo
 import LiveWallpaperCore
 import QuartzCore
 
+enum VideoFrameRatePlan: Equatable, Sendable {
+    case pending
+    case native
+    case composed
+
+    static func preservesSourceTiming(ceiling: Float, minimumSourceFrameDuration: CMTime) -> Bool {
+        guard ceiling.isFinite, ceiling > 0,
+              minimumSourceFrameDuration.isNumeric,
+              CMTimeCompare(minimumSourceFrameDuration, .zero) > 0 else { return false }
+        let scale = CMTimeScale(min(max(Double(ceiling), 1), Double(Int32.max)))
+        return CMTimeCompare(minimumSourceFrameDuration, CMTime(value: 1, timescale: scale)) >= 0
+    }
+}
+
 enum VideoCompositionOwner: Equatable, Sendable {
     case none
     case frameRate
@@ -86,6 +100,7 @@ final class WallpaperVideoPlayer {
     private(set) var audioVolume: Double = 1.0
     private(set) var shouldAutoplayWhenReady = true
     private(set) var requestedFrameRateLimit: Float = 0
+    private(set) var frameRatePlan: VideoFrameRatePlan = .native
     private(set) var runtimeError: WallpaperRuntimeError?
     private(set) var formatInfo: VideoFormatInfo?
     /// Replays any pre-existing error when assigned (late observers).
@@ -174,6 +189,15 @@ final class WallpaperVideoPlayer {
         !isForceSDRActive
             && requestedFrameRateLimit > 0
             && currentVideoComposition == nil
+            && frameRatePlan != .native
+    }
+
+    private var hasPreparedFrameRateLimit: Bool {
+        switch frameRatePlan {
+        case .pending: false
+        case .native: videoCompositionOwner == .none && currentVideoComposition == nil
+        case .composed: videoCompositionOwner == .frameRate && currentVideoComposition != nil
+        }
     }
 
     /// Exposed for `Screen.retire`'s handoff crossfade; nil until playback installs.
@@ -1030,6 +1054,11 @@ final class WallpaperVideoPlayer {
         videoCompositionGeneration &+= 1
         currentVideoComposition = composition
         videoCompositionOwner = composition == nil ? .none : owner
+        if composition != nil, owner == .frameRate {
+            frameRatePlan = .composed
+        } else {
+            frameRatePlan = requestedFrameRateLimit > 0 ? .pending : .native
+        }
         rebuildColorComposition()
         installQueueItemMaintenanceObserver()
     }
@@ -1050,6 +1079,7 @@ final class WallpaperVideoPlayer {
         frameRateLimitTask = nil
         currentFrameRateLoadingAsset = nil
         frameRateGeneration &+= 1
+        frameRatePlan = requestedFrameRateLimit > 0 ? .pending : .native
     }
 
     private func applyCurrentCompositionToQueueItems() {
@@ -1065,11 +1095,9 @@ final class WallpaperVideoPlayer {
     // MARK: - Frame Rate Limiting
     func setFrameRateLimit(_ framesPerSecond: Float) {
         guard !isCleanedUp else { return }
+        guard framesPerSecond.isFinite else { return }
         if requestedFrameRateLimit == framesPerSecond,
-           frameRateLimitTask == nil,
-           (framesPerSecond > 0
-                ? videoCompositionOwner == .frameRate && currentVideoComposition != nil
-                : videoCompositionOwner == .none && currentVideoComposition == nil) {
+           frameRateLimitTask != nil || hasPreparedFrameRateLimit {
             return
         }
         requestedFrameRateLimit = framesPerSecond
@@ -1125,6 +1153,20 @@ final class WallpaperVideoPlayer {
 
                 try Task.checkCancellation()
 
+                let minimumDuration = await (try? videoTrack.load(.minFrameDuration)) ?? .invalid
+                try ensureLifecycleActive(lifecycleGeneration)
+                if VideoFrameRatePlan.preservesSourceTiming(
+                    ceiling: framesPerSecond,
+                    minimumSourceFrameDuration: minimumDuration
+                ) {
+                    guard frameRateGeneration == taskGeneration,
+                          videoCompositionGeneration == expectedCompositionGeneration,
+                          !isForceSDRActive else { return }
+                    setVideoComposition(nil, owner: .none)
+                    frameRatePlan = .native
+                    return
+                }
+
                 let naturalSize = try await videoTrack.load(.naturalSize)
                 try self.ensureLifecycleActive(lifecycleGeneration)
                 let transform = try await videoTrack.load(.preferredTransform)
@@ -1137,7 +1179,7 @@ final class WallpaperVideoPlayer {
                 let displayed = naturalSize.applying(transform)
                 let renderSize = CGSize(width: abs(displayed.width), height: abs(displayed.height))
 
-                let frameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFPS))
+                let frameDuration = CMTime(value: 1, timescale: CMTimeScale(min(max(Double(targetFPS), 1), Double(Int32.max))))
                 let composition: AVVideoComposition
 
                 if #available(macOS 26.0, *) {
@@ -1152,7 +1194,7 @@ final class WallpaperVideoPlayer {
                     compositionConfig.frameDuration = frameDuration
                     compositionConfig.renderSize = renderSize
                     compositionConfig.instructions = [AVVideoCompositionInstruction(configuration: instrConfig)]
-                    compositionConfig.sourceTrackIDForFrameTiming = videoTrack.trackID
+                    compositionConfig.sourceTrackIDForFrameTiming = kCMPersistentTrackID_Invalid
 
                     composition = AVVideoComposition(configuration: compositionConfig)
                 } else {
@@ -1167,7 +1209,7 @@ final class WallpaperVideoPlayer {
                     mutableComposition.frameDuration = frameDuration
                     mutableComposition.renderSize = renderSize
                     mutableComposition.instructions = [instr]
-                    mutableComposition.sourceTrackIDForFrameTiming = videoTrack.trackID
+                    mutableComposition.sourceTrackIDForFrameTiming = kCMPersistentTrackID_Invalid
 
                     composition = mutableComposition
                 }
@@ -1198,7 +1240,6 @@ final class WallpaperVideoPlayer {
     ) async -> WallpaperPreparationResult {
         let reusesMatchingBuild = requestedFrameRateLimit == framesPerSecond
             && frameRateLimitTask != nil
-            && currentVideoComposition == nil
             && !isForceSDRActive
         if !reusesMatchingBuild {
             setFrameRateLimit(framesPerSecond)
@@ -1209,9 +1250,7 @@ final class WallpaperVideoPlayer {
 
         let generation = frameRateGeneration
         guard let task = frameRateLimitTask else {
-            return videoCompositionOwner == .frameRate && currentVideoComposition != nil
-                ? .ready
-                : .failed
+            return hasPreparedFrameRateLimit ? .ready : .failed
         }
         return await WallpaperPreparationWaiter.withHardDeadline(timeout: timeout) { [weak self] in
             await task.value
@@ -1221,10 +1260,7 @@ final class WallpaperVideoPlayer {
                   self.frameRateGeneration == generation else {
                 return .cancelled
             }
-            return self.videoCompositionOwner == .frameRate
-                && self.currentVideoComposition != nil
-                ? .ready
-                : .failed
+            return hasPreparedFrameRateLimit ? .ready : .failed
         }
     }
 
@@ -1232,6 +1268,8 @@ final class WallpaperVideoPlayer {
         guard !isCleanedUp,
               player?.currentItem != nil,
               requestedFrameRateLimit > 0,
+              frameRateLimitTask == nil,
+              frameRatePlan != .native,
               currentVideoComposition == nil else { return }
         setFrameRateLimit(requestedFrameRateLimit)
     }
@@ -1481,6 +1519,7 @@ final class WallpaperVideoPlayer {
         currentVideoComposition = nil
         colorComposition.reset()
         videoCompositionOwner = .none
+        frameRatePlan = requestedFrameRateLimit > 0 ? .pending : .native
 
         if inMemoryAssetLoader != nil {
             Logger.info(

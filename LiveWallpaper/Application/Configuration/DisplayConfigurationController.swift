@@ -3,27 +3,50 @@ import Foundation
 import LiveWallpaperCore
 
 @MainActor
-final class WallpaperPersistenceCoordinator {
+protocol DisplayConfigurationCommitting {
+    func save(_ configuration: ScreenConfiguration)
+    func remove(for screenID: CGDirectDisplayID)
+}
+
+@MainActor
+final class DisplayConfigurationController: DisplayConfigurationCommitting {
     private let store: WallpaperConfigurationStore
     private let bookmarkDisplayNameCache: BookmarkDisplayNameCache
     private let releaseRuntimeSession: @MainActor (CGDirectDisplayID) -> Void
     private let notifyWallpaperSessionChanged: @MainActor () -> Void
+    private let advanceSceneMutationIntent: @MainActor (CGDirectDisplayID) -> Void
+    private let now: @MainActor () -> Date
+    private let calendar: @MainActor () -> Calendar
+    private let notificationCenter: NotificationCenter
 
     init(
         store: WallpaperConfigurationStore,
         bookmarkDisplayNameCache: BookmarkDisplayNameCache,
         releaseRuntimeSession: @MainActor @escaping (CGDirectDisplayID) -> Void,
-        notifyWallpaperSessionChanged: @MainActor @escaping () -> Void
+        notifyWallpaperSessionChanged: @MainActor @escaping () -> Void,
+        advanceSceneMutationIntent: @MainActor @escaping (CGDirectDisplayID) -> Void,
+        now: @MainActor @escaping () -> Date = Date.init,
+        calendar: @MainActor @escaping () -> Calendar = { .current },
+        notificationCenter: NotificationCenter = .default
     ) {
         self.store = store
         self.bookmarkDisplayNameCache = bookmarkDisplayNameCache
         self.releaseRuntimeSession = releaseRuntimeSession
         self.notifyWallpaperSessionChanged = notifyWallpaperSessionChanged
+        self.advanceSceneMutationIntent = advanceSceneMutationIntent
+        self.now = now
+        self.calendar = calendar
+        self.notificationCenter = notificationCenter
     }
 
     func save(_ configuration: ScreenConfiguration) {
-        primeDisplayNames(from: configuration)
-        store.save(configuration)
+        advanceSceneMutationIntent(configuration.screenID)
+        let committed = SchedulePolicy.holdingManualChange(
+            configuration, previous: store.get(for: configuration.screenID),
+            now: now(), calendar: calendar()
+        )
+        primeDisplayNames(from: committed)
+        store.save(committed)
         postChange(for: configuration.screenID)
     }
 
@@ -52,8 +75,8 @@ final class WallpaperPersistenceCoordinator {
 
     /// Next main-actor tick so subscribers run outside the current SwiftUI reconcile.
     private func postChange(for screenID: CGDirectDisplayID) {
-        Task { @MainActor in
-            NotificationCenter.default.post(
+        Task { @MainActor [notificationCenter] in
+            notificationCenter.post(
                 name: .wallpaperConfigurationDidChange,
                 object: nil,
                 userInfo: ["screenID": screenID]

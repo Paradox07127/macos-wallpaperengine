@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
@@ -79,8 +80,83 @@ struct ScreenPresentationTests {
 
     @Test("Status text with and without the main display suffix")
     func statusTextMainSuffix() {
-        #expect(ScreenPresentation.statusText(pointSize: CGSize(width: 1920, height: 1080), isMain: false) == "1920×1080")
+        #expect(ScreenPresentation.statusText(pixelSize: CGSize(width: 1920, height: 1080), isMain: false) == "1920×1080")
         let mainLabel = String(localized: "Main", bundle: .appLanguage)
-        #expect(ScreenPresentation.statusText(pointSize: CGSize(width: 1920, height: 1080), isMain: true) == "1920×1080 · \(mainLabel)")
+        #expect(ScreenPresentation.statusText(pixelSize: CGSize(width: 1920, height: 1080), isMain: true) == "1920×1080 · \(mainLabel)")
+    }
+
+    @MainActor
+    @Test("Retina display labels use mode pixels while stage layout keeps points")
+    func retinaResolutionDoesNotChangeStageGeometry() throws {
+        let nsScreen = PresentationTestScreen()
+        // Preserve the unapplied function reference used by DisplayRegistry and fixtures.
+        let makeScreen: (NSScreen) -> Screen = Screen.init(nsScreen:)
+        #expect(makeScreen(nsScreen).frame == nsScreen.frame)
+        var modeReads = 0
+        let screen = Screen(nsScreen: nsScreen, displayPixelSize: { id in
+            #expect(id == PresentationTestScreen.displayID)
+            modeReads += 1
+            return CGSize(width: 3840, height: 2160)
+        })
+        let presentation = ScreenPresentation.presentation(for: screen, refreshRate: 60)
+        #expect(presentation.status == "3840×2160")
+        #expect(screen.frame == CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        #expect(modeReads == 1)
+        let model = EditDeskStageModel()
+        model.reduceMotion = true
+        model.displays = [StageDisplay(
+            id: screen.id, fingerprint: screen.displayFingerprint, frame: screen.frame,
+            isBuiltin: false, name: screen.name, badgeText: presentation.badge,
+            statusText: presentation.status, cover: nil, state: .empty
+        )]
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
+        #expect(children.contains { $0.accessibilityLabel() == "Retina Fixture, 3840×2160" })
+        #expect(model.displays[0].frame.size == CGSize(width: 1920, height: 1080))
+    }
+
+    @MainActor
+    @Test("A refreshed Screen captures mode pixels independently of point frame and backing scale")
+    func refreshedModeUsesReportedPixels() {
+        // A scaled mode need not be inferred from logical frame times backing scale.
+        let screen = Screen(nsScreen: PresentationTestScreen(), displayPixelSize: { _ in
+            CGSize(width: 5120, height: 2880)
+        })
+        #expect(ScreenPresentation.presentation(for: screen, refreshRate: 60).status == "5120×2880")
+        #expect(screen.frame.size == CGSize(width: 1920, height: 1080))
+    }
+
+    @Test("Missing display mode omits resolution instead of labelling points as pixels")
+    func missingModeOmitsResolution() {
+        #expect(ScreenPresentation.statusText(pixelSize: nil, isMain: false).isEmpty)
+        #expect(ScreenPresentation.statusText(pixelSize: nil, isMain: true)
+            == String(localized: "Main", bundle: .appLanguage))
+    }
+
+}
+
+private final class PresentationTestScreen: NSScreen {
+    static let displayID: CGDirectDisplayID = 0x6D1D_0F01
+    override var frame: NSRect {
+        NSRect(x: 0, y: 0, width: 1920, height: 1080)
+    }
+
+    override var visibleFrame: NSRect {
+        frame
+    }
+
+    override var backingScaleFactor: CGFloat {
+        2
+    }
+
+    override var localizedName: String {
+        "Retina Fixture"
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): Self.displayID]
     }
 }

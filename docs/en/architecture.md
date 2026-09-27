@@ -58,6 +58,26 @@ flowchart TD
 - Monitor, music and particles have separate window owners and per-display
   settings. Sharing a display does not make them part of the wallpaper decoder.
 
+## Application commands and file layout
+
+`Application/Configuration/DisplayConfigurationController.swift` is the shared
+product commit entry for display configuration. UI and playback callers delegate
+manual schedule holds, scene-edit invalidation, bookmark-name priming, storage
+mutation and change notifications to it. `WallpaperConfigurationStore` remains
+the configuration read/revision store; this controller does not add another cache.
+
+`Application/Workshop/` contains download, folder-import and repository-mutation
+coordinators. `Infrastructure/Workshop/` keeps HTTP, cache, SteamCMD/XPC and asset
+services. These are folders inside the existing app target, not new packages;
+Pro-only files retain their `LITE_BUILD` guards.
+
+The `ScreenManager` extension files follow the call boundary: `+Wallpaper`
+contains content-selection commands, `+AmbientActivation` prepares HTML/scene
+sessions, and `+AmbientTransaction` commits the prepared replacement. `+Overlays`
+handles desktop overlay settings and visibility; `+SourceAccess` propagates
+refreshed resource grants through configurations, history, bookmarks and schemes.
+All remain parts of the same app-lifetime owner; the split adds no runtime state.
+
 ## WPE render pipeline
 
 ```mermaid

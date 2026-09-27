@@ -104,7 +104,7 @@ extension ScreenManager {
     func clearWallpaperForScreen(_ screen: Screen) {
         Logger.notice("Clearing wallpaper for screen \(screen.id)", category: .screenManager)
         releaseRuntimeSession(screen)
-        persistence.remove(for: screen.id)
+        configurationController.remove(for: screen.id)
         notifyWallpaperSessionChanged()
     }
 
@@ -147,7 +147,7 @@ extension ScreenManager {
         clearWallpaperForScreen(screen)
     }
 
-    /// Tears down the live runtime session without touching persistence.
+    /// Tears down the live runtime session without changing saved configuration.
     func releaseRuntimeSession(_ screen: Screen) {
         adaptiveFrameRateOcclusionThrottled[screen.id] = nil
         suspendReasonsByScreen[screen.id] = nil
@@ -215,7 +215,7 @@ extension ScreenManager {
 
     func pruneInvalidConfigurationsIfNeeded() {
         guard !isTerminating else { return }
-        persistence.pruneInvalidConfigurations()
+        configurationController.pruneInvalidConfigurations()
     }
 
     func loadConfigurationForScreen(_ screen: Screen) {
@@ -299,9 +299,7 @@ extension ScreenManager {
 
     func saveConfiguration(_ configuration: ScreenConfiguration) {
         guard !isTerminating else { return }
-        advanceScenePropertyMutationIntent(for: configuration.screenID)
-        let previous = configurationStore.get(for: configuration.screenID)
-        persistence.save(SchedulePolicy.holdingManualChange(configuration, previous: previous, now: Date(), calendar: .current))
+        configurationController.save(configuration)
     }
 
     func updatePlaybackSpeed(_ speed: Double, for screen: Screen) {
@@ -498,7 +496,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         Logger.notice("Reloading all screens", category: .screenManager)
 
-        _ = persistence.pruneInvalidConfigurations()
+        _ = configurationController.pruneInvalidConfigurations()
 
         let configurations = configurationStore.loadAll()
         configurations.forEach { primeBookmarkDisplayNames(from: $0) }

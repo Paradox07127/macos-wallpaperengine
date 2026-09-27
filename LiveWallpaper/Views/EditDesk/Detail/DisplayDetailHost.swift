@@ -281,6 +281,11 @@ struct DisplayDetailHost: View {
                 }
                 let session = overlaySessions[screen.displayFingerprint] ?? OverlayEditorSession()
                 overlaySessions[screen.displayFingerprint] = session
+                undo?.overlayEditor = session
+                session.onObjectMoved = { [weak session, undo] identity, move in
+                    guard identity.fingerprint == screen.displayFingerprint else { return }
+                    undo?.recordMove(move, from: screen) { session?.flushPendingEdits() }
+                }
                 session.onObjectPersisted = { progress?.record(.overlay) }
                 session.onWidgetsRemoved = { [weak session, undo] removed in
                     undo?.recordRemoval(of: removed, from: screen) { session?.flushPendingEdits() }

@@ -558,7 +558,9 @@ extension WPEMetalSceneRenderer {
                 scale: object.scale,
                 angles: object.angles,
                 index: layers.count,
-                parentName: object.parentObjectID.flatMap { nameByID[$0] }
+                parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                alignment: object.alignment.rawValue,
+                parallaxDepth: object.parallaxDepth
             ))
         }
         for object in document.transformHostObjects {

@@ -21,8 +21,10 @@ struct WidgetDragModifier: ViewModifier {
     }
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(MonitorBoardCoordinateSpace.name))
+        let generation = chrome.editor?.gestureGeneration
+        return DragGesture(minimumDistance: 0, coordinateSpace: .named(MonitorBoardCoordinateSpace.name))
             .onChanged { value in
+                guard chrome.editor?.gestureGeneration == generation else { return }
                 if model.drag?.widgetID != placement.id {
                     let render = geometry.renderRect(forRawRect: restRawRect)
                     let offset = CGSize(
@@ -33,11 +35,13 @@ struct WidgetDragModifier: ViewModifier {
                         width: offset.width + geometry.tileInset,
                         height: offset.height + geometry.tileInset
                     )
+                    chrome.editor?.endKeyboardMove()
                     model.beginDrag(placement.id, grabOffset: rawOffset)
                 }
                 model.updateDrag(pointInBoard: value.location, bypassSnap: bypassSnap)
             }
             .onEnded { value in
+                guard chrome.editor?.gestureGeneration == generation else { return }
                 model.endDrag(bypassSnap: bypassSnap)
                 if let editor = chrome.editor, editor.isClick(value.translation) {
                     editor.requestInspector()

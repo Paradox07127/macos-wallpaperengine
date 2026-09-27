@@ -15,7 +15,11 @@ final class Screen: Identifiable, Hashable {
         }
         return customName
     }
+    /// Global AppKit layout coordinates in points; never use for resolution labels.
     let frame: CGRect
+    /// Pixel dimensions of the selected display mode. Nil when CoreGraphics
+    /// cannot supply a mode; do not present logical points as a pixel fallback.
+    let pixelSize: CGSize?
     let nsScreen: NSScreen
     let displayFingerprint: String
     /// Set only for panels whose key changed when UUID identity was adopted;
@@ -210,12 +214,22 @@ final class Screen: Identifiable, Hashable {
     
     // MARK: - Initialization
 
-    init(nsScreen: NSScreen) {
+    convenience init(nsScreen: NSScreen) {
+        self.init(nsScreen: nsScreen, displayPixelSize: { displayID in
+            guard let mode = CGDisplayCopyDisplayMode(displayID),
+                  mode.pixelWidth > 0, mode.pixelHeight > 0 else { return nil }
+            return CGSize(width: mode.pixelWidth, height: mode.pixelHeight)
+        })
+    }
+
+    init(nsScreen: NSScreen, displayPixelSize: (CGDirectDisplayID) -> CGSize?) {
         self.nsScreen = nsScreen
         self.frame = nsScreen.frame
 
         self.id = (nsScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32)
             ?? UInt32(truncatingIfNeeded: Self.generateFallbackID(for: nsScreen))
+
+        self.pixelSize = displayPixelSize(id)
 
         let screenName = nsScreen.localizedName
         self.systemName = screenName.isEmpty

@@ -255,7 +255,7 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("Download attempts guard every async publication boundary")
     func downloadPublicationGuards() throws {
-        let download = try projectSource("LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift")
+        let download = try projectSource("LiveWallpaper/Application/Workshop/WorkshopDownloadCoordinator.swift")
         let importBoundary = try sourceSlice(
             download,
             from: "let result = try? await self.importService.importProject(folder: folderURL)",
@@ -584,7 +584,7 @@ struct InstalledOwnershipCharacterizationTests {
     @Test("The auto-ingest scan never deletes library records")
     func autoIngestNeverDeletesRecords() throws {
         let source = try projectSource(
-            "LiveWallpaper/Infrastructure/Workshop/WorkshopFolderImportCoordinator.swift"
+            "LiveWallpaper/Application/Workshop/WorkshopFolderImportCoordinator.swift"
         )
         let body = try sourceSlice(source, from: "func ingestExistingDownloads", to: "\n    nonisolated static func")
         #expect(!body.contains("removeWPEImports"))

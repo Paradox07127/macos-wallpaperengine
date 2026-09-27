@@ -10,6 +10,7 @@ struct WPESceneScriptPresentationSnapshot {
     let layerAlpha: [String: Double]
     let textAlpha: [String: Double]
     let createdLayers: [String: WPECreatedLayerScriptState]
+    let layerPresentation: [String: WPELayerScriptPresentationMutation]
 }
 
 struct WPESceneScriptFramePublicationSnapshot {
@@ -37,7 +38,8 @@ extension WPEMetalSceneRenderer {
             textVisibility: liveTextVisibility,
             layerAlpha: liveLayerAlpha,
             textAlpha: liveTextAlpha,
-            createdLayers: liveCreatedLayers
+            createdLayers: liveCreatedLayers,
+            layerPresentation: liveLayerPresentation
         )
     }
 
@@ -49,6 +51,7 @@ extension WPEMetalSceneRenderer {
         liveLayerAlpha = snapshot.layerAlpha
         liveTextAlpha = snapshot.textAlpha
         liveCreatedLayers = snapshot.createdLayers
+        liveLayerPresentation = snapshot.layerPresentation
     }
 
     func captureSceneScriptFramePublication() -> WPESceneScriptFramePublicationSnapshot {
@@ -319,6 +322,7 @@ extension WPEMetalSceneRenderer {
                 parentByID: objectParentByID,
                 hostTransforms: layerAncestorLocalTransformsByID
             )
+        result = result.applyingScriptLayerPresentation(liveLayerPresentation)
         if !liveCreatedLayers.isEmpty {
             result = result.addingCreatedLayers(
                 liveCreatedLayers,

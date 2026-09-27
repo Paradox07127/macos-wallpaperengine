@@ -19,35 +19,35 @@ Skipping onboarding is fine — everything below works from the Settings window.
 ## 2) Know the two surfaces
 
 - **Menu bar icon** — day-to-day control: add a wallpaper, global on/off, per-display play/pause and prev/next, volume, live CPU/GPU/RAM/thermal strip, reload, quit.
-- **Settings window** (menu bar → **Manage**) — sidebar lists your **Displays**, plus **Saved** (wallpapers and schemes), **Apple Aerials**, (Pro) **Steam Workshop**, and **System Wallpaper** on macOS 26+; the settings tabs (General, Display Defaults, Performance, Integrations, Shortcuts, Backup…) live in the same window.
+- **Management window** (menu bar → **Manage**) — the top navigation opens **Overview**, **Wallpaper Library**, **Saved**, **System Wallpaper**, **Workshop** (Pro), and **Settings**. Overview shows your displays; click one to edit it. Settings has its own sidebar for General, Display Defaults, Performance, Integrations, Shortcuts, Backup and the other settings pages.
 
 ## 3) Configure one display end-to-end
 
-1. **Settings → Displays** → pick a display.
-2. Choose the wallpaper type: **Video / Web / Scene** (Scene is Pro-only; Lite shows only what it can render).
-3. Pick the source in the preview area — file picker or drag & drop onto the display row.
-4. Tune in the inspector:
-   - **Wallpaper** tab — volume/mute, frame-rate target (15/30/60/match display; labels show the effective rate), fit mode, video color space (including HDR), playback speed; web pages add JavaScript, tracker blocking, custom CSS, and auto-refresh; scenes add cursor parallax, click interaction, and a **Preset** row.
-   - **Overlays** tab — choose **Weather**, **Widgets** or **Music**. Configure 12 particle effects and weather response, arrange ten widget types including Weather, or enable a separate Now Playing layer. Each category has its own preview; drag to place widgets or the music layer.
-5. State persists as you interact — there is no separate save step.
+1. Open **Overview** and click the display you want to change.
+2. Use **Change Wallpaper**, or choose a wallpaper in **Wallpaper Library** and apply it to the named display. Scene wallpapers require Pro.
+3. In **Wallpaper**, use the preview controls for fit, audio and frame rate; the inspector shows the selected type's additional options. Video adds speed and color effects; web adds JavaScript, tracking protection, CSS and refresh; scenes expose their author's custom properties and presets.
+4. Frame-rate controls accept a custom integer up to that display's current refresh rate, plus **Max**. Presets include 15/24/30/45/60/120 where the display supports them. The selected value is a ceiling, not a measurement of achieved frames.
+5. **Overlays** opens one canvas with a layer list, an object inspector and an add palette. Add widgets, a clock or music, then select and position them. The effect layer contains particles and weather response. Sample Data previews layout without claiming to show live measurements.
+6. Ordinary property edits save as you interact. **Playlist & Schedule** is a separate draft editor with **Save** and **Cancel**.
 
 ## 4) Playlists and rotation
 
-In the display's **Playlist** section:
+Open **Playlist & Schedule** from the display toolbar or inspector:
 
-- Add videos, reorder by drag, remove entries.
-- Set the rotation interval (1–1440 minutes) and toggle **Shuffle**.
-- Apply to the current display or all displays.
+- Add wallpapers from the library, including video, web and scene entries supported by your edition.
+- Use each row's arrows to reorder, its play button to try it on this display, and its remove button to remove it from the queue.
+- Select **Manual** or a rotation interval of 1, 5, 15, 30, 60 or 120 minutes, and optionally enable **Shuffle**.
+- **Save** commits the draft. **Cancel** discards draft changes and restores the configuration from before trial playback.
 
 Prev/next also appear in the menu bar for displays running a playlist.
 
 ## 5) Time-of-day schedule
 
-In the **Schedule** section, add slots from presets (Morning, Midday, Afternoon,
-Evening, Night) or a custom range, then attach a bookmark to each. Overlapping
-slots are flagged. When no slot matches, the display returns to its primary
-wallpaper. Automation sleeps whenever you're away (lock, display sleep) and
-reconciles once on wake — missed slots don't fire retroactively.
+Switch the same editor to **Daily Schedule**. Assign wallpapers to time ranges;
+overlapping ranges show an error and prevent saving. A range can cross midnight.
+**Save and Use Daily Schedule** switches the display to that mode. Configure the
+fallback wallpaper for uncovered hours. Automation pauses while you're away
+(lock or display sleep), then reconciles on wake rather than replaying missed slots.
 
 ## 6) Saved wallpapers and schemes
 
@@ -67,7 +67,7 @@ open the settings window.
 
 ## 8) Workshop setup (Pro)
 
-The Steam Workshop page needs one-time setup, guided in-app:
+Start in **Workshop** to search, filter, sort and inspect public wallpapers; public browsing does not require SteamCMD, a sign-in or an API key. An installed item can be applied directly to a named display. When you need to download content, the app guides you through setup:
 
 1. Open **Settings → Workshop**. A status bar across the top of the page shows where each of the three prerequisites stands, and the **Steam connection** section below lists them step by step and offers auto-configuration.
 2. **SteamCMD** — downloads run through Valve's command-line tool using your own
@@ -122,11 +122,11 @@ preset keeps your changes.
 
 ## 10) Music, weather and system playback
 
-- **Overlays → Music**: enable the layer, pick Poster/Vinyl/Aurora, drag it in
+- **Overlays**: select Music in the add palette or layer list, enable the layer, pick Poster/Vinyl/Aurora, drag it in
   the preview and choose whether to show controls and lyrics. Lyrics are off
   by default. Spotify/Music Automation permission enables controls and missing
   playhead reads; Pro Audio Response enables reactive visuals.
-- **Overlays → Widgets**: add a Weather tile alongside CPU, Memory or other
+- **Overlays**: add a Weather tile from the palette alongside CPU, Memory or other
   widgets. Choose system/manual location under **Settings → Integrations → Weather**.
 - **System Wallpaper** (macOS 26+): add a supported video and open macOS
   Wallpaper settings to select it. The system provider can continue playing
@@ -139,8 +139,8 @@ preset keeps your changes.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug** pre-fills diagnostics.
 
-The Workshop browser retains its query, filters, page, and selected item when switching between pages in the management window, including Settings and Installed. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.
+The Workshop browser retains its query, filters, page, and selected item when switching between pages in the management window, including Settings and the wallpaper library. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.
 
 ## Save Workshop wallpapers for later
 
-Use the bookmark button on a Workshop catalog card, its context menu, or the detail view to save a wallpaper before downloading it. Saved → Bookmarks includes a Workshop Bookmarks section where you can open details and download later. Saving is local and does not download, subscribe to, or apply the item. Existing local bookmarks and the Schemes tab remain available. Workshop bookmark metadata is currently not included in .lwconfig exports.
+Use the bookmark button on a Workshop catalog card, its context menu, or the detail view to save a wallpaper before downloading it. Saved → Bookmarks includes a Workshop Bookmarks section where you can open details and download later. Saving is local and does not download, subscribe to, or apply the item. Existing local bookmarks and the Schemes tab remain available. Pro `.lwconfig` exports include Workshop bookmark metadata. They do not include the downloaded wallpaper media.

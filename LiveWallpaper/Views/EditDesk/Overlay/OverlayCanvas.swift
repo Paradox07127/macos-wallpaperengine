@@ -42,13 +42,28 @@ struct OverlayCanvas: View {
         .focusEffectDisabled()
         .simultaneousGesture(TapGesture().onEnded { focused = true })
         .onDeleteCommand { session.deleteSelection() }
-        .onMoveCommand { direction in
-            switch direction {
-            case .left: session.moveSelection(.left)
-            case .right: session.moveSelection(.right)
-            case .up: session.moveSelection(.up)
-            case .down: session.moveSelection(.down)
-            @unknown default: break
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow], phases: [.down, .repeat, .up]) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift]) else {
+                session.endKeyboardMove()
+                return .ignored
+            }
+            if press.phase == .up {
+                session.endKeyboardMove(); return .handled
+            }
+            let direction: MonitorBoardPlacementDirection
+            switch press.key {
+            case .leftArrow: direction = .left
+            case .rightArrow: direction = .right
+            case .upArrow: direction = .up
+            case .downArrow: direction = .down
+            default: return .ignored
+            }
+            session.moveSelection(direction, isRepeat: press.phase == .repeat)
+            return .handled
+        }
+        .onChange(of: focused) {
+            if !focused {
+                session.endKeyboardMove()
             }
         }
         .onAppear {

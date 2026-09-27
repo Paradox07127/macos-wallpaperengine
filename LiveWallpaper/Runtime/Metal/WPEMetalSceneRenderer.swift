@@ -191,6 +191,7 @@ final class WPEMetalSceneRenderer: NSObject {
     var onDemandVideoLoading: Set<String> = []
     var liveLayerAlpha: [String: Double] = [:]
     var liveCreatedLayers: [String: WPECreatedLayerScriptState] = [:]
+    var liveLayerPresentation: [String: WPELayerScriptPresentationMutation] = [:]
     /// Hidden template layers are retained only when a script references them.
     var createdLayerTemplatesByImagePath: [String: WPEPreparedRenderLayer] = [:]
     var introPhaseSource: WPEVideoTextureSource?

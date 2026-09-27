@@ -3444,9 +3444,6 @@ struct ScreenRuntimeOwnershipTests {
         let managerSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager.swift"
         )
-        let monitorSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Monitor.swift"
-        )
         let wallpaperSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
         )
@@ -3459,7 +3456,7 @@ struct ScreenRuntimeOwnershipTests {
         #expect(
             managerSource.components(separatedBy: "intent: .proposal").count - 1 >= 2
         )
-        #expect(monitorSource.contains("intent: .proposal"))
+        #expect(wallpaperSource.contains("intent: .proposal"))
         #expect(wallpaperSource.contains("intent: intent"))
         #expect(playbackSource.contains("intent == .persistedConfiguration"))
     }
@@ -3468,9 +3465,6 @@ struct ScreenRuntimeOwnershipTests {
     func explicitContentSelectorsBeginLatestIntent() throws {
         let wallpaperSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-        let monitorSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Monitor.swift"
         )
         let automationSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Automation.swift"
@@ -3490,7 +3484,7 @@ struct ScreenRuntimeOwnershipTests {
         #expect(selectorBeginsIntent("func setHTMLWallpaper(", in: wallpaperSource))
         #expect(selectorBeginsIntent("func switchToVideoWallpaper(", in: wallpaperSource))
         #expect(selectorBeginsIntent("func switchToHTMLWallpaper(", in: wallpaperSource))
-        #expect(selectorBeginsIntent("func setSceneWallpaper(", in: monitorSource))
+        #expect(selectorBeginsIntent("func setSceneWallpaper(", in: wallpaperSource))
         #expect(selectorBeginsIntent("func importWallpaperEngineProject(", in: automationSource))
         #expect(selectorBeginsIntent("func activateWPEHistoryEntry(", in: automationSource))
         #expect(selectorBeginsIntent("func updateSceneDescriptor(", in: sceneMutationSource))
@@ -3524,12 +3518,6 @@ struct ScreenRuntimeOwnershipTests {
         )
         let wallpaperSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
-        )
-        let screensSource = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Screens.swift"
-        )
-        let playbackHelpersSource = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator+Helpers.swift"
         )
 
         #expect(sceneMutationSource.contains(
@@ -3567,12 +3555,6 @@ struct ScreenRuntimeOwnershipTests {
         #expect(!scenePreviewSource.contains("Timer.publish"))
         #expect(wallpaperSource.contains(
             "advanceScenePropertyMutationIntent(for: screenID)"
-        ))
-        #expect(screensSource.contains(
-            "advanceScenePropertyMutationIntent(for: configuration.screenID)"
-        ))
-        #expect(playbackHelpersSource.contains(
-            "advanceSceneMutationIntent(configuration.screenID)"
         ))
 
         let preflight = try #require(sceneMutationSource.range(

@@ -240,8 +240,9 @@ final class SteamWorkshopMetadataService {
         return .success(SteamWorkshopMetadata(
             publishedFileID: id,
             title: payload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            // Not `description`: that is raw BBCode.
-            shortDescription: payload.short_description ?? "",
+            // GetPublishedFileDetails often carries only BBCode `description`.
+            // The app renders plain Text, never HTML or executable markup.
+            shortDescription: Self.plainDescription(short: payload.short_description, full: payload.description),
             creatorID: creatorID.flatMap { $0.isEmpty ? nil : $0 },
             creatorPersonaName: nil,
             previewImageURL: preview,
@@ -257,6 +258,16 @@ final class SteamWorkshopMetadataService {
             viewCount: payload.views,
             favoriteCount: payload.lifetime_favorited ?? payload.favorited
         ))
+    }
+
+    nonisolated static func plainDescription(short: String?, full: String?) -> String {
+        let brief = short?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let raw = brief.isEmpty ? (full ?? "") : brief
+        let text = raw.replacingOccurrences(
+            of: #"\[/?(?:h[1-6]|b|i|u|s|strike|spoiler|noparse|code|quote|list|olist|\*|url|img|previewyoutube|previewyoutubehd)(?:=[^\]]*)?\]"#,
+            with: "", options: [.regularExpression, .caseInsensitive]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return WorkshopDiagnosticRedactor.redact(text)
     }
 
     // MARK: - URLSession factory
@@ -299,6 +310,7 @@ private struct GetPublishedFileDetailsEnvelope: Decodable {
         let url: String?
         let title: String?
         let short_description: String?
+        let description: String?
         let time_created: Int?
         let time_updated: Int?
         let visibility: Int?

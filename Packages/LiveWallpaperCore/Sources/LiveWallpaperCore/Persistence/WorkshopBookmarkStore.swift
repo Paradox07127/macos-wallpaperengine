@@ -9,13 +9,17 @@ public struct WorkshopBookmark: Codable, Equatable, Identifiable, Sendable {
     public let previewImageURL: URL?
     public let tags: [String]
     public let createdAt: Date
+    /// App-owned, Codable Workshop item snapshot, shared with the query cache.
+    /// Optional so older bookmarks decode; Core does not depend on Steam DTOs.
+    public let detailsSnapshot: Data?
 
-    public init(id: UInt64, rawTitle: String?, previewImageURL: URL?, tags: [String], createdAt: Date = Date()) {
+    public init(id: UInt64, rawTitle: String?, previewImageURL: URL?, tags: [String], createdAt: Date = Date(), detailsSnapshot: Data? = nil) {
         self.id = id
         self.rawTitle = rawTitle
         self.previewImageURL = previewImageURL
         self.tags = tags
         self.createdAt = createdAt
+        self.detailsSnapshot = detailsSnapshot
     }
 }
 
@@ -49,6 +53,19 @@ public final class WorkshopBookmarkStore {
     public func add(_ bookmark: WorkshopBookmark) {
         guard !contains(bookmark.id) else { return }
         save(bookmarks + [bookmark])
+    }
+
+    /// Hydration never re-adds a bookmark removed while its request was running.
+    public func updateDetailsSnapshot(_ data: Data, for id: UInt64) {
+        guard let index = bookmarks.firstIndex(where: { $0.id == id }),
+              bookmarks[index].detailsSnapshot != data else { return }
+        var updated = bookmarks
+        let old = updated[index]
+        updated[index] = WorkshopBookmark(
+            id: old.id, rawTitle: old.rawTitle, previewImageURL: old.previewImageURL,
+            tags: old.tags, createdAt: old.createdAt, detailsSnapshot: data
+        )
+        save(updated)
     }
 
     public func remove(_ id: UInt64) {

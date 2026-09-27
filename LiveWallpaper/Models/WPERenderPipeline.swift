@@ -261,7 +261,27 @@ extension WPEPreparedRenderPipeline {
         return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
-    /// Runtime createLayer: single-pass non-puppet templates only.
+    func applyingScriptLayerPresentation(
+        _ mutations: [String: WPELayerScriptPresentationMutation]
+    ) -> WPEPreparedRenderPipeline {
+        guard !mutations.isEmpty else { return self }
+        var result = layers.map { layer -> WPEPreparedRenderLayer in
+            guard let mutation = mutations[layer.graphLayer.objectID] else { return layer }
+            return WPEPreparedRenderLayer(
+                graphLayer: layer.graphLayer.applyingScriptPresentation(mutation),
+                puppetModel: layer.puppetModel, passes: layer.passes
+            )
+        }
+        if mutations.values.contains(where: { $0.sortIndex != nil }) {
+            result = result.enumerated().sorted {
+                let a = $0.element.graphLayer.sortIndex, b = $1.element.graphLayer.sortIndex
+                return a == b ? $0.offset < $1.offset : a < b
+            }.map(\.element)
+        }
+        return WPEPreparedRenderPipeline(layers: result)
+    }
+
+    /// Runtime createLayer: independent material, optionally followed by its canonical scene copy.
     func addingCreatedLayers(
         _ createdLayers: [String: WPECreatedLayerScriptState],
         templatesByImagePath: [String: WPEPreparedRenderLayer]
@@ -269,13 +289,17 @@ extension WPEPreparedRenderPipeline {
         guard !createdLayers.isEmpty, !templatesByImagePath.isEmpty else { return self }
 
         let dynamicLayers = createdLayers.values
-            .sorted { $0.key < $1.key }
+            .sorted {
+                if let a = $0.sortIndex, let b = $1.sortIndex, a != b {
+                    return a < b
+                }
+                return $0.key < $1.key
+            }
             .compactMap { state -> WPEPreparedRenderLayer? in
                 guard state.visible,
                       state.alpha > 0.001,
                       let template = templatesByImagePath[state.imagePath],
-                      template.puppetModel == nil,
-                      template.passes.count == 1 else {
+                      template.createdImagePassLayout != nil else {
                     return nil
                 }
                 return template.createdLayerCopy(state: state)
@@ -402,58 +426,136 @@ extension WPEPreparedRenderPipeline {
     }
 }
 
+enum WPECreatedImagePassLayout: Equatable, Sendable {
+    case directMaterial
+    case isolatedMaterialAndSceneCopy
+}
+
+extension WPEPreparedRenderLayer {
+    /// Admission for COPYING one layer. A hidden template may write its own
+    /// composite rather than the scene; that is safe to promote for a clone.
+    /// Arbitrary effects, foreign FBO reads and programmable blending stay out.
+    var createdImagePassLayout: WPECreatedImagePassLayout? {
+        let graph = graphLayer
+        guard puppetModel == nil, graph.parentObjectID == nil, graph.attachment == nil,
+              graph.animationLayers.isEmpty, graph.localFBOs.isEmpty,
+              graph.groupRenderTarget == nil, graph.groupCompositeSource == nil,
+              graph.geometry.shapePoints == nil,
+              let material = passes.first, material.pass.phase == .material,
+              passes.allSatisfy({ $0.pass.constantScripts.isEmpty && $0.pass.visibilityGate == nil
+                      && $0.pass.userTextureBindings.isEmpty }) else { return nil }
+        func reads(_ pass: WPEPreparedRenderPass) -> [WPETextureReference] {
+            [pass.pass.source] + pass.textureReferences + Array(pass.pass.binds.values)
+        }
+        guard reads(material).allSatisfy({
+            switch $0 {
+            case .image, .asset: true
+            case .fbo, .previous: false
+            }
+        }) else { return nil }
+        func ownComposite(_ target: WPERenderTarget) -> String? {
+            guard case let .layerComposite(name) = target,
+                  name == graph.compositeA || name == graph.compositeB else { return nil }
+            return name
+        }
+        if passes.count == 1,
+           material.pass.target == .scene || ownComposite(material.pass.target) != nil {
+            return .directMaterial
+        }
+        guard passes.count == 2, let producer = ownComposite(material.pass.target) else { return nil }
+        let copy = passes[1]
+        guard copy.pass.target == .scene,
+              copy.pass.phase == .command(file: WPERenderPassPhase.sceneCopyCommandFile),
+              copy.pass.shader == WPERenderPassPhase.sceneCopyCommandFile,
+              reads(copy).allSatisfy({ $0 == .fbo(producer) }) else { return nil }
+        return .isolatedMaterialAndSceneCopy
+    }
+
+    /// Admission for REORDERING the existing graph. Each accepted layer owns
+    /// every FBO it reads, so changing the layer order cannot move a consumer
+    /// before another layer's producer. Particle/text/group checks are external.
+    var permitsIndependentImageReordering: Bool {
+        createdImagePassLayout != nil
+    }
+}
+
 private extension WPEPreparedRenderLayer {
     func createdLayerCopy(state: WPECreatedLayerScriptState) -> WPEPreparedRenderLayer? {
-        guard let preparedPass = passes.first else { return nil }
-        let p = preparedPass.pass
-        let renderPass = WPERenderPass(
-            id: "\(state.key).0",
-            phase: p.phase,
-            shader: p.shader,
-            source: p.source,
-            target: .scene,
-            textures: p.textures,
-            binds: p.binds,
-            constants: p.constants,
-            combos: p.combos,
-            userTextureBindings: p.userTextureBindings,
-            authoredJSON: p.authoredJSON,
-            blending: p.blending,
-            cullMode: p.cullMode,
-            depthTest: p.depthTest,
-            depthWrite: p.depthWrite,
-            constantScripts: p.constantScripts,
-            visibilityGate: p.visibilityGate
-        )
-        let dynamicPass = WPEPreparedRenderPass(
-            pass: renderPass,
-            shader: preparedPass.shader,
-            textureBindings: preparedPass.textureBindings,
-            comboValues: preparedPass.comboValues,
-            uniformValues: preparedPass.uniformValues,
-            materialUniformNames: preparedPass.materialUniformNames,
-            layerTintOverride: preparedPass.layerTintOverride,
-            reusingAccess: preparedPass.access
-        )
+        guard let layout = createdImagePassLayout else { return nil }
+        let composite = WPERenderTargetNames.CreatedLayerComposite.make(key: state.key)
+        let replacement = [graphLayer.compositeA: composite.a, graphLayer.compositeB: composite.b]
+        func reference(_ value: WPETextureReference) -> WPETextureReference {
+            guard case let .fbo(name) = value, let fresh = replacement[name] else { return value }
+            return .fbo(fresh)
+        }
+        func target(_ value: WPERenderTarget) -> WPERenderTarget {
+            if case .directMaterial = layout {
+                return .scene
+            }
+            guard case let .layerComposite(name) = value, let fresh = replacement[name] else { return value }
+            return .layerComposite(name: fresh)
+        }
+        let dynamicPasses = passes.enumerated().map { index, preparedPass in
+            let p = preparedPass.pass
+            let renderPass = WPERenderPass(
+                id: "\(state.key).\(index)", phase: p.phase, shader: p.shader,
+                source: reference(p.source), target: target(p.target),
+                textures: p.textures.mapValues(reference), binds: p.binds.mapValues(reference),
+                constants: p.constants, combos: p.combos,
+                userTextureBindings: p.userTextureBindings, authoredJSON: p.authoredJSON,
+                blending: p.blending, cullMode: p.cullMode, depthTest: p.depthTest,
+                depthWrite: p.depthWrite, constantScripts: p.constantScripts, visibilityGate: p.visibilityGate
+            )
+            return WPEPreparedRenderPass(
+                pass: renderPass, shader: preparedPass.shader,
+                textureBindings: preparedPass.textureBindings.mapValues(reference),
+                comboValues: preparedPass.comboValues, uniformValues: preparedPass.uniformValues,
+                materialUniformNames: preparedPass.materialUniformNames,
+                layerTintOverride: preparedPass.layerTintOverride,
+                // The initializer re-derives access when FBO names changed.
+                reusingAccess: preparedPass.access
+            )
+        }
         return WPEPreparedRenderLayer(
-            graphLayer: graphLayer.createdLayerCopy(state: state, pass: renderPass),
-            puppetModel: nil,
-            passes: [dynamicPass]
+            graphLayer: graphLayer.createdLayerCopy(state: state, passes: dynamicPasses.map(\.pass)),
+            puppetModel: nil, passes: dynamicPasses
         )
     }
 }
 
 private extension WPERenderLayer {
+    func applyingScriptPresentation(_ mutation: WPELayerScriptPresentationMutation) -> WPERenderLayer {
+        let g = geometry
+        let adjusted = WPERenderLayerGeometry(
+            origin: g.origin, scale: g.scale, angles: g.angles,
+            alignment: mutation.alignment.map { WPESceneAlignment(rawWPEValue: $0) } ?? g.alignment,
+            size: g.size, puppetMeshCenter: g.puppetMeshCenter,
+            alpha: g.alpha, alphaAnimation: g.alphaAnimation, color: g.color,
+            colorAnimation: g.colorAnimation, brightness: g.brightness, shapePoints: g.shapePoints
+        )
+        return WPERenderLayer(
+            objectID: objectID, objectName: objectName, visible: visible,
+            imagePath: imagePath, materialPath: materialPath, puppetPath: puppetPath,
+            parentObjectID: parentObjectID, attachment: attachment, animationLayers: animationLayers,
+            authoredJSON: authoredJSON, geometry: adjusted, localGeometry: localGeometry,
+            compositeA: compositeA, compositeB: compositeB, localFBOs: localFBOs,
+            passes: passes, groupRenderTarget: groupRenderTarget,
+            groupLocalGeometry: groupLocalGeometry, groupCompositeSource: groupCompositeSource,
+            parallaxDepth: mutation.parallaxDepth ?? parallaxDepth,
+            sortIndex: mutation.sortIndex ?? sortIndex
+        )
+    }
+
     func createdLayerCopy(
         state: WPECreatedLayerScriptState,
-        pass: WPERenderPass
+        passes: [WPERenderPass]
     ) -> WPERenderLayer {
         let g = geometry
         let dynamicGeometry = WPERenderLayerGeometry(
             origin: state.origin,
             scale: state.scale,
-            angles: g.angles,
-            alignment: g.alignment,
+            angles: state.angles.map { $0 * (.pi / 180) } ?? g.angles,
+            alignment: state.alignment.map { WPESceneAlignment(rawWPEValue: $0) } ?? g.alignment,
             size: g.size,
             puppetMeshCenter: g.puppetMeshCenter,
             alpha: state.alpha,
@@ -477,12 +579,12 @@ private extension WPERenderLayer {
             compositeA: WPERenderTargetNames.CreatedLayerComposite.make(key: state.key).a,
             compositeB: WPERenderTargetNames.CreatedLayerComposite.make(key: state.key).b,
             localFBOs: [],
-            passes: [pass],
+            passes: passes,
             groupRenderTarget: nil,
             groupLocalGeometry: nil,
             groupCompositeSource: nil,
-            parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            parallaxDepth: state.parallaxDepth ?? parallaxDepth,
+            sortIndex: state.sortIndex ?? sortIndex
         )
     }
 

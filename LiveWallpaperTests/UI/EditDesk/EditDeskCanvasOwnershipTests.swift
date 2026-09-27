@@ -15,6 +15,7 @@ struct EditDeskCanvasOwnershipTests {
 
     /// The solid content columns: the settings page's right-hand side and the display detail's inspectors.
     private static let contentColumns: Set<String> = [
+        "LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift", // Persistent save-failure recovery notice.
         "LiveWallpaper/Views/Settings/DetailContent.swift",
         "LiveWallpaper/Views/Settings/GeneralSettingsView.swift",
         "LiveWallpaper/Views/Settings/AboutTab.swift",

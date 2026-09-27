@@ -171,6 +171,7 @@ extension WPEMetalSceneRenderer {
             lastStableScriptTransforms = liveScriptTransforms
             lastStableScriptTextByID = tickedTextByID
             liveTextByID = tickedTextByID
+            framePipeline = framePipeline.applyingScriptLayerPresentation(liveLayerPresentation)
             if !liveCreatedLayers.isEmpty {
                 framePipeline = framePipeline.addingCreatedLayers(
                     liveCreatedLayers,

@@ -53,7 +53,7 @@ struct LogNoiseControlTests {
             category: .screenManager,
             level: .notice,
             message: "Preparing scene wallpaper (workshop 123) for screen 1",
-            file: "/s/ScreenManager+Monitor.swift",
+            file: "/s/ScreenManager+AmbientActivation.swift",
             line: 360
         )
 
@@ -75,7 +75,7 @@ struct LogNoiseControlTests {
             sink.record(
                 category: .screenManager, level: .notice,
                 message: "Preparing scene wallpaper (workshop \(index)) for screen 1",
-                file: "/s/ScreenManager+Monitor.swift", line: 360
+                file: "/s/ScreenManager+AmbientActivation.swift", line: 360
             )
         }
 

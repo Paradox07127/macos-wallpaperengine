@@ -46,6 +46,7 @@ struct WPESceneScriptRuntimeTests {
         initialVisible: Bool = true,
         initialAlpha: Double = 1,
         ownLayerName: String? = nil,
+        createdLayerBridge: WPECreatedLayerBridgeConfiguration? = nil,
         governor: WPESceneScriptExecutionGovernor? = nil
     ) throws -> LiveWallpaper.WPELayerScriptInstance {
         try LiveWallpaper.WPELayerScriptInstance(
@@ -61,6 +62,7 @@ struct WPESceneScriptRuntimeTests {
             initialVisible: initialVisible,
             initialAlpha: initialAlpha,
             ownLayerName: ownLayerName,
+            createdLayerBridge: createdLayerBridge,
             governor: governor ?? isolatedGovernor
         )
     }
@@ -2932,6 +2934,123 @@ export function init(value) {
         #expect(store.get("created") as? Double == 1)
     }
 
+    @Test("Namespaced string visualizer initializes all 64 bars and publishes current order")
+    func namespacedVisualizerInitializesAndUpdates() throws {
+        let shared = WPESharedScriptState(layers: [
+            .init(id: "bar", name: "MAIN", size: SIMD2(8, 8), origin: SIMD2(4, 4), index: 0, parentName: nil),
+        ])
+        let instance = try WPELayerScriptInstance(
+            script: WPEVisualizerScriptFixture.script, shared: shared, ownLayerName: "MAIN",
+            createdLayerBridge: .init(
+                imagePaths: [WPEVisualizerScriptFixture.imagePath], orderedLayerNames: ["MAIN"], allowsSorting: true
+            )
+        )
+        #expect(shared.get("initComplete") as? Bool == true)
+        #expect(shared.get("currentCount") as? Double == 64)
+        let order = try #require(shared.get("currentOrder") as? String).split(separator: ",").map(String.init)
+        #expect(order.first == "__created_62")
+        #expect(order.last == "MAIN")
+        #expect(order.count == 64)
+        let output = try #require(instance.tick())
+        #expect(shared.get("updateComplete") as? Bool == true)
+        #expect(output.created.count == 63)
+        #expect(output.created.allSatisfy { $0.imagePath == WPEVisualizerScriptFixture.imagePath })
+        #expect(output.created.allSatisfy { $0.alignment == "bottom" && $0.parallaxDepth == .zero })
+        #expect(output.created.allSatisfy { $0.angles == .zero && $0.scale == SIMD3(0.5, 0.25, 0) })
+        #expect(output.created.last?.origin == SIMD3(60, 60, 0))
+        #expect(output.created.last?.sortIndex == 0)
+        #expect(output.presentation[""]?.sortIndex == 63)
+        #expect(output.presentation[""]?.alignment == "bottom")
+        #expect(output.ownTransform.origin == SIMD3(4, 4, 0))
+    }
+
+    @Test("Unsupported layer sort reports false without changing read-back order")
+    func unsupportedSortDoesNotPretendToSucceed() throws {
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            let layer = thisScene.createLayer('models/bar.json');
+            shared.sorted = thisScene.sortLayer(layer, 0);
+            shared.index = thisScene.getLayerIndex(layer);
+            shared.invalid = thisScene.createLayer('../escape.json') === undefined;
+        }
+        """, shared: shared, ownLayerName: "MAIN", createdLayerBridge: .init(
+            imagePaths: ["models/bar.json"], orderedLayerNames: ["MAIN"], allowsSorting: false
+        ))
+        #expect(shared.get("sorted") as? Bool == false)
+        #expect(shared.get("index") as? Double == 1)
+        #expect(shared.get("invalid") as? Bool == true)
+        #expect(instance.initialOutput.created.count == 1)
+        #expect(instance.initialOutput.created.first?.sortIndex == nil)
+    }
+
+    @Test("Vector copy is independent while cached getter identity retains assignment updates")
+    func layerVectorCopyPreservesGetterAliasContract() throws {
+        let shared = WPESharedScriptState(layers: [
+            .init(id: "bar", name: "MAIN", size: SIMD2(8, 8), origin: SIMD2(1, 2), index: 0, parentName: nil),
+        ])
+        _ = try WPELayerScriptInstance(script: """
+        export function init() {
+            const alias = thisLayer.origin;
+            const copy = alias.copy();
+            copy.x = 99;
+            shared.afterCopy = thisLayer.origin.x;
+            thisLayer.origin = new Vec3(4, 5, 6);
+            shared.aliasUpdated = alias.x;
+            shared.sameObject = alias === thisLayer.origin;
+            shared.unknownNeutral = thisScene.getLayer('not-in-scene').origin.x;
+        }
+        """, shared: shared, ownLayerName: "MAIN")
+        #expect(shared.get("afterCopy") as? Double == 1)
+        #expect(shared.get("aliasUpdated") as? Double == 4)
+        #expect(shared.get("sameObject") as? Bool == true)
+        #expect(shared.get("unknownNeutral") as? Double == 0)
+    }
+
+    @Test("Document-order sound slots survive sorting and retired scripts cannot leak order")
+    func createdLayerOrderIncludesSoundAndResetsPerInstance() throws {
+        let shared = WPESharedScriptState(layers: [
+            .init(id: "bar", name: "MAIN", size: SIMD2(8, 8), origin: SIMD2(4, 4), index: 0, parentName: nil),
+        ])
+        let bridge = WPECreatedLayerBridgeConfiguration(
+            imagePaths: [WPEVisualizerScriptFixture.imagePath],
+            orderedLayerNames: ["SOUND", "MAIN"], allowsSorting: true
+        )
+        let first = try WPELayerScriptInstance(script: WPEVisualizerScriptFixture.script,
+                                               shared: shared, ownLayerName: "MAIN", createdLayerBridge: bridge)
+        #expect(first.initialOutput.presentation[""]?.sortIndex == 64)
+        #expect(first.initialOutput.created.last?.sortIndex == 1)
+        #expect(shared.get("currentCount") as? Double == 65)
+        first.destroy()
+        #expect(first.tick() == nil)
+        _ = try WPELayerScriptInstance(script: """
+        export function init() {
+            shared.newCount = thisScene.getLayerCount();
+            shared.newIndex = thisScene.getLayerIndex(thisLayer);
+        }
+        """, shared: shared, ownLayerName: "MAIN", createdLayerBridge: bridge)
+        #expect(shared.get("newCount") as? Double == 2)
+        #expect(shared.get("newIndex") as? Double == 1)
+    }
+
+    @Test("Duplicate and empty layer names cannot enter name-based sorting", arguments: [["MAIN", "MAIN"], ["", "MAIN"]])
+    func ambiguousLayerNamesRejectSorting(names: [String]) {
+        let bridge = WPECreatedLayerBridgeConfiguration(imagePaths: [], orderedLayerNames: names, allowsSorting: true)
+        #expect(bridge.allowsSorting == false)
+    }
+
+    @Test("Namespace ambiguity never chooses a different asset silently")
+    func createdLayerAssetNamespaceResolution() {
+        let bridge = WPECreatedLayerBridgeConfiguration(
+            imagePaths: ["models/bar.json", WPEVisualizerScriptFixture.imagePath],
+            orderedLayerNames: [], allowsSorting: false
+        )
+        #expect(bridge.resolvedImagePath("models/bar.json", workshopID: "12345") == nil)
+        #expect(bridge.resolvedImagePath(WPEVisualizerScriptFixture.imagePath, workshopID: "12345")
+            == WPEVisualizerScriptFixture.imagePath)
+        #expect(bridge.resolvedImagePath("../models/bar.json", workshopID: "12345") == nil)
+    }
+
     @Test("thisScene.createLayer exposes created layer state")
     func createLayerExposesCreatedLayerState() throws {
         let instance = try WPELayerScriptInstance(script: """
@@ -3059,13 +3178,17 @@ export function init(value) {
                     visibleAssigned: false, alphaAssigned: false
                 ),
                 "both": WPELayerScriptState(visible: false, alpha: 0, videoCommands: [.pause]),
-            ]
+            ],
+            presentation: ["target": .init(alignment: "bottom")]
         )
         let newer = WPELayerScriptOutput(
             own: WPELayerScriptState(visible: true, alpha: 1, videoCommands: [.stop]),
-            others: ["both": WPELayerScriptState(visible: true, alpha: 0.5, videoCommands: [])]
+            others: ["both": WPELayerScriptState(visible: true, alpha: 0.5, videoCommands: [])],
+            presentation: ["target": .init(parallaxDepth: .zero)]
         )
         let merged = LiveWallpaper.WPELayerScriptInstance.mergedOutputs(pending: pending, newer: newer)
+        #expect(merged.presentation["target"]?.alignment == "bottom")
+        #expect(merged.presentation["target"]?.parallaxDepth == .zero)
         #expect(merged.own.visible == true)
         #expect(merged.own.videoCommands == [.play, .stop])
         #expect(merged.others["both"]?.visible == true)

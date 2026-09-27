@@ -57,9 +57,17 @@ enum WorkshopBookmarkActions {
         } else if !item.isBanned {
             workshopStore.add(WorkshopBookmark(
                 id: item.id, rawTitle: item.rawTitle,
-                previewImageURL: item.previewImageURL, tags: item.tags
+                previewImageURL: item.previewImageURL, tags: item.tags,
+                detailsSnapshot: item.bookmarkDetailsSnapshot
             ))
         }
+    }
+
+    /// Preserve a richer successful read without changing bookmark identity/order.
+    static func refreshDetails(_ item: WorkshopQueryItem, in store: WorkshopBookmarkStore = .shared) {
+        guard let saved = store.bookmarks.first(where: { $0.id == item.id }),
+              let snapshot = item.preservingDetails(from: saved.queryItemSnapshot).bookmarkDetailsSnapshot else { return }
+        store.updateDetailsSnapshot(snapshot, for: item.id)
     }
 
     /// Clears a Workshop id from both stores.

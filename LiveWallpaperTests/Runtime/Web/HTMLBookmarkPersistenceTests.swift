@@ -324,7 +324,8 @@ struct HTMLBookmarkPersistenceTests {
 
     @Test("ScreenManager refreshes HTML before source identity and policy consumers")
     func screenManagerUsesEffectiveHTMLSourceForWholeRuntimeChain() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+Monitor.swift")
+        let source = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+AmbientActivation.swift")
+            + "\n" + RepositoryRoot.source("LiveWallpaper/App/ScreenManager+SourceAccess.swift")
         let start = try #require(source.range(of: "case .html(let source, let htmlConfig):"))
         let end = try #require(source.range(
             of: "case .scene(let descriptor):",

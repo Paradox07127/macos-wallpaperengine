@@ -69,7 +69,13 @@ struct DisplayDefaultsView: View {
     }
 
     private func arrangementTile(_ screen: Screen, size: CGSize) -> some View {
-        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+        let pixels = screen.pixelSize
+        let label = if let pixels {
+            Text("\(screen.name), \(Int(pixels.width)) by \(Int(pixels.height)) pixels", comment: "Arrangement map tile VoiceOver label: display name, then width and height in pixels.")
+        } else {
+            Text(verbatim: screen.name)
+        }
+        return RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
             .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
             .overlay {
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
@@ -81,8 +87,8 @@ struct DisplayDefaultsView: View {
                         .font(DesignTokens.Typography.caption)
                         .marqueeOnHover(truncationMode: .tail)
                     // Only the taller tiles have room for a second line.
-                    if size.height >= 46 {
-                        Text(verbatim: "\(Int(screen.frame.width))×\(Int(screen.frame.height))")
+                    if size.height >= 46, let pixels {
+                        Text(verbatim: "\(Int(pixels.width))×\(Int(pixels.height))")
                             .font(DesignTokens.Typography.metric)
                             .foregroundStyle(.secondary)
                     }
@@ -92,7 +98,7 @@ struct DisplayDefaultsView: View {
             .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
             .screenRenameMenu(for: screen)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("\(screen.name), \(Int(screen.frame.width)) by \(Int(screen.frame.height)) pixels", comment: "Arrangement map tile VoiceOver label: display name, then width and height in pixels."))
+            .accessibilityLabel(label)
     }
 
     private var videoSection: some View {

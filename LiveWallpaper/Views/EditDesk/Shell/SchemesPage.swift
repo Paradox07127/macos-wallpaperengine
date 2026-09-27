@@ -88,8 +88,13 @@ struct SchemesPage: View {
         if let workshopSession {
             WorkshopModalHost(
                 presentedItemID: Binding(get: { bookmarks.presentedWorkshopID }, set: { bookmarks.presentedWorkshopID = $0 }),
-                // Empty, so the modal asks Steam for the item rather than showing what was saved with it.
-                items: [],
+                // Browse facts (including personas/ratings) outrank a saved fallback.
+                items: bookmarks.workshopBookmarks.map { bookmark in
+                    let saved = SavedBookmarks.queryItem(bookmark)
+                    return workshopSession.browse.items.first { $0.id == bookmark.id }?
+                        .preservingDetails(from: saved) ?? saved
+                },
+                refreshDetailsOnOpen: true,
                 session: workshopSession,
                 toasts: toasts,
                 windowSize: stageSize,

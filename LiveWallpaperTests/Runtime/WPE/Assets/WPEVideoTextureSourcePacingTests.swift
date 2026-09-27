@@ -169,6 +169,122 @@ struct WPEVideoTextureSourcePacingTests {
         #expect(source.texture(at: 0) != nil, "A frame must still be shown while frozen")
     }
 
+    @Test("Policy resume restores a script-started video without a second play command")
+    func policyResumeRestoresScriptPlayback() async throws {
+        try await withScriptVideo { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            source.applyPerformanceProfile(.suspended)
+            try await requireFrozenPlayhead(source)
+            let pausedAt = source.currentPlayheadSeconds
+            source.applyPerformanceProfile(.quality)
+            try await requirePlayheadAdvance(source, after: pausedAt)
+        }
+    }
+
+    @Test("A script play received while policy-suspended waits for policy resume")
+    func scriptPlayCannotBypassPolicySuspend() async throws {
+        try await withScriptVideo { source in
+            source.applyPerformanceProfile(.suspended)
+            source.scriptPlay()
+            try await requireFrozenPlayhead(source)
+            #expect(source.currentPlayheadSeconds < 0.05)
+            source.applyPerformanceProfile(.quality)
+            try await requirePlayheadAdvance(source, after: 0)
+        }
+    }
+
+    @Test("Explicit script pause survives repeated policy suspend/resume")
+    func policyResumeDoesNotOverrideScriptPause() async throws {
+        try await withScriptVideo { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            source.scriptPause()
+            source.applyPerformanceProfile(.suspended)
+            source.applyPerformanceProfile(.quality)
+            source.applyPerformanceProfile(.quality)
+            try await requireFrozenPlayhead(source)
+        }
+    }
+
+    @Test("Script stop while suspended rewinds and stays stopped after resume")
+    func scriptStopSurvivesPolicyResume() async throws {
+        try await withScriptVideo { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            source.applyPerformanceProfile(.suspended)
+            source.scriptStop()
+            try await Task.sleep(for: .milliseconds(150))
+            source.applyPerformanceProfile(.quality)
+            try await requireFrozenPlayhead(source)
+            #expect(source.currentPlayheadSeconds < 0.1)
+        }
+    }
+
+    @Test("Taking script control with a seek retains pre-suspend automatic playback intent")
+    func scriptSeekPreservesAutomaticPlaybackIntent() async throws {
+        try await withScriptVideo { source in
+            source.applyPerformanceProfile(.quality)
+            try await requirePlayheadAdvance(source, after: 0)
+            source.applyPerformanceProfile(.suspended)
+            source.scriptSetCurrentTime(1)
+            try await Task.sleep(for: .milliseconds(150))
+            try await requireFrozenPlayhead(source)
+            let pausedAt = source.currentPlayheadSeconds
+            source.applyPerformanceProfile(.quality)
+            try await requirePlayheadAdvance(source, after: pausedAt)
+        }
+    }
+
+    @Test("Policy resume preserves a script video's natural end hold")
+    func policyResumePreservesScriptEndHold() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let url = try await SyntheticVideoFixture.writeMP4(durationSeconds: 0.5, frameRate: 24)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: url)
+        defer { source.invalidate() }
+        source.scriptPlay()
+        try await pump(source, for: .seconds(2))
+        source.applyPerformanceProfile(.suspended)
+        source.applyPerformanceProfile(.quality)
+        try await requireFrozenPlayhead(source)
+        #expect(source.texture(at: 0) != nil)
+    }
+
+    private func withScriptVideo(
+        _ operation: (WPEVideoTextureSource) async throws -> Void
+    ) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let url = try await SyntheticVideoFixture.writeMP4(durationSeconds: 4, frameRate: 24)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: url)
+        defer { source.invalidate() }
+        try await operation(source)
+    }
+
+    private func pump(_ source: WPEVideoTextureSource, for duration: Duration) async throws {
+        let deadline = ContinuousClock.now.advanced(by: duration)
+        while ContinuousClock.now < deadline {
+            _ = source.texture(at: 0)
+            try await Task.sleep(for: .milliseconds(16))
+        }
+    }
+
+    private func requireFrozenPlayhead(_ source: WPEVideoTextureSource) async throws {
+        let before = source.currentPlayheadSeconds
+        try await pump(source, for: .milliseconds(300))
+        #expect(abs(source.currentPlayheadSeconds - before) < 0.05)
+    }
+
+    private func requirePlayheadAdvance(_ source: WPEVideoTextureSource, after position: Double) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline, source.currentPlayheadSeconds < position + 0.15 {
+            _ = source.texture(at: 0)
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        #expect(source.currentPlayheadSeconds >= position + 0.15)
+    }
+
     // MARK: - Helpers
 
     private func pollForTexture(

@@ -82,6 +82,8 @@ struct WorkshopModalHost: View {
     /// The current browse page; the opened item is read from here first so a refreshed persona or
     /// rating shows up without a second fetch.
     let items: [WorkshopQueryItem]
+    /// Saved references refresh on open even when their fallback metadata exists.
+    var refreshDetailsOnOpen = false
     let session: WorkshopSession
     let toasts: EditDeskToastCenter
     let windowSize: CGSize
@@ -107,7 +109,9 @@ struct WorkshopModalHost: View {
 
     private var item: WorkshopQueryItem? {
         guard let presentedItemID else { return nil }
-        return items.first { $0.id == presentedItemID } ?? detachedItem.flatMap { $0.id == presentedItemID ? $0 : nil }
+        let pageItem = items.first { $0.id == presentedItemID }
+        let loaded = detachedItem.flatMap { $0.id == presentedItemID ? $0 : nil }
+        return loaded?.preservingDetails(from: pageItem) ?? pageItem
     }
 
     var body: some View {
@@ -153,10 +157,16 @@ struct WorkshopModalHost: View {
             return
         }
         refreshInstalledEntry()
-        guard !items.contains(where: { $0.id == presentedItemID }), detachedItem?.id != presentedItemID else { return }
+        detachedItem = nil
+        let fallback = items.first { $0.id == presentedItemID }
+        if let fallback { WorkshopBookmarkActions.refreshDetails(fallback) }
+        guard refreshDetailsOnOpen || fallback == nil else { return }
         let outcome = await services.itemDetails.load(ids: [presentedItemID])
-        guard self.presentedItemID == presentedItemID else { return }
-        detachedItem = outcome.items.first
+        guard !Task.isCancelled, self.presentedItemID == presentedItemID,
+              let fetched = outcome.items.first(where: { $0.id == presentedItemID }) else { return }
+        let resolved = fetched.preservingDetails(from: item ?? fallback)
+        detachedItem = resolved
+        WorkshopBookmarkActions.refreshDetails(resolved)
     }
 
     private func refreshInstalledEntry() {

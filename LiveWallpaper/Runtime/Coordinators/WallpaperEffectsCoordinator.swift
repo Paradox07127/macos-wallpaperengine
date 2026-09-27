@@ -319,10 +319,8 @@ final class WallpaperEffectsCoordinator {
         to player: WallpaperVideoPlayer,
         screenID: CGDirectDisplayID
     ) {
-        guard player.videoFrameRate > 0 else { return }
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
             frameRateLimit: frameRateLimit,
-            videoFrameRate: player.videoFrameRate,
             screenRefreshRate: Double(screenRefreshRate(screenID))
         )
         player.setFrameRateLimit(limit ?? 0)

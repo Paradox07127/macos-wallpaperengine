@@ -23,7 +23,7 @@ enum MonitorBoardPlacementCommand: Equatable {
     case delete(id: UUID)
 }
 
-enum MonitorBoardPlacementDirection {
+enum MonitorBoardPlacementDirection: Equatable {
     case left
     case right
     case up

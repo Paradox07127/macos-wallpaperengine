@@ -447,7 +447,6 @@ extension PlaybackCoordinator {
 
                     let compositionLimit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
                         frameRateLimit: configuration.frameRateLimit,
-                        videoFrameRate: player.videoFrameRate,
                         screenRefreshRate: Double(self.refreshRateLookup(screenID))
                     )
                     guard let compositionLimit else {

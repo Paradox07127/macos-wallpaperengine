@@ -53,6 +53,7 @@ extension WPEMetalSceneRenderer {
         scenePropertyBindings = [:]
         liveLayerVisibility = [:]
         liveCreatedLayers = [:]
+        liveLayerPresentation = [:]
         createdLayerTemplatesByImagePath = [:]
         previousPointer = SIMD2<Double>(0.5, 0.5)
         previousPointerWasLive = false
@@ -743,6 +744,7 @@ extension WPEMetalSceneRenderer {
         scenePropertyBindings = [:]
         liveLayerVisibility = [:]
         liveCreatedLayers = [:]
+        liveLayerPresentation = [:]
         createdLayerTemplatesByImagePath = [:]
         previousPointer = SIMD2<Double>(0.5, 0.5)
         previousPointerWasLive = false

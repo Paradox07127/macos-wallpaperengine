@@ -335,6 +335,7 @@ final class WPEVideoTextureSource {
             if scriptHeldAtEnd { return currentTexture }
             let playhead = playheadSeconds
             if playhead + 0.1 < scriptLastPlaybackSeconds {
+                playbackRequested = false
                 player?.pause()
                 scriptHeldAtEnd = true
                 return currentTexture   // hold the pre-wrap (≈ last) frame
@@ -369,13 +370,12 @@ final class WPEVideoTextureSource {
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         guard !isInvalidated else { return }
-        switch profile {
-        case .quality:
-            // Script-owned source: don't force-play on policy resume.
-            if !scriptControlled { player?.play() }
-        case .suspended:
-            player?.pause()
-            // A paused source never publishes again, so drain here or the last replaced frame's planes stay resident.
+        policySuspended = profile == .suspended
+        if profile == .quality, !scriptControlled {
+            playbackRequested = true
+        }
+        reconcilePlaybackIntent()
+        if policySuspended {
             drainRetiredFrames()
         }
     }
@@ -384,6 +384,17 @@ final class WPEVideoTextureSource {
 
     /// Script owns playback — policy stops force-play; texture path becomes play-once.
     private var scriptControlled = false
+    private var playbackRequested = false
+    private var policySuspended = false
+
+    private func reconcilePlaybackIntent() {
+        if playbackRequested, !policySuspended, !scriptHeldAtEnd {
+            player?.play()
+        } else {
+            player?.pause()
+        }
+    }
+
     /// Last playhead for loop-wrap detection (backward jump).
     private var scriptLastPlaybackSeconds: TimeInterval = 0
     /// Play-once reached end and froze on last frame.
@@ -405,20 +416,23 @@ final class WPEVideoTextureSource {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
         resetScriptPlayback()
-        player?.play()
+        playbackRequested = true
+        reconcilePlaybackIntent()
     }
 
     func scriptPause() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
-        player?.pause()
+        playbackRequested = false
+        reconcilePlaybackIntent()
     }
 
     /// Pause + rewind to first frame (reset play-once for replay).
     func scriptStop() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
-        player?.pause()
+        playbackRequested = false
+        reconcilePlaybackIntent()
         player?.seek(to: .zero)
         resetScriptPlayback()
     }

@@ -1,6 +1,114 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Move Overlay Object" : {
+      "comment" : "Undo/Redo action name after moving a widget, music layer or clock.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Overlay Object"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover objeto superpuesto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーバーレイオブジェクトを移動"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動疊加物件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动叠加对象"
+          }
+        }
+      }
+    },
+    "Retry Save" : {
+      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar guardar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存を再試行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試儲存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试保存"
+          }
+        }
+      }
+    },
+    "Your latest changes aren't saved yet. Keep Loomscreen open and retry." : {
+      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your latest changes aren't saved yet. Keep Loomscreen open and retry."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los últimos cambios aún no se han guardado. Mantén Loomscreen abierto e inténtalo de nuevo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新の変更はまだ保存されていません。Loomscreenを開いたまま再試行してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新變更尚未儲存。請保持 Loomscreen 開啟並重試。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新更改尚未保存。请保持 Loomscreen 打开并重试。"
+          }
+        }
+      }
+    },
     "" : {
 
     },

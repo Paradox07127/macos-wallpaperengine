@@ -114,6 +114,21 @@ struct EditDeskRoot: View {
                 Color.clear
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if SettingsManager.shared.persistenceStatus.hasFailure {
+                HStack {
+                    Text("Your latest changes aren't saved yet. Keep Loomscreen open and retry.")
+                    Spacer()
+                    Button("Retry Save") {
+                        Task { await SettingsManager.shared.flushPendingWrites() }
+                    }
+                    .disabled(SettingsManager.shared.persistenceStatus.isSaving)
+                }
+                .padding()
+                .contentColumnBackground()
+                .accessibilityIdentifier("settings.persistenceFailure")
+            }
+        }
         .overlay(alignment: .top) {
             EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })
         }

@@ -265,7 +265,7 @@ struct DeferredApplyCoordinatorTests {
     }
 
     @Test func dependencyCompletionIsPublishedAfterChainAndKeepsLegacySuccessPhase() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift")
+        let source = try RepositoryRoot.source("LiveWallpaper/Application/Workshop/WorkshopDownloadCoordinator.swift")
         let run = try slice(source, from: "var outcome: WorkshopDownloadOutcome?", to: "private func recordProgress(")
         #expect(run.contains("outcome = await fetchDependencies("))
         #expect(run.contains("if attempts[itemID] == attemptID"))

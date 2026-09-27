@@ -854,6 +854,7 @@ struct VideoSessionLifecycleTests {
         }
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             applyPolicy: { _ in },
             applyVideoEffects: applyEffects,
@@ -1453,6 +1454,153 @@ struct VideoSessionLifecycleTests {
         #expect(player.currentPlaybackSpeed == 2.0)
     }
 
+    @Test("Native timing decision uses the fastest source frame, not a nominal average")
+    func sourceCadenceResolvesFrameRatePlan() {
+        #expect(VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: CMTime(value: 1, timescale: 24)))
+        #expect(VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: CMTime(value: 1001, timescale: 30000)))
+        #expect(!VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: CMTime(value: 1, timescale: 60)))
+        #expect(!VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: .invalid))
+        #expect(!VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: .zero))
+        #expect(!VideoFrameRatePlan.preservesSourceTiming(ceiling: 30, minimumSourceFrameDuration: .positiveInfinity))
+    }
+
+    @Test("A cap above source cadence is ready with no composition, including repeated requests")
+    func nativeFrameRatePlanIsPreparedAndIdempotent() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(frameRate: 24)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        player.setFrameRateLimit(60)
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        #expect(await player.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+        #expect(player.requestedFrameRateLimit == 60)
+        #expect(player.currentVideoComposition == nil)
+        #expect(!player.requiresFrameRatePreparationForRetry)
+        let revision = player.videoCompositionRevision
+        #expect(await player.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        #expect(player.videoCompositionRevision == revision)
+        player.setFrameRateLimit(0)
+        #expect(player.frameRatePlan == .native)
+        #expect(player.currentVideoComposition == nil)
+    }
+
+    @Test("A lower ceiling emits bounded composition PTS instead of preserving 60fps source timing")
+    func frameRateCompositionActuallyCapsOutput() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(durationSeconds: 4, frameRate: 60)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        #expect(await player.prepareFrameRateLimit(30, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .composed)
+        let composition = try #require(player.currentVideoComposition)
+        #expect(composition.sourceTrackIDForFrameTiming == kCMPersistentTrackID_Invalid)
+        let asset = AVURLAsset(url: url)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderVideoCompositionOutput(videoTracks: [track], videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        output.videoComposition = composition
+        reader.add(output)
+        try #require(reader.startReading())
+        var times: [Double] = []
+        while let sample = output.copyNextSampleBuffer() {
+            times.append(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample)))
+        }
+        #expect(reader.status == .completed)
+        #expect(times.filter { $0 >= 1 && $0 < 3 }.count == 60)
+        #expect(zip(times.dropFirst(), times).allSatisfy { $0 - $1 >= 1.0 / 30 - 0.00001 })
+    }
+
+    @Test("Clearing a resolved native plan invalidates readiness until it is resolved again")
+    func clearedNativeFrameRatePlanRequiresPreparation() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(frameRate: 24)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        #expect(await player.prepareFrameRateLimit(30, timeout: .seconds(5)) == .ready)
+        player.setVideoComposition(nil, owner: .none)
+        #expect(player.frameRatePlan == .pending)
+        #expect(player.requiresFrameRatePreparationForRetry)
+        #expect(await player.prepareFrameRateLimit(30, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+    }
+
+    @Test("Changing ceilings transitions native to composed and back without stale publication")
+    func frameRatePlanTransitionsBetweenNativeAndComposed() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(durationSeconds: 4, frameRate: 60)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        #expect(await player.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+        #expect(await player.prepareFrameRateLimit(30, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .composed)
+        #expect(await player.prepareFrameRateLimit(120, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+        #expect(player.currentVideoComposition == nil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(player.currentVideoComposition == nil)
+    }
+
+    @Test("A VFR track's fast frames prevent an average-FPS native shortcut")
+    func variableCadenceUsesMinimumFrameDuration() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(durationSeconds: 4, frameRate: 30, variableFrameTiming: true)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        #expect(player.videoFrameRate < 45)
+        #expect(await player.prepareFrameRateLimit(45, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .composed)
+        #expect(await player.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+        #expect(player.currentVideoComposition == nil)
+    }
+
+    @Test("Force SDR supersedes a pending FPS plan; leaving it resolves the saved request")
+    func forceSDRRetainsCompositionAuthorityAcrossFrameRatePlan() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(frameRate: 24)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        player.setFrameRateLimit(60)
+        player.setVideoColorSpace(.forceSDR)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(player.videoCompositionOwner == .forceSDR)
+        #expect(player.currentVideoComposition != nil)
+        #expect(!player.requiresFrameRatePreparationForRetry)
+        player.setVideoColorSpace(.auto)
+        #expect(await player.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        #expect(player.frameRatePlan == .native)
+        #expect(player.currentVideoComposition == nil)
+    }
+
+    @Test("Cleanup cannot be followed by a late FPS composition publication")
+    func cleanupRetiresFrameRatePlanBuild() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(frameRate: 60)
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        defer { player.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { player.player?.currentItem != nil }
+        player.setFrameRateLimit(30)
+        player.cleanup()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(player.currentVideoComposition == nil)
+        #expect(player.videoCompositionOwner == .none)
+        #expect(player.frameRatePlan == .pending)
+    }
+
+    @Test("Retry copies the requested ceiling but resolves native readiness for its own asset")
+    func retryResolvesNativeFrameRatePlan() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4(frameRate: 24)
+        let source = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true)
+        let replacement = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128), startsHidden: true, loadImmediately: false)
+        defer { source.cleanup(); replacement.cleanup(); try? FileManager.default.removeItem(at: url) }
+        try await Self.waitForCondition("player item") { source.player?.currentItem != nil }
+        #expect(await source.prepareFrameRateLimit(60, timeout: .seconds(5)) == .ready)
+        VideoWallpaperSession.applyCompositionState(from: source, to: replacement)
+        #expect(replacement.requestedFrameRateLimit == 60)
+        #expect(replacement.frameRatePlan == .pending)
+        #expect(replacement.requiresFrameRatePreparationForRetry)
+    }
+
     // MARK: - Manual-pause deep hibernation (parity with SceneWallpaperSession)
 
     @Test("A manual pause deep-hibernates after its dwell and play rebuilds the player")
@@ -1597,13 +1745,12 @@ struct VideoSessionLifecycleTests {
 /// A tiny real MP4. The deep-hibernation path needs a live `AVQueuePlayer` and a
 /// still-frame capture, so a nonexistent URL cannot exercise it.
 private enum ManualPauseVideoFixture {
-    static func writeMP4(durationSeconds: TimeInterval = 1.5) async throws -> URL {
+    static func writeMP4(durationSeconds: TimeInterval = 1.5, frameRate: Int32 = 30, variableFrameTiming: Bool = false) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("manual-pause-hibernate-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         let width = 128
         let height = 128
-        let frameRate: Int32 = 30
         let input = AVAssetWriterInput(
             mediaType: .video,
             outputSettings: [
@@ -1647,7 +1794,9 @@ private enum ManualPauseVideoFixture {
             CVPixelBufferUnlockBaseAddress(buffer, [])
             guard adaptor.append(
                 buffer,
-                withPresentationTime: CMTime(value: Int64(index), timescale: frameRate)
+                withPresentationTime: variableFrameTiming
+                    ? CMTime(value: Int64((index / 2) * 40 + (index % 2) * 10), timescale: 600)
+                    : CMTime(value: Int64(index), timescale: frameRate)
             ) else {
                 throw FixtureError.setupFailed(writer.error?.localizedDescription ?? "append failed")
             }

@@ -427,6 +427,7 @@ extension WPEMetalSceneRenderer {
         liveLayerAlpha.removeAll(keepingCapacity: false)
         liveTextAlpha.removeAll(keepingCapacity: false)
         liveCreatedLayers.removeAll(keepingCapacity: false)
+        liveLayerPresentation.removeAll(keepingCapacity: false)
         layerVideoSourceKey.removeAll(keepingCapacity: false)
         layerObjectIDByName.removeAll(keepingCapacity: false)
         sceneScriptVideoCommandBuffer.discard()

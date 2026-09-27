@@ -20,6 +20,33 @@ extension ScreenManager {
         )
     }
 
+    func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen) {
+        guard !isTerminating else { return }
+        beginExplicitWallpaperSelection(for: screen)
+        var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) ?? ScreenConfiguration(
+            screenID: screen.id,
+            wallpaper: .scene(descriptor)
+        ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
+        if configuration.activeWallpaper == .scene(descriptor),
+           configuration.wpeOrigin == origin,
+           screen.runtimeSession?.wallpaperType == .scene {
+            Logger.info("Scene wallpaper already active for screen \(screen.id); keeping existing scene session", category: .screenManager)
+            return
+        }
+
+        configuration.setSceneWallpaper(descriptor, origin: origin)
+        restoreWallpaperSession(
+            for: screen,
+            configuration: configuration,
+            preservingState: false,
+            intent: .proposal,
+            beforeCommit: { [weak self] in
+                self?.saveConfiguration(configuration)
+                return self != nil
+            }
+        )
+    }
+
     @discardableResult
     func bumpTransition(for screenID: CGDirectDisplayID) -> Int {
         advanceScenePropertyMutationIntent(for: screenID)
@@ -209,7 +236,7 @@ extension ScreenManager {
     }
 
     func primeBookmarkDisplayNames(from configuration: ScreenConfiguration) {
-        persistence.primeDisplayNames(from: configuration)
+        configurationController.primeDisplayNames(from: configuration)
     }
 
     func commitWallpaperSessionState(includePollingRefresh: Bool = false) {

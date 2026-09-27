@@ -652,7 +652,9 @@ struct WPERenderGraphBuilder: Sendable {
         guard !imagePaths.isEmpty else { return [] }
 
         return Set(document.imageObjects.compactMap { object in
-            imagePaths.contains(object.imageRelativePath) ? object.id : nil
+            imagePaths.contains(object.imageRelativePath)
+                || imagePaths.contains(WPECreatedLayerBridgeConfiguration.unqualifiedAssetPath(object.imageRelativePath))
+                ? object.id : nil
         })
     }
 
@@ -671,6 +673,14 @@ struct WPERenderGraphBuilder: Sendable {
                 paths.insert(String(chunk[range]))
             }
             searchStart = createRange.upperBound
+        }
+        let stringPattern = #"\bcreateLayer\s*\(\s*["']([^"']+)["']"#
+        if let strings = try? NSRegularExpression(pattern: stringPattern) {
+            for match in strings.matches(in: script, range: NSRange(script.startIndex ..< script.endIndex, in: script)) {
+                if let range = Range(match.range(at: 1), in: script) {
+                    paths.insert(String(script[range]))
+                }
+            }
         }
         return paths
     }

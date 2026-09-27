@@ -6,7 +6,7 @@ import Testing
 struct OverlayRuntimeContractTests {
     @Test("Desktop edits still skip reconcile and capture still forces painted panels")
     func desktopWriteAndCaptureContracts() throws {
-        let manager = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+Monitor.swift")
+        let manager = try RepositoryRoot.source("LiveWallpaper/App/ScreenManager+Overlays.swift")
         let start = try #require(manager.range(of: "private func persistMonitorOverlayBoard("))
         let end = try #require(manager.range(of: "func monitorOverlay(for", range: start.upperBound ..< manager.endIndex))
         #expect(manager[start.lowerBound ..< end.lowerBound].contains("reconcile: false"))

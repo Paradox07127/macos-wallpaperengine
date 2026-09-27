@@ -1182,6 +1182,109 @@ struct WPEMetalSceneRendererTests {
         #expect(pixel.r > pixel.b)
     }
 
+    @Test("Namespaced string visualizer draws bar0 and 63 clones with their published geometry", arguments: [0.0, 90.0], [false, true])
+    func rendersNamespacedVisualizer(angleDegrees: Double, workshopShader: Bool) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.sceneScriptVisualizerScene(angleDegrees: angleDegrees, workshopShader: workshopShader)
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        try await renderer.load()
+        #expect(renderer.sceneScriptSharedState?.get("initComplete") as? Bool == true)
+        let layers = try #require(renderer.lastFramePipeline?.layers)
+        #expect(layers.count == 64)
+        #expect(layers.allSatisfy { $0.passes.count == (workshopShader ? 2 : 1) })
+        if workshopShader {
+            #expect(layers.allSatisfy { $0.passes[0].uniformValues["g_UserAlpha"] == .number(0.5) })
+            var targets = Set<String>()
+            for layer in layers {
+                guard case let .layerComposite(target) = layer.passes[0].pass.target else {
+                    Issue.record("workshop material lost its independent offscreen target")
+                    continue
+                }
+                #expect(targets.insert(target).inserted)
+                #expect(layer.passes[1].pass.source == .fbo(target))
+                #expect(layer.passes[1].textureReferences.contains(.fbo(target)))
+                #expect(layer.passes[1].pass.target == .scene)
+            }
+            #expect(targets.count == 64)
+        }
+        #expect(layers.last?.graphLayer.objectID == "bar")
+        #expect(layers.first?.graphLayer.objectID == "bar.__created_62")
+        #expect(layers.allSatisfy { $0.graphLayer.geometry.alignment == .bottom })
+        #expect(layers.allSatisfy { abs($0.graphLayer.geometry.angles.z - angleDegrees * .pi / 180) < 0.0001 })
+        #expect(layers.allSatisfy { $0.graphLayer.geometry.scale == SIMD3(0.5, 0.25, 0) })
+        #expect(layers.dropLast().allSatisfy { $0.graphLayer.parallaxDepth == .zero })
+        #expect(layers.map(\.graphLayer.sortIndex) == Array(0 ..< 64))
+        let output = try #require(renderer.outputTexture)
+        let source = try #require(renderer.loadedTextures["materials/bar.png"])
+        let sourcePixel = try #require(source.readAllPixels()?.first)
+        #expect(sourcePixel.r > 250 && sourcePixel.g < 5 && sourcePixel.b < 5 && sourcePixel.a == 255)
+        let pixels = try #require(output.readAllPixels())
+        var histogram: [String: Int] = [:]
+        for pixel in pixels {
+            histogram["\(pixel.r),\(pixel.g),\(pixel.b),\(pixel.a)", default: 0] += 1
+        }
+        print("[VisualizerPixels] angle=\(angleDegrees) workshop=\(workshopShader) output=\(output.width)x\(output.height) format=\(output.pixelFormat.rawValue) scene=\(renderer.sceneRenderSize) colors=\(histogram.sorted { $0.value > $1.value }.prefix(8))")
+        for (key, texture) in renderer.loadedTextures.sorted(by: { $0.key < $1.key }) {
+            let pixel = texture.readAllPixels()?.first
+            print("[VisualizerSource] \(key) \(texture.width)x\(texture.height) format=\(texture.pixelFormat.rawValue) pixel=\(String(describing: pixel))")
+        }
+        for layer in [layers[0], layers[layers.count - 1]] {
+            print("[VisualizerLayer] id=\(layer.id) geometry=\(layer.graphLayer.geometry)")
+            for pass in layer.passes {
+                print("[VisualizerPass] id=\(pass.id) shader=\(pass.pass.shader) source=\(pass.pass.source) target=\(pass.pass.target) textures=\(pass.textureBindings) constants=\(pass.uniformValues)")
+            }
+        }
+        let minimumRed: UInt8 = workshopShader ? 80 : 200
+        var redPixels = 0, farRightRedPixels = 0
+        for y in 0 ..< output.height {
+            for x in 0 ..< output.width {
+                let pixel = pixels[y * output.width + x]
+                if pixel.r > minimumRed, pixel.g < 20, pixel.b < 20 {
+                    redPixels += 1
+                    if x > 48 {
+                        farRightRedPixels += 1
+                    }
+                }
+            }
+        }
+        #expect(redPixels > 128)
+        #expect(farRightRedPixels > 16) // Cannot be satisfied by bar0 alone.
+        if angleDegrees == 0 {
+            // bar0 occupies world y=4...6 when bottom-aligned; a center anchor
+            // only reaches y=5. This pixel distinguishes the actual draw path.
+            let anchored = pixels[58 * output.width + 4]
+            print("[VisualizerAnchor] \(anchored)")
+            #expect(anchored.r > minimumRed && anchored.g < 20)
+        }
+        renderer.cleanup()
+        #expect(renderer.liveCreatedLayers.isEmpty)
+        #expect(renderer.liveLayerPresentation.isEmpty)
+        #expect(renderer.lastFramePipeline == nil)
+    }
+
+    @Test("Disjoint presentation assignments from separate scripts retain each other's fields")
+    func disjointLayerPresentationAssignmentsMerge() async throws {
+        let fixture = try MetalSceneFixture.sceneScriptCreatedLayerScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        try await renderer.load()
+        let neutral = WPELayerScriptState(visible: true, alpha: 1, videoCommands: [], visibleAssigned: false, alphaAssigned: false)
+        renderer.applyLayerScriptOutput(.init(own: neutral, others: [:], presentation: ["Template": .init(alignment: "bottom")]), ownObjectID: "A")
+        renderer.applyLayerScriptOutput(.init(own: neutral, others: [:], presentation: ["Template": .init(parallaxDepth: SIMD2(0.1, 0.2))]), ownObjectID: "B")
+        #expect(renderer.liveLayerPresentation["template"]?.alignment == "bottom")
+        #expect(renderer.liveLayerPresentation["template"]?.parallaxDepth == SIMD2(0.1, 0.2))
+        renderer.applyLayerScriptOutput(.init(own: neutral, others: [:]), ownObjectID: "C")
+        #expect(renderer.liveLayerPresentation["template"]?.alignment == "bottom")
+        renderer.cleanup()
+    }
+
     @Test("Angles scripts are WPE degrees: returning 90 turns a horizontal bar vertical")
     func anglesScriptOutputConvertsDegreesToRadians() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2095,6 +2198,67 @@ struct MetalSceneFixture {
         )
     }
 
+    static func sceneScriptVisualizerScene(angleDegrees: Double = 0, workshopShader: Bool = false) throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEVisualizer-\(UUID().uuidString)", isDirectory: true)
+        let models = root.appendingPathComponent("models/workshop/12345", isDirectory: true)
+        let materials = root.appendingPathComponent("materials", isDirectory: true)
+        try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: materials, withIntermediateDirectories: true)
+        // This fixture asserts channel values, so both the source color and PNG
+        // drawing space must be sRGB rather than device-dependent RGB.
+        let sRGB = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let red = try #require(CGColor(colorSpace: sRGB, components: [1, 0, 0, 1]))
+        try writePNG(at: materials.appendingPathComponent("bar.png"), color: red, colorSpace: sRGB)
+        try Data(#"{"material":"materials/bar.json"}"#.utf8).write(to: models.appendingPathComponent("bar.json"))
+        try Data(#"{"passes":[{"shader":"genericimage2","textures":["materials/bar.png"]}]}"#.utf8)
+            .write(to: materials.appendingPathComponent("bar.json"))
+        if workshopShader {
+            let shaders = root.appendingPathComponent("shaders/workshop/12345", isDirectory: true)
+            try FileManager.default.createDirectory(at: shaders, withIntermediateDirectories: true)
+            // Authored here for this regression: equivalent model/material/shader
+            // shape to the real bar, without Workshop artwork or source copying.
+            let vertex = """
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 v_TexCoord;
+            void main() { v_TexCoord = a_TexCoord; gl_Position = vec4(a_Position, 1.0); }
+            """
+            let fragment = """
+            uniform sampler2D g_Texture0;
+            uniform float g_UserAlpha; // {"material":"Alpha","default":1}
+            uniform vec3 g_TintColor; // {"material":"color","default":"1 1 1"}
+            varying vec2 v_TexCoord;
+            void main() {
+                gl_FragColor = texture2D(g_Texture0, v_TexCoord) * vec4(g_TintColor, g_UserAlpha);
+            }
+            """
+            try Data(vertex.utf8).write(to: shaders.appendingPathComponent("tint.vert"))
+            try Data(fragment.utf8).write(to: shaders.appendingPathComponent("tint.frag"))
+            try Data(#"{"autosize":true,"material":"materials/bar.json"}"#.utf8)
+                .write(to: models.appendingPathComponent("bar.json"))
+            try Data(#"{"passes":[{"shader":"workshop/12345/tint","textures":["materials/bar.png"],"blending":"translucent","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled","constantshadervalues":{"Alpha":0.5,"color":"1 1 1"}}]}"#.utf8)
+                .write(to: materials.appendingPathComponent("bar.json"))
+        }
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64, "auto": true]],
+            "objects": [[
+                "id": "bar", "name": "MAIN", "image": WPEVisualizerScriptFixture.imagePath,
+                "origin": "4 4 0", "size": "8 8", "scale": "1 1 1", "parallaxDepth": "0.2 0.2",
+                "visible": ["value": true, "script": WPEVisualizerScriptFixture.script.replacingOccurrences(
+                    of: "bars[i].angles = new Vec3(0, 0, 0)",
+                    with: "bars[i].angles = new Vec3(0, 0, \(angleDegrees))"
+                )],
+            ]],
+        ]
+        try JSONSerialization.data(withJSONObject: scene).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(root: root, descriptor: SceneDescriptor(
+            workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
+            entryFile: "scene.json", capabilityTier: .imageOnly
+        ), dependencyRoot: nil)
+    }
+
     static func sceneScriptCreatedLayerScene() throws -> MetalSceneFixture {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
@@ -2498,14 +2662,14 @@ struct MetalSceneFixture {
         try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
     }
 
-    private static func writePNG(at url: URL, color: CGColor) throws {
+    private static func writePNG(at url: URL, color: CGColor, colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()) throws {
         guard let context = CGContext(
             data: nil,
             width: 8,
             height: 8,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
             throw NSError(domain: "fixture", code: -1)
@@ -2584,6 +2748,21 @@ private struct MetalPixel {
 }
 
 private extension MTLTexture {
+    /// One coherent GPU readback for the whole fixture, rather than a new blit
+    /// and command-buffer wait for each of the 4,096 pixels.
+    func readAllPixels() -> [MetalPixel]? {
+        guard [.rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb].contains(pixelFormat),
+              let staged = WPEMetalTextureSnapshotter.stagedForCPURead(self) else { return nil }
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        staged.getBytes(&bytes, bytesPerRow: width * 4,
+                        from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        let isBGRA = pixelFormat == .bgra8Unorm || pixelFormat == .bgra8Unorm_srgb
+        return stride(from: 0, to: bytes.count, by: 4).map {
+            MetalPixel(r: bytes[$0 + (isBGRA ? 2 : 0)], g: bytes[$0 + 1],
+                       b: bytes[$0 + (isBGRA ? 0 : 2)], a: bytes[$0 + 3])
+        }
+    }
+
     func readPixel(x: Int, y: Int) -> MetalPixel? {
         let supportedFormats: [MTLPixelFormat] = [.rgba8Unorm, .rgba8Unorm_srgb]
         guard supportedFormats.contains(pixelFormat),

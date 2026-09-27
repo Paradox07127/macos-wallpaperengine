@@ -333,10 +333,10 @@ struct ProtocolizedDependenciesTests {
         let persistence = RecordingConfigurationPersistence()
         let store = WallpaperConfigurationStore(persistence: persistence)
         let lifecycleChecks = LockedCounter()
-        let notificationCount = LockedCounter()
         let lifecycleActive = OSAllocatedUnfairLock(initialState: true)
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: loader,
             applyPolicy: { _ in },
             applyVideoEffects: { _, _ in },
@@ -349,8 +349,7 @@ struct ProtocolizedDependenciesTests {
             isRuntimeInstallationAllowed: {
                 lifecycleChecks.increment()
                 return lifecycleActive.withLock { $0 }
-            },
-            notifyConfigurationChanged: { _ in notificationCount.increment() }
+            }
         )
         defer { _ = coordinator.transition.bumpTransition(for: screen.id) }
 
@@ -369,7 +368,7 @@ struct ProtocolizedDependenciesTests {
 
         #expect(screen.runtimeSession == nil)
         #expect(persistence.savedConfigurations.isEmpty)
-        #expect(notificationCount.value == 0)
+        #expect(store.revision(for: screen.id) == 0)
     }
 
     @Test("Persisted bookmark resolution failure removes configuration and runtime")
@@ -396,6 +395,7 @@ struct ProtocolizedDependenciesTests {
         var notificationCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: Self.rejectingBookmarkResolver,
             applyPolicy: { _ in },
@@ -453,6 +453,7 @@ struct ProtocolizedDependenciesTests {
         var notificationCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: Self.rejectingBookmarkResolver,
             applyPolicy: { _ in },
@@ -516,6 +517,7 @@ struct ProtocolizedDependenciesTests {
         var releaseCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: resolver,
             applyPolicy: { _ in },

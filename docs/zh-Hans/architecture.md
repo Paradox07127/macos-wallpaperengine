@@ -47,6 +47,21 @@ flowchart TD
 - 用户意图由每屏 `WallpaperPlaybackStateMachine` 保存。策略暂停不改写播放/暂停选择；切换与配置 generation 拒绝过时的异步结果。
 - 监控、音乐与粒子各有窗口 owner 和逐屏设置，共用显示器不意味着共用壁纸解码器。
 
+## 应用命令与文件目录
+
+`Application/Configuration/DisplayConfigurationController.swift` 是显示器配置的统一产品提交入口。
+界面和播放路径把手动修改的计划保留、场景编辑失效、书签名称预热、存储变更及通知交给它处理。
+`WallpaperConfigurationStore` 仍负责配置读取和 revision；新入口没有再加一份缓存。
+
+`Application/Workshop/` 放下载、文件夹导入和共享库变更协调器；
+`Infrastructure/Workshop/` 保留 HTTP、缓存、SteamCMD/XPC 和资源服务。
+这些只是现有 app target 内的目录，没有新增包；Pro 专属源码保留 `LITE_BUILD` 边界。
+
+`ScreenManager` 的扩展按调用边界分文件：`+Wallpaper` 放内容选择命令，
+`+AmbientActivation` 准备 HTML/scene session，`+AmbientTransaction` 提交准备好的替换。
+`+Overlays` 管桌面覆盖层配置和显隐，`+SourceAccess` 把刷新的资源授权同步到配置、历史、收藏与方案。
+它们仍属于同一个应用生命周期 owner；这次拆分不增加运行时状态。
+
 ## WPE 渲染管线
 
 ```mermaid

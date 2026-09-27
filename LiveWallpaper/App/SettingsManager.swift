@@ -1,6 +1,62 @@
 import Foundation
 import CoreGraphics
 import LiveWallpaperCore
+import Observation
+
+/// Metadata only. The existing SettingsManager caches own the latest snapshots.
+enum SettingsPersistenceDomain: CaseIterable, Hashable {
+    case configurations, globalSettings, bookmarks, schemes
+}
+
+@MainActor
+@Observable
+final class SettingsPersistenceStatus {
+    enum Phase: Equatable {
+        case saving(previousError: String?)
+        case failed(String)
+        case saved
+
+        var error: String? {
+            switch self {
+            case let .saving(error): error
+            case let .failed(error): error
+            case .saved: nil
+            }
+        }
+    }
+
+    private(set) var phases: [SettingsPersistenceDomain: Phase] = [:]
+    var hasUnsavedChanges: Bool {
+        phases.values.contains { $0 != .saved }
+    }
+
+    var hasFailure: Bool {
+        phases.values.contains { $0.error != nil }
+    }
+
+    var isSaving: Bool {
+        phases.values.contains {
+            if case .saving = $0 {
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    fileprivate func began(_ domain: SettingsPersistenceDomain) {
+        phases[domain] = .saving(previousError: phases[domain]?.error)
+    }
+
+    fileprivate func completed(_ domain: SettingsPersistenceDomain, error: String?) {
+        phases[domain] = error.map(Phase.failed) ?? .saved
+    }
+
+    /// Reset intentionally discards prior edits; this does not attest deletion success.
+    fileprivate func discardedPriorEditsForReset() {
+        phases.removeAll()
+    }
+}
 
 @MainActor
 final class SettingsManager {
@@ -21,6 +77,8 @@ final class SettingsManager {
     private let defaults: UserDefaults
 
     private let configurationPersistenceActor: WallpaperPersistenceActor
+    let persistenceStatus = SettingsPersistenceStatus()
+    private var pendingWriteTasks: [SettingsPersistenceDomain: Task<Void, Never>] = [:]
 
     /// Per-store monotonic counters: the actor drops any submission whose generation is older than the last it committed, so a stale in-flight write can't overwrite a newer MainActor mutation (or resurrect a reset).
     private var configurationWriteGeneration: UInt64 = 0
@@ -55,6 +113,7 @@ final class SettingsManager {
     init(
         directory: ConfigurationDirectory = ConfigurationDirectory(),
         defaults: UserDefaults = .appScoped(),
+        fileManager: FileManager = .default,
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
         persistWPEBookmarkOwnerRefresh: @MainActor @escaping (WPEOrigin, Data) -> Void = {
             origin, refreshed in
@@ -66,17 +125,17 @@ final class SettingsManager {
         }
     ) {
         let screenConfigStore = AtomicFileStore<[ScreenConfiguration]>(
-            fileURL: directory.url(for: .screenConfigurations)
+            fileURL: directory.url(for: .screenConfigurations), fileManager: fileManager
         )
         self.screenConfigStore = screenConfigStore
         let globalSettingsStore = AtomicFileStore<GlobalSettings>(
-            fileURL: directory.url(for: .globalSettings)
+            fileURL: directory.url(for: .globalSettings), fileManager: fileManager
         )
         let wallpaperBookmarksStore = AtomicFileStore<[WallpaperBookmark]>(
-            fileURL: directory.url(for: .wallpaperBookmarks)
+            fileURL: directory.url(for: .wallpaperBookmarks), fileManager: fileManager
         )
         let screenSchemesStore = AtomicFileStore<[ScreenScheme]>(
-            fileURL: directory.url(for: .screenSchemes)
+            fileURL: directory.url(for: .screenSchemes), fileManager: fileManager
         )
         self.globalSettingsStore = globalSettingsStore
         self.wallpaperBookmarksStore = wallpaperBookmarksStore
@@ -208,69 +267,95 @@ final class SettingsManager {
     /// Updates the in-memory cache synchronously so MainActor readers observe
     /// the new value before this function returns; disk write is queued async.
     private func persistConfigurations(_ configs: [ScreenConfiguration]) {
-        configurationWriteGeneration &+= 1
-        let generation = configurationWriteGeneration
         cachedConfigurations = configs
-        Task { [weak self, configurationPersistenceActor] in
+        queueWrite(.configurations) { actor, generation in
+            try await actor.write(configs, generation: generation)
+        }
+    }
+
+    private func generation(for domain: SettingsPersistenceDomain, advance: Bool = false) -> UInt64 {
+        switch domain {
+        case .configurations:
+            if advance {
+                configurationWriteGeneration &+= 1
+            }
+            return configurationWriteGeneration
+        case .globalSettings:
+            if advance {
+                globalSettingsWriteGeneration &+= 1
+            }
+            return globalSettingsWriteGeneration
+        case .bookmarks:
+            if advance {
+                bookmarksWriteGeneration &+= 1
+            }
+            return bookmarksWriteGeneration
+        case .schemes:
+            if advance {
+                schemesWriteGeneration &+= 1
+            }
+            return schemesWriteGeneration
+        }
+    }
+
+    private func queueWrite(
+        _ domain: SettingsPersistenceDomain,
+        operation: @escaping @Sendable (WallpaperPersistenceActor, UInt64) async throws -> Void
+    ) {
+        let generation = generation(for: domain, advance: true)
+        persistenceStatus.began(domain)
+        pendingWriteTasks[domain] = Task { [weak self, configurationPersistenceActor] in
+            let failure: String?
             do {
-                try await configurationPersistenceActor.write(configs, generation: generation)
+                try await operation(configurationPersistenceActor, generation)
+                failure = nil
             } catch {
-                await MainActor.run {
-                    guard let self,
-                          self.configurationWriteGeneration == generation else { return }
-                    Logger.error(
-                        "Failed to persist screen configurations: \(error.localizedDescription)",
-                        category: .settings
-                    )
-                    self.cachedConfigurations = nil
-                }
+                failure = LogPrivacyRedactor.scrub(error.localizedDescription)
+            }
+            // A completion from an older write must not clear a newer dirty value or error.
+            guard let self, self.generation(for: domain) == generation else { return }
+            persistenceStatus.completed(domain, error: failure)
+            pendingWriteTasks.removeValue(forKey: domain)
+            if let failure {
+                Logger.error("Failed to persist \(String(describing: domain)): \(failure)", category: .settings)
             }
         }
     }
 
-    func flushPendingWrites() async {
-        configurationWriteGeneration &+= 1
-        let configGeneration = configurationWriteGeneration
-        do {
-            try await configurationPersistenceActor.write(loadConfigurations(), generation: configGeneration)
-        } catch {
-            Logger.error(
-                "Final configuration flush failed: \(error.localizedDescription)",
-                category: .settings
-            )
+    /// Wait only for submissions present at entry; no sleeps or polling are needed by callers/tests.
+    /// A later edit may still be pending, which persistenceStatus continues to report honestly.
+    func waitForPendingWrites() async {
+        let tasks = Array(pendingWriteTasks.values)
+        for task in tasks {
+            await task.value
         }
+    }
 
+    /// Retry current snapshots, never re-read old disk data over a failed in-memory edit.
+    /// Capture all submissions in one MainActor turn before yielding. The return is false
+    /// if a failed or newer in-flight submission remains; callers must not call that durable.
+    @discardableResult
+    func flushPendingWrites() async -> Bool {
+        persistConfigurations(loadConfigurations())
         if let settings = cachedGlobalSettings {
-            globalSettingsWriteGeneration &+= 1
-            let generation = globalSettingsWriteGeneration
-            do {
-                try await configurationPersistenceActor.writeGlobalSettings(settings, generation: generation)
-            } catch {
-                Logger.error("Final global-settings flush failed: \(error.localizedDescription)", category: .settings)
+            queueWrite(.globalSettings) { actor, generation in
+                try await actor.writeGlobalSettings(settings, generation: generation)
             }
         }
-
         if let bookmarks = cachedWallpaperBookmarks {
-            bookmarksWriteGeneration &+= 1
-            let generation = bookmarksWriteGeneration
-            do {
-                try await configurationPersistenceActor.writeBookmarks(bookmarks, generation: generation)
-            } catch {
-                Logger.error("Final bookmarks flush failed: \(error.localizedDescription)", category: .settings)
+            queueWrite(.bookmarks) { actor, generation in
+                try await actor.writeBookmarks(bookmarks, generation: generation)
             }
         }
-
         if let schemes = cachedScreenSchemes {
-            schemesWriteGeneration &+= 1
-            let generation = schemesWriteGeneration
-            do {
-                try await configurationPersistenceActor.writeSchemes(schemes, generation: generation)
-            } catch {
-                Logger.error("Final screen-schemes flush failed: \(error.localizedDescription)", category: .settings)
+            queueWrite(.schemes) { actor, generation in
+                try await actor.writeSchemes(schemes, generation: generation)
             }
         }
+        await waitForPendingWrites()
+        return !persistenceStatus.hasUnsavedChanges
     }
-    
+
     // MARK: - Global Settings
 
     func saveGlobalSettings(_ settings: GlobalSettings) {
@@ -280,20 +365,8 @@ final class SettingsManager {
             loginItemController.apply(startOnLogin: settings.startOnLogin)
         }
 
-        globalSettingsWriteGeneration &+= 1
-        let generation = globalSettingsWriteGeneration
-        Task { [weak self, configurationPersistenceActor] in
-            do {
-                try await configurationPersistenceActor.writeGlobalSettings(settings, generation: generation)
-                Logger.settingsChanged(setting: "globalSettings", value: "Updated global settings")
-            } catch {
-                await MainActor.run {
-                    guard let self,
-                          self.globalSettingsWriteGeneration == generation else { return }
-                    Logger.error("Failed to persist global settings: \(error.localizedDescription)", category: .settings)
-                    self.cachedGlobalSettings = nil
-                }
-            }
+        queueWrite(.globalSettings) { actor, generation in
+            try await actor.writeGlobalSettings(settings, generation: generation)
         }
     }
 
@@ -533,6 +606,9 @@ final class SettingsManager {
         cachedWallpaperBookmarks = []
         cachedScreenSchemes = []
 
+        persistenceStatus.discardedPriorEditsForReset()
+        pendingWriteTasks.removeAll()
+        // Do not cancel older writes: the bumped generations below fence actor ordering.
         // Route deletes through the same serial actor with bumped generations so an in-flight async write (older generation) can't resurrect the file after the reset.
         configurationWriteGeneration &+= 1
         globalSettingsWriteGeneration &+= 1
@@ -693,19 +769,8 @@ final class SettingsManager {
     /// can't read the not-yet-flushed disk copy); the write is queued async.
     func saveWallpaperBookmarks(_ bookmarks: [WallpaperBookmark]) {
         cachedWallpaperBookmarks = bookmarks
-        bookmarksWriteGeneration &+= 1
-        let generation = bookmarksWriteGeneration
-        Task { [weak self, configurationPersistenceActor] in
-            do {
-                try await configurationPersistenceActor.writeBookmarks(bookmarks, generation: generation)
-            } catch {
-                await MainActor.run {
-                    guard let self,
-                          self.bookmarksWriteGeneration == generation else { return }
-                    Logger.error("Failed to persist wallpaper bookmarks: \(error.localizedDescription)", category: .settings)
-                    self.cachedWallpaperBookmarks = nil
-                }
-            }
+        queueWrite(.bookmarks) { actor, generation in
+            try await actor.writeBookmarks(bookmarks, generation: generation)
         }
     }
 
@@ -722,19 +787,8 @@ final class SettingsManager {
 
     func saveScreenSchemes(_ schemes: [ScreenScheme]) {
         cachedScreenSchemes = schemes
-        schemesWriteGeneration &+= 1
-        let generation = schemesWriteGeneration
-        Task { [weak self, configurationPersistenceActor] in
-            do {
-                try await configurationPersistenceActor.writeSchemes(schemes, generation: generation)
-            } catch {
-                await MainActor.run {
-                    guard let self,
-                          self.schemesWriteGeneration == generation else { return }
-                    Logger.error("Failed to persist screen schemes: \(error.localizedDescription)", category: .settings)
-                    self.cachedScreenSchemes = nil
-                }
-            }
+        queueWrite(.schemes) { actor, generation in
+            try await actor.writeSchemes(schemes, generation: generation)
         }
     }
 

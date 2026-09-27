@@ -152,18 +152,13 @@ public extension FrameRateLimit {
 }
 
 public enum PlainVideoFrameRateCompositionPolicy {
+    /// Source timing is resolved asynchronously by the player from minFrameDuration,
+    /// never from nominalFrameRate (which may average a variable-rate track).
     public static func compositionLimit(
         frameRateLimit: FrameRateLimit,
-        videoFrameRate: Double,
         screenRefreshRate: Double
     ) -> Float? {
         guard frameRateLimit.enforcesCompositionCap else { return nil }
-
-        let limit = frameRateLimit.getEffectiveLimit(
-            videoFrameRate: videoFrameRate,
-            screenRefreshRate: screenRefreshRate
-        )
-        guard limit > 0, videoFrameRate > Double(limit) else { return nil }
-        return limit
+        return Float(frameRateLimit.frameRate(forRefreshRate: screenRefreshRate))
     }
 }

@@ -267,6 +267,7 @@ struct VideoSelectionGateTests {
         var notifications = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: loader,
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in (url, false) }, refreshData: { _ in Data() }
@@ -284,8 +285,7 @@ struct VideoSelectionGateTests {
             refreshRateLookup: { _ in 60 }, screensProvider: { [screen] },
             markSessionStateChanged: {}, releaseRuntimeSession: { $0.resetRuntimeSession() },
             notifyWallpaperSessionChanged: { notifications += 1 },
-            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { enabled },
-            notifyConfigurationChanged: { _ in }
+            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { enabled }
         )
         defer {
             coordinator.transition.bumpTransition(for: screen.id)
@@ -341,7 +341,8 @@ struct VideoSelectionGateTests {
         var errors = 0
         var builtPlayers: [WallpaperVideoPlayer] = []
         let coordinator = PlaybackCoordinator(
-            configurationStore: store, playableVideoLoader: loader,
+            configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store), playableVideoLoader: loader,
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in throw CocoaError(.fileNoSuchFile) }, refreshData: { _ in Data() }
             ),
@@ -371,8 +372,7 @@ struct VideoSelectionGateTests {
             isRuntimeInstallationAllowed: {
                 lifecycleChecks += 1
                 return active
-            },
-            notifyConfigurationChanged: { _ in }
+            }
         )
         defer {
             coordinator.transition.bumpTransition(for: screen.id)

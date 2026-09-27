@@ -909,6 +909,7 @@ private struct HTMLPacingHarness {
         let screenForClosure = screen
         coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in (URL(fileURLWithPath: "/tmp/html-pacing"), false) },

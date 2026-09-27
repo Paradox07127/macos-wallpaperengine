@@ -5,8 +5,15 @@ import LiveWallpaperCore
 
 @MainActor
 struct SettingsManagerBookmarkPersistence: BookmarkPersisting {
-    func load() -> [WallpaperBookmark] { SettingsManager.shared.loadWallpaperBookmarks() }
-    func save(_ bookmarks: [WallpaperBookmark]) { SettingsManager.shared.saveWallpaperBookmarks(bookmarks) }
+    var manager: SettingsManager = .shared
+
+    func load() -> [WallpaperBookmark] {
+        manager.loadWallpaperBookmarks()
+    }
+
+    func save(_ bookmarks: [WallpaperBookmark]) {
+        manager.saveWallpaperBookmarks(bookmarks)
+    }
 }
 
 extension BookmarkStore {
@@ -15,12 +22,14 @@ extension BookmarkStore {
 
 @MainActor
 struct SettingsManagerSchemePersistence: SchemePersisting {
+    var manager: SettingsManager = .shared
+
     func load() -> [ScreenScheme] {
-        SettingsManager.shared.loadScreenSchemes()
+        manager.loadScreenSchemes()
     }
 
     func save(_ schemes: [ScreenScheme]) {
-        SettingsManager.shared.saveScreenSchemes(schemes)
+        manager.saveScreenSchemes(schemes)
     }
 }
 
@@ -40,24 +49,26 @@ extension TrustedHostStore {
 
 @MainActor
 struct SettingsManagerScreenConfigurationPersistence: ScreenConfigurationPersisting {
+    var manager: SettingsManager = .shared
+
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
-        SettingsManager.shared.getConfiguration(for: screenID)
+        manager.getConfiguration(for: screenID)
     }
 
     func saveConfiguration(_ configuration: ScreenConfiguration) {
-        SettingsManager.shared.saveConfiguration(configuration)
+        manager.saveConfiguration(configuration)
     }
 
     func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
-        SettingsManager.shared.cleanSettingsForScreen(screenID)
+        manager.cleanSettingsForScreen(screenID)
     }
 
     func loadConfigurations() -> [ScreenConfiguration] {
-        SettingsManager.shared.loadConfigurations()
+        manager.loadConfigurations()
     }
 
     func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
-        SettingsManager.shared.replaceAllConfigurations(configurations)
+        manager.replaceAllConfigurations(configurations)
     }
 }
 

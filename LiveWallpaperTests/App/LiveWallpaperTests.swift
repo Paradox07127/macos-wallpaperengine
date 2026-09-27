@@ -416,85 +416,22 @@ struct FrameRateLimitTests {
 
 @Suite("PlainVideoFrameRateCompositionPolicy")
 struct PlainVideoFrameRateCompositionPolicyTests {
-    @Test("The 60 step composites a 120fps source down to 60")
-    func fps60CompositesAFasterSource() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps60,
-            videoFrameRate: 120,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == 60)
+    @Test("Explicit caps are passed to the player for source-cadence resolution")
+    func explicitCapsReachPlayer() {
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .fps15, screenRefreshRate: 60) == 15)
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .fps30, screenRefreshRate: 60) == 30)
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .fps60, screenRefreshRate: 120) == 60)
     }
 
-    @Test("Unlimited keeps plain video on the native playback path")
+    @Test("Max preserves native playback without requesting a composition")
     func unlimitedDoesNotUsePlainComposition() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .matchDisplay,
-            videoFrameRate: 120,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == nil)
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .matchDisplay, screenRefreshRate: 60) == nil)
     }
 
-    @Test("A 30 target leaves a 24fps source alone")
-    func targetAboveTheSourceSkipsComposition() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps30,
-            videoFrameRate: 24,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == nil)
-    }
-
-    @Test("fps15 caps a 60fps source to 15")
-    func fps15CapsHighSourceFPS() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps15,
-            videoFrameRate: 60,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == 15)
-    }
-
-    @Test("The 30 step caps a 60fps source to 30 on a 60 Hz panel")
-    func halfCapsHighSourceFPS() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps30,
-            videoFrameRate: 60,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == 30)
-    }
-
-    @Test("Match display skips composition whatever the source runs at")
-    func fullRateSkipsCompositionForAnySource() {
-        #expect(
-            PlainVideoFrameRateCompositionPolicy.compositionLimit(
-                frameRateLimit: .matchDisplay, videoFrameRate: 24, screenRefreshRate: 60
-            ) == nil
-        )
-        #expect(
-            PlainVideoFrameRateCompositionPolicy.compositionLimit(
-                frameRateLimit: .matchDisplay, videoFrameRate: 10, screenRefreshRate: 60
-            ) == nil
-        )
-    }
-
-    /// A cap that rounds down to the source itself has nothing to composite away.
-    @Test("A source already at the cap skips composition")
-    func sourceAtTheCapSkipsComposition() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps15,
-            videoFrameRate: 1,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == nil)
+    @Test("Explicit cap is bounded by the current display and unknown display uses 60")
+    func requestedCapFollowsDisplay() {
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .fps120, screenRefreshRate: 60) == 60)
+        #expect(PlainVideoFrameRateCompositionPolicy.compositionLimit(frameRateLimit: .fps120, screenRefreshRate: 0) == 60)
     }
 }
 

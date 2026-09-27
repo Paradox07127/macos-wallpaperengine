@@ -333,7 +333,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Power/FullScreenDetector.swift"
         )
         let monitor = try RepositoryRoot.source(
-            "LiveWallpaper/App/ScreenManager+Monitor.swift"
+            "LiveWallpaper/App/ScreenManager+Overlays.swift"
         )
         let observers = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Observers.swift"

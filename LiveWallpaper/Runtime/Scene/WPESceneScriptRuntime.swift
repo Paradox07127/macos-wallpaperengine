@@ -1639,6 +1639,8 @@ struct WPESceneScriptLayerInfo: Sendable {
     /// Name of this layer's parent, so `getParent()` can hand back the real
     /// handle (with a real `origin`) instead of a neutral stub.
     let parentName: String?
+    let alignment: String
+    let parallaxDepth: SIMD2<Double>
 
     init(
         id: String,
@@ -1649,7 +1651,9 @@ struct WPESceneScriptLayerInfo: Sendable {
         scale: SIMD3<Double> = SIMD3<Double>(repeating: 1),
         angles: SIMD3<Double> = .zero,
         index: Int,
-        parentName: String?
+        parentName: String?,
+        alignment: String = "center",
+        parallaxDepth: SIMD2<Double> = .zero
     ) {
         self.id = id
         self.name = name
@@ -1660,6 +1664,8 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.angles = angles
         self.index = index
         self.parentName = parentName
+        self.alignment = alignment
+        self.parallaxDepth = parallaxDepth
     }
 }
 

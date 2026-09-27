@@ -9,6 +9,55 @@ import Testing
 @Suite("WPE Metal FBO alias topology cache")
 struct WPEMetalFBOAliasTopologyCacheTests {
 
+    @Test("Paint-order changes rebuild ordered topology; numeric-only index changes do not")
+    func sceneScriptPaintOrderInvalidatesActualTopology() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let sceneSize = CGSize(width: 64, height: 64)
+        func isolated(_ id: String) -> WPEPreparedRenderLayer {
+            let target = "_rt_imageLayerComposite_\(id)_a"
+            return aliasLayer(objectID: id, passes: [
+                aliasPass(id: "\(id).0", source: .image("source"), target: .layerComposite(name: target)),
+                aliasPass(id: "\(id).1", source: .fbo(target), target: .scene),
+            ])
+        }
+        let base = WPEPreparedRenderPipeline(layers: [isolated("a"), isolated("b")])
+            .applyingScriptLayerPresentation(["a": .init(sortIndex: 0), "b": .init(sortIndex: 1)])
+        _ = executor.fboAliasIntervals(pipeline: base, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        let numericOnly = base.applyingScriptLayerPresentation(["a": .init(sortIndex: 10), "b": .init(sortIndex: 20)])
+        _ = executor.fboAliasIntervals(pipeline: numericOnly, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        let reordered = base.applyingScriptLayerPresentation(["a": .init(sortIndex: 1), "b": .init(sortIndex: 0)])
+        #expect(reordered.layers.map(\.id) == ["b", "a"])
+        let intervals = executor.fboAliasIntervals(pipeline: reordered, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
+        #expect(normalizedAliasIntervals(intervals) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: reordered, sceneSize: sceneSize)
+        ))
+    }
+
+    @Test("Created image admission accepts only an isolated material and canonical scene copy")
+    func createdImageAdmissionRejectsForeignDependencies() {
+        let own = "_rt_imageLayerComposite_safe_a"
+        let material = aliasPass(id: "safe.0", source: .image("source"), target: .layerComposite(name: own))
+        func copy(source: WPETextureReference, phase: WPERenderPassPhase) -> WPERenderPass {
+            WPERenderPass(id: "safe.1", phase: phase, shader: WPERenderPassPhase.sceneCopyCommandFile,
+                          source: source, target: .scene, textures: [0: source], binds: [:], constants: [:], combos: [:],
+                          blending: "normal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        }
+        let canonical = copy(source: .fbo(own), phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile))
+        let accepted = aliasLayer(objectID: "safe", passes: [material, canonical])
+        #expect(accepted.createdImagePassLayout != nil)
+        // The old object-spec renderer fixture uses exactly this hidden-template form.
+        #expect(aliasLayer(objectID: "safe", passes: [material]).createdImagePassLayout != nil)
+        #expect(aliasLayer(objectID: "safe", passes: [material,
+                                                      copy(source: .fbo("foreign"), phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile))]).createdImagePassLayout == nil)
+        #expect(aliasLayer(objectID: "safe", passes: [material,
+                                                      copy(source: .fbo(own), phase: .effect(file: "arbitrary"))]).createdImagePassLayout == nil)
+        #expect(aliasLayer(objectID: "safe", passes: [material, canonical, canonical]).createdImagePassLayout == nil)
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(for: accepted, dynamicTextureNames: []) == nil)
+    }
+
     @Test("Same pass id and target with new read bindings invalidates alias topology")
     func changedReadBindingsInvalidateTopology() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -251,6 +300,92 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
         try #require(executor.cachedFBOAliasTopology).metrics
     }
 
+    @Test("64 independent audio bars keep 4x4 targets while transforms change")
+    func dynamicImageTransformsKeepLocalExtentMemo() throws {
+        let executor = try executor()
+        let scene = CGSize(width: 3840, height: 2160)
+        let pool = executor.targetPool
+        for frame in 0 ..< 5 {
+            let scale = SIMD3<Double>(12, Double(frame + 1) * 50, 0)
+            let template = independentBarTemplate(size: CGSize(width: 4, height: 4), scale: scale)
+            let states = Dictionary(uniqueKeysWithValues: (0 ..< 63).map { index in
+                let key = "bar.__created_\(index)"
+                return (key, WPECreatedLayerScriptState(
+                    key: key, imagePath: template.graphLayer.imagePath,
+                    origin: SIMD3<Double>(Double(index) * 50, 0, 0),
+                    color: SIMD3<Double>(repeating: 1), scale: scale,
+                    alpha: 1, visible: true,
+                    angles: SIMD3<Double>(0, 0, Double(frame) * 15),
+                    alignment: "bottom", parallaxDepth: .zero, sortIndex: index + 1
+                ))
+            })
+            let pipeline = WPEPreparedRenderPipeline(layers: [template]).addingCreatedLayers(
+                states, templatesByImagePath: [template.graphLayer.imagePath: template]
+            )
+            #expect(pipeline.layers.count == 64)
+            #expect(pipeline.layers.allSatisfy { $0.graphLayer.geometry.scale == scale })
+            let lastAngle = try #require(pipeline.layers.last).graphLayer.geometry.angles.z
+            #expect(abs(lastAngle - Double(frame) * 15 * .pi / 180) < 1e-10)
+            let intervals = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: scene)
+            #expect(intervals.count == 64)
+            #expect(intervals.allSatisfy { $0.key.width == 4 && $0.key.height == 4 })
+            pool.prepare(pipeline: pipeline, aliasIntervals: intervals,
+                         pipelineIdentity: executor.fboAliasTopologyRebuildCount)
+            pool.beginAliasFrame()
+            for (index, layer) in pipeline.layers.enumerated() {
+                let texture = try pool.texture(for: layer.passes[0].pass.target,
+                                               layer: layer.graphLayer, sceneSize: scene, avoiding: nil)
+                #expect(texture.width == 4 && texture.height == 4)
+                pool.endPass(passIndex: index * 2 + 1)
+            }
+        }
+        #expect(try metrics(executor).intervalRebuilds == 1)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        #expect(pool.prepareRebuildCount == 1)
+        #expect(pool.aliasPlanDeviceQueryCount == 64)
+    }
+
+    @Test("Authored image resize still changes actual texture and allocation plan")
+    func independentImageSizeChangeInvalidatesLocalExtentMemo() throws {
+        let executor = try executor()
+        let pool = executor.targetPool
+        for width in [4, 8] {
+            let layer = independentBarTemplate(size: CGSize(width: width, height: 4))
+            let pipeline = WPEPreparedRenderPipeline(layers: [layer])
+            let intervals = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+            pool.prepare(pipeline: pipeline, aliasIntervals: intervals,
+                         pipelineIdentity: executor.fboAliasTopologyRebuildCount)
+            pool.beginAliasFrame()
+            let texture = try pool.texture(for: layer.passes[0].pass.target, layer: layer.graphLayer,
+                                           sceneSize: Self.sceneSize, avoiding: nil)
+            #expect(texture.width == width && texture.height == 4)
+            pool.endPass(passIndex: 1)
+        }
+        #expect(try metrics(executor).intervalRebuilds == 2)
+        #expect(pool.prepareRebuildCount == 2)
+        #expect(pool.aliasPlanDeviceQueryCount == 2)
+    }
+
+    @Test("Compose fullscreen transition retains scale-dependent sizing and real allocation")
+    func utilityScaleStillChangesTextureExtent() throws {
+        let executor = try executor()
+        for (scale, expected) in [(SIMD3<Double>(1, 1, 1), CGSize(width: 120, height: 80)),
+                                  (SIMD3<Double>(9, 10, 1), Self.sceneSize)] {
+            let pipeline = makeAliasFormsPipeline(composeScale: scale)
+            let intervals = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+            let pool = executor.targetPool
+            pool.prepare(pipeline: pipeline, aliasIntervals: intervals,
+                         pipelineIdentity: executor.fboAliasTopologyRebuildCount)
+            pool.beginAliasFrame()
+            let layer = try #require(pipeline.layers.first { $0.id == "compose" })
+            let texture = try pool.texture(for: layer.passes[0].pass.target, layer: layer.graphLayer,
+                                           sceneSize: Self.sceneSize, avoiding: nil)
+            #expect(texture.width == Int(expected.width) && texture.height == Int(expected.height))
+        }
+        #expect(try metrics(executor).intervalRebuilds == 2)
+        #expect(executor.targetPool.prepareRebuildCount == 2)
+    }
+
     // MARK: - 1. Steady state
 
     @Test("Re-presenting the same pipeline value costs no walk and no rescan")
@@ -490,6 +625,26 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
 }
 
 // MARK: - Pipeline fixtures
+
+/// Self-authored workshop-shaped two-pass chain, without third-party assets.
+private func independentBarTemplate(
+    size: CGSize,
+    scale: SIMD3<Double> = SIMD3<Double>(repeating: 1)
+) -> WPEPreparedRenderLayer {
+    let composite = "_rt_imageLayerComposite_bar_a"
+    let material = aliasPass(id: "bar.0", shader: "workshop/12345/tint",
+                             source: .image("materials/bar.png"), target: .layerComposite(name: composite))
+    let copy = WPERenderPass(
+        id: "bar.1", phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile),
+        shader: WPERenderPassPhase.sceneCopyCommandFile,
+        source: .fbo(composite), target: .scene, textures: [0: .fbo(composite)],
+        binds: [:], constants: [:], combos: [:], blending: "normal",
+        cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+    )
+    return aliasLayer(objectID: "bar", imagePath: "models/workshop/12345/bar.json",
+                      geometry: aliasGeometry(size: size, scale: scale), passes: [material, copy])
+}
+
 
 private func aliasGeometry(
     size: CGSize,

@@ -223,13 +223,25 @@ extension WPEMetalRenderExecutor {
         /// Fields `keyDimensions` reads. Alpha/color/origin never reach a pool key, so an animated tint or a moved (but unscaled) layer must not invalidate the interval memo.
         struct SizingGeometry: Equatable {
             let size: CGSize?
-            let scale: SIMD3<Double>
-            let angles: SIMD3<Double>
+            let scale: SIMD3<Double>?
+            let angles: SIMD3<Double>?
 
-            init(_ geometry: WPERenderLayerGeometry) {
+            init(_ layer: WPEPreparedRenderLayer) {
+                let graph = layer.graphLayer
+                let geometry = graph.geometry
                 size = geometry.size
-                scale = geometry.scale
-                angles = geometry.angles
+                // This exact admitted chain owns one local image composite and
+                // a canonical scene copy. keyDimensions uses authored size only;
+                // object transforms affect the scene draw, not the intermediate.
+                // Utility/group/puppet/effect paths retain conservative tracking.
+                let fixedImageExtent = !graph.isUtilityModelLayer
+                    && layer.createdImagePassLayout == .isolatedMaterialAndSceneCopy
+                    && geometry.size.map {
+                        $0.width.isFinite && $0.height.isFinite
+                            && $0.width > 0 && $0.height > 0
+                    } == true
+                scale = fixedImageExtent ? nil : geometry.scale
+                angles = fixedImageExtent ? nil : geometry.angles
             }
         }
 
@@ -285,7 +297,7 @@ extension WPEMetalRenderExecutor {
             self.sizingLayerIndices = sizingLayerIndices
             validatedLayers = layers
             sizingGeometry = sizingLayerIndices.map {
-                SizingGeometry(layers[$0].graphLayer.geometry)
+                SizingGeometry(layers[$0])
             }
         }
 
@@ -303,7 +315,7 @@ extension WPEMetalRenderExecutor {
         mutating func adopt(layers: [WPEPreparedRenderLayer]) {
             validatedLayers = layers
             let geometry = sizingLayerIndices.map {
-                SizingGeometry(layers[$0].graphLayer.geometry)
+                SizingGeometry(layers[$0])
             }
             guard geometry != sizingGeometry else { return }
             sizingGeometry = geometry

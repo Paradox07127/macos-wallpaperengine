@@ -243,6 +243,7 @@ struct ScreenManagerCoordinationTests {
         var effectsApplyCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in (currentURL, false) },
@@ -299,6 +300,7 @@ struct ScreenManagerCoordinationTests {
         var appliedConfigurations: [ScreenConfiguration] = []
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in (videoURL, false) },
@@ -379,6 +381,7 @@ struct ScreenManagerCoordinationTests {
         var effectsApplyCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             bookmarkResolver: SecurityScopedBookmarkResolver(
                 resolveData: { _ in (packageURL, false) },
@@ -820,6 +823,7 @@ struct ScreenManagerCoordinationTests {
         var releaseCount = 0
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             applyPolicy: { _ in },
             applyVideoEffects: { _, _ in },
@@ -872,6 +876,7 @@ struct ScreenManagerCoordinationTests {
 
         let coordinator = PlaybackCoordinator(
             configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
             playableVideoLoader: FakePlayableVideoLoader(),
             applyPolicy: { _ in },
             applyVideoEffects: { _, _ in },

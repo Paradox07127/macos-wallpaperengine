@@ -63,7 +63,9 @@
         "LiveWallpaper/App/ScreenManager+Observers.swift",
         "LiveWallpaper/App/ScreenManager+Screens.swift",
         "LiveWallpaper/App/ScreenManager+Wallpaper.swift",
-        "LiveWallpaper/App/ScreenManager+Monitor.swift",
+        "LiveWallpaper/App/ScreenManager+Overlays.swift",
+        "LiveWallpaper/App/ScreenManager+AmbientActivation.swift",
+        "LiveWallpaper/App/ScreenManager+SourceAccess.swift",
         "LiveWallpaper/App/ScreenManager+Automation.swift"
       ]
     },
