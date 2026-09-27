@@ -981,7 +981,7 @@ final class WallpaperVideoPlayer {
 
         if let window = window, !Self.areFramesEquivalent(window.frame, newFrame) {
             Logger.debug("Updating video window frame to \(newFrame)", category: .videoPlayer)
-            window.updateFrame(newFrame, animate: false)
+            window.updateFrame(newFrame)
         }
 
         if let videoView = videoView {

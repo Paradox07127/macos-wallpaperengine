@@ -9,13 +9,6 @@ import UniformTypeIdentifiers
 
 // `ProbeImage`, `ProbeColor` and `ProbeRenderer` come from `EditDeskFidelityProbeTests.swift`, compiled for Pro only.
 
-/// A titled window is pulled onto a real display when it is ordered in; this one has to stay off screen.
-private final class GridPreviewWindow: NSWindow {
-    override func constrainFrameRect(_ frameRect: NSRect, to _: NSScreen?) -> NSRect {
-        frameRect
-    }
-}
-
 /// AppKit traps when a bare `NSScreen()` is asked these.
 private final class GridPreviewScreen: NSScreen {
     static let id: CGDirectDisplayID = 0x6D1D_0C01
@@ -199,7 +192,7 @@ private final class GridPreviewHost {
         let page = HomePage(router: router, toasts: EditDeskToastCenter(), library: library, gridPreview: preview)
         let hosting = NSHostingView(rootView: page.environment(manager))
         hosting.sizingOptions = []
-        window = GridPreviewWindow(
+        window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: Self.size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
@@ -214,8 +207,7 @@ private final class GridPreviewHost {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         window.setContentSize(Self.size)
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         window.makeKey()
         host = hosting
         preview.autoplayEnabled = { [weak self] in self?.autoplay ?? true }
@@ -504,8 +496,8 @@ struct LibraryGridPreviewTests {
         await host.click(gif.center)
         let clickOpens = await host.settle { host.detailOpen }
         #expect(clickOpens, "a click on a playing tile no longer opens its detail")
-        let covered = host.preview.covered
-        #expect(covered, "the detail over the grid leaves the preview free to play")
+        let obscured = host.preview.obscured
+        #expect(obscured, "the detail over the grid leaves the preview free to play")
     }
 
     @Test("A Workshop tile showing its saved cover plays its scene's GIF on a settled hover, as its shelf card does; leaving puts the cover back", .timeLimit(.minutes(1)))

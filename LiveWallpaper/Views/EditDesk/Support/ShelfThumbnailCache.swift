@@ -226,12 +226,6 @@ final class ShelfThumbnailCache {
         return await task.value
     }
 
-    func prewarm(_ requests: [Request], pixelSize: CGSize, scale: CGFloat) {
-        for request in requests {
-            Task { _ = await image(request, pixelSize: pixelSize, scale: scale) }
-        }
-    }
-
     private func sourceImage(for request: Request, pixelSize: CGSize) async -> CGImage? {
         switch request {
         case let .bookmark(bookmark):

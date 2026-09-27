@@ -22,13 +22,6 @@ private final class ManifestReadGate {
     }
 }
 
-/// A titled window is pulled onto a real display when it is ordered in; this one has to stay off screen.
-private final class OffScreenModalWindow: NSWindow {
-    override func constrainFrameRect(_ frameRect: NSRect, to _: NSScreen?) -> NSRect {
-        frameRect
-    }
-}
-
 @MainActor
 private final class NoBookmarks: BookmarkPersisting {
     func load() -> [WallpaperBookmark] {
@@ -117,7 +110,7 @@ struct LibraryModalHostLoadTests {
         )
         let hosting = NSHostingView(rootView: host.tint(.gray))
         hosting.sizingOptions = []
-        let window = OffScreenModalWindow(
+        let window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: StageGeometry.designWindow),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false
         )
@@ -125,8 +118,7 @@ struct LibraryModalHostLoadTests {
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentView = hosting
         window.setContentSize(StageGeometry.designWindow)
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         defer {
             window.orderOut(nil)
             window.contentView = nil

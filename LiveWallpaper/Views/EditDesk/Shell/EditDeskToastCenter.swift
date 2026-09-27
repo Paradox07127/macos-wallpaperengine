@@ -7,9 +7,15 @@ import SwiftUI
 @MainActor
 @Observable
 final class EditDeskToastCenter {
-    struct Toast: Identifiable, Equatable {
+    struct Toast: Identifiable {
         enum Style: Equatable {
             case info, success, failure
+        }
+
+        /// A button beside the text; pressing it closes the toast and runs `perform`.
+        struct Action {
+            let title: String
+            let perform: @MainActor () -> Void
         }
 
         let id: UUID
@@ -23,6 +29,7 @@ final class EditDeskToastCenter {
         var undoStepID: UUID?
         /// Set while the pointer rests on the toast, which stops its clock.
         var pausedAt: Date?
+        var action: Action?
     }
 
     /// MOTION 18: at most two stacked, newest just under the top bar and the older one below it.
@@ -47,7 +54,8 @@ final class EditDeskToastCenter {
         screenID: CGDirectDisplayID? = nil,
         persistent: Bool = false,
         duration: TimeInterval = EditDeskToastCenter.duration,
-        undoStepID: UUID? = nil
+        undoStepID: UUID? = nil,
+        action: Toast.Action? = nil
     ) -> Toast.ID {
         if let screenID {
             toasts.removeAll { $0.screenID == screenID && $0.style == .failure }
@@ -59,7 +67,7 @@ final class EditDeskToastCenter {
         let toast = Toast(
             id: UUID(), text: text, style: style, screenID: screenID, postedAt: now(),
             lifetime: style == .failure || persistent ? nil : (undoStepID == nil ? duration : Self.undoDuration),
-            undoStepID: undoStepID
+            undoStepID: undoStepID, action: action
         )
         toasts.append(toast)
         if toasts.count > Self.visibleLimit {
@@ -70,6 +78,12 @@ final class EditDeskToastCenter {
 
     func dismiss(_ id: Toast.ID) {
         toasts.removeAll { $0.id == id }
+    }
+
+    func performAction(_ id: Toast.ID) {
+        guard let action = toasts.first(where: { $0.id == id })?.action else { return }
+        dismiss(id)
+        action.perform()
     }
 
     /// The pointer resting on an Undo toast stops its clock; leaving restarts it where it stopped.
@@ -152,6 +166,14 @@ struct EditDeskToastHost: View {
                     }
                 } label: {
                     Text("Undo", comment: "Button on the toast after a wallpaper change in the Edit Desk; reverts that change.")
+                        .font(DesignTokens.EditDesk.Typography.body)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.link)
+            }
+            if let action = toast.action {
+                Button { center.performAction(toast.id) } label: {
+                    Text(verbatim: action.title)
                         .font(DesignTokens.EditDesk.Typography.body)
                 }
                 .buttonStyle(.borderless)

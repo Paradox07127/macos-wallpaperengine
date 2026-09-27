@@ -10,7 +10,7 @@ final class LibraryGridPreview {
     var settledID: LibraryItem.ID?
     var reduceMotion = false
     /// A tile drag, or a page presented over the grid.
-    var covered = false
+    var obscured = false
     /// Settings → hover to play preview, read whenever a tile asks.
     @ObservationIgnored var autoplayEnabled: () -> Bool = {
         UserDefaults.appScoped().object(forKey: EditDeskPreferences.hoverAutoplayPreview) as? Bool
@@ -32,7 +32,7 @@ final class LibraryGridPreview {
     func plays(_ id: LibraryItem.ID, displaysGIF: Bool) -> Bool {
         ShelfPreviewPlayback.plays(
             displaysGIF: displaysGIF, hoverSettled: settledID == id, autoplayEnabled: autoplayEnabled(),
-            reduceMotion: reduceMotion, covered: covered
+            reduceMotion: reduceMotion, obscured: obscured
         )
     }
 }

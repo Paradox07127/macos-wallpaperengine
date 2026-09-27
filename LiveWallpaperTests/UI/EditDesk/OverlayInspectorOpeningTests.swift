@@ -185,14 +185,6 @@ private final class OpeningCanvasFixture {
     }
 }
 
-/// The test app is not active, so AppKit spends each click as an activating first click, which only Buttons accept;
-/// the canvas objects' gestures would never see it.
-private final class FirstMouseHost<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
-        true
-    }
-}
-
 // MARK: - Inspector backgrounds
 
 /// Every object on, and a snow effect, so each selection's inspector has groups to paint.

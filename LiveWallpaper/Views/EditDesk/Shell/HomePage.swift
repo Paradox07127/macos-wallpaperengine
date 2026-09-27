@@ -966,7 +966,7 @@ struct HomePage: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
-            .onChange(of: interactionLock, initial: true) { gridPreview.covered = $1 }
+            .onChange(of: interactionLock, initial: true) { gridPreview.obscured = $1 }
             .onChange(of: reduceMotion, initial: true) { gridPreview.reduceMotion = $1 }
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))

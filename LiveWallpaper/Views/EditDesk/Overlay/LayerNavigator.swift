@@ -75,7 +75,7 @@ private struct OverlayLayerRowView: View {
         .contextMenu {
             if let copyLayer, let kind = copiedKind {
                 Button("Copy to Other Displays") { copyLayer(kind, name) }
-                    .disabled(screenManager.screens.count < 2 || (isEffect && !session.canEditEffect))
+                    .disabled(screenManager.screens.count < 2)
             }
         }
     }
@@ -86,7 +86,6 @@ private struct OverlayLayerRowView: View {
         case .board: .monitor
         case .clock: .clock
         case .music: .music
-        case .effect: .weather
         case .widget: nil
         }
     }
@@ -113,20 +112,14 @@ private struct OverlayLayerRowView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .disabled(isEffect && !session.canEditEffect)
                 .accessibilityLabel(Text(verbatim: name))
-                .modifier(EffectHint(shown: isEffect && !session.canEditEffect))
         }
-    }
-
-    private var isEffect: Bool {
-        row.kind == .effect
     }
 
     private var hasSettings: Bool {
         switch row.kind {
         case .board, .clock, .music: true
-        case .widget, .effect: false
+        case .widget: false
         }
     }
 
@@ -135,7 +128,6 @@ private struct OverlayLayerRowView: View {
         case .board: session.setBoardEnabled(isOn)
         case .clock: session.setClockEnabled(isOn)
         case .music: session.setMusicEnabled(isOn)
-        case .effect: session.setEffectVisible(isOn)
         case .widget: break
         }
     }
@@ -164,7 +156,6 @@ private struct OverlayLayerRowView: View {
         case let .widget(kind): WidgetFactory.displayName(kind)
         case .clock: String(localized: "Clock", bundle: .appLanguage)
         case .music: String(localized: "Music", bundle: .appLanguage)
-        case .effect: String(localized: "Effect Layer", bundle: .appLanguage)
         }
     }
 
@@ -173,7 +164,6 @@ private struct OverlayLayerRowView: View {
         case .board, .widget: DesignTokens.EditDesk.Colors.sceneGroupLayers
         case .clock: DesignTokens.EditDesk.Colors.sceneGroupColors
         case .music: DesignTokens.EditDesk.Colors.success
-        case .effect: DesignTokens.EditDesk.Colors.sceneGroupEffects
         }
     }
 }
@@ -193,19 +183,5 @@ private struct WidgetShownToggle: View {
         .toggleStyle(.switch)
         .controlSize(.mini)
         .accessibilityLabel(Text(verbatim: name))
-    }
-}
-
-/// A help tag on an always-present control reads as advice; here it only explains why the
-/// switch is dead, so it is attached only while it is.
-private struct EffectHint: ViewModifier {
-    let shown: Bool
-
-    func body(content: Content) -> some View {
-        if shown {
-            content.help(Text("Apply a wallpaper to enable effects"))
-        } else {
-            content
-        }
     }
 }

@@ -253,38 +253,8 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(publications == ["new", "successor"])
     }
 
-    @Test("Inspector load and download attempts guard every async publication boundary")
-    @MainActor
-    func loadAndDownloadPublicationGuards() async throws {
-        let oldEntry = entry(id: "same-id", importedAt: 10)
-        let reimportedEntry = entry(id: "same-id", importedAt: 20)
-        let oldIdentity = WorkshopInstalledLocalInfoLoadIdentity(
-            entryID: oldEntry.id,
-            importedAt: oldEntry.importedAt
-        )
-        let reimportedIdentity = WorkshopInstalledLocalInfoLoadIdentity(
-            entryID: reimportedEntry.id,
-            importedAt: reimportedEntry.importedAt
-        )
-        #expect(oldIdentity.entryID == reimportedIdentity.entryID)
-        #expect(oldIdentity != reimportedIdentity)
-
-        let loadOwner = WorkshopInstalledLocalInfoLoadOwner()
-        let gate = WorkshopInstalledUpdateGate()
-        let oldTicket = loadOwner.begin(identity: oldIdentity)
-        let lateOldLoad = Task { @MainActor in
-            _ = await gate.suspend("old-local-info")
-            return loadOwner.canPublish(oldTicket)
-        }
-        await gate.waitUntilSuspended("old-local-info")
-        let reimportedTicket = loadOwner.begin(identity: reimportedIdentity)
-        await gate.resume("old-local-info", value: "loaded")
-        let oldLoadCanPublish = await lateOldLoad.value
-        #expect(!oldLoadCanPublish)
-        #expect(loadOwner.canPublish(reimportedTicket))
-        loadOwner.invalidate()
-        #expect(!loadOwner.canPublish(reimportedTicket))
-
+    @Test("Download attempts guard every async publication boundary")
+    func downloadPublicationGuards() throws {
         let download = try projectSource("LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift")
         let importBoundary = try sourceSlice(
             download,

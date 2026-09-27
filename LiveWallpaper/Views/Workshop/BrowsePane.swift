@@ -3,8 +3,7 @@ import Combine
 import LiveWallpaperCore
 import SwiftUI
 
-/// Which shell hosts the grid. It decides layout only: the pager, banners, filters, skeleton and
-/// query behaviour are the same either way.
+/// Which shell a `BrowseCard` is drawn for.
 enum BrowsePresentation {
     /// The old Workshop window: grid plus a resizable inspector column.
     case legacy
@@ -14,16 +13,12 @@ enum BrowsePresentation {
 
 struct BrowsePane: View {
     @Environment(\.libraryTileSize) private var tileSize
-    /// The old Workshop window passes its window-owned session; the Edit Desk page omits it and gets one per view.
-    /// `@State`, not `@Bindable`: a `@Bindable` default would be rebuilt on every parent render.
-    @State var session = WorkshopBrowseSession()
     let viewModel: BrowseViewModel
     let doctor: SteamCMDDoctorService
     let onRequestKeyEntry: () -> Void
     /// Downloading a pasted id needs SteamCMD but no Web API key.
     var onDownloadByLink: (() -> Void)?
-    var presentation: BrowsePresentation = .legacy
-    /// Where an opened item goes when there is no inspector to put it in.
+    /// Where a clicked card's item goes.
     var onOpenItem: ((WorkshopQueryItem) -> Void)?
     /// nil keeps each card's reveal in its own `@State`; a state makes reveals outlive the tiles.
     var matureReveal: MatureRevealState?
@@ -43,19 +38,17 @@ struct BrowsePane: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
-    @AppStorage("Workshop.Browse.InspectorWidth", store: .appScoped()) private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
-    @State private var liveInspectorWidth: Double?
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
     var body: some View {
-        layout
+        mainColumn
+            .pageBackground()
             .onAppear {
                 rateLimitRemaining = currentRateLimitRemaining
                 reloadInstalledIDs()
-                session.reconcileSelection(in: viewModel.items)
                 viewModel.hidesDownloadedInBrowse = hidesDownloadedPref
                 Task {
                     await services.refreshAPIKeyStatus()
@@ -87,94 +80,6 @@ struct BrowsePane: View {
             .onReceive(NotificationCenter.default.publisher(for: .workshopPresetVisibilityDidChange)) { _ in
                 Task { await viewModel.reload() }
             }
-            .onChange(of: viewModel.items) { _, items in
-                session.reconcileSelection(in: items)
-            }
-    }
-
-    /// The only place the two presentations differ: whether the grid is wrapped in a split with an
-    /// inspector column.
-    @ViewBuilder
-    private var layout: some View {
-        if presentation == .editDesk {
-            mainColumn
-                .pageBackground()
-        } else {
-            InspectorSplit(
-                isMounted: true,
-                isVisible: isInspectorVisible,
-                animationTrigger: AnyHashable(isInspectorVisible),
-                reduceMotion: reduceMotion,
-                storedWidth: $inspectorWidth,
-                liveWidth: $liveInspectorWidth,
-                minWidth: DesignTokens.Inspector.minWidth,
-                maxWidth: DesignTokens.Inspector.maxWidth,
-                onClose: { session.inspectorHidden = true },
-                main: { mainColumn },
-                inspector: { width in inspectorColumn(width: width) }
-            )
-            .pageBackground()
-            .toolbar {
-                if session.selectedID != nil {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            session.inspectorHidden.toggle()
-                        } label: {
-                            Image(systemName: "sidebar.right")
-                        }
-                        .help(Text(session.inspectorHidden ? "Show details" : "Hide details"))
-                        .accessibilityLabel(Text("Toggle details panel"))
-                    }
-                }
-            }
-        }
-    }
-
-    private var selectedItem: WorkshopQueryItem? {
-        BrowseSelection.resolve(id: session.selectedID, in: viewModel.items, detached: session.detachedItem)
-    }
-
-    private var isInspectorVisible: Bool {
-        session.selectedID != nil && !session.inspectorHidden
-    }
-
-    /// Opens an item by id, which may not be on this page. Off-page ids are fetched
-    /// once; an id Steam will not describe leaves the previous selection in place.
-    private func openItem(_ id: UInt64) {
-        // With no inspector the resolved item leaves through the callback; the chain below still
-        // runs for ids that are not on this page.
-        if presentation == .editDesk,
-           let item = BrowseSelection.resolve(id: id, in: viewModel.items, detached: session.detachedItem) {
-            onOpenItem?(item)
-            return
-        }
-        session.inspectorHidden = false
-        guard !viewModel.items.contains(where: { $0.id == id }), session.detachedItem?.id != id else {
-            session.selectedID = id
-            return
-        }
-        session.openGeneration += 1
-        let open = BrowseSelection.PendingOpen(
-            id: id, generation: session.openGeneration, previousSelectedID: session.selectedID, previousDetached: session.detachedItem
-        )
-        session.pendingOpen = open
-        session.selectedID = id
-        session.detachedItem = nil
-        Task {
-            let outcome = await services.itemDetails.load(ids: [id])
-            guard session.pendingOpen?.generation == open.generation else { return }
-            session.pendingOpen = nil
-            guard session.selectedID == id else { return }
-            let settled = open.settle(with: outcome.items.first, in: viewModel.items)
-            session.selectedID = settled.selectedID
-            session.detachedItem = settled.detached
-            if presentation == .editDesk,
-               let item = BrowseSelection.resolve(
-                   id: settled.selectedID, in: viewModel.items, detached: settled.detached
-               ) {
-                onOpenItem?(item)
-            }
-        }
     }
 
     private var mainColumn: some View {
@@ -260,36 +165,6 @@ struct BrowsePane: View {
         }
     }
 
-    private func inspectorColumn(width: CGFloat) -> some View {
-        Group {
-            if let selectedItem {
-                WorkshopInspectorContent(
-                    item: selectedItem,
-                    doctor: doctor,
-                    onBrowseCreator: { steamID, name in
-                        session.selectedID = nil
-                        Task { await viewModel.browseCreator(steamID: steamID, name: name) }
-                    },
-                    onSelectTag: { tag in
-                        session.selectedID = nil
-                        Task { await viewModel.browseTag(tag) }
-                    },
-                    onOpenItem: { openItem($0) }
-                )
-            } else if session.selectedID != nil {
-                // Off-page id still being resolved.
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityLabel(Text("Loading item…"))
-            } else {
-                inspectorPlaceholder
-            }
-        }
-        .frame(width: width)
-        .frame(maxHeight: .infinity)
-    }
-
     @ViewBuilder
     private var content: some View {
         // A failure with the pager live (a page turn off an all-filtered or later page)
@@ -322,10 +197,11 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
-                        let bookmarkedIDs: Set<UInt64> = presentation == .editDesk ? [] : WorkshopBookmarkActions.bookmarkedIDs()
-                        LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: gridColumnWidth) {
+                        LibraryGalleryGrid(
+                            size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
+                        ) {
                             ForEach(viewModel.displayedItems) { item in
-                                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
+                                browseCard(for: item)
                                     .equatable()
                                     .id(item.id)
                             }
@@ -337,21 +213,6 @@ struct BrowsePane: View {
                     paginationBar
                 }
                 .frame(maxWidth: .infinity)
-                .background(
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { session.selectedID = nil }
-                )
-            }
-            // Opening the inspector reflows rows and can push the selected tile off-screen — re-center it.
-            .onChange(of: session.selectedID) { _, id in
-                guard let id else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(id, anchor: .center)
-                    }
-                }
             }
             .onChange(of: viewModel.pageIndex) { _, _ in
                 proxy.scrollTo(Self.gridTopAnchor, anchor: .top)
@@ -359,34 +220,19 @@ struct BrowsePane: View {
         }
     }
 
-    private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {
+    private func browseCard(for item: WorkshopQueryItem) -> BrowseCard {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
             hasUpdate: hasUpdate(item),
             inUseBadge: inUseBadges[String(item.id)],
-            isSelected: session.selectedID == item.id,
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
-            presentation: presentation,
+            presentation: .editDesk,
             isRevealed: matureReveal?.isRevealed(item.id) ?? false,
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
-            isBookmarked: isBookmarked,
-            onBookmark: presentation == .editDesk ? nil : { WorkshopBookmarkActions.toggle(item) },
-            onSelect: {
-                guard presentation != .editDesk else {
-                    openItem(item.id)
-                    return
-                }
-                if session.selectedID == item.id {
-                    session.selectedID = nil
-                } else {
-                    session.selectedID = item.id
-                    session.detachedItem = nil
-                    session.inspectorHidden = false
-                }
-            },
+            onSelect: { onOpenItem?(item) },
             onDownload: {
                 WorkshopDownloadCoordinator.shared.download(
                     itemID: item.id,
@@ -510,14 +356,9 @@ struct BrowsePane: View {
         }
     }
 
-    /// nil follows the user's tile-size preference; the Edit Desk page takes one preferred width and shares the row evenly.
-    private var gridColumnWidth: CGFloat? {
-        presentation == .editDesk ? DesignTokens.LibraryGrid.workshopBrowseColumnWidth : nil
-    }
-
     private var loadingSkeleton: some View {
         ScrollView {
-            LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: gridColumnWidth) {
+            LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth) {
                 ForEach(0..<6, id: \.self) { _ in
                     WorkshopSkeletonCard()
                 }
@@ -577,14 +418,6 @@ struct BrowsePane: View {
                     .frame(maxWidth: 360)
             }
         }
-    }
-
-    private var inspectorPlaceholder: some View {
-        IllustratedEmptyState(
-            symbol: "square.dashed",
-            title: "Select a wallpaper to see details.",
-            variant: .compact
-        )
     }
 
     private var emptyState: some View {
@@ -823,54 +656,6 @@ struct BrowsePane: View {
             // Listed rather than defaulted: a new case has to be considered
             // here for a remedy, not silently inherit the bare cause.
             error.causeDescription
-        }
-    }
-}
-
-/// Which item the inspector shows for a selected id: the grid's copy when the id
-/// is on the page (it carries the persona pass), else the detached copy.
-enum BrowseSelection {
-    static func resolve(id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?) -> WorkshopQueryItem? {
-        guard let id else {
-            return nil
-        }
-        if let onPage = items.first(where: { $0.id == id }) {
-            return onPage
-        }
-        return detached?.id == id ? detached : nil
-    }
-
-    /// Whether the selection survives the grid replacing its items: on the new page,
-    /// already detached from it, or still being fetched for an off-page open.
-    static func keepsSelection(
-        id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?, pending: UInt64?
-    ) -> Bool {
-        guard let id else {
-            return true
-        }
-        return pending == id || detached?.id == id || items.contains { $0.id == id }
-    }
-
-    struct PendingOpen: Equatable {
-        let id: UInt64
-        /// The pane's open counter at the time; two opens of the same id from
-        /// the same selection are otherwise indistinguishable.
-        let generation: Int
-        let previousSelectedID: UInt64?
-        let previousDetached: WorkshopQueryItem?
-
-        /// The inspector's selection once Steam answered: the fetched item, or what was
-        /// showing before — an id Steam will not describe must not close open details.
-        func settle(
-            with item: WorkshopQueryItem?, in items: [WorkshopQueryItem]
-        ) -> (selectedID: UInt64?, detached: WorkshopQueryItem?) {
-            if let item {
-                return (id, item)
-            }
-            guard BrowseSelection.resolve(id: previousSelectedID, in: items, detached: previousDetached) != nil else {
-                return (nil, nil)
-            }
-            return (previousSelectedID, previousDetached)
         }
     }
 }

@@ -133,22 +133,19 @@ struct WorkshopPageSourceTests {
         #expect(page.contains("onImportLocalFolder: { SteamWizard.importLocalFolder() }"))
     }
 
-    @Test("The page reuses the shell top bar and asks Browse for the Edit Desk layout")
+    @Test("The page reuses the shell top bar")
     func pageUsesTheSharedChrome() throws {
         let source = try RepositoryRoot.source(Self.page)
         #expect(source.contains("TopBar("))
-        #expect(source.contains("presentation: .editDesk"))
         #expect(!source.contains("LibrarySearchField("), "the ribbon carries the only Workshop search field")
         #expect(!source.contains("InspectorSplit"), "the Edit Desk workshop page has no inspector column")
     }
 
-    @Test("Browse branches on presentation only where the inspector split is built")
-    func browsePaneBranchesInTheLayoutLayer() throws {
+    @Test("Browse is the grid alone, with no inspector column")
+    func browsePaneHasNoInspector() throws {
         let source = try RepositoryRoot.source(Self.browsePane)
-        #expect(source.contains("if presentation == .editDesk"))
-        let splits = source.components(separatedBy: "InspectorSplit(").count - 1
-        #expect(splits == 1, "the split is built once, in the legacy branch")
-        // The pieces R-21 keeps identical across both presentations.
+        #expect(!source.contains("InspectorSplit("), "Browse builds an inspector column again")
+        #expect(!source.contains("presentation =="), "Browse branches on a second presentation again")
         for fragment in [
             "BrowseFilterRibbon(", "paginationBar", "rateLimitBanner", "keyRejectedBanner",
             "installedWorkshopIDs", "hidesDownloadedPref", "loadingSkeleton",
@@ -160,7 +157,7 @@ struct WorkshopPageSourceTests {
     @Test("The workshop grid and its skeleton share one column preset")
     func gridAndSkeletonShareTheColumnPreset() throws {
         let source = try RepositoryRoot.source(Self.browsePane)
-        let uses = source.components(separatedBy: "columnWidth: gridColumnWidth").count - 1
+        let uses = source.components(separatedBy: "columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth").count - 1
         #expect(uses == 2, "the real grid and the skeleton must ask for the same width")
     }
 

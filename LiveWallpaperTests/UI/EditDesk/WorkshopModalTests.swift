@@ -8,11 +8,10 @@ import Testing
 @Suite("Workshop modal — bottom-row state, status line, paging and source shape")
 @MainActor
 struct WorkshopModalTests {
-    private static let detailsPath = "LiveWallpaper/Views/Workshop/WorkshopDetailsContent.swift"
+    private static let linksPath = "LiveWallpaper/Views/Workshop/WorkshopCommunityLinks.swift"
     private static let modalPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift"
     private static let contractPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift"
     private static let hostPath = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift"
-    private static let inspectorPath = "LiveWallpaper/Views/Workshop/DetailSheet.swift"
 
     // MARK: Download rate
 
@@ -364,10 +363,8 @@ struct WorkshopModalTests {
         // Control: outside Steam's layout a numeric folder name says nothing about the item.
         #expect(mode(for: try origin(inFolder: "3159206868")) == .download)
 
-        for path in [Self.hostPath, Self.inspectorPath] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!has(".origin.workshopID ==", in: source), Comment(rawValue: "\(path) looks an item up by the recorded id alone"))
-        }
+        let host = try RepositoryRoot.source(Self.hostPath)
+        #expect(!has(".origin.workshopID ==", in: host), Comment(rawValue: "\(Self.hostPath) looks an item up by the recorded id alone"))
         let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
         #expect(has("origin.steamFolderItemID", in: pane), "Browse cards key the library by the recorded id alone")
     }
@@ -377,7 +374,7 @@ struct WorkshopModalTests {
         // Reading `workshopID` as one key beside `steamFolderItemID`, or as a dependency failure's id, stays allowed; these are the lookups by it alone.
         let lookupsByRecordedID = [".workshopID ==", "wpeOrigin?.workshopID {"]
         for path in [
-            Self.hostPath, Self.inspectorPath, "LiveWallpaper/Views/Workshop/BrowsePane.swift",
+            Self.hostPath, "LiveWallpaper/Views/Workshop/BrowsePane.swift",
             "LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift",
         ] {
             let source = try RepositoryRoot.source(path)
@@ -438,19 +435,6 @@ struct WorkshopModalTests {
         source.contains(needle)
     }
 
-    @Test("The shared details column has no hero, no scroll view, no download control and no mature gate")
-    func detailsColumnIsBodyOnly() throws {
-        let source = try RepositoryRoot.source(Self.detailsPath)
-        #expect(!has("ScrollView", in: source), "the shared column scrolls itself instead of letting its host do it")
-        #expect(!has("AnimatedGIFThumbnail", in: source), "the shared column draws its own hero")
-        #expect(!has("downloadButton", in: source), "the shared column owns a download control")
-        #expect(!has("MatureContentSettings", in: source), "the shared column carries its own mature gate")
-        #expect(has("WorkshopDetailIdentityHeader(", in: source))
-        #expect(has("DetailRequiredItemsSection(", in: source))
-        #expect(has("DetailPresetsSection(", in: source))
-        #expect(has("CollapsibleDescription(", in: source))
-    }
-
     /// R-24 ④: one reveal set for the card, the hero, the dependency rows and the preset rows.
     @Test("Dependencies and presets read the page's reveal state when the host hands them one")
     func theWholeColumnSharesOneRevealSet() throws {
@@ -471,24 +455,12 @@ struct WorkshopModalTests {
         #expect(has("matureReveal: session.matureReveal", in: host))
     }
 
-    @Test("The Workshop inspector draws the shared column rather than a second copy of it")
-    func inspectorReusesTheSharedColumn() throws {
-        let source = try RepositoryRoot.source(Self.inspectorPath)
-        #expect(has("WorkshopDetailsContent(", in: source))
-        #expect(!has("DetailRequiredItemsSection(", in: source), "the inspector still builds the required-items block itself")
-        #expect(!has("DetailPresetsSection(", in: source), "the inspector still builds the presets block itself")
-        // The hero, the scroll view and the download control stay behind in the inspector.
-        #expect(has("AnimatedGIFThumbnail(", in: source))
-        #expect(has("downloadButton", in: source))
-    }
-
     @Test("The Workshop modal builds on the library modal's chrome, layout and buttons, and ⌘n presses a display's button")
     func modalSharesTheLibraryLayout() throws {
         let source = try RepositoryRoot.source(Self.modalPath)
         #expect(has("EditDeskModalChrome(", in: source), "the modal does not build on the shared chrome")
         #expect(has("WallpaperDetailLayout(", in: source), "the modal lays itself out instead of using the shared layout")
         #expect(has("ModalDisplayButtons(", in: source), "the modal draws its own bottom buttons")
-        #expect(!has("WorkshopDetailsContent(", in: source), "the modal still draws the inspector's column")
         #expect(has("collapsedLineLimit: 4", in: source), "the description is not cut to four lines")
         #expect(!has("modalScrim", in: source), "the modal paints its own scrim")
         #expect(!has("ModalGeometry.panelFrame(", in: source), "the modal measures its own panel")
@@ -508,7 +480,7 @@ struct WorkshopModalTests {
 
     @Test("No token-bypass literals in the files this package adds")
     func noTokenBypassLiterals() throws {
-        for path in [Self.detailsPath, Self.modalPath, Self.contractPath, Self.hostPath] {
+        for path in [Self.linksPath, Self.modalPath, Self.contractPath, Self.hostPath] {
             let source = try RepositoryRoot.source(path)
             #expect(!has(".font(.system(", in: source), "\(path) has an inline .font(.system( literal")
             #expect(!has("Color(red:", in: source), "\(path) has a literal Color(red:")

@@ -556,7 +556,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             hoverSettled: model.hoveredCard == id,
             autoplayEnabled: previewAutoplayEnabled(),
             reduceMotion: model.reduceMotion,
-            covered: !shelfAtRest
+            obscured: !shelfAtRest
         )
     }
 

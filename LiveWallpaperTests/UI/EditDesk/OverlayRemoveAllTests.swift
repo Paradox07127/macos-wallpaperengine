@@ -13,7 +13,6 @@ struct OverlayRemoveAllTests {
             placements: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.1, y: 0.1)],
             boardEnabled: true, clockEnabled: true, musicEnabled: true
         )
-        #expect(!rows.contains { $0.kind == .effect || $0.selection == .effect }, "the layer list still has an effect row")
         #expect(!OverlayLayerList.addItems.map(\.id).contains("effect"), "the add strip still offers the effect")
         #expect(OverlayLayerList.addItems.count == 13)
     }

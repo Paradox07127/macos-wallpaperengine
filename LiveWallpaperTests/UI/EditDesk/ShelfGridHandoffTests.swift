@@ -7,13 +7,6 @@ import Testing
 
 // `ProbeImage`, `ProbeColor` and `ProbeRenderer` come from `EditDeskFidelityProbeTests.swift`, compiled for Pro only.
 
-/// A titled window is pulled onto a real display when it is ordered in, which also caps its height at that display's.
-private final class HandoffWindow: NSWindow {
-    override func constrainFrameRect(_ frameRect: NSRect, to _: NSScreen?) -> NSRect {
-        frameRect
-    }
-}
-
 /// The library banner names a display the manager knows; AppKit traps when a bare `NSScreen()` is asked these.
 private final class HandoffScreen: NSScreen {
     override var frame: NSRect {
@@ -95,7 +88,7 @@ private struct HandoffHost {
         }
         let hosting = NSHostingView(rootView: root)
         hosting.sizingOptions = []
-        window = HandoffWindow(
+        window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
@@ -110,8 +103,7 @@ private struct HandoffHost {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         window.setContentSize(size)
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         host = hosting
     }
 
@@ -758,12 +750,11 @@ struct ShelfGridHandoffTests {
             .background(DesignTokens.EditDesk.Colors.background)
             let hosting = NSHostingView(rootView: grid.frame(width: size.width, height: size.height))
             hosting.frame = CGRect(origin: .zero, size: size)
-            let window = HandoffWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let window = ParkedTestWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .darkAqua)
             window.isReleasedWhenClosed = false
             window.contentView = hosting
-            window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-            window.orderBack(nil)
+            window.parkOffScreen()
             defer {
                 window.orderOut(nil)
                 window.contentView = nil

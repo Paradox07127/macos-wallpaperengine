@@ -27,6 +27,7 @@ struct EditDeskRoot: View {
     @State private var announcedTickets: Set<UUID> = []
     @State private var historicalFailure: WallpaperFailureSnapshot?
     @State private var historicalFailureDetails: WallpaperFailureSnapshot?
+    @State private var bookmarkErrorToast: EditDeskToastCenter.Toast.ID?
     #endif
     private let initialNavigation: Navigation?
     private let initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?
@@ -118,6 +119,8 @@ struct EditDeskRoot: View {
         }
         #if !LITE_BUILD
         .onChange(of: deferredApplyTicketStates, initial: true) { _, _ in announceSettledTickets() }
+        .onChange(of: WorkshopBookmarkStore.shared.hasStorageError, initial: true) { syncBookmarkErrorToast() }
+        .onChange(of: toasts.toasts.map(\.id)) { syncBookmarkErrorToast() }
         .overlay(alignment: .bottomTrailing) {
             DownloadToastHost(
                 visibleDisplayID: router?.page == .home ? router?.detailDisplayID : nil,
@@ -238,6 +241,10 @@ struct EditDeskRoot: View {
                 )
             }
         }
+    }
+
+    private func syncBookmarkErrorToast() {
+        bookmarkErrorToast = BookmarkStorageErrorToast.sync(.shared, shown: bookmarkErrorToast, in: toasts)
     }
 
     private func makeWorkshopSession(undo: EditDeskUndoStack) -> WorkshopSession {

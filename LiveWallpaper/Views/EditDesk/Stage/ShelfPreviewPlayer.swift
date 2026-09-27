@@ -6,8 +6,8 @@ import QuartzCore
 enum ShelfPreviewPlayback {
     /// `displaysGIF`: the card's scene has a `.gif` preview, played over the card's picture, a saved cover
     /// included. A video poster or a web snapshot never plays, whatever the scene's preview is.
-    static func plays(displaysGIF: Bool, hoverSettled: Bool, autoplayEnabled: Bool, reduceMotion: Bool, covered: Bool) -> Bool {
-        displaysGIF && hoverSettled && autoplayEnabled && !reduceMotion && !covered
+    static func plays(displaysGIF: Bool, hoverSettled: Bool, autoplayEnabled: Bool, reduceMotion: Bool, obscured: Bool) -> Bool {
+        displaysGIF && hoverSettled && autoplayEnabled && !reduceMotion && !obscured
     }
 
     static func displaysGIF(_ card: StageCard) -> Bool {

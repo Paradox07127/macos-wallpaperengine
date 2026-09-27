@@ -7,13 +7,6 @@ import Testing
 
 // `ProbeImage` and `ProbeRenderer` come from `EditDeskFidelityProbeTests.swift`, compiled for Pro only.
 
-/// A titled window is pulled onto a real display when it is ordered in; this one has to stay off screen.
-private final class GridDragWindow: NSWindow {
-    override func constrainFrameRect(_ frameRect: NSRect, to _: NSScreen?) -> NSRect {
-        frameRect
-    }
-}
-
 private enum GridDragDisplays {
     static let left: CGDirectDisplayID = 0x6D1D_0001
     static let right: CGDirectDisplayID = 0x6D1D_0002
@@ -115,7 +108,7 @@ private final class GridDragHost {
         let library = SavedLibraryModel(inputs: inputs)
         let hosting = NSHostingView(rootView: HomePage(router: router, toasts: toasts, library: library).environment(manager))
         hosting.sizingOptions = []
-        window = GridDragWindow(
+        window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
@@ -130,8 +123,7 @@ private final class GridDragHost {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         window.setContentSize(size)
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         // Without it a synthesized key press reaches no key-equivalent handler, and the page's Escape stays silent.
         window.makeKey()
         host = hosting

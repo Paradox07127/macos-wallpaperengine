@@ -391,14 +391,14 @@ final class DisplayShellLayer {
             }
         }
         hoverElapsed += dt
-        let hoverStep = CGFloat(min(1, max(0, hoverElapsed / (reduceMotion ? 0.15 : 0.22))))
+        let hoverStep = CGFloat(min(1, max(0, hoverElapsed / 0.22)))
         hoverMix = hoverStep >= 1 ? hoverTarget : hoverFrom + (hoverTarget - hoverFrom) * hoverStep
         // Clamped: a mix below 0 would shrink the cover and uncover the content layer's corners.
         let zoom = 1 + 0.04 * min(max(hoverMix, 0), 1)
         coverGroup.transform = CATransform3DMakeScale(zoom, zoom, 1)
         dropElapsed += dt
-        let dropMix = min(1, dropElapsed / (reduceMotion ? 0.15 : 0.18))
-        let eased = Float(reduceMotion ? dropMix : 1 - pow(1 - dropMix, 3))
+        let dropMix = min(1, dropElapsed / 0.18)
+        let eased = Float(1 - pow(1 - dropMix, 3))
         highlight.opacity = dropMix >= 1 ? dropTarget : dropFrom + (dropTarget - dropFrom) * eased
         shell.strokeColor = highlight.opacity > 0 || hoverMix > 0.5 ? hotStroke : normalStroke
         if var fade = coverFade {

@@ -227,12 +227,10 @@ final class ShelfGestureController {
         wheelTravel = 0
     }
 
-    /// `quantum` > 0 lands the row on a whole slot so the cards come to rest aligned.
-    func settleRow(quantum: CGFloat = 0) -> CGFloat {
-        var settled = min(max(rawRowOffset, rowLimits.lowerBound), rowLimits.upperBound)
-        if quantum > 0 {
-            settled = min(max((settled / quantum).rounded() * quantum, rowLimits.lowerBound), rowLimits.upperBound)
-        }
+    /// Lands the row on a whole slot of width `quantum` so the cards come to rest aligned.
+    func settleRow(quantum: CGFloat) -> CGFloat {
+        let clamped = min(max(rawRowOffset, rowLimits.lowerBound), rowLimits.upperBound)
+        let settled = min(max((clamped / quantum).rounded() * quantum, rowLimits.lowerBound), rowLimits.upperBound)
         rawRowOffset = settled
         rowOffset = settled
         return rowOffset

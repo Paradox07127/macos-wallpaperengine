@@ -70,10 +70,6 @@ enum OverlayGeometry {
         gridScreenSpacing / validScale(scale)
     }
 
-    static func screenRect(_ rect: CGRect, renderScale: CGFloat) -> CGRect {
-        rect.applying(CGAffineTransform(scaleX: renderScale, y: renderScale))
-    }
-
     static func musicRect(_ configuration: MusicOverlayConfiguration, logicalSize: CGSize,
                           safeArea: MonitorSafeAreaInsets) -> CGRect {
         MusicOverlayLayout.renderRect(configuration: configuration, boardSize: logicalSize, safeArea: safeArea) ?? .zero

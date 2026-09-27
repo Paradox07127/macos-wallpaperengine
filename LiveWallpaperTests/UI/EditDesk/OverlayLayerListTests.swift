@@ -75,7 +75,6 @@ struct OverlayLayerListTests {
         #expect(OverlayLayerList.inspectorContent(for: .widget(id)) == .widget(id))
         #expect(OverlayLayerList.inspectorContent(for: .music) == .music)
         #expect(OverlayLayerList.inspectorContent(for: .clock) == .clock)
-        #expect(OverlayLayerList.inspectorContent(for: .effect) == .empty)
         #expect(OverlayLayerList.inspectorContent(for: nil) == .empty)
     }
 

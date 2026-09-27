@@ -77,21 +77,21 @@ public final class VideoWallpaperWindow: NSWindow {
 }
 
 // MARK: - Window Management Extensions
-extension VideoWallpaperWindow {
-    public func ensureProperWindowLevel() {
+public extension VideoWallpaperWindow {
+    func ensureProperWindowLevel() {
         level = NSWindow.Level(rawValue: wallpaperWindowLevel)
         orderBack(nil)
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         applyMouseInteractionPolicy()
     }
 
-    public func setWallpaperMouseInteractionEnabled(_ enabled: Bool) {
+    func setWallpaperMouseInteractionEnabled(_ enabled: Bool) {
         allowsWallpaperMouseInteraction = enabled
         applyMouseInteractionPolicy()
     }
 
     /// Display-P3 color space so the composited HDR output keeps its wider gamut.
-    public func setExtendedDynamicRangeEnabled(_ enabled: Bool) {
+    func setExtendedDynamicRangeEnabled(_ enabled: Bool) {
         colorSpace = enabled ? NSColorSpace.displayP3 : nil
     }
 
@@ -106,7 +106,7 @@ extension VideoWallpaperWindow {
         }
     }
 
-    public func updateFrame(_ frame: CGRect, animate: Bool = false) {
+    func updateFrame(_ frame: CGRect) {
         guard !frame.isEmpty && frame.width > 0 && frame.height > 0 else {
             Logger.warning("Attempted to set invalid frame: \(frame)", category: .ui)
             return
@@ -118,15 +118,7 @@ extension VideoWallpaperWindow {
 
         Logger.debug("Updating window frame from \(self.frame) to \(frame)", category: .ui)
 
-        if animate {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.3
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                animator().setFrame(TestHostWindowParking.parkedFrame(frame), display: true, animate: true)
-            }
-        } else {
-            setFrame(frame, display: true)
-        }
+        setFrame(frame, display: true)
 
         ensureProperWindowLevel()
 
@@ -136,7 +128,7 @@ extension VideoWallpaperWindow {
         }
     }
 
-    public override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    override func constrainFrameRect(_ frameRect: NSRect, to _: NSScreen?) -> NSRect {
         frameRect
     }
 }

@@ -149,12 +149,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(shutdown.contains("references.reset()"))
         #expect(shutdown.contains("updateTask?.cancel()"))
 
-        let expanded = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/SystemMonitor/SystemMonitorView.swift"
-        )
-        #expect(!expanded.contains("monitor.startMonitoring()"))
-        #expect(!expanded.contains("monitor.stopMonitoring()"))
-
         let menu = try productionSource("LiveWallpaper/Views/MenuBarContent.swift")
         #expect(menu.contains("private var monitor: SystemMonitor { .shared }"))
         #expect(menu.contains("@State private var ownsSystemMonitorLease = false"))
@@ -354,14 +348,12 @@ struct MonitorSamplerOwnershipCharacterizationTests {
             #expect(monitor.contains(symbol))
         }
 
-        let view = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/SystemMonitor/SystemMonitorView.swift"
-        )
-        #expect(view.contains("@AppStorage(\"Dashboard.RAMScope\")"))
-        #expect(view.contains("ramScopeRaw == \"app\" ? monitor.memoryPercentage()"))
-        #expect(view.contains("ramScopeRaw == \"app\" ? monitor.cpuUsage"))
-        #expect(view.contains("monitor.systemMemoryUsage * 100"))
-        #expect(view.contains("monitor.systemCpuUsage"))
+        let capsule = try productionSource("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
+        #expect(capsule.contains("@AppStorage(\"Dashboard.RAMScope\""))
+        #expect(capsule.contains("scope: ramScope, systemFraction: monitor.systemMemoryUsage"))
+        #expect(capsule.contains("appBytes: monitor.memoryUsage"))
+        #expect(capsule.contains("appCPUPercent: monitor.cpuUsage"))
+        #expect(capsule.contains("cpuPercent: monitor.systemCpuUsage"))
     }
 
     @MainActor

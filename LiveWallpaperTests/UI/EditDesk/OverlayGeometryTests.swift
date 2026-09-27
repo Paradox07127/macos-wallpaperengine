@@ -38,7 +38,8 @@ struct OverlayGeometryTests {
                     origin: geometry.clampOrigin(CGPoint(x: music.x * canvas.width, y: music.y * canvas.height), footprint: footprint),
                     size: footprint
                 ))
-                let actual = OverlayGeometry.screenRect(OverlayGeometry.musicRect(music, logicalSize: logical, safeArea: safe), renderScale: scale)
+                let actual = OverlayGeometry.musicRect(music, logicalSize: logical, safeArea: safe)
+                    .applying(CGAffineTransform(scaleX: scale, y: scale))
                 expectEqual(actual, old)
             }
         }
@@ -56,8 +57,9 @@ struct OverlayGeometryTests {
             clock.x = 0.9
             clock.y = 0.9
             let old = ClockOverlayLayout.renderRect(configuration: clock, canvas: canvas, referenceWidth: logical.width, safeArea: safe)
-            let actual = OverlayGeometry.screenRect(OverlayGeometry.clockRect(clock, logicalSize: logical, safeArea: safe),
-                                                    renderScale: canvas.width / logical.width)
+            let scale = canvas.width / logical.width
+            let actual = OverlayGeometry.clockRect(clock, logicalSize: logical, safeArea: safe)
+                .applying(CGAffineTransform(scaleX: scale, y: scale))
             expectEqual(actual, old)
         }
     }

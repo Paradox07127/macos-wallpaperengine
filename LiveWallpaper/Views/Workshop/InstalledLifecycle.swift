@@ -2,38 +2,6 @@
     import AppKit
     import Foundation
 
-    struct WorkshopInstalledLocalInfoLoadIdentity: Hashable, Sendable {
-        let entryID: String
-        let importedAt: Date
-    }
-
-    @MainActor
-    final class WorkshopInstalledLocalInfoLoadOwner {
-        struct Ticket: Equatable, Sendable {
-            let identity: WorkshopInstalledLocalInfoLoadIdentity
-            let generation: UInt64
-        }
-
-        private var generation: UInt64 = 0
-        private var currentTicket: Ticket?
-
-        func begin(identity: WorkshopInstalledLocalInfoLoadIdentity) -> Ticket {
-            generation &+= 1
-            let ticket = Ticket(identity: identity, generation: generation)
-            currentTicket = ticket
-            return ticket
-        }
-
-        func canPublish(_ ticket: Ticket) -> Bool {
-            currentTicket == ticket && !Task.isCancelled
-        }
-
-        func invalidate() {
-            generation &+= 1
-            currentTicket = nil
-        }
-    }
-
     @MainActor
     final class InstalledPageLifecycleOwner {
         struct UpdateTicket: Equatable, Sendable {

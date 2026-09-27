@@ -358,12 +358,4 @@ private final class ArrowWindow {
         NSApp.sendEvent(event)
     }
 }
-
-/// The test app is not active, so AppKit spends each click on the window as an activating first click, which only
-/// Buttons accept; without this the scrim's own tap never closes the modal and a fall-through would go unseen.
-private final class FirstMouseHost<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
-        true
-    }
-}
 #endif

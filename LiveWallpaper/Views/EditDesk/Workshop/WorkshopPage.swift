@@ -42,7 +42,6 @@ struct WorkshopPage: View {
                 doctor: doctor,
                 onRequestKeyEntry: { isShowingKeyEntry = true },
                 onDownloadByLink: { presentPasteFlow() },
-                presentation: .editDesk,
                 onOpenItem: { presentedItemID = $0.id },
                 matureReveal: session.matureReveal
             )

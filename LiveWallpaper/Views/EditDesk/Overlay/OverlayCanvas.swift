@@ -33,9 +33,6 @@ struct OverlayCanvas: View {
             }
             .environment(\.monitorBoardChrome, .editDesk(session))
             .id(session.gestureGeneration)
-            if session.addDrop == .effect {
-                effectDropHighlight
-            }
         }
         .frame(width: size.width, height: size.height)
         .clipped()
@@ -171,23 +168,9 @@ struct OverlayCanvas: View {
                 .opacity(OverlayGeometry.dropPreviewOpacity)
                 .modifier(OverlayObjectChrome(selected: true, dragging: true, renderScale: session.renderScale, claimsLanding: false))
                 .position(x: rect.midX, y: rect.midY)
-        case .effect?, .outside?, nil:
+        case .outside?, nil:
             EmptyView()
         }
-    }
-
-    /// Same treatment as the shelf's "Add to Library" drop band.
-    private var effectDropHighlight: some View {
-        Rectangle()
-            .fill(DesignTokens.EditDesk.Colors.dropHighlight)
-            .overlay { Rectangle().strokeBorder(DesignTokens.EditDesk.Colors.success, lineWidth: 2) }
-            .overlay {
-                Text("Release to turn on the effect layer")
-                    .font(DesignTokens.EditDesk.Typography.dropLabel)
-                    .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                    .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
-            }
-            .allowsHitTesting(false)
     }
 
     private func object(_ selection: OverlaySelection, @ViewBuilder content: () -> some View) -> some View {

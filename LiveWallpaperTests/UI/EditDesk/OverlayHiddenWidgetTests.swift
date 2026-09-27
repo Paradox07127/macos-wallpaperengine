@@ -295,13 +295,6 @@ struct OverlayHiddenWidgetTests {
     }
 }
 
-/// The test app is not active, so AppKit spends each click as an activating first click, which only Buttons accept.
-private final class FirstMouseHost<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
-        true
-    }
-}
-
 @MainActor
 private final class HiddenWidgetStore: OverlayEditorStore {
     let identity = OverlayEditorIdentity(displayID: 0x41DD_0001, fingerprint: "hidden-widget")

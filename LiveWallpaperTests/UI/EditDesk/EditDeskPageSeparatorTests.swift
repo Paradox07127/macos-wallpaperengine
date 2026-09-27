@@ -173,7 +173,7 @@ struct EditDeskBrowseSeparatorRenderTests {
         return await ProbeRenderer.render(nil, size: Self.size, appearance: dark ? .darkAqua : .aqua, settle: 1.5) {
             ZStack {
                 DesignTokens.EditDesk.Colors.background
-                BrowsePane(viewModel: browse, doctor: doctor, onRequestKeyEntry: {}, presentation: .editDesk)
+                BrowsePane(viewModel: browse, doctor: doctor, onRequestKeyEntry: {})
             }
             .environment(\.windowPaintsCanvas, onCanvas)
             .environment(services)

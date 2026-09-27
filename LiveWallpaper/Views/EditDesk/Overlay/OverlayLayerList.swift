@@ -8,7 +8,6 @@ enum OverlayLayerKind: Equatable {
     case widget(MonitorWidgetKind)
     case clock
     case music
-    case effect
 }
 
 /// The trailing control of a layer row. A board widget's row removes it; its shown/hidden switch sits beside this.
@@ -85,7 +84,7 @@ enum OverlayLayerList {
         case let .widget(id): .widget(id)
         case .music: .music
         case .clock: .clock
-        case .effect, nil: .empty
+        case nil: .empty
         }
     }
 }

@@ -156,12 +156,11 @@ struct WorkshopBookmarkTests {
         }
     }
 
-    @Test("Browse builds the bookmark set once per pass and gives Edit Desk cards no bookmark affordance")
+    @Test("Browse gives Edit Desk cards no bookmark affordance")
     func browsePaneBookmarkWiring() throws {
         let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(pane.contains("WorkshopBookmarkActions.bookmarkedIDs()"))
-        #expect(!pane.contains("WorkshopBookmarkActions.contains("), "every card scans the bookmark list")
-        #expect(pane.contains("onBookmark: presentation == .editDesk ? nil :"))
+        #expect(!pane.contains("WorkshopBookmarkActions"), "the pane reads the bookmark stores again")
+        #expect(!pane.contains("onBookmark:"), "a Browse card got a bookmark action")
 
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
         #expect(card.contains("var onBookmark: (() -> Void)?"))

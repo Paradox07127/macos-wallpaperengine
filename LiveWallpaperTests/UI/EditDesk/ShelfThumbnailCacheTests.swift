@@ -614,7 +614,9 @@ struct ShelfThumbnailCacheTests {
         }
         let cache = ShelfThumbnailCache(sources: sources)
         let request = ShelfThumbnailCache.Request.bookmark(bookmark(cover: "cover.png"))
-        cache.prewarm([request, request], pixelSize: size, scale: 1)
+        for _ in 0 ..< 2 {
+            Task { _ = await cache.image(request, pixelSize: size, scale: 1) }
+        }
         var start = started.stream.makeAsyncIterator()
         _ = await start.next()
         let first = Task { await cache.image(request, pixelSize: size, scale: 1) }

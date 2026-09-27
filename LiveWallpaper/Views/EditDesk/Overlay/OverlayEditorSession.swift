@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import Observation
 
 enum OverlaySelection: Hashable {
-    case board, widget(UUID), music, clock, effect
+    case board, widget(UUID), music, clock
 }
 
 struct OverlayEditorIdentity: Hashable {
@@ -128,7 +128,6 @@ final class OverlayEditorSession {
         case widget(MonitorWidgetKind, landing: CGRect, guideX: MonitorSnapGuide?, guideY: MonitorSnapGuide?)
         case noRoom(MonitorWidgetKind, footprint: CGRect)
         case singleton(OverlaySelection, rect: CGRect, guideX: MonitorSnapGuide?, guideY: MonitorSnapGuide?)
-        case effect
     }
 
     let interaction: InteractionModel
@@ -342,7 +341,7 @@ final class OverlayEditorSession {
         case .clock:
             wasOn = overlay.clock.enabled
             setClockEnabled(true)
-        case .board, .widget, .effect:
+        case .board, .widget:
             return
         }
         select(selection)
@@ -461,7 +460,7 @@ final class OverlayEditorSession {
         switch selection {
         case .music: return OverlayGeometry.musicRect(overlay.music, logicalSize: logicalSize, safeArea: safeArea)
         case .clock: return OverlayGeometry.clockRect(overlay.clock, logicalSize: logicalSize, safeArea: safeArea)
-        case .board, .widget, .effect: return .zero
+        case .board, .widget: return .zero
         }
     }
 
@@ -531,7 +530,7 @@ final class OverlayEditorSession {
             if next != latest.clock {
                 store.writeClock(next, for: identity)
             }
-        case .board, .widget, .effect: break
+        case .board, .widget: break
         }
     }
 
@@ -581,7 +580,7 @@ final class OverlayEditorSession {
         addDrop = nil
         guard commit, isActive else { return false }
         switch drop {
-        case .outside, .effect:
+        case .outside:
             return false
         case .noRoom:
             addDropRejected = true
@@ -618,7 +617,7 @@ final class OverlayEditorSession {
             if !latest.clock.enabled, store.read(identity)?.overlay.clock == next {
                 onObjectPersisted?()
             }
-        case .board, .widget, .effect:
+        case .board, .widget:
             return false
         }
         select(selection)

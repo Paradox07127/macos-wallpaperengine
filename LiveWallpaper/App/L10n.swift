@@ -48,17 +48,4 @@ enum L10n {
             bundle: .appLanguage, comment: "Title of the settings window."
         ) }
     }
-
-    enum Toolbar {
-        static var preferences: String { String(
-            localized: "toolbar.preferences",
-            defaultValue: "Preferences",
-            bundle: .appLanguage, comment: "Settings window toolbar button for opening general preferences."
-        ) }
-        static var addWallpaper: String { String(
-            localized: "toolbar.addWallpaper",
-            defaultValue: "Add wallpaper",
-            bundle: .appLanguage, comment: "Settings window toolbar button that opens a video picker for the selected display."
-        ) }
-    }
 }

@@ -1303,7 +1303,7 @@ struct S8bModalFidelityTests {
         }
 
         // The line limit folds the description; nothing caps it once it is open.
-        let collapsible = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/DetailSheet.swift")
+        let collapsible = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/CollapsibleDescription.swift")
         #expect(collapsible.contains("var collapsedLineLimit: Int?"))
         #expect(!collapsible.contains("expandedMaxHeight"), "the expanded description is still capped")
 

@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 public enum TestHostWindowParking {
     /// True in an XCTest host, where runtime windows must stay off the user's displays.
-    public static var isEnabled = NSClassFromString("XCTestCase") != nil
+    public static let isEnabled = NSClassFromString("XCTestCase") != nil
 
     /// The frame to hand AppKit: shifted off every display in a test host, unchanged otherwise.
     public static func parkedFrame(_ frame: NSRect) -> NSRect {
