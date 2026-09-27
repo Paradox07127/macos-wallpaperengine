@@ -338,6 +338,40 @@ struct WorkshopModalTests {
         #expect(!WorkshopModalContent.isInstalled(hasLibraryEntry: false, isDownloading: true, isFetchingDependencies: false))
     }
 
+    @Test("An entry recorded under a copied manifest's old id is still the Steam item whose folder it came from")
+    func legacyManifestIDEntryIsInstalledForItsSteamFolder() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("modal-legacy-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func origin(inFolder relativePath: String) throws -> WPEOrigin {
+            let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return WPEOrigin(
+                workshopID: "2585024298", title: "Lunar Tear [4K]", originalType: .scene,
+                sourceFolderBookmark: try #require(ResourceUtilities.createBookmark(for: folder)),
+                cacheRelativePath: nil, previewFileName: nil
+            )
+        }
+        func mode(for origin: WPEOrigin) -> ModalDisplayButtons.Mode {
+            row(installed: WorkshopModalContent.isInstalled(
+                hasLibraryEntry: origin.matchesWorkshopItem("3159206868"), isDownloading: false, isFetchingDependencies: false
+            )).mode
+        }
+
+        let steam = try origin(inFolder: "steamapps/workshop/content/431960/3159206868")
+        #expect(mode(for: steam) == .apply)
+        #expect(steam.matchesWorkshopItem("2585024298"))
+        // Control: outside Steam's layout a numeric folder name says nothing about the item.
+        #expect(mode(for: try origin(inFolder: "3159206868")) == .download)
+
+        for path in [Self.hostPath, Self.inspectorPath] {
+            let source = try RepositoryRoot.source(path)
+            #expect(!has(".origin.workshopID ==", in: source), Comment(rawValue: "\(path) looks an item up by the recorded id alone"))
+        }
+        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
+        #expect(has("origin.steamFolderItemID", in: pane), "Browse cards key the library by the recorded id alone")
+    }
+
     // MARK: Paging and rows
 
     @Test("← → walk the loaded page and stop at its ends; an item opened from outside it has neither")

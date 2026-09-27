@@ -749,6 +749,33 @@ struct WallpaperEnginePresetEntryFileTests {
     }
 }
 
+@Suite("Wallpaper Engine project workshop id")
+struct WallpaperEngineProjectWorkshopIDTests {
+    /// A re-upload whose author kept the original item's `workshopid`.
+    private static let manifest = #"{ "workshopid": "2585024298", "title": "Lunar Tear [4K]", "type": "Scene", "file": "scene.pkg" }"#
+
+    private func workshopID(inFolder relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("workshop-id-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(Self.manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
+        return try WallpaperEngineProject.read(from: folder).workshopID
+    }
+
+    @Test("In Steam's Workshop folder the folder name is the item id, whatever the manifest says")
+    func steamFolderNameWinsOverManifestID() throws {
+        #expect(try workshopID(inFolder: "steamapps/workshop/content/431960/3159206868") == "3159206868")
+    }
+
+    @Test("Control: outside Steam's layout the manifest id still wins, even over a numeric folder name")
+    func manifestIDWinsOutsideSteamLayout() throws {
+        #expect(try workshopID(inFolder: "MyScene") == "2585024298")
+        #expect(try workshopID(inFolder: "3159206868") == "2585024298")
+    }
+}
+
 /// A Workshop preset's `preset` map mirrors the manifest's whole property list,
 /// decorative rows included; those rows carry an empty string.
 @Suite("Preset layer is filtered to declared editable properties")

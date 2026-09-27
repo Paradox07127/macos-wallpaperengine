@@ -160,6 +160,7 @@ SUITES=(
   BrowseCardEditDeskLayoutTests
   WorkshopModalTests
   WorkshopModalHostTests
+  WallpaperEngineProjectWorkshopIDTests
   DeferredApplyToastsTests
   OnboardingProgressTests
   OnboardingSignalsTests

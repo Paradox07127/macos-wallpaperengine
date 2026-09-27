@@ -83,7 +83,7 @@ struct WorkshopInspectorContent: View {
     private func refreshInstalledEntry() {
         let id = String(item.id)
         installedEntry = SettingsManager.shared.loadGlobalSettings().recentWPEImports
-            .first { $0.origin.workshopID == id }
+            .first { $0.origin.matchesWorkshopItem(id) }
     }
 
     // MARK: - Hero

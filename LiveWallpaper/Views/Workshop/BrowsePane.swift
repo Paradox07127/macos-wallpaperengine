@@ -758,8 +758,12 @@ struct BrowsePane: View {
 
     private func reloadInstalledIDs() {
         let imports = SettingsManager.shared.loadGlobalSettings().recentWPEImports
-        installedWorkshopIDs = Set(imports.map(\.origin.workshopID))
-        importedAtByWorkshopID = Dictionary(imports.map { ($0.origin.workshopID, $0.importedAt) }) { newest, _ in newest }
+        // Same keys `WPEOrigin.matchesWorkshopItem` accepts, flattened so each card is one lookup.
+        let importedAtByID = imports.flatMap { entry in
+            [entry.origin.workshopID, entry.origin.steamFolderItemID].compactMap { $0 }.map { ($0, entry.importedAt) }
+        }
+        installedWorkshopIDs = Set(importedAtByID.map(\.0))
+        importedAtByWorkshopID = Dictionary(importedAtByID) { newest, _ in newest }
         viewModel.installedWorkshopIDs = installedWorkshopIDs
     }
 

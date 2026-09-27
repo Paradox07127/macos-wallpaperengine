@@ -163,7 +163,7 @@ struct WorkshopModalHost: View {
         guard let presentedItemID else { return }
         let workshopID = String(presentedItemID)
         installedEntry = SettingsManager.shared.loadGlobalSettings().recentWPEImports
-            .first { $0.origin.workshopID == workshopID }
+            .first { $0.origin.matchesWorkshopItem(workshopID) }
     }
 
     // MARK: Content
@@ -173,7 +173,7 @@ struct WorkshopModalHost: View {
     }
 
     private func installedExtras(for item: WorkshopQueryItem) -> InstalledItemExtras? {
-        let entry = installedEntry.flatMap { $0.origin.workshopID == String(item.id) ? $0 : nil }
+        let entry = installedEntry.flatMap { $0.origin.matchesWorkshopItem(String(item.id)) ? $0 : nil }
         guard WorkshopModalContent.isInstalled(
             hasLibraryEntry: entry != nil, isDownloading: downloads.isBusy(item.id),
             isFetchingDependencies: downloads.fetchingDependencies.contains(item.id)

@@ -220,7 +220,7 @@ final class WallpaperEngineImportService {
 
 
     /// `.workshopImport` only under steamapps/workshop/content/431960/<id>/; else `.userLocal`.
-    static func originKind(forSourceFolder folderURL: URL) -> HTMLOriginKind {
+    nonisolated static func originKind(forSourceFolder folderURL: URL) -> HTMLOriginKind {
         let canonical = folderURL.standardizedFileURL.resolvingSymlinksInPath().path
         let components = canonical.split(separator: "/", omittingEmptySubsequences: true)
         guard let id = components.last,

@@ -74,7 +74,10 @@ struct WallpaperEngineProject: Sendable, Equatable {
             throw WPEProjectError.manifestMalformed(error.localizedDescription)
         }
 
-        let workshopID = Self.trimmed(decoded.workshopid) ?? folder.lastPathComponent
+        // Steam names the folder after the item; a re-upload's manifest can still carry the original item's id.
+        let workshopID = WallpaperEngineImportService.originKind(forSourceFolder: folder) == .workshopImport
+            ? folder.lastPathComponent
+            : Self.trimmed(decoded.workshopid) ?? folder.lastPathComponent
         guard WPEPathSafety.isSafeProjectID(workshopID) else {
             throw WPEProjectError.manifestMalformed("Invalid workshop id")
         }
@@ -170,6 +173,21 @@ struct WallpaperEngineProject: Sendable, Equatable {
         return nil
     }
 
+}
+
+extension WPEOrigin {
+    /// Name of the bookmarked source folder when it sits in Steam's Workshop layout, i.e. the Steam item it came from; nil otherwise.
+    /// Can differ from `workshopID`, which an entry may have recorded from a re-upload's manifest.
+    var steamFolderItemID: String? {
+        guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: sourceFolderBookmark)?.path else { return nil }
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        guard WallpaperEngineImportService.originKind(forSourceFolder: folder) == .workshopImport else { return nil }
+        return folder.lastPathComponent
+    }
+
+    func matchesWorkshopItem(_ id: String) -> Bool {
+        workshopID == id || steamFolderItemID == id
+    }
 }
 
 enum WPEProjectError: LocalizedError, Equatable, Sendable {
