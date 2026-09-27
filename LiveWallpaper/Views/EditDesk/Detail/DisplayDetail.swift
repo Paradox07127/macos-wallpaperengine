@@ -54,7 +54,6 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     let tags: [DetailDisplayTag]
     let hero: DetailHeroStatus
     let heroImage: CGImage?
-    let windowSize: CGSize
     @Binding var section: DetailSection
     let heroVisible: Bool
     var returning = false
@@ -108,8 +107,11 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     @ViewBuilder
     private var workspace: some View {
         if section == .overlay {
-            overlayCanvas(CGSize(width: windowSize.width, height: max(1, windowSize.height - DetailGeometry.topBarHeight)))
-                .opacity(heroVisible ? 1 : 0)
+            // Measured, not taken from the stage's size: the stage is sized by this page, so it would hold a shrinking window at its old height.
+            GeometryReader { proxy in
+                overlayCanvas(proxy.size)
+            }
+            .opacity(heroVisible ? 1 : 0)
         } else {
             InspectorSplit(
                 isMounted: !isEmpty, isVisible: inspectorVisible && !isEmpty,

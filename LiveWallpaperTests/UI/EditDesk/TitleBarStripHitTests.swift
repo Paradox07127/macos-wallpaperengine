@@ -13,7 +13,7 @@ struct TitleBarStripHitTests {
     func detailTopBarOverScrollingInspector() async throws {
         try await withWindow(navigation: nil) { window in
             window.contentView = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
-                Self.detail(windowSize: window.frame.size).ignoresSafeArea()
+                Self.detail().ignoresSafeArea()
             })
             // The settings button, last in the bar: 16pt padding, a 36pt capsule.
             let chain = await Self.hitChain(in: window, x: window.frame.width - 27, yFromTop: 28)
@@ -85,13 +85,12 @@ struct TitleBarStripHitTests {
         return chain
     }
 
-    private static func detail(windowSize: CGSize) -> some View {
+    private static func detail() -> some View {
         DisplayDetail(
             displayName: "Display",
             tags: [DetailDisplayTag(id: 1, name: "Display", thumbnail: nil, isCurrent: true)],
             hero: DetailHeroStatus(title: "Wallpaper", kindLine: "", intendsToPlay: true),
             heroImage: nil,
-            windowSize: windowSize,
             section: .constant(.wallpaper),
             heroVisible: true,
             actions: DetailActions(

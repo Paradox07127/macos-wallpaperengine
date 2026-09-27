@@ -219,7 +219,6 @@ struct EditDeskCanvasCoverageTests {
             tags: [DetailDisplayTag(id: 1, name: "Canvas Display", thumbnail: nil, isCurrent: true)],
             hero: DetailHeroStatus(title: "Canvas", kindLine: "Video", intendsToPlay: true),
             heroImage: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue),
-            windowSize: Self.size,
             section: .constant(section),
             heroVisible: true,
             actions: ProbeFixtures.detailActions,

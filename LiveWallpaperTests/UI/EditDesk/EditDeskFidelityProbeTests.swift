@@ -585,7 +585,7 @@ struct S4S5OverlapTests {
 @Suite("Fidelity S6-B display detail", .serialized)
 @MainActor
 struct S6DetailFidelityTests {
-    private func detail(windowSize: CGSize) -> some View {
+    private func detail() -> some View {
         DisplayDetail(
             displayName: "MPG321CX OLED",
             tags: [
@@ -597,7 +597,6 @@ struct S6DetailFidelityTests {
                 intendsToPlay: true
             ),
             heroImage: ProbeRenderer.solid(ProbeRenderer.heroMagenta),
-            windowSize: windowSize,
             section: .constant(.wallpaper),
             heroVisible: true,
             actions: ProbeFixtures.detailActions,
@@ -615,7 +614,7 @@ struct S6DetailFidelityTests {
     func layoutAt1280() async throws {
         let size = CGSize(width: 1280, height: 820)
         // The inspector fades in 0.25s after the hero, then animates for 0.25s.
-        let image = await ProbeRenderer.render("S6B-1280-dark", size: size, settle: 1.4) { detail(windowSize: size) }
+        let image = await ProbeRenderer.render("S6B-1280-dark", size: size, settle: 1.4) { detail() }
 
         let inspector = try #require(image.boundingBox { $0.isYellow }, "the inspector column never became visible")
         ProbeRenderer.report("S6.1280.inspectorRect", inspector)
@@ -649,7 +648,7 @@ struct S6DetailFidelityTests {
     @Test("S6-B hero at 1040×700 keeps 16:9 and the 372 inspector")
     func layoutAt1040() async throws {
         let size = CGSize(width: 1040, height: 700)
-        let image = await ProbeRenderer.render("S6B-1040-dark", size: size, settle: 1.4) { detail(windowSize: size) }
+        let image = await ProbeRenderer.render("S6B-1040-dark", size: size, settle: 1.4) { detail() }
         let hero = try #require(image.boundingBox { $0.isMagenta })
         let inspector = try #require(image.boundingBox { $0.isYellow })
         let contract = DetailGeometry.heroFrame(in: size)

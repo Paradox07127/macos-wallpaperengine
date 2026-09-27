@@ -145,7 +145,6 @@ struct DisplayDetailHost: View {
             tags: tags(current: id),
             hero: status,
             heroImage: cover(id),
-            windowSize: stage.stageSize,
             section: sectionBinding,
             heroVisible: coordinator?.heroVisible ?? false,
             returning: coordinator?.phase == .returning,

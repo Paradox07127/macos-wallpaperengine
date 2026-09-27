@@ -143,6 +143,9 @@ SUITES=(
   OverlayLayerListTests
   OverlayRuntimeContractTests
   OverlayObjectRemoveWindowTests
+  OverlayInspectorOpeningTests
+  DetailResizeWindowTests
+  EditDeskToastHostPlacementTests
   EditDeskModalChromeTests
   PopoverEscapeTests
   MatureRevealStateTests
