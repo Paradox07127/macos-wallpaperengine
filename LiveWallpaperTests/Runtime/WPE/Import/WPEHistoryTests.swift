@@ -65,6 +65,31 @@ struct WPEHistoryTests {
         }
     }
 
+    @Test("Re-recording a Steam folder replaces only that folder's entry, not another folder whose manifest names it")
+    func steamFolderReRecordKeepsOtherFolderNamingIt() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("history-steam-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func entry(_ workshopID: String, inFolder itemID: String) throws -> WPEHistoryEntry {
+            let folder = root.appendingPathComponent("steamapps/workshop/content/431960/\(itemID)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let origin = try WPEOrigin(
+                workshopID: workshopID, title: "Item \(itemID)", originalType: .scene,
+                sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+                cacheRelativePath: "wpe-cache/\(workshopID)", previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: Double(workshopID) ?? 0))
+        }
+
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            try manager.recordWPEImport(entry("100", inFolder: "200"))
+            try manager.recordWPEImport(entry("200", inFolder: "300"))
+            try manager.recordWPEImport(entry("200", inFolder: "200"))
+            #expect(manager.loadGlobalSettings().recentWPEImports.map(\.origin.steamFolderItemID) == ["200", "300"])
+        }
+    }
+
     @Test("Caps at maxRecentWPEImports, dropping the oldest")
     func capsAtMaxRecentImports() throws {
         withIsolatedGlobalSettings {

@@ -15,8 +15,8 @@ enum SchedulePolicy {
     }
 
     static func decision(for configuration: ScreenConfiguration, hour: Int) -> Decision {
-        guard configuration.wallpaperMode == .schedule,
-              let slots = configuration.scheduleSlots, !slots.isEmpty else {
+        let slots = configuration.scheduleSlots ?? []
+        guard configuration.wallpaperMode == .schedule, !slots.isEmpty || configuration.scheduleFallback != nil else {
             return .none
         }
 
@@ -49,8 +49,7 @@ enum SchedulePolicy {
 
     /// The entry the plan wants on screen at `hour`; nil when the plan leaves that hour alone.
     static func plannedEntry(for configuration: ScreenConfiguration, hour: Int) -> WallpaperQueueEntry? {
-        guard let slots = configuration.scheduleSlots else { return nil }
-        let active = activeSlot(in: slots, hour: hour)
+        let active = activeSlot(in: configuration.scheduleSlots ?? [], hour: hour)
         let slotVideo = active?.videoBookmarkData.map {
             WallpaperQueueEntry(title: active?.label ?? "", content: .video(bookmarkData: $0))
         }

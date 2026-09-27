@@ -335,7 +335,8 @@ final class WallpaperAutomationOrchestrator {
         }
         var seen: Set<String> = []
         config.wallpaperQueue = queue.filter { seen.insert($0.id).inserted }
-        config.playlistCursorIndex = config.wallpaperQueue?.firstIndex(where: { $0.id == currentID }) ?? 0
+        let keptCursor = config.wallpaperQueue?.firstIndex(where: { $0.id == currentID })
+        config.playlistCursorIndex = keptCursor ?? 0
         config.scheduleSlots = slots.isEmpty ? nil : slots
         config.wallpaperMode = mode
         config.playlistRotationMinutes = rotationMinutes.flatMap { $0 > 0 ? $0 : nil }
@@ -343,7 +344,8 @@ final class WallpaperAutomationOrchestrator {
         saveConfiguration(config)
         if mode == .schedule {
             checkAndApplySchedule(for: screen, force: true)
-        } else if previousMode != .playlist, let entries = config.wallpaperQueue, !entries.isEmpty {
+        } else if previousMode != .playlist || (currentID != nil && keptCursor == nil),
+                  let entries = config.wallpaperQueue, !entries.isEmpty {
             let index = config.playlistCursorIndex ?? 0
             applyEntry(entries[index], cursor: index, for: screen)
         }
@@ -399,7 +401,8 @@ final class WallpaperAutomationOrchestrator {
         guard !isSuspendedForUserAbsence,
               var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.wallpaperMode == .schedule,
-              let slots = config.scheduleSlots, !slots.isEmpty else { return }
+              config.scheduleSlots?.isEmpty == false || config.scheduleFallback != nil else { return }
+        let slots = config.scheduleSlots ?? []
         let currentTime = now()
         if !force, let settled = config.scheduleSettledUntil, currentTime < settled {
             return

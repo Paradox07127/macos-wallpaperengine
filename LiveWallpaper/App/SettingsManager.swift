@@ -347,8 +347,14 @@ final class SettingsManager {
     ) {
         var settings = loadGlobalSettings()
         var entry = entry
-        let entryItemIDs = Self.workshopItemIDs(entry.origin)
-        let isSameItem = { (other: WPEHistoryEntry) in !entryItemIDs.isDisjoint(with: Self.workshopItemIDs(other.origin)) }
+        let entryWorkshopID = entry.origin.workshopID
+        let entryFolderID = Self.steamFolderItemID(entry.origin)
+        let isSameItem = { (other: WPEHistoryEntry) in
+            if let entryFolderID, let otherFolderID = Self.steamFolderItemID(other.origin) {
+                return entryFolderID == otherFolderID
+            }
+            return entryWorkshopID == other.origin.workshopID
+        }
         let previous = settings.recentWPEImports.first(where: isSameItem)
         if entry.sizeBytes == nil {
             entry.sizeBytes = previous?.sizeBytes
@@ -376,12 +382,12 @@ final class SettingsManager {
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
     }
 
-    /// Ids naming the Steam item an entry came from; two entries sharing any of them are the same item.
-    private static func workshopItemIDs(_ origin: WPEOrigin) -> Set<String> {
+    /// When both entries have a Steam folder id it alone decides sameness: a manifest's id can name another folder's item.
+    private static func steamFolderItemID(_ origin: WPEOrigin) -> String? {
         #if LITE_BUILD
-        return [origin.workshopID]
+        return nil
         #else
-        return Set([origin.workshopID, origin.steamFolderItemID].compactMap { $0 })
+        return origin.steamFolderItemID
         #endif
     }
 

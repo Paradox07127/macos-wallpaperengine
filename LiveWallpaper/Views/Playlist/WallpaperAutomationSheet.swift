@@ -129,6 +129,15 @@ struct WallpaperAutomationSheet: View {
         manager.restoreProposedWallpaperSession(for: screen, configuration: shownBeforeTrial)
     }
 
+    /// A playlist step or schedule switch since the preview began has put another wallpaper on the display.
+    static func endTrialIfSwitched(
+        _ preview: inout (entryID: WallpaperQueueEntry.ID, switchSerial: Int?)?, shownBeforeTrial: inout ScreenConfiguration?, currentSerial: Int?
+    ) {
+        guard let started = preview, currentSerial != started.switchSerial else { return }
+        preview = nil
+        shownBeforeTrial = nil
+    }
+
     /// 0 and 24 both mean a midnight end; the end picker lists 1–24, so a stored 0 must read as 24.
     static func endHourBinding(_ hour: Binding<Int>) -> Binding<Int> {
         Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
@@ -222,10 +231,10 @@ struct WallpaperAutomationSheet: View {
         .onAppear(perform: load)
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
-            // A playlist step or schedule switch since the preview began has put another wallpaper on the display.
-            if let started = preview, manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial != started.switchSerial {
-                preview = nil
-            }
+            Self.endTrialIfSwitched(
+                &preview, shownBeforeTrial: &shownBeforeTrial,
+                currentSerial: manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial
+            )
             playingEntryID = Self.nowPlayingEntryID(
                 in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID, previewing: preview?.entryID
             )
