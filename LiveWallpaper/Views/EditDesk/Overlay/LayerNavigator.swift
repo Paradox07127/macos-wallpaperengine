@@ -36,6 +36,7 @@ private struct OverlayLayerRowView: View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
             Button {
                 session.select(row.selection)
+                session.requestInspector()
             } label: {
                 HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
                     Circle()

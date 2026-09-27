@@ -130,6 +130,8 @@ final class OverlayEditorSession {
     private(set) var addDropRejected = false
     /// Bumps each time an add or a drop puts an object on the canvas and selects it.
     private(set) var landingToken = 0
+    /// Bumps on a click on a canvas object or a layer row, the only gestures that open the inspector.
+    private(set) var inspectorRequest = 0
     private(set) var isActive = false
     private(set) var gestureGeneration = 0
     var renderScale: CGFloat = 1 {
@@ -244,6 +246,15 @@ final class OverlayEditorSession {
             interaction.select(nil)
         }
         selection = next
+    }
+
+    func requestInspector() {
+        inspectorRequest += 1
+    }
+
+    /// `translation` is press to release in board points; under 3pt on screen the gesture was a click, not a drag.
+    func isClick(_ translation: CGSize) -> Bool {
+        hypot(translation.width, translation.height) * OverlayGeometry.validScale(renderScale) < 3
     }
 
     func deleteSelection() {

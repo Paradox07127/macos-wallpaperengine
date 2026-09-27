@@ -207,11 +207,17 @@ struct OverlayCanvas: View {
                     guard generation == session.gestureGeneration else { return }
                     session.updateDrag(selection, translation: value.translation, bypassSnap: bypassSnap)
                     session.endDrag()
+                    if session.isClick(value.translation) {
+                        session.requestInspector()
+                    }
                 })
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(selection == .music ? Text("Drag to move the Music layer") : Text("Drag to move the Clock layer"))
             .accessibilityAddTraits(session.selection == selection ? .isSelected : [])
-            .accessibilityAction { session.select(selection) }
+            .accessibilityAction {
+                session.select(selection)
+                session.requestInspector()
+            }
             .position(x: rect.midX, y: rect.midY)
     }
 

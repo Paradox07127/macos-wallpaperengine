@@ -89,14 +89,30 @@ struct OverlayWorkspace: View {
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: layersVisible)
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: addExpanded)
         .onChange(of: session.selection) { _, selection in
-            inspectorVisible = selection != nil
+            inspectorVisible = Self.inspectorVisible(inspectorVisible, after: .selectionChanged, selection: selection)
+        }
+        .onChange(of: session.inspectorRequest) {
+            inspectorVisible = Self.inspectorVisible(inspectorVisible, after: .requested, selection: session.selection)
         }
         .onChange(of: screen.id, initial: true) { _, _ in
-            inspectorVisible = session.selection != nil
+            inspectorVisible = Self.inspectorVisible(inspectorVisible, after: .displayChanged, selection: session.selection)
         }
         .onChange(of: previewMode) { _, _ in session.capturePreview() }
         .onChange(of: sessionKey) { addDrag.cancel() }
         .onDisappear { addDrag.cancel() }
+    }
+
+    enum InspectorEvent {
+        case selectionChanged, requested, displayChanged
+    }
+
+    /// Only a click asks for the inspector: a drag or an add keeps it as it was, now showing the new selection.
+    static func inspectorVisible(_ visible: Bool, after event: InspectorEvent, selection: OverlaySelection?) -> Bool {
+        switch event {
+        case .selectionChanged: visible && selection != nil
+        case .requested: selection != nil
+        case .displayChanged: false
+        }
     }
 
     /// A tile drag belongs to one session: it ends when that session is detached or another display's replaces it.

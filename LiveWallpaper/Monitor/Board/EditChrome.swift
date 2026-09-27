@@ -9,6 +9,7 @@ struct WidgetDragModifier: ViewModifier {
     let placement: MonitorWidgetPlacement
     let geometry: MonitorBoardGeometry
     let restRawRect: CGRect
+    @Environment(\.monitorBoardChrome) private var chrome
 
     func body(content: Content) -> some View {
         content.gesture(dragGesture, including: model.isEditing ? .all : .subviews)
@@ -36,8 +37,11 @@ struct WidgetDragModifier: ViewModifier {
                 }
                 model.updateDrag(pointInBoard: value.location, bypassSnap: bypassSnap)
             }
-            .onEnded { _ in
+            .onEnded { value in
                 model.endDrag(bypassSnap: bypassSnap)
+                if let editor = chrome.editor, editor.isClick(value.translation) {
+                    editor.requestInspector()
+                }
             }
     }
 }
