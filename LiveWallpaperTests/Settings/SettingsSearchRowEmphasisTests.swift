@@ -83,8 +83,7 @@ struct SettingsSearchRowEmphasisTests {
         window.setContentSize(
             editDesk ? SettingsWindowMetrics.editDeskMinimumContentSize : SettingsWindowMetrics.minimumContentSize
         )
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         await settle(window, for: 1.2)
         try await body(window, #require(window.contentView))
     }

@@ -1957,7 +1957,7 @@ private struct StaticPresentRetryFixture {
         )
         window.isReleasedWhenClosed = false
         window.contentView = renderer.nsView
-        window.orderBack(nil)
+        window.parkOffScreen()
         if let layer = renderer.nsView.layer as? CAMetalLayer {
             let size = renderer.nsView.convertToBacking(renderer.nsView.bounds).size
             if size.width > 0, size.height > 0 {

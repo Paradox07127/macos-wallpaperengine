@@ -149,7 +149,7 @@ private final class DragWindowFixture {
         let session = OverlayEditorSession(defaults: UserDefaults(suiteName: "OverlayAddDragWindowTests") ?? .standard)
         session.transition(to: store.identity, store: store, editing: true)
         self.session = session
-        window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        window = ParkedTestWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: DragWindowHost(fixture: self))
         host.frame = CGRect(origin: .zero, size: size)

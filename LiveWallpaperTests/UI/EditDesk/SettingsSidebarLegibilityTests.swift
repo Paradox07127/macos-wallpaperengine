@@ -178,8 +178,7 @@ struct SettingsSidebarLegibilityTests {
         )
         let window = try #require(controller.window)
         defer { Self.close(window) }
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         await Self.settle(window, for: 1.2)
         let table = try #require(Self.sidebarTable(in: window))
         #expect(table.selectedRow == Self.generalRow, "control: the old window did not open on General")

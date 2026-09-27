@@ -78,7 +78,7 @@ struct EditDeskCanvasCoverageTests {
         .frame(width: Self.size.width, height: Self.size.height)
         let hosting = NSHostingView(rootView: AppLanguageScope(defaults: .standard) { root })
         hosting.sizingOptions = []
-        let window = NSWindow(
+        let window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: Self.size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false

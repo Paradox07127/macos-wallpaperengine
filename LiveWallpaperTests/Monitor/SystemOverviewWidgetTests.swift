@@ -134,7 +134,7 @@ final class SystemOverviewWidgetTests: XCTestCase {
                 )
                 window.isReleasedWhenClosed = false
                 window.contentView = host
-                window.orderBack(nil)
+                window.parkOffScreen()
                 defer { window.close() }
                 host.layoutSubtreeIfNeeded()
                 RunLoop.current.run(until: Date().addingTimeInterval(0.12))

@@ -26,7 +26,7 @@ struct AppRuntimeOptions: Equatable {
             || isXCTestLoaded
     }
 
-    private static func isXCTestLoaded() -> Bool {
+    fileprivate static func isXCTestLoaded() -> Bool {
         NSClassFromString("XCTestCase") != nil
             || NSClassFromString("XCTest.XCTestCase") != nil
     }
@@ -545,12 +545,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentSettingsWindow(_ controller: NSWindowController) {
-        controller.showWindow(nil)
         guard let window = controller.window else { return }
         LocalImageCacheReclaimer.shared.windowDidOpen(window)
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
+        if AppRuntimeOptions.isXCTestLoaded() {
+            // A test host takes no focus and shows nothing, yet the window stays ordered in. AppKit keeps a
+            // corner of a titled window on a display however far it is moved, so it is transparent as well.
+            window.alphaValue = 0
+            window.orderBack(nil)
+            window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+        } else {
+            controller.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
         guard window.isVisible else { return }
         acquireSettingsSystemMonitorLeaseIfNeeded()
     }

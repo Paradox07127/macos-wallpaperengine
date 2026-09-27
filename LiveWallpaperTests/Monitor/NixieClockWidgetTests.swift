@@ -75,7 +75,7 @@ final class NixieClockWidgetTests: XCTestCase {
         let window = OverlayWindow(screenFrame: NSRect(origin: .zero, size: dimensions), level: .desktop)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderBack(nil)
+        window.parkOffScreen()
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.15))
@@ -109,7 +109,7 @@ final class NixieClockWidgetTests: XCTestCase {
                               styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderBack(nil)
+        window.parkOffScreen()
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.15))

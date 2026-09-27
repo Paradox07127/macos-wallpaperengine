@@ -250,8 +250,7 @@ struct EditDeskLibraryStateTests {
             window.close()
             manager.tearDownForTermination()
         }
-        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
-        window.orderBack(nil)
+        window.parkOffScreen()
         try await body(window, manager.featureCatalog.isEnabled(.wpeImport))
     }
 

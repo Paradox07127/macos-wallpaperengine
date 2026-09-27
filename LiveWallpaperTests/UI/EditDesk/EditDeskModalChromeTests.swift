@@ -273,7 +273,7 @@ private final class ArrowWindow {
         case .workshop:
             AnyView(Self.workshopModal(size: size, navigation: navigation, presses: presses, directory: directory))
         }
-        window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        window = ParkedTestWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = FirstMouseHost(rootView: AppLanguageScope(defaults: .standard) { content.frame(width: size.width, height: size.height) })
         host.frame = CGRect(origin: .zero, size: size)
