@@ -9187,6 +9187,41 @@
         }
       }
     },
+    "Aurora Curtain" : {
+      "comment" : "Wallpaper transition option: an aurora curtain falls from the top with the new wallpaper behind it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aurora Curtain"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cortina de aurora"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーロラカーテン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极光幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "極光幕"
+          }
+        }
+      }
+    },
     "Author" : {
       "comment" : "Wallpaper detail row: the Workshop item's creator.",
       "localizations" : {
@@ -19270,6 +19305,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "嚴重過熱"
+          }
+        }
+      }
+    },
+    "Crossfade" : {
+      "comment" : "Wallpaper transition option: the old wallpaper fades out over the new one.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crossfade"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fundido encadenado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クロスフェード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "淡入淡出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "淡入淡出"
           }
         }
       }
@@ -32828,6 +32898,41 @@
         }
       }
     },
+    "Ink Bloom" : {
+      "comment" : "Wallpaper transition option: the new wallpaper spreads from a point like ink dropped in water.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ink Bloom"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mancha de tinta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "墨のにじみ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "墨晕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "墨暈"
+          }
+        }
+      }
+    },
     "Inline HTML content" : {
       "comment" : "Read-only label shown when a web wallpaper's source is legacy inline HTML.",
       "extractionState" : "manual",
@@ -35058,6 +35163,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "淺色"
+          }
+        }
+      }
+    },
+    "Light Leak" : {
+      "comment" : "Wallpaper transition option: a warm light leak sweeps across and the new wallpaper develops in it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light Leak"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuga de luz"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光漏れ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "漏光"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "漏光"
+          }
+        }
+      }
+    },
+    "Light Weave" : {
+      "comment" : "Wallpaper transition option: shuttles of light weave the new wallpaper in row by row.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light Weave"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tejido de luz"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光の織り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "织光"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "織光"
           }
         }
       }
@@ -38963,6 +39138,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MetalFX 超解析度"
+          }
+        }
+      }
+    },
+    "Meteor" : {
+      "comment" : "Wallpaper transition option: a meteor streaks across and the new wallpaper spreads out from its trail.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meteor"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meteoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星"
           }
         }
       }
@@ -48766,6 +48976,41 @@
         }
       }
     },
+    "Plays when a display switches wallpapers. With Reduce Motion on, wallpapers switch without animation." : {
+      "comment" : "Settings › General, info for Wallpaper transition. Reduce Motion is the macOS accessibility setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plays when a display switches wallpapers. With Reduce Motion on, wallpapers switch without animation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se reproduce cuando una pantalla cambia de fondo. Con Reducir movimiento activado, el fondo cambia sin animación."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイの壁紙が切り替わるときに再生します。「視差効果を減らす」がオンの間はアニメーションなしで切り替わります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器切换壁纸时播放；开启“减弱动态效果”时直接切换，不播放动画。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示器切換桌布時播放；開啟「減少動態效果」時直接切換，不播放動畫。"
+          }
+        }
+      }
+    },
     "Plugged in" : {
       "comment" : "System overview power status for external AC power.",
       "extractionState" : "manual",
@@ -50586,6 +50831,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "RAM 範圍"
+          }
+        }
+      }
+    },
+    "Random" : {
+      "comment" : "Wallpaper transition option: picks one of the transitions at random each time.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Random"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aleatorio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ランダム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随机"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隨機"
           }
         }
       }
@@ -78997,6 +79277,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布渲染已關閉"
+          }
+        }
+      }
+    },
+    "Wallpaper transition" : {
+      "comment" : "Settings › General › Wallpaper row title: the animation played when a display switches from one wallpaper to the next.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper transition"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transición de fondo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙の切り替え効果"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换壁纸动画"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "換桌布動畫"
           }
         }
       }

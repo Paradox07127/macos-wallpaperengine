@@ -7,6 +7,9 @@ public final class VideoWallpaperWindow: NSWindow {
     private static let interactiveWallpaperWindowLevel = desktopIconWindowLevel + 1
     private var allowsWallpaperMouseInteraction = false
 
+    /// Posted when an interactive wallpaper orders itself to the front of its level.
+    public static let didOrderFrontNotification = Notification.Name("VideoWallpaperWindow.didOrderFront")
+
     private var wallpaperWindowLevel: Int {
         allowsWallpaperMouseInteraction
             ? Self.interactiveWallpaperWindowLevel
@@ -66,6 +69,7 @@ public final class VideoWallpaperWindow: NSWindow {
     public override func makeKeyAndOrderFront(_ sender: Any?) {
         if allowsWallpaperMouseInteraction {
             super.makeKeyAndOrderFront(sender)
+            NotificationCenter.default.post(name: Self.didOrderFrontNotification, object: self)
         } else {
             orderBack(nil)
         }
@@ -101,6 +105,7 @@ public extension VideoWallpaperWindow {
         acceptsMouseMovedEvents = allowsWallpaperMouseInteraction
         if allowsWallpaperMouseInteraction {
             super.makeKeyAndOrderFront(nil)
+            NotificationCenter.default.post(name: Self.didOrderFrontNotification, object: self)
         } else {
             orderBack(nil)
         }
