@@ -25,7 +25,7 @@ final class EditDeskToastCenter {
         var pausedAt: Date?
     }
 
-    /// MOTION 18: at most two stacked, newest at bottom 24pt / older pushed to 68pt.
+    /// MOTION 18: at most two stacked, newest just under the top bar and the older one below it.
     static let visibleLimit = 2
     static let duration: TimeInterval = 1.8
     static let undoDuration: TimeInterval = 8
@@ -112,16 +112,19 @@ struct EditDeskToastHost: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
 
-    private static let newestBottomInset: CGFloat = 24
-    private static let olderBottomInset: CGFloat = 68
+    /// Below the tallest page top bar, so a toast never covers its buttons.
+    private static let newestTopInset = max(DesignTokens.EditDesk.Spacing.topBar, DetailGeometry.topBarHeight)
+        + DesignTokens.EditDesk.Spacing.s8
+    /// 44 = one toast's height plus the gap between the two.
+    private static let olderTopInset = newestTopInset + 44
     private static let reapInterval: Duration = .milliseconds(200)
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             ForEach(Array(center.toasts.enumerated()), id: \.element.id) { index, toast in
                 toastView(toast)
-                    .padding(.bottom, index == center.toasts.count - 1 ? Self.newestBottomInset : Self.olderBottomInset)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.top, index == center.toasts.count - 1 ? Self.newestTopInset : Self.olderTopInset)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.4, dampingFraction: 0.82), value: center.toasts.map(\.id))

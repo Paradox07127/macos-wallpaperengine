@@ -45,7 +45,9 @@ struct WorkshopPageSourceTests {
         }
         let root = try RepositoryRoot.source(Self.root)
         #expect(root.components(separatedBy: "EditDeskToastHost(").count - 1 == 1)
-        #expect(root.contains("EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })"))
+        #expect(root.contains(
+            ".overlay(alignment: .top) {\n            EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })"
+        ))
     }
 
     @Test("The root observes every deferred ticket and announces each settled ID once")

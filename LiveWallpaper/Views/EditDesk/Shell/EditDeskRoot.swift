@@ -113,7 +113,7 @@ struct EditDeskRoot: View {
                 Color.clear
             }
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })
         }
         #if !LITE_BUILD
