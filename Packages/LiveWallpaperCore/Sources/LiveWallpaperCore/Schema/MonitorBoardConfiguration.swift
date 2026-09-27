@@ -124,6 +124,8 @@ public struct MonitorWidgetPlacement: Codable, Equatable, Sendable, Identifiable
     public var x: Double
     public var y: Double
     public var options: [String: MonitorWidgetOptionValue]
+    /// Off the desktop and out of sampling, but still on the board: its footprint keeps others off its spot.
+    public var isHidden: Bool
 
     public init(
         id: UUID = UUID(),
@@ -139,10 +141,12 @@ public struct MonitorWidgetPlacement: Codable, Equatable, Sendable, Identifiable
         self.x = x.isFinite ? min(max(x, 0), 1) : 0
         self.y = y.isFinite ? min(max(y, 0), 1) : 0
         self.options = options
+        isHidden = false
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, size, x, y, options
+        case isHidden = "hidden"
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,6 +158,21 @@ public struct MonitorWidgetPlacement: Codable, Equatable, Sendable, Identifiable
         let y = try c.decodeIfPresent(Double.self, forKey: .y) ?? 0
         let options = try c.decodeIfPresent([String: MonitorWidgetOptionValue].self, forKey: .options) ?? [:]
         self.init(id: id, kind: kind, size: size, x: x, y: y, options: options)
+        isHidden = try c.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
+    }
+
+    /// A shown widget writes no `hidden` key, so boards saved before the key existed re-encode unchanged.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(size, forKey: .size)
+        try c.encode(x, forKey: .x)
+        try c.encode(y, forKey: .y)
+        try c.encode(options, forKey: .options)
+        if isHidden {
+            try c.encode(isHidden, forKey: .isHidden)
+        }
     }
 }
 

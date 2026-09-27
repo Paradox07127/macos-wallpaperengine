@@ -672,13 +672,14 @@ final class OverlayController: NSObject {
         for (key, host) in hosts where visibleHostKeys.contains(key) {
             switch host.content {
             case .monitor(_, let board):
-                kinds.formUnion(board.widgets.map(\.kind))
-                if let s = MonitorWidgetDraft.gpuSampleSeconds(in: board.widgets) {
+                let shown = board.widgets.filter { !$0.isHidden }
+                kinds.formUnion(shown.map(\.kind))
+                if let s = MonitorWidgetDraft.gpuSampleSeconds(in: shown) {
                     gpuSeconds = min(gpuSeconds ?? s, s)
                 }
                 let interval = board.refreshIntervalSeconds
                 sampleSeconds = min(sampleSeconds ?? interval, interval)
-                demand = demand.union(MonitorSampleDemand.of(board.widgets))
+                demand = demand.union(MonitorSampleDemand.of(shown))
             case .music(_, let configuration):
                 music = true
                 // The tap and its FFT only pay for themselves while a layer

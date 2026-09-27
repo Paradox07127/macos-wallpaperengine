@@ -376,6 +376,12 @@ final class InteractionModel: ObservableObject {
         return true
     }
 
+    func setHidden(_ id: UUID, to hidden: Bool) {
+        guard let index = placements.firstIndex(where: { $0.id == id }), placements[index].isHidden != hidden else { return }
+        placements[index].isHidden = hidden
+        emitConfiguration()
+    }
+
     // MARK: - Reflow on board resize
 
     func reflow(boardSize newSize: CGSize) {

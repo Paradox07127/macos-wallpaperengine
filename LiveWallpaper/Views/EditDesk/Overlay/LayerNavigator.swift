@@ -51,6 +51,17 @@ private struct OverlayLayerRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if hasSettings {
+                GlassIconButton("gearshape", size: .small) {
+                    session.select(row.selection)
+                    session.requestInspector()
+                }
+                .help(Text("Settings"))
+                .accessibilityLabel(Text("Settings"))
+            }
+            if case let .widget(id) = row.selection {
+                WidgetShownToggle(interaction: session.interaction, id: id, name: name)
+            }
             action
         }
         .padding(.leading, indent)
@@ -112,6 +123,13 @@ private struct OverlayLayerRowView: View {
         row.kind == .effect
     }
 
+    private var hasSettings: Bool {
+        switch row.kind {
+        case .board, .clock, .music: true
+        case .widget, .effect: false
+        }
+    }
+
     private func setEnabled(_ isOn: Bool) {
         switch row.kind {
         case .board: session.setBoardEnabled(isOn)
@@ -157,6 +175,24 @@ private struct OverlayLayerRowView: View {
         case .music: DesignTokens.EditDesk.Colors.success
         case .effect: DesignTokens.EditDesk.Colors.sceneGroupEffects
         }
+    }
+}
+
+/// Observes the board itself: the row's own inputs do not change when a widget is hidden.
+private struct WidgetShownToggle: View {
+    @ObservedObject var interaction: InteractionModel
+    let id: UUID
+    let name: String
+
+    var body: some View {
+        Toggle("", isOn: Binding(
+            get: { interaction.placements.first { $0.id == id }?.isHidden == false },
+            set: { interaction.setHidden(id, to: !$0) }
+        ))
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .accessibilityLabel(Text(verbatim: name))
     }
 }
 

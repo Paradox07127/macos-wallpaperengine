@@ -13,14 +13,18 @@ struct OverlayCanvas: View {
 
     var body: some View {
         ZStack {
-            DesignTokens.Colors.surfaceRaised
-            if let cover {
-                Image(decorative: cover, scale: 1)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
+            ZStack {
+                DesignTokens.Colors.surfaceRaised
+                if let cover {
+                    Image(decorative: cover, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
+                }
             }
+            // Only the backdrop: rounding the whole canvas would also cut an edge object's outline and remove button.
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.content, style: .continuous))
             MonitorBoardRootContainer(
                 model: session.interaction, data: session.data, reduceMotion: reduceMotion,
                 suspended: true, preview: session.preview, logicalSize: session.logicalSize
@@ -259,14 +263,16 @@ struct OverlayObjectChrome: ViewModifier {
             }
             .overlay(alignment: .topTrailing) {
                 if let onRemove, selected || hovering || hoveringButton {
-                    let reach = DesignTokens.iconButtonDiameter(.small) / 2
+                    let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
+                    // Board points: from the unscaled circle's centre to the corner, less 4pt on screen.
+                    let reach = DesignTokens.iconButtonDiameter(.small) / 2 - DesignTokens.Spacing.xs * boost
                     GlassIconButton("xmark", size: .small, action: onRemove)
                         .help(Text("Remove"))
                         .accessibilityLabel(Text("Remove"))
-                        // Undoes the board shrink so the circle stays 20pt on screen; the offset centres it on the corner.
-                        .scaleEffect(MonitorChromeScale.boost(forRenderScale: renderScale))
+                        // Undoes the board shrink so the circle stays 20pt on screen; the offset centres it 4pt in from the corner.
+                        .scaleEffect(boost)
                         .offset(x: reach, y: -reach)
-                        // Half the circle hangs outside the object, where the object's own hover has already ended.
+                        // Part of the circle hangs outside the object, where the object's own hover has already ended.
                         .onHover { hoveringButton = $0 }
                 }
             }

@@ -221,6 +221,58 @@ struct MonitorBoardConfigurationTests {
         #expect(decoded.widgets.map(\.kind) == [.cpu, .gpu])
     }
 
+    // MARK: - Hidden placements
+
+    @Test("A placement missing the hidden key decodes as shown")
+    func missingHiddenKeyDecodesShown() throws {
+        let json = Data("""
+        { "widgets": [{ "kind": "cpu", "size": "s", "x": 0.0, "y": 0.0 }] }
+        """.utf8)
+        let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
+        #expect(decoded.widgets.map(\.isHidden) == [false])
+    }
+
+    @Test("A hidden placement stays hidden through a round trip")
+    func hiddenPlacementRoundTrips() throws {
+        var hidden = MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.25, y: 0.5)
+        hidden.isHidden = true
+        let board = MonitorBoardConfiguration(widgets: [hidden, MonitorWidgetPlacement(kind: .gpu)])
+        let encoded = try JSONEncoder().encode(board)
+        let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: encoded)
+        #expect(decoded.widgets.map(\.isHidden) == [true, false])
+        #expect(decoded == board)
+    }
+
+    @Test("A shown placement encodes byte for byte as before, with no hidden key")
+    func shownPlacementEncodesAsBefore() throws {
+        let id = try #require(UUID(uuidString: "6F1C2A34-1D2E-4F5A-8B9C-0D1E2F3A4B5C"))
+        let placement = MonitorWidgetPlacement(
+            id: id, kind: .cpu, size: .small, x: 0.25, y: 0.5,
+            options: ["history": .number(60), "labels": .bool(true)]
+        )
+        let legacy = LegacyPlacement(id: placement.id, kind: placement.kind, size: placement.size,
+                                     x: placement.x, y: placement.y, options: placement.options)
+        // The formats the settings store and the config export write; unsorted key order varies per encode.
+        for formatting in [JSONEncoder.OutputFormatting.sortedKeys, [.prettyPrinted, .sortedKeys]] {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = formatting
+            let encoded = try encoder.encode(placement)
+            let before = try encoder.encode(legacy)
+            #expect(encoded == before)
+            #expect(String(bytes: encoded, encoding: .utf8)?.contains("hidden") == false)
+        }
+    }
+
+    /// The placement's fields before `isHidden`, with the synthesized encoding it had then.
+    private struct LegacyPlacement: Encodable {
+        let id: UUID
+        let kind: MonitorWidgetKind
+        let size: MonitorWidgetSize
+        let x: Double
+        let y: Double
+        let options: [String: MonitorWidgetOptionValue]
+    }
+
     // MARK: - Missing-key resilience
 
     @Test("Empty JSON object decodes to full defaults including default placements")

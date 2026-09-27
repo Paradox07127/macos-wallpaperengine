@@ -348,7 +348,9 @@ final class BoardLayoutImporter {
         guard imported.widgets.count <= maxWidgets else { throw tooLarge }
         var next = imported
         next.widgets = imported.widgets.map { w in
-            MonitorWidgetPlacement(kind: w.kind, size: w.size, x: w.x, y: w.y, options: w.options)
+            var placement = MonitorWidgetPlacement(kind: w.kind, size: w.size, x: w.x, y: w.y, options: w.options)
+            placement.isHidden = w.isHidden
+            return placement
         }
         next.schemaVersion = MonitorBoardConfiguration.currentSchemaVersion
         return next

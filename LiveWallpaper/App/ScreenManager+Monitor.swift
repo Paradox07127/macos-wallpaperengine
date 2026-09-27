@@ -66,7 +66,7 @@ extension ScreenManager {
     var hasEnabledWeatherWidget: Bool {
         wallpapersGloballyEnabled && screens.contains { screen in
             let overlay = monitorOverlay(for: screen)
-            return overlay.enabled && overlay.board.widgets.contains { $0.kind == .weather }
+            return overlay.enabled && overlay.board.widgets.contains { $0.kind == .weather && !$0.isHidden }
         }
     }
 

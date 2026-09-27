@@ -23,8 +23,26 @@ struct OverlayObjectRemoveWindowTests {
         let footprint = fixture.session.interaction.footprint(for: widget)
         let origin = geometry.clampOrigin(fixture.session.interaction.pixelOrigin(for: widget), footprint: footprint)
         let tile = geometry.renderRect(forRawRect: CGRect(origin: origin, size: footprint))
-        await fixture.click(board: CGPoint(x: tile.maxX, y: tile.minY))
+        await fixture.click(board: fixture.button(corner: CGPoint(x: tile.maxX, y: tile.minY)))
         #expect(await fixture.settle { fixture.session.interaction.placements.isEmpty }, "the corner button did not remove the widget")
+    }
+
+    @Test("The button sits in from the corner, so a click a corner-centred button missed removes the widget")
+    func buttonSitsInsideTheCorner() async throws {
+        let fixture = RemoveWindowFixture(overlay: MonitorOverlayConfiguration(
+            enabled: true, board: MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.3, y: 0.4)])
+        ))
+        defer { fixture.close() }
+        let widget = try #require(fixture.session.interaction.placements.first)
+        fixture.session.select(.widget(widget.id))
+        let geometry = fixture.session.interaction.geometry
+        let footprint = fixture.session.interaction.footprint(for: widget)
+        let origin = geometry.clampOrigin(fixture.session.interaction.pixelOrigin(for: widget), footprint: footprint)
+        let tile = geometry.renderRect(forRawRect: CGRect(origin: origin, size: footprint))
+        // 8pt left of the button's centre on screen: inside its 10pt radius, 12pt from the corner and outside a circle centred there.
+        let centre = fixture.button(corner: CGPoint(x: tile.maxX, y: tile.minY))
+        await fixture.click(board: CGPoint(x: centre.x - 8 / fixture.renderScale, y: centre.y))
+        #expect(await fixture.settle { fixture.session.interaction.placements.isEmpty }, "the click landed on the widget, not its remove button")
     }
 
     @Test("Clicking the selected Clock layer's corner button turns the clock off")
@@ -36,7 +54,7 @@ struct OverlayObjectRemoveWindowTests {
         #expect(fixture.session.overlay.clock.enabled)
         fixture.session.select(.clock)
         let clock = fixture.session.rect(for: .clock)
-        await fixture.click(board: CGPoint(x: clock.maxX, y: clock.minY))
+        await fixture.click(board: fixture.button(corner: CGPoint(x: clock.maxX, y: clock.minY)))
         #expect(await fixture.settle { !fixture.session.overlay.clock.enabled }, "the corner button did not turn the clock off")
         #expect(fixture.store.snapshot.overlay.clock.enabled == false)
     }
@@ -83,6 +101,15 @@ private final class RemoveWindowFixture {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+
+    var renderScale: CGFloat {
+        Self.scale
+    }
+
+    /// The remove button's centre, in board points: 4pt on screen left of and below the object's top-right `corner`.
+    func button(corner: CGPoint) -> CGPoint {
+        CGPoint(x: corner.x - 4 / Self.scale, y: corner.y + 4 / Self.scale)
     }
 
     /// `point` is in board points with a top-left origin; window coordinates start bottom-left.

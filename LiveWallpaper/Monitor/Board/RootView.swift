@@ -121,7 +121,7 @@ struct RootView: View {
                         ghostFrame(drag: drag, geometry: geometry)
                     }
 
-                    ForEach(editor?.overlay.enabled == false ? [] : model.placements) { placement in
+                    ForEach(drawnPlacements) { placement in
                         widgetTile(placement, geometry: geometry)
                     }
 
@@ -162,6 +162,12 @@ struct RootView: View {
 
     // MARK: Widget tiles
 
+    /// The desktop drops hidden widgets; the editor keeps them as placeholders.
+    private var drawnPlacements: [MonitorWidgetPlacement] {
+        guard let editor else { return model.placements.filter { !$0.isHidden } }
+        return editor.overlay.enabled ? model.placements : []
+    }
+
     @ViewBuilder
     private func widgetTile(
         _ placement: MonitorWidgetPlacement,
@@ -173,7 +179,13 @@ struct RootView: View {
         let liveRawRect = isDragging ? draggedRawRect(placement, geometry: geometry) : restRawRect
         let liveRenderRect = geometry.renderRect(forRawRect: liveRawRect)
 
-        tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height)
+        Group {
+            if placement.isHidden {
+                hiddenPlaceholder(cornerRadius: geometry.cornerRadius)
+            } else {
+                tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height)
+            }
+        }
             .frame(width: liveRenderRect.width, height: liveRenderRect.height)
             .modifier(SelectionChrome(
                 isEditing: model.isEditing,
@@ -264,6 +276,17 @@ struct RootView: View {
             MonitorLiveTile(data: data, history: data.historyStore, placement: placement,
                             isEditing: model.isEditing, reduceMotion: reduceMotion)
         }
+    }
+
+    private func hiddenPlaceholder(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let scale = OverlayGeometry.validScale(renderScale)
+        // Dash and gap are 5pt and 4pt on screen, grown back through the board shrink.
+        return shape
+            .strokeBorder(DesignTokens.EditDesk.Colors.strokeDashedCard,
+                          style: StrokeStyle(lineWidth: decorationWidth, dash: [5 / scale, 4 / scale]))
+            // A stroke alone hit-tests only on its line; the whole face must stay grabbable.
+            .contentShape(shape)
     }
 
     private func rawRect(_ placement: MonitorWidgetPlacement, geometry: MonitorBoardGeometry) -> CGRect {

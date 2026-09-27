@@ -11,8 +11,7 @@ enum OverlayLayerKind: Equatable {
     case effect
 }
 
-/// The trailing control of a layer row. Board widgets are added and removed, not hidden, so
-/// their action removes rather than toggles.
+/// The trailing control of a layer row. A board widget's row removes it; its shown/hidden switch sits beside this.
 enum OverlayLayerAction: Equatable {
     case remove
     case toggle(isOn: Bool)

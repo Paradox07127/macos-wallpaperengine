@@ -31,6 +31,15 @@ struct BoardConfigDecodeTests {
         #expect(board.widgets.map(\.kind) == [.network])
     }
 
+    @Test("A hidden widget stays on the board, hidden, beside the shown ones")
+    func hiddenWidgetStaysOnBoard() throws {
+        let board = try decodeBoard("""
+        {"widgets":[{"kind":"cpu","size":"s","x":0.1,"y":0.1,"hidden":true},{"kind":"gpu","size":"m","x":0.5,"y":0.1}]}
+        """)
+        #expect(board.widgets.map(\.kind) == [.cpu, .gpu])
+        #expect(board.widgets.map(\.isHidden) == [true, false])
+    }
+
     @Test("A retired kind (clock/health) is dropped on decode, keeping the rest")
     func retiredKindsAreDropped() throws {
         let board = try decodeBoard("""
