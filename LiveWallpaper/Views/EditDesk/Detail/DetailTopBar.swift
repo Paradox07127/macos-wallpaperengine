@@ -30,6 +30,7 @@ struct DetailTopBar: View {
     var attemptShown = false
     @State private var schemeMenuPresented = false
     @State private var changeMenuPresented = false
+    @State private var bookmarkPresented = false
     @State private var schemeStore = SchemeStore.shared
 
     var body: some View {
@@ -62,6 +63,7 @@ struct DetailTopBar: View {
         .onChange(of: tags.first(where: \.isCurrent)?.id) {
             schemeMenuPresented = false
             changeMenuPresented = false
+            bookmarkPresented = false
         }
     }
 
@@ -91,6 +93,15 @@ struct DetailTopBar: View {
         if let openAutomation = actions.openAutomation {
             icon("list.bullet", "Playlist & Schedule", action: openAutomation)
                 .disabled(!hasWallpaper || attemptShown)
+        }
+        let bookmarked = actions.bookmark?.existing != nil
+        icon(bookmarked ? "bookmark.fill" : "bookmark", bookmarked ? "Bookmarked" : "Bookmark",
+             help: bookmarked ? Text("Bookmarked — click to rename or remove") : Text("Bookmark this wallpaper")) {
+            bookmarkPresented.toggle()
+        }
+        .disabled(attemptShown)
+        .appLanguagePopover(isPresented: $bookmarkPresented, arrowEdge: .bottom) {
+            DetailBookmarkPopover(target: actions.bookmark) { bookmarkPresented = false }
         }
         icon("square.stack", "Scheme") {
             if schemeStore.schemes.isEmpty {

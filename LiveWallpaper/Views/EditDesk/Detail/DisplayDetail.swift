@@ -35,6 +35,7 @@ struct DetailActions {
     var resumeSchedule: (() -> Void)?
     var applyScheme: (ScreenScheme) -> Void = { _ in }
     var manageSchemes: () -> Void = {}
+    var bookmark: DetailBookmarkTarget?
     /// nil while the wallpaper library is empty.
     var chooseFromLibrary: (() -> Void)?
     var importFile: () -> Void = {}
