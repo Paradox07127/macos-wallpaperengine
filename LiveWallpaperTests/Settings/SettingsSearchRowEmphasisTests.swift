@@ -54,8 +54,8 @@ struct SettingsSearchRowEmphasisTests {
         )
     }
 
-    /// The app's settings window opened on General, parked off every display; `editDesk` picks the Edit Desk layout.
-    private static func withSettingsWindow(editDesk: Bool, _ body: (NSWindow, NSView) async throws -> Void) async throws {
+    /// The app's settings window opened on General, parked off every display.
+    private static func withSettingsWindow(_ body: (NSWindow, NSView) async throws -> Void) async throws {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
             powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
@@ -71,7 +71,7 @@ struct SettingsSearchRowEmphasisTests {
         )
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: editDesk, initialNavigation: .general, initialAddWallpaperRequest: nil,
+            initialNavigation: .general, initialAddWallpaperRequest: nil,
             savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
@@ -80,9 +80,7 @@ struct SettingsSearchRowEmphasisTests {
             window.contentView = nil
             window.close()
         }
-        window.setContentSize(
-            editDesk ? SettingsWindowMetrics.editDeskMinimumContentSize : SettingsWindowMetrics.minimumContentSize
-        )
+        window.setContentSize(SettingsWindowMetrics.editDeskMinimumContentSize)
         window.parkOffScreen()
         await settle(window, for: 1.2)
         try await body(window, #require(window.contentView))
@@ -134,8 +132,8 @@ struct SettingsSearchRowEmphasisTests {
 
     @Test("Picking a result scrolls the matching row of a long page into view and marks that row, not its section title")
     func resultMarksItsRow() async throws {
-        let query = "Video preload (RAM)"
-        try await Self.withSettingsWindow(editDesk: false) { window, root in
+        let query = "Show wallpaper in screen captures"
+        try await Self.withSettingsWindow { window, root in
             #expect(root.isFlipped, "control: the page rect below is read top-down, as the bitmap is")
             let search = try await Self.search(query, in: window, root: root)
             #expect(search.rows == 2, "control: expected the Search Results header and one result, found \(search.rows) rows")
@@ -154,17 +152,14 @@ struct SettingsSearchRowEmphasisTests {
         }
     }
 
-    @Test(
-        "Picking the result for the page already showing marks its row, though neither the page nor the anchor changes",
-        arguments: [false, true]
-    )
-    func pickOnThePageShowing(editDesk: Bool) async throws {
+    @Test("Picking the result for the page already showing marks its row, though neither the page nor the anchor changes")
+    func pickOnThePageShowing() async throws {
         let support = SettingsNavigation.allItems.filter { $0.group == .support }.map(\.destination)
         #expect(
             SettingsNavigationGroup.allCases.last == .support && support == [.advanced, .about],
             "control: Advanced is not the sidebar's second-to-last row"
         )
-        try await Self.withSettingsWindow(editDesk: editDesk) { window, root in
+        try await Self.withSettingsWindow { window, root in
             let general = try Self.page(in: root)
             let table = try Self.sidebarTable(in: root)
             table.selectRowIndexes(IndexSet(integer: table.numberOfRows - 2), byExtendingSelection: false)
@@ -186,9 +181,9 @@ struct SettingsSearchRowEmphasisTests {
         }
     }
 
-    @Test("Picking a result for another page opens that page and marks the row", arguments: [false, true])
-    func pickForAnotherPage(editDesk: Bool) async throws {
-        try await Self.withSettingsWindow(editDesk: editDesk) { window, root in
+    @Test("Picking a result for another page opens that page and marks the row")
+    func pickForAnotherPage() async throws {
+        try await Self.withSettingsWindow { window, root in
             let general = try Self.page(in: root)
             let rows = try await Self.search("Log Files", in: window, root: root).rows
             #expect(rows == 2, "control: expected the Search Results header and Advanced, found \(rows) rows")
@@ -201,9 +196,9 @@ struct SettingsSearchRowEmphasisTests {
         }
     }
 
-    @Test("Picking a result in a section of the page already showing marks its row", arguments: [false, true])
-    func pickSectionResultOnThePageShowing(editDesk: Bool) async throws {
-        try await Self.withSettingsWindow(editDesk: editDesk) { window, root in
+    @Test("Picking a result in a section of the page already showing marks its row")
+    func pickSectionResultOnThePageShowing() async throws {
+        try await Self.withSettingsWindow { window, root in
             let general = try Self.page(in: root)
             let rows = try await Self.search("Language", in: window, root: root).rows
             #expect(rows == 2, "control: expected the Search Results header and General, found \(rows) rows")

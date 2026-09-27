@@ -1802,55 +1802,6 @@ private final class VideoCompositionConfigurationPersistence: ScreenConfiguratio
     }
 }
 
-@Suite("Inspector poster load ownership")
-@MainActor
-struct InspectorPosterLoadStateTests {
-    @Test("A replaced poster load cannot publish or finish the replacement")
-    func replacedLoadCannotPublish() {
-        var state = InspectorPosterLoadState()
-        let original = state.begin()
-        let replacement = state.begin()
-
-        #expect(!state.isCurrent(original))
-        let staleFinished = state.finish(original)
-        #expect(!staleFinished)
-        #expect(state.isCurrent(replacement))
-        let replacementFinished = state.finish(replacement)
-        #expect(replacementFinished)
-    }
-
-    @Test("Switching to playback invalidates a pending poster")
-    func invalidationRejectsPendingPoster() {
-        var state = InspectorPosterLoadState()
-        let poster = state.begin()
-
-        state.invalidate()
-
-        #expect(!state.isCurrent(poster))
-        let invalidatedPosterFinished = state.finish(poster)
-        #expect(!invalidatedPosterFinished)
-    }
-
-    @Test("Controller cleanup synchronously clears every transient playback state")
-    func controllerCleanupClearsTransientState() {
-        let controller = InspectorPreviewController()
-        let missingURL = URL(fileURLWithPath: "/nonexistent/inspector-poster.mp4")
-
-        // No suspension point: the poster task cannot finish before the
-        // synchronous cleanup contract is exercised.
-        controller.loadPoster(from: missingURL)
-        #expect(controller.isLoading)
-
-        controller.cleanup()
-
-        #expect(!controller.isLoading)
-        #expect(!controller.isPlaying)
-        #expect(controller.player == nil)
-        #expect(controller.posterImage == nil)
-        #expect(controller.assetURL == nil)
-    }
-}
-
 /// `@unchecked Sendable`: every access to `asset` goes through `lock`, and the
 /// box holds nothing else.
 private final class AssetSlot: @unchecked Sendable {

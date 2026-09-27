@@ -86,37 +86,5 @@ enum WorkshopBookmarkActions {
             workshopStore.remove(id)
         }
     }
-
-    /// Saved-for-later entries that are not already a playable local bookmark.
-    static func notSavedLocally(
-        _ bookmarks: [WorkshopBookmark],
-        store: BookmarkStore = .shared
-    ) -> [WorkshopBookmark] {
-        bookmarks.filter { !store.containsWPEBookmark(workshopID: String($0.id)) }
-    }
-}
-
-struct WorkshopBookmarkErrorModifier: ViewModifier {
-    @State private var isPresented = false
-
-    func body(content: Content) -> some View {
-        let store = WorkshopBookmarkStore.shared
-        content
-            // Read here, not only inside the alert's Binding: a failed save changes this flag and
-            // nothing else, so a Binding-only read gives the view no reason to update.
-            .onChange(of: store.hasStorageError, initial: true) { _, failed in isPresented = failed }
-            .alert("Action needed", isPresented: $isPresented) {
-                if store.isArchiveUnreadable {
-                    Button("Reset", role: .destructive) { store.resetUnreadableArchive() }
-                }
-                Button("OK") { store.dismissStorageError() }
-            } message: {
-                if store.isArchiveUnreadable {
-                    Text("Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved.")
-                } else {
-                    Text("Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.")
-                }
-            }
-    }
 }
 #endif

@@ -16,9 +16,7 @@ struct ShelfSettingsRows: View {
     private var homeDefaultRaw = EditDeskPreferences.homeDefaultStateDefault.rawValue
 
     var body: some View {
-        if EditDeskFlag.isEnabled {
-            rows
-        }
+        rows
     }
 
     @ViewBuilder

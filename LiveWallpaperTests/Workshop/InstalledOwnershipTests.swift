@@ -133,18 +133,9 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(await service.fetch(publishedFileID: 100) == .failure(.networkUnreachable))
     }
 
-    @Test("Installed page routes state and commands through one library model")
+    @Test("Installed state and commands route through one library model")
     func lifecycleOwnerProductionWiring() throws {
-        let view = try installedViewSource()
         let model = try installedModelSource()
-        #expect(view.contains("@State private var model = InstalledLibraryModel()"))
-        #expect(view.contains(".onAppear { model.onAppear() }"))
-        #expect(view.contains(".onDisappear { model.onDisappear() }"))
-        #expect(view.contains("model.historyDidChange()"))
-        #expect(!view.contains("@State private var entries"))
-        #expect(!view.contains("private func checkForUpdatesIfNeeded"))
-        #expect(!view.contains("private func installDragEndMonitors"))
-
         #expect(model.contains("@Observable"))
         #expect(model.contains("final class InstalledLibraryModel"))
         #expect(model.contains("let lifecycleOwner: InstalledPageLifecycleOwner"))
@@ -293,13 +284,6 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(loadOwner.canPublish(reimportedTicket))
         loadOwner.invalidate()
         #expect(!loadOwner.canPublish(reimportedTicket))
-
-        let inspector = try projectSource("LiveWallpaper/Views/Workshop/InstalledInspector.swift")
-        #expect(inspector.contains(".task(id: localInfoLoadIdentity)"))
-        #expect(inspector.contains("localInfoLoadOwner.begin(identity: localInfoLoadIdentity)"))
-        #expect(inspector.contains("let loadedInfo = await loadWPELocalProjectInfo(for: entry)"))
-        #expect(inspector.contains("guard localInfoLoadOwner.canPublish(ticket) else { return }"))
-        #expect(inspector.contains(".onDisappear { localInfoLoadOwner.invalidate() }"))
 
         let download = try projectSource("LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift")
         let importBoundary = try sourceSlice(
@@ -690,10 +674,6 @@ struct InstalledOwnershipCharacterizationTests {
             ),
             importedAt: Date(timeIntervalSince1970: importedAt)
         )
-    }
-
-    private func installedViewSource() throws -> String {
-        try projectSource("LiveWallpaper/Views/Workshop/InstalledView.swift")
     }
 
     private func projectSource(_ relativePath: String) throws -> String {

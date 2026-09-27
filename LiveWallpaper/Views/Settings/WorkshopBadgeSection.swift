@@ -12,34 +12,32 @@ struct WorkshopBadgeSection: View {
 
     var body: some View {
         Section {
-            if !EditDeskFlag.isEnabled {
-                SettingRow(
-                    icon: "square.stack.3d.up",
-                    iconColor: .indigo,
-                    title: "Wallpaper type"
-                ) {
-                    Toggle("", isOn: $showsType)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .accessibilityLabel(Text("Wallpaper type badge"))
-                }
-
-                SettingRow(
-                    icon: "textformat",
-                    iconColor: .indigo,
-                    title: "Type badge style"
-                ) {
-                    Picker("", selection: $typeStyle) {
-                        Text("Icon").tag(CardTypeBadgeStyle.icon)
-                        Text("Name").tag(CardTypeBadgeStyle.text)
-                        Text("Icon and name").tag(CardTypeBadgeStyle.iconAndText)
-                    }
+            SettingRow(
+                icon: "square.stack.3d.up",
+                iconColor: .indigo,
+                title: "Wallpaper type"
+            ) {
+                Toggle("", isOn: $showsType)
                     .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
-                    .disabled(!showsType)
-                    .accessibilityLabel(Text("Type badge style"))
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text("Wallpaper type badge"))
+            }
+
+            SettingRow(
+                icon: "textformat",
+                iconColor: .indigo,
+                title: "Type badge style"
+            ) {
+                Picker("", selection: $typeStyle) {
+                    Text("Icon").tag(CardTypeBadgeStyle.icon)
+                    Text("Name").tag(CardTypeBadgeStyle.text)
+                    Text("Icon and name").tag(CardTypeBadgeStyle.iconAndText)
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!showsType)
+                .accessibilityLabel(Text("Type badge style"))
             }
 
             SettingRow(

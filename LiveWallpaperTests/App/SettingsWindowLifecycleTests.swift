@@ -39,8 +39,6 @@
                 weakContentView = window.contentView
                 #expect(weakContentView != nil)
 
-                #expect(delegate.windowShouldClose(window))
-
                 window.close()
             }
 
@@ -104,7 +102,7 @@ extension SettingsWindowLifecycleTests {
         #expect(handled == false)
         #expect(delegate.settingsWindowControllerForTesting == nil)
         delegate.screenManager = makeScreenManager()
-        delegate.consumePendingReopen(showSettingsOnLaunch: false, showOnboarding: false)
+        delegate.consumePendingReopen(showSettingsOnLaunch: false)
         let window = try #require(delegate.settingsWindowControllerForTesting?.window)
         #expect(window.isVisible)
         window.close()
@@ -118,7 +116,7 @@ extension SettingsWindowLifecycleTests {
         _ = (delegate as any NSApplicationDelegate)
             .applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
         delegate.screenManager = makeScreenManager()
-        delegate.consumePendingReopen(showSettingsOnLaunch: false, showOnboarding: true)
+        delegate.consumePendingReopen(showSettingsOnLaunch: true)
 
         #expect(delegate.settingsWindowControllerForTesting == nil)
     }

@@ -34,8 +34,17 @@ struct WorkshopBookmarkTests {
         store.add(label: "Rain", content: .video(bookmarkData: Data(workshopID.utf8)), wpeOrigin: origin(workshopID))
     }
 
-    private static func saved(_ id: UInt64, rawTitle: String? = "Rain", tags: [String] = []) -> WorkshopBookmark {
-        WorkshopBookmark(id: id, rawTitle: rawTitle, previewImageURL: nil, tags: tags)
+    private static func saved(_ id: UInt64, rawTitle: String? = "Rain") -> WorkshopBookmark {
+        WorkshopBookmark(id: id, rawTitle: rawTitle, previewImageURL: nil, tags: [])
+    }
+
+    private static func queryItem(_ id: UInt64, rawTitle: String? = "Rain") -> WorkshopQueryItem {
+        WorkshopQueryItem(
+            id: id, rawTitle: rawTitle, shortDescription: "", creatorID: nil,
+            previewImageURL: nil, fileSizeBytes: nil, timeUpdated: nil,
+            subscriptionCount: nil, rating: nil, tags: [], visibility: .unknown,
+            isBanned: false, steamCommunityURL: WorkshopCommunityURL.item(itemID: id)
+        )
     }
 
     private static func stores(_ name: String) throws -> (BookmarkStore, WorkshopBookmarkStore, TestScratch.DefaultsSuite) {
@@ -49,7 +58,7 @@ struct WorkshopBookmarkTests {
     func toggleAndContains() throws {
         let (local, workshop, suite) = try Self.stores("toggle")
         defer { suite.discard() }
-        let item = Self.saved(424_242).queryItem
+        let item = Self.queryItem(424_242)
 
         WorkshopBookmarkActions.toggle(item, store: local, workshopStore: workshop)
         #expect(workshop.contains(424_242))
@@ -67,7 +76,7 @@ struct WorkshopBookmarkTests {
         let (local, workshop, suite) = try Self.stores("untitled")
         defer { suite.discard() }
 
-        WorkshopBookmarkActions.toggle(Self.saved(9, rawTitle: nil).queryItem, store: local, workshopStore: workshop)
+        WorkshopBookmarkActions.toggle(Self.queryItem(9, rawTitle: nil), store: local, workshopStore: workshop)
 
         #expect(workshop.bookmarks.map(\.rawTitle) == [nil])
     }
@@ -98,17 +107,6 @@ struct WorkshopBookmarkTests {
         #expect(!workshop.contains(424_242))
     }
 
-    @Test("Saved-for-later entries already saved as a playable bookmark are listed once")
-    func savedForLaterHidesLocalDuplicates() throws {
-        let (local, _, suite) = try Self.stores("dedupe")
-        defer { suite.discard() }
-        _ = Self.addLocal("2", to: local)
-
-        let listed = WorkshopBookmarkActions.notSavedLocally([Self.saved(1), Self.saved(2)], store: local)
-
-        #expect(listed.map(\.id) == [1])
-    }
-
     @Test("The pane's bookmark set covers both stores")
     func bookmarkedIDsCoverBothStores() throws {
         let (local, workshop, suite) = try Self.stores("idSet")
@@ -117,14 +115,6 @@ struct WorkshopBookmarkTests {
         _ = Self.addLocal("2", to: local)
 
         #expect(WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop) == [1, 2])
-    }
-
-    @Test("Workshop tags map to the library's wallpaper types")
-    func tagsMapToWallpaperTypes() {
-        #expect(Self.saved(1, tags: ["Scene"]).wallpaperType == .scene)
-        #expect(Self.saved(1, tags: ["video"]).wallpaperType == .video)
-        #expect(Self.saved(1, tags: ["Web"]).wallpaperType == .html)
-        #expect(Self.saved(1, tags: ["Anime"]).wallpaperType == nil)
     }
 
     @Test("A saved-for-later entry on the Installed page becomes a playable bookmark in one tap")
@@ -158,7 +148,6 @@ struct WorkshopBookmarkTests {
     @Test("Both installed-delete paths clear the Workshop store too")
     func installedDeleteUsesBothStores() throws {
         for path in [
-            "LiveWallpaper/Views/Workshop/InstalledView.swift",
             "LiveWallpaper/Views/EditDesk/Library/ModalActions.swift",
         ] {
             let source = try RepositoryRoot.source(path)
@@ -190,64 +179,15 @@ struct WorkshopBookmarkTests {
         #expect(card[thumbnail.upperBound ..< pills.lowerBound].contains("ThumbnailBookmarkButton("))
     }
 
-    @Test("Browse cards and installed rows draw one shared bookmark glyph")
+    @Test("Browse cards draw the shared bookmark glyph")
     func bookmarkGlyphIsShared() throws {
         for path in [
             "LiveWallpaper/Views/Workshop/BrowseCard.swift",
-            "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift",
         ] {
             let source = try RepositoryRoot.source(path)
             #expect(source.contains("ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)"), Comment(rawValue: path))
             #expect(!source.contains("Image(systemName: isBookmarked"), Comment(rawValue: "\(path) draws its own bookmark glyph"))
         }
-    }
-
-    @Test("Saved bookmarks use square tiles, stacked with the local grid")
-    func workshopBookmarkGridLayout() throws {
-        let gallery = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkGallery.swift")
-        #expect(gallery.contains("LibraryGalleryGrid(size: tileSize, aspect: .square)"))
-        let library = try RepositoryRoot.source("LiveWallpaper/Views/Bookmarks/LibraryView.swift")
-        #expect(library.contains("ScrollView {\n                VStack {\n                    LibraryGalleryGrid("))
-    }
-
-    @Test("A rebuilt bookmark keeps Download off until its live lookup")
-    func savedItemDownloadWaitsForLiveDetails() throws {
-        let gallery = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkGallery.swift")
-        #expect(!gallery.contains("canDownload: doctor.isDownloadReady"))
-        #expect(gallery.contains("allowsDownload: currentItem != nil"))
-        let inspector = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/DetailSheet.swift")
-        #expect(inspector.contains("|| item.isBanned || !allowsDownload)"))
-    }
-
-    @Test("The storage alert is mounted once, above every legacy page, and observes the flag in body")
-    func errorAlertMounting() throws {
-        let mount = ".modifier(WorkshopBookmarkErrorModifier())"
-        var mounts: [String] = []
-        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper") {
-            let source = try String(contentsOf: file, encoding: .utf8)
-            mounts += Array(repeating: RepositoryRoot.relativePath(of: file), count: source.components(separatedBy: mount).count - 1)
-        }
-        #expect(mounts == ["LiveWallpaper/Views/ContentView.swift"])
-        let content = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
-        let detail = try #require(content.range(of: "struct DetailContent: View {"))
-        #expect(content[detail.upperBound...].contains(mount), "the alert sits outside the pages' common parent")
-
-        let modifier = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
-        #expect(modifier.contains(".onChange(of: store.hasStorageError, initial: true)"))
-    }
-
-    @Test("An unreadable archive gets its own message, one that agrees with Reset")
-    func unreadableArchiveMessage() throws {
-        let modifier = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
-        let message = try #require(modifier.range(of: "} message: {"))
-        let tail = modifier[message.upperBound...]
-        let unreadable = try #require(tail.range(of: "if store.isArchiveUnreadable {"))
-        let read = try #require(tail.range(of: "Text(\"Couldn't read Workshop bookmarks. Reset discards them"))
-        let otherwise = try #require(tail.range(of: "} else {"))
-        let kept = try #require(tail.range(of: "Your existing bookmarks have been kept."))
-        #expect(unreadable.lowerBound < read.lowerBound)
-        #expect(read.lowerBound < otherwise.lowerBound)
-        #expect(otherwise.lowerBound < kept.lowerBound)
     }
 }
 #endif

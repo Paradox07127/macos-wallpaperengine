@@ -471,13 +471,7 @@ struct MenuBarContent: View {
 
     private func invokeManageWindow() {
         dismiss()
-        if EditDeskFlag.isEnabled {
-            openHome()
-        } else if let screen = screenManager.screens.first {
-            openSettingsForScreen(screen.id)
-        } else {
-            openSettings()
-        }
+        openHome()
     }
 
     private func invokeOpenScreenSettings(_ id: CGDirectDisplayID) {

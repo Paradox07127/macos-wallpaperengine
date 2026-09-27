@@ -5,15 +5,6 @@ import Testing
 /// target the test host cannot link. Each names the defect it keeps out.
 @Suite("0.7.0 review fixes stay in place")
 struct ReviewFixSourceGuardsTests {
-    @Test("A saved bookmark only inherits the playing wallpaper's Workshop origin when it is that wallpaper")
-    func bookmarkProvenanceIsNotBorrowedFromAnotherWallpaper() throws {
-        let popover = try RepositoryRoot.source("LiveWallpaper/Views/Bookmarks/Popover.swift")
-        #expect(
-            !popover.contains("wpeOrigin: screenManager.getConfiguration(for: screen)?.wpeOrigin"),
-            "the playing scene's origin was attached to whatever content the inspector held, so deleting that scene also deleted unrelated bookmarks"
-        )
-    }
-
     @Test("Perspective sprites keep the CPU depth scale whenever the GPU path has no matrix")
     func perspectiveSpritesFallBackToTheCPUScale() throws {
         let system = try RepositoryRoot.source("LiveWallpaper/Runtime/Scene/WPEParticleSystem.swift")

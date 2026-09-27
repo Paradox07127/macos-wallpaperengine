@@ -34,15 +34,6 @@ struct ErrorReasonSurfaceTests {
         #expect(mapperCount == 1)
     }
 
-    @Test("Onboarding scene import shows the service's own refusal reason")
-    func sceneImportShowsRejectionReason() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Onboarding/PickerView.swift")
-
-        #expect(source.contains("case let .rejected(reason):"))
-        #expect(!source.contains("case .rejected:\n                    break"))
-        #expect(source.contains("} else if let rejection {"))
-    }
-
     @Test("In-app Steam sign-in separates connector, launch and refusal failures")
     func signInSheetSeparatesItsFailures() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/SteamSignInSheet.swift")
@@ -70,29 +61,10 @@ struct ErrorReasonSurfaceTests {
     func rejectedAPIKeyIsNotReportedAsHealthy() throws {
         let settings = try RepositoryRoot.source("LiveWallpaper/Views/Settings/WorkshopAPIKeySection.swift")
         #expect(settings.contains("services.apiKeyRejected"))
-
-        let onboarding = try RepositoryRoot.source("LiveWallpaper/Views/Onboarding/WorkshopSetupStep.swift")
-        let start = try #require(onboarding.range(of: "private var apiKeyDetail"))
-        let body = String(onboarding[start.lowerBound...].prefix(900))
-        #expect(body.contains("services.apiKeyRejected"))
     }
 
     @Test("Wallpaper failure surfaces render the runtime error, not the word Error")
     func wallpaperFailureSurfacesReadTheSubtitle() throws {
-        // Sliced from the branch rather than matched with its whitespace: the
-        // assertion is "this branch reads the subtitle", not how it is laid out.
-        let header = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/Header.swift")
-        let headerBranch = try #require(header.range(of: "case .error:"))
-        #expect(String(header[headerBranch.lowerBound...].prefix(500))
-            .contains("wallpaperSessionSummary.subtitle"))
-
-        // Anchored on the function: ContentView has three `case .error:`
-        // branches and only this one speaks to the reader.
-        let content = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
-        let accessibility = try #require(content.range(of: "private func accessibilityValue"))
-        #expect(String(content[accessibility.lowerBound...].prefix(600))
-            .contains("summary.subtitle"))
-
         let menuBar = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
         let start = try #require(menuBar.range(of: "private func displaySource"))
         let body = String(menuBar[start.lowerBound...].prefix(1400))

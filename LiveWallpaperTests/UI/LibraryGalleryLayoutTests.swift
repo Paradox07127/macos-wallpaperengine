@@ -8,20 +8,13 @@ import Testing
 struct LibraryGalleryLayoutTests {
     /// The pages whose tiles are 16:9 wallpaper stills.
     private static let widePages = [
-        "LiveWallpaper/Views/Bookmarks/LibraryView.swift",
         "LiveWallpaper/Views/Schemes/SchemeLibraryView.swift",
-        "LiveWallpaper/Views/Aerials/AerialsLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift",
         "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift",
     ]
 
-    /// The pages whose tiles are square.
-    private static let squarePages = [
-        "LiveWallpaper/Views/Workshop/InstalledView.swift",
-    ]
-
-    @Test("Wallpaper pages draw the wide ladder, Workshop the square one")
+    @Test("Wallpaper pages draw the wide ladder")
     func pagesDrawTheLadderTheirTileShapeNeeds() throws {
         // Bound to `Bool` first: `#expect` on `contains` renders the whole file on failure.
         for path in Self.widePages {
@@ -31,18 +24,11 @@ struct LibraryGalleryLayoutTests {
             #expect(usesWide, Comment(rawValue: "\(path) is not on the wide ladder"))
             #expect(!usesSquare, Comment(rawValue: "\(path) mixes in square columns"))
         }
-        for path in Self.squarePages {
-            let source = try RepositoryRoot.source(path)
-            let usesSquare = source.contains("aspect: .square")
-            let usesWide = source.contains("aspect: .wide")
-            #expect(usesSquare, Comment(rawValue: "\(path) is not on the square ladder"))
-            #expect(!usesWide, Comment(rawValue: "\(path) mixes in wide columns"))
-        }
     }
 
     @Test("Every library grid takes the shared inset")
     func everyLibraryGridTakesTheSharedInset() throws {
-        for path in Self.widePages + Self.squarePages {
+        for path in Self.widePages {
             let source = try RepositoryRoot.source(path)
             let grids = source.components(separatedBy: "LibraryGalleryGrid(").count - 1
             let insets = source.components(separatedBy: ".libraryGridPadding()").count - 1
@@ -56,7 +42,7 @@ struct LibraryGalleryLayoutTests {
     @Test("Library pages state their size at the foot of the page")
     func libraryPagesStateTheirSizeAtTheFoot() throws {
         // The add sheet is the exception: it has a footer bar of its own.
-        let paged = (Self.widePages + Self.squarePages)
+        let paged = Self.widePages
             .filter { !$0.hasSuffix("SystemWallpaperAddSheet.swift") }
         for path in paged {
             let hasStatusBar = try RepositoryRoot.source(path).contains("LibraryStatusBar(")

@@ -180,11 +180,10 @@ struct AppRuntimeOptionsTests {
             environment: [:],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: options)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers == false)
         #expect(plan.screenManagerOptions.startAutomation == false)
-        #expect(plan.showOnboarding == false)
         #expect(plan.showSettingsOnLaunch == true)
     }
 
@@ -195,7 +194,7 @@ struct AppRuntimeOptionsTests {
             environment: ["LIVEWALLPAPER_OPEN_SETTINGS": "1"],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: options)
 
         #expect(plan.showSettingsOnLaunch == true)
     }
@@ -247,7 +246,7 @@ struct AppRuntimeOptionsTests {
             isXCTestLoaded: false
         )
 
-        let plan = AppStartupPlan(runtimeOptions: runtime, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: runtime)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers)
         #expect(plan.screenManagerOptions.startAutomation)
@@ -258,7 +257,6 @@ struct AppRuntimeOptionsTests {
         #expect(plan.screenManagerOptions.featureCatalog.capabilities.sku == .pro)
         #expect(plan.screenManagerOptions.featureCatalog.isEnabled(.workshopOnline))
         #endif
-        #expect(plan.showOnboarding == false)
     }
 }
 
@@ -1725,13 +1723,6 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         let source = try Self.readSourceFile("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
 
         #expect(source.contains("preventsDisplaySleepDuringVideoPlayback = false"))
-    }
-
-    @Test("Video preview surfaces controller errors in the preview UI")
-    func videoPreviewSurfacesControllerErrors() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/VideoPreviewSection.swift")
-
-        #expect(source.contains("previewController.lastError"))
     }
 
     @Test("Scene preview does not synchronously render a live poster on MainActor")

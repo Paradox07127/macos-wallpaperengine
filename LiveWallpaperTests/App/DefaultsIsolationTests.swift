@@ -42,7 +42,6 @@ struct DefaultsIsolationTests {
         let appStorageFiles = [
             "LiveWallpaper/Views/Settings/WorkshopBadgeSection.swift",
             "LiveWallpaper/Views/Workshop/BrowseCard.swift",
-            "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift",
             "LiveWallpaper/Views/Settings/WorkshopSettingsView.swift",
             "LiveWallpaper/Views/Settings/WorkshopConnectionSetup.swift",
             "LiveWallpaper/Views/Settings/WorkshopEngineAssetsSection.swift"

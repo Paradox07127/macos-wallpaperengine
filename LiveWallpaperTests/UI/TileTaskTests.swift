@@ -150,8 +150,6 @@ struct TileTaskTests {
 
     /// Every gallery tile that clears its artwork before an async reload.
     private static let tiles = [
-        "LiveWallpaper/Views/Aerials/ThumbnailCard.swift",
-        "LiveWallpaper/Views/Bookmarks/LibraryView.swift",
         "LiveWallpaper/Views/Schemes/SchemeLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperCandidate.swift",

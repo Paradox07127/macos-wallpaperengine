@@ -102,8 +102,7 @@ struct SystemMemoryPressureWatcherTests {
             isXCTestLoaded: false
         )
         let options = AppStartupPlan(
-            runtimeOptions: runtimeOptions,
-            onboardingCompleted: true
+            runtimeOptions: runtimeOptions
         ).screenManagerOptions
         #expect(
             (options.memoryPressureWatcher as? SystemMemoryPressureWatcher)

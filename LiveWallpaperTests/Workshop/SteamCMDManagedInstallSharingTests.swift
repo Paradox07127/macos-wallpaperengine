@@ -25,23 +25,3 @@ struct SteamCMDManagedInstallSharingTests {
         }
     }
 }
-
-/// Browse needs only the Web API key; SteamCMD is a download-time
-/// requirement.
-@Suite("Installed empty state browse entry")
-struct InstalledEmptyStateBrowseEntryTests {
-    @Test("Browse Online is offered without consulting SteamCMD state")
-    func browseEntryIgnoresSteamCMD() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/InstalledView.swift")
-        let marker = "private var emptyStatePrimaryAction"
-        let start = try #require(source.range(of: marker), "emptyStatePrimaryAction no longer exists; retarget this test")
-        let end = try #require(source.range(of: "\n    }", range: start.upperBound..<source.endIndex))
-        let body = source[start.lowerBound..<end.lowerBound]
-        // Control: the entry itself is still produced by this property.
-        #expect(body.contains("Browse Online"))
-        #expect(
-            !body.contains("doctor."),
-            Comment(rawValue: "Browse Online is gated on SteamCMD doctor state, but browsing only needs the Web API key")
-        )
-    }
-}

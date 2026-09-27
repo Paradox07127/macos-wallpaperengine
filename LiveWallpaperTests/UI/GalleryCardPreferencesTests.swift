@@ -42,7 +42,6 @@ struct GalleryCardPreferencesTests {
         // per-tile `@AppStorage`, which registers a KVO observation for every card on screen.
         let cards = [
             "LiveWallpaper/Views/Workshop/BrowseCard.swift",
-            "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift"
         ]
         var offenders: [String] = []
         for path in cards {
@@ -82,13 +81,7 @@ struct GalleryCardPreferencesTests {
         #expect(glass.contains("#available(macOS 26.0, *), surface == .glass"))
     }
 
-    @Test("The window root publishes the preferences the cards depend on")
-    func rootPublishesPreferences() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
-        #expect(source.contains(".providesGalleryCardPreferences()"))
-    }
-
-    @Test("The Edit Desk root publishes the same preferences as the old root")
+    @Test("The Edit Desk root publishes the preferences the cards depend on")
     func editDeskRootPublishesPreferences() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
         #expect(source.contains(".providesGalleryCardPreferences()"))

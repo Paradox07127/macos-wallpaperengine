@@ -241,7 +241,7 @@ struct EditDeskLibraryStateTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: true, initialNavigation: navigation, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
+            initialNavigation: navigation, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
         defer {

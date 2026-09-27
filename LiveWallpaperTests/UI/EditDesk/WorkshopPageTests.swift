@@ -10,10 +10,9 @@ struct WorkshopPageSourceTests {
     private static let browsePane = "LiveWallpaper/Views/Workshop/BrowsePane.swift"
     private static let steamMenu = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopSteamMenu.swift"
 
-    @Test("The root routes Workshop to the new page, not the old pane")
-    func rootDropsThePaneView() throws {
+    @Test("The root routes Workshop to the Workshop page")
+    func rootRoutesToTheWorkshopPage() throws {
         let source = try RepositoryRoot.source(Self.root)
-        #expect(!source.contains("PaneView()"), "EditDeskRoot still renders the old Workshop shell")
         #expect(source.contains("WorkshopPage("))
     }
 

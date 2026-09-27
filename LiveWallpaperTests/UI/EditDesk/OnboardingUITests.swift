@@ -199,13 +199,10 @@ struct OnboardingUITests {
         }
     }
 
-    @Test("The workshop page presents the wizard and no longer keeps the old onboarding sheet")
-    func wizardReplacesTheOldSheet() throws {
+    @Test("The workshop page presents the Steam wizard")
+    func workshopPagePresentsTheWizard() throws {
         let source = try RepositoryRoot.source(Self.workshopPage)
         #expect(source.contains("SteamWizard("))
-        #expect(!source.contains("OnboardingSheet("), "two onboarding sheets must not coexist")
-        #expect(!source.contains("isShowingOnboarding"))
-        #expect(!source.contains("onboardingShown"))
     }
 
     // MARK: Tokens

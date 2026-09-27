@@ -4,8 +4,7 @@ import LiveWallpaperCore
 import SwiftUI
 import Testing
 
-/// On the Edit Desk canvas a library page separates its filter bar from the grid by spacing alone;
-/// the old window keeps the rule.
+/// On the Edit Desk canvas a library page separates its filter bar from the grid by spacing alone.
 @Suite("Edit Desk library pages — filter-bar rule source contract")
 struct EditDeskPageSeparatorSourceTests {
     enum Rule: Equatable {
@@ -42,10 +41,10 @@ struct EditDeskPageSeparatorSourceTests {
         #expect(rule == .gated, Comment(rawValue: "\(path): the rule under the filter bar is \(rule)"))
     }
 
-    @Test("Control: the old window's bookmarks page draws its filter-bar rule in every window")
-    func bookmarksRuleIsUngated() throws {
-        let rule = try Self.filterBarRule(in: RepositoryRoot.source("LiveWallpaper/Views/Bookmarks/LibraryView.swift"))
-        #expect(rule == .ungated, Comment(rawValue: "the checker no longer sees the bookmarks page's ungated rule: \(rule)"))
+    @Test("Control: the checker sees a filter-bar rule drawn in every window")
+    func ungatedRuleIsSeen() {
+        let rule = Self.filterBarRule(in: "filterBar\nDivider()\ngrid")
+        #expect(rule == .ungated, Comment(rawValue: "the checker no longer sees an ungated rule: \(rule)"))
     }
 }
 

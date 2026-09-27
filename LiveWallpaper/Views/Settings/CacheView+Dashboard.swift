@@ -98,11 +98,7 @@ extension WPECacheManagementView {
                         openFolderIconButton(url, scopeRoot: inventory?.projectsScopeRootURL)
                     }
                     StorageInfoButton {
-                        if EditDeskFlag.isEnabled {
-                            infoNote("Downloaded files in the Steam library. To free space, open a Workshop wallpaper you no longer need in the Wallpaper Library and choose Delete from its … menu.")
-                        } else {
-                            infoNote("Downloaded files in the Steam library. Remove wallpapers from Installed to free space.")
-                        }
+                        infoNote("Downloaded files in the Steam library. To free space, open a Workshop wallpaper you no longer need in the Wallpaper Library and choose Delete from its … menu.")
                     }
                 }
 

@@ -141,14 +141,13 @@ struct MenuBarBehaviorTests {
         #expect(!row.contains("activity == .active"), "a policy-suspended display would show Play while its toggle pauses")
     }
 
-    @Test("Manage opens the panorama on the Edit Desk and the first display's detail on the old shell")
+    @Test("Manage opens the panorama on the Edit Desk")
     func manageWindowOpensHomeOnEditDesk() throws {
         let menuBar = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
         let start = try #require(menuBar.range(of: "private func invokeManageWindow"))
         let body = try #require(String(menuBar[start.lowerBound...]).components(separatedBy: "\n    }").first)
-        #expect(body.contains("if EditDeskFlag.isEnabled {\n            openHome()"))
-        #expect(body.contains("openSettingsForScreen(screen.id)"))
-        #expect(body.contains("openSettings()"))
+        #expect(body.contains("openHome()"))
+        #expect(!body.contains("openSettingsForScreen("), "a screen ID would open a display's detail instead of the panorama")
 
         let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
         let closure = try #require(app.range(of: "openHome: { [appDelegate] in"))
@@ -163,10 +162,8 @@ struct MenuBarBehaviorTests {
         let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
         let start = try #require(app.range(of: "openSettingsAndAddWallpaper: { [appDelegate] screenID in"))
         let body = try #require(String(app[start.lowerBound...]).components(separatedBy: "\n                }").first)
-        #expect(body.contains("if EditDeskFlag.isEnabled {"))
         #expect(body.contains("kind: \"any\", targetDisplayID: screenID"))
-        #expect(body.contains("initialScreenID: screenID"))
-        #expect(body.contains("kind: \"video\", targetDisplayID: nil"))
+        #expect(!body.contains("initialScreenID"), "the target rides in the request, not as a separate screen selection")
     }
 
     @Test("Performance values use the emphasized metric token and keep their combined accessibility label")

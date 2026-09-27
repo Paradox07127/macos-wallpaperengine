@@ -160,39 +160,6 @@ final class MusicOverlaySectionTests: XCTestCase {
 
     // MARK: Preview wiring (source contracts)
 
-    /// The drag is attached to the very view `.position` moves, so reading the translation
-    /// in that view's own space re-bases it every frame — it must use the named canvas.
-    func testPreviewDragUsesAStableCoordinateSpace() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
-        )
-        XCTAssertTrue(source.contains("coordinateSpace: .named(Self.canvasSpace)"))
-        XCTAssertTrue(source.contains(".coordinateSpace(name: Self.canvasSpace)"))
-        XCTAssertFalse(
-            source.contains("DragGesture(minimumDistance: 2)\n"),
-            "a bare DragGesture defaults to .local - that is the jitter"
-        )
-    }
-
-    func testStatusReadoutLivesOnThePreviewOnly() throws {
-        let preview = try RepositoryRoot.source(
-            "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
-        )
-        let section = try RepositoryRoot.source(
-            "LiveWallpaper/Views/Monitor/MusicOverlaySection.swift"
-        )
-        XCTAssertTrue(preview.contains("MusicStatusBadge(state:"))
-        XCTAssertFalse(section.contains("statusCard"), "the inspector copy must be gone")
-    }
-
-    /// Poster draws the cover as a photo, so a stand-in without artwork looks like poster
-    /// lost its cover — the preview's sample must carry one.
-    func testPreviewSampleTrackCarriesArtwork() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
-        )
-        XCTAssertTrue(source.contains("state.artwork = sampleArtwork"))
-    }
     /// The transport row must stay an overlay: mounted inside a style's stack it can be
     /// pushed past the widget rect, which is the exact region the overlay window hit-tests.
     func testTransportControlsStayOutOfTheLayoutFlow() throws {

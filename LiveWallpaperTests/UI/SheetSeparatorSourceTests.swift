@@ -35,7 +35,6 @@ struct SheetSeparatorSourceTests {
         Boundary(path: "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift", from: "schedulePage\n", to: #"Button("Cancel")"#),
         Boundary(path: "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift", from: "struct DiagnosticLogSheet", to: "private var header"),
         Boundary(path: "LiveWallpaper/Views/Monitor/AgentActivityPanel.swift", from: "sourceHealth\n", to: "HSplitView {"),
-        Boundary(path: "LiveWallpaper/Views/Settings/SetupComponents.swift", from: "struct WorkshopPrivacySheet", to: "ScrollView {"),
         Boundary(path: "LiveWallpaper/Views/Settings/AppExceptionsSheet.swift", from: "var body: some View {", to: "footer\n"),
         Boundary(path: "LiveWallpaper/Views/Settings/ReportBugSheet.swift", from: "header\n", to: "diagnosticPreview\n"),
     ]

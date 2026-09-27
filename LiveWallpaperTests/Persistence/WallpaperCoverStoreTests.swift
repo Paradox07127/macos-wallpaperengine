@@ -270,10 +270,8 @@ struct WallpaperCoverStoreTests {
         #expect(!names.contains(replaced) && !names.contains(orphan), Comment(rawValue: "the sweep kept covers nothing names: \(names)"))
     }
 
-    @Test("The old window's bookmark library and the Edit Desk's library sweep against the one keep-set")
-    func bothLibrariesSweepWithOneKeepSet() throws {
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Bookmarks/SavedLibraryPane.swift")
-        #expect(pane.contains("removeOrphans(keeping: WallpaperCoverStore.keptFileNames())"), "the old window's library sweeps against a set of its own")
+    @Test("The Edit Desk's library sweeps against the one keep-set")
+    func librarySweepsWithOneKeepSet() throws {
         let model = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/SavedLibraryModel.swift")
         #expect(model.contains("inputs.savedCoverFileNames = { WallpaperCoverStore.keptFileNames() }"), "the Edit Desk's library sweeps against a set of its own")
         let sweeps = try RepositoryRoot.swiftFiles(under: "LiveWallpaper").flatMap { file in

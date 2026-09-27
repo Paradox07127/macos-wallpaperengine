@@ -149,13 +149,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(shutdown.contains("references.reset()"))
         #expect(shutdown.contains("updateTask?.cancel()"))
 
-        let pill = try productionSource(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/SystemMonitor/SystemMonitorPill.swift"
-        )
-        #expect(!pill.contains("startMonitoring()"))
-        #expect(!pill.contains("stopMonitoring()"))
-        #expect(pill.contains("SystemMonitorView("))
-
         let expanded = try productionSource(
             "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/SystemMonitor/SystemMonitorView.swift"
         )
@@ -186,12 +179,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         )
         #expect(close.contains("releaseSettingsSystemMonitorLeaseIfNeeded()"))
         #expect(close.contains("settingsWindowController = nil"))
-        let shouldClose = try slice(
-            app,
-            from: "func windowShouldClose(",
-            until: "func windowWillClose("
-        )
-        #expect(!shouldClose.contains("settingsWindowController"))
         #expect(app.contains("func windowDidMiniaturize("))
         #expect(app.contains("func windowDidDeminiaturize("))
         #expect(app.contains("SystemMonitor.shared.shutdown()"))

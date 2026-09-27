@@ -12,15 +12,12 @@ private final class SidebarSelection {
 }
 
 /// The Edit Desk hosts `SettingsSidebar` in a bare `HStack` (`EditDeskRoot`'s settings branch), with no
-/// `NavigationStack` or `NavigationSplitView` around it; the old window hosts it as a split view's sidebar.
+/// `NavigationStack` or `NavigationSplitView` around it.
 @Suite("Settings sidebar legibility", .serialized)
 @MainActor
 struct SettingsSidebarLegibilityTests {
-    private final class WindowDelegate: NSObject, NSWindowDelegate {}
-
     /// Table rows: the Setup header, then General, Display Defaults, Shortcuts.
     private static let headerRow = 0
-    private static let generalRow = 1
     private static let displayDefaultsRow = 2
     private static let shortcutsRow = 3
 
@@ -58,13 +55,6 @@ struct SettingsSidebarLegibilityTests {
     private static func sidebarTable(in window: NSWindow) -> NSTableView? {
         guard let root = window.contentView else { return nil }
         return views(root).lazy.compactMap { $0 as? NSTableView }.first
-    }
-
-    /// `ShortcutsView` is the only settings page that mounts `KeyCaptureMonitor` (one per shortcut row).
-    /// Its `makeNSView` returns a plain `NSView`; the name matches SwiftUI's host view, whose generic type carries the representable's.
-    private static func showsShortcutsPage(_ window: NSWindow) -> Bool {
-        guard let root = window.contentView else { return false }
-        return views(root).contains { String(describing: type(of: $0)).contains("KeyCaptureMonitor") }
     }
 
     private static func settle(_ window: NSWindow, for seconds: TimeInterval) async {
@@ -154,39 +144,6 @@ struct SettingsSidebarLegibilityTests {
         Self.select(row: Self.shortcutsRow, of: table)
         await Self.settle(window, for: 0.5)
         #expect(selection.value == .shortcuts, "selecting the Shortcuts row left the selection at \(String(describing: selection.value))")
-    }
-
-    @Test("In the old window, selecting a category still switches the page beside the sidebar")
-    func oldWindowSelectionSwitchesThePage() async throws {
-        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-            restoreSavedWallpapers: false, startAutomation: false,
-            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(),
-            featureCatalog: .unconfigured
-        ))
-        defer { manager.tearDownForTermination() }
-        let doctor = SteamCMDDoctorService()
-        let host = SettingsWindowHost(
-            manager: manager, wallpaperExportService: WallpaperExportService(),
-            workshopDoctorService: doctor, workshopServices: WorkshopServices(),
-            workshopSetupController: WorkshopSetupController(doctor: doctor)
-        )
-        let delegate = WindowDelegate()
-        let controller = host.makeWindowController(
-            editDeskEnabled: false, initialNavigation: .general, initialAddWallpaperRequest: nil,
-            savesFrame: false, delegate: delegate
-        )
-        let window = try #require(controller.window)
-        defer { Self.close(window) }
-        window.parkOffScreen()
-        await Self.settle(window, for: 1.2)
-        let table = try #require(Self.sidebarTable(in: window))
-        #expect(table.selectedRow == Self.generalRow, "control: the old window did not open on General")
-        #expect(!Self.showsShortcutsPage(window), "control: the Shortcuts page shows before anything was selected")
-        Self.select(row: Self.shortcutsRow, of: table)
-        await Self.settle(window, for: 0.8)
-        #expect(table.selectedRow == Self.shortcutsRow, "the old window's sidebar dropped the Shortcuts selection: \(table.selectedRow)")
-        #expect(Self.showsShortcutsPage(window), "selecting Shortcuts in the old window left the previous page beside the sidebar")
     }
 }
 #endif

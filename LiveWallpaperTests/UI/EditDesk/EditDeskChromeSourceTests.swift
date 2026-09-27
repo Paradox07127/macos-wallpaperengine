@@ -303,12 +303,6 @@ struct EditDeskChromeSourceTests {
         #expect(!commands.contains("_ in"), "a dialog action that drops its ID acts on whichever entry is current")
     }
 
-    @Test("The Aerials chip filters the library grid rather than mounting the old Aerials page")
-    func aerialsChipKeepsTheLibraryGrid() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(!source.contains("AerialsLibraryView("), "the Aerials chip still swaps the grid for the old Aerials page")
-    }
-
     @Test("Leaving the wallpaper library clears its search")
     func leavingTheLibraryClearsItsSearch() throws {
         // Bound to `Bool` first: `#expect` on `contains` renders the whole file on failure.

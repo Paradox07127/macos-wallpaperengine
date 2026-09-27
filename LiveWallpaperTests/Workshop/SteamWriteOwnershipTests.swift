@@ -23,8 +23,8 @@ struct SteamWriteOwnershipTests {
         let model = try Self.source(Self.appSources[2])
         #expect(model.contains("deleteSharedRepositoryItem"))
 
-        let view = try Self.source("LiveWallpaper/Views/Workshop/InstalledView.swift")
-        #expect(view.contains("SteamConnectorClient.deleteWorkshopItem"))
+        let actions = try Self.source("LiveWallpaper/Views/EditDesk/Library/ModalActions.swift")
+        #expect(actions.contains("SteamConnectorClient.deleteWorkshopItem"))
     }
 
     @Test("Wallpaper Engine install and update go through the connector")

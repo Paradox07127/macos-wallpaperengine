@@ -82,7 +82,6 @@ struct MacOSCompatibilityPolicyTests {
             "SheetFooterBar.swift",
             "IllustratedEmptyState.swift",
             "StatusChip.swift",
-            "TypeBadge.swift",
             "FilterChip.swift",
             "LibraryFilterBar.swift",
             "DestructiveControlTint.swift",

@@ -198,3 +198,16 @@ private enum SettingsSidebarMetrics {
     static let rowContentSpacing: CGFloat = 7
     static let rowIconWidth: CGFloat = 18
 }
+
+struct SidebarSectionHeader: View {
+    let title: LocalizedStringKey
+
+    var body: some View {
+        Text(title)
+            .font(.caption)
+            .bold()
+            .foregroundStyle(.secondary)
+            .padding(.top, DesignTokens.Sidebar.sectionHeaderTopPadding)
+            .padding(.bottom, DesignTokens.Sidebar.sectionHeaderBottomPadding)
+    }
+}

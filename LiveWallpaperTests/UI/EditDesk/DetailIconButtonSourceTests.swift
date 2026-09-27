@@ -56,12 +56,9 @@ struct DetailIconButtonSourceTests {
     func prominentCallSitesAreUntouched() throws {
         let pinned = [
             "LiveWallpaper/Monitor/Board/EditChrome.swift": "prominence: isOpen ? .prominent : .regular,",
-            "LiveWallpaper/Views/ScreenDetail/Header.swift": "prominence: isCurrentBookmarked ? .prominent : .regular",
             "LiveWallpaper/Views/MenuBarContent.swift": ".adaptiveGlassButton(.prominent)",
             "LiveWallpaper/Views/Schedule/TimeEditorPopover.swift": ".adaptiveGlassButton(.prominent)",
             "LiveWallpaper/Views/Schemes/SchemeCapturePopover.swift": ".adaptiveGlassButton(.prominent, size: .small)",
-            "LiveWallpaper/Views/Bookmarks/Popover.swift": ".adaptiveGlassButton(.prominent, size: .small)",
-            "LiveWallpaper/Views/ScreenDetail/VideoPreviewSection.swift": ".adaptiveGlassButton(.prominent, size: .large)",
         ]
         for (path, fragment) in pinned {
             let source = try RepositoryRoot.source(path)

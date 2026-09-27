@@ -225,9 +225,6 @@ struct HTMLTrustVerdictTests {
         let preview = try RepositoryRoot.source(
             "LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift"
         )
-        let bookmarks = try RepositoryRoot.source(
-            "LiveWallpaper/Views/Bookmarks/LibraryView.swift"
-        )
 
         #expect(requestContract.contains("struct HTMLSnapshotRequest"))
         #expect(service.contains("func htmlSnapshotImage(\n        request: HTMLSnapshotRequest"))
@@ -238,7 +235,6 @@ struct HTMLTrustVerdictTests {
         #expect(!service.contains("htmlSnapshotImage(\n        for url: URL"))
         #expect(preview.contains("config: HTMLConfig"))
         #expect(preview.contains("HTMLWallpaperCompatibilityPolicy.runtimeConfig("))
-        #expect(bookmarks.contains("case .html(let source, let config):"))
     }
 
     @Test("Offscreen thumbnail load completion is sticky until its async waiter arrives")

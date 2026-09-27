@@ -292,18 +292,6 @@ public enum DesignTokens {
         public static let sectionHeaderTopPadding: CGFloat = -7
     }
 
-    public enum DetailHeader {
-        public static let horizontalPadding: CGFloat = Spacing.xl
-        public static let verticalPadding: CGFloat = Spacing.cardInset
-        public static let contentSpacing: CGFloat = Spacing.cardInset
-        public static let iconSize: CGFloat = 40
-        public static let iconSymbolSize: CGFloat = 20
-        public static let textSpacing: CGFloat = Spacing.xxs
-        public static let metadataSpacing: CGFloat = Spacing.sm
-    }
-
-    /// Horizontal padding matches `DetailHeader` so the search capsule lines up with
-    /// the header brand icon; vertical padding stays tighter.
     public enum LibraryFilterBar {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 10

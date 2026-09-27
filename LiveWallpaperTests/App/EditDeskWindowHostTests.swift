@@ -7,52 +7,43 @@ import Testing
 @Suite("Edit Desk window host", .serialized)
 @MainActor
 struct EditDeskWindowHostTests {
-    @Test("First launch on a build opens the legacy tour until it is done, otherwise the main window", arguments: [false, true], [false, true])
-    func startupOnboarding(editDeskEnabled: Bool, onboardingCompleted: Bool) {
+    @Test("First launch on a build opens the main window")
+    func firstLaunchOpensMainWindow() {
         let options = AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false)
         for recordedBuild in [nil, "41"] as [String?] {
             let plan = AppStartupPlan(
                 runtimeOptions: options,
-                onboardingCompleted: onboardingCompleted,
                 startupWindowBuild: recordedBuild,
-                currentBuild: "42",
-                editDeskEnabled: editDeskEnabled
+                currentBuild: "42"
             )
 
-            #expect(plan.showOnboarding == (!editDeskEnabled && !onboardingCompleted))
             #expect(plan.screenManagerOptions.restoreSavedWallpapers)
             #expect(plan.screenManagerOptions.startAutomation)
-            #expect(plan.showSettingsOnLaunch == (editDeskEnabled || onboardingCompleted))
+            #expect(plan.showSettingsOnLaunch)
             #expect(plan.startupWindowBuildToRecord == "42")
         }
     }
 
-    @Test("Testing still suppresses onboarding", arguments: [false, true])
-    func onboardingDuringTests(editDeskEnabled: Bool) {
+    @Test("Testing opens no window on launch")
+    func noWindowDuringTests() {
         let options = AppRuntimeOptions(arguments: ["--ui-testing"], environment: [:], isXCTestLoaded: false)
         let plan = AppStartupPlan(
             runtimeOptions: options,
-            onboardingCompleted: false,
             startupWindowBuild: nil,
-            currentBuild: "42",
-            editDeskEnabled: editDeskEnabled
+            currentBuild: "42"
         )
 
-        #expect(!plan.showOnboarding)
         #expect(!plan.showSettingsOnLaunch)
         #expect(plan.startupWindowBuildToRecord == nil)
     }
 
-    @Test("Later launches of the same build open no window", arguments: [false, true])
-    func laterLaunchesOpenNothing(editDeskEnabled: Bool) {
+    @Test("Later launches of the same build open no window")
+    func laterLaunchesOpenNothing() {
         let plan = AppStartupPlan(
             runtimeOptions: AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false),
-            onboardingCompleted: false,
             startupWindowBuild: "42",
-            currentBuild: "42",
-            editDeskEnabled: editDeskEnabled
+            currentBuild: "42"
         )
-        #expect(!plan.showOnboarding)
         #expect(!plan.showSettingsOnLaunch)
         #expect(plan.startupWindowBuildToRecord == nil)
     }
@@ -91,24 +82,9 @@ struct EditDeskWindowHostTests {
         #expect(progress.completed == [.home])
     }
 
-    @Test("Edit Desk flag defaults off and reads app-scoped defaults")
-    func flagUsesAppScopedDefaults() {
-        let defaults = UserDefaults.appScoped()
-        let previousValue = defaults.object(forKey: EditDeskFlag.key)
-        defer { defaults.set(previousValue, forKey: EditDeskFlag.key) }
-
-        #expect(EditDeskFlag.key == "loomscreen.ui.editDesk.v1")
-        defaults.removeObject(forKey: EditDeskFlag.key)
-        #expect(!EditDeskFlag.isEnabled)
-        defaults.set(true, forKey: EditDeskFlag.key)
-        #expect(EditDeskFlag.isEnabled)
-        defaults.set(false, forKey: EditDeskFlag.key)
-        #expect(!EditDeskFlag.isEnabled)
-    }
-
-    @Test("Settings window uses the selected layout", arguments: [false, true])
-    func windowLayout(editDeskEnabled: Bool) throws {
-        let frameName = editDeskEnabled ? "LiveWallpaperEditDeskWindow" : "LiveWallpaperSettingsWindow"
+    @Test("Settings window hosts the Edit Desk")
+    func windowLayout() throws {
+        let frameName = "LiveWallpaperEditDeskWindow"
         let frameKey = "NSWindow Frame \(frameName)"
         let defaults = UserDefaults.standard
         let previousFrame = defaults.object(forKey: frameKey)
@@ -138,7 +114,6 @@ struct EditDeskWindowHostTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: editDeskEnabled,
             initialNavigation: nil,
             initialAddWallpaperRequest: nil,
             delegate: delegate
@@ -150,20 +125,17 @@ struct EditDeskWindowHostTests {
             manager.tearDownForTermination()
         }
 
-        let expectedSize = editDeskEnabled ? CGSize(width: 1280, height: 820) : CGSize(width: 1180, height: 720)
-        let expectedMinimum = editDeskEnabled ? CGSize(width: 1040, height: 700) : SettingsWindowMetrics.minimumContentSize
-        #expect(window.contentRect(forFrameRect: window.frame).size == expectedSize)
-        #expect(window.contentMinSize == expectedMinimum)
-        // Neither host pins an appearance any more: the Edit Desk follows General → Appearance.
+        #expect(window.contentRect(forFrameRect: window.frame).size == CGSize(width: 1280, height: 820))
+        #expect(window.contentMinSize == CGSize(width: 1040, height: 700))
+        // The Edit Desk follows General → Appearance rather than pinning one.
         #expect(window.appearance == nil)
         #expect(window.frameAutosaveName == frameName)
         let content = try #require(window.contentView)
         let hostType = String(reflecting: type(of: content))
         #expect(hostType.contains("NSHostingView<"))
-        #expect(hostType.contains(editDeskEnabled ? "LiveWallpaper.EditDeskRoot" : "LiveWallpaper.ContentView"))
-        #expect(!hostType.contains(editDeskEnabled ? "LiveWallpaper.ContentView" : "LiveWallpaper.EditDeskRoot"))
+        #expect(hostType.contains("LiveWallpaper.EditDeskRoot"))
         #expect(window.delegate === delegate)
-        #expect((AppDelegate().windowWillReturnUndoManager(window) is EditDeskMenuUndoManager) == editDeskEnabled)
+        #expect(AppDelegate().windowWillReturnUndoManager(window) is EditDeskMenuUndoManager)
         #expect(window.title == L10n.Window.settingsTitle)
         #expect(window.accessibilityIdentifier() == "LiveWallpaperSettingsWindow")
         #expect(window.sharingType == .readOnly)
@@ -201,7 +173,7 @@ struct EditDeskWindowHostTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: true, initialNavigation: nil, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
+            initialNavigation: nil, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
         defer {
