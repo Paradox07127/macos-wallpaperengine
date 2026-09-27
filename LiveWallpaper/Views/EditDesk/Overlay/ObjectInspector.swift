@@ -12,10 +12,6 @@ struct ObjectInspector: View {
 
     static let headerHeight: CGFloat = 44
 
-    /// `OverlaysInspectorPanel` edits a draft in place; the session's copy is read-only here, so
-    /// the panel gets a local mirror that is reseeded whenever the applied configuration changes.
-    @State private var draft = DraftState.default
-
     private var content: OverlayInspectorContent {
         OverlayLayerList.inspectorContent(for: session.selection)
     }
@@ -34,8 +30,6 @@ struct ObjectInspector: View {
         }
         .frame(height: height, alignment: .top)
         .clipped()
-        .onAppear { draft = session.draft }
-        .onChange(of: session.draft) { draft = session.draft }
     }
 
     // MARK: Header
@@ -70,7 +64,6 @@ struct ObjectInspector: View {
                 ?? String(localized: "No Selection", bundle: .appLanguage)
         case .music: String(localized: "Music", bundle: .appLanguage)
         case .clock: String(localized: "Clock", bundle: .appLanguage)
-        case .effect: String(localized: "Effect Layer", bundle: .appLanguage)
         case .empty: String(localized: "No Selection", bundle: .appLanguage)
         }
     }
@@ -119,47 +112,18 @@ struct ObjectInspector: View {
                                         showsVisibilityControl: false, showsBackdropControl: false)
                 }
             }
-        case .effect:
-            if let screen {
-                effectPanel(screen)
-            }
         case .empty:
             emptyState
         }
     }
 
-    /// Same insets as `OverlaysInspectorPanel`'s own scroll view, which the effect case uses instead.
+    /// Same insets as `OverlaysInspectorPanel`'s own scroll view.
     private func scrolling(@ViewBuilder _ builder: () -> some View) -> some View {
         ScrollView {
             builder()
                 .padding(.horizontal, padding)
                 .padding(.vertical, DesignTokens.Spacing.md)
         }
-    }
-
-    private func effectPanel(_ screen: Screen) -> some View {
-        OverlaysInspectorPanel(
-            screen: screen,
-            draft: $draft,
-            screenManager: screenManager,
-            kind: .weather,
-            inspectorPanelWidth: width,
-            backdropAvailable: false,
-            showsBackdropControl: false,
-            showsVisibilityControl: false,
-            onParticleEffectChange: { effect in write { screenManager.updateParticleEffect(effect, for: screen) } },
-            onParticleDensityChange: { density in write { screenManager.updateParticleDensity(density, for: screen) } },
-            onWeatherReactiveChange: { on in write { screenManager.setWeatherReactive(on, for: screen) } },
-            onWeatherWindChange: { on in write { screenManager.setWeatherWind(on, for: screen) } },
-            onWeatherIntensityChange: { on in write { screenManager.setWeatherIntensity(on, for: screen) } }
-        )
-    }
-
-    /// The layer row reads the session's own copy of the applied configuration, which only the
-    /// session can refresh; without this the row's switch lags the panel by one edit.
-    private func write(_ apply: () -> Void) {
-        apply()
-        session.refreshAppliedConfiguration()
     }
 
     private var emptyState: some View {

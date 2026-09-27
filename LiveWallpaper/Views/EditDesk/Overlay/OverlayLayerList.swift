@@ -31,14 +31,12 @@ enum OverlayAddItem: Identifiable, Equatable {
     case widget(MonitorWidgetKind)
     case music
     case clock
-    case effect
 
     var id: String {
         switch self {
         case let .widget(kind): "widget.\(kind.rawValue)"
         case .music: "music"
         case .clock: "clock"
-        case .effect: "effect"
         }
     }
 }
@@ -49,20 +47,18 @@ enum OverlayInspectorContent: Equatable {
     case widget(UUID)
     case music
     case clock
-    case effect
     case empty
 }
 
 enum OverlayLayerList {
     static func rows(
-        placements: [MonitorWidgetPlacement], boardEnabled: Bool, clockEnabled: Bool, musicEnabled: Bool, effectVisible: Bool
+        placements: [MonitorWidgetPlacement], boardEnabled: Bool, clockEnabled: Bool, musicEnabled: Bool
     ) -> [OverlayLayerRow] {
         [OverlayLayerRow(selection: .board, kind: .board, action: .toggle(isOn: boardEnabled))] + placements.map {
             OverlayLayerRow(selection: .widget($0.id), kind: .widget($0.kind), action: .remove)
         } + [
             OverlayLayerRow(selection: .clock, kind: .clock, action: .toggle(isOn: clockEnabled)),
             OverlayLayerRow(selection: .music, kind: .music, action: .toggle(isOn: musicEnabled)),
-            OverlayLayerRow(selection: .effect, kind: .effect, action: .toggle(isOn: effectVisible)),
         ]
     }
 
@@ -72,15 +68,14 @@ enum OverlayLayerList {
 
     /// `MonitorWidgetKind.allCases` already drops the decode-only `nixieClock`.
     static let addItems: [OverlayAddItem] =
-        MonitorWidgetKind.allCases.map(OverlayAddItem.widget) + [.music, .clock, .effect]
+        MonitorWidgetKind.allCases.map(OverlayAddItem.widget) + [.music, .clock]
 
     /// Singletons that are already on get a mark on their tile; widgets can be added any number of times.
-    static func isOnCanvas(_ item: OverlayAddItem, musicEnabled: Bool, clockEnabled: Bool, effectVisible: Bool) -> Bool {
+    static func isOnCanvas(_ item: OverlayAddItem, musicEnabled: Bool, clockEnabled: Bool) -> Bool {
         switch item {
         case .widget: false
         case .music: musicEnabled
         case .clock: clockEnabled
-        case .effect: effectVisible
         }
     }
 
@@ -90,8 +85,7 @@ enum OverlayLayerList {
         case let .widget(id): .widget(id)
         case .music: .music
         case .clock: .clock
-        case .effect: .effect
-        case nil: .empty
+        case .effect, nil: .empty
         }
     }
 }
@@ -99,4 +93,8 @@ enum OverlayLayerList {
 enum OverlayWorkspaceLayout {
     static let rowHeight: CGFloat = 30
     static let drawerCollapsedHeight: CGFloat = 30
+    /// A floating panel's title row, which is all of it while collapsed.
+    static let panelTitleHeight: CGFloat = 38
+    /// The strip above the canvas: a panel title row with the canvas inset above and below it.
+    static let topBarHeight = panelTitleHeight + 2 * OverlayGeometry.canvasInset
 }

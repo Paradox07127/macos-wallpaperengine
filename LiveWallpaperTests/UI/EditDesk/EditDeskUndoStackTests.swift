@@ -518,6 +518,14 @@ final class UndoTestManager: UndoRestoring {
         overlays[screen.displayFingerprint] = overlay
     }
 
+    func setMonitorOverlay(_ overlay: MonitorOverlayConfiguration, for screen: Screen) {
+        overlays[screen.displayFingerprint] = overlay
+    }
+
+    func updateParticleEffect(_ effect: ParticleEffect, for screen: Screen) {
+        configurations[screen.id]?.particleEffect = effect
+    }
+
     func updateSceneDescriptor(_ descriptor: SceneDescriptor, for screen: Screen) async {
         onSceneUpdate(descriptor)
         configurations[screen.id]?.activeWallpaper = .scene(descriptor)

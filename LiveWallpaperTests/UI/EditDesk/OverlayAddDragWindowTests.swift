@@ -12,7 +12,7 @@ struct OverlayAddDragWindowTests {
     private static let size = CGSize(width: 1280, height: 764)
     /// The CPU tile's centre, top-left origin: column 1 of 7 (172.57 wide, 8 apart, 12 in), row 0 of the strip.
     private static let cpuTile = CGPoint(x: 12 + (1208.0 / 7 + 8) + 1208.0 / 14, y: 764 - 150 + 4 + 30 + 4 + 23)
-    /// Inside the canvas, which aspect-fits 1728×1117 into 1280×614 less 12 a side.
+    /// Inside the canvas, which aspect-fits 1728×1117 into the 1280×552 under the 62pt top strip, less 12 a side.
     private static let onCanvas = CGPoint(x: 640, y: 300)
 
     @Test("A short click on a tile adds once; a drag past six points never counts as a click")
@@ -48,7 +48,8 @@ struct OverlayAddDragWindowTests {
         #expect(added.kind == .cpu)
         let box = OverlayGeometry.aspectFit(
             logicalSize: fixture.session.logicalSize,
-            in: CGRect(x: 0, y: 0, width: Self.size.width, height: Self.size.height - 150).insetBy(dx: 12, dy: 12)
+            in: CGRect(x: 0, y: OverlayWorkspaceLayout.topBarHeight, width: Self.size.width,
+                       height: Self.size.height - 150 - OverlayWorkspaceLayout.topBarHeight).insetBy(dx: 12, dy: 12)
         )
         let scale = box.width / fixture.session.logicalSize.width
         let pointer = CGPoint(x: (Self.onCanvas.x - box.minX) / scale, y: (Self.onCanvas.y - box.minY) / scale)

@@ -2,7 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The layer list floats above the canvas; expanding it never resizes the artwork.
+/// The floating panels hang from a fixed strip above the canvas; opening them never resizes the artwork.
 struct OverlayWorkspace: View {
     /// Shared by the add strip's tile drags, the canvas frame and the drag ghost.
     nonisolated static let dragSpace = "overlayWorkspace"
@@ -70,7 +70,7 @@ struct OverlayWorkspace: View {
                 storedWidth: $inspectorWidth, liveWidth: $liveInspectorWidth,
                 minWidth: 340, maxWidth: 440, mainFloor: 320,
                 onClose: { inspectorVisible = false },
-                main: { canvas }, inspector: { width in
+                main: { editor }, inspector: { width in
                     ObjectInspector(session: session, screen: screen, screenManager: screenManager,
                                     placements: interaction.placements,
                                     height: editorHeight, width: width)
@@ -83,6 +83,7 @@ struct OverlayWorkspace: View {
                 addDrag.handle(phase, session: session)
             }
             .overlay(alignment: .top) { Divider() }
+            .contentColumnBackground()
         }
         .coordinateSpace(name: Self.dragSpace)
         .overlay(alignment: .topLeading) { ghost }
@@ -131,8 +132,7 @@ struct OverlayWorkspace: View {
         OverlayLayerList.rows(placements: interaction.placements,
                               boardEnabled: session.boardEnabled,
                               clockEnabled: session.overlay.clock.enabled,
-                              musicEnabled: session.overlay.music.enabled,
-                              effectVisible: session.effectVisible)
+                              musicEnabled: session.overlay.music.enabled)
             .filter { row in
                 // Disabled singleton layers are available in the add strip, rather than empty rows.
                 // The widget group has no add-strip entry, so it always stays.
@@ -141,6 +141,46 @@ struct OverlayWorkspace: View {
                 }
                 return true
             }
+    }
+
+    /// The canvas under a strip it never takes; the strip's panels open over the canvas.
+    private var editor: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: OverlayWorkspaceLayout.topBarHeight)
+            canvas
+        }
+        .overlay(alignment: .top) { topBar }
+    }
+
+    private var topBar: some View {
+        HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
+            HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
+                floatingLayers(availableHeight: editorHeight)
+                    .frame(minWidth: 0, maxWidth: 220)
+                    .topBarFrame(.layers)
+                OverlayEffectPanel(session: session, screen: screen, availableHeight: editorHeight, copyLayer: copyLayer)
+                    .frame(minWidth: 0, maxWidth: OverlayEffectPanel.width)
+                    .topBarFrame(.effect)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Picker("", selection: $previewMode) {
+                ForEach(MonitorBoardPreviewMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel(Text("Preview Contents"))
+            .frame(height: OverlayWorkspaceLayout.panelTitleHeight)
+            .topBarFrame(.previewContents)
+            GlassIconButton("arrow.clockwise", action: recapture)
+                .help(Text("Recapture preview"))
+                .accessibilityLabel(Text("Recapture preview"))
+                .frame(height: OverlayWorkspaceLayout.panelTitleHeight)
+                .topBarFrame(.recapture)
+        }
+        .padding([.horizontal, .top], OverlayGeometry.canvasInset)
     }
 
     private var canvas: some View {
@@ -158,17 +198,7 @@ struct OverlayWorkspace: View {
                                                    value: [screen.id: geometry.frame(in: .named(DetailPreviewSpace.name))])
                         }
                     }
-                    .overlay(alignment: .topTrailing) {
-                        GlassIconButton("arrow.clockwise", action: recapture)
-                            .help(Text("Recapture preview"))
-                            .accessibilityLabel(Text("Recapture preview"))
-                            .padding(10)
-                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .topLeading) {
-                        floatingLayers(availableHeight: proxy.size.height)
-                            .padding(12)
-                    }
                     .id(screen.id)
                     .transition(.detailSwitch(from: switchEdge, reduceMotion: reduceMotion))
             }
@@ -216,7 +246,7 @@ struct OverlayWorkspace: View {
                 }
                 .font(DesignTokens.EditDesk.Typography.body)
                 .padding(.horizontal, 12)
-                .frame(height: 38)
+                .frame(height: OverlayWorkspaceLayout.panelTitleHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -226,15 +256,51 @@ struct OverlayWorkspace: View {
                 Divider().padding(.horizontal, 12)
                 LayerNavigator(session: session, rows: rows,
                                height: min(CGFloat(rows.count) * OverlayWorkspaceLayout.rowHeight,
-                                           max(30, min(300, availableHeight - 76))),
+                                           max(30, min(300, availableHeight - 76 - OverlayWorkspaceLayout.rowHeight))),
                                copyLayer: copyLayer)
                     .padding(.vertical, 6)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+                VStack(spacing: 0) {
+                    Divider().padding(.horizontal, 12)
+                    Button(role: .destructive) { session.removeAllObjects() } label: {
+                        Label("Remove All", systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .disabled(!session.hasObjects)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .frame(height: OverlayWorkspaceLayout.rowHeight)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .frame(width: 220)
         .clipped()
         .adaptiveGlassSurface(.roundedRectangle(14))
+    }
+}
+
+/// A control in the strip above the canvas.
+enum OverlayTopBarItem: Hashable {
+    case layers, effect, previewContents, recapture
+}
+
+/// Each top-strip control's frame in `OverlayWorkspace.dragSpace`.
+struct OverlayTopBarFrameKey: PreferenceKey {
+    static let defaultValue: [OverlayTopBarItem: CGRect] = [:]
+    static func reduce(value: inout [OverlayTopBarItem: CGRect], nextValue: () -> [OverlayTopBarItem: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+private extension View {
+    func topBarFrame(_ item: OverlayTopBarItem) -> some View {
+        background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: OverlayTopBarFrameKey.self,
+                                       value: [item: geometry.frame(in: .named(OverlayWorkspace.dragSpace))])
+            }
+        }
     }
 }
 

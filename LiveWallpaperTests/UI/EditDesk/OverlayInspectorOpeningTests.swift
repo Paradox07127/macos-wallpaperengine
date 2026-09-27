@@ -225,7 +225,7 @@ private final class InspectorRenderFixture {
 
     var selections: [(String, OverlaySelection)] {
         let widget = session.interaction.placements.first.map { OverlaySelection.widget($0.id) } ?? .board
-        return [("widget", widget), ("board", .board), ("clock", .clock), ("music", .music), ("effect", .effect)]
+        return [("widget", widget), ("board", .board), ("clock", .clock), ("music", .music)]
     }
 
     /// As `OverlayWorkspace` mounts it.

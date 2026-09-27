@@ -17,31 +17,31 @@ struct OverlayLayerListTests {
         }
     }
 
-    @Test("Rows run the widget group, its placements, then clock, music and effect")
+    @Test("Rows run the widget group, its placements, then clock and music")
     func rowOrder() {
         let widgets = [placement(.cpu), placement(.memory)]
         let rows = OverlayLayerList.rows(
-            placements: widgets, boardEnabled: false, clockEnabled: true, musicEnabled: false, effectVisible: true
+            placements: widgets, boardEnabled: false, clockEnabled: true, musicEnabled: false
         )
-        #expect(rows.count == 6)
+        #expect(rows.count == 5)
         #expect(rows.map(\.kind) == [
-            .board, .widget(.cpu), .widget(.memory), .clock, .music, .effect,
+            .board, .widget(.cpu), .widget(.memory), .clock, .music,
         ])
         #expect(rows.map(\.selection) == [
-            .board, .widget(widgets[0].id), .widget(widgets[1].id), .clock, .music, .effect,
+            .board, .widget(widgets[0].id), .widget(widgets[1].id), .clock, .music,
         ])
         #expect(rows.map(\.action) == [
-            .toggle(isOn: false), .remove, .remove, .toggle(isOn: true), .toggle(isOn: false), .toggle(isOn: true),
+            .toggle(isOn: false), .remove, .remove, .toggle(isOn: true), .toggle(isOn: false),
         ])
     }
 
-    @Test("An empty board still lists the widget group, clock, music and effect")
+    @Test("An empty board still lists the widget group, clock and music")
     func rowOrderWithEmptyBoard() {
         let rows = OverlayLayerList.rows(
-            placements: [], boardEnabled: false, clockEnabled: false, musicEnabled: false, effectVisible: false
+            placements: [], boardEnabled: false, clockEnabled: false, musicEnabled: false
         )
-        #expect(rows.count == 4)
-        #expect(rows.map(\.kind) == [.board, .clock, .music, .effect])
+        #expect(rows.count == 3)
+        #expect(rows.map(\.kind) == [.board, .clock, .music])
         #expect(rows.allSatisfy { $0.action == .toggle(isOn: false) })
     }
 
@@ -49,51 +49,50 @@ struct OverlayLayerListTests {
     func layerCountSkipsWidgetGroup() throws {
         let rows = OverlayLayerList.rows(
             placements: [placement(.cpu), placement(.memory), placement(.gpu)],
-            boardEnabled: false, clockEnabled: false, musicEnabled: false, effectVisible: false
+            boardEnabled: false, clockEnabled: false, musicEnabled: false
         )
         // A new display lists the group row and its three default widgets; the off singletons are filtered out.
         #expect(OverlayLayerList.layerCount(Array(rows.prefix(4))) == 3)
-        #expect(OverlayLayerList.layerCount(rows) == 6)
+        #expect(OverlayLayerList.layerCount(rows) == 5)
         let workspace = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
         #expect(workspace.contains("OverlayLayerList.layerCount(rows)"), "OverlayWorkspace must count through the shared source")
     }
 
-    @Test("The add grid holds fourteen items and never the decode-only nixie clock")
+    @Test("The add grid holds thirteen items and never the decode-only nixie clock")
     func addItems() {
         let items = OverlayLayerList.addItems
-        #expect(items.count == 14)
+        #expect(items.count == 13)
         #expect(!items.contains(.widget(.nixieClock)))
         #expect(items.filter(isWidget).count == 11)
-        #expect(items.suffix(3) == [.music, .clock, .effect])
-        #expect(Set(items.map(\.id)).count == 14)
+        #expect(items.suffix(2) == [.music, .clock])
+        #expect(Set(items.map(\.id)).count == 13)
     }
 
-    @Test("Each selection dispatches to its own inspector")
+    @Test("Each object selection dispatches to its own inspector; the effect has its panel in the top strip instead")
     func inspectorDispatch() {
         let id = UUID()
         #expect(OverlayLayerList.inspectorContent(for: .board) == .board)
         #expect(OverlayLayerList.inspectorContent(for: .widget(id)) == .widget(id))
         #expect(OverlayLayerList.inspectorContent(for: .music) == .music)
         #expect(OverlayLayerList.inspectorContent(for: .clock) == .clock)
-        #expect(OverlayLayerList.inspectorContent(for: .effect) == .effect)
+        #expect(OverlayLayerList.inspectorContent(for: .effect) == .empty)
         #expect(OverlayLayerList.inspectorContent(for: nil) == .empty)
     }
 
-    @Test("The effect row reads the applied particle effect, never the monitor overlay switch")
+    @Test("The effect panel's switch reads the applied particle effect, never the monitor overlay switch")
     func effectVisibilitySource() throws {
         let session = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEditorSession.swift")
         let start = try #require(session.range(of: "var effectVisible: Bool {"))
         let end = try #require(session.range(of: "}", range: start.upperBound ..< session.endIndex))
         #expect(session[start.upperBound ..< end.lowerBound].contains("draft.selectedParticleEffect != .none"))
-        for file in ["OverlayWorkspace", "LayerNavigator", "ObjectInspector", "AddOverlayDrawer"] {
+        for file in ["OverlayWorkspace", "LayerNavigator", "ObjectInspector", "AddOverlayDrawer", "OverlayEffectPanel"] {
             let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/\(file).swift")
             #expect(!source.contains("overlay.enabled"), "\(file) must not read the monitor overlay switch")
             #expect(!source.contains("@State private var selection"), "\(file) must not own a second selection")
         }
-        let workspace = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
-        #expect(workspace.contains("effectVisible: session.effectVisible"))
-        let navigator = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/LayerNavigator.swift")
-        #expect(navigator.contains("session.setEffectVisible("))
+        let panel = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEffectPanel.swift")
+        #expect(panel.contains("get: { session.effectVisible }"))
+        #expect(panel.contains("session.setEffectVisible("))
     }
 
     @Test("Agent folder access is one section, mounted by both inspectors and never inside the widget card")
@@ -150,7 +149,7 @@ struct OverlayLayerListTests {
         #expect(OverlayLayerList.addItems.map(\.id) == [
             "widget.systemOverview", "widget.cpu", "widget.memory", "widget.gpu", "widget.network", "widget.disk",
             "widget.power", "widget.processes", "widget.fleet", "widget.aiEngine", "widget.weather",
-            "music", "clock", "effect",
+            "music", "clock",
         ])
     }
 
@@ -160,12 +159,13 @@ struct OverlayLayerListTests {
         #expect(!drawer.contains("ScrollView(.horizontal)"))
     }
 
-    @Test("The inspector has one switch per object: none in its header, none in the effect panel")
+    @Test("One switch per object: none in the inspector's header, none inside the effect panel's settings")
     func inspectorSwitches() throws {
         let inspector = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/ObjectInspector.swift")
         #expect(!inspector.contains("headerToggle"))
-        let panel = try #require(inspector.range(of: "OverlaysInspectorPanel("))
-        let call = inspector[panel.lowerBound...].prefix(700)
+        let effect = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEffectPanel.swift")
+        let panel = try #require(effect.range(of: "OverlaysInspectorPanel("))
+        let call = effect[panel.lowerBound...].prefix(700)
         #expect(call.contains("showsVisibilityControl: false"))
     }
 

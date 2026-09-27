@@ -14,6 +14,8 @@ protocol UndoRestoring: WallpaperApplying {
     func clearWallpaperForScreen(_ screen: Screen)
     func monitorOverlay(for screen: Screen) -> MonitorOverlayConfiguration
     func setMonitorOverlayBoard(_ board: MonitorBoardConfiguration, for screen: Screen)
+    func setMonitorOverlay(_ overlay: MonitorOverlayConfiguration, for screen: Screen)
+    func updateParticleEffect(_ effect: ParticleEffect, for screen: Screen)
     func updateSceneDescriptor(_ descriptor: SceneDescriptor, for screen: Screen) async
     func automaticSwitchMark(for fingerprint: String) -> AutomaticSwitchMark?
 }
@@ -25,7 +27,7 @@ protocol UndoRestoring: WallpaperApplying {
 final class EditDeskUndoStack {
     enum Action: Equatable {
         case applyWallpaper, applyToAllDisplays, clearWallpaper, resetDisplaySettings
-        case removeFromSaved, renameWallpaper, removeWidget, changePreset, resetSceneSettings
+        case removeFromSaved, renameWallpaper, removeWidget, removeAllObjects, changePreset, resetSceneSettings
 
         var name: String {
             switch self {
@@ -52,6 +54,8 @@ final class EditDeskUndoStack {
                 )
             case .removeWidget:
                 String(localized: "Remove Widget", bundle: .appLanguage)
+            case .removeAllObjects:
+                String(localized: "Remove All", bundle: .appLanguage)
             case .changePreset:
                 String(
                     localized: "Change Preset", bundle: .appLanguage,
@@ -75,6 +79,7 @@ final class EditDeskUndoStack {
         /// Gives the entry with this ID this label.
         case bookmarkLabel(id: UUID, label: String)
         case widgets(WidgetEdit)
+        case objects(ObjectsEdit)
         case scene(SceneEdit)
     }
 
@@ -86,6 +91,16 @@ final class EditDeskUndoStack {
         let widgets: [(placement: MonitorWidgetPlacement, index: Int)]
         /// True puts the widgets back; false takes them off again.
         let inserts: Bool
+        /// Lands the editor's debounced board edit first, which would otherwise write over this change.
+        let flush: @MainActor () async -> Void
+    }
+
+    /// All of one display's overlay objects at once: its widgets, clock and music switches, and effect.
+    struct ObjectsEdit {
+        let fingerprint: String
+        let name: String
+        /// What running the step writes back.
+        let objects: OverlayObjects
         /// Lands the editor's debounced board edit first, which would otherwise write over this change.
         let flush: @MainActor () async -> Void
     }
@@ -244,6 +259,12 @@ final class EditDeskUndoStack {
         ))
     }
 
+    /// What Remove All just took off `screen`, as it was before.
+    func recordRemoveAll(of objects: OverlayObjects, from screen: Screen, flush: @escaping @MainActor () async -> Void) {
+        let edit = ObjectsEdit(fingerprint: screen.displayFingerprint, name: screen.name, objects: objects, flush: flush)
+        record(.removeAllObjects, .objects(edit), announcing: String(localized: "Remove All", bundle: .appLanguage))
+    }
+
     /// A `.changePreset` or `.resetSceneSettings` on `screen` once it has landed; `before` is the descriptor it replaced.
     func recordSceneChange(
         _ action: Action, from before: SceneDescriptor, on screen: Screen, flush: @escaping @MainActor () async -> Void
@@ -352,6 +373,8 @@ final class EditDeskUndoStack {
         case let .bookmarkLabel(id, label):
             relabel(id, to: label)
         case let .widgets(edit):
+            await restore(edit)
+        case let .objects(edit):
             await restore(edit)
         case let .scene(edit):
             await restore(edit)
@@ -469,6 +492,24 @@ final class EditDeskUndoStack {
             fingerprint: edit.fingerprint, name: screen.name, widgets: changed, inserts: !edit.inserts, flush: edit.flush
         )
         return Ran(inverse: .widgets(inverse), restored: [screen.name])
+    }
+
+    private func restore(_ edit: ObjectsEdit) async -> Ran {
+        guard let screen = connectedScreen(edit.fingerprint) else {
+            return Ran(skipped: [.init(name: edit.name, reason: .disconnected)])
+        }
+        await edit.flush()
+        var overlay = manager.monitorOverlay(for: screen)
+        let replaced = OverlayObjects(overlay: overlay, configuration: manager.getConfiguration(for: screen))
+        overlay.board.widgets = edit.objects.widgets
+        overlay.clock.enabled = edit.objects.clockEnabled
+        overlay.music.enabled = edit.objects.musicEnabled
+        manager.setMonitorOverlay(overlay, for: screen)
+        if edit.objects.effect != replaced.effect {
+            manager.updateParticleEffect(edit.objects.effect, for: screen)
+        }
+        let inverse = ObjectsEdit(fingerprint: edit.fingerprint, name: screen.name, objects: replaced, flush: edit.flush)
+        return Ran(inverse: .objects(inverse), restored: [screen.name])
     }
 
     private func restore(_ edit: SceneEdit) async -> Ran {

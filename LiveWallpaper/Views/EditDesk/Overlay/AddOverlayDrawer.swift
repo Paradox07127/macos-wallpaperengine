@@ -162,10 +162,8 @@ struct AddOverlayDrawer: View {
     }
 
     private func tile(_ item: OverlayAddItem) -> some View {
-        let enabled = item != .effect || session.canEditEffect
         let onCanvas = OverlayLayerList.isOnCanvas(
-            item, musicEnabled: session.overlay.music.enabled, clockEnabled: session.overlay.clock.enabled,
-            effectVisible: session.effectVisible
+            item, musicEnabled: session.overlay.music.enabled, clockEnabled: session.overlay.clock.enabled
         )
         return Button { add(item) } label: {
             AddOverlayTileFace(item: item, onCanvas: onCanvas)
@@ -173,9 +171,8 @@ struct AddOverlayDrawer: View {
                 .frame(height: Self.tileHeight)
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
         // High priority: a drag that ends back on the tile must not also count as a click.
-        .highPriorityGesture(dragGesture(item), including: enabled ? .all : .subviews)
+        .highPriorityGesture(dragGesture(item))
         .accessibilityLabel(Text(verbatim: AddOverlayTileFace.name(item)))
         .accessibilityValue(onCanvas ? Text("On Canvas") : Text(verbatim: ""))
     }
@@ -204,9 +201,6 @@ struct AddOverlayDrawer: View {
             session.addSingleton(.music)
         case .clock:
             session.addSingleton(.clock)
-        case .effect:
-            session.setEffectVisible(true)
-            session.select(.effect)
         }
     }
 }
@@ -248,7 +242,6 @@ struct AddOverlayTileFace: View {
         case let .widget(kind): WidgetFactory.displayName(kind)
         case .music: String(localized: "Music", bundle: .appLanguage)
         case .clock: String(localized: "Clock", bundle: .appLanguage)
-        case .effect: String(localized: "Effect Layer", bundle: .appLanguage)
         }
     }
 
@@ -257,7 +250,6 @@ struct AddOverlayTileFace: View {
         case let .widget(kind): WidgetFactory.icon(kind)
         case .music: "music.note"
         case .clock: "clock"
-        case .effect: "sparkles"
         }
     }
 }

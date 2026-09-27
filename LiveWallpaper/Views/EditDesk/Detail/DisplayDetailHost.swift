@@ -285,6 +285,9 @@ struct DisplayDetailHost: View {
                 session.onWidgetsRemoved = { [weak session, undo] removed in
                     undo?.recordRemoval(of: removed, from: screen) { session?.flushPendingEdits() }
                 }
+                session.onObjectsRemoved = { [weak session, undo] objects in
+                    undo?.recordRemoveAll(of: objects, from: screen) { session?.flushPendingEdits() }
+                }
                 overlaySession = session
                 session.transition(
                     to: OverlayEditorIdentity(displayID: screen.id, fingerprint: screen.displayFingerprint),

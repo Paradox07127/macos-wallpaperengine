@@ -19,6 +19,22 @@ struct OverlayEditorSnapshot {
     var safeArea: MonitorSafeAreaInsets
 }
 
+/// What Remove All takes off one display, and what undoing it puts back.
+struct OverlayObjects: Equatable {
+    var widgets: [MonitorWidgetPlacement]
+    var clockEnabled: Bool
+    var musicEnabled: Bool
+    /// `.none` when the effect layer is off or the display has no wallpaper.
+    var effect: ParticleEffect
+
+    init(overlay: MonitorOverlayConfiguration, configuration: ScreenConfiguration?) {
+        widgets = overlay.board.widgets
+        clockEnabled = overlay.clock.enabled
+        musicEnabled = overlay.music.enabled
+        effect = configuration?.particleEffect ?? .none
+    }
+}
+
 @MainActor
 protocol OverlayEditorStore: AnyObject {
     var displays: [OverlayEditorIdentity] { get }
@@ -147,6 +163,8 @@ final class OverlayEditorSession {
     @ObservationIgnored var onObjectPersisted: (@MainActor () -> Void)?
     /// Widgets an edit took off the board, each with its index there; called before the debounced write.
     @ObservationIgnored var onWidgetsRemoved: (@MainActor ([(placement: MonitorWidgetPlacement, index: Int)]) -> Void)?
+    /// What Remove All took off, as it was just before; `onWidgetsRemoved` stays silent for it.
+    @ObservationIgnored var onObjectsRemoved: (@MainActor (OverlayObjects) -> Void)?
     @ObservationIgnored private var store: (any OverlayEditorStore)?
     @ObservationIgnored private var pendingBoard: MonitorBoardConfiguration?
     @ObservationIgnored private var pendingAddedWidgetIDs: Set<UUID> = []
@@ -349,6 +367,32 @@ final class OverlayEditorSession {
         interaction.perform(.delete(id: id))
     }
 
+    /// Whether Remove All has anything to take off.
+    var hasObjects: Bool {
+        !interaction.placements.isEmpty || overlay.clock.enabled || overlay.music.enabled || effectVisible
+    }
+
+    /// Takes every widget, the clock, music and the effect off this display.
+    func removeAllObjects() {
+        guard isActive, let identity, let store else { return }
+        flushPendingEdits()
+        guard let snapshot = store.read(identity) else { return }
+        let removed = OverlayObjects(overlay: snapshot.overlay, configuration: snapshot.configuration)
+        // Straight to the store: through the canvas each widget would be reported to `onWidgetsRemoved` on its own.
+        if !removed.widgets.isEmpty {
+            var board = snapshot.overlay.board
+            board.widgets = []
+            store.writeBoard(board, for: identity)
+        }
+        setClockEnabled(false)
+        setMusicEnabled(false)
+        if removed.effect != .none {
+            setEffectVisible(false)
+        }
+        refreshAppliedConfiguration()
+        onObjectsRemoved?(removed)
+    }
+
     func moveSelection(_ direction: MonitorBoardPlacementDirection) {
         guard isActive else { return }
         if case let .widget(id) = selection {
@@ -527,8 +571,6 @@ final class OverlayEditorSession {
             let free = CGRect(origin: CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2), size: size)
             let placed = place(selection, free: free, bypassSnap: bypassSnap)
             addDrop = .singleton(selection, rect: placed.rect, guideX: placed.snap.guideX, guideY: placed.snap.guideY)
-        case .effect:
-            addDrop = canEditEffect ? .effect : .outside
         }
     }
 
@@ -539,7 +581,7 @@ final class OverlayEditorSession {
         addDrop = nil
         guard commit, isActive else { return false }
         switch drop {
-        case .outside:
+        case .outside, .effect:
             return false
         case .noRoom:
             addDropRejected = true
@@ -548,12 +590,6 @@ final class OverlayEditorSession {
             return addWidget(kind: kind, at: landing.origin)
         case let .singleton(selection, rect, _, _):
             return placeSingleton(selection, at: rect)
-        case .effect:
-            if !effectVisible {
-                setEffectVisible(true)
-            }
-            select(.effect)
-            return effectVisible
         }
     }
 

@@ -77,16 +77,16 @@ struct OverlayHiddenWidgetTests {
     func layerSwitchTogglesHidden() async throws {
         let fixture = LayersFixture(widgets: [Self.shown])
         defer { fixture.close() }
-        // Rows run Widgets, the widget, Clock, Music, Effect Layer.
+        // Rows run Widgets, the widget, Clock, Music; the effect layer has its own panel.
         let before = await fixture.switches()
-        #expect(before.count == 5, "the panel shows \(before.count) switches, not one per row")
-        try #require(before.count == 5)
+        #expect(before.count == 4, "the panel shows \(before.count) switches, not one per row")
+        try #require(before.count == 4)
         before[1].performClick(nil)
         #expect(await fixture.settle { fixture.session.interaction.placements.first?.isHidden == true }, "the switch did not hide the widget")
         fixture.session.flushPendingEdits()
         #expect(fixture.store.snapshot.overlay.board.widgets.first?.isHidden == true, "the hidden widget was not saved")
         let after = await fixture.switches()
-        try #require(after.count == 5)
+        try #require(after.count == 4)
         after[1].performClick(nil)
         #expect(await fixture.settle { fixture.session.interaction.placements.first?.isHidden == false }, "the switch did not show the widget again")
     }
@@ -246,7 +246,7 @@ struct OverlayHiddenWidgetTests {
                 featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
             ))
             let rows = OverlayLayerList.rows(placements: session.interaction.placements, boardEnabled: true,
-                                             clockEnabled: false, musicEnabled: false, effectVisible: false)
+                                             clockEnabled: false, musicEnabled: false)
             let size = CGSize(width: 220, height: CGFloat(rows.count) * OverlayWorkspaceLayout.rowHeight)
             let host = NSHostingView(rootView: LayerNavigator(session: session, rows: rows, height: size.height)
                 .frame(width: size.width, height: size.height)

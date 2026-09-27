@@ -884,7 +884,7 @@ struct S7OverlayFidelityTests {
         let cpu = try #require(fixture.session.interaction.placements.first)
         let edge = DesignTokens.Inspector.horizontalPadding(for: 372)
         let cases: [(String, OverlaySelection)] = [
-            ("board", .board), ("widget", .widget(cpu.id)), ("music", .music), ("clock", .clock), ("effect", .effect),
+            ("board", .board), ("widget", .widget(cpu.id)), ("music", .music), ("clock", .clock),
         ]
         for (name, selection) in cases {
             fixture.session.select(selection)

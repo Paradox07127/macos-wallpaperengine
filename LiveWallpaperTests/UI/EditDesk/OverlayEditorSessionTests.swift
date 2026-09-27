@@ -586,25 +586,6 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
-    @Test("The effect turns on wherever it is dropped; dropping it again writes nothing")
-    func dropEffect() {
-        let store = FakeOverlayStore()
-        store.snapshots[store.displays[0]]?.configuration?.particleEffect = ParticleEffect.none
-        let session = opened(store)
-        #expect(!session.effectVisible)
-        session.updateAddDrag(.effect, boardPoint: CGPoint(x: 10, y: 10), bypassSnap: false)
-        #expect(session.addDrop == .effect)
-        store.events = []
-        #expect(session.endAddDrag(commit: true))
-        #expect(store.events.filter { $0.hasPrefix("effect") } == ["effect 1"])
-        #expect(session.effectVisible && session.selection == .effect)
-        store.events = []
-        session.updateAddDrag(.effect, boardPoint: CGPoint(x: 500, y: 500), bypassSnap: false)
-        #expect(session.endAddDrag(commit: true))
-        #expect(!store.events.contains { $0.hasPrefix("effect") })
-        session.detach()
-    }
-
     @Test("A widget dropped onto a switched-off board turns the board on first")
     func dropEnablesBoard() {
         let store = FakeOverlayStore()
