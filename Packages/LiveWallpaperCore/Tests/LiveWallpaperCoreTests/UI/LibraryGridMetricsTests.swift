@@ -82,33 +82,7 @@ struct LibraryGridMetricsTests {
         }
     }
 
-    @Test("The old window's square ladder keeps fixed columns")
-    func squareLadderKeepsFixedColumns() {
-        // The old window at 1160 / 1280 / 1728 less its 220pt sidebar; Browse insets its grid 18 a side, Installed 24.
-        let expected: [(page: CGFloat, counts: [LibraryTileSize: Int])] = [
-            (940, [.small: 5, .medium: 3, .large: 2]),
-            (1060, [.small: 6, .medium: 4, .large: 3]),
-            (1508, [.small: 8, .medium: 6, .large: 4]),
-        ]
-        for (page, counts) in expected {
-            for inset in [DesignTokens.Settings.formHorizontalMargin, DesignTokens.LibraryGrid.horizontalPadding] {
-                for (size, count) in counts {
-                    let column = DesignTokens.LibraryGrid.columnWidth(for: size, aspect: .square)
-                    let columns = DesignTokens.LibraryGrid.columns(for: size, aspect: .square, fitting: page - 2 * inset)
-                    #expect(columns.count == count, Comment(rawValue: "\(size) at \(page) less \(inset) a side: \(columns.count) columns"))
-                    for item in columns {
-                        guard case let .fixed(width) = item.size else {
-                            Issue.record("\(size) is not a fixed column")
-                            continue
-                        }
-                        #expect(width == column, Comment(rawValue: "\(size) at \(page): \(width) instead of \(column)"))
-                    }
-                }
-            }
-        }
-    }
-
-    @Test("Columns are fixed at the ladder's width and pack as many as the width holds")
+    @Test("Columns pack as many ladder widths as the width holds and share the row")
     func columnsPackFixedTilesIntoTheWidth() {
         let spacing = DesignTokens.LibraryGrid.spacing
         for aspect in Self.aspects {
@@ -130,9 +104,7 @@ struct LibraryGridMetricsTests {
                             Issue.record("\(aspect) \(size) is not a fixed column")
                             continue
                         }
-                        if case .square = aspect {
-                            #expect(width == column)
-                        } else if expected.width > 0 {
+                        if expected.width > 0 {
                             #expect(abs(width * CGFloat(columns.count) + spacing * CGFloat(columns.count - 1) - expected.width) < 0.01)
                         }
                         #expect(item.spacing == spacing)

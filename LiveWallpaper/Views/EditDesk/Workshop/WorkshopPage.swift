@@ -16,7 +16,7 @@ struct WorkshopPage: View {
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
 
-    /// Shared with the old Workshop window's banner, so a dismissal in either place counts.
+    /// Kept under its original key so a dismissal recorded by earlier builds still counts.
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped())
     private var privateSessionNoticeShown = false
 

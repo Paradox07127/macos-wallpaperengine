@@ -42,7 +42,6 @@ struct AttemptSceneProperties: View {
             .padding(DesignTokens.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .pageBackground()
         .task(id: loadKey) {
             schema = nil; failure = nil; resolved = false
             guard let descriptor else {

@@ -145,7 +145,6 @@ struct WorkshopPageSourceTests {
     func browsePaneHasNoInspector() throws {
         let source = try RepositoryRoot.source(Self.browsePane)
         #expect(!source.contains("InspectorSplit("), "Browse builds an inspector column again")
-        #expect(!source.contains("presentation =="), "Browse branches on a second presentation again")
         for fragment in [
             "BrowseFilterRibbon(", "paginationBar", "rateLimitBanner", "keyRejectedBanner",
             "installedWorkshopIDs", "hidesDownloadedPref", "loadingSkeleton",

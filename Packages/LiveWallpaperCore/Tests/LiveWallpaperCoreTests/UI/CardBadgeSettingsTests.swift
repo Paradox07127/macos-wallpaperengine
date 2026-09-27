@@ -30,16 +30,6 @@ struct CardBadgeSettingsTests {
         #expect(Set(keys).count == keys.count)
     }
 
-    @Test("Each type badge style renders the parts it names", arguments: [
-        (CardTypeBadgeStyle.icon, true, false),
-        (CardTypeBadgeStyle.text, false, true),
-        (CardTypeBadgeStyle.iconAndText, true, true)
-    ])
-    func typeBadgeStyleRendersItsParts(style: CardTypeBadgeStyle, icon: Bool, text: Bool) {
-        #expect(style.showsIcon == icon)
-        #expect(style.showsText == text)
-    }
-
     /// The raw values are the persisted representation, same reasoning as the keys.
     @Test("Type badge style raw values are stable")
     func typeBadgeStyleRawValuesAreStable() {

@@ -84,7 +84,6 @@ struct SettingsSidebarLegibilityTests {
             Color.clear
         }
         .frame(width: size.width, height: size.height)
-        .environment(\.windowPaintsCanvas, true)
         .background { EditDeskBackdrop(frosted: false) }
     }
 

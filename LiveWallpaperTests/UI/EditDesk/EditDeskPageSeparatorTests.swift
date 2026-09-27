@@ -8,10 +8,7 @@ import Testing
 @Suite("Edit Desk library pages — filter-bar rule source contract")
 struct EditDeskPageSeparatorSourceTests {
     enum Rule: Equatable {
-        /// Drawn only off the Edit Desk canvas.
-        case gated
-        /// Drawn in every window.
-        case ungated
+        case drawn
         /// No rule under the filter bar at all.
         case missing
     }
@@ -19,41 +16,37 @@ struct EditDeskPageSeparatorSourceTests {
     /// How the `Divider()` right under a page's filter bar is drawn.
     static func filterBarRule(in source: String) -> Rule {
         let lines = source.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        var rule = Rule.missing
         for (index, line) in lines.enumerated() where line == "filterBar" || line.hasPrefix("LibraryFilterBar(") {
-            let next = Array(lines[(index + 1)...].prefix(3))
-            if next.first == "Divider()" {
-                return .ungated
-            }
-            if next == ["if !windowPaintsCanvas {", "Divider()", "}"] {
-                rule = .gated
+            if lines[(index + 1)...].first == "Divider()" {
+                return .drawn
             }
         }
-        return rule
+        return .missing
     }
 
-    @Test("Schemes and System Wallpaper draw the filter-bar rule only off the Edit Desk canvas", arguments: [
+    @Test("Schemes and System Wallpaper draw no rule under the filter bar", arguments: [
         "LiveWallpaper/Views/Schemes/SchemeLibraryView.swift",
         "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
     ])
-    func ruleIsGatedOnTheCanvas(path: String) throws {
+    func noRuleUnderTheFilterBar(path: String) throws {
         let rule = try Self.filterBarRule(in: RepositoryRoot.source(path))
-        #expect(rule == .gated, Comment(rawValue: "\(path): the rule under the filter bar is \(rule)"))
+        #expect(rule == .missing, Comment(rawValue: "\(path): the rule under the filter bar is \(rule)"))
     }
 
-    @Test("Control: the checker sees a filter-bar rule drawn in every window")
-    func ungatedRuleIsSeen() {
+    @Test("Control: the checker sees a rule under the filter bar")
+    func drawnRuleIsSeen() {
         let rule = Self.filterBarRule(in: "filterBar\nDivider()\ngrid")
-        #expect(rule == .ungated, Comment(rawValue: "the checker no longer sees an ungated rule: \(rule)"))
+        #expect(rule == .drawn, Comment(rawValue: "the checker no longer sees a drawn rule: \(rule)"))
     }
 }
 
 #if !LITE_BUILD
-/// The Workshop browse pane over the canvas colour, once as the Edit Desk hosts it and once as the old window does.
-@Suite("Workshop browse — filter-bar rule on and off the Edit Desk canvas", .serialized)
+/// The Workshop browse pane over the canvas colour, once as it is and once with a control rule laid over it.
+@Suite("Workshop browse — no filter-bar rule on the Edit Desk canvas", .serialized)
 @MainActor
 struct EditDeskBrowseSeparatorRenderTests {
     private static let size = CGSize(width: 1280, height: 320)
+    private static let controlRuleY: CGFloat = 60
 
     private final class OfflineURLProtocol: URLProtocol, @unchecked Sendable { // stateless: no stored properties
         override static func canInit(with _: URLRequest) -> Bool {
@@ -140,7 +133,8 @@ struct EditDeskBrowseSeparatorRenderTests {
     }
 
     /// The pane with one cached page, so the grid fills without a fetch; any request that misses the cache fails offline.
-    private func render(onCanvas: Bool, dark: Bool) async throws -> ProbeImage {
+    /// `controlRule` lays a full-width `Divider()` over the pane, `controlRuleY` points from its top.
+    private func render(controlRule: Bool, dark: Bool) async throws -> ProbeImage {
         let suite = try TestScratch.defaultsSuite("EditDeskBrowseSeparatorRenderTests.render")
         defer { suite.discard() }
         let directory = FileManager.default.temporaryDirectory
@@ -174,18 +168,22 @@ struct EditDeskBrowseSeparatorRenderTests {
             ZStack {
                 DesignTokens.EditDesk.Colors.background
                 BrowsePane(viewModel: browse, doctor: doctor, onRequestKeyEntry: {})
+                    .overlay(alignment: .top) {
+                        if controlRule {
+                            Divider().padding(.top, Self.controlRuleY)
+                        }
+                    }
             }
-            .environment(\.windowPaintsCanvas, onCanvas)
             .environment(services)
             .environment(manager)
         }
     }
 
-    @Test("The Edit Desk draws no rule under the Workshop filter bar; the old window keeps it", arguments: [false, true])
-    func ruleFollowsTheCanvas(dark: Bool) async throws {
-        let oldWindow = try await Self.fullWidthRules(in: render(onCanvas: false, dark: dark), depth: 120)
-        #expect(oldWindow.count == 1, Comment(rawValue: "old window shows full-width rules at \(oldWindow); the scan misses the rule it guards"))
-        let editDesk = try await render(onCanvas: true, dark: dark)
+    @Test("The Edit Desk draws no rule under the Workshop filter bar", arguments: [false, true])
+    func noRuleUnderTheFilterBar(dark: Bool) async throws {
+        let control = try await Self.fullWidthRules(in: render(controlRule: true, dark: dark), depth: 120)
+        #expect(control.count == 1, Comment(rawValue: "control shows full-width rules at \(control); the scan misses the rule it guards"))
+        let editDesk = try await render(controlRule: false, dark: dark)
         #expect(Self.hasInk(editDesk, depth: 60), "the Edit Desk render is blank, so a missing rule proves nothing")
         let rules = Self.fullWidthRules(in: editDesk, depth: 120)
         #expect(rules.isEmpty, Comment(rawValue: "the Edit Desk still draws a full-width rule at \(rules)"))

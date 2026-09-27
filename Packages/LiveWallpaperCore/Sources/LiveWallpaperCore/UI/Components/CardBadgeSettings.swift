@@ -60,38 +60,4 @@ public enum CardTypeBadgeStyle: String, CaseIterable, Identifiable, Sendable {
     case iconAndText
 
     public var id: String { rawValue }
-
-    public var showsIcon: Bool { self != .text }
-    public var showsText: Bool { self != .icon }
-}
-
-/// The badge is `accessibilityHidden`, so the hosting card MUST restate the type in
-/// its own accessibility label or `.icon` leaves VoiceOver nothing to read.
-public struct ThumbnailTypeBadge: View {
-    private let systemImage: String
-    private let title: String
-    private let style: CardTypeBadgeStyle
-
-    public init(systemImage: String, title: String, style: CardTypeBadgeStyle) {
-        self.systemImage = systemImage
-        self.title = title
-        self.style = style
-    }
-
-    /// `.icon` takes the glyph-only initializer; passing an empty string would still
-    /// reserve a text slot.
-    @ViewBuilder
-    public var body: some View {
-        if style.showsText {
-            ThumbnailBadge(
-                verbatim: title.uppercased(with: .current),
-                systemImage: style.showsIcon ? systemImage : nil,
-                tracking: 0.5
-            )
-            .help(Text(verbatim: title))
-        } else {
-            ThumbnailBadge(systemImage: systemImage)
-                .help(Text(verbatim: title))
-        }
-    }
 }

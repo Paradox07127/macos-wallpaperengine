@@ -146,7 +146,6 @@ struct EditDeskRoot: View {
         #endif
         .modifier(UndoCommands(undo: undo, toasts: toasts))
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
-        .environment(\.windowPaintsCanvas, true)
         .providesGalleryCardPreferences()
         .background { EditDeskBackdrop(frosted: background == .frosted) }
         .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)

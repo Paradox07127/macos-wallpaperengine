@@ -3,25 +3,16 @@ import AppKit
 import SwiftUI
 import Testing
 
-@Suite("Page and content-column backgrounds")
+@Suite("Content-column background")
 @MainActor
 struct PageBackgroundTests {
-    private enum Fill {
-        case page, contentColumn
-    }
-
-    /// The centre pixel of a 20pt square that paints `fill` over magenta.
-    private static func centre(_ fill: Fill, windowPaintsCanvas: Bool) throws -> (r: Int, g: Int, b: Int) {
-        let square = Color.clear.frame(width: 20, height: 20)
+    /// The centre pixel of a 20pt square that paints the content-column background over magenta.
+    private static func centre() throws -> (r: Int, g: Int, b: Int) {
         let content = ZStack {
             Color(nsColor: NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1))
-            switch fill {
-            case .page: square.pageBackground()
-            case .contentColumn: square.contentColumnBackground()
-            }
+            Color.clear.frame(width: 20, height: 20).contentColumnBackground()
         }
         .frame(width: 20, height: 20)
-        .environment(\.windowPaintsCanvas, windowPaintsCanvas)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
         let image = try #require(renderer.cgImage, "the renderer produced no image")
@@ -34,25 +25,9 @@ struct PageBackgroundTests {
         return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
     }
 
-    private static func isMagenta(_ pixel: (r: Int, g: Int, b: Int)) -> Bool {
-        pixel.r > 235 && pixel.g < 25 && pixel.b > 235
-    }
-
-    @Test("A page paints its own background outside a canvas-painting window")
-    func pagePaintsByDefault() throws {
-        let pixel = try Self.centre(.page, windowPaintsCanvas: false)
-        #expect(!Self.isMagenta(pixel), "the page left its background clear in a window that paints none: \(pixel)")
-    }
-
-    @Test("A page stays clear where the window root paints the canvas")
-    func pageLeavesTheWindowCanvasShowing() throws {
-        let pixel = try Self.centre(.page, windowPaintsCanvas: true)
-        #expect(Self.isMagenta(pixel), "the page painted over the window's canvas: \(pixel)")
-    }
-
-    @Test("A content column stays solid in both windows", arguments: [false, true])
-    func contentColumnStaysSolid(windowPaintsCanvas: Bool) throws {
-        let pixel = try Self.centre(.contentColumn, windowPaintsCanvas: windowPaintsCanvas)
-        #expect(!Self.isMagenta(pixel), "the content column let the canvas through: \(pixel)")
+    @Test("A content column stays solid over the window canvas")
+    func contentColumnStaysSolid() throws {
+        let pixel = try Self.centre()
+        #expect(!(pixel.r > 235 && pixel.g < 25 && pixel.b > 235), "the content column let the canvas through: \(pixel)")
     }
 }

@@ -10,7 +10,6 @@ struct SystemWallpaperLibraryView: View {
     var isEmbedded = false
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(WallpaperExportService.self) private var service
-    @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
     @State private var pendingDestructive: PendingDestructive?
     @State private var searchText = ""
 
@@ -83,9 +82,6 @@ struct SystemWallpaperLibraryView: View {
     private var gallery: some View {
         VStack(spacing: 0) {
             LibraryFilterBar(searchText: $searchText, searchPrompt: "Search videos")
-            if !windowPaintsCanvas {
-                Divider()
-            }
             galleryScroll
             LibraryStatusBar(summary: statusSummary) {
                 if service.diskUsageBytes > 0 {

@@ -117,24 +117,19 @@ struct BrowseCardEqualityTests {
     )])
 
     private static func card(
-        presentation: BrowsePresentation = .legacy, isRevealed: Bool = false, isInLibrary: Bool = false,
+        isRevealed: Bool = false, isInLibrary: Bool = false,
         hasUpdate: Bool = false, inUseBadge: NowPlayingBadge? = nil,
         preferences: GalleryCardPreferences = GalleryCardPreferences(), tags: [String] = [], rating: WorkshopRating? = nil
     ) -> BrowseCard {
         BrowseCard(
             item: item(tags: tags, rating: rating), isInLibrary: isInLibrary, hasUpdate: hasUpdate, inUseBadge: inUseBadge,
-            cardPreferences: preferences, reduceMotion: false, presentation: presentation, isRevealed: isRevealed
+            cardPreferences: preferences, reduceMotion: false, isRevealed: isRevealed
         )
     }
 
     @Test("Two cards with the same inputs compare equal")
     func identicalInputsAreEqual() {
         #expect(Self.card() == Self.card())
-    }
-
-    @Test("The presentation is part of equality")
-    func presentationEntersEquality() {
-        #expect(Self.card(presentation: .legacy) != Self.card(presentation: .editDesk))
     }
 
     @Test("A reveal is part of equality, or EquatableView would swallow the refresh")
@@ -148,34 +143,30 @@ struct BrowseCardEqualityTests {
         #expect(Self.card(inUseBadge: nil) != Self.card(inUseBadge: Self.studio))
     }
 
-    @Test("An Edit Desk browse card reads out only the marks it draws")
+    @Test("A browse card reads out only the marks it draws")
     func editDeskCardReadsOnlyDrawnMarks() {
         let inLibrary = String(localized: "In Library", bundle: .appLanguage)
         let inUse = String(localized: "Currently in use", bundle: .appLanguage)
         let update = String(localized: "Update available", bundle: .appLanguage)
 
-        let drawn = Self.card(presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio)
+        let drawn = Self.card(isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio)
             .accessibilityLabelText
         #expect(drawn.contains(update) && drawn.contains(inUse), "a drawn badge is not read: \(drawn)")
         #expect(!drawn.contains(inLibrary), "the check that Needs Update replaced is still read: \(drawn)")
 
-        let checked = Self.card(presentation: .editDesk, isInLibrary: true).accessibilityLabelText
-        let switchedOff = Self.card(
-            presentation: .editDesk, isInLibrary: true, preferences: GalleryCardPreferences(showsInLibrary: false)
-        ).accessibilityLabelText
+        let checked = Self.card(isInLibrary: true).accessibilityLabelText
+        let switchedOff = Self.card(isInLibrary: true, preferences: GalleryCardPreferences(showsInLibrary: false))
+            .accessibilityLabelText
         #expect(checked.contains(inLibrary), "the drawn check is not read: \(checked)")
         #expect(!switchedOff.contains(inLibrary), "the check is read with its switch off: \(switchedOff)")
 
         let blurred = Self.card(
-            presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio, tags: ["Mature"]
+            isInLibrary: true, hasUpdate: true, inUseBadge: Self.studio, tags: ["Mature"]
         ).accessibilityLabelText
         #expect(![inLibrary, inUse, update].contains { blurred.contains($0) }, "a blurred card draws no marks but reads: \(blurred)")
-
-        let legacy = Self.card(isInLibrary: true).accessibilityLabelText
-        #expect(legacy.contains(inLibrary), "the legacy card no longer reads In Library: \(legacy)")
     }
 
-    @Test("An Edit Desk browse card reads only the metadata its info band draws, and a blurred card only its title")
+    @Test("A browse card reads only the metadata its info band draws, and a blurred card only its title")
     func editDeskCardReadsOnlyDrawnMetadata() throws {
         let tags = ["Scene", "3840 x 2160"]
         let rating = WorkshopRating.score(0.9, votesUp: 9, votesDown: 1)
@@ -184,17 +175,15 @@ struct BrowseCardEqualityTests {
         let type = WorkshopContentTypeFilter.scene.displayName
         let off = GalleryCardPreferences(showsRating: false, showsResolution: false)
 
-        let switchedOff = Self.card(presentation: .editDesk, preferences: off, tags: tags, rating: rating).accessibilityLabelText
+        let switchedOff = Self.card(preferences: off, tags: tags, rating: rating).accessibilityLabelText
         #expect(!switchedOff.contains(stars), "the rating is read with its switch off: \(switchedOff)")
         #expect(!switchedOff.contains(resolution), "the resolution is read with its switch off: \(switchedOff)")
-        #expect(!switchedOff.contains(type), "the Edit Desk card draws no type but reads it: \(switchedOff)")
-        let blurred = Self.card(presentation: .editDesk, tags: tags + ["Mature"], rating: rating).accessibilityLabelText
+        #expect(!switchedOff.contains(type), "the card draws no type but reads it: \(switchedOff)")
+        let blurred = Self.card(tags: tags + ["Mature"], rating: rating).accessibilityLabelText
         #expect(blurred == Self.item().title, "a blurred card draws no info band but reads: \(blurred)")
 
-        // Controls: the legacy card reads as before, and switched on the Edit Desk card reads what it draws.
-        let legacy = Self.card(preferences: off, tags: tags, rating: rating).accessibilityLabelText
-        #expect(legacy.contains(stars) && legacy.contains(type), "the legacy card's reading changed: \(legacy)")
-        let switchedOn = Self.card(presentation: .editDesk, tags: tags, rating: rating).accessibilityLabelText
+        // Control: switched on, the card reads what it draws.
+        let switchedOn = Self.card(tags: tags, rating: rating).accessibilityLabelText
         #expect(switchedOn.contains(stars) && switchedOn.contains(resolution), "a drawn rating or resolution is not read: \(switchedOn)")
     }
 }

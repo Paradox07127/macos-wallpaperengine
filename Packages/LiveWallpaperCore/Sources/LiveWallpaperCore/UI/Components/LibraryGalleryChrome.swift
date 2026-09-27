@@ -3,7 +3,6 @@ import SwiftUI
 public struct LibraryStatusBar<Trailing: View>: View {
     private let summary: Text
     private let trailing: Trailing
-    @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
 
     public init(summary: Text, @ViewBuilder trailing: () -> Trailing) {
         self.summary = summary
@@ -11,24 +10,19 @@ public struct LibraryStatusBar<Trailing: View>: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            if !windowPaintsCanvas {
-                Divider()
+        ZStack {
+            summary
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Spacer(minLength: 0)
+                trailing
             }
-            ZStack {
-                summary
-                HStack(spacing: DesignTokens.Spacing.sm) {
-                    Spacer(minLength: 0)
-                    trailing
-                }
-            }
-            .font(DesignTokens.Typography.metric)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, DesignTokens.LibraryStatusBar.horizontalPadding)
-            .padding(.vertical, DesignTokens.LibraryStatusBar.verticalPadding)
-            .frame(maxWidth: .infinity)
         }
+        .font(DesignTokens.Typography.metric)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, DesignTokens.LibraryStatusBar.horizontalPadding)
+        .padding(.vertical, DesignTokens.LibraryStatusBar.verticalPadding)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
 }

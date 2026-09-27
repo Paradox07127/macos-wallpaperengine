@@ -146,7 +146,7 @@ public enum DesignTokens {
             case wide
         }
 
-        /// Preferred width selects the number of columns. Wide cards share the remaining space.
+        /// Preferred width selects the number of columns, which then share the remaining space.
         public static func columnWidth(for size: LibraryTileSize, aspect: Aspect) -> CGFloat {
             switch aspect {
             case .square:
@@ -200,12 +200,12 @@ public enum DesignTokens {
             return Array(repeating: GridItem(.fixed(resolved), spacing: spacing), count: count)
         }
 
-        /// `.wide` and a pinned `columnWidth` share the row evenly; `.square` ladder steps keep their width.
+        /// The columns share the row evenly.
         public static func resolvedColumnWidth(
             for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat, columnWidth: CGFloat? = nil
         ) -> CGFloat {
             let preferred = columnWidth ?? self.columnWidth(for: size, aspect: aspect)
-            guard columnWidth != nil || aspect == .wide, width > 0 else { return preferred }
+            guard width > 0 else { return preferred }
             let count = max(1, Int(((width + spacing) / (preferred + spacing)).rounded(.down)))
             return max(1, (width - CGFloat(count - 1) * spacing) / CGFloat(count))
         }

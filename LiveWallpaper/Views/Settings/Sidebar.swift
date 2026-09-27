@@ -77,7 +77,6 @@ struct SettingsSidebar: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
         }
-        .pageBackground()
         .navigationSplitViewColumnWidth(
             min: SettingsWindowMetrics.sidebarColumnWidth,
             ideal: SettingsWindowMetrics.sidebarColumnWidth,

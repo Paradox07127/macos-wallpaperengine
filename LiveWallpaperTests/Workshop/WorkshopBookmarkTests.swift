@@ -167,26 +167,5 @@ struct WorkshopBookmarkTests {
         let menu = try #require(card.range(of: "private var contextMenuItems: some View {"))
         #expect(card[menu.upperBound...].prefix(80).contains("if let onBookmark {"))
     }
-
-    @Test("The bookmark glyph is a thumbnail badge in media colours, not a card overlay")
-    func bookmarkGlyphSitsOnTheThumbnail() throws {
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(!card.contains("Color.primary"))
-        #expect(!card.contains(".padding(.bottom, DesignTokens.Spacing.xl + DesignTokens.Spacing.md)"))
-        let thumbnail = try #require(card.range(of: "private var thumbnailArea: some View {"))
-        let pills = try #require(card.range(of: "private func typePill("))
-        #expect(card[thumbnail.upperBound ..< pills.lowerBound].contains("ThumbnailBookmarkButton("))
-    }
-
-    @Test("Browse cards draw the shared bookmark glyph")
-    func bookmarkGlyphIsShared() throws {
-        for path in [
-            "LiveWallpaper/Views/Workshop/BrowseCard.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(source.contains("ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)"), Comment(rawValue: path))
-            #expect(!source.contains("Image(systemName: isBookmarked"), Comment(rawValue: "\(path) draws its own bookmark glyph"))
-        }
-    }
 }
 #endif

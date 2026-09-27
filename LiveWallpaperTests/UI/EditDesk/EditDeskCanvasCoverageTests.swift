@@ -73,7 +73,7 @@ struct EditDeskCanvasCoverageTests {
     ) async throws -> Coverage {
         let root = ZStack {
             Color(nsColor: NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)).ignoresSafeArea()
-            page.environment(\.windowPaintsCanvas, true)
+            page
         }
         .frame(width: Self.size.width, height: Self.size.height)
         let hosting = NSHostingView(rootView: AppLanguageScope(defaults: .standard) { root })

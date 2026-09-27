@@ -16,7 +16,6 @@ struct BrowseCard: View, Equatable {
             && lhs.cardPreferences == rhs.cardPreferences
             && lhs.reduceMotion == rhs.reduceMotion
             && lhs.canDownload == rhs.canDownload
-            && lhs.presentation == rhs.presentation
             && lhs.isRevealed == rhs.isRevealed
             && lhs.isBookmarked == rhs.isBookmarked
     }
@@ -37,7 +36,6 @@ struct BrowseCard: View, Equatable {
     /// not a read of `WorkshopDownloadCoordinator`: observing it here would tie every
     /// visible card to the progress ticks of whichever download is running.
     var canDownload: Bool = false
-    var presentation: BrowsePresentation = .legacy
     /// Whether the host's `MatureRevealState` has uncovered this item.
     var isRevealed: Bool = false
     /// nil keeps the reveal in this card's own `@State`.
@@ -58,24 +56,16 @@ struct BrowseCard: View, Equatable {
         cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed && !isRevealed
     }
 
-    private var showsTypePill: Bool {
-        contentType != nil && cardPreferences.showsType
-    }
-
-    private var showsRatingPill: Bool {
-        ratingValue != nil && cardPreferences.showsRating
-    }
-
     private var showsInUseBadge: Bool {
-        presentation == .editDesk && inUseBadge != nil && cardPreferences.showsInUse && !shouldBlur
+        inUseBadge != nil && cardPreferences.showsInUse && !shouldBlur
     }
 
     private var showsUpdateBadge: Bool {
-        presentation == .editDesk && hasUpdate && cardPreferences.showsUpdate && !shouldBlur
+        hasUpdate && cardPreferences.showsUpdate && !shouldBlur
     }
 
     private var showsEditDeskInLibraryCheck: Bool {
-        presentation == .editDesk && isInLibrary && cardPreferences.showsInLibrary && !shouldBlur && !showsUpdateBadge
+        isInLibrary && cardPreferences.showsInLibrary && !shouldBlur && !showsUpdateBadge
     }
 
     var body: some View {
@@ -84,10 +74,10 @@ struct BrowseCard: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: cardCornerRadius, reduceMotion: reduceMotion)
+        .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: DesignTokens.EditDesk.Corner.panel, reduceMotion: reduceMotion)
         .overlay { editDeskBorder }
-        .shadow(color: editDeskRingShadow?.color ?? .clear, radius: editDeskRingShadow?.radius ?? 0, y: editDeskRingShadow?.y ?? 0)
-        .shadow(color: editDeskRestShadow?.color ?? .clear, radius: editDeskRestShadow?.radius ?? 0, y: editDeskRestShadow?.y ?? 0)
+        .shadow(color: Self.ringShadow.color, radius: Self.ringShadow.radius, y: Self.ringShadow.y)
+        .shadow(color: Self.restShadow.color, radius: Self.restShadow.radius, y: Self.restShadow.y)
         .shadow(color: editDeskShadow?.color ?? .clear, radius: editDeskShadow?.radius ?? 0, y: editDeskShadow?.y ?? 0)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
@@ -147,38 +137,24 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - S8 chrome
 
-    private var cardCornerRadius: CGFloat {
-        presentation == .editDesk ? DesignTokens.EditDesk.Corner.panel : DesignTokens.Corner.lg
-    }
-
-    @ViewBuilder
     private var editDeskBorder: some View {
-        if presentation == .editDesk {
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panel, style: .continuous)
+            .strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
+            .allowsHitTesting(false)
     }
 
     /// SCREENS S8's card shadow is two layers: a 1px ring against the page and the drop below it.
-    private var editDeskRingShadow: DesignTokens.EditDesk.Shadow? {
-        presentation == .editDesk ? .workshopCardRing : nil
-    }
-
-    private var editDeskRestShadow: DesignTokens.EditDesk.Shadow? {
-        presentation == .editDesk ? .workshopCard : nil
-    }
+    private static let ringShadow = DesignTokens.EditDesk.Shadow.workshopCardRing
+    private static let restShadow = DesignTokens.EditDesk.Shadow.workshopCard
 
     private var editDeskShadow: DesignTokens.EditDesk.Shadow? {
-        guard presentation == .editDesk, isHovered else { return nil }
-        return .hoverCard
+        isHovered ? .hoverCard : nil
     }
 
     // MARK: - Thumbnail
 
-    /// Every badge is an `overlay`, never a ZStack sibling: `ThumbnailTypeBadge`
-    /// ends in `fixedSize()`, so as a sibling it would set an intrinsic width that
-    /// `aspectRatio(1, .fit)` cannot shrink, and the tile would stretch out of square.
+    /// Every badge is an `overlay`, never a ZStack sibling: a badge ending in `fixedSize()`
+    /// would set an intrinsic width that `aspectRatio(1, .fit)` cannot shrink, and the tile would stretch out of square.
     private var thumbnailArea: some View {
         AnimatedGIFThumbnail(
             url: item.previewImageURL,
@@ -187,96 +163,24 @@ struct BrowseCard: View, Equatable {
             isBlurred: shouldBlur,
             isHovered: $isHovered
         )
-        // Gated on the pills, not just the blur: inside the `if`s every card would still
-        // build the glass container, its `HStack` and the padding around an empty stack.
         .overlay(alignment: .topLeading) {
-            if presentation == .editDesk {
-                if !shouldBlur, showsEditDeskTopRow {
-                    EditDeskTopRow(
-                        inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered,
-                        resolution: editDeskMarks.resolution, status: editDeskStatus
-                    )
-                    .padding(DesignTokens.Spacing.sm)
-                }
-            } else if !shouldBlur, showsTypePill || showsRatingPill {
-                AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let contentType, showsTypePill {
-                            typePill(contentType)
-                        }
-                        if let rating = ratingValue, showsRatingPill {
-                            ratingPill(rating)
-                        }
-                    }
-                }
-                .padding(DesignTokens.Spacing.sm)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if presentation != .editDesk, !shouldBlur, showsResolutionBadge || onBookmark != nil {
-                AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let resolutionLabel, showsResolutionBadge {
-                            ThumbnailBadge(verbatim: resolutionLabel)
-                        }
-                        if let onBookmark {
-                            ThumbnailBookmarkButton(isBookmarked: isBookmarked, action: onBookmark)
-                                .disabled(item.isBanned && !isBookmarked)
-                        }
-                    }
-                }
+            if !shouldBlur, showsEditDeskTopRow {
+                EditDeskTopRow(
+                    inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered,
+                    resolution: editDeskMarks.resolution, status: editDeskStatus
+                )
                 .padding(DesignTokens.Spacing.sm)
             }
         }
         .overlay(alignment: .bottom) {
             if !shouldBlur {
-                if presentation == .editDesk {
-                    editDeskInfoBand
-                } else {
-                    titleBand
-                }
+                editDeskInfoBand
             }
         }
         .aspectRatio(1, contentMode: .fit)
     }
 
-    private func typePill(_ type: WorkshopContentTypeFilter) -> some View {
-        ThumbnailTypeBadge(
-            systemImage: Self.typeSymbol(for: type),
-            title: type.displayName,
-            style: cardPreferences.typeStyle
-        )
-    }
-
-    private func ratingPill(_ rating: Double) -> some View {
-        ThumbnailBadge(
-            verbatim: rating.formatted(.number.precision(.fractionLength(1))),
-            systemImage: "star.fill"
-        )
-    }
-
-    private var showsResolutionBadge: Bool {
-        resolutionLabel != nil && cardPreferences.showsResolution
-    }
-
-    private static let inLibraryGreen = DesignTokens.Colors.badgeActive
-
     // MARK: - Footer
-
-    private var titleBand: some View {
-        ThumbnailTitleBand(title: item.title, isHovering: isHovered) {
-            if let status = statusInfo {
-                Image(systemName: status.symbol)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(status.tint)
-                    .accessibilityHidden(true)
-            }
-        } trailing: {
-            if isInLibrary, cardPreferences.showsInLibrary {
-                ThumbnailPresenceCheck(tint: Self.inLibraryGreen)
-            }
-        }
-    }
 
     /// SCREENS S8: the title with the rating at its end, over subscribers and size, on a gradient that fades into the picture.
     private var editDeskInfoBand: some View {
@@ -344,14 +248,6 @@ struct BrowseCard: View, Equatable {
             .lineLimit(1)
     }
 
-    private static func typeSymbol(for type: WorkshopContentTypeFilter) -> String {
-        switch type {
-        case .scene: return "cube.transparent.fill"
-        case .video: return "play.rectangle.fill"
-        case .web: return "globe"
-        }
-    }
-
     // MARK: - Context menu
 
     @ViewBuilder
@@ -386,14 +282,6 @@ struct BrowseCard: View, Equatable {
     private var ratingValue: Double? {
         guard let stars = item.rating?.starsOutOfFive, stars > 0 else { return nil }
         return stars
-    }
-
-    private var contentType: WorkshopContentTypeFilter? {
-        let lowered = Set(item.tags.map { $0.lowercased() })
-        if lowered.contains("scene") { return .scene }
-        if lowered.contains("video") { return .video }
-        if lowered.contains("web") { return .web }
-        return nil
     }
 
     private var resolutionLabel: String? {
@@ -455,33 +343,30 @@ struct BrowseCard: View, Equatable {
         return WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
 
-    private var statusInfo: (text: String, tint: Color, symbol: String)? {
+    private var statusText: String? {
         if item.isBanned {
-            return (String(localized: "Unavailable", bundle: .appLanguage, comment: "Workshop item removed or hidden on Steam."), DesignTokens.Colors.Status.danger, "xmark.octagon.fill")
+            return String(localized: "Unavailable", bundle: .appLanguage, comment: "Workshop item removed or hidden on Steam.")
         }
         switch item.visibility {
         case .friendsOnly:
-            return (String(localized: "Friends-only", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return String(localized: "Friends-only", bundle: .appLanguage, comment: "Workshop item visibility.")
         case .private:
-            return (String(localized: "Private", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return String(localized: "Private", bundle: .appLanguage, comment: "Workshop item visibility.")
         case .public, .unknown:
             return nil
         @unknown default:
-            return (String(localized: "Restricted", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return String(localized: "Restricted", bundle: .appLanguage, comment: "Workshop item visibility.")
         }
     }
 
     var accessibilityLabelText: String {
         var parts: [String] = [item.title]
-        // The Edit Desk card reads what its band and top row draw, and a blurred card draws neither.
-        let showsMeta = presentation != .editDesk || !shouldBlur
-        if let rating = ratingValue, showsMeta, presentation != .editDesk || cardPreferences.showsRating {
+        // The card reads what its band and top row draw, and a blurred card draws neither.
+        let showsMeta = !shouldBlur
+        if let rating = ratingValue, showsMeta, cardPreferences.showsRating {
             parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage, comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
         }
-        if let type = contentType, presentation != .editDesk {
-            parts.append(type.displayName)
-        }
-        if let resolutionLabel, showsMeta, presentation != .editDesk || cardPreferences.showsResolution {
+        if let resolutionLabel, showsMeta, cardPreferences.showsResolution {
             parts.append(resolutionLabel)
         }
         if let subscriberText, showsMeta {
@@ -493,7 +378,7 @@ struct BrowseCard: View, Equatable {
         if isBookmarked {
             parts.append(String(localized: "Bookmarked", bundle: .appLanguage, comment: "Workshop item is saved locally."))
         }
-        if presentation == .editDesk ? showsEditDeskInLibraryCheck : isInLibrary {
+        if showsEditDeskInLibraryCheck {
             parts.append(String(localized: "In Library", bundle: .appLanguage, comment: "Workshop card VoiceOver: item is already downloaded to the local library."))
         }
         if showsInUseBadge {
@@ -502,8 +387,8 @@ struct BrowseCard: View, Equatable {
         if showsUpdateBadge {
             parts.append(String(localized: "Update available", bundle: .appLanguage, comment: "A11y: the installed item has a newer version on Steam."))
         }
-        if let status = statusInfo {
-            parts.append(status.text)
+        if let statusText {
+            parts.append(statusText)
         }
         return parts.joined(separator: ", ")
     }

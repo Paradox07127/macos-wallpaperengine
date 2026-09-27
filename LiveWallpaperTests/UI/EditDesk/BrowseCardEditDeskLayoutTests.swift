@@ -70,7 +70,7 @@ struct BrowseCardEditDeskLayoutTests {
     ) -> BrowseCard {
         BrowseCard(
             item: item, isInLibrary: isInLibrary, hasUpdate: hasUpdate, inUseBadge: inUse,
-            cardPreferences: GalleryCardPreferences(showsResolution: showsResolution), reduceMotion: true, presentation: .editDesk
+            cardPreferences: GalleryCardPreferences(showsResolution: showsResolution), reduceMotion: true
         )
     }
 

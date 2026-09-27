@@ -35,15 +35,4 @@ struct BrowseCardEditDeskSkinTests {
         #expect(source.contains("inLibraryBadgeFill"))
         #expect(source.contains("appearance: .solid("))
     }
-
-    @Test("The legacy card keeps its own skin")
-    func legacyBranchUnchanged() throws {
-        let source = try RepositoryRoot.source(Self.path)
-        #expect(source.contains("ThumbnailTitleBand(title: item.title, isHovering: isHovered)"))
-        #expect(
-            source.contains("ThumbnailPresenceCheck(tint: Self.inLibraryGreen)"),
-            "the legacy title band's check changed appearance"
-        )
-        #expect(source.contains("private static let inLibraryGreen = DesignTokens.Colors.badgeActive"))
-    }
 }

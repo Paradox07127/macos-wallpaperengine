@@ -10,14 +10,18 @@ struct LibraryStatusBarTests {
     private static let height = 40
 
     /// How far the bar's top row stands out from a row inside its top padding (sum of |ΔR|+|ΔG|+|ΔB|,
-    /// averaged over the bar's left end, clear of the centred count).
-    private static func topRowContrast(windowPaintsCanvas: Bool, colorScheme: ColorScheme) throws -> Double {
+    /// averaged over the bar's left end, clear of the centred count). `ruled` puts a `Divider()` above the bar.
+    private static func topRowContrast(ruled: Bool, colorScheme: ColorScheme) throws -> Double {
         let content = ZStack(alignment: .top) {
             Color(nsColor: NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1))
-            LibraryStatusBar(summary: Text(verbatim: "12 items"))
+            VStack(spacing: 0) {
+                if ruled {
+                    Divider()
+                }
+                LibraryStatusBar(summary: Text(verbatim: "12 items"))
+            }
         }
         .frame(width: CGFloat(width), height: CGFloat(height))
-        .environment(\.windowPaintsCanvas, windowPaintsCanvas)
         .environment(\.colorScheme, colorScheme)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
@@ -39,11 +43,11 @@ struct LibraryStatusBarTests {
         return total / Double(columns.count)
     }
 
-    @Test("The rule above the count is drawn only outside a canvas-painting window", arguments: [ColorScheme.light, .dark])
-    func ruleFollowsTheCanvas(colorScheme: ColorScheme) throws {
-        let oldWindow = try Self.topRowContrast(windowPaintsCanvas: false, colorScheme: colorScheme)
-        #expect(oldWindow > 10, "control: the old window's status bar shows no rule above the count (\(oldWindow))")
-        let editDesk = try Self.topRowContrast(windowPaintsCanvas: true, colorScheme: colorScheme)
-        #expect(editDesk < 3, "the Edit Desk's status bar still draws a rule above the count (\(editDesk))")
+    @Test("The status bar draws no rule above the count", arguments: [ColorScheme.light, .dark])
+    func noRuleAboveTheCount(colorScheme: ColorScheme) throws {
+        let ruled = try Self.topRowContrast(ruled: true, colorScheme: colorScheme)
+        #expect(ruled > 10, "control: the measurement misses a Divider above the bar (\(ruled))")
+        let bare = try Self.topRowContrast(ruled: false, colorScheme: colorScheme)
+        #expect(bare < 3, "the status bar draws a rule above the count (\(bare))")
     }
 }

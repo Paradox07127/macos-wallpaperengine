@@ -1,8 +1,8 @@
 import Foundation
 import Testing
 
-/// Who may paint behind an Edit Desk page: the window root owns the canvas; pages go through
-/// `.pageBackground()`, and only the content columns listed here stay solid.
+/// Who may paint behind an Edit Desk page: the window root owns the canvas, pages paint none,
+/// and only the content columns listed here stay solid.
 @Suite("Edit Desk canvas ownership — source contract")
 struct EditDeskCanvasOwnershipTests {
     private static let canvasOwner = "LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift"
@@ -23,7 +23,7 @@ struct EditDeskCanvasOwnershipTests {
         "LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift",
     ]
 
-    /// Pages the Edit Desk embeds that paint through `.pageBackground()`.
+    /// Pages the Edit Desk embeds, which leave the canvas showing.
     private static let pages = [
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/DetailPageScaffold.swift",
         "LiveWallpaper/Views/Settings/Sidebar.swift",
@@ -55,11 +55,10 @@ struct EditDeskCanvasOwnershipTests {
         ], "a second view reads the setting and can paint a canvas of its own: \(readers.sorted())")
     }
 
-    @Test("The root paints one canvas under every page and tells the pages so")
+    @Test("The root paints one canvas under every page")
     func theRootPaintsTheCanvasForEveryPage() throws {
         let root = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
         #expect(root.components(separatedBy: "EditDeskBackdrop(frosted:").count == 2, "the canvas is not painted exactly once")
-        #expect(root.contains(".environment(\\.windowPaintsCanvas, true)"), "pages under the root still paint their own background")
         for colour in Self.pageColours {
             #expect(!root.contains(colour), "the root paints \(colour) under one page instead of the canvas")
         }
@@ -93,11 +92,10 @@ struct EditDeskCanvasOwnershipTests {
         #expect(callers == Self.contentColumns, "content columns drifted: \(callers.sorted())")
     }
 
-    @Test("Embedded pages paint through pageBackground, not a colour of their own")
-    func pagesGoThroughPageBackground() throws {
+    @Test("Embedded pages paint no colour of their own")
+    func pagesPaintNoColour() throws {
         for path in Self.pages {
             let source = try RepositoryRoot.source(path)
-            #expect(source.contains(".pageBackground()"), "\(path) does not paint through pageBackground()")
             for colour in Self.pageColours {
                 #expect(!source.contains(colour), "\(path) paints \(colour) directly")
             }

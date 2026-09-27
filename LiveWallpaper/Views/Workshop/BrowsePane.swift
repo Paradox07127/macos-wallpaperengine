@@ -3,14 +3,6 @@ import Combine
 import LiveWallpaperCore
 import SwiftUI
 
-/// Which shell a `BrowseCard` is drawn for.
-enum BrowsePresentation {
-    /// The old Workshop window: grid plus a resizable inspector column.
-    case legacy
-    /// SCREENS S8: grid alone, its row shared evenly from one preferred column width; items open through `onOpenItem`.
-    case editDesk
-}
-
 struct BrowsePane: View {
     @Environment(\.libraryTileSize) private var tileSize
     let viewModel: BrowseViewModel
@@ -37,7 +29,6 @@ struct BrowsePane: View {
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.windowPaintsCanvas) private var windowPaintsCanvas
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -45,7 +36,6 @@ struct BrowsePane: View {
 
     var body: some View {
         mainColumn
-            .pageBackground()
             .onAppear {
                 rateLimitRemaining = currentRateLimitRemaining
                 reloadInstalledIDs()
@@ -93,9 +83,6 @@ struct BrowsePane: View {
     private var gridColumn: some View {
         VStack(spacing: 0) {
             filterBand
-            if !windowPaintsCanvas {
-                Divider()
-            }
             keyRejectedBanner
             content
                 .overlay(alignment: .top) { rateLimitBanner }
@@ -229,7 +216,6 @@ struct BrowsePane: View {
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
-            presentation: .editDesk,
             isRevealed: matureReveal?.isRevealed(item.id) ?? false,
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
             onSelect: { onOpenItem?(item) },

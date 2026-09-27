@@ -12,7 +12,6 @@ public struct DetailPageScaffold<Content: View>: View {
     public var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .pageBackground()
             .frame(minWidth: DesignTokens.LibraryPage.minWidth, minHeight: DesignTokens.LibraryPage.minHeight)
     }
 }

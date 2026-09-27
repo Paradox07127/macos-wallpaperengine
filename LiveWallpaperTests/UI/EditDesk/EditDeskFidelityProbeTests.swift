@@ -1143,7 +1143,7 @@ struct S8aGridFidelityTests {
                 BrowseCard(
                     item: ProbeFixtures.workshopItem(), isInLibrary: true, isSelected: false,
                     cardPreferences: GalleryCardPreferences(), reduceMotion: true,
-                    canDownload: true, presentation: .editDesk, isRevealed: false
+                    canDownload: true, isRevealed: false
                 )
                 .frame(width: width)
             }
@@ -1830,6 +1830,8 @@ struct SettingsBackgroundFidelityTests {
                 }
                 .settingsFormChrome()
             }
+            // A flat canvas in the form's colour: a sidebar that paints nothing of its own matches the form.
+            .background(DesignTokens.Colors.pageBackground)
         }
         let background = image.rgb(px: Int(1025 * image.scale), Int(700 * image.scale))
         for point in [CGPoint(x: 210, y: 15), CGPoint(x: 210, y: 700), CGPoint(x: 230, y: 700)] {
