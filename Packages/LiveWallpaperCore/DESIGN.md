@@ -125,7 +125,6 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Colors.fillSelectedNavItem` | white `.16` | SCREENS S1 (selected nav item) |
 | `Colors.dropHighlight` | `rgba(74,222,128,.22)` | SCREENS S1/S5 (drop target overlay) |
 | `Colors.dropHighlightGlow` | `rgba(74,222,128,.45)` | SCREENS S5 (drop target glow) |
-| `Colors.playbackControlFill` | `rgba(0,0,0,.55)` | SCREENS S1 (hover playback controls) |
 | `Colors.gradientStageBottom` | black `.7` | SCREENS S1 (screen content bottom gradient) |
 | `Colors.gradientCardBottom` | black `.5` | SCREENS S2 (shelf card bottom gradient) |
 | `Colors.cardRimRing` / `cardRimRingIncreased` | white `.10`; Increase Contrast → `.35` (fixed) | shelf-lab v3 `.q-refined` (1px inner ring of the shelf card and the library grid tile) |

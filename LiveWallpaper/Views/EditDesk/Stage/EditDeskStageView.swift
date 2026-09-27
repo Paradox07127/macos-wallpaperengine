@@ -511,6 +511,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             tile.layer.zPosition = placement.depthOrder + lifted * 400
         }
         reportHoveredCardRect(style: style, count: count)
+        // After `resolveHover`: the display under a still pointer can change on the frame the stage comes to rest.
+        reportHoveredPlayback()
         renderFlights()
         ghost.render(reduceMotion: model.reduceMotion)
         updateCardFocusRing()
@@ -574,6 +576,28 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         var placement = cardPlacement(style: style, index: index, count: count, progress: progress.value)
         placement.lift(by: cardLayers[cards[index].id]?.lift.value ?? 0)
         model.report(hoveredCardRect: StageGeometry.hitRect(placement, style: style, hover: model.reduceMotion ? 0 : 1))
+    }
+
+    /// The chrome's buttons do not ride the stage's springs, so they are offered only over a display at rest.
+    private func reportHoveredPlayback() {
+        // A tracked swipe jumps the spring every frame, so a settled spring alone can still sit between two states.
+        guard !model.interactionBlocked, flights.isEmpty, !dragging, arrangementInset.isSettled,
+              progress.isSettled, progress.value == progress.value.rounded(),
+              let id = model.hoveredDisplay, let display = displays.first(where: { $0.id == id }), display.state != .empty,
+              let shell = displayLayers[id], !shell.isShaking, let root = layer else {
+            model.report(hoveredPlayback: nil)
+            return
+        }
+        let layout = StageGeometry.playbackLayout(
+            content: shell.content.bounds.size, showsPlaylistControls: display.showsPlaylistControls
+        )
+        let row = layout.buttons.reduce(CGRect.null) { $0.union($1) }
+            .offsetBy(dx: layout.container.minX, dy: layout.container.minY)
+        model.report(hoveredPlayback: StagePlaybackOverlay(
+            displayID: id, rect: shell.content.convert(row, to: root), intendsToPlay: display.intendsToPlay,
+            glyph: display.playbackGlyph, showsPlaylistControls: display.showsPlaylistControls,
+            canToggle: display.canTogglePlayback, canChangeEntry: display.canChangePlaylistEntry
+        ))
     }
 
     /// Builds and drops card layers as the row scrolls, so the shelf can be as long as the
@@ -1433,13 +1457,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 return
             }
             model.emit(.cardTapped(cards[index].id))
-        } else if let id = displayID(at: point), let shell = displayLayers[id] {
-            let local = shell.layer.convert(point, from: layer)
-            if let action = shell.playbackAction(at: local) {
-                model.emit(.playbackTapped(id, action))
-            } else {
-                model.emit(.displayTapped(id))
-            }
+        } else if let id = displayID(at: point) {
+            model.emit(.displayTapped(id))
         }
     }
 

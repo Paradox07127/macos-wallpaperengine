@@ -448,16 +448,16 @@ enum StageGeometry {
 
     // MARK: Playback controls (S1)
 
-    /// One capsule holding the glyph buttons. `buttons` are in the container's own coordinates, in
-    /// drawing order; the layer and its hit test both read this, so a button that is not drawn
-    /// cannot keep a hot spot.
+    /// Where the home page's transport sits in a display's content. `buttons` are in the container's own
+    /// coordinates, in order; their union is the slot the chrome's buttons centre on.
     struct PlaybackLayout: Equatable {
         var container: CGRect
         var buttons: [CGRect]
     }
 
-    static let playbackButtonSide: CGFloat = 26
-    static let playbackButtonGap: CGFloat = 2
+    /// The home page's `HStack(spacing: 12)` of default-size `GlassIconButton`s.
+    static let playbackButtonSide = DesignTokens.iconButtonDiameter(.large)
+    static let playbackButtonGap: CGFloat = 12
     static let playbackInset = CGSize(width: 4, height: 2)
     static let playbackTrailingMargin: CGFloat = 10
     static let playbackBottomMargin: CGFloat = 9

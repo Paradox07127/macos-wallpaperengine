@@ -538,8 +538,6 @@ public enum DesignTokens {
 
             public static let dropHighlight = success.opacity(0.22)
             public static let dropHighlightGlow = success.opacity(0.45)
-            /// Over a wallpaper thumbnail, so it stays a dark scrim in both appearances.
-            public static let playbackControlFill = Color.black.opacity(0.55)
             public static let gradientStageBottom = Color.black.opacity(0.7)
             public static let gradientCardBottom = Color.black.opacity(0.5)
             /// A wallpaper card's inner ring and 1pt top light / bottom shade, drawn over the artwork.

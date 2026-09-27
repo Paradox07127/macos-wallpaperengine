@@ -342,6 +342,21 @@ struct EditDeskChromeSourceTests {
         #expect(tree.contains("EditDeskShelfScrim(stage: stage)\n                .zIndex(-1)"), "the scrim has to stay under the row it backs")
     }
 
+    @Test("Home's transport is the detail page's glass buttons, right over the stage and hidden from VoiceOver")
+    func homeTransportUsesTheDetailButtons() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        let start = try #require(source.range(of: "private var hoverPlayback: some View {"), "HomePage draws no transport of its own")
+        let overlay = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
+        #expect(overlay.contains("HStack(spacing: 12) {"))
+        #expect(overlay.contains(#"GlassIconButton("backward.end.fill")"#))
+        #expect(overlay.contains("GlassIconButton(playback.glyph)"))
+        #expect(overlay.contains(#"GlassIconButton("forward.end.fill")"#))
+        // VoiceOver presses these through the display's own actions on the stage; exposed here, each would be listed twice.
+        #expect(overlay.contains(".accessibilityHidden(true)"))
+        let tree = try #require(source.range(of: "        ZStack(alignment: .top) {").map { String(source[$0.lowerBound...]) })
+        #expect(tree.contains("EditDeskStageRepresentable(model: stage)\n            hoverPlayback\n"), "the buttons have to sit right over the stage")
+    }
+
     @Test("The library grid cross-fades in on its own layer, at once under Reduce Motion")
     func libraryGridFadesOnItsOwnLayer() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")

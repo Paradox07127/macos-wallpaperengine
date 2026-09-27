@@ -3202,7 +3202,7 @@ struct EditDeskStageViewTests {
         #expect(CATransform3DIsIdentity(shell.layer.transform), "the shell must not move any more")
         #expect(abs(shell.coverGroup.transform.m11 - 1.04) < 0.001, Comment(rawValue: "\(shell.coverGroup.transform.m11)"))
         #expect(abs(shell.coverGroup.transform.m22 - 1.04) < 0.001)
-        // The zoom must not reach the text or the transport: they are content's own sublayers.
+        // The zoom must not reach the text: it is content's own sublayers.
         #expect(shell.coverGroup.sublayers?.compactMap { $0 as? CATextLayer }.isEmpty == true)
 
         shell.setHovered(false)
@@ -3248,54 +3248,46 @@ struct EditDeskStageViewTests {
         #expect(textLayers(in: tile.layer).map(\.fontSize) == [11])
     }
 
-    @Test("Previous and next take a tap only where the playlist can actually move")
-    func playbackHitTestingFollowsCapability() throws {
+    @Test("The hovered display's transport carries that display's own capabilities, and an empty display has none")
+    func hoveredPlaybackFollowsCapability() throws {
         let model = makeModel()
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
         view.layoutSubtreeIfNeeded()
-        let shell = try #require(view.displayLayers[1])
-        var display = model.displays[0]
-        display.canTogglePlayback = true
+        let root = try #require(view.layer)
+
+        func hover(_ id: StageDisplay.ID) throws -> StagePlaybackOverlay? {
+            let shell = try #require(view.displayLayers[id])
+            view.setPointerForTesting(shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root))
+            try #require(model.hoveredDisplay == id, "control: the pointer is not over the display")
+            return model.hoveredPlayback
+        }
 
         func show(_ configure: (inout StageDisplay) -> Void) {
-            configure(&display)
-            shell.update(display: display, dropHint: "", palette: palette())
-            shell.layoutContent()
-            shell.setHovered(true, reduceMotion: true)
+            configure(&model.displays[0])
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
         }
 
-        /// Centre of the `index`th button of the capsule a playlist display draws, in shell points.
-        func centre(_ index: Int, showsPlaylistControls: Bool) -> CGPoint {
-            let layout = StageGeometry.playbackLayout(
-                content: shell.content.bounds.size, showsPlaylistControls: showsPlaylistControls
-            )
-            let button = layout.buttons[index].offsetBy(
-                dx: layout.container.minX + shell.content.frame.minX,
-                dy: layout.container.minY + shell.content.frame.minY
-            )
-            return CGPoint(x: button.midX, y: button.midY)
-        }
+        show { $0.showsPlaylistControls = true; $0.canChangePlaylistEntry = true; $0.canTogglePlayback = true; $0.intendsToPlay = true }
+        var overlay = try #require(try hover(1), "a still, hovered display offers no transport")
+        #expect(overlay.displayID == 1)
+        #expect(overlay.showsPlaylistControls && overlay.canChangeEntry && overlay.canToggle && overlay.intendsToPlay)
 
-        show { $0.showsPlaylistControls = true; $0.canChangePlaylistEntry = true }
-        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == .previous)
-        #expect(shell.playbackAction(at: centre(1, showsPlaylistControls: true)) == .toggle)
-        #expect(shell.playbackAction(at: centre(2, showsPlaylistControls: true)) == .next)
-
-        // A playlist of one: the buttons stay put so the row does not reflow, but they are dead.
+        // A playlist of one: previous and next stay in the row so it does not reflow, but they are dead.
         show { $0.canChangePlaylistEntry = false }
-        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == nil)
-        #expect(shell.playbackAction(at: centre(2, showsPlaylistControls: true)) == nil)
-        #expect(shell.playbackAction(at: centre(1, showsPlaylistControls: true)) == .toggle)
+        overlay = try #require(try hover(1))
+        #expect(overlay.showsPlaylistControls && !overlay.canChangeEntry && overlay.canToggle)
 
-        // Not a playlist at all: previous and next are not drawn, so their slots answer to nobody.
-        show { $0.showsPlaylistControls = false }
-        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == nil)
-        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == .toggle)
+        show { $0.showsPlaylistControls = false; $0.intendsToPlay = false }
+        overlay = try #require(try hover(1))
+        #expect(!overlay.showsPlaylistControls && !overlay.intendsToPlay && overlay.canToggle)
 
         show { $0.canTogglePlayback = false }
-        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == nil)
+        #expect(try hover(1)?.canToggle == false)
+
+        #expect(try hover(2) == nil, "an empty display has nothing to play")
     }
 
     @Test("VoiceOver offers each transport button the display can use, and runs it as a click would", .timeLimit(.minutes(1)))
@@ -3333,8 +3325,8 @@ struct EditDeskStageViewTests {
         #expect(try actions().isEmpty)
     }
 
-    @Test("The shell's state pill, transport capsule and main button round to at most half their size")
-    func shellCapsulesRoundWithinTheirSize() throws {
+    @Test("The shell's state pill rounds to at most half its size")
+    func statePillRoundsWithinItsSize() throws {
         let model = makeModel()
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
@@ -3343,24 +3335,95 @@ struct EditDeskStageViewTests {
         let shell = try #require(view.displayLayers[1])
         var display = model.displays[0]
         display.state = .paused(reasonText: "Paused")
-        display.showsPlaylistControls = true
-        display.canTogglePlayback = true
         shell.update(display: display, dropHint: "", palette: palette())
         shell.layoutContent()
-        shell.setHovered(true, reduceMotion: true)
-        let layout = StageGeometry.playbackLayout(content: shell.content.bounds.size, showsPlaylistControls: true)
         let pill = try #require(shell.content.sublayers?.first { layer in
             layer.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == "Paused" } == true
         })
-        let transport = try #require(shell.content.sublayers?.first { sameRect($0.frame, layout.container) })
-        let mainButton = try #require(transport.sublayers?.first { sameRect($0.frame, layout.buttons[1]) })
-        for (name, layer) in [("state pill", pill), ("transport", transport), ("main button", mainButton)] {
-            try #require(!layer.isHidden && layer.bounds.height > 0, Comment(rawValue: "the \(name) is not laid out"))
-            #expect(
-                layer.cornerRadius <= min(layer.bounds.width, layer.bounds.height) / 2,
-                Comment(rawValue: "the \(name) rounds \(layer.cornerRadius) on \(layer.bounds.size)")
+        try #require(!pill.isHidden && pill.bounds.height > 0, "the state pill is not laid out")
+        #expect(
+            pill.cornerRadius <= min(pill.bounds.width, pill.bounds.height) / 2,
+            Comment(rawValue: "the state pill rounds \(pill.cornerRadius) on \(pill.bounds.size)")
+        )
+    }
+
+    @Test(
+        "A hovered display at rest reports its transport slot as the stage transform draws it; moving, flying, shaking or covered, none",
+        .timeLimit(.minutes(1))
+    )
+    func hoveredPlaybackFollowsTheStageTransform() async throws {
+        let model = makeModel()
+        model.displays[0].showsPlaylistControls = true
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let content = StageGeometry.arrangement(
+            frames: model.displays.map(\.frame), in: StageGeometry.stageRect(windowSize: view.bounds.size)
+        ).contentRects[0]
+        let layout = StageGeometry.playbackLayout(content: content.size, showsPlaylistControls: true)
+        let row = layout.buttons.reduce(CGRect.null) { $0.union($1) }
+            .offsetBy(dx: content.minX + layout.container.minX, dy: content.minY + layout.container.minY)
+
+        /// `row` as the arrangement layer draws it: scaled about the window's top centre, then lifted.
+        func drawn(at progress: Double) -> CGRect {
+            let t = StageGeometry.stageTransform(progress: progress)
+            let midX = view.bounds.midX
+            return CGRect(
+                x: midX + (row.minX - midX) * t.scale, y: row.minY * t.scale + t.translationY,
+                width: row.width * t.scale, height: row.height * t.scale
             )
         }
+
+        func close(_ a: CGRect, _ b: CGRect) -> Bool {
+            abs(a.minX - b.minX) < 0.001 && abs(a.minY - b.minY) < 0.001
+                && abs(a.width - b.width) < 0.001 && abs(a.height - b.height) < 0.001
+        }
+
+        func hover() throws {
+            view.setPointerForTesting(shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root))
+            try #require(model.hoveredDisplay == 1, "control: the pointer is not over the display")
+        }
+
+        for progress in [0.0, 1.0] {
+            model.setProgress(progress, animated: false)
+            try hover()
+            let overlay = try #require(model.hoveredPlayback, Comment(rawValue: "p=\(progress): a still, hovered display offers no transport"))
+            #expect(
+                close(overlay.rect, drawn(at: progress)),
+                Comment(rawValue: "p=\(progress): reported \(overlay.rect), drawn at \(drawn(at: progress))")
+            )
+        }
+
+        model.reduceMotion = false
+        model.setProgress(0, animated: true)
+        #expect(model.hoveredPlayback == nil, "the transport rode a display still springing to its state")
+        for _ in 0 ..< 240 {
+            view.advance(dt: 1.0 / 60)
+        }
+        try hover()
+        #expect(model.hoveredPlayback.map { close($0.rect, drawn(at: 0)) } == true, "control: the display never came to rest")
+
+        view.shake(display: 1)
+        view.advance(dt: 1.0 / 60)
+        #expect(model.hoveredPlayback == nil, "the transport stood still while its display shook")
+        for _ in 0 ..< 30 {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(model.hoveredPlayback != nil, "control: the shake never ended")
+
+        await model.flyTile(display: 1, to: CGRect(x: 100, y: 100, width: 800, height: 450))
+        #expect(model.hoveredPlayback == nil, "the transport stayed behind as the screen flew to the detail page")
+        await model.returnTile(display: 1)
+        try hover()
+        #expect(model.hoveredPlayback != nil, "control: the returned display offers no transport")
+
+        model.interactionBlocked = true
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(model.hoveredPlayback == nil, "the transport shows through a covering page")
     }
 
     @Test("The screen's own two lines stop short of the transport at either capsule width")

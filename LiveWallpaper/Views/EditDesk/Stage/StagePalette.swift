@@ -27,8 +27,6 @@ struct StagePalette {
     let failureFatal: CGColor
     let failureBlocked: CGColor
     let failureNeedsParts: CGColor
-    let playbackControlFill: CGColor
-    let playbackStroke: CGColor
     let fillEmptyScreen: CGColor
     let emptyScreenPlaceholder: CGColor
     let surfaceRaised: CGColor
@@ -79,8 +77,6 @@ struct StagePalette {
         failureFatal = resolve(WallpaperFailureClass.fatal.tint)
         failureBlocked = resolve(WallpaperFailureClass.blocked.tint)
         failureNeedsParts = resolve(WallpaperFailureClass.needsParts.tint)
-        playbackControlFill = resolve(colors.playbackControlFill)
-        playbackStroke = resolve(colors.strokeBadge, alpha: 0.2)
         fillEmptyScreen = resolve(colors.fillEmptyScreen)
         emptyScreenPlaceholder = resolve(colors.emptyScreenPlaceholder)
         surfaceRaised = resolve(DesignTokens.Colors.surfaceRaised)

@@ -323,15 +323,20 @@ struct StageGeometryTests {
 
     // MARK: Playback controls
 
-    @Test("The playback capsule holds three buttons in playlist mode and one otherwise", arguments: [true, false])
+    @Test("The playback slot holds three large glass buttons 12pt apart in playlist mode and one otherwise", arguments: [true, false])
     func playbackCapsuleSizesToItsButtons(showsPlaylistControls: Bool) {
         let size = CGSize(width: 480, height: 270)
         let layout = StageGeometry.playbackLayout(content: size, showsPlaylistControls: showsPlaylistControls)
         #expect(layout.buttons.count == (showsPlaylistControls ? 3 : 1))
         let container = CGRect(origin: .zero, size: layout.container.size)
+        // The slot the home page's `HStack(spacing: 12)` of `GlassIconButton`s is centred on.
+        let side = DesignTokens.iconButtonDiameter(.large)
         for button in layout.buttons {
-            #expect(button.width == StageGeometry.playbackButtonSide)
+            #expect(button.size == CGSize(width: side, height: side), Comment(rawValue: "\(button.size)"))
             #expect(container.contains(button))
+        }
+        for (left, right) in zip(layout.buttons, layout.buttons.dropFirst()) {
+            #expect(near(right.minX - left.maxX, 12, 0.001), Comment(rawValue: "gap \(right.minX - left.maxX)"))
         }
         #expect(near(size.width - layout.container.maxX, StageGeometry.playbackTrailingMargin, 0.001))
         #expect(near(size.height - layout.container.maxY, StageGeometry.playbackBottomMargin, 0.001))

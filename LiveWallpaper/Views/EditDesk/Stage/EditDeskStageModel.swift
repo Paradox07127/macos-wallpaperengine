@@ -217,6 +217,18 @@ enum StagePlaybackAction: Equatable, Sendable {
     case next
 }
 
+/// The transport the chrome draws over the hovered display, and what each of its buttons may do.
+struct StagePlaybackOverlay: Equatable {
+    let displayID: StageDisplay.ID
+    /// The button row's slot in stage coordinates, as the stage transform draws it; the buttons centre on it.
+    let rect: CGRect
+    let intendsToPlay: Bool
+    let glyph: String
+    let showsPlaylistControls: Bool
+    let canToggle: Bool
+    let canChangeEntry: Bool
+}
+
 /// The two entry points drawn inside an empty display; dropping onto the shell is the third.
 enum EmptyScreenAction: Equatable, Sendable {
     case chooseFile
@@ -320,6 +332,8 @@ final class EditDeskStageModel {
     /// to follow the card rather than sit at a fixed spot in the row.
     private(set) var hoveredCardRect: CGRect?
     private(set) var hoveredDisplay: StageDisplay.ID?
+    /// nil unless the hovered display holds still, uncovered and not flying: the buttons never trail a moving display.
+    private(set) var hoveredPlayback: StagePlaybackOverlay?
     private(set) var dropTarget: StageDisplay.ID?
     /// A Finder file is over the shelf band, where a drop only adds it to the library.
     private(set) var shelfDropTargeted = false
@@ -425,6 +439,12 @@ final class EditDeskStageModel {
     func report(hoveredCardRect rect: CGRect?) {
         if hoveredCardRect != rect {
             hoveredCardRect = rect
+        }
+    }
+
+    func report(hoveredPlayback overlay: StagePlaybackOverlay?) {
+        if hoveredPlayback != overlay {
+            hoveredPlayback = overlay
         }
     }
 

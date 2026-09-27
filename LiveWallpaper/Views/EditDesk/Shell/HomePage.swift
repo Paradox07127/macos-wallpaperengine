@@ -337,6 +337,8 @@ struct HomePage: View {
                 .zIndex(-1)
                 .modifier(CoveredByDetail(covered: detailCovers))
             EditDeskStageRepresentable(model: stage)
+            hoverPlayback
+                .modifier(CoveredByDetail(covered: detailCovers))
             ShelfDropHighlight(stage: stage)
                 .modifier(CoveredByDetail(covered: detailCovers))
             HomeHints(stage: stage)
@@ -847,6 +849,37 @@ struct HomePage: View {
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
+    }
+
+    /// The detail page's transport over the display under the pointer, at the slot the stage reports.
+    private var hoverPlayback: some View {
+        ZStack {
+            if let playback = stage.hoveredPlayback {
+                HStack(spacing: 12) {
+                    if playback.showsPlaylistControls {
+                        GlassIconButton("backward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .previous)) }
+                            .disabled(!playback.canChangeEntry)
+                            .help(Text("Previous Wallpaper"))
+                    }
+                    GlassIconButton(playback.glyph) { stage.emit(.playbackTapped(playback.displayID, .toggle)) }
+                    .disabled(!playback.canToggle)
+                    .help(Text(playback.intendsToPlay ? "Pause" : "Play"))
+                    if playback.showsPlaylistControls {
+                        GlassIconButton("forward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .next)) }
+                            .disabled(!playback.canChangeEntry)
+                            .help(Text("Next Wallpaper"))
+                    }
+                }
+                .position(x: playback.rect.midX, y: playback.rect.midY)
+                // One view per display: moving straight onto another fades rather than slides across the gap.
+                .id(playback.displayID)
+                .transition(.opacity)
+            }
+        }
+        .allowsHitTesting(!interactionLock)
+        // VoiceOver presses these through the display's own actions on the stage.
+        .accessibilityHidden(true)
+        .animation(.easeOut(duration: 0.2), value: stage.hoveredPlayback?.displayID)
     }
 
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {

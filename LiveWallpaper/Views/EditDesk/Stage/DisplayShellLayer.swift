@@ -7,7 +7,7 @@ final class DisplayShellLayer {
     let layer = CALayer()
     let content = CALayer()
     /// Holds the cover and whatever `crossfade` puts on top of it, and nothing else: the hover
-    /// zoom is written here, so the two images stay framed alike while text and controls hold still.
+    /// zoom is written here, so the two images stay framed alike while the text holds still.
     let coverGroup = CALayer()
     let cover = CALayer()
     private let shell = CAShapeLayer()
@@ -26,8 +26,6 @@ final class DisplayShellLayer {
     private let stateLabel = CATextLayer()
     private var stateWidth: CGFloat = 0
     private let stateSymbol = CALayer()
-    private let playback = CALayer()
-    private let buttons = [CALayer(), CALayer(), CALayer()]
     private let highlight = CALayer()
     private let hint = CATextLayer()
     private let empty = CALayer()
@@ -40,9 +38,7 @@ final class DisplayShellLayer {
     private var layoutRect: CGRect?
     private var layoutBuiltin: Bool?
     private var coverFade: (layer: CALayer, elapsed: TimeInterval, duration: TimeInterval)?
-    private var playbackElapsed: TimeInterval = 0
-    private var playbackFrom: Float = 0
-    private var playbackTarget: Float = 0
+    private var hoverTarget: CGFloat = 0
     private var hoverMix: CGFloat = 0
     private var hoverFrom: CGFloat = 0
     private var hoverElapsed: TimeInterval = 0
@@ -56,8 +52,7 @@ final class DisplayShellLayer {
     }
 
     var hasAnimation: Bool {
-        coverFade != nil || playback.opacity != playbackTarget || highlight.opacity != dropTarget
-            || abs(hoverMix - CGFloat(playbackTarget)) > 0.001 || shakeElapsed != nil
+        coverFade != nil || highlight.opacity != dropTarget || abs(hoverMix - hoverTarget) > 0.001 || shakeElapsed != nil
     }
 
     init() {
@@ -67,7 +62,7 @@ final class DisplayShellLayer {
         content.masksToBounds = true
         content.cornerRadius = DesignTokens.EditDesk.Corner.content
         content.cornerCurve = .continuous
-        for child in [coverGroup, gradient, title, meta, playback, veil, stateGroup, empty] {
+        for child in [coverGroup, gradient, title, meta, veil, stateGroup, empty] {
             content.addSublayer(child)
         }
         coverGroup.addSublayer(cover)
@@ -79,12 +74,6 @@ final class DisplayShellLayer {
         cover.masksToBounds = true
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        for button in buttons {
-            playback.addSublayer(button)
-            button.contentsGravity = .center
-        }
-        playback.borderWidth = 1
-        playback.opacity = 0
         highlight.opacity = 0
         highlight.borderWidth = 2
         highlight.addSublayer(hint)
@@ -146,18 +135,6 @@ final class DisplayShellLayer {
         highlight.shadowOpacity = 1
         hint.string = dropHint
         hint.foregroundColor = StageLayerStyle.white
-        playback.backgroundColor = palette.playbackControlFill
-        playback.borderColor = palette.playbackStroke
-        for (index, glyph) in ["backward.fill", display.playbackGlyph, "forward.fill"].enumerated() {
-            let button = buttons[index]
-            button.backgroundColor = index == 1 ? StageLayerStyle.white : nil
-            button.contents = StageLayerStyle.symbol(glyph, tint: index == 1 ? StageLayerStyle.black : StageLayerStyle.white)
-            button.isHidden = true
-        }
-        for item in transport {
-            item.layer.isHidden = false
-            item.layer.opacity = item.enabled ? 1 : Float(DesignTokens.Opacity.dimmedContent)
-        }
         empty.backgroundColor = palette.fillEmptyScreen
         emptySymbol.contents = StageLayerStyle.symbol(
             "photo", tint: palette.emptyScreenPlaceholder,
@@ -168,7 +145,6 @@ final class DisplayShellLayer {
         stateGroup.isHidden = true
         stateLabel.isHidden = true
         stateSymbol.isHidden = true
-        playback.isHidden = display.state == .empty
         cover.isHidden = display.state == .empty
         gradient.isHidden = display.state == .empty
         title.isHidden = display.state == .empty
@@ -276,13 +252,6 @@ final class DisplayShellLayer {
         let lineWidth = max(0, controls.container.minX - 18)
         title.frame = CGRect(x: 10, y: size.height - 49, width: lineWidth, height: 22)
         meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
-        playback.frame = controls.container
-        // Half the height and no more: Core Animation does not clamp a larger radius and draws a lens or nothing.
-        playback.cornerRadius = playback.bounds.height / 2
-        for (index, item) in transport.enumerated() {
-            item.layer.frame = controls.buttons[index]
-        }
-        buttons[1].cornerRadius = buttons[1].bounds.height / 2
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
         let trailing = switch display?.state {
@@ -314,19 +283,13 @@ final class DisplayShellLayer {
     }
 
     func setHovered(_ hovered: Bool, reduceMotion: Bool = false) {
-        let target: Float = hovered ? 1 : 0
-        guard target != playbackTarget || (reduceMotion && (playback.opacity != target || hoverMix != CGFloat(target))) else { return }
-        playbackFrom = playback.opacity
-        playbackTarget = target
-        playbackElapsed = hovered ? 0 : -0.3
+        let target: CGFloat = hovered ? 1 : 0
+        guard target != hoverTarget || (reduceMotion && hoverMix != target) else { return }
+        hoverTarget = target
         hoverFrom = hoverMix
         hoverElapsed = 0
         if reduceMotion {
-            playback.opacity = target
-            StageLayerStyle.fadeOpacity(playback, resumingFrom: playbackFrom)
-            playbackFrom = target
-            playbackElapsed = 0.2
-            hoverMix = CGFloat(target)
+            hoverMix = target
             hoverFrom = hoverMix
             hoverElapsed = 0.22
             coverGroup.transform = CATransform3DIdentity
@@ -359,30 +322,22 @@ final class DisplayShellLayer {
         shakeElapsed = 0
     }
 
+    var isShaking: Bool {
+        shakeElapsed != nil
+    }
+
     private func stopShake() {
         shakeElapsed = nil
         layer.sublayerTransform = CATransform3DIdentity
     }
 
-    /// The transport as drawn: one entry per visible button, in drawing order. Layout, the hit test,
-    /// the dimmed state and VoiceOver's actions all read this, so a button that is not drawn keeps no
-    /// hot spot and a button the orchestrator would refuse cannot be pressed.
-    private var transport: [(layer: CALayer, action: StagePlaybackAction, enabled: Bool)] {
-        let toggle = (buttons[1], StagePlaybackAction.toggle, display?.canTogglePlayback == true)
-        guard display?.showsPlaylistControls == true else { return [toggle] }
-        let canChange = display?.canChangePlaylistEntry == true
-        return [(buttons[0], .previous, canChange), toggle, (buttons[2], .next, canChange)]
-    }
-
-    /// The buttons VoiceOver may press, in drawing order; the hover fade that gates a click does not gate these.
+    /// The transport buttons VoiceOver may press, in the home page's order: the enabled ones, whether or not the pointer shows them.
     var accessiblePlaybackActions: [StagePlaybackAction] {
-        playback.isHidden ? [] : transport.filter(\.enabled).map(\.action)
-    }
-
-    func playbackAction(at point: CGPoint) -> StagePlaybackAction? {
-        guard !playback.isHidden, playback.opacity > 0 else { return nil }
-        let local = CGPoint(x: point.x - content.frame.minX - playback.frame.minX, y: point.y - content.frame.minY - playback.frame.minY)
-        return transport.first { $0.enabled && $0.layer.frame.contains(local) }?.action
+        guard let display, display.state != .empty else { return [] }
+        let transport: [(action: StagePlaybackAction, enabled: Bool)] = display.showsPlaylistControls
+            ? [(.previous, display.canChangePlaylistEntry), (.toggle, display.canTogglePlayback), (.next, display.canChangePlaylistEntry)]
+            : [(.toggle, display.canTogglePlayback)]
+        return transport.filter(\.enabled).map(\.action)
     }
 
     func crossfade(to image: CGImage, duration: TimeInterval, reduceMotion: Bool = false) {
@@ -412,7 +367,7 @@ final class DisplayShellLayer {
 
     func step(dt: TimeInterval, reduceMotion: Bool) {
         if reduceMotion {
-            setHovered(playbackTarget > 0, reduceMotion: true)
+            setHovered(hoverTarget > 0, reduceMotion: true)
             setDropTarget(dropTarget > 0, reduceMotion: true)
             if let fade = coverFade {
                 cover.contents = fade.layer.contents
@@ -435,14 +390,9 @@ final class DisplayShellLayer {
                 layer.sublayerTransform = CATransform3DMakeTranslation(6 * sin((elapsed + dt) / 0.3 * 6 * .pi), 0, 0)
             }
         }
-        playbackElapsed += dt
-        let playbackDuration = reduceMotion ? 0.15 : 0.2
-        let playbackMix = Float(min(1, max(0, playbackElapsed / playbackDuration)))
-        // `hasAnimation` compares for equality, so the last step lands on the target exactly.
-        playback.opacity = playbackMix >= 1 ? playbackTarget : playbackFrom + (playbackTarget - playbackFrom) * playbackMix
         hoverElapsed += dt
         let hoverStep = CGFloat(min(1, max(0, hoverElapsed / (reduceMotion ? 0.15 : 0.22))))
-        hoverMix = hoverStep >= 1 ? CGFloat(playbackTarget) : hoverFrom + (CGFloat(playbackTarget) - hoverFrom) * hoverStep
+        hoverMix = hoverStep >= 1 ? hoverTarget : hoverFrom + (hoverTarget - hoverFrom) * hoverStep
         // Clamped: a mix below 0 would shrink the cover and uncover the content layer's corners.
         let zoom = 1 + 0.04 * min(max(hoverMix, 0), 1)
         coverGroup.transform = CATransform3DMakeScale(zoom, zoom, 1)
