@@ -417,10 +417,10 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
                     anchor: .generalWallpaper,
-                    rows: ["Capture video frame when locking", "Show wallpaper in screen captures"],
+                    rows: ["Capture video frame when locking", "Show wallpaper in screen captures", "Wallpaper transition"],
                     keywords: [
                         "lock", "lock screen", "capture", "screenshot", "screen capture",
-                        "recording", "sharing", "desktop picture",
+                        "recording", "sharing", "desktop picture", "transition", "animation", "crossfade",
                     ]
                 ),
             ]

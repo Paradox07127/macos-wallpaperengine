@@ -131,6 +131,9 @@ SUITES=(
   LibraryMetadataSidecarTests
   ScreenPresentationTests
   EditDeskPreferencesTests
+  # Wallpaper transition setting: default, persistence and search. The shader and
+  # controller suites need Metal and windows, so they stay out of this shard.
+  WallpaperTransitionSettingTests
   SavedLibraryModelTests
   StageSpringTests
   # Edit Desk M4/M5 (2026-09-20): overlay canvas session/geometry, modal chrome,
