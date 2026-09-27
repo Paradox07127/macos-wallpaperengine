@@ -118,13 +118,26 @@ struct OverlayLayerListTests {
         #expect(drawer.contains(".onChange(of: interaction.placements)"))
     }
 
-    @Test("The add strip lays its fourteen tiles out as seven columns by two rows")
+    @Test("The add strip lays its tiles out seven to a row whatever their count, and grows a row at a time")
     func drawerLayout() {
-        #expect(AddOverlayDrawer.columns(for: OverlayLayerList.addItems.count) == 7)
-        #expect(abs(AddOverlayDrawer.tileWidth(containerWidth: 1040, count: 14) - 968.0 / 7) < 0.001)
-        #expect(abs(AddOverlayDrawer.tileWidth(containerWidth: 1280, count: 14) - 1208.0 / 7) < 0.001)
-        #expect(AddOverlayDrawer.expandedHeight == 150)
+        for count in [7, 13, 14, 15, 21] {
+            #expect(AddOverlayDrawer.columns(for: count) == 7, "\(count) tiles")
+            #expect(abs(AddOverlayDrawer.tileWidth(containerWidth: 1040, count: count) - 968.0 / 7) < 0.001, "\(count) tiles")
+            #expect(abs(AddOverlayDrawer.tileWidth(containerWidth: 1280, count: count) - 1208.0 / 7) < 0.001, "\(count) tiles")
+        }
         #expect(AddOverlayDrawer.collapsedHeight == 38)
+        #expect(AddOverlayDrawer.expandedHeight(itemCount: 7) == 96)
+        #expect(AddOverlayDrawer.expandedHeight(itemCount: 13) == 150)
+        #expect(AddOverlayDrawer.expandedHeight(itemCount: 14) == 150)
+        #expect(AddOverlayDrawer.expandedHeight(itemCount: 15) == 204)
+        #expect(AddOverlayDrawer.expandedHeight == AddOverlayDrawer.expandedHeight(itemCount: OverlayLayerList.addItems.count))
+    }
+
+    @Test("The add strip is titled Add Widget, never Add Overlay")
+    func drawerTitle() throws {
+        let drawer = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/AddOverlayDrawer.swift")
+        #expect(drawer.contains("Text(\"Add Widget\")"))
+        #expect(!drawer.contains("\"Add Overlay\""))
     }
 
     @Test("The add strip has no category filter and fills its grid in board order")

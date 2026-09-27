@@ -808,32 +808,73 @@ struct S7OverlayFidelityTests {
         expectClose(OverlayGeometry.decorationLineWidth(forRenderScale: 2) * 2, 1, "S7.grid.lineWidth", tolerance: 0.001)
     }
 
-    /// Seven equal tiles a row, both rows, and nothing under them but the 12pt inset.
-    @Test("Add strip lays fourteen tiles out as 7×2 at 1040 and 1280")
+    /// Seven equal tiles a row, a short last row centred, the title row centred, and nothing under the tiles but the 12pt inset.
+    @Test("Add strip lays 13 and 14 tiles out seven to a row, centred, at 1040 and 1280")
     func addStripGrid() async {
-        for width in [CGFloat(1040), 1280] {
-            let fixture = S7OverlayFixture()
-            let height = AddOverlayDrawer.expandedHeight
-            let image = await ProbeRenderer.render("S7-add-strip-\(Int(width))", size: CGSize(width: width, height: height)) {
-                ZStack(alignment: .top) {
-                    DesignTokens.EditDesk.Colors.background
-                    AddOverlayDrawer(session: fixture.session, isExpanded: .constant(true), height: height) { _ in }
+        for count in [13, 14] {
+            for width in [CGFloat(1040), 1280] {
+                let items = Array(OverlayLayerList.addItems.prefix(count))
+                let fixture = S7OverlayFixture()
+                let height = AddOverlayDrawer.expandedHeight(itemCount: items.count)
+                let tag = "\(items.count).\(Int(width))"
+                let image = await ProbeRenderer.render(
+                    "S7-add-strip-\(items.count)-\(Int(width))", size: CGSize(width: width, height: height)
+                ) {
+                    ZStack(alignment: .top) {
+                        DesignTokens.EditDesk.Colors.background
+                        AddOverlayDrawer(session: fixture.session, isExpanded: .constant(true), height: height, items: items) { _ in }
+                    }
                 }
-            }
-            fixture.close()
-            let base = image.rgb(px: 2, image.height - 2)
-            let pitch = AddOverlayDrawer.tileWidth(containerWidth: width, count: OverlayLayerList.addItems.count) + 8
-            for (row, top) in [(0, CGFloat(38)), (1, 38 + 46 + 8)] {
-                let edges = image.runs(inRow: top + 3) { S7OverlayFixture.differs($0, from: base, by: 10) }
-                let lefts = stride(from: 0, to: edges.count, by: 2).map { edges[$0].x }
-                ProbeRenderer.report("S7.addStrip.\(Int(width)).row\(row).lefts", lefts)
-                #expect(lefts.count == 7, "row \(row) at \(Int(width)) drew \(lefts.count) tiles")
-                if lefts.count == 7 {
-                    expectClose((lefts[6] - lefts[0]) / 6, pitch, "S7.addStrip.\(Int(width)).row\(row).pitch", tolerance: 1)
+                fixture.close()
+                let base = image.rgb(px: 2, image.height - 2)
+                let title = image.boundingBox(in: CGRect(x: 0, y: 4, width: width, height: 30)) {
+                    S7OverlayFixture.differs($0, from: base, by: 10)
                 }
+                ProbeRenderer.report("S7.addStrip.\(tag).title", title ?? .null)
+                if let title {
+                    expectClose(title.minX, width - title.maxX, "S7.addStrip.\(tag).titleCentred", tolerance: 2)
+                }
+                let pitch = AddOverlayDrawer.tileWidth(containerWidth: width, count: items.count) + 8
+                for row in 0 ..< (items.count + 6) / 7 {
+                    let expected = min(7, items.count - row * 7)
+                    let top = AddOverlayDrawer.collapsedHeight + CGFloat(row) * (AddOverlayDrawer.tileHeight + 8)
+                    let edges = image.runs(inRow: top + 3) { S7OverlayFixture.differs($0, from: base, by: 10) }
+                    let lefts = stride(from: 0, to: edges.count, by: 2).map { edges[$0].x }
+                    ProbeRenderer.report("S7.addStrip.\(tag).row\(row).lefts", lefts)
+                    #expect(lefts.count == expected, "row \(row) of \(tag) drew \(lefts.count) tiles, not \(expected)")
+                    if lefts.count == expected, expected > 1 {
+                        expectClose((lefts[expected - 1] - lefts[0]) / CGFloat(expected - 1), pitch,
+                                    "S7.addStrip.\(tag).row\(row).pitch", tolerance: 1)
+                    }
+                    if let first = edges.first, let last = edges.last {
+                        expectClose(first.x, width - last.maxX, "S7.addStrip.\(tag).row\(row).centred", tolerance: 1)
+                    }
+                }
+                let bottom = S7OverlayFixture.lastInkRow(image, width: width, base: base)
+                expectClose(bottom, height - 12, "S7.addStrip.\(tag).contentBottom", tolerance: 1)
             }
-            let bottom = S7OverlayFixture.lastInkRow(image, width: width, base: base)
-            expectClose(bottom, height - 12, "S7.addStrip.\(Int(width)).contentBottom", tolerance: 1)
+        }
+    }
+
+    @Test("Collapsed add strip is one capsule centred in the strip at 1040")
+    func addStripCollapsed() async {
+        let width: CGFloat = 1040
+        let fixture = S7OverlayFixture()
+        let height = AddOverlayDrawer.collapsedHeight
+        let image = await ProbeRenderer.render("S7-add-strip-collapsed-\(Int(width))", size: CGSize(width: width, height: height)) {
+            ZStack(alignment: .top) {
+                DesignTokens.EditDesk.Colors.background
+                AddOverlayDrawer(session: fixture.session, isExpanded: .constant(false), height: height) { _ in }
+            }
+        }
+        fixture.close()
+        let base = image.rgb(px: 2, image.height - 2)
+        let capsule = image.extent(inRow: height / 2) { S7OverlayFixture.differs($0, from: base, by: 10) }
+        ProbeRenderer.report("S7.addStrip.collapsed.capsule", capsule.map { "\($0.x) +\($0.width)" } ?? "none")
+        #expect(capsule != nil, "the collapsed strip drew nothing")
+        if let capsule {
+            expectClose(capsule.x, width - (capsule.x + capsule.width), "S7.addStrip.collapsed.centred", tolerance: 1)
+            #expect(capsule.width < width / 4, "the collapsed button spans \(capsule.width)pt, not a capsule")
         }
     }
 

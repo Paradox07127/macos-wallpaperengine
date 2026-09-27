@@ -8,18 +8,20 @@ enum OverlayAddDragPhase: Equatable {
     case ended(CGPoint)
 }
 
-/// Bottom strip of the overlay workspace. Collapsed it is one row; expanded it lays every object this
-/// display can carry out in two rows. A click adds at the board's first free slot, a drag where it is released.
+/// Bottom strip of the overlay workspace. Collapsed it is one centred capsule; expanded it lays every object this
+/// display can carry out seven to a row. A click adds at the board's first free slot, a drag where it is released.
 struct AddOverlayDrawer: View {
     let session: OverlayEditorSession
     @Binding var isExpanded: Bool
     let height: CGFloat
+    let items: [OverlayAddItem]
     let onDrag: (OverlayAddDragPhase) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var interaction: InteractionModel
     @State private var boardFull = false
     @State private var draggedItem: OverlayAddItem?
+    @State private var headerHovered = false
 
     static let tileHeight: CGFloat = 46
     private static let gap = DesignTokens.EditDesk.Spacing.s8
@@ -27,12 +29,28 @@ struct AddOverlayDrawer: View {
     /// Above the header row and between it and the tiles.
     private static let rim = DesignTokens.Spacing.xs
     static let collapsedHeight = rim + OverlayWorkspaceLayout.drawerCollapsedHeight + rim
-    static let expandedHeight = collapsedHeight + 2 * tileHeight + gap + side
     /// The modal preview's threshold, so a click that wobbles a little stays a click.
     private static let dragThreshold: CGFloat = 6
 
+    static func expandedHeight(itemCount: Int) -> CGFloat {
+        collapsedHeight + gridHeight(rows: rows(for: itemCount)) + side
+    }
+
+    static var expandedHeight: CGFloat {
+        expandedHeight(itemCount: OverlayLayerList.addItems.count)
+    }
+
     static func columns(for count: Int) -> Int {
-        max(1, (count + 1) / 2)
+        max(1, min(7, count))
+    }
+
+    private static func rows(for count: Int) -> Int {
+        let columns = columns(for: count)
+        return (count + columns - 1) / columns
+    }
+
+    private static func gridHeight(rows: Int) -> CGFloat {
+        CGFloat(rows) * tileHeight + CGFloat(rows - 1) * gap
     }
 
     /// `containerWidth` is the whole strip, side insets included.
@@ -42,16 +60,18 @@ struct AddOverlayDrawer: View {
     }
 
     init(session: OverlayEditorSession, isExpanded: Binding<Bool>, height: CGFloat,
+         items: [OverlayAddItem] = OverlayLayerList.addItems,
          onDrag: @escaping (OverlayAddDragPhase) -> Void) {
         self.session = session
         _isExpanded = isExpanded
         self.height = height
+        self.items = items
         self.onDrag = onDrag
         interaction = session.interaction
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.rim) {
+        VStack(spacing: Self.rim) {
             header
             if isExpanded {
                 grid
@@ -72,15 +92,31 @@ struct AddOverlayDrawer: View {
                     isExpanded.toggle()
                 }
             } label: {
-                Text(verbatim: "\(isExpanded ? "−" : "+") \(String(localized: "Add Overlay", bundle: .appLanguage))")
-                    .font(DesignTokens.EditDesk.Typography.body)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                    .lineLimit(1)
-                    .frame(height: OverlayWorkspaceLayout.drawerCollapsedHeight)
-                    .contentShape(Rectangle())
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    if !isExpanded {
+                        Image(systemName: "plus")
+                    }
+                    Text("Add Widget")
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? 0 : 180))
+                }
+                .font(DesignTokens.EditDesk.Typography.body)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, isExpanded ? 0 : Self.side)
+                .frame(height: OverlayWorkspaceLayout.drawerCollapsedHeight)
+                .background {
+                    if !isExpanded {
+                        Capsule()
+                            .fill(headerHovered ? DesignTokens.EditDesk.Colors.fillSelectedChip : DesignTokens.EditDesk.Colors.fillNavPill)
+                            .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1))
+                    }
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Add Overlay"))
+            .onHover { headerHovered = $0 }
+            .accessibilityLabel(Text("Add Widget"))
             if let warning {
                 Text(warning)
                     .font(DesignTokens.EditDesk.Typography.footnote)
@@ -92,8 +128,8 @@ struct AddOverlayDrawer: View {
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
                     .lineLimit(1)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var warning: LocalizedStringKey? {
@@ -107,15 +143,22 @@ struct AddOverlayDrawer: View {
     }
 
     private var grid: some View {
-        let items = OverlayLayerList.addItems
-        return LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: Self.gap), count: Self.columns(for: items.count)),
-            spacing: Self.gap
-        ) {
-            ForEach(items) { item in
-                tile(item)
+        let columns = Self.columns(for: items.count)
+        let rows = stride(from: 0, to: items.count, by: columns).map { items[$0 ..< min($0 + columns, items.count)] }
+        return GeometryReader { proxy in
+            let width = Self.tileWidth(containerWidth: proxy.size.width + 2 * Self.side, count: items.count)
+            VStack(spacing: Self.gap) {
+                ForEach(rows, id: \.startIndex) { row in
+                    HStack(spacing: Self.gap) {
+                        ForEach(row) { item in
+                            tile(item).frame(width: width)
+                        }
+                    }
+                }
             }
+            .frame(maxWidth: .infinity)
         }
+        .frame(height: Self.gridHeight(rows: rows.count))
     }
 
     private func tile(_ item: OverlayAddItem) -> some View {
