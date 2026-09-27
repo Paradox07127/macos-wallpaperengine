@@ -354,6 +354,43 @@ struct EditDeskUndoStackTests {
         #expect(manager.monitorOverlay(for: manager.left).board.widgets == pending.widgets)
     }
 
+    @Test("Undoing a scheme applied to a display with no wallpaper clears it and puts its overlay back", .timeLimit(.minutes(1)))
+    func schemeOnAnEmptyDisplayUndoesItsOverlay() async throws {
+        let stack = stack()
+        manager.clearWallpaperForScreen(manager.left)
+        var clockOnly = MonitorOverlayConfiguration.default
+        clockOnly.clock.enabled = true
+        manager.setMonitorOverlay(clockOnly, for: manager.left)
+        let recording = stack.begin(.applyWallpaper, displays: [manager.left], includesOverlay: true)
+        // What applying a scheme with a widget commits.
+        var withWidget = clockOnly
+        withWidget.board = MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.1, y: 0.1)])
+        manager.restoreRecordedConfiguration(
+            ScreenConfiguration(screenID: manager.left.id, wallpaper: Self.page("Scheme")), overlay: nil, on: manager.left
+        )
+        manager.setMonitorOverlay(withWidget, for: manager.left)
+        recording.settle(manager.left.id, applied: true)
+
+        let undone = try #require(await stack.undo())
+        #expect(undone.restored == [manager.left.name])
+        #expect(manager.configuration(on: manager.left) == nil)
+        #expect(manager.monitorOverlay(for: manager.left) == clockOnly, "the scheme's widget stayed after undo")
+    }
+
+    @Test("A restore of the content already shown counts only once the restore itself is committed", .timeLimit(.minutes(1)))
+    func sameContentRestoreWaitsForItsCommit() async throws {
+        let stack = stack(timeout: .milliseconds(300))
+        // A scheme that kept the page and changed only a setting.
+        let recording = stack.begin(.applyWallpaper, displays: [manager.left], includesOverlay: true)
+        manager.updateParticleEffect(.snow, for: manager.left)
+        recording.settle(manager.left.id, applied: true)
+        manager.confirmsRestores = false
+
+        let unconfirmed = try #require(await stack.undo())
+        #expect(unconfirmed.failed == [manager.left.name], "read as restored before the restore was committed")
+        #expect(unconfirmed.restored.isEmpty)
+    }
+
     @Test("Undoing a scene change lands the owner's pending edit, then commits the earlier descriptor; another scene there is skipped", .timeLimit(.minutes(1)))
     func sceneChangeUndoesAfterTheFlush() async throws {
         let stack = stack()
@@ -425,6 +462,7 @@ final class UndoTestManager: UndoRestoring {
     private var marks: [String: AutomaticSwitchMark] = [:]
     private var overlays: [String: MonitorOverlayConfiguration] = [:]
     private var held: [Restore] = []
+    private var revisions: [CGDirectDisplayID: UInt64] = [:]
     private(set) var restores: [Restore] = []
     var cleared: [CGDirectDisplayID] = []
     /// When false a restore waits in `held` until `commitHeldRestores()`.
@@ -486,6 +524,7 @@ final class UndoTestManager: UndoRestoring {
 
     private func commit(_ restore: Restore) {
         configurations[restore.screenID] = restore.configuration
+        revisions[restore.screenID, default: 0] += 1
         NotificationCenter.default.post(name: .wallpaperConfigurationDidChange, object: nil, userInfo: ["screenID": restore.screenID])
     }
 
@@ -556,6 +595,10 @@ final class UndoTestManager: UndoRestoring {
 
     func isCurrentPreparation(generation _: Int?, attemptID _: UUID?, on _: Screen) -> Bool {
         false
+    }
+
+    func configurationRevision(for screen: Screen) -> UInt64 {
+        revisions[screen.id] ?? 0
     }
 
     #if !LITE_BUILD

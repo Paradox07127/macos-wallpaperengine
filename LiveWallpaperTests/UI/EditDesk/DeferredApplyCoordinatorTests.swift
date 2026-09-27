@@ -448,6 +448,10 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         false
     }
 
+    func configurationRevision(for _: Screen) -> UInt64 {
+        0
+    }
+
     func setSceneWallpaper(descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen) {
         Issue.record("Unexpected scene route")
     }

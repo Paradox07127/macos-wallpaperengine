@@ -44,6 +44,25 @@ struct ApplyRouterTests {
         #expect(manager.calls == [.scheme(scheme)])
     }
 
+    @Test("A scheme repeating the content on screen reads as applied only once the scheme itself is committed", .timeLimit(.minutes(1)))
+    func schemeWithShownContentWaitsForItsCommit() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        var configuration = manager.configuration
+        configuration.playbackSpeed = 2
+        let scheme = ScreenScheme(name: "Faster", configuration: configuration, overlay: .default)
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true)
+        var report: ApplyReport?
+        let task = Task { report = await router.apply(.scheme(scheme), to: manager.screen) }
+        await waitUntil { manager.calls == [.scheme(scheme)] }
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(report == nil, "read as applied before the scheme was committed")
+        manager.commit(configuration.activeWallpaper)
+        await task.value
+        #expect(report?.outcome == .applied)
+    }
+
     @Test func spanExitsBeforeApplying() async {
         manager.configuration.videoDisplayMode = .spanAllDisplays
         let source = HTMLSource.inline("<p>Per display</p>")
@@ -528,6 +547,7 @@ private class RecordingWallpaperApplying: WallpaperApplying {
     var lookupCount = 0
     /// Bumped by every call on a display, the way a real selection bumps its transition.
     private var generations: [CGDirectDisplayID: Int] = [:]
+    private var revisions: [CGDirectDisplayID: UInt64] = [:]
 
     var screens: [Screen] {
         screenAvailable ? [screen, secondScreen] : []
@@ -622,7 +642,12 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         let target = target ?? screen
         configurations[target.id]?.activeWallpaper = content
         configurations[target.id]?.wpeOrigin = origin
+        revisions[target.id, default: 0] += 1
         notify(screenID: target.id)
+    }
+
+    func configurationRevision(for screen: Screen) -> UInt64 {
+        revisions[screen.id] ?? 0
     }
 
     func notify(screenID: CGDirectDisplayID) {

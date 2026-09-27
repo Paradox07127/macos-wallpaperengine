@@ -117,6 +117,53 @@ struct SceneSettingsOwnerTests {
         #expect(current.editor.overrides == before.propertyOverrides)
     }
 
+    @Test("A preset change after a display refresh lands on the display, which now has a new Screen object", .timeLimit(.minutes(1)))
+    func presetChangeLandsAfterDisplayRefresh() async throws {
+        let harness = try Harness(displayID: 0xED33_0006)
+        defer { harness.close() }
+        let owner = try harness.appliedOwner { _, _, _, _ in }
+        harness.registry.screens = [Screen(nsScreen: SceneSettingsTestScreen(displayID: 0xED33_0006))]
+        harness.manager.refreshScreens()
+        // Compared as a plain Bool: a failure that describes a `Screen` crashes the test host.
+        let replaced = harness.manager.screens.first.map { $0 !== harness.screen } ?? false
+        #expect(replaced, "fixture: the refresh must replace the Screen object")
+        owner.applyPreset(nil)
+        await Self.waitUntil { harness.applied?.sceneDescriptor?.propertyOverrides.isEmpty == true }
+    }
+
+    @Test("A preset change whose session rebuild commits later is reported only once it is committed", .timeLimit(.minutes(1)))
+    func presetChangeReportsAfterDeferredCommit() async throws {
+        let harness = try Harness(displayID: 0xED33_0007)
+        defer { harness.close() }
+        // No cache path: the rebuild is refused and the store keeps the old scene until the commit below.
+        let before = SceneDescriptor(
+            workshopID: "probe", cacheRelativePath: "", entryFile: "scene.json", capabilityTier: .imageOnly
+        ).withPropertyOverrides(["gain": .number(0.5)])
+        var configuration = ScreenConfiguration(screenID: harness.screen.id, wallpaper: .scene(before))
+        configuration.displayFingerprint = harness.screen.displayFingerprint
+        harness.manager.configurationStore.save(configuration)
+        var reports: [(before: SceneDescriptor, after: SceneDescriptor)] = []
+        let owner = try SceneSettingsOwner(
+            screen: harness.screen, screenManager: harness.manager, descriptor: before, schema: Self.schema(),
+            onUndoableChange: { _, before, after, _ in reports.append((before, after)) }
+        )
+        owner.applyPreset(nil)
+        await Self.waitUntil { owner.descriptor.propertyOverrides.isEmpty }
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(harness.applied == .scene(before), "fixture: the rebuild must not have committed yet")
+        #expect(reports.isEmpty, "recorded before the rebuilt scene was committed")
+
+        // What the prepared session's commit writes.
+        let after = owner.descriptor
+        configuration.activeWallpaper = .scene(after)
+        harness.manager.saveConfiguration(configuration)
+        await Self.waitUntil { reports.count == 1 }
+        #expect(reports.first?.before == before)
+        #expect(reports.first?.after == after)
+    }
+
     private static func waitUntil(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(2)
         while !condition(), ContinuousClock.now < deadline {
@@ -133,15 +180,17 @@ struct SceneSettingsOwnerTests {
     @MainActor
     private final class Harness {
         let screen: Screen
+        let registry: FakeDisplayRegistry
         let manager: ScreenManager
         var owner: SceneSettingsOwner!
 
         init(displayID: UInt32 = 0xED33_0001, onUndoableChange: SceneSettingsOwner.UndoableChange? = nil) throws {
             screen = Screen(nsScreen: SceneSettingsTestScreen(displayID: displayID))
+            registry = FakeDisplayRegistry(screens: [screen])
             manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
                 restoreSavedWallpapers: false, startAutomation: false,
                 powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
-                playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+                playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: registry,
                 featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
             ))
             let descriptor = SceneDescriptor(

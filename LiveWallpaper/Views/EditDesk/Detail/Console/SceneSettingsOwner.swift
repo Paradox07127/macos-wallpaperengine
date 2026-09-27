@@ -10,7 +10,8 @@ import SwiftUI
 final class SceneSettingsOwner {
     private typealias ValueLogic = PropertyValueLogic
 
-    let screen: Screen
+    let screenID: CGDirectDisplayID
+    private let displayFingerprint: String
     let editor: WPESceneCustomSettingsCard.Editor
     private let expandsSectionsOnLoad: Bool
     var query = ""
@@ -50,7 +51,8 @@ final class SceneSettingsOwner {
     ) {
         self.editor = editor ?? WPESceneCustomSettingsCard.Editor()
         expandsSectionsOnLoad = editor == nil
-        self.screen = screen
+        screenID = screen.id
+        displayFingerprint = screen.displayFingerprint
         self.screenManager = screenManager
         self.descriptor = descriptor
         self.schema = schema
@@ -65,8 +67,17 @@ final class SceneSettingsOwner {
         }
     }
 
+    /// nil once the display is gone. The manager replaces `Screen` objects on every display refresh, and its scene mutations take only the current one.
+    private var currentScreen: Screen? {
+        guard let screen = screenManager.screen(withID: screenID) else {
+            Logger.notice("Scene settings: display \(screenID) is no longer connected", category: .ui)
+            return nil
+        }
+        return screen
+    }
+
     func loadSchema() async {
-        guard schema == nil else { return }
+        guard schema == nil, let screen = currentScreen else { return }
         let inspected = attemptID == nil ? nil : screenManager.inspectedWallpaperAttempt(for: screen)?.configuration
         let outcome = await WPESceneProjectSchemaLoader.load(
             descriptor: descriptor,
@@ -147,14 +158,31 @@ final class SceneSettingsOwner {
         Task { @MainActor in
             let before = descriptor
             let next = descriptor.applyingPreset(preset)
-            await commitDescriptor(next)
+            guard attemptID == nil, before != next else {
+                await commitDescriptor(next)
+                return
+            }
+            guard let screen = currentScreen else { return }
+            // An engine colour or audio change rebuilds the session, which stores `next` only once it is prepared.
+            let outcome = await ApplyRouter.awaitApplied(
+                matching: { $0.activeWallpaper == .scene(next) }, with: screenManager, on: screen.id,
+                committedAfter: screenManager.configurationRevision(for: screen), timeout: ApplyRouter.defaultConfirmationTimeout,
+                dispatch: {
+                    await self.commitDescriptor(next)
+                    return nil
+                }
+            )
+            guard outcome == .applied else {
+                Logger.notice("Preset change on display \(screen.id) was not committed; no undo step recorded", category: .ui)
+                return
+            }
             reportUndoableChange(.changePreset, from: before, to: next)
         }
     }
 
     private func reportUndoableChange(_ action: EditDeskUndoStack.Action, from before: SceneDescriptor, to after: SceneDescriptor) {
         guard attemptID == nil, before != after else { return }
-        let fingerprint = screen.displayFingerprint
+        let fingerprint = displayFingerprint
         onUndoableChange?(action, before, after) { await Self.appliedSceneOwners[fingerprint]?.owner?.commitPendingEditorState() }
     }
 
@@ -168,6 +196,7 @@ final class SceneSettingsOwner {
         onDescriptorChange(next)
         synchronizeEditor(force: true)
         refreshPresetDerivedState()
+        guard let screen = currentScreen else { return }
         if let attemptID {
             screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
         } else {
@@ -222,7 +251,7 @@ final class SceneSettingsOwner {
 
     var sceneIdentity: WPESceneCustomSettingsCard.SceneIdentity {
         WPESceneCustomSettingsCard.SceneIdentity(
-            screenID: screen.id,
+            screenID: screenID,
             workshopID: descriptor.workshopID,
             cacheRelativePath: descriptor.cacheRelativePath,
             entryFile: descriptor.entryFile
@@ -308,6 +337,7 @@ final class SceneSettingsOwner {
         descriptor = next
         onDescriptorChange(next)
         refreshPresetDerivedState()
+        guard let screen = currentScreen else { return }
         if let attemptID {
             screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
         } else {

@@ -541,15 +541,20 @@ final class EditDeskUndoStack {
 
     private func restore(_ display: Display, on screen: Screen) async -> Bool {
         guard let configuration = display.configuration else {
+            if let overlay = display.overlay {
+                manager.setMonitorOverlay(overlay, for: screen)
+            }
             manager.clearWallpaperForScreen(screen)
             return true
         }
+        // The recorded content can still be on screen with other settings, so only this restore's commit confirms it.
+        let revision = manager.configurationRevision(for: screen)
         manager.restoreRecordedConfiguration(
             configuration.reboundToDisplay(screen.id, fingerprint: screen.displayFingerprint),
             overlay: display.overlay, on: screen
         )
         return await router.awaitApplied(
-            matching: configuration.activeWallpaper, on: screen.id, timeout: router.confirmationTimeout
+            matching: configuration.activeWallpaper, on: screen.id, committedAfter: revision, timeout: router.confirmationTimeout
         )
     }
 

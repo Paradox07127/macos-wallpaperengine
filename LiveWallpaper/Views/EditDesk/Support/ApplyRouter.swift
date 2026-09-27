@@ -110,6 +110,8 @@ protocol WallpaperApplying {
     func cancelPreparation(for screen: Screen)
     /// Whether a `.wallpaperPreparationDidFail` names the preparation `screen` is running now.
     func isCurrentPreparation(generation: Int?, attemptID: UUID?, on screen: Screen) -> Bool
+    /// Moves with every write of `screen`'s stored configuration, a write that repeats its content included.
+    func configurationRevision(for screen: Screen) -> UInt64
     #if !LITE_BUILD
     func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen)
     func importWallpaperEngineProject(at folderURL: URL, for screen: Screen) async -> ScreenManager.WPEProjectApplyOutcome
@@ -131,6 +133,10 @@ extension ScreenManager: WallpaperApplying {
             return wallpaperLoads.attempt(for: screen)?.id == attemptID
         }
         return generation.map { isCurrentTransition($0, for: screen.id) } ?? false
+    }
+
+    func configurationRevision(for screen: Screen) -> UInt64 {
+        configurationStore.revision(for: screen.id)
     }
 }
 
@@ -203,7 +209,11 @@ final class ApplyRouter {
             }
         case let .scheme(scheme):
             leaveSpanMode()
-            outcome = await applyConfirmed(scheme.configuration.activeWallpaper, to: screen, cancellation: cancellation) {
+            // A scheme can repeat the content on screen with other settings, so only its own commit confirms it.
+            let revision = manager.configurationRevision(for: screen)
+            outcome = await applyConfirmed(
+                scheme.configuration.activeWallpaper, to: screen, committedAfter: revision, cancellation: cancellation
+            ) {
                 manager.applyScheme(scheme, to: screen)
             }
         case let .droppedFile(url):
@@ -223,9 +233,9 @@ final class ApplyRouter {
             outcome = await applyProject(url, to: screen, cancellation: cancellation)
         case let .installedWorkshop(entry):
             leaveSpanMode()
-            outcome = await awaitApplied(
+            outcome = await Self.awaitApplied(
                 matching: { self.matches(entry.origin, configuration: $0) },
-                on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
+                with: manager, on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
                 dispatch: {
                     await manager.activateWPEHistoryEntry(entry, for: screen)
                     return nil
@@ -296,18 +306,24 @@ final class ApplyRouter {
         try? SecurityScopedBookmarkResolver.shared.resolve(bookmarkData, target: .transient).get().url.path
     }
 
-    func awaitApplied(matching content: WallpaperContent, on screenID: CGDirectDisplayID, timeout: Duration) async -> Bool {
-        await awaitApplied(
-            matching: { Self.contentMatches($0.activeWallpaper, content) }, on: screenID, timeout: timeout, dispatch: { nil }
+    /// A non-nil `revision` counts a match only once the display's configuration revision has moved past it.
+    func awaitApplied(
+        matching content: WallpaperContent, on screenID: CGDirectDisplayID, committedAfter revision: UInt64? = nil,
+        timeout: Duration
+    ) async -> Bool {
+        await Self.awaitApplied(
+            matching: { Self.contentMatches($0.activeWallpaper, content) }, with: manager, on: screenID,
+            committedAfter: revision, timeout: timeout, dispatch: { nil }
         ) == .applied
     }
 
     private func applyConfirmed(
-        _ content: WallpaperContent, to screen: Screen, cancellation: ApplyCancellation?, dispatch: () -> Void
+        _ content: WallpaperContent, to screen: Screen, committedAfter revision: UInt64? = nil,
+        cancellation: ApplyCancellation?, dispatch: () -> Void
     ) async -> ApplyOutcome {
-        await awaitApplied(
-            matching: { Self.contentMatches($0.activeWallpaper, content) }, on: screen.id, timeout: confirmationTimeout,
-            cancellation: cancellation,
+        await Self.awaitApplied(
+            matching: { Self.contentMatches($0.activeWallpaper, content) }, with: manager, on: screen.id,
+            committedAfter: revision, timeout: confirmationTimeout, cancellation: cancellation,
             dispatch: {
                 dispatch()
                 return nil
@@ -322,9 +338,12 @@ final class ApplyRouter {
         case deadline
     }
 
-    private func awaitApplied(
+    /// A non-nil `revision` counts a match only once the display's configuration revision has moved past it.
+    static func awaitApplied(
         matching matches: (ScreenConfiguration) -> Bool,
+        with manager: any WallpaperApplying,
         on screenID: CGDirectDisplayID,
+        committedAfter revision: UInt64? = nil,
         timeout: Duration,
         cancellation: ApplyCancellation? = nil,
         dispatch: @MainActor () async -> ApplyOutcome?
@@ -372,8 +391,9 @@ final class ApplyRouter {
         guard !Task.isCancelled, let currentScreen = manager.screen(withID: screenID) else {
             return .failed(.applyNotConfirmed)
         }
+        let isCommitted = { (screen: Screen) in revision.map { manager.configurationRevision(for: screen) != $0 } ?? true }
         let configuration = manager.getConfiguration(for: currentScreen)
-        if let configuration, matches(configuration) {
+        if let configuration, matches(configuration), isCommitted(currentScreen) {
             return .applied
         }
         if cancellation?.isCancelled == true || Self.changedAway(configuration?.activeWallpaper, from: initialContent) {
@@ -402,7 +422,7 @@ final class ApplyRouter {
             }
             guard let currentScreen = manager.screen(withID: screenID) else { return .failed(.applyNotConfirmed) }
             let configuration = manager.getConfiguration(for: currentScreen)
-            if let configuration, matches(configuration) {
+            if let configuration, matches(configuration), isCommitted(currentScreen) {
                 return .applied
             }
             if Self.changedAway(configuration?.activeWallpaper, from: initialContent) {
@@ -534,12 +554,12 @@ final class ApplyRouter {
     #if !LITE_BUILD
     private func applyProject(_ url: URL, to screen: Screen, cancellation: ApplyCancellation?) async -> ApplyOutcome {
         var origin: WPEOrigin?
-        return await awaitApplied(
+        return await Self.awaitApplied(
             matching: { configuration in
                 guard let origin else { return false }
                 return self.matches(origin, configuration: configuration)
             },
-            on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
+            with: manager, on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
             dispatch: {
                 switch await manager.importWallpaperEngineProject(at: url, for: screen) {
                 case let .applied(appliedOrigin):
