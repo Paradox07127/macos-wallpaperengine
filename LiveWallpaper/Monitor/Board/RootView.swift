@@ -181,7 +181,8 @@ struct RootView: View {
                 isDragging: isDragging,
                 cornerRadius: geometry.cornerRadius,
                 editDesk: editor != nil,
-                renderScale: renderScale
+                renderScale: renderScale,
+                onRemove: editor.map { editor in { editor.removeWidget(id: placement.id) } }
             ))
             .offset(x: liveRenderRect.minX, y: liveRenderRect.minY)
             .zIndex(isDragging ? 40 : 3)
@@ -436,11 +437,12 @@ private struct SelectionChrome: ViewModifier {
     let cornerRadius: CGFloat
     var editDesk = false
     var renderScale: CGFloat = 1
+    var onRemove: (() -> Void)?
     @State private var hovering = false
 
     func body(content: Content) -> some View {
         if editDesk {
-            content.modifier(OverlayObjectChrome(selected: isSelected, dragging: isDragging, renderScale: renderScale))
+            content.modifier(OverlayObjectChrome(selected: isSelected, dragging: isDragging, renderScale: renderScale, onRemove: onRemove))
         } else {
             content
                 .overlay(borderOverlay)

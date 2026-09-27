@@ -194,7 +194,8 @@ struct OverlayCanvas: View {
             .frame(width: rect.width, height: rect.height)
             .overlay { Color.clear.contentShape(Rectangle()) }
             .modifier(OverlayObjectChrome(selected: session.selection == selection,
-                                          dragging: session.drag?.selection == selection, renderScale: session.renderScale))
+                                          dragging: session.drag?.selection == selection, renderScale: session.renderScale,
+                                          onRemove: { selection == .music ? session.setMusicEnabled(false) : session.setClockEnabled(false) }))
             .opacity(isBeingMovedByDrop(selection) ? DesignTokens.Opacity.dimmedContent : 1)
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.coordinateSpace))
                 .onChanged { value in
@@ -232,9 +233,13 @@ struct OverlayObjectChrome: ViewModifier {
     let renderScale: CGFloat
     /// False for drop previews, which are never the object that just landed.
     var claimsLanding = true
+    /// nil draws no remove button.
+    var onRemove: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.monitorBoardChrome) private var chrome
     @State private var landings = 0
+    @State private var hovering = false
+    @State private var hoveringButton = false
 
     func body(content: Content) -> some View {
         content
@@ -246,6 +251,20 @@ struct OverlayObjectChrome: ViewModifier {
                         .allowsHitTesting(false)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                if let onRemove, selected || hovering || hoveringButton {
+                    let reach = DesignTokens.iconButtonDiameter(.small) / 2
+                    GlassIconButton("xmark", size: .small, action: onRemove)
+                        .help(Text("Remove"))
+                        .accessibilityLabel(Text("Remove"))
+                        // Undoes the board shrink so the circle stays 20pt on screen; the offset centres it on the corner.
+                        .scaleEffect(MonitorChromeScale.boost(forRenderScale: renderScale))
+                        .offset(x: reach, y: -reach)
+                        // Half the circle hangs outside the object, where the object's own hover has already ended.
+                        .onHover { hoveringButton = $0 }
+                }
+            }
+            .onHover { hovering = $0 }
             .shadow(color: DesignTokens.EditDesk.Shadow.floatPanel.color.opacity(dragging && !reduceMotion ? 1 : 0),
                     radius: DesignTokens.EditDesk.Shadow.floatPanel.radius,
                     y: reduceMotion ? 0 : DesignTokens.EditDesk.Shadow.floatPanel.y)

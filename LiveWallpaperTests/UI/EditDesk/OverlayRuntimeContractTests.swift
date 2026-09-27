@@ -42,6 +42,28 @@ struct OverlayRuntimeContractTests {
         #expect(!canvas.contains(".offset("))
     }
 
+    @Test("Canvas objects carry a remove button that calls what the Layers panel calls")
+    func objectRemoveButtonContract() throws {
+        let canvas = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayCanvas.swift")
+        let chromeStart = try #require(canvas.range(of: "struct OverlayObjectChrome: ViewModifier"))
+        let chrome = canvas[chromeStart.lowerBound...]
+        #expect(chrome.contains("var onRemove: (() -> Void)?"))
+        #expect(chrome.contains("GlassIconButton(\"xmark\""))
+        let objectStart = try #require(canvas.range(of: "private func object(_ selection: OverlaySelection"))
+        let objectEnd = try #require(canvas.range(of: "private func isBeingMovedByDrop", range: objectStart.upperBound ..< canvas.endIndex))
+        let object = canvas[objectStart.upperBound ..< objectEnd.lowerBound]
+        let layers = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/LayerNavigator.swift")
+        #expect(object.contains("onRemove:"))
+        #expect(layers.contains("case .clock: session.setClockEnabled(isOn)"))
+        #expect(object.contains("session.setClockEnabled(false)"))
+        #expect(layers.contains("case .music: session.setMusicEnabled(isOn)"))
+        #expect(object.contains("session.setMusicEnabled(false)"))
+        let root = try RepositoryRoot.source("LiveWallpaper/Monitor/Board/RootView.swift")
+        #expect(layers.contains("session.removeWidget(id: id)"))
+        #expect(root.contains("editor.removeWidget(id: placement.id)"))
+        #expect(root.contains("OverlayObjectChrome(selected: isSelected, dragging: isDragging, renderScale: renderScale, onRemove: onRemove)"))
+    }
+
     @Test("Editor writes use public setters and applied configuration")
     func publicWriterContract() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEditorSession.swift")
