@@ -186,7 +186,7 @@ struct WorkshopModalHost: View {
             ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame)
         }
         let activeOn = Set(screenManager.screens
-            .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == String(item.id) }
+            .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.matchesWorkshopItem(String(item.id)) == true }
             .map(\.id))
         return WorkshopModalTargets.make(displays: displays, activeOn: activeOn)
     }

@@ -33,6 +33,38 @@ struct WPEHistoryTests {
         }
     }
 
+    @Test("A Steam folder recorded under a copied manifest's id is the same entry as its re-download under the folder's id")
+    func steamFolderReRecordReplacesManifestIDEntry() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("history-steam-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func entry(_ workshopID: String, inFolder relativePath: String) throws -> WPEHistoryEntry {
+            let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let origin = WPEOrigin(
+                workshopID: workshopID, title: "Lunar Tear [4K]", originalType: .scene,
+                sourceFolderBookmark: try #require(ResourceUtilities.createBookmark(for: folder)),
+                cacheRelativePath: "wpe-cache/\(workshopID)", previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: Double(workshopID) ?? 0))
+        }
+
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            let steamFolder = "steamapps/workshop/content/431960/3159206868"
+            manager.recordWPEImport(try entry("2585024298", inFolder: steamFolder))
+            manager.recordWPEImport(try entry("3159206868", inFolder: steamFolder))
+            #expect(manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == ["3159206868"])
+        }
+        // Control: outside Steam's layout a numeric folder name says nothing about the item, so two ids stay two entries.
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            manager.recordWPEImport(try entry("2585024298", inFolder: "loose/3159206868"))
+            manager.recordWPEImport(try entry("3159206868", inFolder: "loose/3159206868"))
+            #expect(manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == ["3159206868", "2585024298"])
+        }
+    }
+
     @Test("Caps at maxRecentWPEImports, dropping the oldest")
     func capsAtMaxRecentImports() throws {
         withIsolatedGlobalSettings {

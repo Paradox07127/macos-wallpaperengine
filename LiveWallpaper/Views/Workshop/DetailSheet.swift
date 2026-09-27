@@ -253,7 +253,7 @@ struct WorkshopInspectorContent: View {
 
     private var activeScreenIDs: Set<CGDirectDisplayID> {
         Set(screenManager.screens
-            .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == String(item.id) }
+            .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.matchesWorkshopItem(String(item.id)) == true }
             .map(\.id))
     }
 

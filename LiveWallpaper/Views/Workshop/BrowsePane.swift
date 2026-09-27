@@ -783,8 +783,9 @@ struct BrowsePane: View {
         }
         var running: [String: [StageDisplay.ID]] = [:]
         for screen in screenManager.screens {
-            if let workshopID = screenManager.getConfiguration(for: screen)?.wpeOrigin?.workshopID {
-                running[workshopID, default: []].append(screen.id)
+            guard let origin = screenManager.getConfiguration(for: screen)?.wpeOrigin else { continue }
+            for id in Set([origin.workshopID, origin.steamFolderItemID].compactMap { $0 }) {
+                running[id, default: []].append(screen.id)
             }
         }
         inUseBadges = running.compactMapValues { NowPlayingBadge(on: $0, among: displays) }

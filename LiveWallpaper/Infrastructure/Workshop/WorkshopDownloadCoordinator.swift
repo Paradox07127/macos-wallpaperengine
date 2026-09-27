@@ -257,7 +257,7 @@ final class WorkshopDownloadCoordinator {
             )
         case .succeededAsPreset(let baseWorkshopID):
             let hasBase = SettingsManager.shared.loadGlobalSettings()
-                .recentWPEImports.contains { $0.origin.workshopID == baseWorkshopID }
+                .recentWPEImports.contains { $0.origin.matchesWorkshopItem(baseWorkshopID) }
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Preset added", bundle: .appLanguage, comment: "Workshop preset download success toast headline."),
                 title: title,

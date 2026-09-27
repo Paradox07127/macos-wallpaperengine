@@ -372,6 +372,21 @@ struct WorkshopModalTests {
         #expect(has("origin.steamFolderItemID", in: pane), "Browse cards key the library by the recorded id alone")
     }
 
+    @Test("Now-playing marks and the preset's base check find an item by its Steam folder too")
+    func inUseLookupsAcceptTheSteamFolderID() throws {
+        // Reading `workshopID` as one key beside `steamFolderItemID`, or as a dependency failure's id, stays allowed; these are the lookups by it alone.
+        let lookupsByRecordedID = [".workshopID ==", "wpeOrigin?.workshopID {"]
+        for path in [
+            Self.hostPath, Self.inspectorPath, "LiveWallpaper/Views/Workshop/BrowsePane.swift",
+            "LiveWallpaper/Infrastructure/Workshop/WorkshopDownloadCoordinator.swift",
+        ] {
+            let source = try RepositoryRoot.source(path)
+            for needle in lookupsByRecordedID {
+                #expect(!has(needle, in: source), Comment(rawValue: "\(path) finds an item by the recorded id alone (`\(needle)`)"))
+            }
+        }
+    }
+
     // MARK: Paging and rows
 
     @Test("← → walk the loaded page and stop at its ends; an item opened from outside it has neither")

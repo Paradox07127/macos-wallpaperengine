@@ -347,9 +347,9 @@ final class SettingsManager {
     ) {
         var settings = loadGlobalSettings()
         var entry = entry
-        let previous = settings.recentWPEImports.first {
-            $0.origin.workshopID == entry.origin.workshopID
-        }
+        let entryItemIDs = Self.workshopItemIDs(entry.origin)
+        let isSameItem = { (other: WPEHistoryEntry) in !entryItemIDs.isDisjoint(with: Self.workshopItemIDs(other.origin)) }
+        let previous = settings.recentWPEImports.first(where: isSameItem)
         if entry.sizeBytes == nil {
             entry.sizeBytes = previous?.sizeBytes
         }
@@ -363,9 +363,7 @@ final class SettingsManager {
                 sizeBytes: entry.sizeBytes
             )
         }
-        var recent = settings.recentWPEImports.filter {
-            $0.origin.workshopID != entry.origin.workshopID
-        }
+        var recent = settings.recentWPEImports.filter { !isSameItem($0) }
         recent.insert(entry, at: 0)
         if recent.count > Self.maxRecentWPEImports {
             recent = Array(recent.prefix(Self.maxRecentWPEImports))
@@ -376,6 +374,15 @@ final class SettingsManager {
         }
         saveGlobalSettings(settings)
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+    }
+
+    /// Ids naming the Steam item an entry came from; two entries sharing any of them are the same item.
+    private static func workshopItemIDs(_ origin: WPEOrigin) -> Set<String> {
+        #if LITE_BUILD
+        return [origin.workshopID]
+        #else
+        return Set([origin.workshopID, origin.steamFolderItemID].compactMap { $0 })
+        #endif
     }
 
     func updateWPEImportSize(workshopID: String, sizeBytes: Int64) {
