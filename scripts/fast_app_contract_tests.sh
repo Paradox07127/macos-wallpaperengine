@@ -189,6 +189,8 @@ SUITES=(
   EditDeskBrowseSeparatorRenderTests
   SheetSeparatorSourceTests
   SettingsSidebarLegibilityTests
+  SettingsSearchFocusTests
+  HoverAutoplayPreviewRowTests
   DisplayFloatLayerTests
   WallpaperModalTests
   ModalActionsTests

@@ -30,6 +30,7 @@ final class EditDeskRouter {
     var settingsSelection: SettingsNavigation?
     var settingsSearchText = ""
     var pendingSettingsSearchAnchor: SettingsSearchAnchor?
+    var settingsSearchRequest = 0
     var pendingAddWallpaper: AddWallpaperRequest?
     var pendingFailureID: UUID?
     var pendingDetailSection: DetailSection?

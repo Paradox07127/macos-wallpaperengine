@@ -4,7 +4,18 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum StatusCapsuleHealth: Equatable {
-    case normal, elevatedLoad, highLoad, thermalFair, thermalSerious, thermalCritical
+    case noReadings, normal, elevatedLoad, highLoad, thermalFair, thermalSerious, thermalCritical
+}
+
+/// The sentence beside the headline: which reading set it, whether that reading is the whole system's, and whether to act.
+enum StatusCapsuleNote: Equatable {
+    case waitingForReadings
+    case normal
+    /// `fraction` is the whole system's; `appBytes` is this app's own footprint.
+    case systemMemory(fraction: Double, appBytes: UInt64, suggestsAction: Bool)
+    /// Both in percent of the whole machine, as `SystemMonitor` reports them.
+    case systemCPU(percent: Double, appPercent: Double, suggestsAction: Bool)
+    case heat(ProcessInfo.ThermalState)
 }
 
 /// AppKit reports a click in window coordinates — y up from the content view's bottom edge —
@@ -37,6 +48,8 @@ enum StatusCapsuleModel {
         case .serious: return .thermalSerious
         default: break
         }
+        // Memory reads 0 until `SystemMonitor`'s first sample; a running Mac never uses none.
+        guard memoryFraction > 0 else { return .noReadings }
         if load >= Design.Load.hot {
             return .highLoad
         }
@@ -46,8 +59,30 @@ enum StatusCapsuleModel {
         return load >= Design.Load.elevated ? .elevatedLoad : .normal
     }
 
+    static func note(
+        cpuPercent: Double, memoryFraction: Double, thermal: ProcessInfo.ThermalState,
+        appCPUPercent: Double, appMemoryBytes: UInt64
+    ) -> StatusCapsuleNote {
+        let band = Self.health(cpuPercent: cpuPercent, memoryFraction: memoryFraction, thermal: thermal)
+        switch band {
+        case .noReadings:
+            return .waitingForReadings
+        case .normal:
+            return .normal
+        case .thermalFair, .thermalSerious, .thermalCritical:
+            return .heat(thermal)
+        case .elevatedLoad, .highLoad:
+            // The larger of the two is the reading `health` put in this band.
+            if cpuPercent / 100 >= memoryFraction {
+                return .systemCPU(percent: cpuPercent, appPercent: appCPUPercent, suggestsAction: band == .highLoad)
+            }
+            return .systemMemory(fraction: memoryFraction, appBytes: appMemoryBytes, suggestsAction: band == .highLoad)
+        }
+    }
+
     static func headlineKey(for health: StatusCapsuleHealth) -> String {
         switch health {
+        case .noReadings: "Waiting for readings"
         case .normal: "System Normal"
         case .elevatedLoad: "Elevated Load"
         case .highLoad: "High Load"
@@ -59,6 +94,7 @@ enum StatusCapsuleModel {
 
     static func dotColor(for health: StatusCapsuleHealth) -> Color {
         switch health {
+        case .noReadings: DesignTokens.EditDesk.Colors.textTertiary
         case .normal: DesignTokens.EditDesk.Colors.success
         case .elevatedLoad, .thermalFair: DesignTokens.EditDesk.Colors.warning
         case .highLoad, .thermalSerious, .thermalCritical: DesignTokens.EditDesk.Colors.danger
@@ -141,6 +177,16 @@ struct StatusCapsule: View {
         )
     }
 
+    private var note: StatusCapsuleNote {
+        StatusCapsuleModel.note(
+            cpuPercent: monitor.systemCpuUsage,
+            memoryFraction: monitor.systemMemoryUsage,
+            thermal: monitor.thermalState,
+            appCPUPercent: monitor.cpuUsage,
+            appMemoryBytes: monitor.memoryUsage
+        )
+    }
+
     private var memory: (fraction: Double, text: String) {
         StatusCapsuleModel.memoryReadout(
             scope: ramScope, systemFraction: monitor.systemMemoryUsage,
@@ -220,6 +266,7 @@ struct StatusCapsule: View {
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.statusExpanded, style: .continuous)
                 .fill(DesignTokens.EditDesk.Colors.panel)
         )
+        .help(noteText)
     }
 
     private var collapsedCapsule: some View {
@@ -233,6 +280,8 @@ struct StatusCapsule: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .help(noteText)
+        .accessibilityValue(noteText)
     }
 
     private var expandedPanel: some View {
@@ -243,6 +292,10 @@ struct StatusCapsule: View {
                 headlineRow(showsChevron: true)
             }
             .buttonStyle(.plain)
+            noteText
+                .font(DesignTokens.EditDesk.Typography.footnote)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
                 dial("CPU", fraction: monitor.systemCpuUsage / 100) {
                     Text(verbatim: percentText(monitor.systemCpuUsage))
@@ -364,6 +417,33 @@ struct StatusCapsule: View {
 
     private func percentText(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
+    }
+
+    private var noteText: Text {
+        switch note {
+        case .waitingForReadings:
+            return Text("Waiting for the first system readings.")
+        case .normal:
+            return Text("System CPU, memory and heat are normal. No action needed.")
+        case let .systemMemory(fraction, appBytes, suggestsAction):
+            let used = percentText(fraction * 100)
+            let app = FormatUtils.formatBytes(appBytes)
+            return suggestsAction
+                ? Text("System memory is \(used) in use; Loomscreen uses \(app). If the Mac slows down, quit apps you are not using.")
+                : Text("System memory is \(used) in use; Loomscreen uses \(app). No action needed.")
+        case let .systemCPU(percent, appPercent, suggestsAction):
+            let busy = percentText(percent)
+            let app = percentText(appPercent)
+            return suggestsAction
+                ? Text("System CPU is \(busy) busy; Loomscreen uses \(app). If the Mac slows down, quit apps you are not using.")
+                : Text("System CPU is \(busy) busy; Loomscreen uses \(app). No action needed.")
+        case .heat(.fair):
+            return Text("The Mac is running warm. No action needed.")
+        case .heat(.serious):
+            return Text("The Mac is running hot. Quitting apps you are not using helps it cool down.")
+        case .heat:
+            return Text("The Mac is too hot. Wallpapers pause until it cools down.")
+        }
     }
 }
 

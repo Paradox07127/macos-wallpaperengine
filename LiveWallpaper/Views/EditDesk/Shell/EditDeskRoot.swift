@@ -89,6 +89,7 @@ struct EditDeskRoot: View {
                                         selection: $router.settingsSelection,
                                         searchText: $router.settingsSearchText,
                                         pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
+                                        searchRequest: $router.settingsSearchRequest,
                                         onBack: router.backFromSettings,
                                         showsBackButton: false
                                     )
@@ -96,7 +97,9 @@ struct EditDeskRoot: View {
                                     Divider()
                                     SettingsDetailContent(
                                         selection: $router.settingsSelection,
-                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor
+                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
+                                        searchText: router.settingsSearchText,
+                                        searchRequest: router.settingsSearchRequest
                                     )
                                 }
                             }

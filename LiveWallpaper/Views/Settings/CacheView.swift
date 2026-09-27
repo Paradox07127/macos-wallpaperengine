@@ -52,13 +52,7 @@ struct WPECacheManagementView: View {
             testArtifactsSection
         }
         .settingsFormChrome()
-        .settingsSearchAnchorScroller(
-            pendingSearchAnchor: $pendingSearchAnchor,
-            anchors: [
-                .storageDashboard,
-                .storageCaches
-            ]
-        )
+        .settingsSearchAnchorScroller(page: .storage, pendingSearchAnchor: $pendingSearchAnchor)
         .onAppear {
             exportService.refresh()
             Task { await refreshStats() }

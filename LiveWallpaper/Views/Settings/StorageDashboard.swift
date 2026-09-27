@@ -189,6 +189,7 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                 .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
         )
+        .settingsSearchRow(title)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }
 }

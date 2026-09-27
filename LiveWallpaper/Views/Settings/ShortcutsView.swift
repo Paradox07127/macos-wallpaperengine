@@ -42,13 +42,7 @@ struct ShortcutsView: View {
             .disabled(!globalShortcutsEnabled)
         }
         .settingsFormChrome(minWidth: 500, minHeight: 400)
-        .settingsSearchAnchorScroller(
-            pendingSearchAnchor: $pendingSearchAnchor,
-            anchors: [
-                .shortcutsMaster,
-                .shortcutsGlobal,
-            ]
-        )
+        .settingsSearchAnchorScroller(page: .shortcuts, pendingSearchAnchor: $pendingSearchAnchor)
         .onReceive(NotificationCenter.default.publisher(for: .globalShortcutsDidChange)) { _ in
             let latest = SettingsManager.shared.loadGlobalSettings()
             var didResync = false
@@ -218,6 +212,7 @@ private struct ShortcutRow: View {
             }
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
+        .settingsSearchRow(action.displayNameKey)
     }
 
     private var scopeInfo: String.LocalizationValue? {

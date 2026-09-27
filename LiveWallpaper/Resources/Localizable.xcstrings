@@ -4498,6 +4498,42 @@
         }
       }
     },
+    "A card's GIF preview plays when the pointer rests on it, but not while Reduce Motion is on." : {
+      "comment" : "Settings › General, under Autoplay preview on hover: what the switch controls. Covers shelf cards and library grid cards; Reduce Motion is the macOS accessibility setting.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A card's GIF preview plays when the pointer rests on it, but not while Reduce Motion is on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La vista previa GIF de una tarjeta se reproduce al dejar el puntero sobre ella, pero no con Reducir movimiento activado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カードにポインタを置くと、その GIF プレビューを再生します。「視差効果を減らす」がオンの間は再生しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指针停留在卡片上时播放其 GIF 预览；开启“减弱动态效果”时不播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游標停留在卡片上時播放其 GIF 預覽；開啟「減少動態效果」時不播放。"
+          }
+        }
+      }
+    },
     "A component of the install path is a symbolic link: %@" : {
       "comment" : "Managed SteamCMD install error. Placeholder is the offending path.",
       "extractionState" : "manual",
@@ -71485,6 +71521,114 @@
         }
       }
     },
+    "System CPU is %@ busy; Loomscreen uses %@. If the Mac slows down, quit apps you are not using." : {
+      "comment" : "Status capsule sentence beside the High Load headline when CPU set it. Both placeholders are percents of the whole machine: the system's CPU in use, then this app's share.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System CPU is %@ busy; Loomscreen uses %@. If the Mac slows down, quit apps you are not using."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La CPU del sistema está al %@; Loomscreen usa el %@. Si el Mac va lento, cierra las apps que no estés usando."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムの CPU 使用率は %@ で、そのうち Loomscreen が %@ を使用しています。この Mac の動作が遅くなったら、使っていないアプリを終了してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统 CPU 占用率为 %@，其中 Loomscreen 占 %@。如果本机运行变慢，请退出暂不使用的应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統 CPU 使用率為 %@，其中 Loomscreen 佔 %@。如果這台 Mac 變慢，請結束暫不使用的應用程式。"
+          }
+        }
+      }
+    },
+    "System CPU is %@ busy; Loomscreen uses %@. No action needed." : {
+      "comment" : "Status capsule sentence beside the Elevated Load headline when CPU set it. Both placeholders are percents of the whole machine: the system's CPU in use, then this app's share.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System CPU is %@ busy; Loomscreen uses %@. No action needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La CPU del sistema está al %@; Loomscreen usa el %@. No hace falta hacer nada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムの CPU 使用率は %@ で、そのうち Loomscreen が %@ を使用しています。対応は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统 CPU 占用率为 %@，其中 Loomscreen 占 %@，无需处理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統 CPU 使用率為 %@，其中 Loomscreen 佔 %@，無需處理。"
+          }
+        }
+      }
+    },
+    "System CPU, memory and heat are normal. No action needed." : {
+      "comment" : "Status capsule sentence beside the System Normal headline. Heat is macOS thermal pressure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System CPU, memory and heat are normal. No action needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La CPU, la memoria y la temperatura del sistema son normales. No hace falta hacer nada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムの CPU、メモリ、温度はいずれも正常です。対応は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统 CPU、内存和温度均正常，无需处理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統 CPU、記憶體和溫度皆正常，無需處理。"
+          }
+        }
+      }
+    },
     "System health (CPU · GPU · memory · temperature)" : {
       "comment" : "Status capsule content option: system health metrics.",
       "localizations" : {
@@ -71551,6 +71695,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統位置"
+          }
+        }
+      }
+    },
+    "System memory is %@ in use; Loomscreen uses %@. If the Mac slows down, quit apps you are not using." : {
+      "comment" : "Status capsule sentence beside the High Load headline when memory set it. First placeholder is the whole system's memory in use as a percent, second is this app's own memory footprint.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System memory is %@ in use; Loomscreen uses %@. If the Mac slows down, quit apps you are not using."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El sistema usa el %@ de la memoria; Loomscreen usa %@. Si el Mac va lento, cierra las apps que no estés usando."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムのメモリ使用率は %@ で、そのうち Loomscreen が %@ を使用しています。この Mac の動作が遅くなったら、使っていないアプリを終了してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统内存已使用 %@，其中 Loomscreen 占用 %@。如果本机运行变慢，请退出暂不使用的应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統記憶體已使用 %@，其中 Loomscreen 佔用 %@。如果這台 Mac 變慢，請結束暫不使用的應用程式。"
+          }
+        }
+      }
+    },
+    "System memory is %@ in use; Loomscreen uses %@. No action needed." : {
+      "comment" : "Status capsule sentence beside the Elevated Load headline when memory set it. First placeholder is the whole system's memory in use as a percent, second is this app's own memory footprint.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System memory is %@ in use; Loomscreen uses %@. No action needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El sistema usa el %@ de la memoria; Loomscreen usa %@. No hace falta hacer nada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムのメモリ使用率は %@ で、そのうち Loomscreen が %@ を使用しています。対応は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统内存已使用 %@，其中 Loomscreen 占用 %@，无需处理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統記憶體已使用 %@，其中 Loomscreen 佔用 %@，無需處理。"
           }
         }
       }
@@ -73224,41 +73440,6 @@
         }
       }
     },
-    "The current wallpaper shelf uses still previews." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The current wallpaper shelf uses still previews."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La estantería actual usa vistas previas estáticas; esta opción aún no se aplica."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の壁紙シェルフは静止画プレビューを使用するため、この設定は適用されません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前壁纸架使用静态预览，此选项暂不生效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前桌布架使用靜態預覽，此選項暫不生效。"
-          }
-        }
-      }
-    },
     "The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺)." : {
       "localizations" : {
         "en" : {
@@ -73858,6 +74039,114 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "鎖定畫面與登入視窗一律播放影片。"
+          }
+        }
+      }
+    },
+    "The Mac is running hot. Quitting apps you are not using helps it cool down." : {
+      "comment" : "Status capsule sentence beside the Running Hot headline (macOS thermal pressure: serious).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac is running hot. Quitting apps you are not using helps it cool down."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac está caliente. Cerrar las apps que no estés usando ayuda a que se enfríe."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac の温度が高くなっています。使っていないアプリを終了すると温度が下がりやすくなります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机温度过热。退出暂不使用的应用有助于降温。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 溫度過熱。結束暫不使用的應用程式有助於降溫。"
+          }
+        }
+      }
+    },
+    "The Mac is running warm. No action needed." : {
+      "comment" : "Status capsule sentence beside the Running Warm headline (macOS thermal pressure: fair).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac is running warm. No action needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac está algo caliente. No hace falta hacer nada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac の温度がやや高めです。対応は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机温度偏高，无需处理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 溫度偏高，無需處理。"
+          }
+        }
+      }
+    },
+    "The Mac is too hot. Wallpapers pause until it cools down." : {
+      "comment" : "Status capsule sentence beside the Critical Heat headline (macOS thermal pressure: critical). Loomscreen suspends every wallpaper at this level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac is too hot. Wallpapers pause until it cools down."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac está demasiado caliente. Los fondos se pausan hasta que se enfríe."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac の温度が高すぎます。温度が下がるまで壁紙を一時停止します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机严重过热，壁纸将暂停，直至温度下降。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 嚴重過熱，桌布會暫停，直到溫度下降。"
           }
         }
       }
@@ -82170,6 +82459,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待延伸功能重新連線…"
+          }
+        }
+      }
+    },
+    "Waiting for the first system readings." : {
+      "comment" : "Status capsule sentence beside the headline before the first CPU and memory sample arrives.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the first system readings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando las primeras lecturas del sistema."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムの最初の測定値を待っています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待首次系统采样。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待首次系統取樣。"
           }
         }
       }

@@ -67,6 +67,7 @@ struct WorkshopLegalSection: View {
                 .padding(.vertical, DesignTokens.Spacing.xxs)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
+                .settingsSearchRow(point.title)
             }
 
             HStack(spacing: DesignTokens.Spacing.md) {

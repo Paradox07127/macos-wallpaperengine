@@ -16,6 +16,8 @@ public struct SettingRow<Content: View>: View {
     let icon: String
     let iconColor: Color
     let title: Text
+    /// The catalog key a settings search finds this row by; nil for verbatim titles.
+    let titleKey: LocalizedStringKey?
     let titleBadge: SettingRowTitleBadge?
     let subtitle: Text?
     let info: String.LocalizationValue?
@@ -38,6 +40,7 @@ public struct SettingRow<Content: View>: View {
         self.icon = icon
         self.iconColor = iconColor
         self.title = Text(title)
+        titleKey = title
         self.titleBadge = titleBadge
         self.subtitle = subtitle.map { Text($0) }
         self.info = info
@@ -60,6 +63,7 @@ public struct SettingRow<Content: View>: View {
         self.icon = icon
         self.iconColor = iconColor
         self.title = Text(title)
+        titleKey = title
         self.titleBadge = titleBadge
         self.subtitle = valueSubtitle.map { Text(verbatim: $0) }
         self.info = info
@@ -82,6 +86,7 @@ public struct SettingRow<Content: View>: View {
         self.icon = icon
         self.iconColor = iconColor
         self.title = Text(verbatim: verbatimTitle)
+        titleKey = nil
         self.titleBadge = titleBadge
         self.subtitle = verbatimSubtitle.map { Text(verbatim: $0) }
         self.info = info
@@ -102,6 +107,7 @@ public struct SettingRow<Content: View>: View {
         self.icon = icon
         self.iconColor = iconColor
         self.title = Text(verbatim: verbatimTitle)
+        titleKey = nil
         self.titleBadge = titleBadge
         self.subtitle = Text(subtitle)
         self.info = info
@@ -159,6 +165,7 @@ public struct SettingRow<Content: View>: View {
         }
         .controlSize(.small)
         .padding(.vertical, DesignTokens.Spacing.xs)
+        .settingsSearchRow(titleKey)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }
 }

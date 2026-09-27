@@ -212,6 +212,7 @@ private struct AboutActionTile: View {
         .disabled(action.action == nil && action.url == nil)
         .cardHoverEffect(isActive: isHovering, reduceMotion: reduceMotion)
         .onHover { isHovering = $0 }
+        .settingsSearchRow(action.title)
     }
 }
 

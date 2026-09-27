@@ -5,6 +5,8 @@ struct SettingsSidebar: View {
     @Binding var selection: SettingsNavigation?
     @Binding var searchText: String
     @Binding var pendingSearchAnchor: SettingsSearchAnchor?
+    /// Bumped on every pick of a search result, including one that changes neither the page nor the anchor.
+    var searchRequest: Binding<Int> = .constant(0)
     let onBack: () -> Void
     var showsBackButton = true
 
@@ -28,6 +30,7 @@ struct SettingsSidebar: View {
             set: { newSelection in
                 if isSearching, let newSelection {
                     pendingSearchAnchor = results.first { $0.destination == newSelection }?.anchor
+                    searchRequest.wrappedValue += 1
                 }
                 selection = newSelection
             }

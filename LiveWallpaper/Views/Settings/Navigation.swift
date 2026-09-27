@@ -50,6 +50,16 @@ struct SettingsNavigationSearchResult: Identifiable, Equatable {
     var systemImage: String { item.systemImage }
 }
 
+/// Where a settings search lands on one page: the section, the rows it found and the row to bring into view.
+struct SettingsSearchFocus: Equatable {
+    /// nil on a page whose rows sit in no searchable section (Advanced, About, Backup).
+    let anchor: SettingsSearchAnchor?
+    /// Catalog keys of every row on the page whose name matches, in page order.
+    let rows: [String]
+    /// The landing section's matched row when that name appears once on the page; nil scrolls to the section instead.
+    let scrollRow: String?
+}
+
 /// Sidebar grouping. Names avoid every page title so the sidebar never reads
 /// "General > General".
 enum SettingsNavigationGroup: String, CaseIterable, Hashable, Identifiable {
@@ -139,9 +149,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         let wholeQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return items.compactMap { item in
             let targets = item.searchTargets(capabilities: capabilities)
-            // Exact name first: "Global Shortcuts" also sits inside the earlier "Enable Global Shortcuts" section.
-            if let target = targets.first(where: { $0.hasName(equalTo: wholeQuery) })
-                ?? targets.first(where: { $0.matches(terms: terms) }) {
+            if let target = SettingsNavigationSearchTarget.landing(in: targets, wholeQuery: wholeQuery, terms: terms) {
                 return SettingsNavigationSearchResult(
                     item: item,
                     anchor: target.anchor,
@@ -607,6 +615,36 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         }
     }
 
+    func searchFocus(matching query: String, capabilities: ProductCapabilities) -> SettingsSearchFocus? {
+        let terms = query.localizedStandardTokens.filter { !$0.isEmpty }
+        guard !terms.isEmpty else { return nil }
+        let wholeQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targets = searchTargets(capabilities: capabilities)
+        let landing = SettingsNavigationSearchTarget.landing(in: targets, wholeQuery: wholeQuery, terms: terms)
+        let pageRows = rows.filter { row in
+            row.localizedInEveryLanguage.contains { text in terms.allSatisfy { text.localizedCaseInsensitiveContains($0) } }
+        }
+        let hits = targets.flatMap { target in target.matchingRows(terms: terms).map { (anchor: Optional(target.anchor), key: $0) } }
+            + pageRows.map { (anchor: SettingsSearchAnchor?.none, key: $0) }
+        guard landing != nil || !hits.isEmpty else { return nil }
+
+        let landingRows = hits.filter { $0.anchor == landing?.anchor }.map(\.key)
+        let landingRow: String? = if landing?.hasLabel(equalTo: wholeQuery) == true {
+            nil
+        } else {
+            landingRows.first { row in
+                row.localizedInEveryLanguage.contains { $0.localizedCaseInsensitiveCompare(wholeQuery) == .orderedSame }
+            } ?? landingRows.first
+        }
+        let everyRow = targets.flatMap(\.rows) + rows
+        let isUnique = landingRow.map { key in everyRow.filter { $0 == key }.count == 1 } ?? false
+        var marked: [String] = []
+        for hit in hits where !marked.contains(hit.key) {
+            marked.append(hit.key)
+        }
+        return SettingsSearchFocus(anchor: landing?.anchor, rows: marked, scrollRow: isUnique ? landingRow : nil)
+    }
+
     func searchMatchHint(matching query: String) -> String? {
         let terms = query.localizedStandardTokens.filter { !$0.isEmpty }
         guard !terms.isEmpty else { return nil }
@@ -657,9 +695,26 @@ struct SettingsNavigationSearchTarget: Equatable {
         Self.indexes[anchor] ?? SearchIndex(self)
     }
 
+    /// The section a query lands in: exact name first, since "Global Shortcuts" also sits inside the earlier
+    /// "Enable Global Shortcuts" section.
+    static func landing(in targets: [Self], wholeQuery: String, terms: [String]) -> Self? {
+        targets.first { $0.hasName(equalTo: wholeQuery) } ?? targets.first { $0.matches(terms: terms) }
+    }
+
     func matches(terms: [String]) -> Bool {
         let text = index.text
         return terms.allSatisfy { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    func hasLabel(equalTo query: String) -> Bool {
+        index.names.first?.texts.contains { $0.localizedCaseInsensitiveCompare(query) == .orderedSame } ?? false
+    }
+
+    /// Rows only, never the label: a label names the section, which the page marks on its header.
+    func matchingRows(terms: [String]) -> [String] {
+        index.names.dropFirst().filter { name in
+            name.texts.contains { text in terms.allSatisfy { text.localizedCaseInsensitiveContains($0) } }
+        }.map(\.key)
     }
 
     func hasName(equalTo query: String) -> Bool {

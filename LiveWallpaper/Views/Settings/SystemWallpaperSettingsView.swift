@@ -56,6 +56,7 @@ struct SystemWallpaperSettingsView: View {
                     )) { try? service.clearLibrary() }
                 }
                 .disabled(service.items.isEmpty)
+                .settingsSearchRow("Remove All from System Wallpaper")
             } header: {
                 SettingsSearchSectionHeader("System Wallpaper Library", anchor: .systemWallpaperLibrary)
             } footer: {
@@ -131,7 +132,9 @@ private struct SystemWallpaperMaintenanceSection: View {
             }
             HStack {
                 Button("Inspect Registrations") { Task { await maintenance.inspect() } }
+                    .settingsSearchRow("Inspect Registrations")
                 Button("Restart Wallpaper Service") { Task { await maintenance.recover(service: service) } }
+                    .settingsSearchRow("Restart Wallpaper Service")
                 if maintenance.isBusy {
                     ProgressView().controlSize(.small)
                 }
@@ -145,6 +148,7 @@ private struct SystemWallpaperMaintenanceSection: View {
                 get: { maintenance.automaticRecovery }, set: { maintenance.automaticRecovery = $0 }
             ))
             .disabled(!maintenance.helperAvailable)
+            .settingsSearchRow("Automatically recover stalled connections")
             Text("Automatic recovery runs while Loomscreen is open, waits for persistent failure, and restarts at most once every five minutes.")
                 .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
 

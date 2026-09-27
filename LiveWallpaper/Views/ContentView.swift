@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var selectedSettingsNavigation: SettingsNavigation?
     @State private var settingsSearchText = ""
     @State private var pendingSettingsSearchAnchor: SettingsSearchAnchor?
+    @State private var settingsSearchRequest = 0
     @State private var lastAppNavigation: Navigation?
     @State private var didConsumeInitialAddWallpaperPrompt = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -41,7 +42,9 @@ struct ContentView: View {
             if isSettingsMode {
                 SettingsDetailContent(
                     selection: $selectedSettingsNavigation,
-                    pendingSearchAnchor: $pendingSettingsSearchAnchor
+                    pendingSearchAnchor: $pendingSettingsSearchAnchor,
+                    searchText: settingsSearchText,
+                    searchRequest: settingsSearchRequest
                 )
             } else {
                 DetailContent(selection: $selectedNavigation)
@@ -132,6 +135,7 @@ struct ContentView: View {
                     selection: $selectedSettingsNavigation,
                     searchText: $settingsSearchText,
                     pendingSearchAnchor: $pendingSettingsSearchAnchor,
+                    searchRequest: $settingsSearchRequest,
                     onBack: exitSettingsMode
                 )
             } else {

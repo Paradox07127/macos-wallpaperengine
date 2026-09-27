@@ -33,15 +33,7 @@ struct DisplayDefaultsView: View {
             }
         }
         .settingsFormChrome()
-        .settingsSearchAnchorScroller(
-            pendingSearchAnchor: $pendingSearchAnchor,
-            anchors: [
-                .displayDefaultsArrangement,
-                .displayDefaultsVideo,
-                .displayDefaultsWeb,
-                .displayDefaultsScene
-            ]
-        )
+        .settingsSearchAnchorScroller(page: .displayDefaults, pendingSearchAnchor: $pendingSearchAnchor)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             displayFrameRate = NSScreen.main?.configuredFramesPerSecond ?? 60
         }

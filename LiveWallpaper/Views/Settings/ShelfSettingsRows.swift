@@ -10,8 +10,6 @@ struct ShelfSettingsRows: View {
     private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
     @AppStorage(EditDeskPreferences.shelfCapacity, store: .appScoped())
     private var shelfCapacity = EditDeskPreferences.shelfCapacityDefault
-    @AppStorage(EditDeskPreferences.hoverAutoplayPreview, store: .appScoped())
-    private var hoverAutoplayPreview = EditDeskPreferences.hoverAutoplayPreviewDefault
     @AppStorage(EditDeskPreferences.statusCapsuleContent, store: .appScoped())
     private var statusCapsuleRaw = EditDeskPreferences.statusCapsuleContentDefault.rawValue
     @AppStorage(EditDeskPreferences.homeDefaultState, store: .appScoped())
@@ -42,14 +40,7 @@ struct ShelfSettingsRows: View {
             shelfCapacityStepper
         }
 
-        SettingRow(icon: "play.circle", iconColor: .mint, title: "Autoplay preview on hover",
-                   subtitle: "The current wallpaper shelf uses still previews.") {
-            Toggle("", isOn: $hoverAutoplayPreview)
-                .disabled(true)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .accessibilityLabel(Text("Autoplay preview on hover"))
-        }
+        HoverAutoplayPreviewRow()
 
         SettingRow(icon: "gauge", iconColor: .yellow, title: "Status capsule shows") {
             statusCapsulePicker
@@ -159,6 +150,26 @@ struct ShelfSettingsRows: View {
         switch state {
         case .hidden: "Hidden shelf"
         case .halfOpen: "Half-open shelf"
+        }
+    }
+}
+
+/// A view of its own so it renders without the Edit Desk flag that gates `ShelfSettingsRows`.
+struct HoverAutoplayPreviewRow: View {
+    @AppStorage(EditDeskPreferences.hoverAutoplayPreview, store: .appScoped())
+    private var hoverAutoplayPreview = EditDeskPreferences.hoverAutoplayPreviewDefault
+
+    var body: some View {
+        SettingRow(
+            icon: "play.circle",
+            iconColor: .mint,
+            title: "Autoplay preview on hover",
+            info: "A card's GIF preview plays when the pointer rests on it, but not while Reduce Motion is on."
+        ) {
+            Toggle("", isOn: $hoverAutoplayPreview)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text("Autoplay preview on hover"))
         }
     }
 }

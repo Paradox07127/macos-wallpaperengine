@@ -4,6 +4,10 @@ import SwiftUI
 struct SettingsDetailContent: View {
     @Binding var selection: SettingsNavigation?
     @Binding var pendingSearchAnchor: SettingsSearchAnchor?
+    /// The sidebar's search text; empty when the sidebar is not searching.
+    var searchText = ""
+    /// The sidebar's count of picked search results.
+    var searchRequest = 0
     @Environment(\.featureCatalog) private var featureCatalog
 
     var body: some View {
@@ -11,41 +15,23 @@ struct SettingsDetailContent: View {
             switch selection ?? .general {
             case .general:
                 GeneralSettingsView(page: .general)
-                    .settingsSearchAnchorScroller(
-                        pendingSearchAnchor: $pendingSearchAnchor,
-                        anchors: [.generalAppearance, .generalStartup, .generalWallpaper]
-                    )
+                    .settingsSearchAnchorScroller(page: .general, pendingSearchAnchor: $pendingSearchAnchor)
             case .displayDefaults:
                 DisplayDefaultsView(pendingSearchAnchor: $pendingSearchAnchor)
             case .systemWallpaper:
                 if #available(macOS 26.0, *) {
                     SystemWallpaperSettingsView()
-                        .settingsSearchAnchorScroller(
-                            pendingSearchAnchor: $pendingSearchAnchor,
-                            anchors: [
-                                .systemWallpaperPlayback, .systemWallpaperStatus,
-                                .systemWallpaperMaintenance, .systemWallpaperLibrary,
-                            ]
-                        )
+                        .settingsSearchAnchorScroller(page: .systemWallpaper, pendingSearchAnchor: $pendingSearchAnchor)
                 }
             case .performancePower:
                 GeneralSettingsView(page: .performancePower)
-                    .settingsSearchAnchorScroller(
-                        pendingSearchAnchor: $pendingSearchAnchor,
-                        anchors: [.performancePause, .performanceRendering, .performanceMemory]
-                    )
+                    .settingsSearchAnchorScroller(page: .performancePower, pendingSearchAnchor: $pendingSearchAnchor)
             case .integrations:
                 GeneralSettingsView(page: .integrations)
-                    .settingsSearchAnchorScroller(
-                        pendingSearchAnchor: $pendingSearchAnchor,
-                        anchors: [.integrationsAudio, .integrationsWeather]
-                    )
+                    .settingsSearchAnchorScroller(page: .integrations, pendingSearchAnchor: $pendingSearchAnchor)
             case .overlays:
                 OverlaysSettingsView()
-                    .settingsSearchAnchorScroller(
-                        pendingSearchAnchor: $pendingSearchAnchor,
-                        anchors: [.overlaysAppearance, .overlaysUnits]
-                    )
+                    .settingsSearchAnchorScroller(page: .overlays, pendingSearchAnchor: $pendingSearchAnchor)
             case .shortcuts:
                 ShortcutsView(pendingSearchAnchor: $pendingSearchAnchor)
             case .storage:
@@ -60,6 +46,7 @@ struct SettingsDetailContent: View {
                 #endif
             case .backupRestore:
                 GeneralSettingsView(page: .backupRestore)
+                    .settingsSearchAnchorScroller(page: .backupRestore, pendingSearchAnchor: $pendingSearchAnchor)
             case .workshopSetup:
                 #if !LITE_BUILD
                 if featureCatalog.isEnabled(.workshopOnline) {
@@ -72,10 +59,14 @@ struct SettingsDetailContent: View {
                 #endif
             case .advanced:
                 GeneralSettingsView(page: .advanced)
+                    .settingsSearchAnchorScroller(page: .advanced, pendingSearchAnchor: $pendingSearchAnchor)
             case .about:
                 GeneralSettingsView(page: .about)
+                    .settingsSearchAnchorScroller(page: .about, pendingSearchAnchor: $pendingSearchAnchor)
             }
         }
+        .environment(\.settingsSearchQuery, searchText)
+        .environment(\.settingsSearchRequest, searchRequest)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentColumnBackground()
     }

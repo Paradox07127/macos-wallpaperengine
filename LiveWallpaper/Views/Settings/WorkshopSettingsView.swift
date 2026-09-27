@@ -125,18 +125,7 @@ struct WorkshopSettingsView: View {
             WorkshopLegalSection()
         }
         .settingsFormChrome()
-        .settingsSearchAnchorScroller(
-            pendingSearchAnchor: $pendingSearchAnchor,
-            anchors: [
-                .workshopSetup,
-                .workshopConnection,
-                .workshopAssets,
-                .workshopContent,
-                .workshopDiagnostics,
-                .workshopLegal,
-                .workshopBadges,
-            ]
-        )
+        .settingsSearchAnchorScroller(page: .workshopSetup, pendingSearchAnchor: $pendingSearchAnchor)
         .overlay(alignment: .bottom) {
             ExportToast(isPresented: $showingExportToast)
                 .padding(.bottom, DesignTokens.Spacing.xl)

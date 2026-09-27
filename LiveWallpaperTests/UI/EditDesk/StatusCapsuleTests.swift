@@ -95,6 +95,75 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.thermalBarFraction(.critical) == 1)
     }
 
+    // MARK: The sentence beside the headline
+
+    private static let appFootprint: UInt64 = 1_288_490_189
+
+    private static func note(cpu: Double, memory: Double, thermal: ProcessInfo.ThermalState = .nominal) -> StatusCapsuleNote {
+        StatusCapsuleModel.note(
+            cpuPercent: cpu, memoryFraction: memory, thermal: thermal, appCPUPercent: 3, appMemoryBytes: appFootprint
+        )
+    }
+
+    @Test("The reviewed panel (CPU 9%, memory 62%) names the whole system's memory and says nothing needs doing")
+    func elevatedMemoryIsNamedAsTheSystems() {
+        #expect(Self.note(cpu: 9, memory: 0.62) == .systemMemory(fraction: 0.62, appBytes: Self.appFootprint, suggestsAction: false))
+    }
+
+    @Test("CPU past the elevated line is named as the whole system's CPU, with this app's share beside it")
+    func elevatedCPUIsNamedAsTheSystems() {
+        #expect(Self.note(cpu: 72, memory: 0.3) == .systemCPU(percent: 72, appPercent: 3, suggestsAction: false))
+    }
+
+    @Test("High load suggests acting, and names whichever reading is higher")
+    func highLoadSuggestsActingOnTheHigherReading() {
+        #expect(Self.note(cpu: 10, memory: 0.9) == .systemMemory(fraction: 0.9, appBytes: Self.appFootprint, suggestsAction: true))
+        #expect(Self.note(cpu: 95, memory: 0.9) == .systemCPU(percent: 95, appPercent: 3, suggestsAction: true))
+    }
+
+    @Test("Heat notes follow the thermal state the headline names")
+    func heatNotesFollowTheThermalState() {
+        for state in [ProcessInfo.ThermalState.fair, .serious, .critical] {
+            #expect(Self.note(cpu: 10, memory: 0.1, thermal: state) == .heat(state))
+        }
+    }
+
+    @Test("Before the first reading neither the headline nor the note claims the system is normal")
+    func noReadingsIsNotCalledNormal() {
+        let health = StatusCapsuleModel.health(cpuPercent: 0, memoryFraction: 0, thermal: .nominal)
+        #expect(StatusCapsuleModel.headlineKey(for: health) != "System Normal")
+        #expect(Self.note(cpu: 0, memory: 0) == .waitingForReadings)
+        #expect(Self.note(cpu: 10, memory: 0.1) == .normal, "control: real low readings are normal")
+    }
+
+    @Test("Across the whole range the note tells the same story as the headline")
+    func noteAgreesWithTheHeadline() {
+        var disagreements: [String] = []
+        for cpu in stride(from: 0.0, through: 100, by: 5) {
+            for memory in stride(from: 0.0, through: 1, by: 0.05) {
+                for thermal in [ProcessInfo.ThermalState.nominal, .fair, .serious, .critical] {
+                    let health = StatusCapsuleModel.health(cpuPercent: cpu, memoryFraction: memory, thermal: thermal)
+                    let note = Self.note(cpu: cpu, memory: memory, thermal: thermal)
+                    let agrees = switch (health, note) {
+                    case (.noReadings, .waitingForReadings), (.normal, .normal),
+                         (.thermalFair, .heat(.fair)), (.thermalSerious, .heat(.serious)), (.thermalCritical, .heat(.critical)):
+                        true
+                    case let (.elevatedLoad, .systemMemory(_, _, act)), let (.elevatedLoad, .systemCPU(_, _, act)):
+                        !act
+                    case let (.highLoad, .systemMemory(_, _, act)), let (.highLoad, .systemCPU(_, _, act)):
+                        act
+                    default:
+                        false
+                    }
+                    if !agrees {
+                        disagreements.append("cpu \(cpu) memory \(memory) \(thermal.rawValue): \(health) vs \(note)")
+                    }
+                }
+            }
+        }
+        #expect(disagreements.isEmpty, Comment(rawValue: "\(disagreements.count) disagree, e.g. \(disagreements.prefix(3))"))
+    }
+
     // MARK: Memory and battery
 
     private static let gib: UInt64 = 1 << 30
