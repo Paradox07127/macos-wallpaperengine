@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -218,6 +221,7 @@
     },
     "“%@” is a preset, not a wallpaper. It was added to your presets — choose a wallpaper to continue." : {
       "comment" : "Onboarding error when the chosen folder turned out to be a Workshop preset. Placeholder is the preset name.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -823,6 +827,7 @@
       }
     },
     "%@ of %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1264,6 +1269,7 @@
     },
     "%@, %@ wallpaper bookmark" : {
       "comment" : "Bookmark tile accessibility label. %1$@ is the bookmark name, %2$@ is the localized wallpaper type (Video / Web / Scene / Monitor).",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1334,7 +1340,7 @@
       }
     },
     "%@, %lld by %lld pixels" : {
-      "comment" : "Arrangement map tile VoiceOver label: display name, then width and height in pixels.\nSidebar row VoiceOver label combining display name and resolution. First placeholder is the display name, second and third are width and height in pixels.",
+      "comment" : "Arrangement map tile VoiceOver label: display name, then width and height in pixels.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1766,6 +1772,7 @@
     },
     "%@K subs" : {
       "comment" : "Workshop item subscriber count, thousands.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1801,6 +1808,7 @@
     },
     "%@M subs" : {
       "comment" : "Workshop item subscriber count, millions.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1935,6 +1943,7 @@
     },
     "%lld aerials" : {
       "comment" : "Library status bar: the number of aerials in the library. %lld is the count.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -2053,6 +2062,7 @@
     },
     "%lld API requests today" : {
       "comment" : "Workshop header stat: Steam Web API requests issued today.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -5639,6 +5649,7 @@
     },
     "Add a Web API key" : {
       "comment" : "Secondary action in the Workshop onboarding sheet, for the optional Steam Web API key.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5835,6 +5846,7 @@
       }
     },
     "Add Overlay" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6729,6 +6741,7 @@
     },
     "Aerial: %@" : {
       "comment" : "Aerial thumbnail a11y label. The placeholder is the aerial display name.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6764,6 +6777,7 @@
     },
     "Aerial: %@, %@" : {
       "comment" : "Aerial thumbnail a11y label. Placeholders are aerial display name and category.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7708,6 +7722,7 @@
       }
     },
     "Also active on: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8126,6 +8141,7 @@
       }
     },
     "Apple Aerials" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8577,6 +8593,7 @@
       }
     },
     "Apply Local Project" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8611,6 +8628,7 @@
       }
     },
     "Apply Project" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8889,6 +8907,7 @@
       }
     },
     "Apply to all displays" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10497,6 +10516,7 @@
     },
     "Back" : {
       "comment" : "Onboarding back button accessibility label.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10629,6 +10649,7 @@
     },
     "Back to library" : {
       "comment" : "Tooltip and VoiceOver label of the back button on an unsupported project's card in a display's Scene view (classic interface); returns to the grid of recently linked projects.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11481,6 +11502,7 @@
     },
     "Browse all in Workshop" : {
       "comment" : "A button that opens the Workshop app.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -11547,6 +11569,7 @@
     },
     "Browse installed and online Workshop wallpapers" : {
       "comment" : "A hint for the user that they can browse the Workshop Library.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -11613,6 +11636,7 @@
     },
     "Browse Online" : {
       "comment" : "Installed-tab empty state primary button; switches to the Workshop browse tab.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11684,6 +11708,7 @@
     },
     "Browse Wallpaper Engine from Steam" : {
       "comment" : "A heading for a section that shows how to browse wallpapers from Steam.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -11750,6 +11775,7 @@
     },
     "Browsing without an API key" : {
       "comment" : "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11962,6 +11988,7 @@
     },
     "by %@" : {
       "comment" : "Workshop item author line. Placeholder is the creator's Steam persona name.",
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -12378,6 +12405,7 @@
       }
     },
     "Can't use Wallpaper Engine projects" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14050,6 +14078,7 @@
       }
     },
     "Choose an .mp4, .mov, .m4v, or similar video file." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14114,6 +14143,7 @@
       }
     },
     "Choose Different Source" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14148,6 +14178,7 @@
       }
     },
     "Choose Different Video" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14351,6 +14382,7 @@
       }
     },
     "Choose one in the sidebar to set up its wallpaper." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14686,6 +14718,7 @@
     },
     "Choose wallpaper type" : {
       "comment" : "A hint for the user to choose a wallpaper type.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -14721,6 +14754,7 @@
       }
     },
     "Choose Web" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15323,6 +15357,7 @@
     },
     "Clear scene" : {
       "comment" : "Accessibility label for the Trash button when scene tab is active.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15358,6 +15393,7 @@
     },
     "Clear Scene — remove the active scene for this display" : {
       "comment" : "Tooltip on the Trash button when scene tab is active. Clarifies it only clears this screen's scene.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15535,6 +15571,7 @@
     },
     "Clear Video — remove the saved video for this display" : {
       "comment" : "Tooltip on the Trash button when video tab is active. Clarifies it only clears this screen's video.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15643,6 +15680,7 @@
     },
     "Clear web page" : {
       "comment" : "Accessibility label for the Trash button when HTML tab is active.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15678,6 +15716,7 @@
     },
     "Clear Web Page — remove the saved web page for this display" : {
       "comment" : "Tooltip on the Trash button when HTML tab is active. Clarifies it only clears this screen's web page.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -16768,6 +16807,7 @@
     },
     "Compatible imported scenes." : {
       "comment" : "Text displayed in a guide card for the Scene wallpaper type.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -17382,6 +17422,7 @@
       }
     },
     "Continue" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17770,6 +17811,7 @@
       }
     },
     "Copies the current wallpaper and settings to every other connected display" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17841,6 +17883,7 @@
     },
     "Copies this overlay to every other connected display; their wallpapers are not changed" : {
       "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -19775,6 +19818,7 @@
       }
     },
     "Couldn't open video" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -19809,6 +19853,7 @@
       }
     },
     "Couldn't open web resource" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -20443,6 +20488,7 @@
     },
     "Couldn't set up that Wallpaper Engine project. Try another folder." : {
       "comment" : "Onboarding error when a Wallpaper Engine project folder could not be applied to any display.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -20932,6 +20978,7 @@
     },
     "Currently in use. Tap to reactivate." : {
       "comment" : "A11y hint for a WPE history row that is the active wallpaper.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25432,6 +25479,7 @@
       }
     },
     "Drop a video file, web file, or folder to use it as a wallpaper." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25552,6 +25600,7 @@
       }
     },
     "Drop to use as wallpaper" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -32419,6 +32468,7 @@
     },
     "Hand videos to macOS so they play without Loomscreen running" : {
       "comment" : "Sidebar accessibility hint for the System Wallpaper item.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -32845,6 +32895,7 @@
     },
     "Hide the properties panel" : {
       "comment" : "A label for a toolbar button that hides the properties panel.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -33347,6 +33398,7 @@
       }
     },
     "https://example.com or example.com" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -33791,6 +33843,7 @@
       }
     },
     "Import a File" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -34290,6 +34343,7 @@
     },
     "Imported project: %@" : {
       "comment" : "A11y label for an imported project history row card. The placeholder is the project title.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -34446,6 +34500,7 @@
       }
     },
     "In use" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37595,6 +37650,7 @@
       }
     },
     "Load preview" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37629,6 +37685,7 @@
       }
     },
     "Load Preview" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37769,6 +37826,7 @@
       }
     },
     "Loading preview…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37943,6 +38001,7 @@
       }
     },
     "Loading video…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -38041,6 +38100,7 @@
       }
     },
     "Local development server — JavaScript allowed." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -39355,6 +39415,7 @@
       }
     },
     "macOS couldn't grant the app secure access to that file. Try a different video, or move the file to a folder you own." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -39389,6 +39450,7 @@
       }
     },
     "macOS couldn't grant the app secure access to that resource. Try moving it to a folder you own." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -41963,6 +42025,7 @@
     },
     "MP4 / MOV from your Mac." : {
       "comment" : "Subtitle for the \"Video\" guide card when the user is not a Lite subscriber.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -41999,6 +42062,7 @@
     },
     "MP4 / MOV, playlists, and schedules." : {
       "comment" : "Subtitle for the \"Video\" guide card.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -42642,6 +42706,7 @@
       }
     },
     "Needs deps" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -43488,6 +43553,7 @@
     },
     "No aerials match your search" : {
       "comment" : "Empty state title shown when the user's search filters out every aerial.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -43686,6 +43752,7 @@
       }
     },
     "No display selected" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -44026,6 +44093,7 @@
       }
     },
     "No particles for current weather" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -45194,6 +45262,7 @@
       }
     },
     "No Video Selected" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -45424,6 +45493,7 @@
       }
     },
     "No wallpapers installed yet." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -45481,6 +45551,7 @@
     },
     "No web source" : {
       "comment" : "A placeholder text when there is no web source.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -46402,7 +46473,7 @@
       }
     },
     "OK" : {
-      "comment" : "Dismiss button on the add-wallpaper failure alert.\nDismiss button on the monitor layout error alert.\nDismiss button on the monitor wallpaper wrong-folder alert.",
+      "comment" : "Dismiss button on the monitor layout error alert.\nDismiss button on the monitor wallpaper wrong-folder alert.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -47068,6 +47139,7 @@
       }
     },
     "Open application preferences" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -47766,6 +47838,7 @@
     },
     "Opens the Steam Workshop tab to browse and manage your full library" : {
       "comment" : "A hint for the user that opens the Steam Workshop tab to browse and manage their full library.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -50084,6 +50157,7 @@
     },
     "Pauses video playback" : {
       "comment" : "A11y hint for playback toggle when playing.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -50605,6 +50679,7 @@
       }
     },
     "Pick a web file or folder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -50850,6 +50925,7 @@
       }
     },
     "Play preview" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -50884,6 +50960,7 @@
       }
     },
     "Play Preview" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -52257,6 +52334,7 @@
       }
     },
     "Preview paused" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -52697,6 +52775,7 @@
       }
     },
     "Proceed to choose your first wallpaper" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -53974,7 +54053,7 @@
       }
     },
     "Ready" : {
-      "comment" : "Onboarding engine-assets step detail when the assets are available.\nWorkshop paste row status badge.\nWorkshop setup status when a Steam Web API key exists.",
+      "comment" : "Workshop paste row status badge.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -54658,6 +54737,7 @@
     },
     "Refresh web preview" : {
       "comment" : "A label for the refresh button in the web preview section.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -54694,6 +54774,7 @@
     },
     "Refresh web snapshot" : {
       "comment" : "A label for the refresh button.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -54901,6 +54982,7 @@
       }
     },
     "Release to turn on the effect layer" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -55601,6 +55683,7 @@
       }
     },
     "Remove from Library" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -59197,6 +59280,7 @@
     },
     "Resumes video playback" : {
       "comment" : "A11y hint for playback toggle when paused.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -59371,6 +59455,7 @@
     },
     "Retry Preview" : {
       "comment" : "A button that retries loading a video preview.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -59406,6 +59491,7 @@
       }
     },
     "Retry Update" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -59434,6 +59520,7 @@
       }
     },
     "Return to the recent linked projects grid" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -61168,6 +61255,7 @@
     },
     "Scanning library…" : {
       "comment" : "Progress shown in the Apple Aerials library while it is being scanned.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -61203,6 +61291,7 @@
     },
     "Scanning the Aerials library" : {
       "comment" : "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -61638,6 +61727,7 @@
       }
     },
     "Scene wallpaper type" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -62416,6 +62506,7 @@
       }
     },
     "Scrub through the video timeline" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -62516,6 +62607,7 @@
     },
     "Search aerials" : {
       "comment" : "Placeholder for the Aerials library search field.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -62659,6 +62751,7 @@
     },
     "Search library" : {
       "comment" : "Placeholder of the search field on the Installed tab of the Steam Workshop pane (classic interface).",
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -62961,6 +63054,7 @@
     },
     "Select a wallpaper to see details." : {
       "comment" : "A description of the placeholder view.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -63027,6 +63121,7 @@
     },
     "Select to configure this display" : {
       "comment" : "A hint that describes how to interact with this view.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -63062,6 +63157,7 @@
       }
     },
     "Select Video File" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -63642,6 +63738,7 @@
     },
     "Set Up Steam Workshop" : {
       "comment" : "Onboarding Workshop setup page title.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -65307,6 +65404,7 @@
     },
     "Show or hide the wallpaper properties on the right" : {
       "comment" : "A description of the accessibility hint for the wallpaper properties panel toggle.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -65534,6 +65632,7 @@
     },
     "Show the properties panel" : {
       "comment" : "A label for a toolbar button that shows the properties panel.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -66430,6 +66529,7 @@
     },
     "Skip for Now" : {
       "comment" : "Skip first-run wallpaper setup and open the app.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -67643,6 +67743,7 @@
     },
     "Start browsing" : {
       "comment" : "Primary action in the Workshop onboarding sheet: dismiss and browse, which needs no key.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -67749,6 +67850,7 @@
       }
     },
     "Starts a temporary video preview for this settings panel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -68322,6 +68424,7 @@
     },
     "Steam doesn't expose remaining quota; this counts only the requests this Mac has issued today." : {
       "comment" : "A tooltip for the seal that indicates the Steam Workshop API key status.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -71386,6 +71489,7 @@
       }
     },
     "Switch to Video or Web to drop" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72089,6 +72193,7 @@
     },
     "System Wallpaper requires macOS 26 or later." : {
       "comment" : "Shown when the System Wallpaper page is reached on an unsupported macOS version.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72188,6 +72293,7 @@
     },
     "Tap refresh to capture preview" : {
       "comment" : "A description of the refresh button.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -72224,6 +72330,7 @@
     },
     "Tap to apply" : {
       "comment" : "A11y hint for a WPE history row that can be applied.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72259,6 +72366,7 @@
     },
     "Tap to apply to all displays, or drag onto a display." : {
       "comment" : "A11y hint for an Installed-library card: the whole card applies the wallpaper.",
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -72949,6 +73057,7 @@
       }
     },
     "That file type isn't supported. Pick a video or web page." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72983,6 +73092,7 @@
       }
     },
     "That file type isn't supported. Pick a video, web page, or scene." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -75030,6 +75140,7 @@
       }
     },
     "The selection isn't a web file or a folder containing an index page." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -75630,6 +75741,7 @@
     },
     "The wallpaper on screen isn't the scheduled one. The schedule resumes when the next time slot starts." : {
       "comment" : "Explains the paused daily schedule notice on the display detail page.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -76544,6 +76656,7 @@
       }
     },
     "This is a Windows-only wallpaper and can't run on macOS." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -78025,6 +78138,7 @@
     },
     "Toggle details panel" : {
       "comment" : "A label for a button that toggles the",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -78127,6 +78241,7 @@
     },
     "Toggle properties panel" : {
       "comment" : "A label for a toolbar button that toggles the visibility of the properties panel.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -78227,6 +78342,7 @@
     },
     "toolbar.addWallpaper" : {
       "comment" : "Settings window toolbar button that opens a video picker for the selected display.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -78262,6 +78378,7 @@
     },
     "toolbar.preferences" : {
       "comment" : "Settings window toolbar button for opening general preferences.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -79787,6 +79904,7 @@
       }
     },
     "Unsupported file type" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -80097,6 +80215,7 @@
       }
     },
     "Update available on Steam" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -80155,6 +80274,7 @@
     },
     "Update from Steam" : {
       "comment" : "A context-menu item that downloads a newer version of",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {
@@ -81474,6 +81594,7 @@
       }
     },
     "Video file (.mp4, .mov, …)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -81542,6 +81663,7 @@
       }
     },
     "Video format not supported" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -81647,6 +81769,7 @@
       }
     },
     "Video position" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -81780,6 +81903,7 @@
       }
     },
     "Video wallpaper type" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -82673,6 +82797,7 @@
       }
     },
     "Wallpaper bundles a Windows DLL plugin; cannot run on macOS" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -83021,6 +83146,7 @@
     },
     "Wallpaper paused" : {
       "comment" : "A description of a wallpaper that is paused.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -83092,6 +83218,7 @@
     },
     "Wallpaper playing" : {
       "comment" : "A description of a wallpaper that is currently playing.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -83231,6 +83358,7 @@
       }
     },
     "Wallpaper requires a Windows executable; cannot run on macOS" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -83299,6 +83427,7 @@
       }
     },
     "Wallpaper Type" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -84161,6 +84290,7 @@
       }
     },
     "Web file or folder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -84232,6 +84362,7 @@
     },
     "Web pages, local .html files, and folders." : {
       "comment" : "Subtitle for the web wallpaper type.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
@@ -84303,6 +84434,7 @@
       }
     },
     "Web wallpaper active" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -84373,6 +84505,7 @@
       }
     },
     "Web wallpaper type" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -85155,6 +85288,7 @@
       }
     },
     "Won't run" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -85676,6 +85810,7 @@
     },
     "Workshop tab" : {
       "comment" : "A segmented control that lets the user switch between the two tabs of the workshop pane.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "es" : {

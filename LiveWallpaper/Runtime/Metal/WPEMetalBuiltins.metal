@@ -20,7 +20,7 @@ struct WPETextMeshVertex {
 
 // WPE text glyph mesh. Per-glyph quad vertices in top-left scene pixels +
 // R8 coverage-atlas UV; mirrors Windows WPE's bitmap font atlas draw.
-vertex WPEVertexOut wpe_text_glyph_vertex(
+[[vertex]] WPEVertexOut wpe_text_glyph_vertex(
     uint vid [[vertex_id]],
     constant WPETextMeshVertex* verts [[buffer(0)]],
     constant float2& sceneSize [[buffer(1)]]
@@ -33,7 +33,7 @@ vertex WPEVertexOut wpe_text_glyph_vertex(
     return out;
 }
 
-fragment half4 wpe_text_glyph_fragment(
+[[fragment]] half4 wpe_text_glyph_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> atlas [[texture(0)]],
     constant float4& color [[buffer(0)]]
@@ -76,6 +76,8 @@ static inline float3 wpe_map3(float (*fn)(float, float), float3 b, float3 s) {
     return float3(fn(b.r, s.r), fn(b.g, s.g), fn(b.b, s.b));
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
 static inline float3 wpe_RGBToHSL(float3 color) {
     float fmin = min(min(color.r, color.g), color.b);
     float fmax = max(max(color.r, color.g), color.b);
@@ -94,6 +96,7 @@ static inline float3 wpe_RGBToHSL(float3 color) {
     }
     return hsl;
 }
+#pragma clang diagnostic pop
 
 static inline float wpe_hueToRGB(float f1, float f2, float hue) {
     if (hue < 0.0)      { hue += 1.0; }
@@ -157,7 +160,7 @@ static inline float3 wpe_ApplyBlending(int blendMode, float3 A, float3 B, float 
     return wpe_lerp(A, r, opacity);
 }
 
-vertex WPEVertexOut wpe_fullscreen_vertex(uint vertexID [[vertex_id]]) {
+[[vertex]] WPEVertexOut wpe_fullscreen_vertex(uint vertexID [[vertex_id]]) {
     float2 positions[4] = {
         float2(-1.0, -1.0),
         float2( 1.0, -1.0),
@@ -183,7 +186,7 @@ struct WPEObjectQuadUniforms {
     float4 uvSignAndPadding;     // x,y UV sign for negative WPE scale mirroring; z = local capture CLEARALPHA
 };
 
-vertex WPEVertexOut wpe_object_quad_vertex(
+[[vertex]] WPEVertexOut wpe_object_quad_vertex(
     uint vertexID [[vertex_id]],
     constant WPEObjectQuadUniforms& u [[buffer(1)]]
 ) {
@@ -226,7 +229,7 @@ vertex WPEVertexOut wpe_object_quad_vertex(
 // covered by the current text layer into its exact-size local surface, keeping
 // RGB but forcing alpha to zero. Effects and linked-source consumers therefore
 // see the same background seed without making it opaque at final composite.
-fragment half4 wpe_text_background_fragment(
+[[fragment]] half4 wpe_text_background_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> scene [[texture(0)]],
     constant WPEObjectQuadUniforms& u [[buffer(0)]]
@@ -266,7 +269,7 @@ struct WPESkewParams {
     float4 topBottomLeftRight; // x=g_Top, y=g_Bottom, z=g_Left, w=g_Right
 };
 
-vertex WPEVertexOut wpe_skew_object_quad_vertex(
+[[vertex]] WPEVertexOut wpe_skew_object_quad_vertex(
     uint vertexID [[vertex_id]],
     constant WPEObjectQuadUniforms& u [[buffer(1)]],
     constant WPESkewParams& skew [[buffer(2)]]
@@ -329,7 +332,7 @@ struct WPEShapeQuadUniforms {
     float4 sceneHalfAndPad; // x,y = half scene width/height; z,w = padding
 };
 
-vertex WPEVertexOut wpe_shape_quad_vertex(
+[[vertex]] WPEVertexOut wpe_shape_quad_vertex(
     uint vertexID [[vertex_id]],
     constant WPEShapeQuadUniforms& u [[buffer(1)]]
 ) {
@@ -468,7 +471,7 @@ static inline float3 wpe_skin_puppet_normal(
     return normalize((determinant < 0.0 ? -1.0 : 1.0) * (cofactor * v.normal.xyz));
 }
 
-vertex WPEVertexOut wpe_puppet_mesh_vertex(
+[[vertex]] WPEVertexOut wpe_puppet_mesh_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPEPuppetMeshUniforms& u [[buffer(1)]],
@@ -487,7 +490,7 @@ vertex WPEVertexOut wpe_puppet_mesh_vertex(
     return out;
 }
 
-vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
+[[vertex]] WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPESceneModelMeshUniforms& u [[buffer(1)]],
@@ -517,7 +520,7 @@ vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
 
 // Same skinned placement as wpe_puppet_mesh_vertex, but also emits the screen-space
 // UV (WPE CLIPPINGUVS) so the clip-target/compose fragments can sample the clip-mask RT.
-vertex WPEPuppetClipVertexOut wpe_puppet_mesh_clip_vertex(
+[[vertex]] WPEPuppetClipVertexOut wpe_puppet_mesh_clip_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPEPuppetMeshUniforms& u [[buffer(1)]],
@@ -547,7 +550,7 @@ vertex WPEPuppetClipVertexOut wpe_puppet_mesh_clip_vertex(
 // placement (size/rotation/center, /halfScene) is applied. Negative WPE scale
 // mirrors the MESH geometry (scaleSign) rather than the UV, which is equivalent
 // because the old final quad mirrored an already-rasterized puppet FBO.
-vertex WPEVertexOut wpe_puppet_scene_composite_vertex(
+[[vertex]] WPEVertexOut wpe_puppet_scene_composite_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPEPuppetSceneCompositeUniforms& u [[buffer(1)]],
@@ -589,7 +592,7 @@ vertex WPEVertexOut wpe_puppet_scene_composite_vertex(
 // Clip-capable twin of the deferred scene composite vertex. The visible mesh and
 // each clip-source silhouette use the exact same scene-space position; normalized
 // screenUV therefore addresses the clip RT correctly even when that RT is downsampled.
-vertex WPEPuppetClipVertexOut wpe_puppet_scene_composite_clip_vertex(
+[[vertex]] WPEPuppetClipVertexOut wpe_puppet_scene_composite_clip_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPEPuppetSceneCompositeUniforms& u [[buffer(1)]],
@@ -630,10 +633,11 @@ vertex WPEPuppetClipVertexOut wpe_puppet_scene_composite_clip_vertex(
     return out;
 }
 
-fragment half4 wpe_solidcolor_fragment(
+[[fragment]] half4 wpe_solidcolor_fragment(
     WPEVertexOut in [[stage_in]],
     constant WPESolidUniforms& uniforms [[buffer(0)]]
 ) {
+    (void)in;
     return half4(uniforms.color);
 }
 
@@ -649,7 +653,7 @@ struct WPEPresentUniforms {
 // copies. `ndcScale` shrinks the quad (letterboxed Fit); `uvScale`/`uvOffset`
 // crop the source UV (crop-to-fill). All-identity reproduces the legacy
 // full-bleed Stretch.
-vertex WPEVertexOut wpe_present_vertex(
+[[vertex]] WPEVertexOut wpe_present_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPresentUniforms& u [[buffer(0)]]
 ) {
@@ -671,7 +675,7 @@ vertex WPEVertexOut wpe_present_vertex(
     return out;
 }
 
-fragment half4 wpe_present_fragment(
+[[fragment]] half4 wpe_present_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]
 ) {
@@ -684,7 +688,7 @@ fragment half4 wpe_present_fragment(
 // the vertex stage (objectQuadUniforms / pixelOffset), so this fragment never
 // offsets its sample UV — it samples the source texture straight through and
 // takes no uniform buffer.
-fragment half4 wpe_copy_fragment(
+[[fragment]] half4 wpe_copy_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]
 ) {
@@ -703,7 +707,7 @@ struct WPEVideoYCbCrUniforms {
 // `WPEVideoYCbCrConversion` so tests can pin the coefficients. Output is
 // gamma-encoded R'G'B' into a non-sRGB target; the renderer samples it through
 // an sRGB view — byte-identical to the old direct `.bgra8Unorm_srgb` CV wrap.
-fragment half4 wpe_video_nv12_convert_fragment(
+[[fragment]] half4 wpe_video_nv12_convert_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> luma [[texture(0)]],
     texture2d<float, access::sample> chroma [[texture(1)]],
@@ -723,15 +727,16 @@ fragment half4 wpe_video_nv12_convert_fragment(
 // `materials/util/copy.json` between FBOs. `compose` blends two layer
 // composites into the scene under a tint color.
 
-fragment half4 wpe_solidlayer_fragment(
+[[fragment]] half4 wpe_solidlayer_fragment(
     WPEVertexOut in [[stage_in]],
     constant WPESolidUniforms& uniforms [[buffer(0)]]
 ) {
+    (void)in;
     float alpha = saturate(uniforms.color.a);
     return half4(float4(uniforms.color.rgb * alpha, alpha));
 }
 
-fragment half4 wpe_util_copy_fragment(
+[[fragment]] half4 wpe_util_copy_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]
 ) {
@@ -753,7 +758,7 @@ struct WPEBlendCompositeUniforms {
 //
 // Screen UV comes from the snapshot's own dimensions rather than a uniform:
 // it is always allocated at scene size, which is the space `[[position]]` is in.
-fragment half4 wpe_blend_composite_fragment(
+[[fragment]] half4 wpe_blend_composite_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture4 [[texture(4)]],
@@ -777,7 +782,7 @@ fragment half4 wpe_blend_composite_fragment(
 
 // Apple GPU attachment read: the executor permits only a single non-overlapping
 // quad, with the same HDR format/size as the old immutable scene snapshot.
-fragment half4 wpe_blend_composite_fetch_fragment(
+[[fragment]] half4 wpe_blend_composite_fetch_fragment(
     WPEVertexOut in [[stage_in]],
     half4 sceneColor [[color(0)]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
@@ -798,7 +803,7 @@ fragment half4 wpe_blend_composite_fetch_fragment(
 // DOWNSTREAM effect (lens flare / DoF / foliage), not the compose capture.
 // Single-texture by design (WPE composelayer samples only g_Texture0); the
 // two-texture mix lives in wpe_compose_fragment for ordinary region composes.
-fragment half4 wpe_composelayer_fragment(
+[[fragment]] half4 wpe_composelayer_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEComposeLayerUniforms& uniforms [[buffer(0)]]
@@ -817,7 +822,7 @@ fragment half4 wpe_composelayer_fragment(
 // the scene pixels that sit under the object's authored quad. The final scene
 // pass will draw that local target through wpe_object_quad_vertex, so this path
 // pre-applies the inverse UV mirroring and the same z-rotation/placement math.
-fragment half4 wpe_local_scene_capture_fragment(
+[[fragment]] half4 wpe_local_scene_capture_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEObjectQuadUniforms& u [[buffer(0)]]
@@ -852,7 +857,7 @@ fragment half4 wpe_local_scene_capture_fragment(
     return texture0.sample(linearSampler, clamp(uv, float2(0.0), float2(1.0)));
 }
 
-fragment half4 wpe_compose_fragment(
+[[fragment]] half4 wpe_compose_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -885,7 +890,7 @@ struct WPEColorBalanceUniforms {
     float padding;
 };
 
-fragment half4 wpe_effect_colorbalance_fragment(
+[[fragment]] half4 wpe_effect_colorbalance_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEColorBalanceUniforms& uniforms [[buffer(0)]]
@@ -911,7 +916,7 @@ struct WPEBlurUniforms {
     float padding;
 };
 
-fragment half4 wpe_effect_blur_fragment(
+[[fragment]] half4 wpe_effect_blur_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEBlurUniforms& uniforms [[buffer(0)]]
@@ -942,7 +947,7 @@ struct WPEVignetteUniforms {
     float padding;
 };
 
-fragment half4 wpe_effect_vignette_fragment(
+[[fragment]] half4 wpe_effect_vignette_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEVignetteUniforms& uniforms [[buffer(0)]]
@@ -965,7 +970,7 @@ struct WPEWaterUniforms {
     float time;
 };
 
-fragment half4 wpe_effect_water_fragment(
+[[fragment]] half4 wpe_effect_water_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEWaterUniforms& uniforms [[buffer(0)]]
@@ -1025,7 +1030,7 @@ static inline half4 wpe_genericimage2_shade(
     return half4(float4(rgb * alpha, alpha));
 }
 
-fragment half4 wpe_genericimage2_fragment(
+[[fragment]] half4 wpe_genericimage2_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
@@ -1036,7 +1041,7 @@ fragment half4 wpe_genericimage2_fragment(
 /// Same shading, fed by `wpe_scene_model_mesh_vertex`: a `.mdl` layer whose
 /// material is an IMAGE shader (genericimage2/3/4) still draws its mesh, and the
 /// mesh vertex emits the richer scene-model varyings this stage_in must match.
-fragment half4 wpe_scene_model_image_fragment(
+[[fragment]] half4 wpe_scene_model_image_fragment(
     WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
@@ -1044,7 +1049,7 @@ fragment half4 wpe_scene_model_image_fragment(
     return wpe_genericimage2_shade(in.uv, texture0, uniforms);
 }
 
-fragment half4 wpe_genericimage4_fragment(
+[[fragment]] half4 wpe_genericimage4_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1090,7 +1095,7 @@ static inline float3 wpe_bloom_box4(
     );
 }
 
-fragment half4 wpe_bloom_prefilter_fragment(
+[[fragment]] half4 wpe_bloom_prefilter_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> texture0 [[texture(0)]],
     constant WPEBloomUniforms& u [[buffer(0)]]
@@ -1103,7 +1108,7 @@ fragment half4 wpe_bloom_prefilter_fragment(
     return half4(float4(color * contribution * u.texelAndWeight.z * u.tint.rgb, 1.0));
 }
 
-fragment half4 wpe_bloom_downsample_fragment(
+[[fragment]] half4 wpe_bloom_downsample_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> texture0 [[texture(0)]],
     constant WPEBloomUniforms& u [[buffer(0)]]
@@ -1113,7 +1118,7 @@ fragment half4 wpe_bloom_downsample_fragment(
 
 // Draws with the "additive" pipeline (SRC_ALPHA/ONE): alpha carries the
 // scatter weight so each level accumulates into the next-larger one.
-fragment half4 wpe_bloom_upsample_fragment(
+[[fragment]] half4 wpe_bloom_upsample_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> texture0 [[texture(0)]],
     constant WPEBloomUniforms& u [[buffer(0)]]
@@ -1189,7 +1194,7 @@ static inline float3 wpe_scene_model_reflection(
     return saturate(reflectionColor);
 }
 
-fragment half4 wpe_scene_model_generic4_fragment(
+[[fragment]] half4 wpe_scene_model_generic4_fragment(
     WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1257,7 +1262,7 @@ fragment half4 wpe_scene_model_generic4_fragment(
 // `PerformLighting_V1` has no definition anywhere in the engine assets — WPE injects
 // it — but it contributes only scene-light specular, and we feed no scene lights, so
 // it evaluates to 0 here exactly as it does for generic4.
-fragment half4 wpe_scene_model_chroma4_fragment(
+[[fragment]] half4 wpe_scene_model_chroma4_fragment(
     WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1336,7 +1341,7 @@ fragment half4 wpe_scene_model_chroma4_fragment(
 // generic2's REFLECTION samples `_rt_Reflection` (slot 2), NOT generic4's
 // mip-mapped frame buffer, so it is deliberately not wired here: no corpus scene
 // authors it, and guessing the source would be worse than leaving it off.
-fragment half4 wpe_scene_model_generic2_fragment(
+[[fragment]] half4 wpe_scene_model_generic2_fragment(
     WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPESceneModelGenericUniforms& u [[buffer(0)]]
@@ -1362,7 +1367,7 @@ fragment half4 wpe_scene_model_generic2_fragment(
 // Port of WPE clippingmaskimage4.frag: renders the clip SHAPE part into the clip-mask
 // render target. `.r` carries the mask coverage (consumed by CLIPPINGTARGET below),
 // `.a` carries the shape alpha. alphaMaskUV.w maps WPE's g_RenderVar0.x (invert toggle).
-fragment half4 wpe_puppet_clippingmaskimage4_fragment(
+[[fragment]] half4 wpe_puppet_clippingmaskimage4_fragment(
     WPEPuppetClipVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1382,7 +1387,7 @@ fragment half4 wpe_puppet_clippingmaskimage4_fragment(
 // Port of WPE genericimage4.frag clipping combos. alphaMaskUV.w selects the mode:
 // 1=CLIPPINGTARGET (alpha *= clipMask.r), 2=CLIPPINGCOMPOSE (mix rgb), 3=both.
 // The clip mask is sampled in screen space (CLIPPINGUVS), matching the mask RT.
-fragment half4 wpe_genericimage4_puppet_clip_fragment(
+[[fragment]] half4 wpe_genericimage4_puppet_clip_fragment(
     WPEPuppetClipVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1416,7 +1421,7 @@ fragment half4 wpe_genericimage4_puppet_clip_fragment(
 // Final deferred puppet clip. The local material + effect chain has already
 // produced premultiplied color in texture0, so this stage only applies the
 // source silhouette coverage; re-running genericimage4 would double tint/alpha.
-fragment half4 wpe_puppet_scene_composite_clip_fragment(
+[[fragment]] half4 wpe_puppet_scene_composite_clip_fragment(
     WPEPuppetClipVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture8 [[texture(8)]],
@@ -1494,7 +1499,7 @@ struct WPEParticleSpriteParams {
     float4 tintAndMask;
 };
 
-vertex WPEParticleVertexOut wpe_particle_vertex(
+[[vertex]] WPEParticleVertexOut wpe_particle_vertex(
     uint vertexID [[vertex_id]],
     uint instanceID [[instance_id]],
     constant WPEParticleInstance* instances [[buffer(1)]],
@@ -1669,7 +1674,7 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
     return out;
 }
 
-fragment half4 wpe_particle_instanced_fragment(
+[[fragment]] half4 wpe_particle_instanced_fragment(
     WPEParticleVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEParticleSpriteParams& sprite [[buffer(0)]],
@@ -1716,7 +1721,7 @@ fragment half4 wpe_particle_instanced_fragment(
 // nearly vanishes. Reuses the instanced quad vertex (`[[position]]` gives the
 // screen pixel, so no screen-coord varying is needed). Offset sign mirrors WPE's
 // GLSL; magnitude = g_RefractAmount (sprite.frameRectMode.w).
-fragment half4 wpe_particle_refract_fragment(
+[[fragment]] half4 wpe_particle_refract_fragment(
     WPEParticleVertexOut in [[stage_in]],
     texture2d<half, access::sample> albedoTex [[texture(0)]],
     texture2d<half, access::sample> normalTex [[texture(1)]],
@@ -1726,6 +1731,7 @@ fragment half4 wpe_particle_refract_fragment(
     sampler particleSampler [[sampler(0)]],
     sampler normalSampler [[sampler(1)]]
 ) {
+    (void)projection;
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     half4 sLo = albedoTex.sample(particleSampler, in.uvCurrent);
     half4 sHi = albedoTex.sample(particleSampler, in.uvNext);
@@ -1768,7 +1774,7 @@ struct WPEParticleRopeVertex {
     float4 color;        // rgb 0..1, a = alpha
 };
 
-vertex WPEParticleVertexOut wpe_particle_rope_vertex(
+[[vertex]] WPEParticleVertexOut wpe_particle_rope_vertex(
     uint vertexID [[vertex_id]],
     constant WPEParticleRopeVertex* verts [[buffer(1)]],
     constant WPEParticleProjection& projection [[buffer(2)]]
@@ -1792,7 +1798,7 @@ vertex WPEParticleVertexOut wpe_particle_rope_vertex(
     return out;
 }
 
-fragment half4 wpe_genericparticle_fragment(
+[[fragment]] half4 wpe_genericparticle_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEGenericParticleUniforms& uniforms [[buffer(0)]]
@@ -1818,7 +1824,7 @@ struct WPEOpacityUniforms {
     float maskScaleY;
 };
 
-fragment half4 wpe_effect_opacity_fragment(
+[[fragment]] half4 wpe_effect_opacity_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1845,7 +1851,7 @@ struct WPEScrollUniforms {
     float padding;
 };
 
-fragment half4 wpe_effect_scroll_fragment(
+[[fragment]] half4 wpe_effect_scroll_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEScrollUniforms& uniforms [[buffer(0)]]
@@ -1871,7 +1877,7 @@ struct WPEGodraysCombineUniforms {
     uint padding2;
 };
 
-fragment half4 wpe_effect_pulse_fragment(
+[[fragment]] half4 wpe_effect_pulse_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEPulseUniforms& uniforms [[buffer(0)]]
@@ -1889,7 +1895,7 @@ fragment half4 wpe_effect_pulse_fragment(
 // previous version returned rays-only whenever slot 2 was bound — 3448877775's
 // moon binds _rt_FullFrameBuffer there with raythreshold:1 (zero rays), so the
 // whole moon layer was erased.
-fragment half4 wpe_effect_godrays_combine_fragment(
+[[fragment]] half4 wpe_effect_godrays_combine_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> raysTexture [[texture(0)]],
     texture2d<half, access::sample> albedoTexture [[texture(1)]],
@@ -1918,7 +1924,7 @@ struct WPEIrisUniforms {
     float padding1;
 };
 
-fragment half4 wpe_effect_iris_fragment(
+[[fragment]] half4 wpe_effect_iris_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEIrisUniforms& uniforms [[buffer(0)]]
@@ -1947,7 +1953,7 @@ struct WPEWaterWavesUniforms {
 // Port of WPE's effects/waterwaves.frag: a sine wave travels along `direction` at
 // `speed`/`scale`, and displaces the sample UV perpendicular to that direction by
 // strength² (an opacity mask localizes it, e.g. to a character's hair).
-fragment half4 wpe_effect_waterwaves_fragment(
+[[fragment]] half4 wpe_effect_waterwaves_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
@@ -1994,7 +2000,7 @@ struct WPESpinUniforms {
     float padding1;
 };
 
-fragment half4 wpe_effect_spin_fragment(
+[[fragment]] half4 wpe_effect_spin_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPESpinUniforms& uniforms [[buffer(0)]]
@@ -2017,7 +2023,7 @@ struct WPETintUniforms {
     float padding2;
 };
 
-fragment half4 wpe_effect_tint_fragment(
+[[fragment]] half4 wpe_effect_tint_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPETintUniforms& uniforms [[buffer(0)]]
@@ -2036,7 +2042,7 @@ struct WPEFoliageSwayUniforms {
     float time;
 };
 
-fragment half4 wpe_effect_foliagesway_fragment(
+[[fragment]] half4 wpe_effect_foliagesway_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEFoliageSwayUniforms& uniforms [[buffer(0)]]
@@ -2055,7 +2061,7 @@ struct WPEWaterRippleUniforms {
     float time;
 };
 
-fragment half4 wpe_effect_waterripple_fragment(
+[[fragment]] half4 wpe_effect_waterripple_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEWaterRippleUniforms& uniforms [[buffer(0)]]
@@ -2078,7 +2084,7 @@ struct WPEBlendUniforms {
     float padding2;
 };
 
-fragment half4 wpe_effect_blend_fragment(
+[[fragment]] half4 wpe_effect_blend_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEBlendUniforms& uniforms [[buffer(0)]]
@@ -2096,7 +2102,7 @@ struct WPEWaterFlowUniforms {
     float time;
 };
 
-fragment half4 wpe_effect_waterflow_fragment(
+[[fragment]] half4 wpe_effect_waterflow_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEWaterFlowUniforms& uniforms [[buffer(0)]]
@@ -2112,7 +2118,7 @@ struct WPEColorGradingUniforms {
     float4 gain;         // highlight gain
 };
 
-fragment half4 wpe_effect_color_grading_fragment(
+[[fragment]] half4 wpe_effect_color_grading_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEColorGradingUniforms& uniforms [[buffer(0)]]
@@ -2134,7 +2140,7 @@ struct WPEShimmerUniforms {
     float padding;
 };
 
-fragment half4 wpe_effect_shimmer_fragment(
+[[fragment]] half4 wpe_effect_shimmer_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEShimmerUniforms& uniforms [[buffer(0)]]
@@ -2146,7 +2152,7 @@ fragment half4 wpe_effect_shimmer_fragment(
     return half4(float4(saturate(sampled.rgb * boost), sampled.a));
 }
 
-fragment half4 wpe_effect_shake_fragment(
+[[fragment]] half4 wpe_effect_shake_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEShakeUniforms& uniforms [[buffer(0)]]
@@ -2178,7 +2184,7 @@ struct WPEColorCorrectionUniforms {
     float hueRadians;   // -pi...pi, 0 neutral
 };
 
-fragment half4 wpe_color_correction_fragment(
+[[fragment]] half4 wpe_color_correction_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half> source [[texture(0)]],
     constant WPEColorCorrectionUniforms &settings [[buffer(0)]]
