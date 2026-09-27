@@ -80,6 +80,17 @@ struct EditDeskChromeSourceTests {
         #expect(!bar.contains("LibrarySearchField("), "the top bar still carries a search field")
     }
 
+    /// Source contract rather than a render probe: the capsule's frame is a fixed 28pt, so a wrapped title
+    /// is clipped inside it and never shows up as height.
+    @Test("The status capsule's headline stays on one line, cut at its tail")
+    func statusHeadlineIsOneLine() throws {
+        let status = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
+        let start = try #require(status.range(of: "Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health)))"))
+        let headline = try #require(String(status[start.upperBound...]).components(separatedBy: "\n            if showsChevron").first)
+        #expect(headline.contains(".lineLimit(1)"), "the headline wraps inside the capsule")
+        #expect(headline.contains(".truncationMode(.tail)"))
+    }
+
     @Test("The Edit Desk controls moved onto Liquid Glass stay on it, with one prominent button per view")
     func glassControlsFollowTheContract() throws {
         /// A member's body, cut at its own closing brace.

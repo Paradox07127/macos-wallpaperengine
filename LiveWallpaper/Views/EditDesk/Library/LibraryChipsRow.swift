@@ -21,6 +21,7 @@ struct LibraryChipsRow: View {
     @Binding var selection: String
     @Binding var searchText: String
     let searchPrompt: LocalizedStringKey
+    let searchShortPrompt: LocalizedStringKey
     /// Drives the search field's reveal; the rest of the row rides the shelf in `ShelfChromeRide`.
     let stage: EditDeskStageModel
     @Binding var sort: SavedLibraryModel.Sort
@@ -37,7 +38,7 @@ struct LibraryChipsRow: View {
                 }
             }
             Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
-            LibrarySearchField(text: $searchText, prompt: searchPrompt)
+            LibrarySearchField(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt)
                 .modifier(LibrarySearchReveal(stage: stage))
             sortControl
             importButton

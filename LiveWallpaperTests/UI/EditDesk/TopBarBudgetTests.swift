@@ -92,6 +92,7 @@ struct TopBarBudgetTests {
             selection: .constant("all"),
             searchText: .constant(""),
             searchPrompt: "Search by name",
+            searchShortPrompt: "Search",
             stage: EditDeskStageModel(),
             sort: .constant(sort),
             filter: .constant(filter),
@@ -124,6 +125,53 @@ struct TopBarBudgetTests {
             print("FILTERROW 1040/\(language) = needs \(needed) of \(available)")
             #expect(needed <= available, Comment(rawValue: "\(language): the row needs \(needed)pt of \(available)"))
         }
+    }
+
+    /// The placeholder the search field draws once `HomePage` has laid out the Aerials chip's row, connected, at `windowWidth`.
+    @MainActor
+    private static func aerialsSearchPlaceholder(_ language: AppLanguagePreference, windowWidth: CGFloat) throws -> (shown: String, fieldWidth: CGFloat) {
+        func textField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.isEditable {
+                return field
+            }
+            return view.subviews.lazy.compactMap(textField).first
+        }
+        return try AppLanguageOverride.with(language) {
+            let row = HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
+                LibraryChipsRow(
+                    chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
+                    selection: .constant("\(SavedLibraryModel.Chip.aerials)"),
+                    searchText: .constant(""),
+                    searchPrompt: "Search by name or tag",
+                    searchShortPrompt: "Search",
+                    stage: EditDeskStageModel(),
+                    sort: .constant(.recentlyUsed),
+                    filter: .constant(nil),
+                    onImport: {}
+                )
+                AerialsSourceControls()
+            }
+            let width = windowWidth - 2 * DesignTokens.EditDesk.Spacing.gutter
+            let host = NSHostingView(rootView: row.frame(width: width).environment(\.locale, Locale(identifier: language.rawValue)))
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 60)
+            host.layoutSubtreeIfNeeded()
+            let field = try #require(textField(in: host), "the row drew no search field")
+            return (field.placeholderString ?? field.placeholderAttributedString?.string ?? "", field.frame.width)
+        }
+    }
+
+    @MainActor
+    @Test("At 1040 in Spanish, beside the Aerials controls, the search field falls back to its short prompt; at 1280 English keeps the long one")
+    func searchFieldFallsBackToItsShortPrompt() throws {
+        let spanish = try Self.aerialsSearchPlaceholder(.spanish, windowWidth: 1040)
+        let short = try NSLocalizedString("Search", bundle: Self.bundle("es"), comment: "")
+        print("SEARCHPROMPT 1040/es = \(spanish.shown) in a \(spanish.fieldWidth)pt text field")
+        #expect(spanish.shown == short, Comment(rawValue: "es 1040 draws \(spanish.shown)"))
+
+        // Control: a field wide enough keeps its long prompt, so the fallback above is a decision, not a constant.
+        let english = try Self.aerialsSearchPlaceholder(.english, windowWidth: 1280)
+        print("SEARCHPROMPT 1280/en = \(english.shown) in a \(english.fieldWidth)pt text field")
+        #expect(english.shown == "Search by name or tag", Comment(rawValue: "en 1280 draws \(english.shown)"))
     }
 
     /// The row hangs a fixed `StageGeometry.chipRowGap` above the shelf's cards; a taller control closes that gap.

@@ -339,6 +339,8 @@ struct StatusCapsule: View {
             Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health)))
                 .font(DesignTokens.EditDesk.Typography.metaMono)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
+                .lineLimit(1)
+                .truncationMode(.tail)
             if showsChevron {
                 Spacer(minLength: DesignTokens.EditDesk.Spacing.s8)
                 Text(verbatim: isExpanded ? "︿" : "⌄")

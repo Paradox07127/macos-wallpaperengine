@@ -788,6 +788,7 @@ struct HomePage: View {
                     selection: chipBinding,
                     searchText: queryBinding,
                     searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
+                    searchShortPrompt: "Search",
                     stage: stage,
                     sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
                     filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
