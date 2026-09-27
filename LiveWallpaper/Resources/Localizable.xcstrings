@@ -219,42 +219,6 @@
         }
       }
     },
-    "“%@” is a preset, not a wallpaper. It was added to your presets — choose a wallpaper to continue." : {
-      "comment" : "Onboarding error when the chosen folder turned out to be a Workshop preset. Placeholder is the preset name.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@” is a preset, not a wallpaper. It was added to your presets — choose a wallpaper to continue."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@” es un preajuste, no un fondo de pantalla. Se ha añadido a tus preajustes — elige un fondo de pantalla para continuar."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」は壁紙ではなくプリセットです。プリセットに追加しました。続けるには壁紙を選んでください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”是预设，不是壁纸。已加入你的预设——请选择一张壁纸以继续。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」是預設，不是桌布。已加入你的預設——請選擇一張桌布以繼續。"
-          }
-        }
-      }
-    },
     "“%@” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings." : {
       "comment" : "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title.",
       "extractionState" : "manual",
@@ -826,41 +790,6 @@
         }
       }
     },
-    "%@ of %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ of %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ de %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 中 %1$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ / %2$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ / %2$@"
-          }
-        }
-      }
-    },
     "%@ stars" : {
       "comment" : "Workshop card VoiceOver rating. Placeholder is a number 0–5.",
       "localizations" : {
@@ -1263,42 +1192,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 將不再出現在最近歷程中。本機快取會保留。"
-          }
-        }
-      }
-    },
-    "%@, %@ wallpaper bookmark" : {
-      "comment" : "Bookmark tile accessibility label. %1$@ is the bookmark name, %2$@ is the localized wallpaper type (Video / Web / Scene / Monitor).",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, %2$@ wallpaper bookmark"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, marcador de fondo de pantalla %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@、%2$@ 壁紙のブックマーク"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@，%2$@ 壁纸书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@，%2$@ 桌布書籤"
           }
         }
       }
@@ -1770,78 +1663,6 @@
         }
       }
     },
-    "%@K subs" : {
-      "comment" : "Workshop item subscriber count, thousands.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@K subs"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@K susc."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@K 人が購読"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@K 订阅"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@K 訂閱"
-          }
-        }
-      }
-    },
-    "%@M subs" : {
-      "comment" : "Workshop item subscriber count, millions.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@M subs"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@M susc."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@M 人が購読"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@M 订阅"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@M 訂閱"
-          }
-        }
-      }
-    },
     "%lld" : {
       "localizations" : {
         "en" : {
@@ -1941,66 +1762,6 @@
         }
       }
     },
-    "%lld aerials" : {
-      "comment" : "Library status bar: the number of aerials in the library. %lld is the count.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld aerial"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld aerials"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld vista aérea"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld vistas aéreas"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮 %lld 件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个航拍"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 個空照圖"
-          }
-        }
-      }
-    },
     "%lld agents" : {
       "comment" : "Agent Session widget header: number of tracked agent sessions.",
       "localizations" : {
@@ -2056,66 +1817,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 個代理"
-          }
-        }
-      }
-    },
-    "%lld API requests today" : {
-      "comment" : "Workshop header stat: Steam Web API requests issued today.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld API request today"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld API requests today"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld solicitud de API hoy"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld solicitudes de API hoy"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 件の本日の API リクエスト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 次 API 请求（今天）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 次 API 要求（今天）"
           }
         }
       }
@@ -5647,42 +5348,6 @@
         }
       }
     },
-    "Add a Web API key" : {
-      "comment" : "Secondary action in the Workshop onboarding sheet, for the optional Steam Web API key.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add a Web API key"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir una clave de Web API"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web API キーを追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加 Web API 密钥"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增 Web API key"
-          }
-        }
-      }
-    },
     "Add an application" : {
       "comment" : "Button tooltip for adding a blocked application exception.",
       "extractionState" : "manual",
@@ -5841,41 +5506,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過工作坊網址或 ID 加入"
-          }
-        }
-      }
-    },
-    "Add Overlay" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Overlay"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir superposición"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オーバーレイを追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加叠加层"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增疊加層"
           }
         }
       }
@@ -6735,78 +6365,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "空照圖"
-          }
-        }
-      }
-    },
-    "Aerial: %@" : {
-      "comment" : "Aerial thumbnail a11y label. The placeholder is the aerial display name.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aerial: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vista aérea: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "航拍：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空照圖：%@"
-          }
-        }
-      }
-    },
-    "Aerial: %@, %@" : {
-      "comment" : "Aerial thumbnail a11y label. Placeholders are aerial display name and category.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aerial: %@, %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vista aérea: %@, %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮: %@、%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "航拍：%@，%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空照圖：%@，%@"
           }
         }
       }
@@ -7721,41 +7279,6 @@
         }
       }
     },
-    "Also active on: %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Also active on: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "También activo en: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次でも有効: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "也在以下显示器上使用：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "也在以下顯示器上使用：%@"
-          }
-        }
-      }
-    },
     "Always" : {
       "comment" : "System wallpaper playback mode: the video plays on the desktop as well as the lock screen.",
       "extractionState" : "manual",
@@ -8136,41 +7659,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "外觀"
-          }
-        }
-      }
-    },
-    "Apple Aerials" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple Aerials"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vistas aéreas de Apple"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple の空撮"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple 航拍"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple 空照圖"
           }
         }
       }
@@ -8592,76 +8080,6 @@
         }
       }
     },
-    "Apply Local Project" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply Local Project"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar proyecto local"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ローカルプロジェクトを適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用本地项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用本機專案"
-          }
-        }
-      }
-    },
-    "Apply Project" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply Project"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar proyecto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクトを適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用專案"
-          }
-        }
-      }
-    },
     "Apply Project Folder" : {
       "localizations" : {
         "en" : {
@@ -8902,41 +8320,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用到 %1$@（⌘%2$lld）"
-          }
-        }
-      }
-    },
-    "Apply to all displays" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to all displays"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar a todas las pantallas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのディスプレイに適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到所有显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用到所有顯示器"
           }
         }
       }
@@ -10514,42 +9897,6 @@
         }
       }
     },
-    "Back" : {
-      "comment" : "Onboarding back button accessibility label.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atrás"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回"
-          }
-        }
-      }
-    },
     "Back to %@" : {
       "comment" : "Wallpaper library banner button that returns to the display's detail page.",
       "localizations" : {
@@ -10643,42 +9990,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回瀏覽"
-          }
-        }
-      }
-    },
-    "Back to library" : {
-      "comment" : "Tooltip and VoiceOver label of the back button on an unsupported project's card in a display's Scene view (classic interface); returns to the grid of recently linked projects.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to library"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a los proyectos recientes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近のプロジェクトに戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回最近项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回最近項目"
           }
         }
       }
@@ -11500,37 +10811,6 @@
         }
       }
     },
-    "Browse all in Workshop" : {
-      "comment" : "A button that opens the Workshop app.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar todo en Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップ ですべてを閲覧"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在创意工坊中浏览全部"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在工作坊中瀏覽全部"
-          }
-        }
-      }
-    },
     "Browse Apple Aerials" : {
       "comment" : "Onboarding action that opens the Apple Aerials library. Keep the library product name consistent.",
       "extractionState" : "manual",
@@ -11563,37 +10843,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽 Apple 空照圖"
-          }
-        }
-      }
-    },
-    "Browse installed and online Workshop wallpapers" : {
-      "comment" : "A hint for the user that they can browse the Workshop Library.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar fondos de pantalla de Workshop instalados y en línea"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インストール済みおよびオンラインの ワークショップ 壁紙を閲覧"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览已安装和在线的创意工坊壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "瀏覽已安裝和線上的工作坊桌布"
           }
         }
       }
@@ -11634,42 +10883,6 @@
         }
       }
     },
-    "Browse Online" : {
-      "comment" : "Installed-tab empty state primary button; switches to the Workshop browse tab.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browse Online"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar en línea"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップを見る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览创意工坊"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "瀏覽工作坊"
-          }
-        }
-      }
-    },
     "Browse Steam Workshop" : {
       "comment" : "Onboarding action that opens the Steam Workshop library.",
       "extractionState" : "manual",
@@ -11706,37 +10919,6 @@
         }
       }
     },
-    "Browse Wallpaper Engine from Steam" : {
-      "comment" : "A heading for a section that shows how to browse wallpapers from Steam.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar Wallpaper Engine desde Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam で Wallpaper Engine を閲覧"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从 Steam 浏览 Wallpaper Engine"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從 Steam 瀏覽 Wallpaper Engine"
-          }
-        }
-      }
-    },
     "Browse without signing in. Downloads require Steam sign-in." : {
       "comment" : "Workshop onboarding: browsing is account-free; downloading requires Steam authentication. The API key is a separate optional setting.",
       "extractionState" : "manual",
@@ -11769,42 +10951,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽無須登入，下載需登入 Steam。"
-          }
-        }
-      }
-    },
-    "Browsing without an API key" : {
-      "comment" : "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browsing without an API key"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exploración sin clave de API"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "API キーなしで閲覧中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未使用 API 密钥浏览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在無 API key 瀏覽"
           }
         }
       }
@@ -11982,36 +11128,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "內建 WPE 圖層 %@ 在 macOS 上無法使用"
-          }
-        }
-      }
-    },
-    "by %@" : {
-      "comment" : "Workshop item author line. Placeholder is the creator's Steam persona name.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "de %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作成者: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作者：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作者：%@"
           }
         }
       }
@@ -12400,41 +11516,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法使用 %@"
-          }
-        }
-      }
-    },
-    "Can't use Wallpaper Engine projects" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Can't use Wallpaper Engine projects"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pueden usar proyectos de Wallpaper Engine"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine プロジェクトは使用できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法使用 Wallpaper Engine 项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法使用 Wallpaper Engine 專案"
           }
         }
       }
@@ -14077,41 +13158,6 @@
         }
       }
     },
-    "Choose an .mp4, .mov, .m4v, or similar video file." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose an .mp4, .mov, .m4v, or similar video file."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige un archivo de vídeo .mp4, .mov, .m4v o similar."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ".mp4、.mov、.m4v などのビデオファイルを選択してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择 .mp4、.mov、.m4v 或类似的视频文件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇 .mp4、.mov、.m4v 或類似的影片檔案。"
-          }
-        }
-      }
-    },
     "Choose another folder" : {
       "comment" : "Secondary Steam library route: pick a folder other than the located one.",
       "extractionState" : "manual",
@@ -14138,76 +13184,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇其他資料夾"
-          }
-        }
-      }
-    },
-    "Choose Different Source" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Different Source"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir otro origen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のソースを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "换一个来源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "換一個來源"
-          }
-        }
-      }
-    },
-    "Choose Different Video" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Different Video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir otro vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のビデオを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "换一个视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "換一個影片"
           }
         }
       }
@@ -14377,41 +13353,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇本機檔案"
-          }
-        }
-      }
-    },
-    "Choose one in the sidebar to set up its wallpaper." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose one in the sidebar to set up its wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige una en la barra lateral para configurar su fondo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サイドバーで 1 台選ぶと、その壁紙を設定できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在侧栏中选择一台，即可设置它的壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在側邊欄中選擇一台，即可設定它的桌布。"
           }
         }
       }
@@ -14712,78 +13653,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇桌布"
-          }
-        }
-      }
-    },
-    "Choose wallpaper type" : {
-      "comment" : "A hint for the user to choose a wallpaper type.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir tipo de fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙の種類を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇桌布類型"
-          }
-        }
-      }
-    },
-    "Choose Web" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Web"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择网页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇 Web"
           }
         }
       }
@@ -15355,78 +14224,6 @@
         }
       }
     },
-    "Clear scene" : {
-      "comment" : "Accessibility label for the Trash button when scene tab is active.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear scene"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンをクリア"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除场景"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除場景"
-          }
-        }
-      }
-    },
-    "Clear Scene — remove the active scene for this display" : {
-      "comment" : "Tooltip on the Trash button when scene tab is active. Clarifies it only clears this screen's scene.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Scene — remove the active scene for this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar escena — elimina la escena activa de esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンをクリア — このディスプレイのアクティブなシーンを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除场景——移除该显示器当前的场景"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除場景——移除此顯示器目前的場景"
-          }
-        }
-      }
-    },
     "Clear scene video texture cache?" : {
       "comment" : "Confirmation dialog title for clearing the scene video texture cache on the Storage tab.",
       "extractionState" : "manual",
@@ -15569,42 +14366,6 @@
         }
       }
     },
-    "Clear Video — remove the saved video for this display" : {
-      "comment" : "Tooltip on the Trash button when video tab is active. Clarifies it only clears this screen's video.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Video — remove the saved video for this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar vídeo — elimina el vídeo guardado de esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画をクリア — このディスプレイに保存された動画を削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除视频——移除该显示器已保存的视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除影片——移除此顯示器已儲存的影片"
-          }
-        }
-      }
-    },
     "Clear Video Cache" : {
       "comment" : "Destructive button title for clearing extracted scene video cache files.",
       "extractionState" : "manual",
@@ -15674,78 +14435,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除桌布"
-          }
-        }
-      }
-    },
-    "Clear web page" : {
-      "comment" : "Accessibility label for the Trash button when HTML tab is active.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear web page"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar página web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ページをクリア"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除网页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除網頁"
-          }
-        }
-      }
-    },
-    "Clear Web Page — remove the saved web page for this display" : {
-      "comment" : "Tooltip on the Trash button when HTML tab is active. Clarifies it only clears this screen's web page.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Web Page — remove the saved web page for this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar página web — elimina la página web guardada de esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ページをクリア — このディスプレイに保存された Web ページを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除网页——移除该显示器已保存的网页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除網頁——移除此顯示器已儲存的網頁"
           }
         }
       }
@@ -16805,43 +15494,6 @@
         }
       }
     },
-    "Compatible imported scenes." : {
-      "comment" : "Text displayed in a guide card for the Scene wallpaper type.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compatible imported scenes."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Escenas importadas compatibles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "対応するインポート済みシーン。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "兼容的已导入场景。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相容的已匯入場景。"
-          }
-        }
-      }
-    },
     "Compressed" : {
       "comment" : "Memory breakdown segment: compressed memory.",
       "extractionState" : "manual",
@@ -17421,41 +16073,6 @@
         }
       }
     },
-    "Continue" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continuar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "続ける"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "继续"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "繼續"
-          }
-        }
-      }
-    },
     "Continue in Browser" : {
       "comment" : "Primary button in the Report a Bug sheet — opens the GitHub issue creation URL in the browser.",
       "localizations" : {
@@ -17810,41 +16427,6 @@
         }
       }
     },
-    "Copies the current wallpaper and settings to every other connected display" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copies the current wallpaper and settings to every other connected display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia el fondo de pantalla y los ajustes actuales a todas las demás pantallas conectadas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の壁紙と設定を、接続されている他のすべてのディスプレイにコピーします"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将当前壁纸和设置复制到所有其他连接的显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將目前桌布和設定複製到其他所有已連接的顯示器"
-          }
-        }
-      }
-    },
     "Copies the error code to the clipboard" : {
       "comment" : "A11y hint for the error-code chip.",
       "extractionState" : "manual",
@@ -17877,42 +16459,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將錯誤代碼複製到剪貼簿"
-          }
-        }
-      }
-    },
-    "Copies this overlay to every other connected display; their wallpapers are not changed" : {
-      "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copies this overlay to every other connected display; their wallpapers are not changed"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia esta superposición a todas las demás pantallas conectadas; sus fondos de pantalla no cambian"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このオーバーレイを接続中の他のすべてのディスプレイに複製します。壁紙は変更されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把这个叠加层复制到其他所有已连接的显示器，不改动它们的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把這個疊加層複製到其他所有已連接的顯示器，不更動它們的桌布"
           }
         }
       }
@@ -19817,76 +18363,6 @@
         }
       }
     },
-    "Couldn't open video" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't open video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo abrir el vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオを開けません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法打开视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法開啟影片"
-          }
-        }
-      }
-    },
-    "Couldn't open web resource" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't open web resource"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo abrir el recurso web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web リソースを開けません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法打开网页资源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法開啟 Web 資源"
-          }
-        }
-      }
-    },
     "Couldn't parse %@ as JSON" : {
       "comment" : "Scene asset resolve failure. Placeholder is the file path.",
       "extractionState" : "manual",
@@ -20486,42 +18962,6 @@
         }
       }
     },
-    "Couldn't set up that Wallpaper Engine project. Try another folder." : {
-      "comment" : "Onboarding error when a Wallpaper Engine project folder could not be applied to any display.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't set up that Wallpaper Engine project. Try another folder."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo configurar ese proyecto de Wallpaper Engine. Prueba con otra carpeta."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "その Wallpaper Engine プロジェクトを設定できませんでした。別のフォルダを試してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法设置该 Wallpaper Engine 项目。请换一个文件夹再试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法設定該 Wallpaper Engine 專案。請換一個資料夾再試。"
-          }
-        }
-      }
-    },
     "Couldn't update System Wallpaper" : {
       "comment" : "Alert title when a System Wallpaper operation fails.",
       "localizations" : {
@@ -20972,42 +19412,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用中標籤"
-          }
-        }
-      }
-    },
-    "Currently in use. Tap to reactivate." : {
-      "comment" : "A11y hint for a WPE history row that is the active wallpaper.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Currently in use. Tap to reactivate."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualmente en uso. Toca para reactivar."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在使用中です。タップして再有効化します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前正在使用。点击重新激活。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前使用中。點一下可重新啟用。"
           }
         }
       }
@@ -25478,41 +23882,6 @@
         }
       }
     },
-    "Drop a video file, web file, or folder to use it as a wallpaper." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drop a video file, web file, or folder to use it as a wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suelta un archivo de vídeo, un archivo web o una carpeta para usarlo como fondo de pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオ、Web ファイル、またはフォルダをドロップして壁紙として使用します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖入视频文件、网页文件或文件夹作为壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖入影片檔案、Web 檔案或資料夾作為桌布。"
-          }
-        }
-      }
-    },
     "Drop onto a display to apply" : {
       "localizations" : {
         "es" : {
@@ -25595,41 +23964,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放開以取代"
-          }
-        }
-      }
-    },
-    "Drop to use as wallpaper" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drop to use as wallpaper"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suelta para usar como fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ドロップして壁紙として使用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖放以用作壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖放以作為桌布"
           }
         }
       }
@@ -32466,42 +30800,6 @@
         }
       }
     },
-    "Hand videos to macOS so they play without Loomscreen running" : {
-      "comment" : "Sidebar accessibility hint for the System Wallpaper item.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hand videos to macOS so they play without Loomscreen running"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entregar los vídeos a macOS para que se reproduzcan sin que Loomscreen esté en ejecución"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画を macOS に渡し、Loomscreen なしで再生します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把视频交给 macOS，无需保持 Loomscreen 运行即可播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把影片交給 macOS，不必保持 Loomscreen 執行即可播放"
-          }
-        }
-      }
-    },
     "HD" : {
       "comment" : "Workshop resolution filter: 720p to 1080p.",
       "extractionState" : "manual",
@@ -32889,37 +31187,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隱藏金鑰"
-          }
-        }
-      }
-    },
-    "Hide the properties panel" : {
-      "comment" : "A label for a toolbar button that hides the properties panel.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar el panel de propiedades"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロパティパネルを隠す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隐藏属性面板"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隱藏屬性面板"
           }
         }
       }
@@ -33397,41 +31664,6 @@
         }
       }
     },
-    "https://example.com or example.com" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://example.com or example.com"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://example.com o example.com"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://example.com または example.com"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://example.com 或 example.com"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://example.com 或 example.com"
-          }
-        }
-      }
-    },
     "https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…" : {
       "comment" : "Paste-sheet placeholder listing accepted URL and ID formats; identical in every language.",
       "localizations" : {
@@ -33838,41 +32070,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "匯入"
-          }
-        }
-      }
-    },
-    "Import a File" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Import a File"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Importar un archivo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルを読み込む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导入文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "匯入檔案"
           }
         }
       }
@@ -34341,42 +32538,6 @@
         }
       }
     },
-    "Imported project: %@" : {
-      "comment" : "A11y label for an imported project history row card. The placeholder is the project title.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imported project: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proyecto importado: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インポート済みプロジェクト：%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已导入项目：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已匯入專案：%@"
-          }
-        }
-      }
-    },
     "Importing from folder…" : {
       "localizations" : {
         "es" : {
@@ -34495,41 +32656,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "進行中"
-          }
-        }
-      }
-    },
-    "In use" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In use"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En uso"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用中"
           }
         }
       }
@@ -37649,76 +35775,6 @@
         }
       }
     },
-    "Load preview" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Load preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargar vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを読み込む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "載入預覽"
-          }
-        }
-      }
-    },
-    "Load Preview" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Load Preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargar vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを読み込む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "載入預覽"
-          }
-        }
-      }
-    },
     "Loading item…" : {
       "comment" : "Accessibility label while the Workshop inspector resolves an item by id.",
       "extractionState" : "manual",
@@ -37821,41 +35877,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在載入預設"
-          }
-        }
-      }
-    },
-    "Loading preview…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading preview…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando vista previa…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを読み込み中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载预览…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入預覽…"
           }
         }
       }
@@ -38000,41 +36021,6 @@
         }
       }
     },
-    "Loading video…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading video…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando vídeo…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画を読み込み中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载视频…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入影片…"
-          }
-        }
-      }
-    },
     "Loading Workshop results" : {
       "localizations" : {
         "es" : {
@@ -38095,41 +36081,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本機"
-          }
-        }
-      }
-    },
-    "Local development server — JavaScript allowed." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local development server — JavaScript allowed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Servidor de desarrollo local — JavaScript permitido."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ローカル開発サーバー — JavaScript は許可されています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本地开发服务器——已允许 JavaScript。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本機開發伺服器——已允許 JavaScript。"
           }
         }
       }
@@ -39410,76 +37361,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 找不到 App 服務"
-          }
-        }
-      }
-    },
-    "macOS couldn't grant the app secure access to that file. Try a different video, or move the file to a folder you own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS couldn't grant the app secure access to that file. Try a different video, or move the file to a folder you own."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS no pudo conceder a la app acceso seguro a ese archivo. Prueba otro vídeo o muévelo a una carpeta de tu propiedad."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がこのファイルへのセキュアアクセスを許可できませんでした。別のビデオを試すか、ご自身のフォルダにファイルを移動してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 无法授予此应用访问该文件的安全权限。换一个视频，或将文件移到你自己的文件夹下再试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 無法授予此 App 存取該檔案的安全權限。換一個影片，或將檔案移到你自己的資料夾下再試。"
-          }
-        }
-      }
-    },
-    "macOS couldn't grant the app secure access to that resource. Try moving it to a folder you own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS couldn't grant the app secure access to that resource. Try moving it to a folder you own."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS no pudo conceder a la app acceso seguro a ese recurso. Prueba a moverlo a una carpeta de tu propiedad."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がこのリソースへのセキュアアクセスを許可できませんでした。ご自身のフォルダに移動してから再試行してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 无法授予此应用访问该资源的安全权限。请将其移到你自己的文件夹下再试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 無法授予此 App 存取該資源的安全權限。請將其移到你自己的資料夾下再試。"
           }
         }
       }
@@ -42023,80 +39904,6 @@
         }
       }
     },
-    "MP4 / MOV from your Mac." : {
-      "comment" : "Subtitle for the \"Video\" guide card when the user is not a Lite subscriber.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV from your Mac."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV de tu Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac の MP4 / MOV。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选用 Mac 上的 MP4 / MOV 文件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "來自你的 Mac 的 MP4 / MOV。"
-          }
-        }
-      }
-    },
-    "MP4 / MOV, playlists, and schedules." : {
-      "comment" : "Subtitle for the \"Video\" guide card.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV, playlists, and schedules."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV, playlists y programaciones."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV、プレイリスト、スケジュール。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV、播放列表和计划。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MP4 / MOV、播放列表與排程。"
-          }
-        }
-      }
-    },
     "Multithreaded rendering" : {
       "localizations" : {
         "en" : {
@@ -42701,41 +40508,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要核准"
-          }
-        }
-      }
-    },
-    "Needs deps" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Needs deps"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faltan deps"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "依存項目不足"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少依赖"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少相依項目"
           }
         }
       }
@@ -43551,42 +41323,6 @@
         }
       }
     },
-    "No aerials match your search" : {
-      "comment" : "Empty state title shown when the user's search filters out every aerial.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No aerials match your search"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ninguna vista aérea coincide con tu búsqueda"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検索に一致する空撮はありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有航拍匹配你的搜索"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有空照圖符合你的搜尋"
-          }
-        }
-      }
-    },
     "No apps added" : {
       "comment" : "A message displayed when the user has not added any apps to the app exceptions list.",
       "isCommentAutoGenerated" : true,
@@ -43747,41 +41483,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未提供描述。"
-          }
-        }
-      }
-    },
-    "No display selected" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No display selected"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ninguna pantalla seleccionada"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイが選択されていません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未选择显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未選擇顯示器"
           }
         }
       }
@@ -44088,41 +41789,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有符合的工作階段"
-          }
-        }
-      }
-    },
-    "No particles for current weather" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No particles for current weather"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sin partículas para el clima actual"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の天気ではパーティクルなし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前天气无粒子效果"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前天氣無粒子效果"
           }
         }
       }
@@ -45261,41 +42927,6 @@
         }
       }
     },
-    "No Video Selected" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Video Selected"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ningún vídeo seleccionado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画が選択されていません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未选择视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未選取影片"
-          }
-        }
-      }
-    },
     "No videos match your search" : {
       "localizations" : {
         "en" : {
@@ -45492,35 +43123,6 @@
         }
       }
     },
-    "No wallpapers installed yet." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay fondos de pantalla instalados."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙はまだインストールされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未安装壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未安裝桌布。"
-          }
-        }
-      }
-    },
     "No wallpapers yet" : {
       "localizations" : {
         "es" : {
@@ -45545,43 +43147,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "還沒有桌布"
-          }
-        }
-      }
-    },
-    "No web source" : {
-      "comment" : "A placeholder text when there is no web source.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No web source"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ningún origen web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ソースなし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未配置网页来源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有 Web 來源"
           }
         }
       }
@@ -47138,41 +44703,6 @@
         }
       }
     },
-    "Open application preferences" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open application preferences"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir las preferencias de la app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリの環境設定を開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开应用偏好设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟 App 偏好設定"
-          }
-        }
-      }
-    },
     "Open display settings" : {
       "localizations" : {
         "en" : {
@@ -47832,37 +45362,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟資料夾選擇器，就地連結並套用本機專案"
-          }
-        }
-      }
-    },
-    "Opens the Steam Workshop tab to browse and manage your full library" : {
-      "comment" : "A hint for the user that opens the Steam Workshop tab to browse and manage their full library.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre la pestaña Steam Workshop para explorar y gestionar todos tus fondos de Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ワークショップタブを開き、すべてのワークショップ壁紙を閲覧・管理します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开 Steam 创意工坊标签页，浏览和管理你的全部创意工坊壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟 Steam 工作坊標籤頁，瀏覽和管理你的全部工作坊桌布"
           }
         }
       }
@@ -50155,42 +47654,6 @@
         }
       }
     },
-    "Pauses video playback" : {
-      "comment" : "A11y hint for playback toggle when playing.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pauses video playback"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pausa la reproducción del vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画再生を一時停止します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂停视频播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暫停影片播放"
-          }
-        }
-      }
-    },
     "Pauses when windows cover about %@ of the display; resumes when the desktop is revealed." : {
       "comment" : "Pause threshold. %@ is a locale-formatted percentage, currently 85 percent.",
       "extractionState" : "manual",
@@ -50678,41 +48141,6 @@
         }
       }
     },
-    "Pick a web file or folder" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pick a web file or folder"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir un archivo o carpeta web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ファイルまたはフォルダを選択してください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请选择网页文件或文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請選擇 Web 檔案或資料夾"
-          }
-        }
-      }
-    },
     "Pick it under Preset in that wallpaper's scene settings." : {
       "comment" : "Workshop preset download success toast subtitle when the base wallpaper is installed.",
       "localizations" : {
@@ -50920,76 +48348,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放或暫停"
-          }
-        }
-      }
-    },
-    "Play preview" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Play preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducir vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを再生"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放預覽"
-          }
-        }
-      }
-    },
-    "Play Preview" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Play Preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducir vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを再生"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放預覽"
           }
         }
       }
@@ -52333,41 +49691,6 @@
         }
       }
     },
-    "Preview paused" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preview paused"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vista previa en pausa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビュー一時停止中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预览已暂停"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "預覽已暫停"
-          }
-        }
-      }
-    },
     "Preview unavailable" : {
       "localizations" : {
         "en" : {
@@ -52770,41 +50093,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "私人"
-          }
-        }
-      }
-    },
-    "Proceed to choose your first wallpaper" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proceed to choose your first wallpaper"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continuar para elegir tu primer fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最初の壁紙の選択に進む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "继续选择你的第一张壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "繼續選擇第一個桌布"
           }
         }
       }
@@ -54735,80 +52023,6 @@
         }
       }
     },
-    "Refresh web preview" : {
-      "comment" : "A label for the refresh button in the web preview section.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh web preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar vista previa web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web プレビューを更新"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新网页预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新整理 Web 預覽"
-          }
-        }
-      }
-    },
-    "Refresh web snapshot" : {
-      "comment" : "A label for the refresh button.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh web snapshot"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar instantánea web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web スナップショットを更新"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新生成网页快照"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新產生 Web 快照"
-          }
-        }
-      }
-    },
     "Registered app copies" : {
       "localizations" : {
         "en" : {
@@ -54977,41 +52191,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放鬆"
-          }
-        }
-      }
-    },
-    "Release to turn on the effect layer" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Release to turn on the effect layer"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suelta para activar la capa de efectos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "放すとエフェクトレイヤーをオンにします"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "松手开启效果层"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "放開以開啟效果層"
           }
         }
       }
@@ -55678,35 +52857,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要移除全部系統桌布嗎？"
-          }
-        }
-      }
-    },
-    "Remove from Library" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar de la biblioteca de fondos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙ライブラリから削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从壁纸库移除"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從桌布庫移除"
           }
         }
       }
@@ -59278,42 +56428,6 @@
         }
       }
     },
-    "Resumes video playback" : {
-      "comment" : "A11y hint for playback toggle when paused.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resumes video playback"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reanuda la reproducción del vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオ再生を再開"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "恢复视频播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "繼續影片播放"
-          }
-        }
-      }
-    },
     "Retro" : {
       "comment" : "Workshop genre tag.",
       "localizations" : {
@@ -59449,107 +56563,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重試預覽"
-          }
-        }
-      }
-    },
-    "Retry Preview" : {
-      "comment" : "A button that retries loading a video preview.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry Preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューを再試行"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重試預覽"
-          }
-        }
-      }
-    },
-    "Retry Update" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar actualización"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新を再試行"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重試更新"
-          }
-        }
-      }
-    },
-    "Return to the recent linked projects grid" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Return to the recent linked projects grid"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a la cuadrícula de proyectos vinculados recientes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近リンクしたプロジェクト一覧に戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回最近链接的项目网格"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回最近連結的專案格狀列表"
           }
         }
       }
@@ -61253,78 +58266,6 @@
         }
       }
     },
-    "Scanning library…" : {
-      "comment" : "Progress shown in the Apple Aerials library while it is being scanned.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scanning library…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analizando la biblioteca de vistas aéreas…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮ライブラリをスキャン中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在扫描航拍库…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在掃描空照圖庫…"
-          }
-        }
-      }
-    },
-    "Scanning the Aerials library" : {
-      "comment" : "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scanning the Aerials library"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analizando la biblioteca de vistas aéreas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮ライブラリをスキャン中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在扫描航拍库"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在掃描空照圖庫"
-          }
-        }
-      }
-    },
     "Scene" : {
       "comment" : "Workshop content-type filter: scene wallpapers.",
       "localizations" : {
@@ -61722,41 +58663,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景桌布載入失敗"
-          }
-        }
-      }
-    },
-    "Scene wallpaper type" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scene wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de fondo de pantalla de escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーン壁紙タイプ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景桌布類型"
           }
         }
       }
@@ -62505,41 +59411,6 @@
         }
       }
     },
-    "Scrub through the video timeline" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scrub through the video timeline"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recorrer la línea de tiempo del vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオタイムラインをスクラブ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在视频时间线上拖动"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在影片時間軸上拖曳瀏覽"
-          }
-        }
-      }
-    },
     "SD" : {
       "comment" : "Workshop resolution filter: standard definition.",
       "localizations" : {
@@ -62601,42 +59472,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋"
-          }
-        }
-      }
-    },
-    "Search aerials" : {
-      "comment" : "Placeholder for the Aerials library search field.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search aerials"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar vistas aéreas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空撮を検索"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索航拍"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜尋空照圖"
           }
         }
       }
@@ -62745,36 +59580,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "依名稱或標籤搜尋"
-          }
-        }
-      }
-    },
-    "Search library" : {
-      "comment" : "Placeholder of the search field on the Installed tab of the Steam Workshop pane (classic interface).",
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar fondos instalados"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インストール済みの壁紙を検索"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索已安装的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜尋已安裝的桌布"
           }
         }
       }
@@ -63052,37 +59857,6 @@
         }
       }
     },
-    "Select a wallpaper to see details." : {
-      "comment" : "A description of the placeholder view.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un fondo de pantalla para ver los detalles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳細を見るには壁紙を選択してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择壁纸以查看详情。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇桌布以查看詳細資訊。"
-          }
-        }
-      }
-    },
     "Select SteamCMD before checking the connection." : {
       "comment" : "Steam sign-in diagnostic when no SteamCMD binary is bound.",
       "extractionState" : "manual",
@@ -63115,78 +59889,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查連線前請先選擇 SteamCMD。"
-          }
-        }
-      }
-    },
-    "Select to configure this display" : {
-      "comment" : "A hint that describes how to interact with this view.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select to configure this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona para configurar esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択してこのディスプレイを設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择以配置此显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇以設定此顯示器"
-          }
-        }
-      }
-    },
-    "Select Video File" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select Video File"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seleccionar archivo de vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオファイルを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择视频文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇影片檔案"
           }
         }
       }
@@ -63732,42 +60434,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定資源"
-          }
-        }
-      }
-    },
-    "Set Up Steam Workshop" : {
-      "comment" : "Onboarding Workshop setup page title.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Set Up Steam Workshop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configurar Steam Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ワークショップを設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设置 Steam 创意工坊"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 Steam 工作坊"
           }
         }
       }
@@ -65402,37 +62068,6 @@
         }
       }
     },
-    "Show or hide the wallpaper properties on the right" : {
-      "comment" : "A description of the accessibility hint for the wallpaper properties panel toggle.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar u ocultar las propiedades del fondo de pantalla a la derecha"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右側の壁紙プロパティを表示または隠します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示或隐藏右侧的壁纸属性"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示或隱藏右側的桌布屬性"
-          }
-        }
-      }
-    },
     "Show presets as wallpapers" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -65626,37 +62261,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示感測器"
-          }
-        }
-      }
-    },
-    "Show the properties panel" : {
-      "comment" : "A label for a toolbar button that shows the properties panel.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el panel de propiedades"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロパティパネルを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示属性面板"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示屬性面板"
           }
         }
       }
@@ -66523,42 +63127,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跳過"
-          }
-        }
-      }
-    },
-    "Skip for Now" : {
-      "comment" : "Skip first-run wallpaper setup and open the app.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Skip for Now"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Omitir por ahora"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あとで設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂时跳过"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暫時略過"
           }
         }
       }
@@ -67741,42 +64309,6 @@
         }
       }
     },
-    "Start browsing" : {
-      "comment" : "Primary action in the Workshop onboarding sheet: dismiss and browse, which needs no key.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start browsing"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Empezar a explorar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "閲覧を始める"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开始浏览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始瀏覽"
-          }
-        }
-      }
-    },
     "Start hour" : {
       "comment" : "A11y label for the start-hour picker in the schedule time editor.",
       "extractionState" : "manual",
@@ -67845,41 +64377,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在開始…"
-          }
-        }
-      }
-    },
-    "Starts a temporary video preview for this settings panel" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starts a temporary video preview for this settings panel"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicia una vista previa de vídeo temporal para este panel de ajustes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この設定パネル用に一時的なビデオプレビューを開始します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为此设置面板启动临时视频预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為此設定面板啟動暫時影片預覽"
           }
         }
       }
@@ -68418,37 +64915,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 未在限時內確認登入。如手機上有 Steam Guard 確認請求，請先核准再重試。"
-          }
-        }
-      }
-    },
-    "Steam doesn't expose remaining quota; this counts only the requests this Mac has issued today." : {
-      "comment" : "A tooltip for the seal that indicates the Steam Workshop API key status.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam no publica la cuota restante; aquí solo se cuentan las solicitudes que ha enviado este Mac hoy."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam は残りクォータを公開していません。ここではこの Mac が今日発行したリクエストのみを数えます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 不公开剩余额度；这里仅统计本机今天发出的请求。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 不公開剩餘額度；這裡僅統計這台 Mac 今天發出的要求。"
           }
         }
       }
@@ -71488,41 +67954,6 @@
         }
       }
     },
-    "Switch to Video or Web to drop" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch to Video or Web to drop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a Vídeo o Web para soltar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ドロップするにはビデオまたは Web に切り替え"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换到视频或网页以拖放文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換到影片或 Web 以拖放"
-          }
-        }
-      }
-    },
     "Sync subscribed wallpapers" : {
       "comment" : "Title of the sheet that downloads Workshop items the Steam account is subscribed to.",
       "extractionState" : "manual",
@@ -72191,42 +68622,6 @@
         }
       }
     },
-    "System Wallpaper requires macOS 26 or later." : {
-      "comment" : "Shown when the System Wallpaper page is reached on an unsupported macOS version.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System Wallpaper requires macOS 26 or later."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo del sistema requiere macOS 26 o posterior."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム壁紙には macOS 26 以降が必要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统壁纸需要 macOS 26 或更新版本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統桌布需要 macOS 26 或更新版本。"
-          }
-        }
-      }
-    },
     "Tagged “%@”" : {
       "comment" : "Workshop tag-scoped browse header. Placeholder is the tag.",
       "localizations" : {
@@ -72287,109 +68682,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標籤"
-          }
-        }
-      }
-    },
-    "Tap refresh to capture preview" : {
-      "comment" : "A description of the refresh button.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap refresh to capture preview"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toca actualizar para capturar la vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新をタップしてプレビューを取り込む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击刷新按钮生成预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點一下重新整理以擷取預覽"
-          }
-        }
-      }
-    },
-    "Tap to apply" : {
-      "comment" : "A11y hint for a WPE history row that can be applied.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap to apply"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toca para aplicar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タップして適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "轻点以应用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點一下以套用"
-          }
-        }
-      }
-    },
-    "Tap to apply to all displays, or drag onto a display." : {
-      "comment" : "A11y hint for an Installed-library card: the whole card applies the wallpaper.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toca para aplicar a todas las pantallas, o arrastra a una pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タップしてすべてのディスプレイに適用するか、ディスプレイへドラッグします。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点按以应用到所有显示器，或拖到某个显示器上。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點按以套用到所有顯示器，或拖到某個顯示器上。"
           }
         }
       }
@@ -73052,76 +69344,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "該檔案不是 SteamCMD，其所在位置也沒有找到 SteamCMD 執行檔。"
-          }
-        }
-      }
-    },
-    "That file type isn't supported. Pick a video or web page." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That file type isn't supported. Pick a video or web page."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ese tipo de archivo no es compatible. Elige un vídeo o una página web."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このファイル形式には対応していません。動画またはウェブページを選んでください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持该文件类型。请选择视频或网页。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援該檔案類型。請選擇影片或網頁。"
-          }
-        }
-      }
-    },
-    "That file type isn't supported. Pick a video, web page, or scene." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That file type isn't supported. Pick a video, web page, or scene."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ese tipo de archivo no es compatible. Elige un vídeo, una página web o una escena."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このファイル形式には対応していません。動画・ウェブページ・シーンを選んでください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持该文件类型。请选择视频、网页或场景。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援該檔案類型。請選擇影片、網頁或場景。"
           }
         }
       }
@@ -75139,41 +71361,6 @@
         }
       }
     },
-    "The selection isn't a web file or a folder containing an index page." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The selection isn't a web file or a folder containing an index page."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La selección no es un archivo web ni una carpeta con una página index."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択したものは Web ファイルでも、index ページを含むフォルダでもありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选中的不是网页文件，也不是含有 index 页面的文件夹。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選取的不是 Web 檔案，也不是含有 index 頁面的資料夾。"
-          }
-        }
-      }
-    },
     "The service restarted, but no new connection was confirmed. In System Wallpaper, click Add Video to choose a video." : {
       "localizations" : {
         "en" : {
@@ -75735,42 +71922,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法播放影片 %@。"
-          }
-        }
-      }
-    },
-    "The wallpaper on screen isn't the scheduled one. The schedule resumes when the next time slot starts." : {
-      "comment" : "Explains the paused daily schedule notice on the display detail page.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The wallpaper on screen isn't the scheduled one. The schedule resumes when the next time slot starts."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo de pantalla actual no es el programado. La programación se reanudará cuando empiece la siguiente franja."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "表示中の壁紙はスケジュールのものではありません。次の時間帯が始まるとスケジュールが再開されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前显示的不是计划中的壁纸，下一个时段开始时将自动恢复计划。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前顯示的不是排程中的桌布，下一個時段開始時將自動恢復排程。"
           }
         }
       }
@@ -76651,35 +72802,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此檔案太大，無法匯入（%lld 位元組）。設定備份通常遠小於 10 MB。"
-          }
-        }
-      }
-    },
-    "This is a Windows-only wallpaper and can't run on macOS." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este fondo de pantalla es solo para Windows y no puede ejecutarse en macOS."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "これは Windows 専用の壁紙で、macOS では実行できません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这是仅限 Windows 的壁纸，无法在 macOS 上运行。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這是僅限 Windows 的桌布，無法在 macOS 上執行。"
           }
         }
       }
@@ -78136,37 +74258,6 @@
         }
       }
     },
-    "Toggle details panel" : {
-      "comment" : "A label for a button that toggles the",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar u ocultar el panel de detalles"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳細パネルを切り替え"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换详情面板"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換詳細資訊面板"
-          }
-        }
-      }
-    },
     "Toggle Interaction" : {
       "comment" : "Global shortcut action name.",
       "extractionState" : "manual",
@@ -78239,37 +74330,6 @@
         }
       }
     },
-    "Toggle properties panel" : {
-      "comment" : "A label for a toolbar button that toggles the visibility of the properties panel.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar u ocultar el panel de propiedades"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロパティパネルを切り替え"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换属性面板"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換屬性面板"
-          }
-        }
-      }
-    },
     "Toggles whether the app appears in the Dock and the Cmd-Tab switcher" : {
       "localizations" : {
         "en" : {
@@ -78336,78 +74396,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工具活動"
-          }
-        }
-      }
-    },
-    "toolbar.addWallpaper" : {
-      "comment" : "Settings window toolbar button that opens a video picker for the selected display.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add wallpaper"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙を追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增桌布"
-          }
-        }
-      }
-    },
-    "toolbar.preferences" : {
-      "comment" : "Settings window toolbar button for opening general preferences.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preferences"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preferencias"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "環境設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "偏好设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "偏好設定"
           }
         }
       }
@@ -79903,41 +75891,6 @@
         }
       }
     },
-    "Unsupported file type" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unsupported file type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de archivo no compatible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サポートされていないファイル形式"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持的文件类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援的檔案類型"
-          }
-        }
-      }
-    },
     "Unsupported scene format" : {
       "comment" : "Wallpaper Engine fallback warning title.",
       "localizations" : {
@@ -80214,35 +76167,6 @@
         }
       }
     },
-    "Update available on Steam" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualización disponible en Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam に更新があります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 上有可用更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 上有可用更新"
-          }
-        }
-      }
-    },
     "Update available on Steam. Current downloaded assets are still linked." : {
       "comment" : "Engine-assets settings status when an update is available.",
       "localizations" : {
@@ -80268,37 +76192,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 上有可用更新。目前下載的資源仍已連結。"
-          }
-        }
-      }
-    },
-    "Update from Steam" : {
-      "comment" : "A context-menu item that downloads a newer version of",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar desde Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam から更新"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从 Steam 更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從 Steam 更新"
           }
         }
       }
@@ -81593,41 +77486,6 @@
         }
       }
     },
-    "Video file (.mp4, .mov, …)" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video file (.mp4, .mov, …)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archivo de vídeo (.mp4, .mov, …)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画ファイル（.mp4、.mov など）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频文件（.mp4、.mov 等）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "影片檔案（.mp4、.mov 等）"
-          }
-        }
-      }
-    },
     "Video fit mode" : {
       "localizations" : {
         "en" : {
@@ -81658,41 +77516,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片適配方式"
-          }
-        }
-      }
-    },
-    "Video format not supported" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video format not supported"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Formato de vídeo no compatible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオ形式に対応していません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频格式不支持"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "影片格式不支援"
           }
         }
       }
@@ -81764,41 +77587,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片播放"
-          }
-        }
-      }
-    },
-    "Video position" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video position"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Posición del vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画位置"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频位置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "影片位置"
           }
         }
       }
@@ -81898,41 +77686,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片無法使用：%@"
-          }
-        }
-      }
-    },
-    "Video wallpaper type" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de fondo de pantalla de vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画壁紙タイプ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "影片桌布類型"
           }
         }
       }
@@ -82796,41 +78549,6 @@
         }
       }
     },
-    "Wallpaper bundles a Windows DLL plugin; cannot run on macOS" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper bundles a Windows DLL plugin; cannot run on macOS"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo de pantalla incluye un plugin DLL de Windows; no puede ejecutarse en macOS"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙に Windows DLL プラグインが含まれているため、macOS では実行できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸捆绑了 Windows DLL 插件，无法在 macOS 上运行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布包含 Windows DLL 外掛程式，無法在 macOS 上執行"
-          }
-        }
-      }
-    },
     "Wallpaper Engine (downloaded)" : {
       "comment" : "Engine-assets status when the assets were downloaded in-app via SteamCMD.",
       "localizations" : {
@@ -83144,43 +78862,6 @@
         }
       }
     },
-    "Wallpaper paused" : {
-      "comment" : "A description of a wallpaper that is paused.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper paused"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondo de pantalla en pausa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙は一時停止中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸已暂停"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布已暫停"
-          }
-        }
-      }
-    },
     "Wallpaper playback stopped because of this error." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -83212,43 +78893,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此錯誤導致桌布播放停止。"
-          }
-        }
-      }
-    },
-    "Wallpaper playing" : {
-      "comment" : "A description of a wallpaper that is currently playing.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper playing"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondo de pantalla en reproducción"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙を再生中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸播放中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布播放中"
           }
         }
       }
@@ -83357,82 +79001,12 @@
         }
       }
     },
-    "Wallpaper requires a Windows executable; cannot run on macOS" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper requires a Windows executable; cannot run on macOS"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo de pantalla requiere un ejecutable de Windows; no puede ejecutarse en macOS"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙には Windows 実行ファイルが必要なため、macOS では実行できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸需要 Windows 可执行文件，无法在 macOS 上运行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布需要 Windows 可執行檔，無法在 macOS 上執行"
-          }
-        }
-      }
-    },
     "Wallpaper type" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙タイプ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布類型"
-          }
-        }
-      }
-    },
-    "Wallpaper Type" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Type"
           }
         },
         "es" : {
@@ -84289,41 +79863,6 @@
         }
       }
     },
-    "Web file or folder" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web file or folder"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archivo o carpeta web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ファイルまたはフォルダ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页文件或文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 檔案或資料夾"
-          }
-        }
-      }
-    },
     "Web Options" : {
       "comment" : "Title of a group of options in the web inspector.",
       "isCommentAutoGenerated" : true,
@@ -84356,43 +79895,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 選項"
-          }
-        }
-      }
-    },
-    "Web pages, local .html files, and folders." : {
-      "comment" : "Subtitle for the web wallpaper type.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web pages, local .html files, and folders."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Páginas web, archivos .html locales y carpetas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web ページ、ローカル .html ファイル、フォルダ。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页、本地 .html 文件和文件夹。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "網頁、本機 .html 檔案和資料夾。"
           }
         }
       }
@@ -84433,41 +79935,6 @@
         }
       }
     },
-    "Web wallpaper active" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web wallpaper active"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondo de pantalla web activo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 壁紙が有効"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页壁纸使用中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 桌布使用中"
-          }
-        }
-      }
-    },
     "Web wallpaper failed to load: %@" : {
       "comment" : "Runtime error title. The placeholder is the URL host or full URL.",
       "extractionState" : "manual",
@@ -84500,41 +79967,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 桌布載入失敗：%@"
-          }
-        }
-      }
-    },
-    "Web wallpaper type" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de fondo de pantalla web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 壁紙タイプ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 桌布類型"
           }
         }
       }
@@ -85287,41 +80719,6 @@
         }
       }
     },
-    "Won't run" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Won't run"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ejecutará"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "実行できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法运行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法執行"
-          }
-        }
-      }
-    },
     "Working" : {
       "comment" : "Accessibility label for the spinner that replaces a setup step's routes while one is running.",
       "extractionState" : "manual",
@@ -85804,37 +81201,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工作坊設定"
-          }
-        }
-      }
-    },
-    "Workshop tab" : {
-      "comment" : "A segmented control that lets the user switch between the two tabs of the workshop pane.",
-      "extractionState" : "stale",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pestaña Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップ タブ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创意工坊标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "工作坊標籤頁"
           }
         }
       }

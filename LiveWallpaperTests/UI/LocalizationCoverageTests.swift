@@ -1,4 +1,6 @@
 import Foundation
+@testable import LiveWallpaper
+import SwiftUI
 import Testing
 
 @Suite("Localization coverage")
@@ -449,7 +451,7 @@ struct LocalizationCoverageTests {
     }
 
     @Test("Workshop import copy describes linked local projects, not online Workshop connection")
-    func workshopImportCopyAvoidsOnlineConnectionLanguage() throws {
+    func workshopImportCopyAvoidsOnlineConnectionLanguage() async throws {
         var scanned = RepositoryRoot.swiftFiles(under: "LiveWallpaper")
         scanned.append(RepositoryRoot.url("LiveWallpaper/Resources/Localizable.xcstrings"))
         #expect(scanned.count > 100, "App source sweep collapsed to \(scanned.count) files — the copy scan is unenforced")
@@ -484,7 +486,10 @@ struct LocalizationCoverageTests {
 
         let hits = disallowedPhrases.filter { source.contains($0) }
         #expect(hits.isEmpty, "User-facing import copy still implies online Workshop/WPE coupling: \(hits)")
-        #expect(source.contains("Workshop Library"), "The product decision keeps the Workshop Library page label.")
+        let usesWorkshopTitle = await MainActor.run {
+            NavPill.title(for: .workshop) == LocalizedStringKey("Workshop")
+        }
+        #expect(usesWorkshopTitle, "The current navigation keeps Workshop distinct from Wallpaper Library.")
     }
 
     private static func projectFile(_ relativePath: String) throws -> String {
