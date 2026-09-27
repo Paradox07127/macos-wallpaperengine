@@ -655,24 +655,13 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             return row.localized(in: .appLanguage)
         }
 
-        let candidates = [title, title.localized(in: .appLanguage)] + keywords
-        let exactCandidate = candidates.first { candidate in
-            terms.allSatisfy { candidate.localizedCaseInsensitiveContains($0) }
+        var keys: [String] = []
+        for key in searchTargets(capabilities: ProductCapabilities.pro.withWorkshopOnline()).flatMap({ $0.hintKeys(matchingAny: terms) })
+        where key != title && !keys.contains(key) {
+            keys.append(key)
         }
-        if let exactCandidate, exactCandidate.localizedCaseInsensitiveCompare(title) != .orderedSame {
-            return exactCandidate.formattedSearchHint
-        }
-
-        let partialCandidates = candidates.filter { candidate in
-            terms.contains { candidate.localizedCaseInsensitiveContains($0) }
-        }
-        let hints = partialCandidates
-            .filter { $0.localizedCaseInsensitiveCompare(title) != .orderedSame }
-            .prefix(2)
-            .map(\.formattedSearchHint)
-
-        guard !hints.isEmpty else { return nil }
-        return hints.joined(separator: ", ")
+        guard !keys.isEmpty else { return nil }
+        return keys.prefix(2).map { $0.localized(in: .appLanguage) }.joined(separator: ", ")
     }
 }
 
@@ -731,13 +720,24 @@ struct SettingsNavigationSearchTarget: Equatable {
             return name.key.localized(in: .appLanguage)
         }
 
+        let localizedLabel = label.localized(in: .appLanguage)
+        // Keywords are untranslated synonyms: only a language-neutral token such as FPS or 4K may reach the screen.
         guard let keyword = keywords.first(where: { keyword in
             terms.allSatisfy { keyword.localizedCaseInsensitiveContains($0) }
-        }) else {
-            return label.localized(in: .appLanguage)
+        })?.formattedSearchHint, keyword.allSatisfy({ $0.isASCII && ($0.isUppercase || $0.isNumber) }) else {
+            return localizedLabel
         }
 
-        return String(localized: "\(label.localized(in: .appLanguage)): \(keyword.formattedSearchHint)", bundle: .appLanguage)
+        return String(localized: "\(localizedLabel): \(keyword)", bundle: .appLanguage)
+    }
+
+    /// Catalog keys saying where any of `terms` hit this section: its matching rows, else its label when the label or a keyword holds one.
+    func hintKeys(matchingAny terms: [String]) -> [String] {
+        let holdsTerm = { (text: String) in terms.contains { text.localizedCaseInsensitiveContains($0) } }
+        let rowKeys = index.names.dropFirst().filter { $0.texts.contains(where: holdsTerm) }.map(\.key)
+        guard rowKeys.isEmpty else { return rowKeys }
+        let labelHit = index.names.first?.texts.contains(where: holdsTerm) == true || keywords.contains(where: holdsTerm)
+        return labelHit ? [label] : []
     }
 
     private struct SearchIndex {

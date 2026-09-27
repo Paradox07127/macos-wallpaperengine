@@ -156,7 +156,9 @@ struct NavigationTests {
             includeWorkshopOnline: false
         ).first { $0.destination == .displayDefaults }
 
-        #expect(item?.searchMatchHint(matching: "frame rate") == "Frame Rate")
+        AppLanguageOverride.with(.english) {
+            #expect(item?.searchMatchHint(matching: "frame rate") == "Frame Rate")
+        }
     }
 
     @Test("Search results expose section anchors for deep links")

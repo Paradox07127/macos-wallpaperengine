@@ -158,7 +158,7 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    /// The one test here that flips the app language: the hint reads `Bundle.appLanguage`, which no bundle argument reaches.
+    /// The hint tests flip the app language: the hint reads `Bundle.appLanguage`, which no bundle argument reaches.
     @Test("A hint that matches neither a name nor a keyword shows the localized section label")
     func fallbackHintIsLocalized() {
         AppLanguageOverride.with(.simplifiedChinese) {
@@ -170,6 +170,32 @@ struct SettingsSearchLocalizationTests {
                 .first { $0.destination == .displayDefaults }
             #expect(result?.anchor == .displayDefaultsVideo)
             #expect(result?.matchHint == expected)
+        }
+    }
+
+    @Test("A hint never shows an English keyword, only localized names and all-caps tokens", arguments: ["video fps", "cache"])
+    func hintHidesEnglishKeywords(query: String) throws {
+        try AppLanguageOverride.with(.simplifiedChinese) {
+            let results = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
+            #expect(results.contains { $0.destination == .performancePower && $0.matchHint != nil })
+            for result in results {
+                let hint = result.matchHint ?? ""
+                let english = try Self.captures("([A-Za-z]{3,})", in: hint).filter { $0 != $0.uppercased() }
+                #expect(english.isEmpty, Comment(rawValue: "`\(query)` on \(result.destination.rawValue) shows `\(hint)`"))
+            }
+        }
+    }
+
+    /// Performance, not Display Defaults: es translates the Frame Rate row as "FPS", so there the row name wins.
+    @Test("A language-neutral keyword like FPS stays next to the localized section label")
+    func neutralKeywordStaysInHint() {
+        AppLanguageOverride.with(.simplifiedChinese) {
+            let result = SettingsNavigation.filteredResults(matching: "fps", capabilities: .pro)
+                .first { $0.destination == .performancePower }
+            let hint = result?.matchHint ?? ""
+            #expect(result?.anchor == .performanceRendering)
+            #expect(hint.hasPrefix("Rendering".localized(in: .appLanguage)), Comment(rawValue: "`fps` shows `\(hint)`"))
+            #expect(hint.contains("FPS"), Comment(rawValue: "`fps` shows `\(hint)`"))
         }
     }
 
