@@ -304,9 +304,9 @@ struct HomePage: View {
         ShelfStyle(rawValue: shelfStyleRaw) ?? EditDeskPreferences.shelfStyleDefault
     }
 
-    /// The stage ignores wheel and clicks while anything is presented over it.
+    /// The stage ignores wheel and clicks while anything is presented over it or a library drag runs.
     fileprivate var interactionLock: Bool {
-        presentedItemID != nil || router.detailDisplayID != nil || detailBusy
+        presentedItemID != nil || router.detailDisplayID != nil || detailBusy || libraryDrag.payload != nil
     }
 
     /// A display's detail page is asked for or up: the overview's own layers go from under it.
@@ -928,7 +928,7 @@ struct HomePage: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
-            .onChange(of: interactionLock || libraryDrag.payload != nil, initial: true) { gridPreview.covered = $1 }
+            .onChange(of: interactionLock, initial: true) { gridPreview.covered = $1 }
             .onChange(of: reduceMotion, initial: true) { gridPreview.reduceMotion = $1 }
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
@@ -1841,6 +1841,8 @@ struct LibraryGridTile: View {
         .onDisappear {
             isOffScreen = true
             loaded = nil
+            // A tile searched out from under the pointer gets no hover exit.
+            preview?.settle(item.id, hovering: false)
         }
         .tileTask(id: Load(thumbnail: thumbnail, appearance: appearance)) {
             guard let thumbnail,

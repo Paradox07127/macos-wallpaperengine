@@ -277,7 +277,7 @@ final class EditDeskStageModel {
     /// Increase Contrast. The stage keeps resolved CGColors, so it cannot read the setting off an
     /// appearance the way SwiftUI does; this picks the tokens' contrast tier instead.
     var increaseContrast = false
-    /// True while a modal or the detail page is open: the stage ignores wheel and clicks.
+    /// True while a modal or the detail page is open, or a library card is being dragged: the stage ignores wheel and clicks.
     var interactionBlocked = false
     /// Only the wallpaper grid reports this; other library pages do not hand scrolls to the stage.
     var gridAtTop = false

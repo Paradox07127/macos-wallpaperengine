@@ -534,7 +534,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// Only the card the pointer rests on may play; another card, a covering page, a flight or Reduce
     /// Motion stops it at once.
     private func syncPreviewPlayback() {
-        let target = window != nil && !dragging && !model.reduceMotion && shelfAtRest ? model.hoveredCard : nil
+        let hovered = window != nil && !dragging && !model.reduceMotion && shelfAtRest ? model.hoveredCard : nil
+        // The GIF check is part of the target, not only of `previewPlays`: a picture landing under a still pointer must start it.
+        let target = hovered.flatMap { id in cards.first { $0.id == id && ShelfPreviewPlayback.displaysGIF($0) }?.id }
         guard target != previewPlayer.cardID else { return }
         previewPlayer.stop()
         guard let target, let card = cards.first(where: { $0.id == target }), let tile = cardLayers[target] else { return }

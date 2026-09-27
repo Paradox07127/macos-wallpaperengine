@@ -318,6 +318,12 @@ private extension CGPoint {
     }
 }
 
+/// One mouse wheel notch the way that, at the grid's top, the stage takes to fold the library away.
+private func wheelNotch() throws -> NSEvent {
+    let event = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+    return try #require(NSEvent(cgEvent: event))
+}
+
 /// A library grid tile dragged onto the S5 strip of displays the detail modal uses. Results are bound before
 /// `#expect`: a failing expectation reflects every value in its expression, and reflecting the host's AppKit views traps.
 @Suite("Library grid drag in a window", .serialized)
@@ -380,6 +386,8 @@ struct LibraryGridDragWindowTests {
         await host.drag(through: [tile.moved(3, 0), tile.moved(20, -10), Self.midWindow])
         let found = try await host.strip()
         let strip = try #require(found, "a tile drag never brought the display strip in")
+        let locked = host.stage?.model.interactionBlocked == true
+        #expect(locked, "the tile drag left the stage free to take the wheel")
         host.escape()
         let stripGone = await host.settle { !host.stripShows }
         #expect(stripGone, "Escape left the strip up")
@@ -396,6 +404,36 @@ struct LibraryGridDragWindowTests {
         host.escape()
         let escapeReachesPage = await host.settle { host.leavingLibrary }
         #expect(escapeReachesPage, "control: with no drag running, Escape never reached the page, so this harness proves nothing")
+    }
+
+    @Test("A wheel notch at the grid's top during a tile drag stays with the grid, and the drop still applies", .timeLimit(.minutes(1)))
+    func wheelDuringATileDragKeepsTheLibrary() async throws {
+        let host = GridDragHost(size: Self.size)
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let stage = try #require(host.stage)
+        let tile = try host.tileCenter(0)
+        await host.press(tile)
+        await host.drag(through: [tile.moved(3, 0), tile.moved(20, -10), Self.midWindow])
+        let found = try await host.strip()
+        let strip = try #require(found, "a tile drag never brought the display strip in")
+
+        let notch = try wheelNotch()
+        let passedOn = stage.forwardGridScroll(notch) === notch
+        #expect(passedOn, "the stage took a wheel notch in the middle of a tile drag")
+        await host.settle(seconds: 0.5)
+        let progress = stage.model.progress
+        let leaving = host.leavingLibrary
+        #expect(progress == 2 && !leaving, Comment(rawValue: "the wheel under the drag moved the stage to \(progress)"))
+        await host.drag(through: [strip.right])
+        await host.release(strip.right)
+        let applied = await host.settle { host.applied(to: GridDragDisplays.right) }
+        #expect(applied, "the drop after the wheel applied nothing")
+
+        await host.settle { !stage.model.interactionBlocked }
+        let control = try wheelNotch()
+        let taken = stage.forwardGridScroll(control) == nil
+        #expect(taken, "control: with the drag over, the same notch never reached the stage, so this proves nothing")
     }
 }
 #endif

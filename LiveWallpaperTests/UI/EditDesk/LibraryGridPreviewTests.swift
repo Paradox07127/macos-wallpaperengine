@@ -537,5 +537,30 @@ struct LibraryGridPreviewTests {
         let played = await host.plays(at: plain.sample)
         #expect(played, "control: the author's GIF tile beside it never played")
     }
+
+    @Test("A settled tile searched out of the grid forgets the pointer: searched back in, it stays on its poster", .timeLimit(.minutes(1)))
+    func searchedOutTileForgetsItsHover() async throws {
+        let host = try GridPreviewHost()
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let gif = try host.tile(.gif)
+        let other = try host.tile(.otherGIF)
+        host.preview.settledID = gif.id
+        let played = await host.plays(at: gif.sample)
+        try #require(played, "control: the settled GIF tile never played")
+
+        host.library.query = "still"
+        let forgot = await host.settle { host.preview.settledID == nil }
+        #expect(forgot, "the tile searched out from under the pointer is still the settled one")
+
+        host.library.query = ""
+        let back = await host.settle(seconds: 3) {
+            (try? host.hue(at: other.sample)) == .cyan && (try? host.hue(at: gif.sample)) == .cyan
+        }
+        try #require(back, "the searched-back grid never drew its tiles again")
+        let seen = await host.hues(at: gif.sample, for: 0.6)
+        let still = !seen.isEmpty && seen.allSatisfy { $0 == .cyan }
+        #expect(still, Comment(rawValue: "searched back in with the pointer elsewhere, the tile showed \(seen)"))
+    }
 }
 #endif

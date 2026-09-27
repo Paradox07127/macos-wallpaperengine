@@ -189,6 +189,38 @@ extension EditDeskStageViewTests {
         #expect(loads.sizes.isEmpty, Comment(rawValue: "\(control) still decoded the preview"))
     }
 
+    @Test("A card the pointer rests on before its GIF is drawn plays it once the picture lands, however often the stage redraws", .timeLimit(.minutes(1)))
+    func previewStartsWhenThePictureLands() async throws {
+        let poster = try #require(Self.solid(0.5))
+        let drawn = Self.shelfCards(poster: poster, previews: [Self.sceneOrigin(preview: "preview.gif")])
+        let cold = drawn.map { card in
+            var card = card
+            card.thumbnail = nil
+            return card
+        }
+        let (view, window, loads) = try Self.mountShelf(cold, frames: Self.frames())
+        defer {
+            view.detach()
+            window.contentView = nil
+        }
+        let tile = try #require(view.cardLayers["card-0"])
+        try view.setPointerForTesting(Self.point(on: 0, of: view))
+        try #require(view.model.hoveredCard == "card-0")
+        try await Task.sleep(for: ShelfPreviewPlayer.settleDelay + .milliseconds(100))
+        #expect(Self.preview(on: tile) == nil && loads.sizes.isEmpty, "a card with no picture yet played")
+
+        view.model.shelfItems = drawn
+        // A redraw every 10 ms, well inside the settle delay: none of them may start the wait again.
+        var animation: CAKeyframeAnimation?
+        let deadline = Date().addingTimeInterval(2)
+        while animation == nil, Date() < deadline {
+            view.layout()
+            try await Task.sleep(for: .milliseconds(10))
+            animation = Self.preview(on: tile)
+        }
+        #expect(animation != nil, "the picture landed under the resting pointer and its GIF never played")
+    }
+
     #if !LITE_BUILD
     private static func encoded(_ type: UTType, delays: [Double], width: Int = 256, height: Int = 144) throws -> Data {
         let data = NSMutableData()
