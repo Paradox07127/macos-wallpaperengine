@@ -228,7 +228,7 @@ final class SettingsManager {
         }
     }
 
-    func flushPendingConfigurationWrites() async {
+    func flushPendingWrites() async {
         configurationWriteGeneration &+= 1
         let configGeneration = configurationWriteGeneration
         do {

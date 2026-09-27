@@ -607,6 +607,8 @@ extension AppDelegate: NSWindowDelegate {
 @main
 struct LiveWallpaperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @AppStorage(AppLanguagePreference.storageKey, store: .appScoped())
+    private var appLanguageRawValue = AppLanguagePreference.system.rawValue
 
     var body: some Scene {
         MenuBarExtra {
@@ -615,6 +617,20 @@ struct LiveWallpaperApp: App {
             Image(systemName: menuBarIconName)
         }
         .menuBarExtraStyle(.window)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(settingsMenuTitle) {
+                    appDelegate.showSettings(opensGeneralSettings: true)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+    }
+
+    /// Commands live outside AppLanguageScope, so observe the same preference and resolve the existing catalog key.
+    private var settingsMenuTitle: String {
+        let language = AppLanguagePreference(rawValue: appLanguageRawValue) ?? .system
+        return String(localized: "Settings", bundle: language.localizationBundle())
     }
 
     @ViewBuilder

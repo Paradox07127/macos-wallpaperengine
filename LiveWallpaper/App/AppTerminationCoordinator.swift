@@ -12,7 +12,7 @@ enum AppTerminationCoordinator {
                     SourceRegistration.flushCursorStoreForTermination()
                 }
             },
-            flushSettings: { await SettingsManager.shared.flushPendingConfigurationWrites() }
+            flushSettings: { await SettingsManager.shared.flushPendingWrites() }
         )
     }
 

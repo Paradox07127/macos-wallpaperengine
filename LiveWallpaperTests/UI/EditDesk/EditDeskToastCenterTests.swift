@@ -22,6 +22,41 @@ private final class TestClock: @unchecked Sendable { // single `Date`, guarded b
 @MainActor
 @Suite("EditDeskToastCenter")
 struct EditDeskToastCenterTests {
+    @Test("Only unpaused, expiring toasts schedule a wakeup")
+    func expiryScheduleIgnoresPersistentAndPausedToasts() {
+        let clock = TestClock(Date(timeIntervalSince1970: 1000))
+        let center = EditDeskToastCenter(now: clock.read)
+        #expect(center.nextExpiry == nil)
+        center.post("Failure", style: .failure)
+        #expect(center.nextExpiry == nil)
+        let id = center.post("Undo", style: .success, undoStepID: UUID())
+        #expect(center.nextExpiry == clock.read().addingTimeInterval(8))
+        clock.advance(2)
+        center.setHovering(true, for: id)
+        #expect(center.nextExpiry == nil)
+        clock.advance(20)
+        center.setHovering(false, for: id)
+        #expect(center.nextExpiry == clock.read().addingTimeInterval(6))
+        center.dismiss(id)
+        #expect(center.nextExpiry == nil)
+    }
+
+    @Test("The earliest expiry wins regardless of insertion order, then advances after reaping")
+    func expiryScheduleTracksEarliestRemainingToast() {
+        let clock = TestClock(Date(timeIntervalSince1970: 1000))
+        let center = EditDeskToastCenter(now: clock.read)
+        center.post("Slow", style: .info, duration: 8)
+        center.post("Fast", style: .info, duration: 2)
+        #expect(center.nextExpiry == clock.read().addingTimeInterval(2))
+        clock.advance(2)
+        center.reap()
+        #expect(center.toasts.map(\.text) == ["Slow"])
+        #expect(center.nextExpiry == clock.read().addingTimeInterval(6))
+        clock.advance(6)
+        center.reap()
+        #expect(center.nextExpiry == nil)
+    }
+
     @Test("A posted toast is visible")
     func postIsVisible() {
         let center = EditDeskToastCenter()

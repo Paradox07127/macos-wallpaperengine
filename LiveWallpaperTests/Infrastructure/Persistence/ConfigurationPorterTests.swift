@@ -170,6 +170,35 @@ struct ConfigurationPorterTests {
         #expect(actual.hasPrefix(expectedYearPrefix.prefix("LiveWallpaper-".count)))
     }
 
+    @Test("Import summaries distinguish absent, empty, and accepted bookmark sections")
+    func bookmarkImportSummaryFollowsTheShippingSKU() {
+        let workshop = WorkshopBookmark(id: 9_100_003, rawTitle: "Backup", previewImageURL: nil, tags: [])
+        let workshopOnly = ConfigurationPorter.importSummary(for: ConfigurationBundle(workshopBookmarks: [workshop]))
+        #expect(workshopOnly.bookmarkCount == nil)
+        #if LITE_BUILD
+        #expect(workshopOnly.workshopBookmarkCount == nil)
+        #expect(workshopOnly.totalBookmarkCount == nil)
+        #expect(workshopOnly.isEmpty)
+        #else
+        #expect(workshopOnly.workshopBookmarkCount == 1)
+        #expect(workshopOnly.totalBookmarkCount == 1)
+        #expect(!workshopOnly.isEmpty)
+        #endif
+
+        let absent = ConfigurationPorter.importSummary(for: ConfigurationBundle())
+        #expect(absent.totalBookmarkCount == nil)
+        #expect(absent.isEmpty)
+        let empty = ConfigurationPorter.importSummary(for: ConfigurationBundle(wallpaperBookmarks: []))
+        #expect(empty.totalBookmarkCount == 0)
+        #expect(!empty.isEmpty)
+
+        let mixed = ConfigurationPorter.ApplySummary(bookmarkCount: 2, workshopBookmarkCount: 3)
+        #expect(mixed.bookmarkCount == 2, "The ordinary-bookmark count must retain its original meaning")
+        #expect(mixed.workshopBookmarkCount == 3)
+        #expect(mixed.totalBookmarkCount == 5)
+        #expect(!mixed.isEmpty)
+    }
+
     // MARK: - Screen schemes
 
     private func sampleScheme(name: String) -> ScreenScheme {
@@ -426,7 +455,7 @@ struct SettingsManagerMigrationTests {
         let postVersion = defaults.integer(forKey: "Settings.MigrationVersion")
         #expect(postVersion == 0,
                 "Migration version must stay at 0 after a failed seed so the next launch retries")
-        await manager.flushPendingConfigurationWrites()
+        await manager.flushPendingWrites()
     }
 
     @Test("Zero-byte store file does not block migration from a valid legacy blob")
@@ -522,11 +551,15 @@ extension ConfigurationPorterTests {
 
         #expect(ConfigurationPorter.currentBundle().workshopBookmarks?.contains(existing) == true, "the export leaves Workshop bookmarks out")
 
-        _ = ConfigurationPorter.apply(ConfigurationBundle(workshopBookmarks: [
+        let summary = ConfigurationPorter.apply(ConfigurationBundle(workshopBookmarks: [
             WorkshopBookmark(id: existing.id, rawTitle: "Backup copy", previewImageURL: nil, tags: []),
             incoming,
         ]))
 
+        #expect(summary.bookmarkCount == nil)
+        #expect(summary.workshopBookmarkCount == 2)
+        #expect(summary.totalBookmarkCount == 2, "The summary counts accepted input entries, including a saved duplicate")
+        #expect(!summary.isEmpty, "A successful Workshop-only import must not be reported as unrecognized")
         #expect(store.contains(incoming.id), "the restore drops the backup's Workshop bookmarks")
         #expect(store.bookmarks.first { $0.id == existing.id }?.rawTitle == "Mine", "the backup overwrote a saved bookmark")
     }

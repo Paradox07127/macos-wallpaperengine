@@ -32,6 +32,59 @@ struct SteamConnectorCallerLivenessTests {
         #expect(!liveness.isLive(enqueuedAt: now, now: now))
     }
 
+    @Test("a login cancelled between spawn and registration is signalled, while its retry survives")
+    func loginCancellationDuringSpawnDoesNotReachRetry() {
+        let registry = SteamCMDActiveProcessRegistry()
+        let cancelled = SteamConnectorCallerLiveness(maxQueueWait: 900)
+        let cancelledID = UUID().uuidString
+        cancelled.own(operationID: cancelledID)
+        cancelled.markAbandoned { operationID in
+            #expect(!registry.terminateActive(operationID: operationID, kill: { _, _ in
+                Issue.record("the child has not registered yet")
+                return 0
+            }))
+        }
+        #expect(!cancelled.canContinue)
+        var signals: [pid_t] = []
+        registry.register(
+            pid: 101, hasOwnGroup: false, operationID: cancelledID,
+            isCancelled: { !cancelled.canContinue },
+            kill: { pid, signal in
+                #expect(signal == SIGTERM)
+                signals.append(pid)
+                return 0
+            }
+        )
+        #expect(signals == [101])
+        registry.clear()
+        let retry = SteamConnectorCallerLiveness(maxQueueWait: 900)
+        let retryID = UUID().uuidString
+        retry.own(operationID: retryID)
+        registry.register(
+            pid: 102, hasOwnGroup: false, operationID: retryID,
+            isCancelled: { !retry.canContinue },
+            kill: { _, _ in
+                Issue.record("the new login must remain live")
+                return 0
+            }
+        )
+        cancelled.markAbandoned { operationID in
+            #expect(!registry.terminateActive(operationID: operationID, kill: { _, _ in
+                Issue.record("late cancellation of the first login killed its retry")
+                return 0
+            }))
+        }
+        #expect(retry.canContinue)
+        retry.markAbandoned { operationID in
+            let terminated = registry.terminateActive(operationID: operationID, kill: { pid, signal in
+                #expect(pid == 102)
+                #expect(signal == SIGTERM)
+                return 0
+            })
+            #expect(terminated)
+        }
+    }
+
     @Test("host exit makes every caller's queued work bail")
     func hostExitFailsEveryCaller() {
         defer { SteamCMDActiveProcessRegistry.resetHostExitForTesting() }

@@ -122,7 +122,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         )
 
         manager.saveGlobalSettings(expected)
-        await manager.flushPendingConfigurationWrites()
+        await manager.flushPendingWrites()
 
         let persistedURL = directory.url(for: .globalSettings)
         #expect(FileManager.default.fileExists(atPath: persistedURL.path))
@@ -282,6 +282,17 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         let backup = try RepositoryRoot.source("LiveWallpaper/Views/Settings/BackupSection.swift")
         #expect(backup.contains("let summary = ConfigurationPorter.apply(bundle)"))
+        #expect(backup.contains("if let count = ConfigurationPorter.importSummary(for: bundle).totalBookmarkCount {"),
+                "Confirmation must count exactly the bookmark sections the shipping SKU imports")
+        #expect(backup.contains("if let count = summary.totalBookmarkCount {"),
+                "The result must include Workshop bookmarks in the existing localized bookmark feedback")
+        let porter = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Persistence/ConfigurationPorter+SettingsBridge.swift")
+        let preview = try Self.slice(porter, from: "static func importSummary(", until: "@discardableResult")
+        let liteCount = try Self.slice(preview, from: "#if LITE_BUILD", until: "#else")
+        let proCount = try Self.slice(preview, from: "#else", until: "#endif")
+        #expect(liteCount.contains("let workshopBookmarkCount: Int? = nil"),
+                "Lite must not count a Workshop section it cannot import")
+        #expect(proCount.contains("let workshopBookmarkCount = bundle.workshopBookmarks?.count"))
         #expect(backup.contains("screenManager.handleGlobalSettingsChanged()"))
         #expect(backup.contains("screenManager.resetAllWallpaperSessions()"))
         #expect(backup.contains("screenManager.refreshScreens(preserveRuntimeSessions: false)"))

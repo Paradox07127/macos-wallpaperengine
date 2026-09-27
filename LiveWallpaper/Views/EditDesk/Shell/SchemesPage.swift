@@ -69,6 +69,7 @@ struct SchemesPage: View {
                 .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
         }
         .fixedSize()
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Saved library tab"))
         .padding(.vertical, DesignTokens.EditDesk.Spacing.s8)
     }

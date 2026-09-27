@@ -140,7 +140,7 @@ extension GeneralSettingsView {
                 bundle: .appLanguage, comment: "Import success line: global settings were restored."
             ))
         }
-        if let count = summary.bookmarkCount {
+        if let count = summary.totalBookmarkCount {
             lines.append(String(
                 localized: "Restored \(count) saved bookmarks.",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
@@ -178,7 +178,7 @@ extension GeneralSettingsView {
             #endif
         }
         var merged: [String] = []
-        if let count = bundle.wallpaperBookmarks?.count {
+        if let count = ConfigurationPorter.importSummary(for: bundle).totalBookmarkCount {
             merged.append(String(
                 localized: "• \(count) saved bookmarks",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."

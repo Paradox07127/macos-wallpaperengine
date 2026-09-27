@@ -114,8 +114,6 @@ struct HTMLPerformanceTargetTests {
         context.evaluateScript("window.__lwSetRafTargetInterval__(33.333);")
         context.evaluateScript("startLoop(); run(6, 1000 / 60);")
 
-        // The frame already registered on the native rAF when the suspend lands
-        // still fires once; what must stop is everything after it.
         context.evaluateScript("window.__lwSuspend__(); run(4, 1000 / 60);")
         let settled = context.evaluateScript("dispatched")?.toInt32()
         context.evaluateScript("run(30, 1000 / 60);")
@@ -290,6 +288,112 @@ struct HTMLPerformanceTargetTests {
         #expect(child.exception?.toString() == nil)
         let paced = child.evaluateScript("dispatched")?.toInt32() ?? 0
         #expect((29...31).contains(paced), "got \(paced)")
+    }
+
+    @Test("Cancelling a paced rAF request survives a rejected native tick")
+    func cancellationSurvivesPacingRetry() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        window.__lwSetRafThrottle__(2);
+        var calls = 0;
+        var request = window.requestAnimationFrame(function () { calls++; });
+        tick(1000 / 60);
+        window.cancelAnimationFrame(request);
+        run(4, 1000 / 60);
+        """)
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("calls")?.toInt32() == 0)
+        #expect(context.evaluateScript("rafPending.length")?.toInt32() == 0)
+    }
+
+    @Test("The same callback can be registered twice and cancelled independently")
+    func duplicateCallbacksHaveIndependentRequests() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        window.__lwSetRafThrottle__(2);
+        var calls = 0;
+        function callback() { calls++; }
+        var first = window.requestAnimationFrame(callback);
+        window.requestAnimationFrame(callback);
+        tick(1000 / 60);
+        window.cancelAnimationFrame(first);
+        run(4, 1000 / 60);
+        """)
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("calls")?.toInt32() == 1)
+    }
+
+    @Test("A callback can cancel itself and another request already due this frame")
+    func cancellationInsideCallbackHonoursRequestIdentity() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        var firstCalls = 0;
+        var secondCalls = 0;
+        var first = window.requestAnimationFrame(function () {
+            firstCalls++;
+            window.cancelAnimationFrame(first);
+            window.cancelAnimationFrame(second);
+        });
+        var second = window.requestAnimationFrame(function () { secondCalls++; });
+        run(4, 1000 / 60);
+        """)
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("firstCalls")?.toInt32() == 1)
+        #expect(context.evaluateScript("secondCalls")?.toInt32() == 0)
+    }
+
+    @Test("Cancelling a suspended request still works after resume and pacing changes")
+    func cancellationSurvivesResumeAndPacingChanges() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        var calls = 0;
+        window.__lwSuspend__();
+        var request = window.requestAnimationFrame(function () { calls++; });
+        window.__lwSetRafThrottle__(2);
+        window.__lwResume__();
+        tick(1000 / 60);
+        window.__lwSetRafThrottle__(1);
+        window.__lwSetRafTargetInterval__(33.333);
+        window.cancelAnimationFrame(request);
+        run(4, 1000 / 60);
+        """)
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("calls")?.toInt32() == 0)
+        #expect(context.evaluateScript("rafPending.length")?.toInt32() == 0)
+    }
+
+    @Test("Suspend and resume inside a frame cannot dispatch an old native callback twice")
+    func sameFrameSuspendResumeRejectsStaleNativeCallback() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        var calls = 0;
+        window.requestAnimationFrame(function () {
+            window.__lwSuspend__();
+            window.__lwResume__();
+        });
+        window.requestAnimationFrame(function () { calls++; });
+        tick(1000 / 60);
+        var beforeNextFrame = calls;
+        run(4, 1000 / 60);
+        """)
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("beforeNextFrame")?.toInt32() == 0)
+        #expect(context.evaluateScript("calls")?.toInt32() == 1)
+    }
+
+    @Test("Throttle updates while suspended take effect on resume", arguments: [1, 2])
+    func suspendedThrottleChangesApplyOnResume(ratio: Int) throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("""
+        startLoop();
+        window.__lwSuspend__();
+        window.__lwSetRafThrottle__(\(ratio));
+        run(10, 1000 / 60);
+        """)
+        #expect(context.evaluateScript("dispatched")?.toInt32() == 0)
+        context.evaluateScript("window.__lwResume__(); run(60, 1000 / 60);")
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("dispatched")?.toInt32() == Int32(60 / ratio))
     }
 
     // MARK: - Host dispatch

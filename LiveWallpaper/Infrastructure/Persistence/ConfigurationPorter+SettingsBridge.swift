@@ -18,14 +18,29 @@ extension ConfigurationPorter {
         return bundle
     }
 
+    /// The sections this SKU accepts, shared by confirmation and the result of applying the bundle.
+    static func importSummary(for bundle: ConfigurationBundle) -> ApplySummary {
+        #if LITE_BUILD
+        let workshopBookmarkCount: Int? = nil
+        #else
+        let workshopBookmarkCount = bundle.workshopBookmarks?.count
+        #endif
+        return ApplySummary(
+            displayCount: bundle.screenConfigurations?.count,
+            bookmarkCount: bundle.wallpaperBookmarks?.count,
+            workshopBookmarkCount: workshopBookmarkCount,
+            schemeCount: bundle.screenSchemes?.count,
+            didRestoreGlobalSettings: bundle.globalSettings != nil
+        )
+    }
+
     @discardableResult
     static func apply(_ bundle: ConfigurationBundle) -> ApplySummary {
         let manager = SettingsManager.shared
-        var summary = ApplySummary(displayCount: nil, bookmarkCount: nil, didRestoreGlobalSettings: false)
+        let summary = importSummary(for: bundle)
 
         if let configurations = bundle.screenConfigurations {
             manager.replaceAllConfigurations(configurations)
-            summary.displayCount = configurations.count
         }
 
         if let global = bundle.globalSettings {
@@ -33,7 +48,6 @@ extension ConfigurationPorter {
             // The imported library may rename or delete presets the cached
             // configurations still carry snapshots of.
             manager.reconcileScenePresetSnapshots()
-            summary.didRestoreGlobalSettings = true
         }
 
         if let bookmarks = bundle.wallpaperBookmarks {
@@ -43,7 +57,6 @@ extension ConfigurationPorter {
             )
             manager.saveWallpaperBookmarks(merged)
             BookmarkStore.shared.reload()
-            summary.bookmarkCount = bookmarks.count
         }
 
         // Schemes are per-machine archives like bookmarks, so a backup that
@@ -55,7 +68,6 @@ extension ConfigurationPorter {
             )
             manager.saveScreenSchemes(merged)
             SchemeStore.shared.reload()
-            summary.schemeCount = schemes.count
         }
 
         #if !LITE_BUILD

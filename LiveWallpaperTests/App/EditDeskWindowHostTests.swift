@@ -7,6 +7,31 @@ import Testing
 @Suite("Edit Desk window host", .serialized)
 @MainActor
 struct EditDeskWindowHostTests {
+    @Test("The application menu exposes a single localized Settings command with Cmd-comma")
+    func nativeSettingsCommandIsInstalled() async throws {
+        /// Inspect the running SwiftUI app's menu so a missing command fails the test.
+        func settingsCommands() -> [NSMenuItem] {
+            guard let applicationMenu = NSApp.mainMenu?.items.first?.submenu else { return [] }
+            return applicationMenu.items.filter {
+                $0.keyEquivalent == ","
+                    && $0.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == .command
+            }
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while settingsCommands().isEmpty, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let commands = settingsCommands()
+        try #require(commands.count == 1, "expected one application-menu Cmd-comma command, found \(commands.count)")
+        let command = try #require(commands.first)
+        let language = AppLanguagePreference.current(in: .appScoped())
+        #expect(command.title == String(localized: "Settings", bundle: language.localizationBundle()))
+        #expect(command.action != nil, "Settings has no action")
+        #expect(!command.isHidden)
+        #expect(command.isEnabled)
+    }
+
     @Test("First launch on a build opens the main window")
     func firstLaunchOpensMainWindow() {
         let options = AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false)

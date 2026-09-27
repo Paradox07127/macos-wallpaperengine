@@ -20,7 +20,7 @@ enum TestScratch {
     /// manager built on `directory`, read-only ones included: `init` alone queues writes.
     static func discard(_ directory: URL, flushing managers: SettingsManager...) async {
         for manager in managers {
-            await manager.flushPendingConfigurationWrites()
+            await manager.flushPendingWrites()
         }
         try? FileManager.default.removeItem(at: directory)
     }

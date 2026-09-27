@@ -99,23 +99,32 @@ public enum ConfigurationPorter {
     public struct ApplySummary: Sendable {
         public var displayCount: Int?
         public var bookmarkCount: Int?
+        public var workshopBookmarkCount: Int?
         public var schemeCount: Int?
         public var didRestoreGlobalSettings: Bool
 
         public init(
             displayCount: Int? = nil,
             bookmarkCount: Int? = nil,
+            workshopBookmarkCount: Int? = nil,
             schemeCount: Int? = nil,
             didRestoreGlobalSettings: Bool = false
         ) {
             self.displayCount = displayCount
             self.bookmarkCount = bookmarkCount
+            self.workshopBookmarkCount = workshopBookmarkCount
             self.schemeCount = schemeCount
             self.didRestoreGlobalSettings = didRestoreGlobalSettings
         }
 
+        /// Input entries accepted for merging, including ones already saved; nil means neither section was accepted.
+        public var totalBookmarkCount: Int? {
+            guard bookmarkCount != nil || workshopBookmarkCount != nil else { return nil }
+            return (bookmarkCount ?? 0) + (workshopBookmarkCount ?? 0)
+        }
+
         public var isEmpty: Bool {
-            displayCount == nil && bookmarkCount == nil && schemeCount == nil && !didRestoreGlobalSettings
+            displayCount == nil && totalBookmarkCount == nil && schemeCount == nil && !didRestoreGlobalSettings
         }
     }
 

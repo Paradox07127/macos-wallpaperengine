@@ -373,30 +373,6 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(script.contains("\"fps\":1"))
     }
 
-    @Test("Lifecycle script keeps throttle changes made while suspended")
-    func lifecycleScriptKeepsSuspendedThrottleChanges() throws {
-        let script = HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
-        let installerStart = try #require(script.range(of: "function installRafThrottle(ratio)"))
-        let installerEnd = try #require(
-            script.range(of: "function ensurePauseStyle()", range: installerStart.upperBound..<script.endIndex)
-        )
-        let installer = script[installerStart.lowerBound..<installerEnd.lowerBound]
-        let ratioAssignment = try #require(installer.range(of: "rafThrottleRatio = ratio;"))
-        let suspendedGuard = try #require(installer.range(of: "if (rafBackup) return;"))
-
-        #expect(ratioAssignment.lowerBound < suspendedGuard.lowerBound)
-
-        let resumeStart = try #require(script.range(of: "window.__lwResume__ = function ()"))
-        let resumeEnd = try #require(
-            script.range(of: "window.__lwSetRafThrottle__", range: resumeStart.upperBound..<script.endIndex)
-        )
-        let resume = script[resumeStart.lowerBound..<resumeEnd.lowerBound]
-
-        #expect(resume.contains("restoreRaf();"))
-        #expect(resume.contains("installRafThrottle(rafThrottleRatio);"))
-        #expect(!resume.contains("if (rafThrottleRatio > 1)"))
-    }
-
     @Test("Lifecycle script parks page timers instead of letting callbacks wake while suspended")
     func lifecycleScriptParksTimers() {
         let script = HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)

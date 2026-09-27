@@ -2,8 +2,6 @@ import CryptoKit
 import Foundation
 import os
 
-/// Steam connector service body. Currently only reports its own execution
-/// context; login / download / prune land on top of a verified boundary.
 final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// Set by the listener when the app exports a progress sink. Long operations
     /// stream through it instead of holding one reply block for minutes.
@@ -111,6 +109,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         timeout: TimeInterval,
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         operationID: String? = nil,
+        isCancelled: @Sendable () -> Bool = { false },
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
         // Every SteamCMD execution in this process funnels through here, so this
@@ -144,7 +143,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     arguments: arguments,
                     timeout: timeout,
                     profileHome: profile.home.path(percentEncoded: false),
-                    activeOperationID: operationID
+                    activeOperationID: operationID,
+                    isCancelled: isCancelled
                 ) { line in
                     guard let onProgress, let progress = SteamCMDProgressLine.parse(line) else { return }
                     onProgress(progress)
@@ -190,6 +190,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         timeout: TimeInterval,
         profileHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         activeOperationID: String? = nil,
+        isCancelled: @Sendable () -> Bool = { false },
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
         let process = Process()
@@ -201,6 +202,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         process.standardOutput = pipe
         process.standardError = pipe
 
+        guard !isCancelled() else { return SteamCMDRun(output: "", timedOut: false) }
         do { try process.run() } catch {
             return SteamCMDRun(output: error.localizedDescription, timedOut: false)
         }
@@ -214,7 +216,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         let hasOwnGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
         // Unconditional: the queue is serial, and a child started without an id is exactly the one
         // `terminateActiveForHostExit` has to find when the app quits.
-        activeSteamCMD.register(pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID)
+        activeSteamCMD.register(
+            pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID,
+            isCancelled: isCancelled
+        )
 
         // Bounded, not accumulating. SteamCMD can emit hundreds of megabytes on a
         // bad run, and this process is unsandboxed; the semantic summary keeps the
@@ -1076,7 +1081,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
     func signInSteamAccount(_ request: Data, with reply: @escaping @Sendable (Data) -> Void) {
+        let operationID = UUID().uuidString
+        let liveness = callerLiveness
+        liveness.own(operationID: operationID)
         @Sendable func send(_ result: SteamCMDLoginResult) {
+            liveness.disown(operationID: operationID)
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
         guard let payload = try? JSONDecoder().decode(SteamCMDLoginRequest.self, from: request),
@@ -1086,7 +1095,6 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
         // Same serial queue as every other steamcmd run: an interactive login
         // and a download share one Steam profile and must not interleave.
-        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else {
@@ -1097,7 +1105,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 send(.failed(.unavailable))
                 return
             }
-            send(Self.runLoginSession(binaryPath: binaryPath, request: payload))
+            send(Self.runLoginSession(
+                binaryPath: binaryPath, request: payload, operationID: operationID,
+                isCancelled: { !liveness.canContinue }
+            ))
         }
     }
 
@@ -1113,6 +1124,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     static func runLoginSession(
         binaryPath: String,
         request: SteamCMDLoginRequest,
+        operationID: String,
+        isCancelled: @Sendable () -> Bool,
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()
     ) -> SteamCMDLoginResult {
         guard !SteamCMDExecutionFence.refusesExecution(of: binaryPath) else {
@@ -1139,6 +1152,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         process.standardInput = slaveHandle
         process.standardOutput = slaveHandle
         process.standardError = slaveHandle
+        guard !isCancelled() else {
+            close(slave)
+            return .failed(.unavailable)
+        }
         do {
             try process.run()
         } catch {
@@ -1146,8 +1163,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return .failed(.unavailable)
         }
         close(slave)
-        // No process group of its own (the PTY is the session), no operation id: only host exit signals it.
-        activeSteamCMD.register(pid: process.processIdentifier, hasOwnGroup: false, operationID: nil)
+        // Register before checking cancellation so a cancellation during spawn still reaches this child.
+        activeSteamCMD.register(
+            pid: process.processIdentifier, hasOwnGroup: false, operationID: operationID,
+            isCancelled: isCancelled
+        )
         defer { activeSteamCMD.clear() }
 
         func write(secret: String) {
@@ -1179,6 +1199,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         var refusalReason: String?
 
         readLoop: while Date() < deadline {
+            guard !isCancelled() else { break }
             var pollDescriptor = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
             let ready = poll(&pollDescriptor, 1, 500)
             if ready > 0 {
@@ -1192,6 +1213,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 if !process.isRunning { break }
                 continue
             }
+            guard !isCancelled() else { break }
             switch event {
             case .passwordPrompt:
                 if !sentPassword {
@@ -1243,9 +1265,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // `+quit` after a fresh login still has the session to write out. A
         // success cut short here is reported as a failed sign-in even though the
         // session may already be on disk, so the budget is generous.
-        if outcome == .success, process.isRunning {
+        if outcome == .success, process.isRunning, !isCancelled() {
             let shutdownDeadline = Date().addingTimeInterval(30)
-            while process.isRunning, Date() < shutdownDeadline {
+            while process.isRunning, Date() < shutdownDeadline, !isCancelled() {
                 usleep(10000)
             }
         }
@@ -1262,12 +1284,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         process.waitUntilExit()
-        guard outcome == .success, process.terminationStatus == 0 else {
+        activeSteamCMD.clear()
+        guard !isCancelled(), outcome == .success, process.terminationStatus == 0 else {
             return .failed(outcome == .success ? .failed : outcome, reason: refusalReason)
         }
         flock(profile.fd, LOCK_UN)
-        let cached = runCachedLoginProbe(accountName: request.accountName, steamCMDPath: binaryPath, realHome: realHome)
-        guard cached.outcome == .sessionValid else { return .failed(.failed, reason: cached.failureReason) }
+        let cached = runCachedLoginProbe(
+            accountName: request.accountName, steamCMDPath: binaryPath, realHome: realHome,
+            operationID: operationID, isCancelled: isCancelled
+        )
+        guard !isCancelled(), cached.outcome == .sessionValid else { return .failed(.failed, reason: cached.failureReason) }
         return SteamCMDLoginResult(outcome: .success, steamID64: cached.steamID64)
     }
 
@@ -1741,13 +1767,17 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     private static func runCachedLoginProbe(
         accountName: String,
         steamCMDPath: String,
-        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()
+        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
+        operationID: String? = nil,
+        isCancelled: @Sendable () -> Bool = { false }
     ) -> SteamCachedLoginResult {
         let run = runSteamCMD(
             steamCMDPath: steamCMDPath,
             arguments: ["+@NoPromptForPassword", "1", "+login", accountName, "+quit"],
             timeout: 60,
-            realHome: realHome
+            realHome: realHome,
+            operationID: operationID,
+            isCancelled: isCancelled
         )
         if run.timedOut {
             return SteamCachedLoginResult(

@@ -36,7 +36,7 @@ struct ScreenSchemePersistenceTests {
 
         // The write is queued off the MainActor; draining it is what makes the
         // second manager read a file rather than an empty directory.
-        await manager.flushPendingConfigurationWrites()
+        await manager.flushPendingWrites()
 
         let reloaded = SettingsManager(
             directory: ConfigurationDirectory(root: root),

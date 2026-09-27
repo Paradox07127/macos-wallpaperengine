@@ -41,6 +41,13 @@ final class EditDeskToastCenter {
 
     private(set) var toasts: [Toast] = []
 
+    var nextExpiry: Date? {
+        toasts.compactMap { toast in
+            guard toast.pausedAt == nil, let lifetime = toast.lifetime else { return nil }
+            return toast.postedAt.addingTimeInterval(lifetime)
+        }.min()
+    }
+
     @ObservationIgnored private let now: @Sendable () -> Date
 
     init(now: @escaping @Sendable () -> Date = Date.init) {
@@ -112,8 +119,7 @@ final class EditDeskToastCenter {
         let expired: (Toast) -> Bool = { toast in
             toast.pausedAt == nil && toast.lifetime.map { cutoff.timeIntervalSince(toast.postedAt) >= $0 } ?? false
         }
-        // `removeAll` publishes an observation whether or not it removed anything, and the host
-        // calls this five times a second: an idle window would re-render forever.
+        // Avoid publishing an observation when no toast expired.
         guard toasts.contains(where: expired) else { return }
         toasts.removeAll(where: expired)
     }
@@ -129,23 +135,24 @@ struct EditDeskToastHost: View {
     /// Below the tallest page top bar, so a toast never covers its buttons.
     private static let newestTopInset = max(DesignTokens.EditDesk.Spacing.topBar, DetailGeometry.topBarHeight)
         + DesignTokens.EditDesk.Spacing.s8
-    /// 44 = one toast's height plus the gap between the two.
-    private static let olderTopInset = newestTopInset + 44
-    private static let reapInterval: Duration = .milliseconds(200)
-
     var body: some View {
-        ZStack(alignment: .top) {
-            ForEach(Array(center.toasts.enumerated()), id: \.element.id) { index, toast in
+        VStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+            ForEach(center.toasts.reversed()) { toast in
                 toastView(toast)
-                    .padding(.top, index == center.toasts.count - 1 ? Self.newestTopInset : Self.olderTopInset)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .padding(.top, Self.newestTopInset)
         .animation(reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.4, dampingFraction: 0.82), value: center.toasts.map(\.id))
-        .task {
-            while !Task.isCancelled {
+        .task(id: center.nextExpiry) {
+            while let deadline = center.nextExpiry {
+                do {
+                    try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
                 center.reap()
-                try? await Task.sleep(for: Self.reapInterval)
             }
         }
     }

@@ -51,6 +51,7 @@ private struct OverlayLayerRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(session.selection == row.selection ? .isSelected : [])
             if hasSettings {
                 GlassIconButton("gearshape", size: .small) {
                     session.select(row.selection)

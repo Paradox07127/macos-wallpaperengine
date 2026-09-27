@@ -65,7 +65,7 @@ struct EmptyDisplaySetup: View {
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
                 Text("Set up this display")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .font(DesignTokens.Typography.hero)
                 Text(verbatim: screen.name)
                     .font(DesignTokens.Typography.body).foregroundStyle(.secondary)
                     .lineLimit(2)

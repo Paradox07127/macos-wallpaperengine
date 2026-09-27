@@ -48,7 +48,7 @@ struct HTMLBookmarkPersistenceTests {
                 )
         )
 
-        await manager.flushPendingConfigurationWrites()
+        await manager.flushPendingWrites()
         let freshResolver = SecurityScopedBookmarkResolver(
             resolveData: { data in
                 #expect(data == refreshed)
@@ -277,7 +277,7 @@ struct HTMLBookmarkPersistenceTests {
         #expect(updatedHistory.lastUsedAt == entry.lastUsedAt)
         #expect(updatedHistory.sizeBytes == entry.sizeBytes)
 
-        await manager.flushPendingConfigurationWrites()
+        await manager.flushPendingWrites()
         let reloaded = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
         #expect(reloaded.loadGlobalSettings().recentWPEImports.first?.origin.sourceFolderBookmark == refreshed)
         await TestScratch.discard(root, flushing: manager, reloaded)

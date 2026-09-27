@@ -193,8 +193,12 @@ final class SteamConnectorCallerLiveness: Sendable {
 
     /// Checked at the top of every queued body and again right before a child is spawned. False once the
     /// connection is gone, the host is exiting, or the request waited past the budget (the client has certainly timed out).
+    var canContinue: Bool {
+        !SteamCMDActiveProcessRegistry.hostExiting && !state.withLock { $0.abandoned }
+    }
+
     func isLive(enqueuedAt: Date, now: Date = Date()) -> Bool {
-        guard !SteamCMDActiveProcessRegistry.hostExiting, !state.withLock({ $0.abandoned }) else { return false }
+        guard canContinue else { return false }
         return now.timeIntervalSince(enqueuedAt) <= maxQueueWait
     }
 
@@ -227,7 +231,7 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     private struct Active {
         let pid: pid_t
         let hasOwnGroup: Bool
-        /// `nil` for a run the app never named — a probe, a login, an install. Only host exit signals those.
+        /// `nil` for a run the app never named — a probe or an install. Only host exit signals those.
         let operationID: String?
     }
 
@@ -250,9 +254,13 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     #endif
 
     /// A child registered after this is signalled immediately by `register`.
-    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String?, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) {
+    func register(
+        pid: pid_t, hasOwnGroup: Bool, operationID: String?,
+        isCancelled: () -> Bool = { false },
+        kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }
+    ) {
         state.withLock { $0 = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
-        if Self.hostExiting {
+        if Self.hostExiting || isCancelled() {
             _ = kill(hasOwnGroup ? -pid : pid, SIGTERM)
         }
     }

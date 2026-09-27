@@ -721,7 +721,6 @@ enum HTMLWallpaperRuntimeScript {
             if (window.__lwLifecycleInstalled__) return;
             window.__lwLifecycleInstalled__ = true;
             var aggressive = \(aggressive);
-            var rafBackup = null;
             var rafThrottleRatio = 1;
             var rafThrottleCounter = 0;
             // Minimum ms between rAF callbacks. Separate from the thermal ratio: an integer divisor cannot express 30 on a 136 Hz panel, and the two must compose.
@@ -1075,48 +1074,67 @@ enum HTMLWallpaperRuntimeScript {
                 } catch (e) {}
             }
 
-            // Queue rAF while suspended so self-perpetuating loops can resume.
-            var rafCafBackup = null;
-            var rafQueue = [];
-            var rafQueueNextId = 1;
-
-            function installRafOverride() {
-                if (rafBackup) return;
-                rafBackup = window.requestAnimationFrame;
-                rafCafBackup = window.cancelAnimationFrame;
-                window.requestAnimationFrame = function (cb) {
-                    var id = rafQueueNextId++;
-                    rafQueue.push({ id: id, cb: cb });
-                    return id;
-                };
-                window.cancelAnimationFrame = function (id) {
-                    for (var i = 0; i < rafQueue.length; i++) {
-                        if (rafQueue[i].id === id) { rafQueue.splice(i, 1); return; }
-                    }
-                };
+            // Stable request IDs survive pacing retries and suspend/resume.
+            var nativeRaf = window.requestAnimationFrame;
+            var nativeCaf = window.cancelAnimationFrame;
+            var rafRecords = Object.create(null);
+            function scheduleRaf(record) {
+                if (suspended || rafRecords[record.id] !== record) return;
+                requestNativeRaf(record);
             }
-
-            function restoreRaf() {
-                if (!rafBackup) return;
-                var native = rafBackup;
-                window.requestAnimationFrame = native;
-                if (rafCafBackup) window.cancelAnimationFrame = rafCafBackup;
-                rafBackup = null;
-                rafCafBackup = null;
-                // Timestamps from before the suspend would make the gate's first
-                // decision on a gap the size of the whole absence.
+            function requestNativeRaf(record) {
+                var generation = ++record.generation;
+                record.nativeId = nativeRaf.call(window, function (t) {
+                    if (rafRecords[record.id] !== record || record.generation !== generation) return;
+                    record.nativeId = null;
+                    if (suspended) return;
+                    if (!rafFrameGateAllows(t)) {
+                        scheduleRaf(record);
+                        return;
+                    }
+                    delete rafRecords[record.id];
+                    record.callback.call(window, t);
+                });
+            }
+            window.requestAnimationFrame = function (callback) {
+                if (typeof callback !== 'function') throw new TypeError('Callback must be a function');
+                var record = { id: null, callback: callback, nativeId: null, generation: 0 };
+                requestNativeRaf(record);
+                record.id = record.nativeId;
+                rafRecords[record.id] = record;
+                // Native callbacks are asynchronous; cancel before returning when parked.
+                if (suspended) {
+                    record.generation++;
+                    nativeCaf.call(window, record.nativeId);
+                    record.nativeId = null;
+                }
+                return record.id;
+            };
+            window.cancelAnimationFrame = function (id) {
+                var record = rafRecords[id];
+                if (!record) {
+                    nativeCaf.call(window, id);
+                    return;
+                }
+                delete rafRecords[id];
+                if (record.nativeId !== null) nativeCaf.call(window, record.nativeId);
+            };
+            function suspendRaf() {
+                Object.keys(rafRecords).forEach(function (id) {
+                    var record = rafRecords[id];
+                    record.generation++;
+                    if (record.nativeId !== null) nativeCaf.call(window, record.nativeId);
+                    record.nativeId = null;
+                });
+            }
+            function resumeRaf() {
                 rafLastDispatchMs = 0;
                 rafLastTickMs = 0;
                 rafGateStampMs = null;
-                var pending = rafQueue;
-                rafQueue = [];
-                for (var i = 0; i < pending.length; i++) {
-                    (function (entry) {
-                        native.call(window, function (t) { entry.cb(t); });
-                    })(pending[i]);
-                }
+                Object.keys(rafRecords).forEach(function (id) {
+                    scheduleRaf(rafRecords[id]);
+                });
             }
-
             function clampRafRatio(ratio) {
                 var value = parseInt(ratio, 10);
                 if (!isFinite(value) || value < 1) return 1;
@@ -1170,36 +1188,11 @@ enum HTMLWallpaperRuntimeScript {
             function installRafThrottle(ratio) {
                 rafThrottleRatio = ratio;
                 rafThrottleCounter = 0;
-                // While suspended, keep ratio; resume reconciles after restoreRaf.
-                if (rafBackup) return;
-                reconcileRafPacing();
             }
 
             function installRafTargetInterval(intervalMs) {
                 rafTargetIntervalMs = intervalMs;
                 rafLastDispatchMs = 0;
-                if (rafBackup) return;
-                reconcileRafPacing();
-            }
-
-            function reconcileRafPacing() {
-                if (rafThrottleRatio <= 1 && rafTargetIntervalMs <= 0) {
-                    if (window.__lwRafThrottleBackup__) {
-                        window.requestAnimationFrame = window.__lwRafThrottleBackup__;
-                        window.__lwRafThrottleBackup__ = null;
-                    }
-                    return;
-                }
-                if (!window.__lwRafThrottleBackup__) {
-                    window.__lwRafThrottleBackup__ = window.requestAnimationFrame;
-                }
-                var original = window.__lwRafThrottleBackup__;
-                window.requestAnimationFrame = function (cb) {
-                    return original.call(window, function (t) {
-                        if (rafFrameGateAllows(t)) cb(t);
-                        else window.requestAnimationFrame(cb);
-                    });
-                };
             }
 
             // animation-play-state does not inherit — class on <html> + rule.
@@ -1280,7 +1273,7 @@ enum HTMLWallpaperRuntimeScript {
                 if (!visibilityDescriptorBackup) visibilityDescriptorBackup = captureDescriptor('visibilityState');
                 forceHidden(true);
                 dispatchVisibility();
-                installRafOverride();
+                suspendRaf();
                 setCSSPaused(true);
                 if (typeof window.__lwSuspendAudioContexts__ === 'function') {
                     window.__lwSuspendAudioContexts__();
@@ -1297,13 +1290,12 @@ enum HTMLWallpaperRuntimeScript {
                     window.__lwResumeAudioContexts__();
                 }
                 setCSSPaused(false);
-                restoreRaf();
+                resumeRaf();
                 restoreVisibility();
                 dispatchVisibility();
                 signalWorkers('resume');
                 broadcastToChildFrames('resume');
                 resumeTimers();
-                // Ratio 1 still reconciles so a pre-suspend throttle wrapper is cleared.
                 installRafThrottle(rafThrottleRatio);
                 installRafTargetInterval(rafTargetIntervalMs);
                 notifyWallpaperPropertyListenerPaused(false);

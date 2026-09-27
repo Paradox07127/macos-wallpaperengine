@@ -222,6 +222,32 @@ struct SteamConnectorClientCancellationTests {
         )
     }
 
+    @Test("login owns one cancellation identity through its interactive and verification children")
+    func loginCancellationReachesBothChildren() throws {
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        let entryStart = try #require(source.range(of: "    func signInSteamAccount("))
+        let loginStart = try #require(source.range(of: "    static func runLoginSession("))
+        let loginEnd = try #require(source.range(of: "    func removeManagedSteamCMD("))
+        let entry = String(source[entryStart.lowerBound ..< loginStart.lowerBound])
+        let login = String(source[loginStart.lowerBound ..< loginEnd.lowerBound])
+        #expect(entry.contains("let operationID = UUID().uuidString"))
+        #expect(entry.contains("liveness.own(operationID: operationID)"))
+        #expect(entry.contains("liveness.disown(operationID: operationID)"))
+        #expect(entry.contains("isCancelled: { !liveness.canContinue }"))
+        #expect(login.contains("hasOwnGroup: false, operationID: operationID"))
+        #expect(!login.contains("operationID: nil"))
+        let verifyStart = try #require(login.range(of: "let cached = runCachedLoginProbe("))
+        #expect(login[verifyStart.lowerBound...].contains("operationID: operationID, isCancelled: isCancelled"))
+        #expect(login.contains("guard !isCancelled() else { break }"))
+        let spawnStart = try #require(source.range(of: "    private static func spawn("))
+        let spawnEnd = try #require(source.range(of: "    func probeEnvironment("))
+        let spawn = String(source[spawnStart.lowerBound ..< spawnEnd.lowerBound])
+        let run = try #require(spawn.range(of: "try process.run()"))
+        #expect(spawn[..<run.lowerBound].contains("guard !isCancelled()"))
+        let register = try #require(spawn.range(of: "activeSteamCMD.register("))
+        #expect(spawn[register.lowerBound...].prefix(220).contains("isCancelled: isCancelled"))
+    }
+
     @Test("SteamCMD termination runs alongside app shutdown, not ahead of it on the same 2 s fuse")
     func hostExitDoesNotSerialiseAheadOfShutdown() throws {
         let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
