@@ -85,6 +85,7 @@ final class EnvironmentOverlayController {
         if host.view.isSuspended {
             host.window.orderOut(nil)
         } else {
+            TestHostWindowParking.park(host.window)
             host.window.orderFrontRegardless()
         }
     }

@@ -300,6 +300,8 @@ final class OverlayController: NSObject {
         SourceRegistration.registerDefaultFactories()
 
         let window = OverlayWindow(screenFrame: screenFrame, level: level)
+        // Here, not in `fadeIn`: `restackSameLevelHosts` can order a second same-level window in first.
+        TestHostWindowParking.park(window)
         let frame = NSRect(origin: .zero, size: screenFrame.size)
         let host: Host
         switch module {

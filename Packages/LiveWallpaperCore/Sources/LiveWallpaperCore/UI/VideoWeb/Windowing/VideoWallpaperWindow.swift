@@ -21,6 +21,7 @@ public final class VideoWallpaperWindow: NSWindow {
             defer: false
         )
 
+        TestHostWindowParking.park(self)
         configureWindow()
     }
 
