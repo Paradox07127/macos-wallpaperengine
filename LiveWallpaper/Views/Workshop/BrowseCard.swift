@@ -41,7 +41,7 @@ struct BrowseCard: View, Equatable {
     /// nil keeps the reveal in this card's own `@State`.
     var onReveal: (() -> Void)?
     var isBookmarked: Bool = false
-    /// nil hides every bookmark affordance: the Edit Desk has nowhere to show Workshop bookmarks.
+    /// nil hides every bookmark affordance.
     var onBookmark: (() -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}

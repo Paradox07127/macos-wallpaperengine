@@ -44,7 +44,10 @@ struct WorkshopModal: View {
             windowSize: windowSize,
             titlebarInset: titlebarInset,
             title: item.title,
-            actions: actions.headerActions(for: item),
+            actions: actions.headerActions(
+                for: item, isBookmarked: WorkshopBookmarkActions.contains(item.id),
+                toggleBookmark: { WorkshopBookmarkActions.toggle(item) }
+            ),
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut,
             onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
@@ -224,13 +227,18 @@ struct WorkshopModal: View {
 }
 
 extension WorkshopModalActions {
-    func headerActions(for item: WorkshopQueryItem) -> [ModalHeaderAction] {
+    func headerActions(
+        for item: WorkshopQueryItem, isBookmarked: Bool, toggleBookmark: @escaping @MainActor () -> Void
+    ) -> [ModalHeaderAction] {
         var actions: [ModalHeaderAction] = []
         if let copyText {
             actions.append(ModalHeaderAction(kind: .copyLink) { copyText(item.steamCommunityURL.absoluteString) })
             actions.append(ModalHeaderAction(kind: .copyID) { copyText(String(item.id)) })
         }
         actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
+        if isBookmarked || !item.isBanned {
+            actions.append(ModalHeaderAction(kind: .bookmark(isBookmarked: isBookmarked), perform: toggleBookmark))
+        }
         return actions
     }
 }

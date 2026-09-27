@@ -143,6 +143,25 @@ struct WorkshopBookmarkTests {
         #expect(model.errorMessage == nil)
     }
 
+    @Test("A card wired the way Browse wires it saves its item on the first click and removes it on the second")
+    func browseCardTogglesTheBookmark() throws {
+        let (local, workshop, suite) = try Self.stores("card")
+        defer { suite.discard() }
+        let item = Self.queryItem(424_242)
+        let card = BrowseCard(
+            item: item, cardPreferences: GalleryCardPreferences(), reduceMotion: true,
+            isBookmarked: WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id),
+            onBookmark: { WorkshopBookmarkActions.toggle(item, store: local, workshopStore: workshop) }
+        )
+        let onBookmark = try #require(card.onBookmark, "the card hides its bookmark button")
+        #expect(!card.isBookmarked)
+
+        onBookmark()
+        #expect(WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id))
+        onBookmark()
+        #expect(!WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id))
+    }
+
     // MARK: - Wiring
 
     @Test("Both installed-delete paths clear the Workshop store too")
@@ -156,11 +175,14 @@ struct WorkshopBookmarkTests {
         }
     }
 
-    @Test("Browse gives Edit Desk cards no bookmark affordance")
+    @Test("Browse hands every card its bookmark state, read once per pass, and a toggle")
     func browsePaneBookmarkWiring() throws {
         let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(!pane.contains("WorkshopBookmarkActions"), "the pane reads the bookmark stores again")
-        #expect(!pane.contains("onBookmark:"), "a Browse card got a bookmark action")
+        #expect(pane.contains("let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()"), "the pane reads no bookmark set")
+        #expect(pane.contains("isBookmarked: bookmarkedIDs.contains(item.id)"), "a Browse card gets no bookmark state")
+        #expect(pane.contains("onBookmark: { WorkshopBookmarkActions.toggle(item) }"), "a Browse card gets no bookmark action")
+        // Control: one set per pass, not a store lookup per card.
+        #expect(!pane.contains("WorkshopBookmarkActions.contains("))
 
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
         #expect(card.contains("var onBookmark: (() -> Void)?"))

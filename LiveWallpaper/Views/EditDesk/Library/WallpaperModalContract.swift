@@ -108,8 +108,9 @@ struct WallpaperTagChip: Equatable, Identifiable {
 
 /// A title-row button of the detail modal: one "…" row that is not an apply.
 struct ModalHeaderAction: Identifiable {
-    enum Kind: Equatable {
+    enum Kind: Hashable {
         case showInFinder, copyLink, copyID, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
+        case bookmark(isBookmarked: Bool)
     }
 
     let kind: Kind
@@ -133,6 +134,7 @@ struct ModalHeaderAction: Identifiable {
         case .checkForUpdate: "arrow.triangle.2.circlepath"
         case .cancelUpdate: "xmark.circle"
         case .removeFromLibrary, .delete: "trash"
+        case let .bookmark(isBookmarked): isBookmarked ? "bookmark.fill" : "bookmark"
         }
     }
 
@@ -151,6 +153,8 @@ struct ModalHeaderAction: Identifiable {
         case .cancelUpdate: String(localized: "Cancel update", bundle: .appLanguage)
         case .removeFromLibrary: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage)
         case .delete: String(localized: "Delete", bundle: .appLanguage)
+        case .bookmark(isBookmarked: true): String(localized: "Remove Bookmark", bundle: .appLanguage)
+        case .bookmark(isBookmarked: false): String(localized: "Add Bookmark", bundle: .appLanguage)
         }
     }
 }

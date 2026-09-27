@@ -184,11 +184,12 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
+                        let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()
                         LibraryGalleryGrid(
                             size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
                         ) {
                             ForEach(viewModel.displayedItems) { item in
-                                browseCard(for: item)
+                                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
                                     .equatable()
                                     .id(item.id)
                             }
@@ -207,7 +208,7 @@ struct BrowsePane: View {
         }
     }
 
-    private func browseCard(for item: WorkshopQueryItem) -> BrowseCard {
+    private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
@@ -218,6 +219,8 @@ struct BrowsePane: View {
             canDownload: doctor.isDownloadReady,
             isRevealed: matureReveal?.isRevealed(item.id) ?? false,
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
+            isBookmarked: isBookmarked,
+            onBookmark: { WorkshopBookmarkActions.toggle(item) },
             onSelect: { onOpenItem?(item) },
             onDownload: {
                 WorkshopDownloadCoordinator.shared.download(

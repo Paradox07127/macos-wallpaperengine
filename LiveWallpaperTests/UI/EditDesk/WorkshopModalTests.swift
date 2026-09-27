@@ -400,13 +400,13 @@ struct WorkshopModalTests {
         #expect(outside.previous == nil && outside.next == nil)
     }
 
-    private func item(posted: Date) throws -> WorkshopQueryItem {
+    private func item(posted: Date, isBanned: Bool = false) throws -> WorkshopQueryItem {
         try WorkshopQueryItem(
             id: 42, rawTitle: "Rain", shortDescription: "", creatorID: "76561198000000000", creatorPersonaName: "kaze",
             previewImageURL: nil, fileSizeBytes: 95_500_000, timeUpdated: posted,
             subscriptionCount: 2900, viewCount: 1300, favoriteCount: 134,
             rating: .score(0.68, votesUp: 36, votesDown: 17), timeCreated: posted, tags: ["Scene", "3840 x 2160"],
-            visibility: .public, isBanned: false,
+            visibility: .public, isBanned: isBanned,
             steamCommunityURL: #require(URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=42"))
         )
     }
@@ -509,14 +509,41 @@ struct WorkshopModalTests {
     func titleRowCopiesTheLinkAndTheID() throws {
         let item = try item(posted: Date(timeIntervalSince1970: 0))
         let recorder = CopyRecorder()
-        let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item)
-        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam])
+        let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item, isBookmarked: false) {}
+        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam, .bookmark(isBookmarked: false)])
         for action in header.prefix(2) {
             action.perform()
         }
         #expect(recorder.texts == [item.steamCommunityURL.absoluteString, "42"])
         // Control: a host that cannot copy draws only the Steam button.
-        #expect(actions(copyText: nil).headerActions(for: item).map(\.kind) == [.openInSteam])
+        #expect(
+            actions(copyText: nil).headerActions(for: item, isBookmarked: false) {}.map(\.kind)
+                == [.openInSteam, .bookmark(isBookmarked: false)]
+        )
+    }
+
+    @Test("The title row's bookmark follows the saved state and toggles it; a banned item can only be removed")
+    func titleRowTogglesTheBookmark() throws {
+        let item = try item(posted: Date(timeIntervalSince1970: 0))
+        let recorder = CopyRecorder()
+        func bookmark(_ item: WorkshopQueryItem, isBookmarked: Bool) -> ModalHeaderAction? {
+            actions(copyText: nil).headerActions(for: item, isBookmarked: isBookmarked) { recorder.texts.append("toggle") }
+                .first { $0.kind == .bookmark(isBookmarked: isBookmarked) }
+        }
+
+        let add = try #require(bookmark(item, isBookmarked: false), "the title row has no bookmark button")
+        #expect(add.symbol == "bookmark")
+        #expect(add.title == String(localized: "Add Bookmark", bundle: .appLanguage))
+        add.perform()
+        #expect(recorder.texts == ["toggle"])
+
+        let remove = try #require(bookmark(item, isBookmarked: true))
+        #expect(remove.symbol == "bookmark.fill")
+        #expect(remove.title == String(localized: "Remove Bookmark", bundle: .appLanguage))
+
+        let banned = try self.item(posted: Date(timeIntervalSince1970: 0), isBanned: true)
+        #expect(bookmark(banned, isBookmarked: false) == nil, "a banned item offers a save that does nothing")
+        #expect(bookmark(banned, isBookmarked: true) != nil)
     }
 }
 #endif
