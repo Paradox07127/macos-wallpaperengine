@@ -121,8 +121,8 @@ struct StageCard: Identifiable, Equatable {
     var isDraggable: Bool
     /// Why the card's wallpaper cannot play here; drawn in place of `nowPlaying`.
     var statusBadge: String?
-    /// The scene whose own preview file `thumbnail` shows; nil when the card shows a saved cover,
-    /// a video poster or a web snapshot instead.
+    /// The scene whose preview GIF plays on hover over `thumbnail`, a saved cover included; nil when the
+    /// card shows a video poster or a web snapshot.
     var previewOrigin: WPEOrigin?
 
     static func == (lhs: Self, rhs: Self) -> Bool {

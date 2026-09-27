@@ -503,6 +503,38 @@ struct ShelfThumbnailCacheTests {
         #expect(cache.cached(.workshop(entry, coverRevision: 2), pixelSize: size, scale: 2) == nil, "a rewritten cover kept the card's old decode")
     }
 
+    @Test("A scene bookmark drawing its saved cover still names its scene, whose GIF plays over the cover")
+    func coveredSceneBookmarkNamesItsScene() async throws {
+        let fixture = Fixture()
+        fixture.cover = try makeImage()
+        fixture.scene = try makeImage()
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let origin = workshopEntry(.scene).origin
+        let scene = SceneDescriptor(workshopID: origin.workshopID, cacheRelativePath: origin.workshopID, entryFile: "scene.json", capabilityTier: .imageOnly)
+        let request = ShelfThumbnailCache.Request.bookmark(
+            WallpaperBookmark(label: "", content: .scene(scene), wpeOrigin: origin, coverFileName: "cover.png")
+        )
+        _ = try #require(await cache.image(request, pixelSize: size, scale: 2))
+        #expect(fixture.calls == ["cover:cover.png"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(request.scenePreviewOrigin == origin, "a bookmark drawing its saved cover no longer names its scene")
+    }
+
+    @Test("A Workshop scene card drawing its saved cover still names its scene; a video card names none, cover or not")
+    func coveredWorkshopCardNamesItsScene() async throws {
+        let fixture = Fixture()
+        fixture.coverThumbnail = try makeImage(width: 200, height: 113)
+        let cache = ShelfThumbnailCache(sources: fixture.sources())
+        let entry = workshopEntry(.scene)
+        let name = try #require(WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt))
+        let request = ShelfThumbnailCache.Request.workshop(entry, coverRevision: 1)
+        _ = try #require(await cache.image(request, pixelSize: size, scale: 2))
+        #expect(fixture.calls == ["coverThumbnail:\(name):200"], Comment(rawValue: "\(fixture.calls)"))
+        #expect(request.scenePreviewOrigin == entry.origin, "a Workshop card drawing its saved cover no longer names its scene")
+        let video = workshopEntry(.video)
+        #expect(ShelfThumbnailCache.Request.workshop(video).scenePreviewOrigin == nil, "a video card named its preview GIF")
+        #expect(ShelfThumbnailCache.Request.workshop(video, coverRevision: 1).scenePreviewOrigin == nil, "a covered video card named its preview GIF")
+    }
+
     @Test("A Workshop video card draws a frame of the video it plays at the card's size; a scene card without a cover keeps the author's preview")
     func workshopVideoCardDrawsAFrame() async throws {
         let fixture = Fixture()

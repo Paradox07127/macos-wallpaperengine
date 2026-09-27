@@ -5,10 +5,10 @@ import LiveWallpaperCore
 import Testing
 import UniformTypeIdentifiers
 
-/// Hover to play on the shelf: only a card whose picture is its scene's own GIF, once the pointer rests on it.
+/// Hover to play on the shelf: only a card whose scene's preview is a GIF, played over the card's picture once the pointer rests on it.
 extension EditDeskStageViewTests {
     enum PreviewControl: String, CaseIterable, Sendable {
-        case settingOff, reduceMotion, stillPreview, savedCover
+        case settingOff, reduceMotion, stillPreview, videoPoster
     }
 
     @MainActor
@@ -125,7 +125,7 @@ extension EditDeskStageViewTests {
         #expect(ShelfPreviewPlayback.displaysGIF(card("preview.gif", thumbnail: poster)))
         #expect(ShelfPreviewPlayback.displaysGIF(card("Preview.GIF", thumbnail: poster)))
         #expect(!ShelfPreviewPlayback.displaysGIF(card("preview.jpg", thumbnail: poster)), "a still preview")
-        #expect(!ShelfPreviewPlayback.displaysGIF(card(nil, thumbnail: poster)), "a saved cover")
+        #expect(!ShelfPreviewPlayback.displaysGIF(card(nil, thumbnail: poster)), "a video poster or a web snapshot")
         #expect(!ShelfPreviewPlayback.displaysGIF(card("preview.gif", thumbnail: nil)), "nothing drawn yet")
     }
 
@@ -162,12 +162,14 @@ extension EditDeskStageViewTests {
         #expect((second.thumbnail.contents as AnyObject?) === (poster as AnyObject), "the card is not back on its first frame")
     }
 
-    @Test("No preview plays with the setting off, under Reduce Motion, on a still preview or on a saved cover", .timeLimit(.minutes(1)), arguments: PreviewControl.allCases)
+    @Test("No preview plays with the setting off, under Reduce Motion, on a still preview or on a video's poster", .timeLimit(.minutes(1)), arguments: PreviewControl.allCases)
     func previewStaysStill(_ control: PreviewControl) async throws {
         let poster = try #require(Self.solid(0.5))
         let origin: WPEOrigin? = switch control {
         case .stillPreview: Self.sceneOrigin(preview: "preview.jpg")
-        case .savedCover: nil
+        case .videoPoster: ShelfThumbnailCache.Request.bookmark(WallpaperBookmark(
+                label: "", content: .video(bookmarkData: Data([1])), wpeOrigin: Self.sceneOrigin(preview: "preview.gif")
+            )).scenePreviewOrigin
         case .settingOff, .reduceMotion: Self.sceneOrigin(preview: "preview.gif")
         }
         let (view, window, loads) = try Self.mountShelf(
@@ -234,6 +236,29 @@ extension EditDeskStageViewTests {
         return data as Data
     }
 
+    @Test("A card showing its saved cover plays its scene's GIF over it on a settled hover, and leaving puts the cover back", .timeLimit(.minutes(1)))
+    func savedCoverCardPlaysItsSceneGIF() async throws {
+        let cover = try #require(Self.solid(0.9))
+        let scene = SceneDescriptor(workshopID: "123", cacheRelativePath: "123", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let bookmark = WallpaperBookmark(
+            label: "", content: .scene(scene), wpeOrigin: Self.sceneOrigin(preview: "preview.gif"), coverFileName: "cover.png"
+        )
+        let origin = ShelfThumbnailCache.Request.bookmark(bookmark).scenePreviewOrigin
+        let (view, window, _) = try Self.mountShelf(Self.shelfCards(poster: cover, previews: [origin]), frames: Self.frames())
+        defer {
+            view.detach()
+            window.contentView = nil
+        }
+        let tile = try #require(view.cardLayers["card-0"])
+        try view.setPointerForTesting(Self.point(on: 0, of: view))
+        #expect(try #require(await Self.waitForPreview(on: tile), "a settled hover on a saved cover never played its scene's GIF").values?.count == 3)
+
+        view.setPointerForTesting(CGPoint(x: 2, y: 2))
+        try #require(view.model.hoveredCard == nil)
+        #expect(Self.preview(on: tile) == nil, "leaving the card left its preview playing")
+        #expect((tile.thumbnail.contents as AnyObject?) === (cover as AnyObject), "the card is not back on its saved cover")
+    }
+
     @Test("A GIF preview decodes every frame at the card's pixel size with its own frame times; a still does not animate")
     func previewFramesDecodeAtCardSize() throws {
         let frames = try #require(ShelfPreviewFrames.decode(Self.encoded(.gif, delays: [0.05, 0.1, 0.2]), maxPixelSize: 100))
@@ -244,23 +269,23 @@ extension EditDeskStageViewTests {
         #expect(try ShelfPreviewFrames.decode(Self.encoded(.png, delays: [0]), maxPixelSize: 100) == nil, "a still")
     }
 
-    @Test("Only a shelf request whose picture is the scene's own preview carries the scene")
-    func scenePreviewOriginFollowsTheShelfPicture() {
+    @Test("A shelf request carries its scene whether it draws the scene's preview or a saved cover; a video's poster carries none")
+    func scenePreviewOriginSurvivesASavedCover() {
         let origin = Self.sceneOrigin(preview: "preview.gif")
         let scene = SceneDescriptor(workshopID: "123", cacheRelativePath: "123", entryFile: "scene.json", capabilityTier: .imageOnly)
         let plain = WallpaperBookmark(label: "", content: .scene(scene), wpeOrigin: origin)
         #expect(ShelfThumbnailCache.Request.bookmark(plain).scenePreviewOrigin == origin)
         var covered = plain
         covered.coverFileName = "cover.png"
-        #expect(ShelfThumbnailCache.Request.bookmark(covered).scenePreviewOrigin == nil, "a saved cover is drawn instead")
+        #expect(ShelfThumbnailCache.Request.bookmark(covered).scenePreviewOrigin == origin, "a saved cover dropped its scene's GIF")
         let video = WallpaperBookmark(label: "", content: .video(bookmarkData: Data([1])), wpeOrigin: origin)
         #expect(ShelfThumbnailCache.Request.bookmark(video).scenePreviewOrigin == nil, "the video's poster is drawn instead")
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
         #expect(ShelfThumbnailCache.Request.workshop(entry).scenePreviewOrigin == origin)
     }
 
-    @Test("A Workshop card showing its saved cover or its video's frame plays no GIF; one showing the author's GIF still does")
-    func workshopCardPlaysOnlyTheAuthorsGIF() {
+    @Test("A Workshop card plays the author's GIF over its saved cover as over the author's preview; one showing its video's frame plays none")
+    func workshopCardPlaysTheAuthorsGIFOverItsCover() {
         let entry = WPEHistoryEntry(origin: Self.sceneOrigin(preview: "preview.gif"), importedAt: Date(timeIntervalSince1970: 0))
         let video = WPEHistoryEntry(origin: WPEOrigin(
             workshopID: "456", title: "Video", originalType: .video, sourceFolderBookmark: Data([2]),
@@ -270,7 +295,7 @@ extension EditDeskStageViewTests {
             ShelfPreviewPlayback.displaysGIF(showsPicture: true, previewOrigin: request.scenePreviewOrigin)
         }
         #expect(playsGIF(.workshop(entry)), "control: the author's GIF no longer plays")
-        #expect(!playsGIF(.workshop(entry, coverRevision: 1)), "a card showing its saved cover played the author's GIF")
+        #expect(playsGIF(.workshop(entry, coverRevision: 1)), "a card showing its saved cover plays no GIF over it")
         #expect(!playsGIF(.workshop(video)), "a card showing its video's frame played the author's GIF")
     }
     #endif

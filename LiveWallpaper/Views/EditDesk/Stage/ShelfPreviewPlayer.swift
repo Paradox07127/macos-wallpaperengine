@@ -4,8 +4,8 @@ import QuartzCore
 
 /// When a shelf card animates its preview on hover.
 enum ShelfPreviewPlayback {
-    /// `displaysGIF`: the picture on the card is its scene's own `.gif` preview. A saved cover, a video
-    /// poster or a web snapshot never plays, whatever the scene's preview is.
+    /// `displaysGIF`: the card's scene has a `.gif` preview, played over the card's picture, a saved cover
+    /// included. A video poster or a web snapshot never plays, whatever the scene's preview is.
     static func plays(displaysGIF: Bool, hoverSettled: Bool, autoplayEnabled: Bool, reduceMotion: Bool, covered: Bool) -> Bool {
         displaysGIF && hoverSettled && autoplayEnabled && !reduceMotion && !covered
     }
@@ -21,7 +21,7 @@ enum ShelfPreviewPlayback {
 }
 
 /// Plays one card's GIF preview as a keyframe animation over its thumbnail's `contents`: the render
-/// server keeps the frame times, and removing the animation shows the card's own first frame again.
+/// server keeps the frame times, and removing the animation shows the card's own picture again.
 @MainActor
 final class ShelfPreviewPlayer {
     /// `settledHover`'s delay, the pause before a SwiftUI tile starts its GIF.
@@ -56,7 +56,7 @@ final class ShelfPreviewPlayer {
         }
     }
 
-    /// Leaves the model `contents`, the card's own first frame, showing.
+    /// Leaves the model `contents`, the card's own picture, showing.
     func stop() {
         task?.cancel()
         task = nil

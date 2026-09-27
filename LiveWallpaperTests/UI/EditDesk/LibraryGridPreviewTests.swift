@@ -508,8 +508,8 @@ struct LibraryGridPreviewTests {
         #expect(covered, "the detail over the grid leaves the preview free to play")
     }
 
-    @Test("A Workshop tile showing its saved cover never plays the author's GIF, nor does its shelf card name one; the author's GIF beside it still plays", .timeLimit(.minutes(1)))
-    func savedCoverTileStaysStill() async throws {
+    @Test("A Workshop tile showing its saved cover plays its scene's GIF on a settled hover, as its shelf card does; leaving puts the cover back", .timeLimit(.minutes(1)))
+    func savedCoverTilePlaysItsSceneGIF() async throws {
         let host = try GridPreviewHost(listsProjects: true)
         defer { host.close() }
         try await host.settleOnLibrary()
@@ -522,20 +522,19 @@ struct LibraryGridPreviewTests {
         #expect(drawn, Comment(rawValue: "the covered tile shows \(String(describing: coveredHue)), not its saved cover, or the plain one lacks its GIF's first frame"))
         let cards = host.stage?.model.shelfItems ?? []
         let coveredCardNamesGIF = cards.first { $0.id == covered.id }?.previewOrigin != nil
-        let plainCardNamesGIF = cards.first { $0.id == plain.id }?.previewOrigin != nil
-        #expect(!coveredCardNamesGIF, "the covered project's shelf card still names the author's GIF")
-        #expect(plainCardNamesGIF, "control: the plain project's shelf card no longer names its GIF")
+        #expect(coveredCardNamesGIF, "the covered project's shelf card names no GIF to play over its cover")
 
         host.preview.settledID = covered.id
-        let seen = await host.hues(at: covered.sample, for: 0.6)
-        let still = !seen.isEmpty && seen.allSatisfy { $0 == .blue }
-        #expect(still, Comment(rawValue: "the settled covered tile showed \(seen)"))
-        let loads = host.loads.count
-        #expect(loads == 0, "the covered tile still decoded the author's GIF")
+        let played = await host.plays(at: covered.sample)
+        #expect(played, "the settled covered tile never played its scene's GIF")
+        let sizes = host.loads
+        #expect(sizes == [covered.pixelSize], Comment(rawValue: "frames asked for at \(sizes), the tile is \(covered.pixelSize) px"))
 
-        host.preview.settledID = plain.id
-        let played = await host.plays(at: plain.sample)
-        #expect(played, "control: the author's GIF tile beside it never played")
+        host.preview.settledID = nil
+        let back = await host.settle(seconds: 1) { (try? host.hue(at: covered.sample)) == .blue }
+        let after = await host.hues(at: covered.sample, for: 0.5)
+        let onCover = back && !after.isEmpty && after.allSatisfy { $0 == .blue }
+        #expect(onCover, Comment(rawValue: "after the pointer left, the covered tile showed \(after), not its saved cover"))
     }
 
     @Test("A settled tile searched out of the grid forgets the pointer: searched back in, it stays on its poster", .timeLimit(.minutes(1)))

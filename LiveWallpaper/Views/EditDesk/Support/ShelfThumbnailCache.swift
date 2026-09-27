@@ -26,20 +26,20 @@ final class ShelfThumbnailCache {
             }
         }
 
-        /// The scene whose preview file `sourceImage(for:)` draws for this request; nil when a saved
-        /// cover, a video poster or a web snapshot is drawn instead.
+        /// The scene whose preview GIF plays on hover, over a saved cover too; nil when a video poster or a
+        /// web snapshot is drawn.
         var scenePreviewOrigin: WPEOrigin? {
             #if LITE_BUILD
             return nil
             #else
             switch self {
             case let .bookmark(bookmark):
-                guard bookmark.coverFileName == nil, case .scene = bookmark.content else { return nil }
+                guard case .scene = bookmark.content else { return nil }
                 return bookmark.wpeOrigin
             case .aerial:
                 return nil
-            case let .workshop(entry, coverRevision):
-                guard coverRevision == nil, entry.origin.originalType != .video else { return nil }
+            case let .workshop(entry, _):
+                guard entry.origin.originalType != .video else { return nil }
                 return entry.origin
             }
             #endif
