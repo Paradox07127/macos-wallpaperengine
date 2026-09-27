@@ -68,7 +68,7 @@ struct EditDeskRouterTests {
             "kind": "html-folder", "screenID": CGDirectDisplayID(42),
         ]))
         #expect(router.pendingAddWallpaper == .init(kind: "html-folder", targetDisplayID: 42))
-        #expect(router.page == .library)
+        #expect(router.page == .home)
         #expect(router.detailDisplayID == nil)
 
         router.pendingAddWallpaper = nil
@@ -118,7 +118,7 @@ struct EditDeskRouterTests {
         #expect(!router.onboardingRequested)
         router.handle(Notification(name: .showOnboarding))
         #expect(router.onboardingRequested)
-        #expect(router.page == .library)
+        #expect(router.page == .schemes)
     }
 
     @Test("No initial navigation opens home and stores the initial prompt")
@@ -161,10 +161,11 @@ struct EditDeskRouterTests {
         #expect(router.libraryFocus == .aerials)
     }
 
-    @Test("Initial bookmarks navigation opens library wallpapers")
+    @Test("Initial bookmarks navigation opens the Saved page on Bookmarks")
     func initialBookmarks() {
         let router = makeRouter(.bookmarks)
-        #expect(router.page == .library)
+        #expect(router.page == .schemes)
+        #expect(router.pendingSavedTab == .bookmarks)
         #expect(router.libraryFocus == nil)
     }
 
@@ -192,7 +193,7 @@ struct EditDeskRouterTests {
         #expect(older.page == .library)
     }
 
-    @Test("The library focus only picks a chip, and Manage Schemes opens the Schemes page")
+    @Test("The library focus only picks a chip, and Manage Schemes opens the Saved page on Schemes")
     func libraryFocusNoLongerNamesPages() throws {
         let router = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRouter.swift")
         let start = try #require(router.range(of: "enum LibraryFocus"))
@@ -200,7 +201,7 @@ struct EditDeskRouterTests {
         #expect(!focus.contains("schemes"), "Schemes is still a focus of the library page")
         #expect(!focus.contains("systemWallpaper"), "System Wallpaper is still a focus of the library page")
         let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
-        #expect(host.contains("router.select(.schemes)"), "Manage Schemes still goes through the wallpaper library")
+        #expect(host.contains("router.openSaved(.schemes)"), "Manage Schemes does not open the Saved page on Schemes")
     }
 
     @Test("Initial workshop navigation opens the available workshop")
@@ -243,12 +244,12 @@ struct EditDeskRouterTests {
     func backFromSettings() {
         let router = makeRouter(.bookmarks)
         router.openSettings(.general)
-        #expect(router.previousPage == .library)
+        #expect(router.previousPage == .schemes)
         router.openSettings(.displayDefaults, anchor: .displayDefaultsVideo)
-        #expect(router.previousPage == .library)
+        #expect(router.previousPage == .schemes)
         #expect(router.pendingSettingsSearchAnchor == .displayDefaultsVideo)
         router.backFromSettings()
-        #expect(router.page == .library)
+        #expect(router.page == .schemes)
 
         let initialSettings = makeRouter(.general)
         initialSettings.backFromSettings()
@@ -312,7 +313,7 @@ struct EditDeskRouterTests {
     func unknownNotification() {
         let router = makeRouter(.bookmarks)
         router.handle(Notification(name: Notification.Name("EditDeskRouterTests.unknown")))
-        #expect(router.page == .library)
+        #expect(router.page == .schemes)
         #expect(router.previousPage == nil)
         #expect(router.pendingAddWallpaper == nil)
         #expect(!router.onboardingRequested)

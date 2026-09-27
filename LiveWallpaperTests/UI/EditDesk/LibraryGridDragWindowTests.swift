@@ -104,7 +104,8 @@ private final class GridDragHost {
         }
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { rows }
-        router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router.select(.library)
         let library = SavedLibraryModel(inputs: inputs)
         let hosting = NSHostingView(rootView: HomePage(router: router, toasts: toasts, library: library).environment(manager))
         hosting.sizingOptions = []

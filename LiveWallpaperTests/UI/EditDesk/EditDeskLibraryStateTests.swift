@@ -28,7 +28,7 @@ struct EditDeskLibraryStateTests {
         // The language the window's `AppLanguageScope` renders in.
         let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
 
-        try await withWindow(navigation: .bookmarks) { window, workshop in
+        try await withLibraryWindow { window, workshop in
             @MainActor func shelf() -> [String] {
                 (Self.stage(in: window)?.shelfItems ?? []).compactMap { labels[$0.id] }
             }
@@ -57,6 +57,11 @@ struct EditDeskLibraryStateTests {
                 shelf() == ["S4b Alpha", "S4b Beta"],
                 Comment(rawValue: "the shelf is \(shelf()): All adds Gamma, Recently Used puts Beta first")
             )
+            // The Saved page's own search field stays in the window for a moment after the switch.
+            let alone = await Self.settle(window) {
+                Self.views(in: window).compactMap { $0 as? NSTextField }.filter(\.isEditable).count == 1
+            }
+            #expect(alone, "the Saved page's search field is still in the window")
             #expect(Self.searchField(in: window)?.stringValue == "S4b", "the search came back empty")
         }
     }
@@ -76,7 +81,7 @@ struct EditDeskLibraryStateTests {
         let labels = Dictionary(uniqueKeysWithValues: fixtures.map { ("bookmark:\($0.id)", $0.label) })
         let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
 
-        try await withWindow(navigation: .bookmarks) { window, workshop in
+        try await withLibraryWindow { window, workshop in
             @MainActor func shelf() -> Set<String> {
                 Set((Self.stage(in: window)?.shelfItems ?? []).compactMap { labels[$0.id] })
             }
@@ -117,7 +122,7 @@ struct EditDeskLibraryStateTests {
         let labels = Dictionary(uniqueKeysWithValues: fixtures.map { ("bookmark:\($0.id)", $0.label) })
         let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
 
-        try await withWindow(navigation: .bookmarks) { window, workshop in
+        try await withLibraryWindow { window, workshop in
             @MainActor func shelf() -> [String] {
                 (Self.stage(in: window)?.shelfItems ?? []).compactMap { labels[$0.id] }
             }
@@ -217,7 +222,8 @@ struct EditDeskLibraryStateTests {
 
     /// The app's own Edit Desk window, parked off every display as in `TitleBarStripHitTests`.
     /// `body` also gets whether the nav pill offers Workshop.
-    private func withWindow(navigation: Navigation?, _ body: @MainActor (NSWindow, Bool) async throws -> Void) async throws {
+    /// Opens on the overview and clicks through to the library: no launch navigation lands on it.
+    private func withLibraryWindow(_ body: @MainActor (NSWindow, Bool) async throws -> Void) async throws {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
@@ -241,7 +247,7 @@ struct EditDeskLibraryStateTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            initialNavigation: navigation, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
+            initialNavigation: nil, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
         defer {
@@ -251,10 +257,22 @@ struct EditDeskLibraryStateTests {
             manager.tearDownForTermination()
         }
         window.parkOffScreen()
-        try await body(window, manager.featureCatalog.isEnabled(.wpeImport))
+        let workshop = manager.featureCatalog.isEnabled(.wpeImport)
+        await Self.settle(window) { Self.stage(in: window) != nil }
+        let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
+        // Landed, not in flight: the library's browse starts, and its controls take clicks, once the stage settles.
+        var landed = false
+        for _ in 0 ..< 3 where !landed {
+            Self.click(Self.navPillCenter(.library, in: window, workshop: workshop, bundle: bundle), in: window)
+            landed = await Self.settle(window) {
+                Self.stage(in: window)?.snappedIndex == 2 && Self.searchField(in: window) != nil
+            }
+        }
+        try #require(landed, "the window never reached the library")
+        try await body(window, workshop)
     }
 
-    /// `HomePage` over a library the test feeds, opened on the library, parked like `withWindow`'s;
+    /// `HomePage` over a library the test feeds, opened on the library, parked like `withLibraryWindow`'s;
     /// `body` changes pages through the router.
     private func withHome(
         _ inputs: SavedLibraryModel.Inputs, _ body: @MainActor (NSWindow, EditDeskRouter, SavedLibraryModel) async throws -> Void
@@ -268,7 +286,8 @@ struct EditDeskLibraryStateTests {
             displayRegistry: FakeDisplayRegistry(),
             featureCatalog: .unconfigured
         ))
-        let router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router.select(.library)
         let library = SavedLibraryModel(inputs: inputs)
         let host = NSHostingView(rootView: PageSwitch(router: router, toasts: EditDeskToastCenter(), library: library).environment(manager))
         host.sizingOptions = []

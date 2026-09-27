@@ -20,9 +20,16 @@ struct NavPill: View {
             ),
             shell: .editDesk
         ) { item, isSelected in
-            Text(Self.title(for: item))
+            let label = Text(Self.title(for: item))
                 .font(DesignTokens.EditDesk.Typography.navItem)
                 .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
+            if item == .schemes {
+                label
+                    .help(Text("Saved wallpapers and saved display setups"))
+                    .accessibilityHint(Text("Saved wallpapers and saved display setups"))
+            } else {
+                label
+            }
         }
         .fixedSize()
     }
@@ -31,7 +38,7 @@ struct NavPill: View {
         switch item {
         case .home: "Overview"
         case .library: "Wallpaper Library"
-        case .schemes: "Schemes"
+        case .schemes: "Saved"
         case .systemWallpaper: "System Wallpaper"
         case .workshop: "Workshop"
         case .settings: "Settings"

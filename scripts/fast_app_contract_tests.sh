@@ -140,6 +140,8 @@ SUITES=(
   OverlayRuntimeContractTests
   OverlayObjectRemoveWindowTests
   OverlayInspectorOpeningTests
+  SavedPageTests
+  DetailBookmarkTests
   OverlayTopBarWindowTests
   OverlayRemoveAllTests
   OverlayHiddenWidgetTests

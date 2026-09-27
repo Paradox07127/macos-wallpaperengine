@@ -188,7 +188,8 @@ private final class GridPreviewHost {
             }
         }
         library = SavedLibraryModel(inputs: inputs)
-        let router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router.select(.library)
         let page = HomePage(router: router, toasts: EditDeskToastCenter(), library: library, gridPreview: preview)
         let hosting = NSHostingView(rootView: page.environment(manager))
         hosting.sizingOptions = []

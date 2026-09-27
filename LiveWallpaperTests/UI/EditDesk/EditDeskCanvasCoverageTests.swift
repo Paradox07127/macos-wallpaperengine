@@ -201,7 +201,8 @@ struct EditDeskCanvasCoverageTests {
         var inputs = SavedLibraryModel.Inputs()
         let rows = (0 ..< 12).map { WallpaperBookmark(label: "Tile \($0)", content: .video(bookmarkData: Data([UInt8($0), 1, 2]))) }
         inputs.bookmarks = { rows }
-        let router = EditDeskRouter(initialNavigation: .bookmarks, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
+        router.select(.library)
         let coverage = try await render(
             HomePage(router: router, toasts: EditDeskToastCenter(), library: SavedLibraryModel(inputs: inputs)).environment(manager),
             settle: 2

@@ -235,7 +235,7 @@ struct DisplayDetailHost: View {
         guard coordinator?.shownDisplayID == nil else { return }
         switch handoff {
         case .schemes:
-            router.select(.schemes)
+            router.openSaved(.schemes)
         case let .wallpapers(displayID):
             router.libraryTarget = displayID
             router.select(.library)
