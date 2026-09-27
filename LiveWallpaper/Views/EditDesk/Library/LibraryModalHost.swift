@@ -126,11 +126,12 @@ struct LibraryModalHost: View {
             }
             return
         }
+        // Read with `item` and `currentCovers`, before any await: a cover landing meanwhile can show another wallpaper.
+        let liveStill = ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)
         var loaded = await actions.content(for: item)
         let preview = ModalGeometry.previewSize
         loaded.preview = await actions.preview(
-            for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale),
-            liveStill: ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)
+            for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale), liveStill: liveStill
         )
         // The item can change under a slow preview decode; a stale load must not replace the newer one.
         guard presentedItemID == item.id else { return }

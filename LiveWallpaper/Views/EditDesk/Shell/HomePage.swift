@@ -35,6 +35,10 @@ struct HomePage: View {
     @State private var coverGenerations: [CGDirectDisplayID: Int] = [:]
     /// The generation whose capture last became a display's cover; behind `coverGenerations` while a newer one is out.
     @State private var landedCoverGenerations: [CGDirectDisplayID: Int] = [:]
+    #if !LITE_BUILD
+    /// Per display, the earliest its Workshop cover may be saved; none for a display that has not switched since the page opened.
+    @State private var workshopCoverNotBefore: [CGDirectDisplayID: ContinuousClock.Instant] = [:]
+    #endif
     @State private var applies = ApplyQueue()
     /// The library item the S4 modal shows; nil when closed.
     @State private var presentedItemID: String?
@@ -1169,6 +1173,9 @@ struct HomePage: View {
     private func refreshCover(for id: CGDirectDisplayID, crossfade: Bool) {
         let generation = (coverGenerations[id] ?? 0) + 1
         coverGenerations[id] = generation
+        #if !LITE_BUILD
+        let saveAt = Self.workshopCoverSaveTime(on: id, afterSwitch: crossfade, at: .now, notBefore: &workshopCoverNotBefore)
+        #endif
         Task { @MainActor in
             if crossfade {
                 // A fresh session has no frame yet right after the change notification.
@@ -1186,7 +1193,7 @@ struct HomePage: View {
             stage.displays[index].cover = image
             landedCoverGenerations[id] = generation
             #if !LITE_BUILD
-            await saveWorkshopCover(for: id, generation: generation, afterSwitch: crossfade)
+            await saveWorkshopCover(for: id, generation: generation, at: saveAt)
             #endif
         }
     }
@@ -1195,15 +1202,27 @@ struct HomePage: View {
     /// After a switch, how long the frame saved as the library cover waits: past an opening animation or fade-in.
     static let workshopCoverDelay: Duration = .seconds(10)
 
-    /// `afterSwitch`: the capture followed a wallpaper change, so the frame saved waits `workshopCoverDelay`.
-    private func saveWorkshopCover(for id: CGDirectDisplayID, generation: Int, afterSwitch: Bool) async {
+    /// When a capture asked for at `now` may save its frame: once the display's latest switch has waited
+    /// `workshopCoverDelay`. A switch's own capture (`afterSwitch`) starts that wait.
+    static func workshopCoverSaveTime(
+        on id: CGDirectDisplayID, afterSwitch: Bool, at now: ContinuousClock.Instant,
+        notBefore: inout [CGDirectDisplayID: ContinuousClock.Instant]
+    ) -> ContinuousClock.Instant {
+        if afterSwitch {
+            notBefore[id] = now + workshopCoverDelay
+        }
+        return max(notBefore[id] ?? now, now)
+    }
+
+    /// `saveAt`: when the frame may be taken, from `workshopCoverSaveTime`.
+    private func saveWorkshopCover(for id: CGDirectDisplayID, generation: Int, at saveAt: ContinuousClock.Instant) async {
         func running() -> (screen: Screen, configuration: ScreenConfiguration)? {
             guard let screen = screenManager.screens.first(where: { $0.id == id }),
                   let configuration = screenManager.getConfiguration(for: screen) else { return nil }
             return (screen, configuration)
         }
         await Self.saveWorkshopCover(
-            after: afterSwitch ? Self.workshopCoverDelay : .zero,
+            after: saveAt - ContinuousClock.now,
             isNewest: { coverGenerations[id] == generation },
             target: {
                 running().flatMap {
@@ -1249,8 +1268,10 @@ struct HomePage: View {
 
     /// The history entry of the Workshop project `configuration` runs as its author made it: a scene with no
     /// property edits or preset, a web page with none of its own settings changed. nil for anything else.
+    /// Only once applied since its import: a download or an update re-imports without replacing the running session.
     static func workshopCoverEntry(running configuration: ScreenConfiguration, in history: [WPEHistoryEntry]) -> WPEHistoryEntry? {
-        guard let origin = configuration.wpeOrigin, let entry = history.first(where: { $0.id == origin.workshopID }) else {
+        guard let origin = configuration.wpeOrigin, let entry = history.first(where: { $0.id == origin.workshopID }),
+              let used = entry.lastUsedAt, used >= entry.importedAt else {
             return nil
         }
         switch configuration.activeWallpaper {

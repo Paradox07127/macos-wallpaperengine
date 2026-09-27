@@ -191,6 +191,7 @@ SUITES=(
   DisplayFloatLayerTests
   WallpaperModalTests
   ModalActionsTests
+  WorkshopCoverSaveTimeTests
   DisplayDetailTests
   DisplayDetailHostTests
   SceneSettingsOwnerTests

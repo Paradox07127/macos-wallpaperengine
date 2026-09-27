@@ -36,12 +36,7 @@ struct SavedLibraryPane: View {
             }
         }
         .task {
-            WallpaperCoverStore.shared.removeOrphans(
-                keeping: Set(
-                    BookmarkStore.shared.bookmarks.compactMap(\.coverFileName)
-                        + SchemeStore.shared.schemes.compactMap(\.coverFileName)
-                )
-            )
+            WallpaperCoverStore.shared.removeOrphans(keeping: WallpaperCoverStore.keptFileNames())
         }
         .toolbar {
             ToolbarItem(placement: .principal) {

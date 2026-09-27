@@ -48,8 +48,8 @@ final class SavedLibraryModel {
         #endif
         var metadata: @MainActor (WallpaperBookmark) -> LibraryMetadata? = { _ in nil }
         var probeMetadata: @MainActor (WallpaperBookmark) async -> LibraryMetadata? = { _ in nil }
-        /// Every cover a bookmark or scheme still points at — not the filtered view, whose misses
-        /// would read as orphans.
+        /// Every cover a bookmark, a scheme or a listed Workshop import still points at — not the filtered view,
+        /// whose misses would read as orphans.
         var savedCoverFileNames: @MainActor () -> Set<String> = { [] }
         var removeOrphanCovers: @MainActor (Set<String>) -> Void = { _ in }
         /// False when the file or folder behind a row is gone or no longer granted.
@@ -99,12 +99,7 @@ final class SavedLibraryModel {
             #endif
             inputs.metadata = { sidecar.cached(for: $0) }
             inputs.probeMetadata = { await sidecar.metadata(for: $0) }
-            inputs.savedCoverFileNames = {
-                Set(
-                    BookmarkStore.shared.bookmarks.compactMap(\.coverFileName)
-                        + SchemeStore.shared.schemes.compactMap(\.coverFileName)
-                )
-            }
+            inputs.savedCoverFileNames = { WallpaperCoverStore.keptFileNames() }
             inputs.removeOrphanCovers = { WallpaperCoverStore.shared.removeOrphans(keeping: $0) }
             inputs.sourceAvailable = { source in
                 switch source {
@@ -274,19 +269,8 @@ final class SavedLibraryModel {
     /// covers directory, and a scan that comes back empty would start the next one. `kept`: covers
     /// of entries that are gone but that undo can still bring back.
     func prepareLibrary(alsoKeeping kept: Set<String>) {
-        inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept).union(workshopCoverFileNames))
+        inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept))
         inputs.scanAerials()
-    }
-
-    /// A Workshop cover is named from its import alone: no saved entry names it, so the sweep would take it for an orphan.
-    private var workshopCoverFileNames: [String] {
-        #if LITE_BUILD
-        []
-        #else
-        inputs.history().compactMap {
-            WallpaperCoverStore.workshopFileName(workshopID: $0.origin.workshopID, importedAt: $0.importedAt)
-        }
-        #endif
     }
 
     /// Freezes "Recently Used" until `endBrowsing()`: a row used meanwhile keeps its place.

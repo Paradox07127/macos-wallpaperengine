@@ -241,6 +241,50 @@ struct WallpaperCoverStoreTests {
         #expect(!seen.contains(afterReset), Comment(rawValue: "a cover written after a reset reused revision \(afterReset)"))
     }
 
+    @Test("The sweep keeps every cover a bookmark, a scheme or a listed Workshop import names, and deletes the rest")
+    func sweepKeepsEveryNamedCover() throws {
+        let (store, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bookmarkCover = try #require(store.store(Self.solidImage(.red), for: UUID()))
+        let schemeCover = try #require(store.store(Self.solidImage(.blue), for: UUID()))
+        let orphan = try #require(store.store(Self.solidImage(.green), for: UUID()))
+        let frame = try #require(Self.solidImage(.red).cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let origin = WPEOrigin(
+            workshopID: "42", title: "Rain", originalType: .scene, sourceFolderBookmark: Data([1]),
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        let imported = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 1_727_000_000))
+        let current = try #require(store.storeWorkshopCover(frame, workshopID: "42", importedAt: imported.importedAt))
+        let replaced = try #require(store.storeWorkshopCover(frame, workshopID: "42", importedAt: Date(timeIntervalSince1970: 1_700_000_000)))
+        let bookmark = WallpaperBookmark(label: "Saved", content: .video(bookmarkData: Data([2])), coverFileName: bookmarkCover)
+        let scheme = ScreenScheme(
+            name: "Desk", configuration: ScreenConfiguration(screenID: 1, wallpaper: .video(bookmarkData: Data([3]))),
+            overlay: .default, coverFileName: schemeCover
+        )
+
+        store.removeOrphans(keeping: WallpaperCoverStore.keptFileNames(bookmarks: [bookmark], schemes: [scheme], workshopImports: [imported]))
+
+        let names = try Set(FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Covers").path))
+        #expect(names.contains(current), "the sweep deleted the cover of the Workshop import the library lists")
+        #expect(names.isSuperset(of: [bookmarkCover, schemeCover]), "the sweep deleted a bookmark's or a scheme's cover")
+        #expect(!names.contains(replaced) && !names.contains(orphan), Comment(rawValue: "the sweep kept covers nothing names: \(names)"))
+    }
+
+    @Test("The old window's bookmark library and the Edit Desk's library sweep against the one keep-set")
+    func bothLibrariesSweepWithOneKeepSet() throws {
+        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Bookmarks/SavedLibraryPane.swift")
+        #expect(pane.contains("removeOrphans(keeping: WallpaperCoverStore.keptFileNames())"), "the old window's library sweeps against a set of its own")
+        let model = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/SavedLibraryModel.swift")
+        #expect(model.contains("inputs.savedCoverFileNames = { WallpaperCoverStore.keptFileNames() }"), "the Edit Desk's library sweeps against a set of its own")
+        let sweeps = try RepositoryRoot.swiftFiles(under: "LiveWallpaper").flatMap { file in
+            try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
+                .filter { $0.contains("removeOrphans(") && !$0.contains("func removeOrphans") }
+                .map { "\(RepositoryRoot.relativePath(of: file)): \($0.trimmingCharacters(in: .whitespaces))" }
+        }
+        let own = sweeps.filter { !$0.contains("removeOrphans(keeping: WallpaperCoverStore.keptFileNames())") && !$0.contains("removeOrphans(keeping: $0)") }
+        #expect(own.isEmpty, Comment(rawValue: "sweeps with a keep-set of their own: \(own)"))
+    }
+
     private actor CoverReadBlocker {
         private var opened = false
         private var continuation: CheckedContinuation<Void, Never>?

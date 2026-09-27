@@ -699,19 +699,6 @@ struct SavedLibraryModelTests {
         #expect(model.workshopVideo(for: scene) == nil)
     }
 
-    @Test("The sweep keeps the saved cover of every Workshop import the library still lists")
-    func prepareLibraryKeepsWorkshopCovers() throws {
-        var swept: [Set<String>] = []
-        let entry = WPEHistoryEntry(origin: origin("3413921910"), importedAt: Date(timeIntervalSince1970: 1_727_000_000))
-        var source = inputs([bookmark("Saved")])
-        source.history = { [entry] }
-        source.savedCoverFileNames = { ["bookmark.png"] }
-        source.removeOrphanCovers = { swept.append($0) }
-        SavedLibraryModel(inputs: source).prepareLibrary(alsoKeeping: [])
-        let workshopCover = try #require(WallpaperCoverStore.workshopFileName(workshopID: "3413921910", importedAt: entry.importedAt))
-        #expect(swept == [["bookmark.png", workshopCover]])
-    }
-
     @Test("On disk the sweep keeps the Workshop cover of the current import and deletes the one an update left behind")
     func sweepDropsCoversOfOldImports() throws {
         let root = FileManager.default.temporaryDirectory
@@ -730,7 +717,7 @@ struct SavedLibraryModelTests {
         try #require(stale != current, "control: re-importing did not change the cover's name")
         let entry = WPEHistoryEntry(origin: origin("42"), importedAt: after)
         var source = inputs()
-        source.history = { [entry] }
+        source.savedCoverFileNames = { WallpaperCoverStore.keptFileNames(bookmarks: [], schemes: [], workshopImports: [entry]) }
         source.removeOrphanCovers = { store.removeOrphans(keeping: $0) }
         SavedLibraryModel(inputs: source).prepareLibrary(alsoKeeping: [])
         let covers = root.appendingPathComponent("Covers", isDirectory: true)

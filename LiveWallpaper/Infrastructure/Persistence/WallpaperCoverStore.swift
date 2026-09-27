@@ -147,6 +147,22 @@ final class WallpaperCoverStore {
         }
     }
 
+    /// What the orphan sweep keeps: the covers bookmarks and schemes name, and each listed Workshop import's own.
+    static func keptFileNames(bookmarks: [WallpaperBookmark], schemes: [ScreenScheme], workshopImports: [WPEHistoryEntry]) -> Set<String> {
+        Set(
+            bookmarks.compactMap(\.coverFileName) + schemes.compactMap(\.coverFileName)
+                + workshopImports.compactMap { workshopFileName(workshopID: $0.origin.workshopID, importedAt: $0.importedAt) }
+        )
+    }
+
+    /// The same, read from the stores as they are now.
+    static func keptFileNames() -> Set<String> {
+        keptFileNames(
+            bookmarks: BookmarkStore.shared.bookmarks, schemes: SchemeStore.shared.schemes,
+            workshopImports: SettingsManager.shared.loadGlobalSettings().recentWPEImports
+        )
+    }
+
     func removeAll() {
         readGenerations.removeAll()
         reads.invalidateAll()

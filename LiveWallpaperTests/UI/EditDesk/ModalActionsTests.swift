@@ -863,7 +863,7 @@ struct ModalActionsTests {
         WPEHistoryEntry(origin: WPEOrigin(
             workshopID: "3413921910", title: "Meteors", originalType: .scene, sourceFolderBookmark: Data([4]),
             cacheRelativePath: nil, previewFileName: "preview.gif"
-        ), importedAt: Date(timeIntervalSince1970: 1_727_000_000))
+        ), importedAt: Date(timeIntervalSince1970: 1_727_000_000), lastUsedAt: Date(timeIntervalSince1970: 1_727_000_000))
     }
 
     private func running(_ content: WallpaperContent, project: String = "3413921910", type: WPEType = .scene) -> ScreenConfiguration {
