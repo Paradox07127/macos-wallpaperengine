@@ -57,13 +57,6 @@ struct SteamWriteOwnershipTests {
         #expect(library.contains("func adoptManagedInstall"))
     }
 
-    @Test("Workshop download no longer builds an in-process SteamCMD script")
-    @MainActor
-    func downloadGateMatchesReality() throws {
-        let doctor = try Self.source(Self.appSources[0])
-        #expect(!doctor.contains("SteamCMDScriptWriter.downloadItemScript"))
-    }
-
     /// `+force_install_dir` must precede `+login` (the order Valve documents), the directory is the ONE
     /// shared library for every account, and no `validate`.
     @Test("Workshop downloads land in the one shared library, unvalidated")

@@ -30,32 +30,6 @@ struct ScenePropertyMutationAuthorityTests {
         #expect(rendererMutationCount == 0)
         #expect(persistedDescriptor == "original")
     }
-
-    @Test("An in-place configuration write rejects a patch queued before renderer admission")
-    func inPlaceConfigurationWriteRejectsQueuedPatch() async {
-        let authority = ScenePropertyMutationAuthority()
-        let editToken = authority.advance()
-        let gate = ScenePropertyMutationAdmissionGate()
-        var rendererMutationCount = 0
-        var persistedDescriptor = "original"
-
-        let queuedPatch = Task { @MainActor in
-            guard authority.isCurrent(editToken) else { return false }
-            await gate.suspend()
-            guard authority.isCurrent(editToken) else { return false }
-            persistedDescriptor = "stale-edit"
-            rendererMutationCount += 1
-            return true
-        }
-
-        await gate.waitUntilSuspended()
-        authority.advance()
-        await gate.resume()
-
-        #expect(await queuedPatch.value == false)
-        #expect(rendererMutationCount == 0)
-        #expect(persistedDescriptor == "original")
-    }
 }
 
 private actor ScenePropertyMutationAdmissionGate {

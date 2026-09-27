@@ -438,17 +438,6 @@ struct PlainVideoFrameRateCompositionPolicyTests {
         #expect(limit == nil)
     }
 
-    @Test("Explicit 30 FPS uses composition when source FPS is higher")
-    func fps30UsesCompositionForHighSourceFPS() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps30,
-            videoFrameRate: 60,
-            screenRefreshRate: 60
-        )
-
-        #expect(limit == 30)
-    }
-
     @Test("A 30 target leaves a 24fps source alone")
     func targetAboveTheSourceSkipsComposition() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(

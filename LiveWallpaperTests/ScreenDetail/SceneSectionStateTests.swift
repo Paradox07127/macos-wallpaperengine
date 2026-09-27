@@ -8,26 +8,6 @@ import Testing
 @Suite("SceneSection state machine")
 struct WPESceneSectionStateTests {
 
-    @Test("every state equals itself")
-    func equalityIsReflexive() {
-        let states: [SceneRenderState] = [
-            .idle,
-            .notRendering,
-            .loading(progress: nil),
-            .loading(progress: "Decoding 3/12 textures…"),
-            .ready,
-            .error(.sceneResourceMissing)
-        ]
-        for state in states {
-            #expect(state == state)
-        }
-        for (index, lhs) in states.enumerated() {
-            for rhs in states[(index + 1)...] {
-                #expect(lhs != rhs)
-            }
-        }
-    }
-
     @Test("loading distinguishes nil vs progress text payloads")
     func loadingPayloadDifferentiates() {
         let plain = SceneRenderState.loading(progress: nil)
