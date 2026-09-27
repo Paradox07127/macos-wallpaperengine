@@ -5,8 +5,8 @@ import LiveWallpaperCore
 /// Display only: `requiredtags` / `excludedtags` and selection state keep the
 /// English tag, which is what Steam matches on.
 enum WorkshopTagLocalization {
-    /// Known tag localized, anything else verbatim — resolution tags are bare
-    /// numbers and Steam serves whatever an author typed.
+    /// Known tag localized, anything else verbatim — a numeric resolution tag reads the
+    /// same in every language, and Steam serves whatever an author typed.
     static func displayName(_ tag: String) -> String {
         switch tag.lowercased() {
         case "abstract": String(localized: "Abstract", bundle: .appLanguage, comment: "Workshop genre tag.")
@@ -48,6 +48,8 @@ enum WorkshopTagLocalization {
         case "video texture": String(localized: "Video Texture", bundle: .appLanguage, comment: "Workshop tag: the scene plays video inside a texture.")
         case "asset pack": String(localized: "Asset Pack", bundle: .appLanguage, comment: "Workshop tag: reusable assets rather than a finished wallpaper.")
         case "standard definition": String(localized: "Standard Definition", bundle: .appLanguage, comment: "Workshop resolution filter display label.")
+        case "other resolution": String(localized: "Other resolution", bundle: .appLanguage, comment: "Workshop resolution tag.")
+        case "dynamic resolution": String(localized: "Dynamic resolution", bundle: .appLanguage, comment: "Workshop resolution tag.")
         case "preset": String(localized: "Preset", bundle: .appLanguage)
         // `3D`, `HDR`, `Puppet Warp` deliberately absent — acronyms, and a WPE
         // feature name its own editor leaves untranslated.

@@ -155,6 +155,7 @@ SUITES=(
   BrowseCardEqualityTests
   WorkshopPageSourceTests
   GalleryCardPreferencesTests
+  BrowseCardEditDeskLayoutTests
   WorkshopModalTests
   WorkshopModalHostTests
   DeferredApplyToastsTests

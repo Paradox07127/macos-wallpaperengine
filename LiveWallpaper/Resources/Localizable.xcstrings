@@ -915,7 +915,7 @@
       }
     },
     "%@ subscribers" : {
-      "comment" : "Workshop card VoiceOver subscriber count.",
+      "comment" : "Workshop card subscriber count, drawn on the card and read by VoiceOver. Placeholder is a compact number such as 1.2K.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -25655,6 +25655,42 @@
         }
       }
     },
+    "Dynamic resolution" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dynamic resolution"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolución dinámica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダイナミック解像度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "动态分辨率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動態解析度"
+          }
+        }
+      }
+    },
     "Edit" : {
       "localizations" : {
         "en" : {
@@ -48095,6 +48131,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "其他選項"
+          }
+        }
+      }
+    },
+    "Other resolution" : {
+      "comment" : "Workshop resolution tag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other resolution"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra resolución"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の解像度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他分辨率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他解析度"
           }
         }
       }

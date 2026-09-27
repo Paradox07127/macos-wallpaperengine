@@ -361,6 +361,23 @@ struct BrowseFilterTests {
         #expect(!known.contains("5120 x 1440"))
     }
 
+    @Test("Other and Dynamic resolution follow the app language; a numeric resolution tag stays verbatim")
+    @MainActor
+    func resolutionWordTagsFollowTheAppLanguage() {
+        for language in [AppLanguagePreference.simplifiedChinese, .traditionalChinese, .japanese, .spanish] {
+            let shown = AppLanguageOverride.with(language) {
+                ["Other resolution", "Dynamic resolution", "3840 x 2160"].map(WorkshopTagLocalization.displayName)
+            }
+            #expect(shown[0] != "Other resolution", "\(language.rawValue) shows Steam's English: \(shown)")
+            #expect(shown[1] != "Dynamic resolution", "\(language.rawValue) shows Steam's English: \(shown)")
+            #expect(shown[2] == "3840 x 2160", "\(language.rawValue) rewrote a numeric tag: \(shown)")
+        }
+        let row = AppLanguageOverride.with(.simplifiedChinese) {
+            WallpaperFacts.tagFacts(["Other resolution", "Dynamic resolution"]).first { $0.kind == .resolution }?.value
+        }
+        #expect(row == "其他分辨率 / 动态分辨率", "the detail modal's Resolution row reads \(row ?? "nothing")")
+    }
+
     // MARK: - W4-A: search target + Miscellaneous at the request layer
 
     @Test("Miscellaneous is Steam's facet minus Asset Pack, in the page's order")

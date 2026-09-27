@@ -96,18 +96,20 @@ struct GalleryCardPreferencesTests {
     }
 
     #if !LITE_BUILD
-    @Test("The S8 card's meta line obeys the rating and resolution switches")
-    func editDeskMetaLineObeysSwitches() {
-        func line(_ preferences: GalleryCardPreferences) -> String {
-            BrowseCard.editDeskMetaLine(
-                rating: 4.5, resolution: "4K", subscribers: "12 subscribers", size: "300 MB", preferences: preferences
-            ) ?? ""
+    @Test("The S8 card's title-row rating and resolution badge obey their switches")
+    func editDeskMarksObeySwitches() {
+        func marks(_ preferences: GalleryCardPreferences) -> (rating: String?, resolution: String?) {
+            BrowseCard.editDeskMarks(rating: 4.5, resolution: "4K", preferences: preferences)
         }
         let rating = "★ " + 4.5.formatted(.number.precision(.fractionLength(1)))
-        let shown = line(GalleryCardPreferences())
-        #expect(shown.contains(rating) && shown.contains("4K"), "with every switch on the line reads \(shown)")
-        #expect(!line(GalleryCardPreferences(showsRating: false)).contains("★"), "the rating shows with its switch off")
-        #expect(!line(GalleryCardPreferences(showsResolution: false)).contains("4K"), "the resolution shows with its switch off")
+        let shown = marks(GalleryCardPreferences())
+        #expect(shown.rating == rating && shown.resolution == "4K", "with every switch on the card draws \(shown)")
+        let noRating = marks(GalleryCardPreferences(showsRating: false))
+        #expect(noRating.rating == nil, "the rating shows with its switch off")
+        #expect(noRating.resolution == "4K", "turning the rating off took the resolution badge with it")
+        let noResolution = marks(GalleryCardPreferences(showsResolution: false))
+        #expect(noResolution.resolution == nil, "the resolution badge shows with its switch off")
+        #expect(noResolution.rating == rating, "turning the resolution off took the rating with it")
     }
     #endif
 }

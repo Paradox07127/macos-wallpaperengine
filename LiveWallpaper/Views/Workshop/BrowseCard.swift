@@ -191,16 +191,11 @@ struct BrowseCard: View, Equatable {
         // build the glass container, its `HStack` and the padding around an empty stack.
         .overlay(alignment: .topLeading) {
             if presentation == .editDesk {
-                if !shouldBlur, isHovered || showsInUseBadge {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let inUseBadge, showsInUseBadge {
-                            // The pane rebuilds these on configuration changes only, so it cannot tell playing from paused.
-                            NowPlayingCapsule(badge: inUseBadge, animates: false)
-                        }
-                        if isHovered {
-                            ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
-                        }
-                    }
+                if !shouldBlur, showsEditDeskTopRow {
+                    EditDeskTopRow(
+                        inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered,
+                        resolution: editDeskMarks.resolution, status: editDeskStatus
+                    )
                     .padding(DesignTokens.Spacing.sm)
                 }
             } else if !shouldBlur, showsTypePill || showsRatingPill {
@@ -218,18 +213,7 @@ struct BrowseCard: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if presentation == .editDesk {
-                if showsUpdateBadge {
-                    ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
-                        .padding(DesignTokens.Spacing.sm)
-                } else if showsEditDeskInLibraryCheck {
-                    ThumbnailPresenceCheck(
-                        tint: DesignTokens.EditDesk.Colors.inLibraryBadgeFill,
-                        appearance: .solid(glyph: DesignTokens.EditDesk.Colors.inLibraryBadgeGlyph)
-                    )
-                    .padding(DesignTokens.Spacing.sm)
-                }
-            } else if !shouldBlur, showsResolutionBadge || onBookmark != nil {
+            if presentation != .editDesk, !shouldBlur, showsResolutionBadge || onBookmark != nil {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if let resolutionLabel, showsResolutionBadge {
@@ -294,18 +278,22 @@ struct BrowseCard: View, Equatable {
         }
     }
 
-    /// SCREENS S8: title over one monospaced meta line, on a gradient that fades into the picture.
+    /// SCREENS S8: the title with the rating at its end, over subscribers and size, on a gradient that fades into the picture.
     private var editDeskInfoBand: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-            Text(verbatim: item.title)
-                .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                .lineLimit(1)
-            if let editDeskMetaLine {
-                Text(verbatim: editDeskMetaLine)
-                    .font(DesignTokens.EditDesk.Typography.badgeMono)
-                    .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(verbatim: item.title)
+                    .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
+                    .foregroundStyle(DesignTokens.Colors.overlayForeground)
                     .lineLimit(1)
+                if let rating = editDeskMarks.rating {
+                    Spacer(minLength: DesignTokens.Spacing.sm)
+                    Self.editDeskMetaText(rating)
+                        .fixedSize()
+                }
+            }
+            if subscriberText != nil || formattedSize != nil {
+                EditDeskStatsRow(subscribers: subscriberText, size: formattedSize)
             }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.workshopCardBandInset)
@@ -321,30 +309,39 @@ struct BrowseCard: View, Equatable {
         .allowsHitTesting(false)
     }
 
-    private var editDeskMetaLine: String? {
-        Self.editDeskMetaLine(
-            rating: ratingValue, resolution: resolutionLabel, subscribers: subscriberText, size: formattedSize,
-            preferences: cardPreferences
+    private var editDeskMarks: (rating: String?, resolution: String?) {
+        Self.editDeskMarks(rating: ratingValue, resolution: resolutionLabel, preferences: cardPreferences)
+    }
+
+    /// The rating that ends the title row and the resolution the top row badges; nil where there is none or its switch is off.
+    nonisolated static func editDeskMarks(
+        rating: Double?, resolution: String?, preferences: GalleryCardPreferences
+    ) -> (rating: String?, resolution: String?) {
+        (
+            rating.flatMap { preferences.showsRating ? "★ " + $0.formatted(.number.precision(.fractionLength(1))) : nil },
+            preferences.showsResolution ? resolution : nil
         )
     }
 
-    static func editDeskMetaLine(
-        rating: Double?, resolution: String?, subscribers: String?, size: String?, preferences: GalleryCardPreferences
-    ) -> String? {
-        var parts: [String] = []
-        if let rating, preferences.showsRating {
-            parts.append("★ " + rating.formatted(.number.precision(.fractionLength(1))))
+    private var editDeskStatus: EditDeskTopRow.Status? {
+        if showsUpdateBadge {
+            return .needsUpdate
         }
-        if let resolution, preferences.showsResolution {
-            parts.append(resolution)
+        if showsEditDeskInLibraryCheck {
+            return .inLibrary
         }
-        if let subscribers {
-            parts.append(subscribers)
-        }
-        if let size {
-            parts.append(size)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return nil
+    }
+
+    private var showsEditDeskTopRow: Bool {
+        isHovered || showsInUseBadge || editDeskMarks.resolution != nil || editDeskStatus != nil
+    }
+
+    fileprivate static func editDeskMetaText(_ text: String) -> some View {
+        Text(verbatim: text)
+            .font(DesignTokens.EditDesk.Typography.badgeMono)
+            .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))
+            .lineLimit(1)
     }
 
     private static func typeSymbol(for type: WorkshopContentTypeFilter) -> String {
@@ -448,7 +445,7 @@ struct BrowseCard: View, Equatable {
         guard let subs = item.subscriptionCount, subs > 0 else { return nil }
         return subs < WorkshopCountFormatter.compactFloor
             ? String(localized: "\(subs) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card VoiceOver subscriber count below 1,000.")
-            : String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card VoiceOver subscriber count.")
+            : String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card subscriber count, drawn on the card and read by VoiceOver. Placeholder is a compact number such as 1.2K.")
     }
 
     private var formattedSize: String? {
@@ -476,7 +473,7 @@ struct BrowseCard: View, Equatable {
 
     var accessibilityLabelText: String {
         var parts: [String] = [item.title]
-        // The Edit Desk card reads what `editDeskInfoBand` draws, and a blurred card draws no band.
+        // The Edit Desk card reads what its band and top row draw, and a blurred card draws neither.
         let showsMeta = presentation != .editDesk || !shouldBlur
         if let rating = ratingValue, showsMeta, presentation != .editDesk || cardPreferences.showsRating {
             parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage, comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
@@ -515,6 +512,87 @@ struct BrowseCard: View, Equatable {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+}
+
+/// The Edit Desk card's top edge as one row, so its two ends see each other: the status marks keep the outer
+/// ends, and the resolution badge, then the update badge's caption, give way before two badges overlap.
+private struct EditDeskTopRow: View {
+    enum Status {
+        case needsUpdate, inLibrary
+    }
+
+    let inUseBadge: NowPlayingBadge?
+    let showsGIF: Bool
+    let resolution: String?
+    let status: Status?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(showsResolution: true, updateCaption: true)
+            row(showsResolution: false, updateCaption: true)
+            // Taken even when too wide: the capsule then truncates its display names rather than slide under a badge.
+            row(showsResolution: false, updateCaption: false)
+        }
+    }
+
+    private func row(showsResolution: Bool, updateCaption: Bool) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                if let inUseBadge {
+                    // The pane rebuilds these on configuration changes only, so it cannot tell playing from paused.
+                    NowPlayingCapsule(badge: inUseBadge, animates: false)
+                }
+                if showsGIF {
+                    ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
+                }
+            }
+            Spacer(minLength: DesignTokens.Spacing.xs)
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                if showsResolution, let resolution {
+                    ThumbnailBadge(verbatim: resolution)
+                }
+                switch status {
+                case .needsUpdate:
+                    if updateCaption {
+                        ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
+                    } else {
+                        ThumbnailBadge(systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
+                    }
+                case .inLibrary:
+                    ThumbnailPresenceCheck(
+                        tint: DesignTokens.EditDesk.Colors.inLibraryBadgeFill,
+                        appearance: .solid(glyph: DesignTokens.EditDesk.Colors.inLibraryBadgeGlyph)
+                    )
+                case nil:
+                    EmptyView()
+                }
+            }
+        }
+    }
+}
+
+/// The band's second row: subscribers at the leading end, size at the trailing end. The size gives way when
+/// both do not fit, so the count is never the part cut short.
+private struct EditDeskStatsRow: View {
+    let subscribers: String?
+    let size: String?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                if let subscribers {
+                    BrowseCard.editDeskMetaText(subscribers)
+                }
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                if let size {
+                    BrowseCard.editDeskMetaText(size)
+                }
+            }
+            if let subscribers {
+                BrowseCard.editDeskMetaText(subscribers)
+            }
+        }
     }
 }
 #endif
