@@ -363,9 +363,12 @@ enum ProbeFixtures {
 @Suite("Fidelity S4 wallpaper modal", .serialized)
 @MainActor
 struct S4ModalFidelityTests {
+    /// A 16:9 frame at the box's own 680 px width, so the cap never shrinks it below the box.
     private func modal(windowSize: CGSize) -> some View {
         WallpaperModal(
-            content: ProbeFixtures.libraryContent(preview: ProbeRenderer.solid(ProbeRenderer.previewRed)),
+            content: ProbeFixtures.libraryContent(
+                preview: ProbeRenderer.solid(ProbeRenderer.previewRed, size: CGSize(width: 680, height: 382))
+            ),
             targets: ProbeFixtures.targets(thumbnail: nil),
             actions: ProbeFixtures.libraryActions,
             requestRename: {}, requestDelete: {},
@@ -376,17 +379,12 @@ struct S4ModalFidelityTests {
         )
     }
 
-    /// The red preview is the anchor: the 16:9 fill fitted into the 4:3 box sits `letterbox` under the
-    /// box's top, and the box opens past the side padding and the ← slot, under the title row.
+    /// The red preview is the anchor: its box hugs the picture and opens past the side padding, under the title row.
     static func panelOrigin(from preview: CGRect) -> CGPoint {
-        let letterbox = (ModalGeometry.previewSize.height - ModalGeometry.previewSize.width * 9 / 16) / 2
-        return CGPoint(
-            x: preview.minX - ModalGeometry.horizontalPadding - ModalGeometry.iconButtonSize - ModalGeometry.arrowGap,
-            y: preview.minY - letterbox - ModalGeometry.contentTop
-        )
+        CGPoint(x: preview.minX - ModalGeometry.horizontalPadding, y: preview.minY - ModalGeometry.contentTop)
     }
 
-    /// `ModalGeometry`: at most 920×680, centred, never above 72; a 340×255 box the 16:9 preview fits into.
+    /// `ModalGeometry`: at most 920×680, centred, never above 72; the 16:9 preview fitted into 340×255 is its own box.
     @Test("S4 panel and preview at 1280×820")
     func panelAt1280() async throws {
         let size = CGSize(width: 1280, height: 820)
@@ -399,7 +397,7 @@ struct S4ModalFidelityTests {
         ProbeRenderer.report("S4.1280.panelOrigin", origin)
         expectClose(origin.y, 72, "S4.1280.panel.top", tolerance: 3)
         expectClose(origin.x, 180, "S4.1280.panel.x", tolerance: 3)
-        expectClose(preview.height, 191.25, "S4.1280.preview.h", tolerance: 3)
+        expectClose(preview.height, 191, "S4.1280.preview.h", tolerance: 3)
         expectClose(preview.width, 340, "S4.1280.preview.w", tolerance: 3)
         // The contract the render is measured against.
         let contract = ModalGeometry.panelFrame(in: size)
@@ -435,6 +433,51 @@ struct S4ModalFidelityTests {
         }
         let preview = try #require(image.boundingBox { $0.isRed })
         expectClose(preview.width, 340, "S4.light.preview.w", tolerance: 3)
+    }
+
+    /// The chrome and layout both modals share, with a red stand-in preview at its fitted size and a blue
+    /// stand-in right column: what the left column gives up, the right one gains.
+    @Test(
+        "The right column widens by what the preview's column gives up: 192 px, a square and 16:9",
+        arguments: [CGSize(width: 1040, height: 700), CGSize(width: 1280, height: 820)]
+    )
+    func rightColumnTakesTheSpace(window: CGSize) async throws {
+        let panel = ModalGeometry.panelFrame(in: window)
+        // pixels → the preview's box at 2×, then the left and right column widths
+        let cases: [(pixels: CGSize, box: CGSize, left: CGFloat, right: CGFloat)] = [
+            (CGSize(width: 192, height: 192), CGSize(width: 192, height: 192), 304, 544),
+            (CGSize(width: 1024, height: 1024), CGSize(width: 255, height: 255), 304, 544),
+            (CGSize(width: 680, height: 382), CGSize(width: 340, height: 191), 340, 508),
+        ]
+        for (pixels, box, left, right) in cases {
+            let size = ModalGeometry.previewFit(pixels: pixels, scale: 2).size
+            let tag = "S4.columns.\(Int(window.width))x\(Int(window.height)).\(Int(pixels.width))"
+            let image = await ProbeRenderer.render(nil, size: window) {
+                ZStack {
+                    Color(white: 0.5)
+                    EditDeskModalChrome(windowSize: window, onDismiss: {}, panel: { _ in
+                        WallpaperDetailLayout(
+                            facts: ProbeFixtures.libraryContent(preview: nil).facts,
+                            previewSize: size,
+                            preview: { Color(nsColor: ProbeRenderer.previewRed) },
+                            sidebar: { Color(nsColor: ProbeRenderer.thumbnailBlue).frame(height: 40) },
+                            status: { EmptyView() },
+                            buttons: { EmptyView() }
+                        )
+                    })
+                }
+            }
+            let preview = try #require(image.boundingBox { $0.isRed }, Comment(rawValue: "\(tag): no preview"))
+            let column = try #require(image.boundingBox { $0.isBlue }, Comment(rawValue: "\(tag): no right column"))
+            ProbeRenderer.report("\(tag).preview", preview)
+            ProbeRenderer.report("\(tag).rightColumn", column)
+            expectClose(preview.minX, panel.minX + ModalGeometry.horizontalPadding, "\(tag).preview.x", tolerance: 1)
+            expectClose(preview.width, box.width, "\(tag).preview.w", tolerance: 1)
+            expectClose(preview.height, box.height, "\(tag).preview.h", tolerance: 1)
+            let columnX = panel.minX + ModalGeometry.horizontalPadding + left + ModalGeometry.columnSpacing
+            expectClose(column.minX, columnX, "\(tag).right.x", tolerance: 1)
+            expectClose(column.width, right, "\(tag).right.w", tolerance: 1)
+        }
     }
 }
 
@@ -1131,10 +1174,10 @@ struct S8bModalFidelityTests {
         .environment(WorkshopServices())
     }
 
-    /// Where the layout puts the 4:3 preview box: past the side padding and the ← slot, under the title row.
+    /// Where the layout puts the 4:3 preview box: past the side padding, under the title row.
     static func previewBox(in panel: CGRect) -> CGRect {
         CGRect(
-            x: panel.minX + ModalGeometry.horizontalPadding + ModalGeometry.iconButtonSize + ModalGeometry.arrowGap,
+            x: panel.minX + ModalGeometry.horizontalPadding,
             y: panel.minY + ModalGeometry.contentTop,
             width: ModalGeometry.previewSize.width, height: ModalGeometry.previewSize.height
         )
@@ -1175,7 +1218,7 @@ struct S8bModalFidelityTests {
                 Color(white: 0.5)
                 WallpaperModal(
                     content: ProbeFixtures.libraryContent(
-                        preview: ProbeRenderer.solid(ProbeRenderer.previewRed, size: CGSize(width: 64, height: 48))
+                        preview: ProbeRenderer.solid(ProbeRenderer.previewRed, size: CGSize(width: 680, height: 510))
                     ),
                     targets: ProbeFixtures.targets(thumbnail: nil),
                     actions: ProbeFixtures.libraryActions, requestRename: {}, requestDelete: {},

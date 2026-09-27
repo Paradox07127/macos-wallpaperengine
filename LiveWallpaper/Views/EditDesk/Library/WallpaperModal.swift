@@ -31,6 +31,7 @@ struct WallpaperModal: View {
     private enum DragState: Equatable { case idle, active, cancelled }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var dragState: DragState = .idle
     @State private var isNavigatingForward = true
     #if !LITE_BUILD
@@ -47,7 +48,9 @@ struct WallpaperModal: View {
             actions: actions.headerActions(isUpdating: isUpdating, requestRename: requestRename, requestDelete: requestDelete),
             onDismiss: onDismiss,
             onEscape: cancelDragForEscape,
-            onTargetShortcut: applyToShortcut
+            onTargetShortcut: applyToShortcut,
+            onPrevious: navigation.canGoPrevious ? { navigate(forward: false) } : nil,
+            onNext: navigation.canGoNext ? { navigate(forward: true) } : nil
         ) { _ in
             panelBody
                 .id(content.itemID)
@@ -60,8 +63,7 @@ struct WallpaperModal: View {
         WallpaperDetailLayout(
             facts: content.facts,
             tags: content.tags,
-            onPrevious: navigation.canGoPrevious ? { navigate(forward: false) } : nil,
-            onNext: navigation.canGoNext ? { navigate(forward: true) } : nil,
+            previewSize: previewFit.size,
             preview: { previewArea },
             sidebar: { sidebar },
             status: { status },
@@ -80,7 +82,15 @@ struct WallpaperModal: View {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge, style: .continuous)
     }
 
-    /// The whole picture fitted into the layout's 4:3 box, square or wide, on a sunken fill.
+    /// The placeholder keeps the whole 4:3 box.
+    private var previewFit: ModalGeometry.PreviewFit {
+        guard let image = content.preview else {
+            return ModalGeometry.PreviewFit(size: ModalGeometry.previewSize, isLowResolution: false)
+        }
+        return ModalGeometry.previewFit(pixels: CGSize(width: image.width, height: image.height), scale: displayScale)
+    }
+
+    /// The whole picture in a box of its own capped size, on a sunken fill.
     private var previewArea: some View {
         ZStack {
             DesignTokens.Colors.surfaceSunken
@@ -92,8 +102,12 @@ struct WallpaperModal: View {
         .animation(navigationAnimation, value: content.itemID)
         .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
         .overlay(alignment: .topLeading) {
-            mediaChip(Text("Still preview", comment: "Wallpaper modal chip over a preview that is a still frame, not the moving wallpaper."))
-                .padding(DesignTokens.EditDesk.Spacing.s8)
+            mediaChip(
+                previewFit.isLowResolution
+                    ? Text("Low-resolution preview", comment: "Wallpaper modal chip over a still preview too small to show sharp at the preview's size.")
+                    : Text("Still preview", comment: "Wallpaper modal chip over a preview that is a still frame, not the moving wallpaper.")
+            )
+            .padding(DesignTokens.EditDesk.Spacing.s8)
         }
         // MOTION 7 asks for .3 under the ghost; `quietStroke` is the nearest step in the scale.
         .opacity(dragState == .active ? DesignTokens.Opacity.quietStroke : 1)
@@ -115,12 +129,15 @@ struct WallpaperModal: View {
         }
     }
 
+    /// A second line rather than a cut word when a small preview is narrower than the chip.
     private func mediaChip(_ label: Text) -> some View {
         label
             .font(DesignTokens.EditDesk.Typography.metaMono)
             .foregroundStyle(DesignTokens.Colors.overlayForeground)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
-            .frame(height: 22)
+            .padding(.vertical, DesignTokens.Spacing.xs)
+            .frame(minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip, style: .continuous)
                     .fill(DesignTokens.EditDesk.Colors.mediaChipFill)

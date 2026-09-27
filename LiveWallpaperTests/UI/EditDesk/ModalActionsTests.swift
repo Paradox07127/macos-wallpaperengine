@@ -464,6 +464,41 @@ struct ModalActionsTests {
         #expect(ModalActions.liveStill(showingOn: [], covers: covers, current: [1, 2]) == nil)
     }
 
+    @Test("A display's cover is current only while the capture that landed is the newest one asked for")
+    func coverIsCurrentOnceItsNewestCaptureLands() {
+        // 1 landed its newest; 2 has a newer capture out; 3 never landed one (still capturing, or it failed).
+        let current = HomePage.currentCovers(requested: [1: 2, 2: 3, 3: 1], landed: [1: 2, 2: 2])
+        #expect(current == [1], Comment(rawValue: "\(current.sorted())"))
+        #expect(HomePage.currentCovers(requested: [:], landed: [:]).isEmpty)
+    }
+
+    /// The capture itself needs a real display running a wallpaper, so the chain from a landed capture to the
+    /// modal's preview is read off the three call sites; `liveStill` and `currentCovers` are tested as values above.
+    @Test("A landed capture's generation reaches the modal host, and the host hands it to liveStill")
+    func landedCoversReachTheModal() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        let refresh = try #require(home.range(of: "private func refreshCover("))
+        let body = home[refresh.lowerBound...]
+        let guardGeneration = try #require(body.range(of: "coverGenerations[id] == generation"))
+        let setCover = try #require(body.range(of: "stage.displays[index].cover = image"))
+        let landing = try #require(body.range(of: "landedCoverGenerations[id] = generation"), "a landed capture is never recorded")
+        #expect(
+            guardGeneration.lowerBound < setCover.lowerBound && setCover.lowerBound < landing.lowerBound,
+            "the landing is recorded before the capture is known to be the newest, or before the cover is set"
+        )
+        #expect(
+            home.contains("Self.currentCovers(requested: coverGenerations, landed: landedCoverGenerations)"),
+            "the displays handed on are not the ones whose newest capture landed"
+        )
+        let host = try #require(home.range(of: "LibraryModalHost("))
+        #expect(home[host.lowerBound...].prefix(400).contains("currentCovers: currentCoverDisplays"), "the modal host never hears which covers are current")
+        let modalHost = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryModalHost.swift")
+        #expect(
+            modalHost.contains("ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)"),
+            "the modal host does not pick its live still by the current covers"
+        )
+    }
+
     @Test("A live frame handed to the modal is its preview, and nothing is decoded")
     func livePreviewSkipsTheDecode() async throws {
         let fixture = Fixture()

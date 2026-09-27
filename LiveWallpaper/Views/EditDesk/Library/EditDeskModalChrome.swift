@@ -3,8 +3,8 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// The Edit Desk detail modal's shell: scrim, panel box, the title row that ends in the close button,
-/// open and close motion, and ESC and ⌘n. The caller draws the body in the closure and keeps its own
-/// floating layers, gestures and remaining keys outside.
+/// ← and → beside the panel, open and close motion, and ESC, ⌘n and the arrow keys. The caller draws the
+/// body in the closure and keeps its own floating layers, gestures and remaining keys outside.
 @MainActor
 struct EditDeskModalChrome<Panel: View>: View {
     /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
@@ -20,6 +20,9 @@ struct EditDeskModalChrome<Panel: View>: View {
     var onEscape: () -> Bool = { false }
     /// The bare ⌘1…⌘9 index; this container never resolves it to a display.
     var onTargetShortcut: ((Int) -> Void)?
+    /// nil greys the arrow out and drops its key: there is no item that way.
+    var onPrevious: (() -> Void)?
+    var onNext: (() -> Void)?
     @ViewBuilder let panel: (CGRect) -> Panel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -82,8 +85,28 @@ struct EditDeskModalChrome<Panel: View>: View {
             radius: DesignTokens.EditDesk.Shadow.modal.radius,
             y: DesignTokens.EditDesk.Shadow.modal.y
         )
+        // On the panel rather than the scrim, so they share its modal element and its open and close motion.
+        .overlay(alignment: .topLeading) { arrows(beside: frame.size) }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+    }
+
+    private func arrows(beside size: CGSize) -> some View {
+        let frames = ModalGeometry.arrowFrames(beside: CGRect(origin: .zero, size: size))
+        return ZStack(alignment: .topLeading) {
+            GlassIconButton("chevron.left") { onPrevious?() }
+                .frame(width: ModalGeometry.iconButtonSize, height: ModalGeometry.iconButtonSize)
+                .disabled(onPrevious == nil)
+                .help(Text("Show Previous Wallpaper (←)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same."))
+                .accessibilityLabel(Text("Show Previous Wallpaper"))
+                .offset(x: frames.previous.minX, y: frames.previous.minY)
+            GlassIconButton("chevron.right") { onNext?() }
+                .frame(width: ModalGeometry.iconButtonSize, height: ModalGeometry.iconButtonSize)
+                .disabled(onNext == nil)
+                .help(Text("Show Next Wallpaper (→)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same."))
+                .accessibilityLabel(Text("Show Next Wallpaper"))
+                .offset(x: frames.next.minX, y: frames.next.minY)
+        }
     }
 
     private var header: some View {
@@ -119,6 +142,14 @@ struct EditDeskModalChrome<Panel: View>: View {
                     Button { onTargetShortcut(index) } label: { EmptyView() }
                         .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
                 }
+            }
+            if let onPrevious {
+                Button(action: onPrevious) { EmptyView() }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+            }
+            if let onNext {
+                Button(action: onNext) { EmptyView() }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
             }
         }
         .opacity(0)

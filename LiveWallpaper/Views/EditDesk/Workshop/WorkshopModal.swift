@@ -46,15 +46,15 @@ struct WorkshopModal: View {
             title: item.title,
             actions: actions.headerActions(for: item),
             onDismiss: onDismiss,
-            onTargetShortcut: pressByShortcut
+            onTargetShortcut: pressByShortcut,
+            onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
+            onNext: navigation.canGoNext ? { navigation.next() } : nil
         ) { _ in
             WallpaperDetailLayout(
                 facts: facts,
                 tags: WallpaperFacts.chips(item.tags),
                 authorLink: authorLink,
                 onSelectTag: actions.selectTag,
-                onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
-                onNext: navigation.canGoNext ? { navigation.next() } : nil,
                 preview: { preview },
                 sidebar: { sidebar },
                 status: { status },

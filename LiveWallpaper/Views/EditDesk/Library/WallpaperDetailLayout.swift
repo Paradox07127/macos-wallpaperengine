@@ -2,9 +2,9 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// The detail modal's body under the chrome's title row: the preview between ← and → with the fact
-/// rows and tags under it, the item's sections on the right, and the status line over the centred
-/// display buttons at the bottom. Both columns scroll together; the bottom stays put.
+/// The detail modal's body under the chrome's title row: the preview with the fact rows and tags under
+/// it, the item's sections on the right, and the status line over the centred display buttons at the
+/// bottom. Both columns scroll together; the bottom stays put.
 @MainActor
 struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons: View>: View {
     let facts: [WallpaperFact]
@@ -14,9 +14,8 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
     var authorLink: WallpaperAuthorLink?
     /// Takes a chip's raw tag; nil leaves the chips unclickable.
     var onSelectTag: (@MainActor (String) -> Void)?
-    /// nil greys the arrow out and drops its key: there is no item that way.
-    var onPrevious: (() -> Void)?
-    var onNext: (() -> Void)?
+    /// The preview's box in points; the left column is as wide, down to `ModalGeometry.leadingColumnFloor`.
+    var previewSize = ModalGeometry.previewSize
     @ViewBuilder let preview: () -> Preview
     @ViewBuilder let sidebar: () -> Sidebar
     @ViewBuilder let status: () -> Status
@@ -44,46 +43,15 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
             .padding(.horizontal, ModalGeometry.horizontalPadding)
             .padding(.bottom, ModalGeometry.bottomPadding)
         }
-        .overlay { arrowKeys }
-    }
-
-    /// Zero-sized buttons rather than `onKeyPress`: the stage's `NSView` is usually first responder
-    /// and swallows `keyDown` while the modal blocks it.
-    private var arrowKeys: some View {
-        ZStack {
-            if let onPrevious {
-                Button(action: onPrevious) { EmptyView() }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-            }
-            if let onNext {
-                Button(action: onNext) { EmptyView() }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-            }
-        }
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .accessibilityHidden(true)
     }
 
     private var leadingColumn: some View {
-        VStack(spacing: ModalGeometry.sectionGap) {
-            HStack(spacing: ModalGeometry.arrowGap) {
-                GlassIconButton("chevron.left") { onPrevious?() }
-                    .frame(width: ModalGeometry.iconButtonSize, height: ModalGeometry.iconButtonSize)
-                    .disabled(onPrevious == nil)
-                    .help(Text("Show Previous Wallpaper (←)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same."))
-                    .accessibilityLabel(Text("Show Previous Wallpaper"))
-                preview()
-                    .frame(width: ModalGeometry.previewSize.width, height: ModalGeometry.previewSize.height)
-                GlassIconButton("chevron.right") { onNext?() }
-                    .frame(width: ModalGeometry.iconButtonSize, height: ModalGeometry.iconButtonSize)
-                    .disabled(onNext == nil)
-                    .help(Text("Show Next Wallpaper (→)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same."))
-                    .accessibilityLabel(Text("Show Next Wallpaper"))
-            }
+        VStack(alignment: .leading, spacing: ModalGeometry.sectionGap) {
+            preview()
+                .frame(width: previewSize.width, height: previewSize.height)
             WallpaperFactGrid(facts: facts, tags: tags, authorLink: authorLink, onSelectTag: onSelectTag)
-                .frame(width: ModalGeometry.previewSize.width, alignment: .leading)
         }
+        .frame(width: ModalGeometry.leadingColumnWidth(preview: previewSize), alignment: .leading)
     }
 }
 

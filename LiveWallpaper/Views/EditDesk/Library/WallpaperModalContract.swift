@@ -18,7 +18,7 @@ struct WallpaperModalContent: Equatable {
     var tags: [WallpaperTagChip] = []
     /// Where a file or page without a Workshop page lives; empty for Workshop items.
     var fileFacts: [WallpaperFact] = []
-    /// Decoded at the preview's pixel size; nil shows the placeholder.
+    /// The whole picture, never upscaled, so its pixels cap how far the modal enlarges it; nil shows the placeholder.
     var preview: CGImage?
     /// Present only for installed Workshop items.
     var installed: InstalledItemExtras?

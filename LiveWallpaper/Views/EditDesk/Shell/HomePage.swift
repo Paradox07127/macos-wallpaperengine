@@ -1289,7 +1289,11 @@ struct HomePage: View {
     /// A cover shows what its display runs now only once the newest capture asked for has landed: until then,
     /// and for good when a capture fails, it is the wallpaper the display ran before.
     private var currentCoverDisplays: Set<CGDirectDisplayID> {
-        Set(coverGenerations.compactMap { id, generation in landedCoverGenerations[id] == generation ? id : nil })
+        Self.currentCovers(requested: coverGenerations, landed: landedCoverGenerations)
+    }
+
+    static func currentCovers(requested: [CGDirectDisplayID: Int], landed: [CGDirectDisplayID: Int]) -> Set<CGDirectDisplayID> {
+        Set(requested.compactMap { id, generation in landed[id] == generation ? id : nil })
     }
 
     // MARK: Shelf

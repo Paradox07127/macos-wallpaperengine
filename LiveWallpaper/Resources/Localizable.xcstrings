@@ -39142,6 +39142,41 @@
         }
       }
     },
+    "Low-resolution preview" : {
+      "comment" : "Wallpaper modal chip over a still preview too small to show sharp at the preview's size.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low-resolution preview"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vista previa de baja resolución"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低解像度プレビュー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低分辨率预览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低解析度預覽"
+          }
+        }
+      }
+    },
     "Lyric lines" : {
       "comment" : "Now Playing DIY control: how many lyric rows the large layer draws.",
       "extractionState" : "manual",
