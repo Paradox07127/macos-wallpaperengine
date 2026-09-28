@@ -356,6 +356,7 @@ struct MonitorWidgetSettingsCard: View {
 struct MonitorPlacementAccessibilityActions: ViewModifier {
     @ObservedObject var model: InteractionModel
     let placementID: UUID
+    @Environment(\.monitorBoardChrome) private var chrome
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -374,7 +375,11 @@ struct MonitorPlacementAccessibilityActions: ViewModifier {
                     model.moveWidget(id: placementID, direction: .down)
                 }
                 .accessibilityAction(named: Text(MonitorBoardStrings.removeWidget)) {
-                    model.perform(.delete(id: placementID))
+                    if let editor = chrome.editor {
+                        editor.removeWidget(id: placementID)
+                    } else {
+                        model.perform(.delete(id: placementID))
+                    }
                 }
         } else {
             content

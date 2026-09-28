@@ -170,8 +170,6 @@ final class OverlayEditorScreenStore: OverlayEditorStore {
 @MainActor
 @Observable
 final class OverlayEditorSession {
-    enum LifecycleStep: Equatable { case flush, endGestures, unbind, load }
-
     struct CopyResult: Equatable {
         var copied: Int
         var total: Int
@@ -222,7 +220,6 @@ final class OverlayEditorSession {
     }
 
     private(set) var preview = MonitorBoardPreview(mode: .snapshot)
-    @ObservationIgnored var onLifecycleStep: ((LifecycleStep) -> Void)?
     @ObservationIgnored var onObjectPersisted: (@MainActor () -> Void)?
     /// Widgets an edit took off the board, each with its index there; called before the debounced write.
     @ObservationIgnored var onWidgetsRemoved: (@MainActor ([(placement: MonitorWidgetPlacement, index: Int)]) -> Void)?
@@ -257,7 +254,6 @@ final class OverlayEditorSession {
             selection = nil
         }
         self.identity = identity
-        onLifecycleStep?(.load)
         guard let identity, let snapshot = store.read(identity) else { return }
         load(snapshot)
         isActive = editing
@@ -273,9 +269,7 @@ final class OverlayEditorSession {
 
     func detach() {
         endKeyboardMove()
-        onLifecycleStep?(.flush)
         flushPendingEdits()
-        onLifecycleStep?(.endGestures)
         interaction.endDrag(bypassSnap: !snapEnabled)
         endDrag()
         addDrop = nil
@@ -284,7 +278,6 @@ final class OverlayEditorSession {
         flushPendingEdits()
         isActive = false
         gestureGeneration += 1
-        onLifecycleStep?(.unbind)
         interaction.onConfigurationEdited = nil
         interaction.onSelectionChanged = nil
         interaction.setEditing(false)
@@ -452,6 +445,17 @@ final class OverlayEditorSession {
         endKeyboardMove()
         guard isActive else { return }
         interaction.perform(.delete(id: id))
+    }
+
+    /// The canvas remove button and VoiceOver Remove on music or the clock: the layer turns off.
+    func removeSingleton(_ selection: OverlaySelection) {
+        endKeyboardMove()
+        guard isActive else { return }
+        switch selection {
+        case .music: setMusicEnabled(false)
+        case .clock: setClockEnabled(false)
+        case .board, .widget: return
+        }
     }
 
     /// Whether Remove All has anything to take off.

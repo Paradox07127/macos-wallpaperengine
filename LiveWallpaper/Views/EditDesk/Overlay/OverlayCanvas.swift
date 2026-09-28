@@ -191,13 +191,14 @@ struct OverlayCanvas: View {
     private func object(_ selection: OverlaySelection, @ViewBuilder content: () -> some View) -> some View {
         let rect = session.rect(for: selection)
         let generation = session.gestureGeneration
+        let remove = { session.removeSingleton(selection) }
         return content()
             .allowsHitTesting(false)
             .frame(width: rect.width, height: rect.height)
             .overlay { Color.clear.contentShape(Rectangle()) }
             .modifier(OverlayObjectChrome(selected: session.selection == selection,
                                           dragging: session.drag?.selection == selection, renderScale: session.renderScale,
-                                          onRemove: { selection == .music ? session.setMusicEnabled(false) : session.setClockEnabled(false) }))
+                                          onRemove: remove))
             .opacity(isBeingMovedByDrop(selection) ? DesignTokens.Opacity.dimmedContent : 1)
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.coordinateSpace))
                 .onChanged { value in
@@ -220,6 +221,7 @@ struct OverlayCanvas: View {
                 session.select(selection)
                 session.requestInspector()
             }
+            .accessibilityAction(named: Text("Remove"), remove)
             .position(x: rect.midX, y: rect.midY)
     }
 

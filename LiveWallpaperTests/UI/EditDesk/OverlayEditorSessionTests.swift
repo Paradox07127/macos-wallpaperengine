@@ -36,10 +36,10 @@ struct OverlayEditorSessionTests {
         let session = opened(store)
         let id = try #require(session.interaction.placements.first?.id)
         session.interaction.perform(.delete(id: id))
-        session.onLifecycleStep = { step in store.events.append("\(step)") }
+        store.watched = session
         store.events = []
         session.transition(to: store.displays[1], store: store, editing: true)
-        #expect(store.events == ["flush", "board 1", "endGestures", "unbind", "load", "read 2"])
+        #expect(store.events == ["board 1 bound", "read 2 unbound"])
         #expect(store.snapshots[store.displays[0]]?.overlay.board.widgets.isEmpty == true)
         #expect(session.identity == store.displays[1])
         session.detach()
@@ -54,10 +54,13 @@ struct OverlayEditorSessionTests {
         let start = try session.interaction.pixelOrigin(for: #require(session.interaction.placements.first))
         session.interaction.beginDrag(placement.id, grabOffset: .zero)
         session.interaction.updateDrag(pointInBoard: CGPoint(x: start.x + 180, y: start.y), bypassSnap: true)
-        session.onLifecycleStep = { store.events.append("\($0)") }
+        store.watched = session
         store.events = []
+        store.boards = []
         session.detach()
-        #expect(store.events == ["flush", "board 1", "endGestures", "board 1", "unbind"])
+        #expect(store.events == ["board 1 bound", "board 1 bound"])
+        let nudged = try #require(store.boards.first?.widgets.first)
+        #expect(abs(nudged.x * session.logicalSize.width - start.x) < 0.5, "the pending nudge was not written before the gesture ended")
         let saved = try #require(store.snapshots[store.displays[0]]?.overlay.board.widgets.first)
         #expect(abs(saved.x * session.logicalSize.width - start.x - 180) < 0.5)
         #expect(session.interaction.drag == nil)
@@ -640,6 +643,9 @@ private final class FakeOverlayStore: OverlayEditorStore {
     let displays = (1 ... 3).map { OverlayEditorIdentity(displayID: UInt32($0), fingerprint: "screen-\($0)") }
     var snapshots: [OverlayEditorIdentity: OverlayEditorSnapshot] = [:]
     var events: [String] = []
+    /// When set, each event also says whether this session's canvas was still bound to its board.
+    weak var watched: OverlayEditorSession?
+    var boards: [MonitorBoardConfiguration] = []
     var copiedKinds: [OverlayKind] = []
     var rejectWrites = false
 
@@ -664,42 +670,51 @@ private final class FakeOverlayStore: OverlayEditorStore {
         }
     }
 
+    private func log(_ event: String) {
+        if let watched {
+            events.append("\(event) \(watched.interaction.onConfigurationEdited == nil ? "unbound" : "bound")")
+        } else {
+            events.append(event)
+        }
+    }
+
     func read(_ identity: OverlayEditorIdentity) -> OverlayEditorSnapshot? {
-        events.append("read \(identity.displayID)")
+        log("read \(identity.displayID)")
         return snapshots[identity]
     }
 
     func writeBoard(_ board: MonitorBoardConfiguration, for identity: OverlayEditorIdentity) {
-        events.append("board \(identity.displayID)")
+        log("board \(identity.displayID)")
+        boards.append(board)
         if !rejectWrites {
             snapshots[identity]?.overlay.board = board
         }
     }
 
     func writeOverlayEnabled(_ enabled: Bool, for identity: OverlayEditorIdentity) {
-        events.append("enabled \(identity.displayID)")
+        log("enabled \(identity.displayID)")
         snapshots[identity]?.overlay.enabled = enabled
     }
 
     func writeMusic(_ music: MusicOverlayConfiguration, for identity: OverlayEditorIdentity) {
-        events.append("music \(identity.displayID)")
+        log("music \(identity.displayID)")
         snapshots[identity]?.overlay.music = music
     }
 
     func writeClock(_ clock: ClockOverlayConfiguration, for identity: OverlayEditorIdentity) {
-        events.append("clock \(identity.displayID)")
+        log("clock \(identity.displayID)")
         if !rejectWrites {
             snapshots[identity]?.overlay.clock = clock
         }
     }
 
     func writeEffect(_ effect: ParticleEffect, for identity: OverlayEditorIdentity) {
-        events.append("effect \(identity.displayID)")
+        log("effect \(identity.displayID)")
         snapshots[identity]?.configuration?.particleEffect = effect
     }
 
     func copy(_ kind: OverlayKind, from identity: OverlayEditorIdentity) {
-        events.append("copy \(kind)")
+        log("copy \(kind)")
         copiedKinds.append(kind)
         guard let source = snapshots[identity] else { return }
         for target in displays where target != identity {

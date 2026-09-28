@@ -42,7 +42,7 @@ struct OverlayRuntimeContractTests {
         #expect(!canvas.contains(".offset("))
     }
 
-    @Test("Canvas objects carry a remove button that calls what the Layers panel calls")
+    @Test("Canvas objects' remove button and VoiceOver Remove share one session call, the one the Layers panel makes")
     func objectRemoveButtonContract() throws {
         let canvas = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayCanvas.swift")
         let chromeStart = try #require(canvas.range(of: "struct OverlayObjectChrome: ViewModifier"))
@@ -52,16 +52,35 @@ struct OverlayRuntimeContractTests {
         let objectStart = try #require(canvas.range(of: "private func object(_ selection: OverlaySelection"))
         let objectEnd = try #require(canvas.range(of: "private func isBeingMovedByDrop", range: objectStart.upperBound ..< canvas.endIndex))
         let object = canvas[objectStart.upperBound ..< objectEnd.lowerBound]
+        #expect(object.contains("let remove = { session.removeSingleton(selection) }"))
+        #expect(object.contains("onRemove: remove"))
+        // The element hides its children, the button among them, so the action has to sit on the element itself.
+        let element = try #require(object.range(of: ".accessibilityElement(children: .ignore)"))
+        let action = try #require(object.range(of: #".accessibilityAction(named: Text("Remove"), remove)"#),
+                                  "the Clock and Music layers carry no VoiceOver Remove")
+        #expect(element.upperBound <= action.lowerBound)
+
+        let session = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEditorSession.swift")
+        let removalStart = try #require(session.range(of: "func removeSingleton(_ selection: OverlaySelection) {"))
+        let removalEnd = try #require(session.range(of: "\n    }\n", range: removalStart.upperBound ..< session.endIndex))
+        let removal = session[removalStart.upperBound ..< removalEnd.lowerBound]
+        #expect(removal.contains("guard isActive else { return }"))
         let layers = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/LayerNavigator.swift")
-        #expect(object.contains("onRemove:"))
         #expect(layers.contains("case .clock: session.setClockEnabled(isOn)"))
-        #expect(object.contains("session.setClockEnabled(false)"))
+        #expect(removal.contains("case .clock: setClockEnabled(false)"))
         #expect(layers.contains("case .music: session.setMusicEnabled(isOn)"))
-        #expect(object.contains("session.setMusicEnabled(false)"))
-        let root = try RepositoryRoot.source("LiveWallpaper/Monitor/Board/RootView.swift")
+        #expect(removal.contains("case .music: setMusicEnabled(false)"))
         #expect(layers.contains("session.removeWidget(id: id)"))
+
+        let root = try RepositoryRoot.source("LiveWallpaper/Monitor/Board/RootView.swift")
         #expect(root.contains("editor.removeWidget(id: placement.id)"))
         #expect(root.contains("OverlayObjectChrome(selected: isSelected, dragging: isDragging, renderScale: renderScale, onRemove: onRemove)"))
+        let board = try RepositoryRoot.source("LiveWallpaper/Monitor/Board/EditChrome.swift")
+        let modifier = try #require(board.range(of: "struct MonitorPlacementAccessibilityActions: ViewModifier"))
+        let actions = board[modifier.upperBound...]
+        #expect(actions.contains(#"@Environment(\.monitorBoardChrome) private var chrome"#))
+        #expect(actions.contains("if let editor = chrome.editor {\n                        editor.removeWidget(id: placementID)"),
+                "the widget's VoiceOver Remove bypasses the session its remove button goes through")
     }
 
     @Test("Editor writes use public setters and applied configuration")
