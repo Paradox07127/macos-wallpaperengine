@@ -75883,6 +75883,42 @@
         }
       }
     },
+    "Waiting for compatible content to use system audio" : {
+      "comment" : "Audio response is enabled but no content currently needs capture.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for compatible content to use system audio"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando contenido compatible que use el audio del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムオーディオを使用する対応コンテンツを待機中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待需要使用系统音频的兼容内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待需要使用系統音訊的相容內容"
+          }
+        }
+      }
+    },
     "Waiting for macOS to update audio permission" : {
       "extractionState" : "manual",
       "localizations" : {

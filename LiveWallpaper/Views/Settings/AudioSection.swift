@@ -18,12 +18,11 @@ extension GeneralSettingsView {
                             .help(Text(verbatim: audioStatusSubtitle))
                     }
 
-                    if audioShowsRegrant {
-                        Button("Re-grant Access") {
-                            regrantAudioAccess()
+                    if audioShowsRetry {
+                        Button("Retry") {
+                            retryAudioCapture()
                         }
                         .fixedSize()
-                        .accessibilityLabel(Text("Re-grant audio access"))
                     }
 
                     Toggle("", isOn: $audioResponseEnabled)
@@ -40,8 +39,6 @@ extension GeneralSettingsView {
         } header: {
             SettingsSearchSectionHeader("Audio", anchor: .integrationsAudio)
         }
-        .onAppear { retainAudioCaptureStatusConsumer() }
-        .onDisappear { releaseAudioCaptureStatusConsumer() }
         #endif
     }
 
@@ -56,46 +53,23 @@ extension GeneralSettingsView {
         }
     }
 
-    func retainAudioCaptureStatusConsumer() {
-        guard !isAudioCaptureStatusConsumerRetained else { return }
-        isAudioCaptureStatusConsumerRetained = true
-        SystemAudioCaptureManager.shared.retain()
-        audioCaptureState = SystemAudioCaptureManager.shared.state
-    }
-
-    func releaseAudioCaptureStatusConsumer() {
-        guard isAudioCaptureStatusConsumerRetained else { return }
-        isAudioCaptureStatusConsumerRetained = false
-        SystemAudioCaptureManager.shared.release()
-        audioCaptureState = SystemAudioCaptureManager.shared.state
-    }
-
     private var audioStatusText: String {
         guard audioResponseEnabled else {
             return String(localized: "Off", bundle: .appLanguage, comment: "Feature is off.")
-        }
-        if audioStatusRefreshPending {
-            return String(localized: "Checking…", bundle: .appLanguage, comment: "Inline status while waiting for audio permission state.")
         }
         switch audioCaptureState {
         case .capturing:
             return String(localized: "Granted", bundle: .appLanguage, comment: "Permission granted.")
         case .failed:
-            return String(localized: "Needs Access", bundle: .appLanguage, comment: "Permission still required.")
+            return String(localized: "Unavailable", bundle: .appLanguage, comment: "System audio capture could not start.")
         case .idle:
-            return String(localized: "Not Granted", bundle: .appLanguage, comment: "Permission not granted yet.")
+            return String(localized: "Ready", bundle: .appLanguage, comment: "Audio response is enabled and waiting for compatible content.")
         }
     }
 
     private var audioStatusSubtitle: String {
         guard audioResponseEnabled else {
             return String(localized: "Audio response is off", bundle: .appLanguage, comment: "Help text when audio response toggle is off.")
-        }
-        if audioStatusRefreshPending {
-            return String(
-                localized: "Waiting for macOS to update audio permission",
-                bundle: .appLanguage, comment: "Help text while system audio permission status refreshes."
-            )
         }
         switch audioCaptureState {
         case .capturing:
@@ -107,38 +81,35 @@ extension GeneralSettingsView {
             return LogPrivacyRedactor.scrub(reason)
         case .idle:
             return String(
-                localized: "Turn on access to start system audio capture",
-                bundle: .appLanguage, comment: "Help text prompting the user to grant system audio access."
+                localized: "Waiting for compatible content to use system audio",
+                bundle: .appLanguage, comment: "Audio response is enabled but no content currently needs capture."
             )
         }
     }
 
     private var audioStatusColor: Color {
         guard audioResponseEnabled else { return .secondary }
-        if audioStatusRefreshPending {
-            return .secondary
-        }
         switch audioCaptureState {
         case .capturing:
             return DesignTokens.Colors.Status.active
         case .failed:
             return DesignTokens.Colors.Status.danger
         case .idle:
-            return DesignTokens.Colors.Status.warning
+            return .secondary
         }
     }
 
-    private var audioShowsRegrant: Bool {
+    private var audioShowsRetry: Bool {
         guard audioResponseEnabled, !audioStatusRefreshPending else { return false }
         switch audioCaptureState {
-        case .capturing:
+        case .capturing, .idle:
             return false
-        case .failed, .idle:
+        case .failed:
             return true
         }
     }
 
-    private func regrantAudioAccess() {
+    private func retryAudioCapture() {
         audioResponseEnabled = true
         updateGlobalSettings()
         SystemAudioCaptureManager.shared.retryAccessRequest()

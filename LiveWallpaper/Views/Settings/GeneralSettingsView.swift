@@ -49,7 +49,6 @@ struct GeneralSettingsView: View {
     @State var audioCaptureState: SystemAudioCaptureManager.State
     @State var audioStatusRefreshPending = false
     @State private var audioStatusRefreshGeneration = 0
-    @State var isAudioCaptureStatusConsumerRetained = false
     #endif
     @State var adaptiveFrameRateEnabled: Bool
     #if !LITE_BUILD
@@ -365,9 +364,6 @@ struct GeneralSettingsView: View {
             loginItemStatus = SMAppService.mainApp.status
         case .audioCapture:
             #if !LITE_BUILD
-            if audioResponseEnabled, SystemAudioCaptureManager.shared.state != .capturing {
-                SystemAudioCaptureManager.shared.retryAccessRequest()
-            }
             audioCaptureState = SystemAudioCaptureManager.shared.state
             #endif
         case .weatherLocation:

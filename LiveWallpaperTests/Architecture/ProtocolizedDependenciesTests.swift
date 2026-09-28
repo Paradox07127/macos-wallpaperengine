@@ -564,7 +564,7 @@ struct ProtocolizedDependenciesTests {
         #expect(manager.consumerCountForTesting == 0)
     }
 
-    @Test("Scene sessions and audio settings balance capture demand ownership")
+    @Test("Scene sessions own capture demand and settings remain passive")
     func systemAudioCaptureDemandOwnersAreWired() throws {
         let session = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Session/SceneWallpaperSession.swift"
@@ -582,8 +582,90 @@ struct ProtocolizedDependenciesTests {
         #expect(session.contains("audioCaptureDemandController.release()"))
         #expect(session.contains("extension SystemAudioCaptureManager: SystemAudioCaptureDemandControlling"))
         #expect(actor.contains("func requiresSystemAudioCapture() -> Bool"))
-        #expect(settings.contains("retainAudioCaptureStatusConsumer()"))
-        #expect(settings.contains("releaseAudioCaptureStatusConsumer()"))
+        #expect(!settings.contains("SystemAudioCaptureManager.shared.retain()"))
+        #expect(!settings.contains("SystemAudioCaptureManager.shared.release()"))
+    }
+
+    @Test("Failed audio capture stays suppressed across demand churn in the same enabled epoch")
+    func audioFailureDoesNotRetryOnDemandChurn() {
+        let service = RecordingAudioCaptureService()
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        defer { manager.shutdown() }
+        manager.setEnabled(true)
+        manager.retain()
+        let failure = manager.state
+        #expect(failure == .failed("Synthetic capture failure"))
+        manager.retain()
+        manager.release()
+        manager.release()
+        #expect(manager.state == failure)
+        manager.retain()
+        manager.setEnabled(true)
+        #expect(service.startCount == 1)
+        #expect(manager.state == failure)
+    }
+
+    @Test("Explicit audio retry permits exactly one new attempt")
+    func audioExplicitRetryAttemptsOnce() {
+        let service = RecordingAudioCaptureService()
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        defer { manager.shutdown() }
+        manager.setEnabled(true)
+        manager.retain()
+        manager.retryAccessRequest()
+        #expect(service.startCount == 2)
+        manager.retain()
+        manager.release()
+        #expect(service.startCount == 2)
+    }
+
+    @Test("Turning audio response off and on permits a new attempt")
+    func audioNewEnabledEpochCanRetry() {
+        let service = RecordingAudioCaptureService()
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        defer { manager.shutdown() }
+        manager.retain()
+        manager.setEnabled(true)
+        manager.setEnabled(false)
+        #expect(manager.state == .idle)
+        #expect(service.startCount == 1)
+        manager.setEnabled(true)
+        #expect(service.startCount == 2)
+    }
+
+    @Test("Audio opt-in and explicit retry never capture without real demand")
+    func audioRequiresRealDemandAndReleasesService() {
+        let service = RecordingAudioCaptureService()
+        service.fails = false
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        defer { manager.shutdown() }
+        manager.setEnabled(true)
+        manager.retryAccessRequest()
+        #expect(service.startCount == 0)
+        #expect(manager.state == .idle)
+        manager.retain()
+        #expect(service.startCount == 1)
+        #expect(manager.state == .capturing)
+        manager.release()
+        #expect(service.stopCount == 1)
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Shutdown prevents retrying a failed audio capture")
+    func audioFailedShutdownRemainsOneWay() {
+        let service = RecordingAudioCaptureService()
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        manager.setEnabled(true)
+        manager.retain()
+        manager.shutdown()
+        manager.retryAccessRequest()
+        manager.setEnabled(false)
+        manager.setEnabled(true)
+        manager.release()
+        manager.retain()
+        #expect(service.startCount == 1)
+        #expect(manager.isTerminated)
+        #expect(manager.state == .idle)
     }
 
     @Test("System audio shutdown rejects every restart entry")
@@ -735,3 +817,29 @@ private final class LockedCounter: @unchecked Sendable {
         lock.unlock()
     }
 }
+
+#if !LITE_BUILD
+@MainActor
+private final class RecordingAudioCaptureService: SystemAudioCaptureServing {
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    var fails = true
+
+    private struct Failure: Error, CustomStringConvertible {
+        var description: String {
+            "Synthetic capture failure"
+        }
+    }
+
+    func start() throws {
+        startCount += 1
+        if fails {
+            throw Failure()
+        }
+    }
+
+    func stop() {
+        stopCount += 1
+    }
+}
+#endif

@@ -4,6 +4,14 @@ import LiveWallpaperCore
 import os
 
 @MainActor
+protocol SystemAudioCaptureServing: AnyObject {
+    func start() throws
+    func stop()
+}
+
+extension SystemAudioCaptureService: SystemAudioCaptureServing {}
+
+@MainActor
 final class SystemAudioCaptureManager {
     static let shared = SystemAudioCaptureManager()
 
@@ -24,14 +32,22 @@ final class SystemAudioCaptureManager {
     private var consumerCount = 0
     /// Process-lifetime shutdown latch — rejects later producer callbacks during terminate.
     private(set) var isTerminated = false
-    private var serviceBox: SystemAudioCaptureService?
+    private var serviceBox: (any SystemAudioCaptureServing)?
+    private let makeService: @MainActor () -> any SystemAudioCaptureServing
+    /// Preserve a failed attempt across demand changes until the user retries or toggles the feature.
+    private var startupFailure: String?
 
-    init() {}
+    init(makeService: @escaping @MainActor () -> any SystemAudioCaptureServing = {
+        SystemAudioCaptureService(broker: SystemAudioCaptureManager.broker)
+    }) {
+        self.makeService = makeService
+    }
 
     func setEnabled(_ enabled: Bool) {
         guard !isTerminated else { return }
         guard isEnabled != enabled else { return }
         isEnabled = enabled
+        startupFailure = nil
         Logger.notice("[AudioCapture] manager: enabled=\(enabled)", category: .audioCapture)
         reconcile()
     }
@@ -41,6 +57,7 @@ final class SystemAudioCaptureManager {
         if !isEnabled {
             isEnabled = true
         }
+        startupFailure = nil
         stopIfNeeded()
         reconcile()
     }
@@ -62,6 +79,7 @@ final class SystemAudioCaptureManager {
         isTerminated = true
         isEnabled = false
         consumerCount = 0
+        startupFailure = nil
         stopIfNeeded()
     }
 
@@ -92,17 +110,20 @@ final class SystemAudioCaptureManager {
     }
 
     private func startIfNeeded() {
-        guard serviceBox == nil else { return }
-        let service = SystemAudioCaptureService(broker: Self.broker)
+        guard serviceBox == nil, startupFailure == nil else { return }
+        let service = makeService()
         do {
             try service.start()
             serviceBox = service
             Self.captureActive.withLock { $0 = true }
             state = .capturing
         } catch {
+            service.stop()
             serviceBox = nil
             Self.captureActive.withLock { $0 = false }
-            state = .failed("\(error)")
+            let reason = String(describing: error)
+            startupFailure = reason
+            state = .failed(reason)
             Logger.warning("[AudioCapture] manager: capture start failed: \(error)", category: .audioCapture)
         }
     }
@@ -112,7 +133,7 @@ final class SystemAudioCaptureManager {
         serviceBox = nil
         Self.captureActive.withLock { $0 = false }
         Self.broker.resetToSilence()
-        state = .idle
+        state = startupFailure.map(State.failed) ?? .idle
     }
 }
 #endif
