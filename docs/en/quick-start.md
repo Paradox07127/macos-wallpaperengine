@@ -28,6 +28,9 @@ Skipping onboarding is fine — everything below works from the Settings window.
 3. In **Wallpaper**, use the preview controls for fit, audio and frame rate; the inspector shows the selected type's additional options. Video adds speed and color effects; web adds JavaScript, tracking protection, CSS and refresh; scenes expose their author's custom properties and presets.
 4. Frame-rate controls accept a custom integer up to that display's current refresh rate, plus **Max**. Presets include 15/24/30/45/60/120 where the display supports them. The selected value is a ceiling, not a measurement of achieved frames.
 5. **Overlays** opens one canvas with a layer list, an object inspector and an add palette. Add widgets, a clock or music, then select and position them. The effect layer contains particles and weather response. Sample Data previews layout without claiming to show live measurements.
+
+   With widget interaction enabled, only visible widget areas receive clicks; empty desktop areas stay click-through. Selecting and moving objects in the overlay editor remains interactive.
+
 6. Ordinary property edits save as you interact. **Playlist & Schedule** is a separate draft editor with **Save** and **Cancel**.
 
 ## 4) Playlists and rotation

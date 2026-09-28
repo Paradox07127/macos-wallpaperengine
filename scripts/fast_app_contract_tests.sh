@@ -25,6 +25,7 @@ EOF
 
 SUITES=(
   GeneralSettingsOwnershipCharacterizationTests
+  SettingsPersistenceFailureTests
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
@@ -32,6 +33,7 @@ SUITES=(
   ScreenRuntimeOwnershipTests
   InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
+  QAControlPlaneScreenIdentityTests
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
@@ -62,6 +64,7 @@ SUITES=(
   BoardPointerScopeTests
   MusicLayerPointerGateTests
   RuntimeLeaseChurnCharacterizationTests
+  RuntimeTests
   MonitorSamplerOwnershipCharacterizationTests
   SuspendEnergyTests
   RepositoryRootTests
@@ -72,6 +75,7 @@ SUITES=(
   # Cached-login verdict wording: a blocked network must not read as an
   # unrecognized response or send the user to re-sign in.
   SteamCachedLoginVerdictTests
+  SteamCMDOutputStreamTests
   WorkshopDownloadReadinessTests
   WorkshopFolderImportCoordinatorTests
   DesktopPictureFrameExtractorTests

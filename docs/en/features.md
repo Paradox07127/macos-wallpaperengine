@@ -11,10 +11,12 @@ and the app target's build gates.
 
 - **Menu bar**: add a wallpaper, global on/off, per-display playback and volume,
   playlist navigation, CPU/GPU/RAM/thermal status, updates, settings and quit.
-- **Settings window**: Displays, **Saved** (wallpapers and display schemes),
-  Apple Aerials, Steam Workshop (Pro), and System Wallpaper (macOS 26+).
-- **Display inspector**: Wallpaper and Overlays tabs. Overlays has separate
-  Weather, Widgets and Music pages, each with its own controls and preview.
+- **Management window**: Overview, Wallpaper Library, **Saved** (bookmarks and display schemes),
+  System Wallpaper (macOS 26+), Workshop (Pro), and Settings.
+- **Display editor**: Wallpaper and Overlays tabs. Overlays uses one canvas,
+  a layer list, an object inspector and an add palette for widgets, clock and music;
+  particles and weather response belong to the effect layer. Widget interaction
+  receives clicks only over visible widgets; empty desktop areas stay click-through.
 - **Languages**: English, Simplified Chinese, Traditional Chinese, Japanese and Spanish.
 
 | Settings page | Edition | Contents |
