@@ -7,9 +7,11 @@ enum WeatherReactivePolicy {
     static func shouldMonitor(
         configurations: [ScreenConfiguration],
         activeScreenIDs: Set<CGDirectDisplayID>,
-        weatherWidgetPlaced: Bool = false
+        weatherWidgetPlaced: Bool = false,
+        wallpapersEnabled: Bool = true
     ) -> Bool {
-        weatherWidgetPlaced || configurations.contains { configuration in
+        guard wallpapersEnabled else { return false }
+        return weatherWidgetPlaced || configurations.contains { configuration in
             activeScreenIDs.contains(configuration.screenID)
                 && configuration.particleEffect != .none
                 && configuration.effectConfig.weatherReactive

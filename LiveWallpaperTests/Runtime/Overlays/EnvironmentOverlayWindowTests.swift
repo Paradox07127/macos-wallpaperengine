@@ -130,6 +130,39 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
     }
 
     @MainActor
+    func testGlobalGateStopsWeatherMonitoringAndPreventsStartup() throws {
+        let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigurationPersistence())
+        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
+        configuration.particleEffect = .rain
+        configuration.effectConfig.weatherReactive = true
+        store.save(configuration)
+        let service = WeatherReactiveService(locationProvider: UnresolvedWeatherProvider())
+        var enabled = false
+        let coordinator = WallpaperEffectsCoordinator(
+            weatherService: service,
+            configurationStore: store,
+            screensProvider: { [screen] },
+            saveConfiguration: { _ in },
+            applyFrameRateLimit: { _, _ in },
+            screenRefreshRate: { _ in 60 },
+            weatherWidgetPlaced: { true },
+            isGloballyEnabled: { enabled }
+        )
+        defer { coordinator.shutdown() }
+
+        coordinator.startWeatherMonitoring()
+        XCTAssertFalse(service.isMonitoringForTesting)
+        enabled = true
+        coordinator.monitorBoardsDidChange()
+        XCTAssertTrue(service.isMonitoringForTesting)
+        enabled = false
+        // The same entry that ScreenManager.applyGlobalRenderGate now calls.
+        coordinator.globalRenderGateDidChange()
+        XCTAssertFalse(service.isMonitoringForTesting)
+    }
+
+    @MainActor
     func testParticleOverlayLeavesWithItsDisplay() throws {
         let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
         var live: [Screen] = [screen]
@@ -183,5 +216,13 @@ private final class InMemoryConfigurationPersistence: ScreenConfigurationPersist
 
     func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
         self.configurations = Dictionary(uniqueKeysWithValues: configurations.map { ($0.screenID, $0) })
+    }
+}
+
+@MainActor
+private final class UnresolvedWeatherProvider: WeatherLocationProviding {
+    func resolveCoordinate() async -> WeatherLocationResolution { .unresolved }
+    func requestCoreLocationAuthorizationIfNeeded() {
+        XCTFail("Monitoring must not initiate authorization")
     }
 }

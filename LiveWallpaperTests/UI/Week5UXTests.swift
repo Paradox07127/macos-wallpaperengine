@@ -184,9 +184,13 @@ struct WeatherLocationProviderFallbackTests {
         )
         SettingsManager.shared.saveGlobalSettings(settings)
 
-        let provider = WeatherLocationProvider()
+        let client = FakeWeatherCoreLocationClient(authorizationStatus: .notDetermined)
+        let provider = WeatherLocationProvider(coreLocationClient: client)
+        provider.requestCoreLocationAuthorizationIfNeeded()
         let resolution = await provider.resolveCoordinate()
 
+        #expect(client.requestAuthorizationCount == 0)
+        #expect(client.requestLocationCount == 0)
         #expect(resolution.resolvedSource == .manual)
         #expect(resolution.coordinate?.latitude == 51.5074)
         #expect(resolution.displayName?.contains("London") == true)
@@ -223,6 +227,45 @@ struct WeatherLocationProviderFallbackTests {
         let resolution = await provider.resolveCoordinate()
 
         #expect(resolution == .unresolved)
+    }
+
+    @Test("Background weather and migrated sources never ask for first location authorization")
+    func backgroundRefreshRequiresExplicitAuthorization() async throws {
+        let original = SettingsManager.shared.loadGlobalSettings()
+        defer { SettingsManager.shared.saveGlobalSettings(original) }
+        let legacy = try JSONDecoder().decode(
+            WeatherLocationPreference.self, from: Data(#"{"source":"ipGeolocation"}"#.utf8)
+        )
+        for preference in [WeatherLocationPreference.default, legacy] {
+            var settings = original
+            settings.weatherLocation = preference
+            SettingsManager.shared.saveGlobalSettings(settings)
+            let client = FakeWeatherCoreLocationClient(authorizationStatus: .notDetermined)
+            let provider = WeatherLocationProvider(coreLocationClient: client)
+            var didResolve = false
+            let resolve = Task {
+                let value = await provider.resolveCoordinate()
+                didResolve = true
+                return value
+            }
+            let resolvedWithoutConsent = await eventually { didResolve }
+            #expect(resolvedWithoutConsent)
+            // Bound a regression: the old implicit-authorization path would wait forever.
+            if !resolvedWithoutConsent { resolve.cancel() }
+            #expect(await resolve.value == .unresolved)
+            let service = WeatherReactiveService(locationProvider: provider)
+            service.startMonitoring()
+            #expect(await eventually { service.locationStatus == .notDetermined })
+            service.refresh()
+            NotificationCenter.default.post(name: .weatherLocationPreferenceDidChange, object: nil)
+            for _ in 0..<10 { await Task.yield() }
+            #expect(client.requestAuthorizationCount == 0)
+            #expect(client.requestLocationCount == 0)
+            #expect(provider.pendingAuthorizationWaiterCountForTesting == 0)
+            #expect(service.locationStatus == .notDetermined)
+            #expect(service.lastError == nil)
+            service.shutdown()
+        }
     }
 
     @Test("Concurrent system location resolves share one request and one result")
@@ -271,9 +314,9 @@ struct WeatherLocationProviderFallbackTests {
 
         let client = FakeWeatherCoreLocationClient(authorizationStatus: .notDetermined)
         let provider = WeatherLocationProvider(coreLocationClient: client)
-        // Mirrors WeatherReactiveService.startMonitoring(): the explicit prompt
-        // and the immediately-started resolve must share one authorization flow.
+        // Mirrors the Weather settings Grant action, followed by its refresh.
         provider.requestCoreLocationAuthorizationIfNeeded()
+        provider.requestCoreLocationAuthorizationIfNeeded() // Double-click stays one request.
         var firstDidResolve = false
         let first = Task {
             let resolution = await provider.resolveCoordinate()
@@ -326,6 +369,7 @@ struct WeatherLocationProviderFallbackTests {
         for status in [CLAuthorizationStatus.denied, .restricted] {
             let client = FakeWeatherCoreLocationClient(authorizationStatus: .notDetermined)
             let provider = WeatherLocationProvider(coreLocationClient: client)
+            provider.requestCoreLocationAuthorizationIfNeeded()
             let resolutionTask = Task { await provider.resolveCoordinate() }
 
             let promptStarted = await eventually { client.requestAuthorizationCount == 1 }
@@ -465,6 +509,7 @@ struct WeatherLocationProviderFallbackTests {
 
         let client = FakeWeatherCoreLocationClient(authorizationStatus: .notDetermined)
         let provider = WeatherLocationProvider(coreLocationClient: client)
+        provider.requestCoreLocationAuthorizationIfNeeded()
         let cancelled = Task { await provider.resolveCoordinate() }
         let promptStarted = await eventually { client.requestAuthorizationCount == 1 }
         #expect(promptStarted)

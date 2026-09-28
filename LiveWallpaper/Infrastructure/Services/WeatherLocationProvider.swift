@@ -123,6 +123,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
     private enum CoreLocationAttempt {
         case resolved(CLLocation)
         case permissionDenied
+        case authorizationRequired
         case unavailable
         case cancelled
     }
@@ -191,6 +192,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 )
             }
             if let resolved = tryManual(preference) { return resolved }
+            if case .authorizationRequired = attempt { return .unresolved }
             let failureKind: WeatherLocationResolution.FailureKind
             if case .permissionDenied = attempt {
                 failureKind = .permissionDenied
@@ -235,6 +237,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
         }
     }
 
+    /// Only the explicit Weather settings grant action may start first authorization.
     func requestCoreLocationAuthorizationIfNeeded() {
         guard SettingsManager.shared.loadGlobalSettings().weatherLocation.source == .coreLocation else {
             return
@@ -250,6 +253,8 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
     private func tryCoreLocation() async -> CoreLocationAttempt {
         var status = coreLocationClient.authorizationStatus
         if status == .notDetermined {
+            // Background refresh may join a user-started prompt, but never starts one.
+            guard authorizationRequestInFlight else { return .authorizationRequired }
             guard let resolvedStatus = await waitForAuthorization() else {
                 return .cancelled
             }
@@ -311,10 +316,6 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 }
 
                 pendingAuthorizationContinuations[waiterID] = continuation
-                guard !authorizationRequestInFlight else { return }
-
-                authorizationRequestInFlight = true
-                coreLocationClient.requestWhenInUseAuthorization()
             }
         } onCancel: {
             Task { @MainActor [weak self] in

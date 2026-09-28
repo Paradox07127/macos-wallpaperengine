@@ -485,6 +485,23 @@ struct WeatherReactivePolicyTests {
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
     }
 
+    @Test("Global wallpaper disable suppresses both weather particle and widget demand")
+    func disabledWallpapersNeverDemandWeather() {
+        var configuration = ScreenConfiguration(screenID: 10, videoBookmarkData: Data())
+        configuration.particleEffect = .rain
+        configuration.effectConfig.weatherReactive = true
+        for widgetPlaced in [false, true] {
+            #expect(!WeatherReactivePolicy.shouldMonitor(
+                configurations: [configuration], activeScreenIDs: [10],
+                weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: false
+            ))
+            #expect(WeatherReactivePolicy.shouldMonitor(
+                configurations: [configuration], activeScreenIDs: [10],
+                weatherWidgetPlaced: widgetPlaced, wallpapersEnabled: true
+            ))
+        }
+    }
+
     @Test("weather is fetched only for a display that both draws particles and follows the sky")
     func monitorNeedsBothSwitches() {
         let id: CGDirectDisplayID = 10

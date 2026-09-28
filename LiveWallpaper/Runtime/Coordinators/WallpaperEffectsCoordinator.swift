@@ -185,6 +185,11 @@ final class WallpaperEffectsCoordinator {
         reconcileEnvironmentOverlays()
     }
 
+    func globalRenderGateDidChange() {
+        refreshWeatherMonitoringState()
+        reconcileEnvironmentOverlays()
+    }
+
     func monitorBoardsDidChange() {
         guard !isShutdown else { return }
         refreshWeatherMonitoringState()
@@ -388,7 +393,8 @@ final class WallpaperEffectsCoordinator {
         let configurations = activeScreenIDs.compactMap { configurationStore.get(for: $0) }
         if WeatherReactivePolicy.shouldMonitor(
             configurations: configurations, activeScreenIDs: activeScreenIDs,
-            weatherWidgetPlaced: weatherWidgetPlaced()
+            weatherWidgetPlaced: weatherWidgetPlaced(),
+            wallpapersEnabled: isGloballyEnabled()
         ) {
             weatherService.startMonitoring()
         } else {

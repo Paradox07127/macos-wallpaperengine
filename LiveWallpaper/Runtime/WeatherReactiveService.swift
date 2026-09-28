@@ -119,12 +119,14 @@ final class WeatherReactiveService {
         }
     }
 
+    #if DEBUG
+    var isMonitoringForTesting: Bool { updateTask != nil }
+    #endif
+
     // MARK: - Public API
 
     func startMonitoring() {
         guard !isShutdown else { return }
-        locationProvider.requestCoreLocationAuthorizationIfNeeded()
-
         updateTask?.cancel()
         startFetch(force: false)
         updateTask = Task { [weak self] in
