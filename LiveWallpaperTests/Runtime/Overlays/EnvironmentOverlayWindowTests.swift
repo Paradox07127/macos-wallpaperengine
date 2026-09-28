@@ -94,7 +94,7 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testParticleOverlayHonoursTheCapturePolicy() {
+    func testParticleOverlayHonoursTheCapturePolicy() throws {
         let restore = WallpaperCapturePolicy.allowsScreenCapture
         defer { WallpaperCapturePolicy.allowsScreenCapture = restore }
         let controller = EnvironmentOverlayController()
@@ -111,11 +111,47 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             "a new overlay ignored the capture setting"
         )
 
+        // Never turn a creation regression into a prerequisite skip.
+        guard controller.debugWindowSharingType(screenID: screenID) == NSWindow.SharingType.none else { return }
+        if CaptureSharingTestHost.isAdHocSigned {
+            let panel = try XCTUnwrap(controller.debugWindow(screenID: screenID))
+            XCTAssertFalse(NSScreen.screens.contains { $0.frame.intersects(panel.frame) })
+            guard !NSScreen.screens.contains(where: { $0.frame.intersects(panel.frame) }) else { return }
+            // Match the live overlay's bare AppKit panel before waiving its update assertion.
+            let control = NSPanel(contentRect: panel.frame, styleMask: panel.styleMask,
+                                  backing: .buffered, defer: false)
+            control.isReleasedWhenClosed = false
+            defer { control.close() }
+            control.isFloatingPanel = true
+            control.level = panel.level
+            control.hidesOnDeactivate = false
+            control.canHide = false
+            control.isOpaque = false
+            control.backgroundColor = .clear
+            control.ignoresMouseEvents = true
+            control.isRestorable = false
+            control.animationBehavior = .none
+            control.collectionBehavior = panel.collectionBehavior
+            control.sharingType = .none
+            control.orderFrontRegardless()
+            control.sharingType = .readOnly
+            try XCTSkipIf(
+                control.sharingType != .readOnly,
+                "Ad-hoc test host: a matching bare NSPanel also rejects none→readOnly "
+                    + "(requested=1, actual=\(control.sharingType.rawValue)); "
+                    + "creation passed, but live capture-policy propagation requires a normally signed run. "
+                    + "This property test does not verify screen-capture privacy."
+            )
+        }
+
         WallpaperCapturePolicy.allowsScreenCapture = true
-        controller.applyCapturePolicy(WallpaperCapturePolicy.windowSharingType)
+        let requested = WallpaperCapturePolicy.windowSharingType
+        XCTAssertEqual(requested, .readOnly)
+        controller.applyCapturePolicy(requested)
         XCTAssertEqual(
             controller.debugWindowSharingType(screenID: screenID), .readOnly,
-            "a policy change did not reach a live overlay"
+            "a policy change did not reach a live overlay; actual raw value: "
+                + "\(String(describing: controller.debugWindowSharingType(screenID: screenID)?.rawValue))"
         )
     }
 

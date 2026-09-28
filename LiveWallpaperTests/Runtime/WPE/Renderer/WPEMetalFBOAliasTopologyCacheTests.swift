@@ -645,7 +645,6 @@ private func independentBarTemplate(
                       geometry: aliasGeometry(size: size, scale: scale), passes: [material, copy])
 }
 
-
 private func aliasGeometry(
     size: CGSize,
     scale: SIMD3<Double> = SIMD3<Double>(1, 1, 1),

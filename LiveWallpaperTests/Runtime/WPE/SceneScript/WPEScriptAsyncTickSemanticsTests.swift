@@ -366,7 +366,15 @@ struct WPEScriptAsyncTickSemanticsTests {
         #expect(micros > 0)
     }
 
-    @Test("Real scene script cost: weighted per-frame total for 3660962877")
+    private nonisolated static var scriptCostCorpusURL: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_SCRIPT_COST_CORPUS_PATH")
+    }
+
+    @Test(
+        "Real scene script cost: weighted per-frame total for 3660962877",
+        .enabled(if: scriptCostCorpusURL != nil,
+                 "Set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_SCRIPT_COST_CORPUS_PATH to an explicit absolute corpus path")
+    )
     func realSceneScriptCostDistribution() async throws {
         struct Entry: Decodable {
             let kind: String
@@ -374,14 +382,10 @@ struct WPEScriptAsyncTickSemanticsTests {
             let script: String
             let count: Int
         }
-        let url = URL.applicationSupportDirectory
-            .appending(path: "LiveWallpaper/script-cost-corpus.json")
-        guard let data = try? Data(contentsOf: url),
-              let corpus = try? JSONDecoder().decode([Entry].self, from: data)
-        else {
-            print("[scenecost] corpus not staged at \(url.path(percentEncoded: false)) — skipped")
-            return
-        }
+        let url = try #require(Self.scriptCostCorpusURL)
+        // Once explicitly selected, a missing/unreadable/malformed fixture is a failure.
+        let data = try Data(contentsOf: url)
+        let corpus = try JSONDecoder().decode([Entry].self, from: data)
 
         let governor = WPESceneScriptExecutionGovernor(limit: 1024)
         var weightedTotalUs = 0.0
@@ -431,6 +435,7 @@ struct WPEScriptAsyncTickSemanticsTests {
             print("[scenecost] \(entry.kind)/\(entry.prop) x\(entry.count) \(Int(entry.script.count))B -> \(us)us")
         }
 
+        try #require(!perTick.isEmpty, "The selected corpus produced no measured script workloads")
         let sorted = perTick.sorted()
         print("""
         [scenecost] distinct=\(perTick.count) failed=\(failures.count) \
@@ -438,6 +443,5 @@ struct WPEScriptAsyncTickSemanticsTests {
         weightedFrameMs=\(weightedTotalUs / 1000) frameBudgetMs=16.667
         """)
         for failure in failures { print("[scenecost] FAILED \(failure)") }
-        #expect(perTick.isEmpty == false)
     }
 }

@@ -100,6 +100,57 @@ struct WorkshopMetadataBatchTests {
         #expect(recorder.bodies.isEmpty)
     }
 
+    @Test("Invalid pasted URLs cannot carry credentials into diagnostic JSON")
+    @MainActor
+    func invalidInputDiagnosticsRedactURLSecrets() throws {
+        let recorder = BatchRequestRecorder { _, _ in
+            .http(status: 500, headers: [:], body: Data())
+        }
+        defer { recorder.releaseAll() }
+        let model = WorkshopPasteQueueModel(metadataService: Self.metadataService(recorder))
+        let inputs = [
+            "https://fixture.invalid/wallpaper?token=fixtureQuerySecret#fixtureFragmentSecret",
+            "https://fixtureUser:fixturePassword@fixture.invalid/wallpaper",
+            "review://fixture.invalid/wallpaper#fixtureCustomFragment",
+        ]
+        model.updateRawInput(inputs.joined(separator: "\n"))
+        model.ingestFromRawInput()
+
+        #expect(model.rows.count == inputs.count)
+        #expect(model.rows.allSatisfy { $0.state == .invalidInput })
+        #expect(recorder.bodies.isEmpty)
+        for row in model.rows {
+            let payload = try #require(model.diagnosticPayload(for: row.id))
+            let encoded = payload.encodedJSON()
+            let decoded = try JSONDecoder().decode(WorkshopDiagnosticPayload.self, from: Data(encoded.utf8))
+            #expect(decoded.phase == .metadata)
+            #expect(decoded.regexMatch?.hasPrefix("parser:") == true)
+            #expect(decoded.tail.contains("fixture.invalid/wallpaper"))
+            for secret in [
+                "fixtureQuerySecret", "fixtureFragmentSecret", "fixtureUser",
+                "fixturePassword", "fixtureCustomFragment",
+            ] {
+                #expect(!encoded.contains(secret))
+            }
+        }
+    }
+
+    @Test("Workshop export retains error codes while sharing general credential redaction")
+    func diagnosticPayloadRedactsGeneralCredentials() throws {
+        let payload = WorkshopDiagnosticPayload(
+            phase: .download,
+            regexMatch: "network:timeout",
+            tail: "ERROR 408 token=fixtureToken password=fixturePassword Bearer fixtureBearer"
+        )
+        let encoded = payload.encodedJSON()
+        let decoded = try JSONDecoder().decode(WorkshopDiagnosticPayload.self, from: Data(encoded.utf8))
+        #expect(decoded.regexMatch == "network:timeout")
+        #expect(decoded.tail.contains("ERROR 408"))
+        for secret in ["fixtureToken", "fixturePassword", "fixtureBearer"] {
+            #expect(!encoded.contains(secret))
+        }
+    }
+
     // MARK: - Paste queue batching
 
     @Test("Ingesting three links issues a single batched POST and settles every row")

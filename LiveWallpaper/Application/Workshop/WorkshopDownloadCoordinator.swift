@@ -3,6 +3,19 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
+/// The existing Doctor owns transport and security scope; this seam lets tests
+/// deliver late content without running SteamCMD. It owns no application state.
+@MainActor
+protocol WorkshopItemDownloading {
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported>
+}
+
+extension SteamCMDDoctorService: WorkshopItemDownloading {}
+
 @MainActor
 @Observable
 final class WorkshopDownloadCoordinator {
@@ -32,23 +45,37 @@ final class WorkshopDownloadCoordinator {
 
     @ObservationIgnored private let importService: WallpaperEngineImportService
     @ObservationIgnored private let repositoryCoordinator: WorkshopRepositoryCoordinator
+    @ObservationIgnored private let settings: SettingsManager
+    @ObservationIgnored private let toasts: WorkshopToastCenter
+    @ObservationIgnored private let cancelSteamCMD: @MainActor (UUID) async -> Void
     @ObservationIgnored private var tasks: [UInt64: Task<Void, Never>] = [:]
-    @ObservationIgnored private var attempts: [UInt64: UUID] = [:]
     @ObservationIgnored private var activeDownloads: [UInt64: WorkshopDownloadAttempt] = [:]
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
-        repositoryCoordinator: WorkshopRepositoryCoordinator = .shared
+        repositoryCoordinator: WorkshopRepositoryCoordinator = .shared,
+        settings: SettingsManager = .shared,
+        toasts: WorkshopToastCenter = .shared,
+        cancelSteamCMD: @escaping @MainActor (UUID) async -> Void = {
+            _ = await SteamConnectorClient.cancelActiveSteamCMD(operationID: $0.uuidString)
+        }
     ) {
         self.importService = importService
         self.repositoryCoordinator = repositoryCoordinator
+        self.settings = settings
+        self.toasts = toasts
+        self.cancelSteamCMD = cancelSteamCMD
     }
 
-    func phase(for itemID: UInt64) -> DownloadPhase { phases[itemID] ?? .idle }
+    func phase(for itemID: UInt64) -> DownloadPhase {
+        phases[itemID] ?? .idle
+    }
 
     func isBusy(_ itemID: UInt64) -> Bool {
         // tasks outlives the phase while a root's dependencies are still downloading; without it a second Download would leave the first chain running unattended.
-        if tasks[itemID] != nil { return true }
+        if tasks[itemID] != nil {
+            return true
+        }
         switch phases[itemID] {
         case .downloading, .importing: return true
         default: return false
@@ -60,12 +87,11 @@ final class WorkshopDownloadCoordinator {
     }
 
     @discardableResult
-    func download(itemID: UInt64, title: String, using doctor: SteamCMDDoctorService) -> WorkshopDownloadAttempt? {
+    func download(itemID: UInt64, title: String, using doctor: any WorkshopItemDownloading) -> WorkshopDownloadAttempt? {
         guard !isBusy(itemID) else { return activeDownloads[itemID] }
         let attemptID = UUID()
         let attempt = WorkshopDownloadAttempt(id: attemptID, itemID: itemID)
         activeDownloads[itemID] = attempt
-        attempts[itemID] = attemptID
         clearProgress(itemID)
         phases[itemID] = .downloading
         tasks[itemID] = Task { [weak self] in
@@ -79,19 +105,28 @@ final class WorkshopDownloadCoordinator {
     func cancel(_ itemID: UInt64) {
         tasks[itemID]?.cancel()
         tasks[itemID] = nil
-        let cancelledAttempt = attempts[itemID]
-        attempts[itemID] = nil
+        let cancelledAttempt = activeDownloads[itemID]?.id
         phases[itemID] = .idle
         clearProgress(itemID)
         fetchingDependencies.remove(itemID)
         activeDownloads.removeValue(forKey: itemID)?.finish(.cancelled)
         // Task.cancel invalidates the connection, which makes the connector drop a still-queued run; a child already running is signalled here, scoped to this attempt's id so another item or a retry survives.
         if let cancelledAttempt {
-            Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelledAttempt.uuidString) }
+            Task { [cancelSteamCMD] in await cancelSteamCMD(cancelledAttempt) }
         }
     }
 
-    private func run(itemID: UInt64, title: String, doctor: SteamCMDDoctorService, attemptID: UUID) async {
+    #if DEBUG
+    func downloadTaskForTesting(itemID: UInt64) -> Task<Void, Never>? {
+        tasks[itemID]
+    }
+    #endif
+
+    private func isCurrent(itemID: UInt64, attemptID: UUID) -> Bool {
+        !Task.isCancelled && activeDownloads[itemID]?.id == attemptID
+    }
+
+    private func run(itemID: UInt64, title: String, doctor: any WorkshopItemDownloading, attemptID: UUID) async {
         let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
         do {
             result = try await repositoryCoordinator.withExclusiveMutation(
@@ -117,11 +152,11 @@ final class WorkshopDownloadCoordinator {
                         }
                     },
                     onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
-                        guard let self, self.attempts[itemID] == attemptID, !Task.isCancelled else { return nil }
-                        self.phases[itemID] = .importing
-                        self.clearProgress(itemID)
-                        let result = try? await self.importService.importProject(folder: folderURL)
-                        guard !Task.isCancelled, self.attempts[itemID] == attemptID else { return nil }
+                        guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
+                        phases[itemID] = .importing
+                        clearProgress(itemID)
+                        let result = try? await importService.importProject(folder: folderURL)
+                        guard isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                         return result
                     }
                 )
@@ -136,27 +171,29 @@ final class WorkshopDownloadCoordinator {
         }
         // A newer attempt may have superseded this one mid-flight; only the
         // current attempt may mutate shared state.
-        guard !Task.isCancelled, attempts[itemID] == attemptID else { return }
+        guard isCurrent(itemID: itemID, attemptID: attemptID) else { return }
 
         var outcome: WorkshopDownloadOutcome?
         switch result {
-        case .imported(let importResult):
-            outcome = await finishImport(importResult, itemID: itemID, title: title)
-            if case .unsupported(let origin)? = importResult, !origin.missingDependencyIDs.isEmpty {
+        case let .imported(importResult):
+            outcome = await finishImport(importResult, itemID: itemID, title: title, attemptID: attemptID)
+            guard isCurrent(itemID: itemID, attemptID: attemptID) else { return }
+            if case let .unsupported(origin)? = importResult, !origin.missingDependencyIDs.isEmpty {
                 fetchingDependencies.insert(itemID)
                 outcome = await fetchDependencies(
                     rootItemID: itemID,
                     rootTitle: title,
+                    attemptID: attemptID,
                     missingIDs: origin.missingDependencyIDs,
                     doctor: doctor
                 )
                 // A cancel, or a retry that started after it, owns the item now.
-                if attempts[itemID] == attemptID {
+                if isCurrent(itemID: itemID, attemptID: attemptID) {
                     fetchingDependencies.remove(itemID)
                     phases[itemID] = .succeeded
                 }
             }
-        case .notConfigured(let reason):
+        case let .notConfigured(reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         case .loginRequired:
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "Loomscreen's Steam download session isn't connected. Connect your account in Settings → Workshop, then try again.", bundle: .appLanguage, comment: "Steam download blocked because Loomscreen's own Steam session is not signed in; shared by engine-assets and Workshop item downloads.")))
@@ -168,13 +205,12 @@ final class WorkshopDownloadCoordinator {
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "This item is no longer available on Steam.", bundle: .appLanguage, comment: "Workshop download failed: item removed from Steam.")))
         case .timedOut:
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "The download timed out. Try again.", bundle: .appLanguage, comment: "Workshop download timed out.")))
-        case .failed(let reason):
+        case let .failed(reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         }
         // Released here rather than in `finish` so the dependency fetch above
         // still counts as this item's in-flight download for `cancel`.
-        if attempts[itemID] == attemptID {
-            attempts[itemID] = nil
+        if isCurrent(itemID: itemID, attemptID: attemptID) {
             tasks[itemID] = nil
             let attempt = activeDownloads.removeValue(forKey: itemID)
             if let outcome {
@@ -194,7 +230,7 @@ final class WorkshopDownloadCoordinator {
         downloadedBytes: UInt64?,
         totalBytes: UInt64?
     ) {
-        guard attempts[itemID] == attemptID, case .downloading? = phases[itemID], percent.isFinite else { return }
+        guard isCurrent(itemID: itemID, attemptID: attemptID), case .downloading? = phases[itemID], percent.isFinite else { return }
         progress[itemID] = min(max(percent / 100, 0), 1)
         progressBytes[itemID] = DownloadProgressBytes(
             downloaded: downloadedBytes,
@@ -208,8 +244,9 @@ final class WorkshopDownloadCoordinator {
     }
 
     private func finishImport(
-        _ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String
+        _ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String, attemptID: UUID
     ) async -> WorkshopDownloadOutcome {
+        guard isCurrent(itemID: itemID, attemptID: attemptID) else { return .cancelled }
         guard let result else {
             let reason = String(localized: "Couldn't read the downloaded files.", bundle: .appLanguage, comment: "Workshop import failed: unreadable download.")
             finish(itemID: itemID, title: title, phase: .failed(reason))
@@ -227,8 +264,9 @@ final class WorkshopDownloadCoordinator {
                 finishUnsupported(entry, itemID: itemID, title: title)
             }
             return .unsupported(entry)
-        case .workshopPreset(let preset):
-            await SettingsManager.shared.registerScenePreset(preset, clearsDeleteTombstone: true)
+        case let .workshopPreset(preset):
+            await settings.registerScenePreset(preset, clearsDeleteTombstone: true)
+            guard isCurrent(itemID: itemID, attemptID: attemptID) else { return .cancelled }
             Logger.info("Registered a downloaded Workshop preset", category: .workshop)
             // Not the shared success toast: a preset does not become a wallpaper-library entry, so Added to your library would send the user looking where it will never be.
             finish(itemID: itemID, title: title, phase: .succeededAsPreset(
@@ -238,7 +276,7 @@ final class WorkshopDownloadCoordinator {
         case let .sceneFailure(cause, _, _):
             finish(itemID: itemID, title: title, phase: .failed(cause.reason))
             return .failed(reason: cause.reason)
-        case .rejected(let reason):
+        case let .rejected(reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
             return .failed(reason: reason)
         }
@@ -249,16 +287,16 @@ final class WorkshopDownloadCoordinator {
         phases[itemID] = phase
         switch phase {
         case .succeeded:
-            WorkshopToastCenter.shared.post(
+            toasts.post(
                 headline: String(localized: "Downloaded", bundle: .appLanguage, comment: "Workshop download success toast headline."),
                 title: title,
                 message: String(localized: "Added to your library.", bundle: .appLanguage, comment: "Workshop download success toast subtitle."),
                 isSuccess: true
             )
-        case .succeededAsPreset(let baseWorkshopID):
-            let hasBase = SettingsManager.shared.loadGlobalSettings()
+        case let .succeededAsPreset(baseWorkshopID):
+            let hasBase = settings.loadGlobalSettings()
                 .recentWPEImports.contains { $0.origin.matchesWorkshopItem(baseWorkshopID) }
-            WorkshopToastCenter.shared.post(
+            toasts.post(
                 headline: String(localized: "Preset added", bundle: .appLanguage, comment: "Workshop preset download success toast headline."),
                 title: title,
                 message: hasBase
@@ -272,8 +310,8 @@ final class WorkshopDownloadCoordinator {
                     ),
                 isSuccess: true
             )
-        case .failed(let message):
-            WorkshopToastCenter.shared.post(
+        case let .failed(message):
+            toasts.post(
                 headline: String(localized: "Download failed", bundle: .appLanguage, comment: "Workshop download failure toast headline."),
                 title: title,
                 message: message,
@@ -286,7 +324,7 @@ final class WorkshopDownloadCoordinator {
 
     private func recordImport(_ origin: WPEOrigin) -> WPEHistoryEntry {
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
-        SettingsManager.shared.recordWPEImport(
+        settings.recordWPEImport(
             entry,
             clearsDeleteTombstone: true
         )
@@ -298,7 +336,7 @@ final class WorkshopDownloadCoordinator {
     private func finishUnsupported(_ entry: WPEHistoryEntry, itemID: UInt64, title: String) {
         clearProgress(itemID)
         phases[itemID] = .succeeded
-        WorkshopToastCenter.shared.post(
+        toasts.post(
             headline: String(
                 localized: "Downloaded, but it can't run on this Mac", bundle: .appLanguage,
                 comment: "Workshop download card headline: the item reached the library but this Mac cannot run it."
@@ -314,15 +352,17 @@ final class WorkshopDownloadCoordinator {
     private func fetchDependencies(
         rootItemID: UInt64,
         rootTitle: String,
+        attemptID: UUID,
         missingIDs: [String],
-        doctor: SteamCMDDoctorService
+        doctor: any WorkshopItemDownloading
     ) async -> WorkshopDownloadOutcome {
         let report = await WorkshopDependencyResolver.resolve(
             rootWorkshopID: String(rootItemID),
             missingDependencyIDs: missingIDs,
+            isCancelled: { !self.isCurrent(itemID: rootItemID, attemptID: attemptID) },
             fetch: { await self.fetchDependency(workshopID: $0, doctor: doctor) }
         )
-        guard !report.wasCancelled else { return .cancelled }
+        guard isCurrent(itemID: rootItemID, attemptID: attemptID), !report.wasCancelled else { return .cancelled }
 
         for failure in report.failures {
             Logger.warning(
@@ -348,7 +388,7 @@ final class WorkshopDownloadCoordinator {
                     localized: "Stopped at the download limit for linked items. Still missing: \(unresolved)",
                     bundle: .appLanguage, comment: "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs."
                 )
-            WorkshopToastCenter.shared.post(
+            toasts.post(
                 headline: String(localized: "Required items missing", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
                 title: rootTitle,
                 message: reason,
@@ -358,9 +398,11 @@ final class WorkshopDownloadCoordinator {
         }
 
         // Every dependency arrived, but claiming success before the re-read would leave the library entry still saying it needs them.
-        guard let entry = await reimportRoot(itemID: rootItemID, doctor: doctor) else {
+        let entry = await reimportRoot(itemID: rootItemID, attemptID: attemptID, doctor: doctor)
+        guard isCurrent(itemID: rootItemID, attemptID: attemptID) else { return .cancelled }
+        guard let entry else {
             let reason = String(localized: "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again.", bundle: .appLanguage, comment: "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed.")
-            WorkshopToastCenter.shared.post(
+            toasts.post(
                 headline: String(localized: "Required items missing", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
                 title: rootTitle,
                 message: reason,
@@ -368,7 +410,7 @@ final class WorkshopDownloadCoordinator {
             )
             return .failed(reason: reason)
         }
-        WorkshopToastCenter.shared.post(
+        toasts.post(
             headline: String(localized: "Required items added", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
             title: rootTitle,
             message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", bundle: .appLanguage, comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
@@ -379,7 +421,7 @@ final class WorkshopDownloadCoordinator {
 
     private func fetchDependency(
         workshopID: String,
-        doctor: SteamCMDDoctorService
+        doctor: any WorkshopItemDownloading
     ) async -> WorkshopDependencyFetchOutcome {
         guard let itemID = UInt64(workshopID) else {
             return WorkshopDependencyFetchOutcome(failureReason: "not a Workshop ID")
@@ -393,7 +435,7 @@ final class WorkshopDownloadCoordinator {
                     onProgress: nil,
                     onContentReady: { [weak self] folderURL -> [String] in
                         guard let self else { return [] }
-                        return await self.importService.missingDependencyIDs(inFolder: folderURL)
+                        return await importService.missingDependencyIDs(inFolder: folderURL)
                     }
                 )
             }
@@ -401,9 +443,9 @@ final class WorkshopDownloadCoordinator {
             return WorkshopDependencyFetchOutcome(failureReason: error.localizedDescription)
         }
         switch result {
-        case .imported(let nestedDependencyIDs):
+        case let .imported(nestedDependencyIDs):
             return WorkshopDependencyFetchOutcome(dependencyIDs: nestedDependencyIDs)
-        case .notConfigured(let reason), .failed(let reason):
+        case let .notConfigured(reason), let .failed(reason):
             return WorkshopDependencyFetchOutcome(failureReason: reason)
         case .loginRequired:
             return WorkshopDependencyFetchOutcome(failureReason: "SteamCMD login required")
@@ -420,7 +462,7 @@ final class WorkshopDownloadCoordinator {
 
     /// Re-read the root now that dependencies are on disk — SteamCMD no-ops on an item that is already current.
     @discardableResult
-    private func reimportRoot(itemID: UInt64, doctor: SteamCMDDoctorService) async -> WPEHistoryEntry? {
+    private func reimportRoot(itemID: UInt64, attemptID: UUID, doctor: any WorkshopItemDownloading) async -> WPEHistoryEntry? {
         let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
         do {
             result = try await repositoryCoordinator.withExclusiveMutation(workshopID: String(itemID)) { [weak self] in
@@ -432,19 +474,21 @@ final class WorkshopDownloadCoordinator {
                 }
                 return await doctor.downloadWorkshopItem(
                     itemID,
+                    onProgress: nil,
                     onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
-                        guard let self else { return nil }
-                        return try? await self.importService.importProject(folder: folderURL)
+                        guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
+                        return try? await importService.importProject(folder: folderURL)
                     }
                 )
             }
         } catch {
             return nil
         }
-        guard case .imported(let importResult) = result,
+        guard isCurrent(itemID: itemID, attemptID: attemptID),
+              case let .imported(importResult) = result,
               case let .ready(_, origin)? = importResult else { return nil }
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
-        SettingsManager.shared.recordWPEImport(
+        settings.recordWPEImport(
             entry,
             clearsDeleteTombstone: true
         )

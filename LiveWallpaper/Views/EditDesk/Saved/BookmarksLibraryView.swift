@@ -164,7 +164,9 @@ final class SavedBookmarks {
 
     /// Known metadata survives offline reopening; legacy references remain usable.
     static func queryItem(_ bookmark: WorkshopBookmark) -> WorkshopQueryItem {
-        if let item = bookmark.queryItemSnapshot { return item }
+        if let item = bookmark.queryItemSnapshot {
+            return item
+        }
         return WorkshopQueryItem(
             id: bookmark.id, rawTitle: bookmark.rawTitle, shortDescription: "", creatorID: nil,
             previewImageURL: bookmark.previewImageURL, fileSizeBytes: nil, timeUpdated: nil,

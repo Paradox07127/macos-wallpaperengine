@@ -325,6 +325,17 @@ struct WorkshopQueryItem: Identifiable, Sendable, Equatable {
     let visibility: SteamWorkshopMetadata.Visibility
     let isBanned: Bool
     let steamCommunityURL: URL
+    var detailDescription: String?
+
+    /// Only detail surfaces use the full body; browse/paste summaries stay short.
+    var displayDescription: String {
+        let detail = detailDescription.map {
+            SteamWorkshopMetadataService.boundedDescriptionText($0)
+        }.flatMap {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+        }
+        return detail ?? SteamWorkshopMetadataService.boundedDescriptionText(shortDescription)
+    }
 
     var title: String {
         Self.displayTitle(rawTitle, id: id)

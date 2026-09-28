@@ -306,6 +306,29 @@ struct SettingsManagerTests {
         await TestScratch.discard(root, flushing: manager)
     }
 
+    @Test("Reset restores the default wallpaper transition without wiping unrelated preferences")
+    func cleanAllSettingsResetsWallpaperTransition() async throws {
+        let scratch = try TestScratch.defaultsSuite("LiveWallpaperTests.resetTransition")
+        let defaults = scratch.defaults
+        defer { scratch.discard() }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("resetTransition-\(UUID().uuidString)", isDirectory: true)
+        let manager = SettingsManager(
+            directory: ConfigurationDirectory(root: root),
+            defaults: defaults
+        )
+        defaults.set(WallpaperTransitionChoice.meteor.rawValue, forKey: WallpaperTransitionChoice.defaultsKey)
+        defaults.set("keep", forKey: "test.unrelated.preference")
+        #expect(WallpaperTransitionChoice.stored(in: defaults) == .meteor)
+
+        manager.cleanAllSettings(applyLoginSetting: false)
+
+        #expect(defaults.object(forKey: WallpaperTransitionChoice.defaultsKey) == nil)
+        #expect(WallpaperTransitionChoice.stored(in: defaults) == .crossfade)
+        #expect(defaults.string(forKey: "test.unrelated.preference") == "keep")
+        await TestScratch.discard(root, flushing: manager)
+    }
+
     @Test("Invalid local HTML bookmark fails configuration validation")
     func invalidLocalHTMLBookmarkFailsValidation() {
         let manager = SettingsManager.shared

@@ -25,7 +25,7 @@ final class WorkshopToastCenter {
 
     @ObservationIgnored private var token = 0
 
-    private init() {}
+    init() {}
 
     func postFailure(_ failure: WallpaperFailureSnapshot, screenID: CGDirectDisplayID) {
         guard lastEvent?.failure?.id != failure.id else { return }

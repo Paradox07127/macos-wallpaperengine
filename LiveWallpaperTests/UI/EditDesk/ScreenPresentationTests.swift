@@ -99,7 +99,8 @@ struct ScreenPresentationTests {
             return CGSize(width: 3840, height: 2160)
         })
         let presentation = ScreenPresentation.presentation(for: screen, refreshRate: 60)
-        #expect(presentation.status == "3840×2160")
+        let suffix = mainDisplaySuffix(for: screen)
+        #expect(presentation.status == "3840×2160\(suffix)")
         #expect(screen.frame == CGRect(x: 0, y: 0, width: 1920, height: 1080))
         #expect(modeReads == 1)
         let model = EditDeskStageModel()
@@ -114,7 +115,7 @@ struct ScreenPresentationTests {
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
         view.layoutSubtreeIfNeeded()
         let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
-        #expect(children.contains { $0.accessibilityLabel() == "Retina Fixture, 3840×2160" })
+        #expect(children.contains { $0.accessibilityLabel() == "Retina Fixture, 3840×2160\(suffix)" })
         #expect(model.displays[0].frame.size == CGSize(width: 1920, height: 1080))
     }
 
@@ -125,8 +126,14 @@ struct ScreenPresentationTests {
         let screen = Screen(nsScreen: PresentationTestScreen(), displayPixelSize: { _ in
             CGSize(width: 5120, height: 2880)
         })
-        #expect(ScreenPresentation.presentation(for: screen, refreshRate: 60).status == "5120×2880")
+        #expect(ScreenPresentation.presentation(for: screen, refreshRate: 60).status == "5120×2880\(mainDisplaySuffix(for: screen))")
         #expect(screen.frame.size == CGSize(width: 1920, height: 1080))
+    }
+
+    @MainActor
+    private func mainDisplaySuffix(for screen: Screen) -> String {
+        // A synthetic display ID can resolve as main in the Window Server test host.
+        CGDisplayIsMain(screen.id) != 0 ? " · \(String(localized: "Main", bundle: .appLanguage))" : ""
     }
 
     @Test("Missing display mode omits resolution instead of labelling points as pixels")
@@ -135,7 +142,6 @@ struct ScreenPresentationTests {
         #expect(ScreenPresentation.statusText(pixelSize: nil, isMain: true)
             == String(localized: "Main", bundle: .appLanguage))
     }
-
 }
 
 private final class PresentationTestScreen: NSScreen {

@@ -164,10 +164,11 @@ struct WorkshopModal: View {
             )
         }
         WallpaperDetailSection(title: Text("Description")) {
+            let description = item.displayDescription
             CollapsibleDescription(
-                text: item.shortDescription.isEmpty
+                text: description.isEmpty
                     ? String(localized: "No description provided.", bundle: .appLanguage, comment: "Placeholder when a Workshop item has no description.")
-                    : item.shortDescription,
+                    : description,
                 isExpanded: $descriptionExpanded,
                 collapsedLineLimit: 4
             )

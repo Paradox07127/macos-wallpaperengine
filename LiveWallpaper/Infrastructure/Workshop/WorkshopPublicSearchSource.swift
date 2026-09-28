@@ -283,7 +283,8 @@ final class WorkshopPublicSearchSource {
             tags: entry.tags,
             visibility: entry.visibility,
             isBanned: entry.isBanned,
-            steamCommunityURL: entry.steamCommunityURL
+            steamCommunityURL: entry.steamCommunityURL,
+            detailDescription: entry.detailDescription
         )
     }
 

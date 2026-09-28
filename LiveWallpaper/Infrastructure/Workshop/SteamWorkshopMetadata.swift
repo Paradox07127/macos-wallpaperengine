@@ -22,6 +22,8 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     let subscriptionCount: Int?
     let viewCount: Int?
     let favoriteCount: Int?
+    /// Bounded plain author text for details, independent of the server summary.
+    var detailDescription: String?
 
     /// Steam's documented visibility enum on `GetPublishedFileDetails`:
     /// `0` public, `1` friends-only, `2` private; anything else → `.unknown`.
@@ -240,9 +242,9 @@ final class SteamWorkshopMetadataService {
         return .success(SteamWorkshopMetadata(
             publishedFileID: id,
             title: payload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            // GetPublishedFileDetails often carries only BBCode `description`.
-            // The app renders plain Text, never HTML or executable markup.
-            shortDescription: Self.plainDescription(short: payload.short_description, full: payload.description),
+            shortDescription: WorkshopDiagnosticRedactor.redact(
+                payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            ),
             creatorID: creatorID.flatMap { $0.isEmpty ? nil : $0 },
             creatorPersonaName: nil,
             previewImageURL: preview,
@@ -256,18 +258,42 @@ final class SteamWorkshopMetadataService {
             tags: payload.tags?.compactMap(\.tag) ?? [],
             subscriptionCount: payload.lifetime_subscriptions ?? payload.subscriptions,
             viewCount: payload.views,
-            favoriteCount: payload.lifetime_favorited ?? payload.favorited
+            favoriteCount: payload.lifetime_favorited ?? payload.favorited,
+            detailDescription: Self.plainDetailDescription(payload.description)
         ))
     }
 
-    nonisolated static func plainDescription(short: String?, full: String?) -> String {
-        let brief = short?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let raw = brief.isEmpty ? (full ?? "") : brief
-        let text = raw.replacingOccurrences(
+    nonisolated static let detailInputScalarLimit = 64 * 1024
+    nonisolated static let detailDisplayScalarLimit = 16 * 1024
+
+    /// This is author content, not a diagnostic. Do not redact names, addresses
+    /// or URLs. SwiftUI renders it as verbatim Text; the Steam link opens the original.
+    nonisolated static func plainDetailDescription(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        // Bound before regex/normalization, including the truncation check itself.
+        let input = scalarPrefix(raw, limit: detailInputScalarLimit)
+        var text = input.text.replacingOccurrences(
             of: #"\[/?(?:h[1-6]|b|i|u|s|strike|spoiler|noparse|code|quote|list|olist|\*|url|img|previewyoutube|previewyoutubehd)(?:=[^\]]*)?\]"#,
             with: "", options: [.regularExpression, .caseInsensitive]
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
-        return WorkshopDiagnosticRedactor.redact(text)
+        )
+        text = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return boundedDescriptionText(text, inputWasTruncated: input.truncated)
+    }
+
+    /// Also bounds legacy snapshots and the summary fallback at the detail view.
+    nonisolated static func boundedDescriptionText(_ raw: String, inputWasTruncated: Bool = false) -> String {
+        let output = scalarPrefix(raw, limit: detailDisplayScalarLimit)
+        guard output.truncated || inputWasTruncated else { return output.text }
+        return scalarPrefix(output.text, limit: detailDisplayScalarLimit - 1).text + "…"
+    }
+
+    private nonisolated static func scalarPrefix(_ raw: String, limit: Int) -> (text: String, truncated: Bool) {
+        let scalars = Array(raw.unicodeScalars.prefix(limit + 1))
+        return (String(String.UnicodeScalarView(scalars.prefix(limit))), scalars.count > limit)
     }
 
     // MARK: - URLSession factory

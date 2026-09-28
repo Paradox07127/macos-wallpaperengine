@@ -2,8 +2,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct MonitorBoardRootContainer: View {
-    @ObservedObject var model: InteractionModel
-    @ObservedObject var data: DataModel
+    // The consuming board and live tiles own their subscriptions; this wrapper only forwards references.
+    let model: InteractionModel
+    let data: DataModel
     let reduceMotion: Bool
     var suspended: Bool = false
     var preview: MonitorBoardPreview?

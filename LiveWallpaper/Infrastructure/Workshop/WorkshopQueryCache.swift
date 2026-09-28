@@ -110,6 +110,7 @@ struct WorkshopItemSnapshot: Codable {
     /// The wire title, `nil` when untitled — never the localized fallback.
     let title: String?
     let shortDescription: String
+    let detailDescription: String?
     let creatorID: String?
     let creatorPersonaName: String?
     let previewImageURL: String?
@@ -131,6 +132,7 @@ struct WorkshopItemSnapshot: Codable {
         self.id = item.id
         title = item.rawTitle
         self.shortDescription = item.shortDescription
+        detailDescription = item.detailDescription.map { SteamWorkshopMetadataService.boundedDescriptionText($0) }
         self.creatorID = item.creatorID
         self.creatorPersonaName = item.creatorPersonaName
         self.previewImageURL = item.previewImageURL?.absoluteString
@@ -171,7 +173,8 @@ struct WorkshopItemSnapshot: Codable {
             tags: tags,
             visibility: SteamWorkshopMetadata.Visibility(rawValue: visibility) ?? .unknown,
             isBanned: isBanned,
-            steamCommunityURL: communityURL
+            steamCommunityURL: communityURL,
+            detailDescription: detailDescription.map { SteamWorkshopMetadataService.boundedDescriptionText($0) }
         )
     }
 }
@@ -205,7 +208,8 @@ extension WorkshopQueryItem {
             commentCount: commentCount ?? previous.commentCount,
             requiredItemIDs: requiredItemIDs.isEmpty ? previous.requiredItemIDs : requiredItemIDs,
             tags: tags.isEmpty ? previous.tags : tags,
-            visibility: visibility, isBanned: isBanned, steamCommunityURL: steamCommunityURL
+            visibility: visibility, isBanned: isBanned, steamCommunityURL: steamCommunityURL,
+            detailDescription: nonempty(detailDescription) ?? previous.detailDescription
         )
     }
 }

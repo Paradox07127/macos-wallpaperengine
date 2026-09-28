@@ -1,6 +1,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Metal
 import QuartzCore
 import Testing
 
@@ -52,10 +53,194 @@ private final class TransitionTestSession: WallpaperRuntimeSession {
     }
 }
 
+@MainActor
+private final class FailingTransitionRenderer: WallpaperTransitionRendering {
+    let device: MTLDevice
+    var isPrepared = true
+    var submissions: [Bool] = []
+    private(set) var drawCount = 0
+    private(set) var failures: [@MainActor @Sendable () -> Void] = []
+
+    init() throws {
+        device = try #require(MTLCreateSystemDefaultDevice())
+    }
+
+    func prepare(_: WallpaperRevealEffect) -> Bool {
+        isPrepared
+    }
+
+    func draw(_: WallpaperTransitionRenderer.Pass, effect _: WallpaperRevealEffect,
+              uniforms _: WallpaperTransitionUniforms, in _: CAMetalLayer,
+              onFailure: @escaping @MainActor @Sendable () -> Void) -> Bool {
+        drawCount += 1
+        failures.append(onFailure)
+        return submissions.isEmpty ? true : submissions.removeFirst()
+    }
+}
+
 @Suite("Wallpaper reveal transition controller", .serialized)
 @MainActor
 struct WallpaperTransitionControllerTests {
     private static let interactiveLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+
+    @Test("Missing effect or first draw leaves no mask, light, clock or reveal owner", arguments: [0, 1, 2])
+    func rejectedStartLeavesNothingAttached(failure: Int) throws {
+        let renderer = try FailingTransitionRenderer()
+        renderer.isPrepared = failure != 0
+        renderer.submissions = failure == 1 ? [false] : [true, false]
+        let old = makeWallpaperWindow()
+        defer { old.close() }
+        let clock = ManualTransitionClock()
+        var finished = 0
+        let candidate = WallpaperRevealTransition(
+            effect: .meteor, oldWindow: old, newWindow: nil, renderer: renderer,
+            makeClock: { _ in clock }, onFinish: { finished += 1 }
+        )
+        let transition = try #require(candidate)
+        #expect(!transition.start())
+        #expect(old.contentView?.layer?.mask == nil)
+        #expect(transition.maskLayer == nil && transition.lightWindow == nil)
+        #expect(!clock.isRunning && finished == 0)
+        renderer.failures.forEach { $0() }
+        #expect(old.alphaValue == 1 && finished == 0)
+    }
+
+    @Test("A host disappearing before start declines without taking retirement ownership")
+    func missingHostDeclinesStart() throws {
+        let renderer = try FailingTransitionRenderer()
+        let old = makeWallpaperWindow()
+        defer { old.close() }
+        let clock = ManualTransitionClock()
+        let candidate = WallpaperRevealTransition(
+            effect: .ink, oldWindow: old, newWindow: nil, renderer: renderer,
+            makeClock: { _ in clock }, onFinish: { Issue.record("Rejected start must not finish") }
+        )
+        let transition = try #require(candidate)
+        old.contentView = nil
+        #expect(!transition.start())
+        #expect(renderer.drawCount == 0 && !clock.isRunning)
+    }
+
+    @Test("A display that never ticks still retires once; late GPU failure is harmless")
+    func noTickDeadlineAndLateFailure() async throws {
+        let renderer = try FailingTransitionRenderer()
+        let old = makeWallpaperWindow()
+        defer { old.close() }
+        let clock = ManualTransitionClock()
+        var finished = 0
+        let candidate = WallpaperRevealTransition(
+            effect: .meteor, oldWindow: old, newWindow: nil, renderer: renderer,
+            makeClock: { _ in clock }, finishDeadline: .milliseconds(30), onFinish: { finished += 1 }
+        )
+        let transition = try #require(candidate)
+        #expect(transition.start())
+        let timeout = ContinuousClock.now.advanced(by: .seconds(1))
+        while !transition.isFinished, ContinuousClock.now < timeout {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(transition.isFinished && finished == 1 && !clock.isRunning)
+        #expect(old.contentView?.layer?.mask == nil && transition.lightWindow == nil)
+        renderer.failures.forEach { $0() }
+        clock.fire(100)
+        transition.finish()
+        #expect(finished == 1)
+    }
+
+    @Test("GPU failure finishes promptly and cancels the later deadline")
+    func gpuFailureFinishesOnce() async throws {
+        let renderer = try FailingTransitionRenderer()
+        let old = makeWallpaperWindow()
+        defer { old.close() }
+        let clock = ManualTransitionClock()
+        var finished = 0
+        let candidate = WallpaperRevealTransition(
+            effect: .meteor, oldWindow: old, newWindow: nil, renderer: renderer,
+            makeClock: { _ in clock }, finishDeadline: .milliseconds(50), onFinish: { finished += 1 }
+        )
+        let transition = try #require(candidate)
+        #expect(transition.start())
+        let failure = try #require(renderer.failures.first)
+        failure()
+        #expect(transition.isFinished && finished == 1 && !clock.isRunning)
+        renderer.failures.forEach { $0() }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(finished == 1)
+    }
+
+    @Test("Later mask or light submission failure retires resources and session once", arguments: [false, true])
+    func laterSubmissionFailureRetiresOnce(lightFails: Bool) throws {
+        let renderer = try FailingTransitionRenderer()
+        renderer.submissions = lightFails ? [true, true, true, false] : [true, true, false]
+        let clock = ManualTransitionClock()
+        let screen = try makeScreen(plan: .reveal(.meteor), clock: clock)
+        screen.transitionEnvironment.renderer = { renderer }
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new)
+        let transition = try #require(screen.revealTransitions.values.first)
+        let light = try #require(transition.lightWindow)
+        #expect(clock.isRunning && old.cleanupCallCount == 0)
+
+        clock.fire(100)
+
+        #expect(renderer.drawCount == (lightFails ? 4 : 3))
+        #expect(transition.isFinished && !clock.isRunning)
+        #expect(transition.maskLayer == nil && transition.lightWindow == nil)
+        #expect(old.wallpaperWindow?.contentView?.layer?.mask == nil && !light.isVisible)
+        #expect(screen.revealTransitions.isEmpty)
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+        renderer.failures.forEach { $0() }
+        clock.fire(101)
+        transition.finish()
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+    }
+
+    @Test("Screen retires a no-tick display once and closes its light window")
+    func screenNoTickDeadlineRetiresOnce() async throws {
+        let renderer = try FailingTransitionRenderer()
+        let clock = ManualTransitionClock()
+        let screen = try makeScreen(plan: .reveal(.meteor), clock: clock)
+        screen.transitionEnvironment.renderer = { renderer }
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new)
+        let transition = try #require(screen.revealTransitions.values.first)
+        let light = try #require(transition.lightWindow)
+        let wallClock = ContinuousClock()
+        let deadline = wallClock.now.advanced(by: .seconds(4))
+        while old.cleanupCallCount == 0, wallClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+        #expect(screen.revealTransitions.isEmpty && !clock.isRunning)
+        #expect(transition.isFinished && transition.maskLayer == nil)
+        #expect(transition.lightWindow == nil && !light.isVisible)
+        renderer.failures.forEach { $0() }
+        clock.fire(100)
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+    }
+
+    @Test("Screen sends a rejected first draw to its existing crossfade cleanup")
+    func screenRejectedStartUsesCrossfade() async throws {
+        let renderer = try FailingTransitionRenderer()
+        renderer.submissions = [false]
+        let clock = ManualTransitionClock()
+        let screen = try makeScreen(plan: .reveal(.meteor), clock: clock)
+        screen.transitionEnvironment.renderer = { renderer }
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new)
+        #expect(screen.revealTransitions.isEmpty && !clock.isRunning)
+        #expect(old.wallpaperWindow?.contentView?.layer?.mask == nil)
+        try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration + 0.15))
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+    }
 
     /// Parks itself off every display in the test host.
     private func makeWallpaperWindow() -> VideoWallpaperWindow {
@@ -162,6 +347,92 @@ struct WallpaperTransitionControllerTests {
         #expect(new.orderedIndex < light.orderedIndex)
         NotificationCenter.default.post(name: VideoWallpaperWindow.didOrderFrontNotification, object: new)
         #expect(light.orderedIndex < new.orderedIndex)
+    }
+
+    @Test("The masked old content stays above incoming content across wallpaper levels, including Ink",
+          arguments: [WallpaperRevealEffect.ink, .meteor], [false, true])
+    func contentOrderAcrossLevels(effect: WallpaperRevealEffect, oldIsInteractive: Bool) throws {
+        try #require(TestHostWindowParking.isEnabled, "Window-order fixtures must never appear on the user's desktop")
+        let old = makeWallpaperWindow()
+        let new = makeWallpaperWindow()
+        let passiveLevel = old.level
+        old.level = oldIsInteractive ? Self.interactiveLevel : passiveLevel
+        new.level = oldIsInteractive ? passiveLevel : Self.interactiveLevel
+        let originalOldLevel = old.level
+        old.orderFrontRegardless()
+        new.orderFrontRegardless()
+        if !oldIsInteractive {
+            // Control: this is why a mask alone cannot reveal the incoming wallpaper.
+            #expect(new.orderedIndex < old.orderedIndex)
+        }
+        let widget = NSWindow(contentRect: old.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        widget.isReleasedWhenClosed = false
+        widget.level = NSWindow.Level(rawValue: Self.interactiveLevel.rawValue + 1)
+        widget.ignoresMouseEvents = true
+        widget.orderFrontRegardless()
+        defer { old.close(); new.close(); widget.close() }
+        let keyWindow = NSApp.keyWindow
+        let wasActive = NSApp.isActive
+        let clock = ManualTransitionClock()
+        var finished = 0
+        let transition = try makeTransition(effect, old: old, new: new, clock: clock) { finished += 1 }
+        defer { transition.finish() }
+        transition.start()
+
+        #expect(old.level == Self.interactiveLevel)
+        #expect(old.orderedIndex < new.orderedIndex)
+        #expect(old.contentView?.layer?.mask === transition.maskLayer)
+        #expect(transition.maskLayer != nil)
+        #expect(old.ignoresMouseEvents)
+        #expect(!old.acceptsMouseMovedEvents)
+        #expect(widget.orderedIndex < old.orderedIndex)
+        let light = transition.lightWindow
+        if effect == .ink {
+            #expect(light == nil)
+        } else {
+            let light = try #require(light)
+            #expect(light.orderedIndex < old.orderedIndex)
+            #expect(widget.orderedIndex < light.orderedIndex)
+        }
+        for window in [old, new, widget] + [light].compactMap(\.self) {
+            #expect(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        }
+
+        // Real Window Server reordering, without makeKeyAndOrderFront (which
+        // would take focus even though a test's interactive window is parked).
+        // Post the product notification explicitly after that real reorder.
+        new.level = Self.interactiveLevel
+        new.orderFrontRegardless()
+        #expect(new.orderedIndex < old.orderedIndex)
+        NotificationCenter.default.post(name: VideoWallpaperWindow.didOrderFrontNotification, object: widget)
+        #expect(new.orderedIndex < old.orderedIndex, "Unrelated windows must not reorder this display's transition")
+        NotificationCenter.default.post(name: VideoWallpaperWindow.didOrderFrontNotification, object: new)
+        #expect(old.orderedIndex < new.orderedIndex)
+        if let light {
+            #expect(light.orderedIndex < old.orderedIndex)
+            #expect(widget.orderedIndex < light.orderedIndex)
+        }
+        clock.fire(0)
+        clock.fire(effect.duration / 2)
+        #expect(!transition.isFinished)
+        #expect(old.contentView?.layer?.mask === transition.maskLayer)
+        #expect(old.orderedIndex < new.orderedIndex)
+        #expect(NSApp.keyWindow === keyWindow)
+        #expect(NSApp.isActive == wasActive)
+
+        transition.finish() // The same path used by cancellation and a replacement transition.
+        transition.finish()
+        #expect(finished == 1)
+        #expect(!clock.isRunning)
+        #expect(old.alphaValue == 0)
+        #expect(old.level == originalOldLevel)
+        #expect(old.contentView?.layer?.mask == nil)
+        #expect(transition.lightWindow == nil)
+        #expect(light?.isVisible != true)
+        let sentinelLevel = NSWindow.Level(rawValue: originalOldLevel.rawValue - 2)
+        old.level = sentinelLevel
+        NotificationCenter.default.post(name: VideoWallpaperWindow.didOrderFrontNotification, object: new)
+        #expect(old.level == sentinelLevel, "Finished transitions must not retake window ordering")
     }
 
     @Test("Screen: a reveal keeps the old session until it ends, then cleans it up")

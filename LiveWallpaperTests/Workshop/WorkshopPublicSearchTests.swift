@@ -128,6 +128,7 @@ struct WorkshopPublicSearchTests {
         """.utf8)
         let entry = try #require(SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [555])[555]).get()
         #expect(entry.shortDescription == "")
+        #expect(entry.detailDescription == "x")
 
         let summarised = try #require(
             SteamWorkshopMetadataService.decodeBatch(data: Self.detailsPayload(id: "556", tags: []), requestedIDs: [556])[556]

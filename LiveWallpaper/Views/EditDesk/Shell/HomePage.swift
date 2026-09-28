@@ -930,7 +930,15 @@ struct HomePage: View {
                             title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
                         )
                     } else if let library {
-                        libraryGrid(library)
+                        LibraryGalleryGrid(
+                            size: tileSize, aspect: .wide,
+                            initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+                        ) {
+                            ForEach(library.visibleItems) { item in
+                                LibraryGridEntry(page: self, library: library, item: item)
+                            }
+                        }
+                        .libraryGridPadding()
                     }
                 }
             }
@@ -944,91 +952,39 @@ struct HomePage: View {
         }
     }
 
-    /// Resolve DynamicProperty inputs during the page's normal body evaluation,
-    /// before lazy accessibility enumeration asks ForEach to construct a row.
-    private func libraryGrid(_ library: SavedLibraryModel) -> some View {
-        let size = tileSize
-        let stageWidth = stage.stageSize.width
-        let displays = stage.displays
-        let updates = updatedWorkshopIDs
-        let preferences = cardPreferences
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let thumbnails = self.thumbnails
-        let preview = gridPreview
-        let drag = libraryDrag
-        let presented = $presentedItemID
-        let apply = self.quickApply
-        let menu = self.libraryMenu(for:)
-        let payload = self.dragPayload(for:)
-        // These are small presentation values, not eagerly mounted tiles or image decodes.
-        let rows = library.visibleItems.map { item in
-            LibraryGridRow(
-                item: item,
-                badges: item.cardBadges(among: displays, updatedWorkshopIDs: updates, preferences: preferences),
-                thumbnail: Self.gridThumbnail(for: item, stageWidth: stageWidth, size: size, scale: scale)
-            )
-        }
-        return LibraryGalleryGrid(
-            size: size, aspect: .wide,
-            initialWidth: stageWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding
-        ) {
-            ForEach(rows) { row in
-                LibraryGridEntry(
-                    row: row, thumbnails: thumbnails, preview: preview, drag: drag,
-                    open: { presented.wrappedValue = row.id },
-                    quickApply: { apply(row.id) },
-                    menu: { menu(row.item) },
-                    dragPayload: { payload(row.item) },
-                    loadMetadata: { await library.probeMetadata(for: [row.id]) }
-                )
-            }
-        }
-        .libraryGridPadding()
-    }
-
-    private struct LibraryGridRow: Identifiable {
-        let item: LibraryItem
-        let badges: LibraryCardBadges
-        let thumbnail: LibraryGridTile.Thumbnail?
-        var id: String { item.id }
-    }
-
-    /// A row stores presentation values and action closures, never a parent View
-    /// whose State/Environment handles would be part of its stored view graph.
+    /// Keep deferred ForEach enumeration structural: live observation reads belong
+    /// to this row's body, not the collection's content-building closure.
     private struct LibraryGridEntry: View {
-        let row: LibraryGridRow
-        let thumbnails: ShelfThumbnailCache
-        let preview: LibraryGridPreview
-        let drag: LibraryDragController
-        let open: @MainActor () -> Void
-        let quickApply: @MainActor () -> Void
-        let menu: @MainActor () -> [StageMenuItem]
-        let dragPayload: @MainActor () -> LibraryDragController.Payload?
-        let loadMetadata: @MainActor () async -> Void
+        let page: HomePage
+        let library: SavedLibraryModel
+        let item: LibraryItem
 
         var body: some View {
-            let item = row.item
-            let badges = row.badges
+            let badges = item.cardBadges(
+                among: page.stage.displays,
+                updatedWorkshopIDs: page.updatedWorkshopIDs,
+                preferences: page.cardPreferences
+            )
             Button {
                 if NSApp.currentEvent?.type == .leftMouseUp,
                    NSApp.currentEvent?.modifierFlags.contains(.option) == true {
-                    quickApply()
+                    page.quickApply(item.id)
                 } else {
-                    open()
+                    page.presentedItemID = item.id
                 }
             } label: {
                 LibraryGridTile(
-                    item: item, thumbnail: row.thumbnail,
-                    thumbnails: thumbnails, badges: badges, preview: preview
+                    item: item, thumbnail: page.gridThumbnail(for: item),
+                    thumbnails: page.thumbnails, badges: badges, preview: page.gridPreview
                 )
             }
             .buttonStyle(.plain)
-            .libraryDragSource(drag, enabled: item.isSupported, payload: dragPayload)
-            .contextMenu { WallpaperMenuRows(items: menu()) }
+            .libraryDragSource(page.libraryDrag, enabled: item.isSupported) { page.dragPayload(for: item) }
+            .contextMenu { WallpaperMenuRows(items: page.libraryMenu(for: item)) }
             .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
             .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
-            .accessibilityAction(named: Text("Apply")) { quickApply() }
-            .task(id: item.id) { await loadMetadata() }
+            .accessibilityAction(named: Text("Apply")) { page.quickApply(item.id) }
+            .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
         }
     }
 

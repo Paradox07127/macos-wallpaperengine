@@ -11,8 +11,22 @@ struct WallpaperTransitionUniforms {
     var origin: SIMD2<Float>
 }
 
+/// Narrow submission boundary for failure tests; Screen remains the transition owner.
 @MainActor
-final class WallpaperTransitionRenderer {
+protocol WallpaperTransitionRendering: AnyObject {
+    var device: MTLDevice { get }
+    func prepare(_ effect: WallpaperRevealEffect) -> Bool
+    func draw(
+        _ pass: WallpaperTransitionRenderer.Pass,
+        effect: WallpaperRevealEffect,
+        uniforms: WallpaperTransitionUniforms,
+        in layer: CAMetalLayer,
+        onFailure: @escaping @MainActor @Sendable () -> Void
+    ) -> Bool
+}
+
+@MainActor
+final class WallpaperTransitionRenderer: WallpaperTransitionRendering {
     enum Pass {
         case mask
         case light
@@ -27,6 +41,7 @@ final class WallpaperTransitionRenderer {
     private let queue: MTLCommandQueue
     private let library: MTLLibrary
     private var pipelines: [String: MTLRenderPipelineState] = [:]
+    private var failedPipelines: Set<String> = []
 
     init?(device: MTLDevice) {
         guard let queue = device.makeCommandQueue(),
@@ -44,6 +59,16 @@ final class WallpaperTransitionRenderer {
         case .mask: effect.maskFunctionName
         case .light: effect.lightFunctionName
         }
+    }
+
+    /// Resolve every required PSO before attaching any mask. A failed immutable
+    /// library/PSO stays a known fallback, rather than retrying on every tick.
+    func prepare(_ effect: WallpaperRevealEffect) -> Bool {
+        guard pipeline(named: effect.maskFunctionName) != nil else { return false }
+        if let light = effect.lightFunctionName {
+            return pipeline(named: light) != nil
+        }
+        return true
     }
 
     /// Encodes and commits one full-target draw; the caller decides whether to wait or present.
@@ -77,40 +102,58 @@ final class WallpaperTransitionRenderer {
 
     /// With `presentsWithTransaction` the drawable lands in the same Core Animation commit as
     /// the caller's layer changes, so a freshly attached mask never shows a frame without content.
+    @discardableResult
     func draw(
         _ pass: Pass,
         effect: WallpaperRevealEffect,
         uniforms: WallpaperTransitionUniforms,
-        in layer: CAMetalLayer
-    ) {
-        guard let drawable = layer.nextDrawable() else { return }
+        in layer: CAMetalLayer,
+        onFailure: @escaping @MainActor @Sendable () -> Void = {}
+    ) -> Bool {
+        guard let drawable = layer.nextDrawable() else { return false }
         let commandBuffer = render(pass, effect: effect, uniforms: uniforms, to: drawable.texture) { buffer in
+            buffer.addCompletedHandler { completed in
+                guard completed.status == .error else { return }
+                Logger.warning("Wallpaper transition GPU failure: \(completed.error?.localizedDescription ?? "unknown")", category: .ui)
+                Task { @MainActor in onFailure() }
+            }
             if !layer.presentsWithTransaction {
                 buffer.present(drawable)
             }
         }
-        guard let commandBuffer, layer.presentsWithTransaction else { return }
-        commandBuffer.waitUntilScheduled()
-        drawable.present()
+        guard let commandBuffer else { return false }
+        if layer.presentsWithTransaction {
+            // Required by CAMetalLayer's transaction presentation contract.
+            commandBuffer.waitUntilScheduled()
+            guard commandBuffer.status != .error else { return false }
+            drawable.present()
+        }
+        return true
     }
 
     private func pipeline(named name: String) -> MTLRenderPipelineState? {
         if let cached = pipelines[name] {
             return cached
         }
+        guard !failedPipelines.contains(name) else { return nil }
         guard let vertex = library.makeFunction(name: "wallpaperTransitionVertex"),
               let fragment = library.makeFunction(name: name) else {
+            failedPipelines.insert(name)
+            Logger.warning("Wallpaper transition function \(name) unavailable; using crossfade", category: .ui)
             return nil
         }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertex
         descriptor.fragmentFunction = fragment
         descriptor.colorAttachments[0].pixelFormat = Self.pixelFormat
-        guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor) else {
-            Logger.warning("Wallpaper transition pipeline \(name) failed to build", category: .ui)
+        do {
+            let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+            pipelines[name] = pipeline
+            return pipeline
+        } catch {
+            failedPipelines.insert(name)
+            Logger.warning("Wallpaper transition pipeline \(name) failed: \(error.localizedDescription)", category: .ui)
             return nil
         }
-        pipelines[name] = pipeline
-        return pipeline
     }
 }

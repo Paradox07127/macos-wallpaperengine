@@ -9,8 +9,13 @@ import Testing
 struct WorkshopBookmarkMetadataTests {
     private final class MemoryBookmarks: BookmarkPersisting {
         var values: [WallpaperBookmark] = []
-        func load() -> [WallpaperBookmark] { values }
-        func save(_ bookmarks: [WallpaperBookmark]) { values = bookmarks }
+        func load() -> [WallpaperBookmark] {
+            values
+        }
+
+        func save(_ bookmarks: [WallpaperBookmark]) {
+            values = bookmarks
+        }
     }
 
     private func item(id: UInt64 = 731, description: String = "A quiet synthetic desert", rich: Bool = true) -> WorkshopQueryItem {
@@ -34,7 +39,7 @@ struct WorkshopBookmarkMetadataTests {
         let original = item()
         WorkshopBookmarkActions.toggle(original, store: local, workshopStore: workshop)
         let restarted = WorkshopBookmarkStore(defaults: scratch.defaults)
-        let restored = SavedBookmarks.queryItem(try #require(restarted.bookmarks.first))
+        let restored = try SavedBookmarks.queryItem(#require(restarted.bookmarks.first))
         #expect(restored.shortDescription == original.shortDescription)
         #expect(restored.creatorPersonaName == "Fixture Author")
         #expect(restored.creatorID == original.creatorID)
@@ -75,8 +80,8 @@ struct WorkshopBookmarkMetadataTests {
 
     @Test("Snapshot identity mismatch or corrupt metadata cannot leak another item's details")
     func snapshotIdentityAndCorruptionFailClosed() throws {
-        let wrong = WorkshopBookmark(id: 732, rawTitle: "Other", previewImageURL: nil, tags: [],
-                                     detailsSnapshot: try #require(item().bookmarkDetailsSnapshot))
+        let wrong = try WorkshopBookmark(id: 732, rawTitle: "Other", previewImageURL: nil, tags: [],
+                                         detailsSnapshot: #require(item().bookmarkDetailsSnapshot))
         #expect(wrong.queryItemSnapshot == nil)
         let fallback = SavedBookmarks.queryItem(wrong)
         #expect(fallback.id == 732)
@@ -89,8 +94,8 @@ struct WorkshopBookmarkMetadataTests {
         let snapshot = try #require(item().bookmarkDetailsSnapshot)
         var payload = try #require(JSONSerialization.jsonObject(with: snapshot) as? [String: Any])
         payload["steamCommunityURL"] = "file:///tmp/unrelated"
-        let foreignLink = WorkshopBookmark(id: 731, rawTitle: "Safe fallback", previewImageURL: nil, tags: [],
-                                           detailsSnapshot: try JSONSerialization.data(withJSONObject: payload))
+        let foreignLink = try WorkshopBookmark(id: 731, rawTitle: "Safe fallback", previewImageURL: nil, tags: [],
+                                               detailsSnapshot: JSONSerialization.data(withJSONObject: payload))
         #expect(foreignLink.queryItemSnapshot == nil)
     }
 
@@ -100,12 +105,82 @@ struct WorkshopBookmarkMetadataTests {
         let result = try #require(SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [731])[731])
         let metadata = try result.get()
         let fetched = WorkshopPublicSearchSource.queryItem(from: metadata)
-        #expect(fetched.shortDescription == "Desert\nA quiet night [2026]")
+        #expect(fetched.shortDescription.isEmpty)
+        #expect(fetched.detailDescription == "Desert\nA quiet night [2026]")
+        #expect(fetched.displayDescription == "Desert\nA quiet night [2026]")
         #expect(fetched.creatorPersonaName == nil)
         #expect(fetched.rating == nil)
         let rich = fetched.preservingDetails(from: item())
         #expect(rich.creatorPersonaName == "Fixture Author")
         #expect(rich.rating?.totalVotes == 179)
+        #expect(rich.shortDescription == item().shortDescription)
+        let scratch = try TestScratch.defaultsSuite(prefix: "WorkshopBookmarkMetadataTests")
+        defer { scratch.discard() }
+        let store = WorkshopBookmarkStore(defaults: scratch.defaults)
+        store.add(WorkshopBookmark(id: 731, rawTitle: "Legacy", previewImageURL: nil, tags: []))
+        WorkshopBookmarkActions.refreshDetails(rich, in: store)
+        WorkshopBookmarkActions.refreshDetails(item(description: " ", rich: false), in: store)
+        let restarted = WorkshopBookmarkStore(defaults: scratch.defaults)
+        let saved = try #require(restarted.bookmarks.first)
+        let restored = SavedBookmarks.queryItem(saved)
+        #expect(restored.displayDescription == "Desert\nA quiet night [2026]")
+        #expect(restored.shortDescription == item().shortDescription)
+        #expect(restored.creatorPersonaName == "Fixture Author")
+        #expect(restored.rating?.totalVotes == 179)
+        #expect(item(id: 732).preservingDetails(from: restored).detailDescription == nil)
+    }
+
+    @Test("Full descriptions remain author content; summaries and literal brackets keep their meaning")
+    func detailTextSemanticsAndBudget() throws {
+        let full = "[h1]Title[/h1]\r\n\r\n\r\n[b]Text[/b] [2026] [unknown]literal[/unknown] [url=https://example.com]Link[/url]\nwriter@example.com 76561198000000001"
+        let data = try JSONSerialization.data(withJSONObject: ["response": ["publishedfiledetails": [[
+            "publishedfileid": "731", "result": 1, "consumer_app_id": 431_960,
+            "visibility": 0, "short_description": "A short summary", "description": full,
+        ]]]])
+        let metadata = try #require(SteamWorkshopMetadataService.decodeBatch(data: data, requestedIDs: [731])[731]).get()
+        let mapped = WorkshopPublicSearchSource.queryItem(from: metadata)
+        #expect(mapped.shortDescription == "A short summary")
+        #expect(mapped.displayDescription == "Title\n\nText [2026] [unknown]literal[/unknown] Link\nwriter@example.com 76561198000000001")
+        #expect(SteamWorkshopMetadataService.plainDetailDescription("[b] [/b]") == nil)
+        #expect(SteamWorkshopMetadataService.plainDetailDescription(nil) == nil)
+
+        let limit = SteamWorkshopMetadataService.detailDisplayScalarLimit
+        let long = String(repeating: "🌙", count: limit + 100)
+        let bounded = try #require(SteamWorkshopMetadataService.plainDetailDescription(long))
+        #expect(bounded.unicodeScalars.count == limit)
+        #expect(bounded.hasSuffix("…"))
+        #expect(!bounded.contains("�"))
+        let exact = String(repeating: "x", count: limit)
+        #expect(SteamWorkshopMetadataService.plainDetailDescription(exact) == exact)
+        // Markup shrinks below the display budget: truncation must still be
+        // visible when processing stopped at the input budget.
+        let inputLimit = SteamWorkshopMetadataService.detailInputScalarLimit
+        let markupHeavy = "start" + String(repeating: "[b][/b]", count: inputLimit / 7 + 1) + "END_SENTINEL"
+        let inputBounded = try #require(SteamWorkshopMetadataService.plainDetailDescription(markupHeavy))
+        #expect(inputBounded.hasPrefix("start") && inputBounded.hasSuffix("…"))
+        #expect(!inputBounded.contains("END_SENTINEL"))
+        #expect(inputBounded.unicodeScalars.count <= limit)
+    }
+
+    @Test("Old snapshots without detail body decode and keep the existing description and facts")
+    func oldSnapshotWithoutDetailDescription() throws {
+        let original = item()
+        let encoded = try #require(original.bookmarkDetailsSnapshot)
+        var fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        fields.removeValue(forKey: "detailDescription")
+        let oldData = try JSONSerialization.data(withJSONObject: fields)
+        let bookmark = WorkshopBookmark(id: 731, rawTitle: "Legacy", previewImageURL: nil, tags: [], detailsSnapshot: oldData)
+        let restored = SavedBookmarks.queryItem(bookmark)
+        #expect(restored.detailDescription == nil)
+        #expect(restored.displayDescription == original.shortDescription)
+        #expect(restored.creatorPersonaName == original.creatorPersonaName)
+        #expect(restored.rating == original.rating)
+        var longDetail = original
+        longDetail.detailDescription = String(repeating: "x", count: 20000)
+        let boundedBookmark = try WorkshopBookmark(id: 731, rawTitle: "Bounded", previewImageURL: nil, tags: [], detailsSnapshot: #require(longDetail.bookmarkDetailsSnapshot))
+        let bounded = try #require(boundedBookmark.queryItemSnapshot?.detailDescription)
+        #expect(bounded.unicodeScalars.count == SteamWorkshopMetadataService.detailDisplayScalarLimit)
+        #expect(bounded.hasSuffix("…"))
     }
 }
 #endif

@@ -198,6 +198,7 @@ final class Screen: Identifiable, Hashable {
             effect: effect,
             oldWindow: window,
             newWindow: runtimeSession?.wallpaperWindow ?? runtimeSession?.videoPlayer?.playbackWindow,
+            renderer: transitionEnvironment.renderer(),
             makeClock: transitionEnvironment.makeClock,
             onFinish: { [weak self] in self?.completeReveal(token) }
         ) else {
@@ -207,7 +208,13 @@ final class Screen: Identifiable, Hashable {
         window.ignoresMouseEvents = true
         retiringSessions[token] = old
         revealTransitions[token] = transition
-        transition.start()
+        guard transition.start() else {
+            // start never published a mask or called onFinish. Leave cleanup to
+            // the existing crossfade owner; do not strand a retiring session.
+            revealTransitions[token] = nil
+            retiringSessions[token] = nil
+            return false
+        }
         return true
     }
 
@@ -284,7 +291,7 @@ final class Screen: Identifiable, Hashable {
         self.id = (nsScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32)
             ?? UInt32(truncatingIfNeeded: Self.generateFallbackID(for: nsScreen))
 
-        self.pixelSize = displayPixelSize(id)
+        pixelSize = displayPixelSize(id)
 
         let screenName = nsScreen.localizedName
         self.systemName = screenName.isEmpty

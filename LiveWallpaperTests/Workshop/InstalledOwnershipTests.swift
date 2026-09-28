@@ -253,27 +253,6 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(publications == ["new", "successor"])
     }
 
-    @Test("Download attempts guard every async publication boundary")
-    func downloadPublicationGuards() throws {
-        let download = try projectSource("LiveWallpaper/Application/Workshop/WorkshopDownloadCoordinator.swift")
-        let importBoundary = try sourceSlice(
-            download,
-            from: "let result = try? await self.importService.importProject(folder: folderURL)",
-            to: "\n                    }\n                )"
-        )
-        #expect(importBoundary.contains("guard !Task.isCancelled, self.attempts[itemID] == attemptID"))
-
-        // Scoped to the region after the download await: a whole-file assertion
-        // would pass with the guard sitting anywhere.
-        let doctorBoundary = try sourceSlice(
-            download,
-            from: "return await doctor.downloadWorkshopItem(",
-            to: "tasks[itemID] = nil"
-        )
-        #expect(doctorBoundary.contains("guard !Task.isCancelled, attempts[itemID] == attemptID else { return }"))
-    }
-
-
     @Test("update policy keeps the daily throttle, partial results and retry semantics")
     func updateLifecyclePolicySourceContract() throws {
         let source = try installedModelSource()

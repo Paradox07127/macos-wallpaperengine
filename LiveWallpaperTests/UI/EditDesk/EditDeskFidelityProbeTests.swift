@@ -1451,12 +1451,48 @@ struct S8bLocalizationWidthTests {
     func queuedThreeDisplaysTruncateOnlyTheNames() async throws {
         for language in ["es", "ja"] {
             let localized = try bundle(language)
+            let locale = Locale(identifier: language)
             func text(_ key: String) -> String {
                 NSLocalizedString(key, bundle: localized, comment: "")
             }
             let caption = text("Download and apply to")
             let cancels = [text("Cancel Auto-Apply"), text("Cancel download")]
-            let natural = row(caption: caption, displays: 3, symbol: "arrow.down.circle", extras: cancels)
+            /// Match the row's locale and native button style in both natural-width and ring controls.
+            func referenceButton(
+                _ title: String, symbol: String? = nil, prominence: AdaptiveGlassProminence = .regular
+            ) -> some View {
+                Button {} label: {
+                    if let symbol {
+                        Label { Text(verbatim: title) } icon: { Image(systemName: symbol) }
+                    } else {
+                        Text(verbatim: title)
+                    }
+                }
+                .adaptiveGlassButton(prominence, size: .large)
+                .environment(\.locale, locale)
+                .fixedSize()
+            }
+            func alone(
+                _ title: String, symbol: String? = nil, prominence: AdaptiveGlassProminence = .regular
+            ) async -> CGRect? {
+                await focusRings(referenceButton(title, symbol: symbol, prominence: prominence), width: 800, expecting: 1).first
+            }
+            let regularNameWidth = width(referenceButton(Self.displayName, symbol: "arrow.down.circle"))
+            let primaryNameWidth = width(referenceButton(Self.displayName, symbol: "arrow.down.circle", prominence: .prominent))
+            let cancelWidths = cancels.map { width(referenceButton($0)) }
+            let unscopedCaption = width(Text(verbatim: caption).font(DesignTokens.EditDesk.Typography.chip))
+            let verbatimCaption = width(
+                Text(verbatim: caption).font(DesignTokens.EditDesk.Typography.chip).environment(\.locale, locale)
+            )
+            // Localized Text can shape differently from verbatim text, even in the same locale.
+            // Measure the production caption independently at its natural size.
+            let idealCaption = width(
+                Text("Download and apply to", comment: "Workshop modal caption before the display buttons: pressing one downloads the wallpaper and applies it there.")
+                    .font(DesignTokens.EditDesk.Typography.chip)
+                    .environment(\.locale, locale)
+            )
+            let natural = idealCaption + primaryNameWidth + 2 * regularNameWidth
+                + cancelWidths.reduce(0, +) + 5 * DesignTokens.Spacing.sm + DesignTokens.Spacing.md
             try #require(natural > Self.rowBudget, Comment(rawValue: "control: \(language) fits whole at \(natural)pt, nothing has to give way"))
             var targets = (1 ... 3).map { index in
                 ModalDisplayTarget(
@@ -1470,56 +1506,47 @@ struct S8bLocalizationWidthTests {
                     targets: targets, canApply: true, mode: .download, applyTo: { _ in },
                     extras: cancels.map { ModalExtraButton(title: $0, action: {}) }
                 )
-                .environment(\.locale, Locale(identifier: language))
+                .environment(\.locale, locale)
                 .frame(width: Self.rowBudget),
                 width: Self.rowBudget, expecting: 5
             )
             try #require(rings.count == 5, Comment(rawValue: "control: \(language): \(rings.count) focus rings, not three displays and two cancels"))
-            /// The same button alone at its natural size, measured the same way.
-            func alone(_ title: String, symbol: String? = nil) async -> CGRect? {
-                let button = Button {} label: {
-                    if let symbol {
-                        Label { Text(verbatim: title) } icon: { Image(systemName: symbol) }
-                    } else {
-                        Text(verbatim: title)
-                    }
-                }
-                .adaptiveGlassButton(.regular, size: .large)
-                .fixedSize()
-                return await focusRings(button, width: 800, expecting: 1).first
-            }
-            let name = try #require(await alone(Self.displayName, symbol: "arrow.down.circle"))
+            let regularName = try #require(await alone(Self.displayName, symbol: "arrow.down.circle"))
+            let primaryName = try #require(await alone(Self.displayName, symbol: "arrow.down.circle", prominence: .prominent))
             var cancelRings: [CGRect] = []
             for title in cancels {
                 let ring = try #require(await alone(title))
                 cancelRings.append(ring)
             }
-            // A ring stands proud of its button by the same margin on each side.
-            let outset = (name.width - button(Self.displayName, symbol: "arrow.down.circle")) / 2
-            let captionRoom = rings[0].minX + outset - DesignTokens.Spacing.sm
-            let idealCaption = width(Text(verbatim: caption).font(DesignTokens.EditDesk.Typography.chip))
+            let primaryOutset = (primaryName.width - primaryNameWidth) / 2
+            let regularOutset = (regularName.width - regularNameWidth) / 2
+            let cancelOutsets = zip(cancelRings, cancelWidths).map { ($0.0.width - $0.1) / 2 }
+            let outsets = [primaryOutset, regularOutset, regularOutset] + cancelOutsets
+            let nameRings = [primaryName, regularName, regularName]
+            let captionRoom = rings[0].minX + primaryOutset - DesignTokens.Spacing.sm
             ProbeRenderer.report(
                 "S8b.queued3.\(language)",
-                "natural=\(natural) rings=\(rings.map { "\(Int($0.minX))...\(Int($0.maxX))" }) alone name=\(name.width) "
-                    + "cancels=\(cancelRings.map(\.width)) outset=\(outset) caption=\(captionRoom)/\(idealCaption) budget=\(Self.rowBudget)"
+                "natural=\(natural) rings=\(rings.map { "\(Int($0.minX))...\(Int($0.maxX))" }) "
+                    + "alone names=\(nameRings.map(\.width)) cancels=\(cancelRings.map(\.width)) outsets=\(outsets) "
+                    + "caption=\(captionRoom)/\(idealCaption) unscopedCaption=\(unscopedCaption) verbatimCaption=\(verbatimCaption) localizedCaption=\(idealCaption) budget=\(Self.rowBudget)"
             )
             #expect(
-                rings.allSatisfy { $0.minX >= -outset - 0.5 && $0.maxX <= Self.rowBudget + outset + 0.5 },
+                zip(rings, outsets).allSatisfy { ring, outset in
+                    ring.minX >= -outset - 0.5 && ring.maxX <= Self.rowBudget + outset + 0.5
+                },
                 Comment(rawValue: "\(language): a button leaves the panel: \(rings.map { "\($0.minX)...\($0.maxX)" })")
             )
             #expect(captionRoom >= idealCaption - 1, Comment(rawValue: "\(language): the caption has \(captionRoom)pt of \(idealCaption)pt"))
-            withKnownIssue("The cancels give way while the names keep their width; wrapping the cancels or cutting the names sooner is undecided") {
-                for (index, ring) in rings.suffix(2).enumerated() {
-                    #expect(
-                        ring.width >= cancelRings[index].width - 1,
-                        Comment(rawValue: "\(language): \(cancels[index]) is cut to \(ring.width)pt of \(cancelRings[index].width)pt")
-                    )
-                }
+            for (index, ring) in rings.suffix(2).enumerated() {
                 #expect(
-                    rings.prefix(3).allSatisfy { $0.width < name.width - 1 },
-                    Comment(rawValue: "\(language): the names \(rings.prefix(3).map(\.width)) kept their \(name.width)pt")
+                    ring.width >= cancelRings[index].width - 1,
+                    Comment(rawValue: "\(language): \(cancels[index]) is cut to \(ring.width)pt of \(cancelRings[index].width)pt")
                 )
             }
+            #expect(
+                zip(rings.prefix(3), nameRings).allSatisfy { actual, reference in actual.width < reference.width - 1 },
+                Comment(rawValue: "\(language): the names \(rings.prefix(3).map(\.width)) kept their \(nameRings.map(\.width))pt")
+            )
         }
     }
 

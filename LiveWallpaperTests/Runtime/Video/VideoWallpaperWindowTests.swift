@@ -214,7 +214,7 @@ struct CaptureSharingAppKitControlTests {
 
 /// Gate only the known ad-hoc host condition: unknown signing information must
 /// still run the assertions, so a failed lookup cannot silently waive a regression.
-private enum CaptureSharingTestHost {
+enum CaptureSharingTestHost {
     static var isAdHocSigned: Bool {
         var code: SecCode?
         var staticCode: SecStaticCode?

@@ -52,6 +52,7 @@ final class DisplayLinkTransitionClock: WallpaperTransitionClock {
 struct WallpaperTransitionEnvironment {
     var plan: @MainActor () -> WallpaperTransitionPlan = { WallpaperTransitionPlan.current() }
     var makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock = { DisplayLinkTransitionClock(window: $0) }
+    var renderer: @MainActor () -> (any WallpaperTransitionRendering)? = { WallpaperTransitionRenderer.shared }
 }
 
 /// Cuts the outgoing wallpaper window away with a Metal-drawn layer mask while an overlay window
@@ -60,12 +61,15 @@ struct WallpaperTransitionEnvironment {
 final class WallpaperRevealTransition {
     let effect: WallpaperRevealEffect
     private let oldWindow: NSWindow
+    private let originalOldWindowLevel: NSWindow.Level
     private weak var newWindow: NSWindow?
-    private let renderer: WallpaperTransitionRenderer
+    private let renderer: any WallpaperTransitionRendering
     private let clock: any WallpaperTransitionClock
     private let onFinish: @MainActor () -> Void
     private var uniforms: WallpaperTransitionUniforms
     private var startTime: CFTimeInterval?
+    private let finishDeadline: Duration
+    private var deadlineTask: Task<Void, Never>?
     private var orderFrontObserver: NSObjectProtocol?
 
     private(set) var maskLayer: CAMetalLayer?
@@ -78,8 +82,9 @@ final class WallpaperRevealTransition {
         effect: WallpaperRevealEffect,
         oldWindow: NSWindow,
         newWindow: NSWindow?,
-        renderer: WallpaperTransitionRenderer? = .shared,
+        renderer: (any WallpaperTransitionRendering)? = WallpaperTransitionRenderer.shared,
         makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock,
+        finishDeadline: Duration? = nil,
         onFinish: @escaping @MainActor () -> Void
     ) {
         guard let renderer, let contentView = oldWindow.contentView, contentView.bounds.height > 0 else {
@@ -87,10 +92,12 @@ final class WallpaperRevealTransition {
         }
         self.effect = effect
         self.oldWindow = oldWindow
+        originalOldWindowLevel = oldWindow.level
         self.newWindow = newWindow
         self.renderer = renderer
         clock = makeClock(oldWindow)
         self.onFinish = onFinish
+        self.finishDeadline = finishDeadline ?? .seconds(effect.duration + 0.5)
         uniforms = WallpaperTransitionUniforms(
             progress: 0,
             time: 0,
@@ -100,27 +107,64 @@ final class WallpaperRevealTransition {
         )
     }
 
-    func start() {
-        guard let contentView = oldWindow.contentView else { return }
+    /// false publishes no mask, light window, or ordering change; Screen can crossfade.
+    @discardableResult
+    func start() -> Bool {
+        guard !isFinished, maskLayer == nil,
+              let contentView = oldWindow.contentView,
+              contentView.bounds.width.isFinite, contentView.bounds.height.isFinite,
+              contentView.bounds.width > 0, contentView.bounds.height > 0,
+              renderer.prepare(effect) else { return false }
         contentView.wantsLayer = true
-        guard let host = contentView.layer else { return }
+        guard let host = contentView.layer else { return false }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Soft-edged, so half resolution is enough; Core Animation scales it back up.
+        defer { CATransaction.commit() }
         let mask = makeMetalLayer(size: host.bounds.size, scale: oldWindow.backingScaleFactor * 0.5)
         mask.presentsWithTransaction = true
         mask.frame = host.bounds
-        renderer.draw(.mask, effect: effect, uniforms: uniforms, in: mask)
+        guard draw(.mask, in: mask) else { return false }
+        // Stage both first draws before publishing either owner property.
+        if effect.lightFunctionName != nil, !installLightWindow() {
+            return false
+        }
         host.mask = mask
         maskLayer = mask
-        CATransaction.commit()
 
-        if effect.lightFunctionName != nil {
-            installLightWindow()
+        // Ink has no light window, but its masked content needs the same order.
+        orderFrontObserver = NotificationCenter.default.addObserver(
+            forName: VideoWallpaperWindow.didOrderFrontNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let object = notification.object else { return }
+            let identity = ObjectIdentifier(object as AnyObject)
+            MainActor.assumeIsolated {
+                guard let self,
+                      identity == ObjectIdentifier(self.oldWindow)
+                      || identity == self.newWindow.map(ObjectIdentifier.init) else { return }
+                self.restackContentAndLight()
+            }
+        }
+        restackContentAndLight()
+        let deadline = finishDeadline
+        deadlineTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: deadline) } catch { return }
+            self?.finish()
         }
         clock.start { [weak self] time in
             self?.advance(to: time)
+        }
+        return true
+    }
+
+    private func draw(_ pass: WallpaperTransitionRenderer.Pass, in layer: CAMetalLayer) -> Bool {
+        renderer.draw(pass, effect: effect, uniforms: uniforms, in: layer) { [weak self] in
+            // Completion runs later on MainActor; finish is also the cancellation
+            // path and is idempotent if another command failed or the deadline won.
+            guard let self, maskLayer != nil else { return }
+            finish()
         }
     }
 
@@ -131,11 +175,13 @@ final class WallpaperRevealTransition {
         let elapsed = time - start
         uniforms.progress = Float(min(1, elapsed / effect.duration))
         uniforms.time = Float(elapsed)
-        if let maskLayer {
-            renderer.draw(.mask, effect: effect, uniforms: uniforms, in: maskLayer)
+        if let maskLayer, !draw(.mask, in: maskLayer) {
+            finish()
+            return
         }
-        if let lightLayer {
-            renderer.draw(.light, effect: effect, uniforms: uniforms, in: lightLayer)
+        if let lightLayer, !draw(.light, in: lightLayer) {
+            finish()
+            return
         }
         if uniforms.progress >= 1 {
             finish()
@@ -146,6 +192,8 @@ final class WallpaperRevealTransition {
     func finish() {
         guard !isFinished else { return }
         isFinished = true
+        deadlineTask?.cancel()
+        deadlineTask = nil
         clock.stop()
         if let orderFrontObserver {
             NotificationCenter.default.removeObserver(orderFrontObserver)
@@ -153,6 +201,7 @@ final class WallpaperRevealTransition {
         orderFrontObserver = nil
         // Hidden before the mask goes: removing it first would show the whole old frame again until the window closes.
         oldWindow.alphaValue = 0
+        oldWindow.level = originalOldWindowLevel
         if let host = oldWindow.contentView?.layer, host.mask === maskLayer {
             host.mask = nil
         }
@@ -164,7 +213,7 @@ final class WallpaperRevealTransition {
         onFinish()
     }
 
-    private func installLightWindow() {
+    private func installLightWindow() -> Bool {
         let frame = oldWindow.frame
         let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -182,22 +231,35 @@ final class WallpaperRevealTransition {
         view.layer = layer
         view.wantsLayer = true
         window.contentView = view
-        renderer.draw(.light, effect: effect, uniforms: uniforms, in: layer)
+        guard draw(.light, in: layer) else {
+            window.close()
+            return false
+        }
         lightWindow = window
         lightLayer = layer
+        return true
+    }
 
-        window.orderFrontRegardless()
-        // An interactive wallpaper shares this level and orders itself front whenever its policy is reapplied.
-        orderFrontObserver = NotificationCenter.default.addObserver(
-            forName: VideoWallpaperWindow.didOrderFrontNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.lightWindow?.orderFrontRegardless() }
+    /// Raising only the light leaves a passive old wallpaper hidden behind an
+    /// interactive incoming one. Keep the masked content above the incoming
+    /// content without raising either above desktop widgets or taking focus.
+    private func restackContentAndLight() {
+        guard !isFinished else { return }
+        oldWindow.ignoresMouseEvents = true
+        oldWindow.acceptsMouseMovedEvents = false
+        oldWindow.level = NSWindow.Level(rawValue: max(
+            originalOldWindowLevel.rawValue, newWindow?.level.rawValue ?? originalOldWindowLevel.rawValue
+        ))
+        if let newWindow, newWindow !== oldWindow {
+            oldWindow.order(.above, relativeTo: newWindow.windowNumber)
+        }
+        if let lightWindow {
+            lightWindow.level = Self.overlayLevel(above: [oldWindow, newWindow].compactMap(\.self))
+            lightWindow.orderFrontRegardless()
         }
     }
 
-    /// One level above passive wallpapers (still under the desktop icons); level with interactive ones.
+    /// Share the highest wallpaper level; ordering places the light above its content, below higher-level widgets.
     static func overlayLevel(above windows: [NSWindow]) -> NSWindow.Level {
         let desktop = Int(CGWindowLevelForKey(.desktopWindow))
         return NSWindow.Level(rawValue: windows.map(\.level.rawValue).reduce(desktop, max))

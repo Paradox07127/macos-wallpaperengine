@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import Foundation
+import LiveWallpaperCore
 
 struct WorkshopDiagnosticPayload: Codable, Equatable, Sendable {
     let phase: Phase
@@ -89,7 +90,8 @@ struct WorkshopDiagnosticPayload: Codable, Equatable, Sendable {
 enum WorkshopDiagnosticRedactor {
 
     static func redact(_ raw: String) -> String {
-        var output = raw
+        // Scrub URLs before identity rules can alter userinfo/host structure.
+        var output = LogPrivacyRedactor.scrub(raw)
 
         output = output.replacingOccurrences(
             of: #"(?i)\bkey=[a-f0-9]{32}\b"#,

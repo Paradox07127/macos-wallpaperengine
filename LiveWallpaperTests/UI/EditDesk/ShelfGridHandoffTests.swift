@@ -65,8 +65,12 @@ private struct HandoffHost {
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { rows }
         router = EditDeskRouter(
-            initialNavigation: onLibrary ? .bookmarks : nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
+            initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
         )
+        // Bookmarks opens Saved; this fixture mounts the wallpaper library's HomePage directly.
+        if onLibrary {
+            router.select(.library)
+        }
         if target {
             router.libraryTarget = screen.id
         }

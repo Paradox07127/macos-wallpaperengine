@@ -264,30 +264,107 @@ struct DeferredApplyCoordinatorTests {
         downloads.cancel(42)
     }
 
-    @Test func dependencyCompletionIsPublishedAfterChainAndKeepsLegacySuccessPhase() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Application/Workshop/WorkshopDownloadCoordinator.swift")
-        let run = try slice(source, from: "var outcome: WorkshopDownloadOutcome?", to: "private func recordProgress(")
-        #expect(run.contains("outcome = await fetchDependencies("))
-        #expect(run.contains("if attempts[itemID] == attemptID"))
-        #expect(run.contains("attempt?.finish(outcome)"))
-        // The dependency stage is observable, so the modal keeps a progress bar instead of going blank.
-        #expect(run.contains("fetchingDependencies.insert(itemID)"))
-        let dependencyFailure = try slice(source, from: "guard report.isFullyResolved else {", to: "// Every dependency arrived")
-        #expect(dependencyFailure.contains("return .failed(reason: reason)"))
-        #expect(!dependencyFailure.contains("phases["))
-        #expect(!dependencyFailure.contains("finish(itemID:"))
-        let reimportFailure = try slice(source, from: "guard let entry = await reimportRoot(", to: "private func fetchDependency(")
-        #expect(reimportFailure.contains("return .failed(reason: reason)"))
-        #expect(reimportFailure.contains("return .succeeded(entry)"))
-        let imports = try slice(source, from: "private func finishImport(", to: "private func finish(itemID:")
-        #expect(imports.contains("finish(itemID: itemID, title: title, phase: .succeeded)"))
-        #expect(imports.contains("return .succeeded(entry)"))
-        #expect(imports.contains("return .unsupported(entry)"))
-        #expect(
-            !imports.contains("case .ready(_, let origin), .unsupported(let origin):"),
-            "an item this Mac can't run shares the success card again"
-        )
-        #expect(imports.contains("finishUnsupported(entry, itemID: itemID, title: title)"))
+    @Test("Cancelling the initial import rejects its late ready result before library publication")
+    func cancelledInitialImportCannotPublish() async throws {
+        let fixture = try DownloadAttemptFixture(name: "cancelledInitialImport", startsWithDependencies: false)
+        defer { fixture.gate.release(); fixture.defaults.discard() }
+        let downloads = fixture.downloads
+        let attempt = try #require(downloads.download(itemID: 420_000_042, title: "Initial", using: fixture.downloader))
+        let task = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
+        let enteredImport = await fixture.waitForReimport()
+        try #require(enteredImport, "\(fixture.diagnostics(for: attempt))")
+        #expect(fixture.downloader.requestedIDs == [420_000_042])
+        #expect(downloads.phase(for: 420_000_042) == .importing)
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.isEmpty)
+
+        downloads.cancel(420_000_042)
+        fixture.gate.release()
+        await task.value
+
+        #expect(attempt.outcome == .cancelled)
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.isEmpty)
+        #expect(fixture.toasts.lastEvent == nil)
+        #expect(downloads.phase(for: 420_000_042) == .idle)
+        #expect(!downloads.isBusy(420_000_042))
+        #expect(downloads.activeAttempt(for: 420_000_042) == nil)
+        await fixture.discard()
+    }
+
+    @Test("Late dependency reimport cannot resurrect a deleted item or overwrite a retry", arguments: [false, true])
+    func cancelledDependencyReimportCannotPublish(startRetry: Bool) async throws {
+        let fixture = try DownloadAttemptFixture(name: "cancelledReimport-\(startRetry)")
+        defer { fixture.gate.release(); fixture.defaults.discard() }
+        let downloads = fixture.downloads
+        let first = try #require(downloads.download(itemID: 420_000_042, title: "Old", using: fixture.downloader))
+        let oldTask = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
+        let reachedReimport = await fixture.waitForReimport()
+        try #require(reachedReimport, "\(fixture.diagnostics(for: first))")
+        #expect(fixture.downloader.requestedIDs == [420_000_042, 990_000_099, 420_000_042])
+        #expect(downloads.fetchingDependencies.contains(420_000_042))
+        #expect(first.outcome == nil)
+        let partial = try #require(fixture.settings.loadGlobalSettings().recentWPEImports.first)
+        #expect(partial.origin.missingDependencyIDs == ["990000099"])
+        #expect(fixture.toasts.lastEvent == nil)
+
+        downloads.cancel(420_000_042)
+        #expect(fixture.settings.removeWPEImport(workshopID: "420000042", matchingImportedAt: partial.importedAt))
+        #expect(first.outcome == .cancelled)
+        var retry: WorkshopDownloadAttempt?
+        if startRetry {
+            retry = try #require(downloads.download(itemID: 420_000_042, title: "Retry", using: fixture.downloader))
+            let retryTask = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
+            // The cancelled importer still holds the existing repository lock.
+            // A retry must retain its own truthful failure, never the old success.
+            await retryTask.value
+            guard case .failed? = retry?.outcome else {
+                Issue.record("The existing repository lock should reject the overlapping mutation")
+                fixture.gate.release()
+                await oldTask.value
+                await fixture.discard()
+                return
+            }
+        }
+        let phaseBeforeLateResult = downloads.phase(for: 420_000_042)
+        let toastBeforeLateResult = fixture.toasts.lastEvent
+        let retryOutcome = retry?.outcome
+        fixture.gate.release()
+        await oldTask.value
+
+        let saved = fixture.settings.loadGlobalSettings()
+        #expect(saved.recentWPEImports.isEmpty)
+        #expect(saved.deletedWorkshopIDs.contains("420000042"))
+        #expect(downloads.phase(for: 420_000_042) == phaseBeforeLateResult)
+        #expect(fixture.toasts.lastEvent == toastBeforeLateResult)
+        #expect(retry?.outcome == retryOutcome)
+        #expect(first.outcome == .cancelled)
+        #expect(!downloads.isBusy(420_000_042) && downloads.activeAttempt(for: 420_000_042) == nil)
+        #expect(!downloads.fetchingDependencies.contains(420_000_042))
+        await fixture.discard()
+    }
+
+    @Test("A current dependency reimport publishes the resolved library item and success once")
+    func currentDependencyReimportPublishes() async throws {
+        let fixture = try DownloadAttemptFixture(name: "currentReimport")
+        defer { fixture.gate.release(); fixture.defaults.discard() }
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Current", using: fixture.downloader))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        let reachedReimport = await fixture.waitForReimport()
+        try #require(reachedReimport, "\(fixture.diagnostics(for: attempt))")
+        #expect(attempt.outcome == nil && fixture.toasts.lastEvent == nil)
+        fixture.gate.release()
+        await task.value
+        guard case let .succeeded(entry)? = attempt.outcome else {
+            Issue.record("Expected a resolved dependency import")
+            await fixture.discard()
+            return
+        }
+        #expect(entry.origin.missingDependencyIDs.isEmpty)
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports == [entry])
+        #expect(fixture.downloads.phase(for: 420_000_042) == .succeeded)
+        #expect(!fixture.downloads.isBusy(420_000_042))
+        #expect(fixture.toasts.lastEvent?.isSuccess == true)
+        #expect(fixture.toasts.lastEvent?.token == 1)
+        await fixture.discard()
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -335,12 +412,6 @@ struct DeferredApplyCoordinatorTests {
         retry.finish(.succeeded(manager.entry))
         await waitUntil { retryTicket.state != .waiting && retryTicket.state != .applying }
         #expect(manager.appliedScreens.map(\.id) == [manager.second.id])
-    }
-
-    private func slice(_ source: String, from start: String, to end: String) throws -> String {
-        let startRange = try #require(source.range(of: start))
-        let endRange = try #require(source.range(of: end, range: startRange.upperBound ..< source.endIndex))
-        return String(source[startRange.lowerBound ..< endRange.lowerBound])
     }
 
     private func waitUntil(_ condition: () -> Bool) async {
@@ -481,4 +552,133 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         )
     }
 }
+
+/// Deliberately ignores cancellation like an already-running file/decode operation.
+@MainActor
+private final class DownloadImportGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var entered = false
+    private var released = false
+
+    func wait() async {
+        entered = true
+        guard !released else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class DownloadFixtureSource: WorkshopItemDownloading {
+    let root: URL
+    private(set) var requestedIDs: [UInt64] = []
+
+    init(root: URL) {
+        self.root = root
+    }
+
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress _: SteamCMDDoctorService.SteamCMDProgressHandler?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported> {
+        requestedIDs.append(itemID)
+        do {
+            let folder = root.appendingPathComponent(String(itemID), isDirectory: true)
+            if itemID == 990_000_099 {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try Data(#"{"workshopid":"990000099","type":"application","file":"unused","title":"Dependency"}"#.utf8)
+                    .write(to: folder.appendingPathComponent("project.json"))
+                // The dependency arrives; the second read now has a playable local
+                // payload. Validation is the real importer's controlled await.
+                let parent = root.appendingPathComponent("420000042", isDirectory: true)
+                try Data(#"{"workshopid":"420000042","type":"video","file":"video.mp4","title":"Resolved"}"#.utf8)
+                    .write(to: parent.appendingPathComponent("project.json"))
+                try Data([0]).write(to: parent.appendingPathComponent("video.mp4"))
+            }
+            return await .imported(onContentReady(folder))
+        } catch {
+            return .failed(reason: error.localizedDescription)
+        }
+    }
+}
+
+@MainActor
+private final class DownloadAttemptFixture {
+    let root: URL
+    let defaults: TestScratch.DefaultsSuite
+    let settings: SettingsManager
+    let toasts: WorkshopToastCenter
+    let gate: DownloadImportGate
+    let downloader: DownloadFixtureSource
+    let downloads: WorkshopDownloadCoordinator
+
+    init(name: String, startsWithDependencies: Bool = true) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("download-attempt-\(UUID())", isDirectory: true)
+        self.root = root
+        let defaults = try TestScratch.defaultsSuite("DeferredApplyCoordinatorTests.\(name)")
+        self.defaults = defaults
+        let settings = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
+        self.settings = settings
+        let toasts = WorkshopToastCenter()
+        self.toasts = toasts
+        let gate = DownloadImportGate()
+        self.gate = gate
+        let content = root.appendingPathComponent("content", isDirectory: true)
+        let item = content.appendingPathComponent("420000042", isDirectory: true)
+        try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
+        let manifest = startsWithDependencies
+            ? #"{"workshopid":"420000042","title":"Needs dependency","type":"scene","file":"scene.json","dependencies":["990000099"]}"#
+            : #"{"workshopid":"420000042","title":"Initial video","type":"video","file":"video.mp4"}"#
+        try Data(manifest.utf8).write(to: item.appendingPathComponent("project.json"))
+        let project = try WallpaperEngineProject.read(from: item)
+        let expectedDependencies = startsWithDependencies ? ["990000099"] : []
+        try #require(project.dependencyWorkshopIDs == expectedDependencies, "Fixture must survive the real manifest ID validator")
+        if !startsWithDependencies {
+            try Data([0]).write(to: item.appendingPathComponent("video.mp4"))
+        }
+        downloader = DownloadFixtureSource(root: content)
+        let importer = WallpaperEngineImportService(
+            validateVideo: { _ in await gate.wait() },
+            makeBookmark: { Data($0.path.utf8) }
+        )
+        downloads = WorkshopDownloadCoordinator(
+            importService: importer, repositoryCoordinator: WorkshopRepositoryCoordinator(),
+            settings: settings, toasts: toasts, cancelSteamCMD: { _ in }
+        )
+    }
+
+    func waitForReimport() async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !gate.entered, downloads.isBusy(420_000_042), ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        return gate.entered
+    }
+
+    func diagnostics(for attempt: WorkshopDownloadAttempt) -> String {
+        let outcome = switch attempt.outcome {
+        case nil: "pending"
+        case .succeeded?: "succeeded"
+        case .succeededAsPreset?: "preset"
+        case .unsupported?: "unsupported"
+        case .cancelled?: "cancelled"
+        case let .failed(reason)?: "failed: \(reason)"
+        }
+        let partial = settings.loadGlobalSettings().recentWPEImports.map {
+            "\($0.origin.workshopID):missing=\($0.origin.missingDependencyIDs)"
+        }
+        return "Import gate was not reached: phase=\(downloads.phase(for: 420_000_042)); outcome=\(outcome); requestedIDs=\(downloader.requestedIDs); partialHistory=\(partial)"
+    }
+
+    func discard() async {
+        await TestScratch.discard(root, flushing: settings)
+    }
+}
+
 #endif

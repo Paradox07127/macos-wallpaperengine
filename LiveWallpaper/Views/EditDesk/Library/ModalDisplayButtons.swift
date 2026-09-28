@@ -30,6 +30,7 @@ struct ModalDisplayButtons: View {
             caption
                 .font(DesignTokens.EditDesk.Typography.chip)
                 .foregroundStyle(DesignTokens.Colors.textSecondary)
+                .layoutPriority(1)
             if let primary = split.primary {
                 applyButton(primary).adaptiveGlassButton(.prominent, size: .large)
             }
@@ -56,6 +57,8 @@ struct ModalDisplayButtons: View {
                     }
                 }
                 .padding(.leading, DesignTokens.Spacing.md)
+                // Keep cancel actions readable; display names already truncate in the middle.
+                .layoutPriority(1)
             }
         }
     }

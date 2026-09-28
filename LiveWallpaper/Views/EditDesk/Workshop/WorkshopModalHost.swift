@@ -159,7 +159,9 @@ struct WorkshopModalHost: View {
         refreshInstalledEntry()
         detachedItem = nil
         let fallback = items.first { $0.id == presentedItemID }
-        if let fallback { WorkshopBookmarkActions.refreshDetails(fallback) }
+        if let fallback {
+            WorkshopBookmarkActions.refreshDetails(fallback)
+        }
         guard refreshDetailsOnOpen || fallback == nil else { return }
         let outcome = await services.itemDetails.load(ids: [presentedItemID])
         guard !Task.isCancelled, self.presentedItemID == presentedItemID,
