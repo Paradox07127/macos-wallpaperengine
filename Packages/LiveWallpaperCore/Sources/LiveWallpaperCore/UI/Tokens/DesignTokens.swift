@@ -358,6 +358,7 @@ public enum DesignTokens {
         /// Deliberately longer than `exitDuration`, which is tuned for widget-sized
         /// elements and reads as a jump at full screen.
         public static let wallpaperCrossfadeDuration: TimeInterval = 0.4
+        public static let wallpaperCrossfadeReducedMotionDuration: TimeInterval = 0.15
 
         public static var enterTiming: CAMediaTimingFunction {
             CAMediaTimingFunction(name: .easeOut)

@@ -49084,37 +49084,37 @@
         }
       }
     },
-    "Plays when a display switches wallpapers. With Reduce Motion on, wallpapers switch without animation." : {
+    "Plays when a display switches wallpapers. With Reduce Motion on, animated transitions become a short crossfade." : {
       "comment" : "Settings › General, info for Wallpaper transition. Reduce Motion is the macOS accessibility setting.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plays when a display switches wallpapers. With Reduce Motion on, wallpapers switch without animation."
+            "value" : "Plays when a display switches wallpapers. With Reduce Motion on, animated transitions become a short crossfade."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se reproduce cuando una pantalla cambia de fondo. Con Reducir movimiento activado, el fondo cambia sin animación."
+            "value" : "Se reproduce cuando una pantalla cambia de fondo. Con Reducir movimiento activado, las transiciones animadas pasan a ser un fundido encadenado breve."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ディスプレイの壁紙が切り替わるときに再生します。「視差効果を減らす」がオンの間はアニメーションなしで切り替わります。"
+            "value" : "ディスプレイの壁紙が切り替わるときに再生します。「視差効果を減らす」がオンの間は、アニメーションが短いクロスフェードになります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示器切换壁纸时播放；开启“减弱动态效果”时直接切换，不播放动画。"
+            "value" : "显示器切换壁纸时播放；开启“减弱动态效果”时改为短暂的淡入淡出。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示器切換桌布時播放；開啟「減少動態效果」時直接切換，不播放動畫。"
+            "value" : "顯示器切換桌布時播放；開啟「減少動態效果」時改為短暫的淡入淡出。"
           }
         }
       }

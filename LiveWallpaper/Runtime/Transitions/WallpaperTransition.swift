@@ -62,7 +62,7 @@ enum WallpaperTransitionPlan: Equatable {
 
     static let randomPool: [WallpaperTransitionPlan] = [.crossfade] + WallpaperRevealEffect.allCases.map { .reveal($0) }
 
-    /// Reduce Motion turns every animated choice into the crossfade, which itself skips the fade under Reduce Motion.
+    /// Reduce Motion turns every animated choice into the crossfade, which `Screen` then runs at its shorter reduced-motion duration.
     static func resolve(
         _ choice: WallpaperTransitionChoice,
         reduceMotion: Bool,
@@ -86,12 +86,8 @@ enum WallpaperTransitionPlan: Equatable {
         }
     }
 
-    static func current() -> WallpaperTransitionPlan {
+    static func current(reduceMotion: Bool) -> WallpaperTransitionPlan {
         var generator = SystemRandomNumberGenerator()
-        return resolve(
-            WallpaperTransitionChoice.stored(),
-            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-            using: &generator
-        )
+        return resolve(WallpaperTransitionChoice.stored(), reduceMotion: reduceMotion, using: &generator)
     }
 }

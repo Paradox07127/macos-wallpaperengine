@@ -48,9 +48,10 @@ final class DisplayLinkTransitionClock: WallpaperTransitionClock {
     }
 }
 
-/// What `Screen` needs to run a transition; tests replace both parts.
+/// What `Screen` needs to run a transition; tests replace any of its parts.
 struct WallpaperTransitionEnvironment {
-    var plan: @MainActor () -> WallpaperTransitionPlan = { WallpaperTransitionPlan.current() }
+    var reduceMotion: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var plan: @MainActor (_ reduceMotion: Bool) -> WallpaperTransitionPlan = { WallpaperTransitionPlan.current(reduceMotion: $0) }
     var makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock = { DisplayLinkTransitionClock(window: $0) }
     var renderer: @MainActor () -> (any WallpaperTransitionRendering)? = { WallpaperTransitionRenderer.shared }
 }

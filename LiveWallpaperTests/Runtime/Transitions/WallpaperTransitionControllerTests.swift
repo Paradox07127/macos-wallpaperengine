@@ -242,6 +242,30 @@ struct WallpaperTransitionControllerTests {
         #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
     }
 
+    @Test("Screen: the crossfade keeps the old session for its duration, shortened under Reduce Motion",
+          .timeLimit(.minutes(1)), arguments: [true, false])
+    func screenCrossfadeRetiresAfterItsDuration(reduceMotion: Bool) async throws {
+        let screen = try makeScreen(plan: .crossfade, clock: ManualTransitionClock())
+        screen.transitionEnvironment.reduceMotion = { reduceMotion }
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new)
+
+        #expect(old.cleanupCallCount == 0)
+        #expect(screen.retiringSessions[ObjectIdentifier(old)] != nil)
+        if reduceMotion {
+            try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration + 0.3))
+        } else {
+            try await Task.sleep(for: .seconds(0.2))
+            #expect(old.cleanupCallCount == 0 && screen.retiringSessions[ObjectIdentifier(old)] != nil)
+            try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration - 0.2 + 0.3))
+        }
+        #expect(old.cleanupCallCount == 1 && new.cleanupCallCount == 0)
+        #expect(screen.retiringSessions.isEmpty)
+    }
+
     /// Parks itself off every display in the test host.
     private func makeWallpaperWindow() -> VideoWallpaperWindow {
         VideoWallpaperWindow(frame: NSRect(x: 0, y: 0, width: 64, height: 36))
@@ -266,7 +290,7 @@ struct WallpaperTransitionControllerTests {
 
     private func makeScreen(plan: WallpaperTransitionPlan, clock: ManualTransitionClock) throws -> Screen {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
-        screen.transitionEnvironment = WallpaperTransitionEnvironment(plan: { plan }, makeClock: { _ in clock })
+        screen.transitionEnvironment = WallpaperTransitionEnvironment(plan: { _ in plan }, makeClock: { _ in clock })
         return screen
     }
 

@@ -32,7 +32,7 @@ final class Screen: Identifiable, Hashable {
 
     /// Sessions fading out after being replaced. Held so screen teardown can
     /// flush them instead of leaving an untracked timer owning a live window.
-    private var retiringSessions: [ObjectIdentifier: any WallpaperRuntimeSession] = [:]
+    private(set) var retiringSessions: [ObjectIdentifier: any WallpaperRuntimeSession] = [:]
 
     var activeWallpaperWindow: NSWindow? {
         runtimeSession?.wallpaperWindow
@@ -149,7 +149,7 @@ final class Screen: Identifiable, Hashable {
         guard let old else { return }
         // A newer swap ends a reveal still in progress rather than stacking a second mask over it.
         finishRevealTransitions()
-        let plan = transitionEnvironment.plan()
+        let plan = transitionEnvironment.plan(transitionEnvironment.reduceMotion())
         guard let window = old.wallpaperWindow ?? old.videoPlayer?.playbackWindow, plan != .none else {
             old.cleanup()
             return
@@ -161,15 +161,14 @@ final class Screen: Identifiable, Hashable {
     }
 
     private func crossfade(_ old: any WallpaperRuntimeSession, window: NSWindow) {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            old.cleanup()
-            return
-        }
+        let duration = transitionEnvironment.reduceMotion()
+            ? DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
+            : DesignTokens.Motion.wallpaperCrossfadeDuration
         old.applyPerformanceProfile(.suspended)
         // The outgoing window outlives this call, so it must stop taking input — otherwise an interactive scene/HTML wallpaper keeps swallowing desktop clicks for the whole fade.
         window.ignoresMouseEvents = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = DesignTokens.Motion.wallpaperCrossfadeDuration
+            context.duration = duration
             context.timingFunction = DesignTokens.Motion.exitTiming
             window.animator().alphaValue = 0
         }
@@ -179,7 +178,7 @@ final class Screen: Identifiable, Hashable {
         retiringSessions[token] = old
         // Not runAnimationGroup's completion handler: that runs nonisolated, and handing it this MainActor-bound session is a Swift 6 sending violation.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration))
+            try? await Task.sleep(for: .seconds(duration))
             guard let self, retiringSessions.removeValue(forKey: token) != nil else {
                 return
             }
