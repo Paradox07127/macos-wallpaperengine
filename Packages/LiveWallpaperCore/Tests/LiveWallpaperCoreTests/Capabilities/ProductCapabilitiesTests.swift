@@ -51,6 +51,11 @@ struct ProductCapabilitiesTests {
         #expect(Set(catalog.selectableWallpaperTypes) == Set(WallpaperType.allCases))
     }
 
+    @Test("HTML wallpaper type is presented to users as Web")
+    func htmlWallpaperTypeIsPresentedAsWeb() {
+        #expect(WallpaperType.html.titleKey == LocalizedStringKey("Web"))
+    }
+
     @Test("Lite catalog exposes playlist and schedule automation modes")
     func liteCatalogWallpaperModes() {
         #expect(ProductCapabilities.lite.selectableWallpaperModes == [.playlist, .schedule])

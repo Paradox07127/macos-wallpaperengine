@@ -74,7 +74,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var leavingScrollOffset: CGFloat = 0
     private var snapTask: Task<Void, Never>?
     private var displayLink: CADisplayLink?
-    private var linkTarget: DisplayLinkTarget?
     private var lastTimestamp: TimeInterval?
     private var tracking: NSTrackingArea?
     private var pressedCard: StageCard.ID?
@@ -1014,7 +1013,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard displayLink == nil, let screen = window?.screen else { return }
         let target = DisplayLinkTarget(view: self)
         let link = screen.displayLink(target: target, selector: #selector(DisplayLinkTarget.step(_:)))
-        linkTarget = target
         displayLink = link
         lastTimestamp = nil
         link.add(to: .main, forMode: .common)
@@ -1023,7 +1021,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func stopDisplayLink() {
         displayLink?.invalidate()
         displayLink = nil
-        linkTarget = nil
         lastTimestamp = nil
     }
 

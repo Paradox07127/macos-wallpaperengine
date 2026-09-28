@@ -164,7 +164,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             return SettingsNavigationSearchResult(
                 item: item,
                 anchor: nil,
-                matchHint: item.searchMatchHint(matching: query)
+                matchHint: item.searchMatchHint(matching: query, capabilities: capabilities)
             )
         }
     }
@@ -645,7 +645,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         return SettingsSearchFocus(anchor: landing?.anchor, rows: marked, scrollRow: isUnique ? landingRow : nil)
     }
 
-    func searchMatchHint(matching query: String) -> String? {
+    func searchMatchHint(matching query: String, capabilities: ProductCapabilities) -> String? {
         let terms = query.localizedStandardTokens.filter { !$0.isEmpty }
         guard !terms.isEmpty else { return nil }
 
@@ -656,7 +656,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         }
 
         var keys: [String] = []
-        for key in searchTargets(capabilities: ProductCapabilities.pro.withWorkshopOnline()).flatMap({ $0.hintKeys(matchingAny: terms) })
+        for key in searchTargets(capabilities: capabilities).flatMap({ $0.hintKeys(matchingAny: terms) })
         where key != title && !keys.contains(key) {
             keys.append(key)
         }

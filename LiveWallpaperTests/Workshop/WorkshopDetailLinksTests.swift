@@ -25,12 +25,7 @@ struct WorkshopCommunityURLTests {
 @Suite("Workshop detail inspector copy")
 struct WorkshopDetailCopyTests {
     private static let keys = [
-        "Posted %@ (%@)",
-        "Updated %@ (%@)",
         "%lld ratings",
-        "No ratings yet",
-        "Rating unavailable",
-        "Download size: %@",
         "%@ up, %@ down",
         "%lld comments",
         "Comments",

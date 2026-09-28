@@ -8,6 +8,8 @@ import Testing
 struct DisplayDetailHostTests {
     @Test("A scene's HUD offers Center, which video has no mode for")
     func sceneFitModesIncludeCenter() {
+        #expect(VideoFitMode.videoModes == [.aspectFill, .aspectFit, .stretch])
+        #expect(VideoFitMode.sceneModes == [.aspectFill, .aspectFit, .stretch, .center])
         #expect(DisplayDetailHost.fitModes(for: .scene) == VideoFitMode.sceneModes)
         #expect(DisplayDetailHost.fitModes(for: .video) == VideoFitMode.videoModes)
         // A scene left on Center must find its own mode in the segment, or it cannot get back to it.

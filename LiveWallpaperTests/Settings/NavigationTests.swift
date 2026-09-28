@@ -157,7 +157,7 @@ struct NavigationTests {
         ).first { $0.destination == .displayDefaults }
 
         AppLanguageOverride.with(.english) {
-            #expect(item?.searchMatchHint(matching: "frame rate") == "Frame Rate")
+            #expect(item?.searchMatchHint(matching: "frame rate", capabilities: .pro) == "Frame Rate")
         }
     }
 
@@ -244,6 +244,35 @@ struct NavigationTests {
 
         #expect(!sceneResults.contains { $0.anchor == .displayDefaultsScene })
         #expect(!sceneResults.map(\.destination).contains(.displayDefaults))
+    }
+
+    @Test("Lite search hints name only sections Lite has")
+    func liteSearchHintsNameOnlyLiteSections() {
+        func sectionLabels(_ capabilities: ProductCapabilities, workshop: Bool) -> Set<String> {
+            Set(SettingsNavigation.availableItems(capabilities: capabilities, includeWorkshopOnline: workshop)
+                .flatMap { $0.searchTargets(capabilities: capabilities) }
+                .flatMap { [$0.label] + $0.rows })
+        }
+        let pro = ProductCapabilities.pro.withWorkshopOnline()
+        let proOnly = sectionLabels(pro, workshop: true).subtracting(sectionLabels(.lite, workshop: false))
+        let queries = ["video fps"] + SettingsNavigation.allItems
+            .flatMap { $0.searchTargets(capabilities: pro) }
+            .flatMap { [$0.label] + $0.keywords }
+
+        AppLanguageOverride.with(.english) {
+            #expect(proOnly.contains("Rendering"))
+            for query in queries {
+                let hints = SettingsNavigation.filteredResults(matching: query, capabilities: .lite).compactMap(\.matchHint)
+                // A hint is "Name", "Name: FPS" or "Name, Name".
+                let named = hints.flatMap { $0.components(separatedBy: ", ") }
+                    .map { $0.components(separatedBy: ": ").first ?? $0 }
+                let leaked = named.filter(proOnly.contains)
+                #expect(leaked.isEmpty, "Lite search for \"\(query)\" names \(leaked)")
+            }
+            let proPerformance = SettingsNavigation.filteredResults(matching: "video fps", capabilities: .pro)
+                .first { $0.destination == .performancePower }
+            #expect(proPerformance?.matchHint?.contains("Rendering") == true)
+        }
     }
 
     @Test("Archive search uses always visible storage anchor")

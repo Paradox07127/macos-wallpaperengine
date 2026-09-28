@@ -104,7 +104,7 @@ struct SettingsSidebar: View {
     private func rows(for results: [SettingsNavigationSearchResult]) -> some View {
         ForEach(results) { result in
             // A tag, not a NavigationLink: the Edit Desk hosts this list outside any navigation container, where links draw disabled.
-            SettingsSidebarRow(result: result, searchText: searchText)
+            SettingsSidebarRow(result: result)
                 .tag(result.destination)
                 .accessibilityHint(Text("Open settings category"))
         }
@@ -162,11 +162,6 @@ private struct SettingsSidebarSearchField: View {
 
 private struct SettingsSidebarRow: View {
     let result: SettingsNavigationSearchResult
-    let searchText: String
-
-    private var matchHint: String? {
-        result.matchHint ?? result.item.searchMatchHint(matching: searchText)
-    }
 
     var body: some View {
         HStack(spacing: SettingsSidebarMetrics.rowContentSpacing) {
@@ -178,7 +173,7 @@ private struct SettingsSidebarRow: View {
                 Text(LocalizedStringKey(result.title))
                     .marqueeOnHover(truncationMode: .tail)
 
-                if let matchHint {
+                if let matchHint = result.matchHint {
                     Text("Matched: \(matchHint)")
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)

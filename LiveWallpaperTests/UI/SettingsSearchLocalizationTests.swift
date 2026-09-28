@@ -186,7 +186,6 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    /// Performance, not Display Defaults: es translates the Frame Rate row as "FPS", so there the row name wins.
     @Test("A language-neutral keyword like FPS stays next to the localized section label")
     func neutralKeywordStaysInHint() {
         AppLanguageOverride.with(.simplifiedChinese) {
