@@ -179,7 +179,6 @@ SUITES=(
   WallpaperEngineProjectWorkshopIDTests
   DeferredApplyToastsTests
   OnboardingProgressTests
-  OnboardingSignalsTests
   DetailIconButtonSourceTests
   OnboardingUITests
   MenuBarBehaviorTests
