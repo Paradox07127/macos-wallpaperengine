@@ -188,13 +188,13 @@ struct EditDeskChromeSourceTests {
     @Test("An ⌥-click on a grid tile and the stage's apply request go through one quick-apply helper")
     func gridOptionClickSharesTheQuickApply() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let start = try #require(source.range(of: "private struct LibraryGridEntry: View {"))
+        let start = try #require(source.range(of: "private var wallpaperGrid: some View {"))
         let grid = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
         #expect(grid.contains("NSApp.currentEvent?.modifierFlags.contains(.option) == true"), "a grid tile ignores ⌥")
         #expect(grid.contains("NSApp.currentEvent?.type == .leftMouseUp"), "a VoiceOver press, whose VO key holds ⌥, applies the tile")
-        #expect(grid.contains("page.quickApply(item.id)"), "an ⌥-click on a grid tile applies on a path of its own")
+        #expect(grid.contains("quickApply(item.id)"), "an ⌥-click on a grid tile applies on a path of its own")
         #expect(
-            grid.contains(#".accessibilityAction(named: Text("Apply")) { page.quickApply(item.id) }"#),
+            grid.contains(#".accessibilityAction(named: Text("Apply")) { quickApply(item.id) }"#),
             "a grid tile offers VoiceOver no Apply, which a shelf card does"
         )
         let request = try #require(source.range(of: "case let .cardApplyRequested(cardID):"))
@@ -280,7 +280,7 @@ struct EditDeskChromeSourceTests {
         #expect(modal.contains("actions.headerActions("), "the modal's buttons do not come from the shared actions")
         #expect(!modal.contains("WallpaperMenuRows(items: actions.menuItems("), "the modal still draws the … menu")
         #expect(!modal.contains("Menu(\"Apply to\")"), "the modal lists its own rows again")
-        #expect(home.contains(".contextMenu { WallpaperMenuRows(items: page.libraryMenu(for: item)) }"))
+        #expect(home.contains(".contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }"))
         #expect(home.contains("stage.cardMenu = { id in library?.items.first { $0.id == id }.map { [libraryMenu(for: $0)] } ?? [] }"))
         #expect(home.contains("modalActions?.menuItems("))
     }

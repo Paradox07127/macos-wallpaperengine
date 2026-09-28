@@ -891,7 +891,29 @@ struct HomePage: View {
                             initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
                         ) {
                             ForEach(library.visibleItems) { item in
-                                LibraryGridEntry(page: self, library: library, item: item)
+                                let badges = item.cardBadges(
+                                    among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
+                                )
+                                Button {
+                                    // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
+                                    if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+                                        quickApply(item.id)
+                                    } else {
+                                        presentedItemID = item.id
+                                    }
+                                } label: {
+                                    LibraryGridTile(
+                                        item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges,
+                                        preview: gridPreview
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
+                                .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
+                                .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
+                                .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
+                                .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
+                                .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
                             }
                         }
                         .libraryGridPadding()
@@ -905,42 +927,6 @@ struct HomePage: View {
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
             }
-        }
-    }
-
-    /// Keep deferred ForEach enumeration structural: live observation reads belong
-    /// to this row's body, not the collection's content-building closure.
-    private struct LibraryGridEntry: View {
-        let page: HomePage
-        let library: SavedLibraryModel
-        let item: LibraryItem
-
-        var body: some View {
-            let badges = item.cardBadges(
-                among: page.stage.displays,
-                updatedWorkshopIDs: page.updatedWorkshopIDs,
-                preferences: page.cardPreferences
-            )
-            Button {
-                if NSApp.currentEvent?.type == .leftMouseUp,
-                   NSApp.currentEvent?.modifierFlags.contains(.option) == true {
-                    page.quickApply(item.id)
-                } else {
-                    page.presentedItemID = item.id
-                }
-            } label: {
-                LibraryGridTile(
-                    item: item, thumbnail: page.gridThumbnail(for: item),
-                    thumbnails: page.thumbnails, badges: badges, preview: page.gridPreview
-                )
-            }
-            .buttonStyle(.plain)
-            .libraryDragSource(page.libraryDrag, enabled: item.isSupported) { page.dragPayload(for: item) }
-            .contextMenu { WallpaperMenuRows(items: page.libraryMenu(for: item)) }
-            .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
-            .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
-            .accessibilityAction(named: Text("Apply")) { page.quickApply(item.id) }
-            .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
         }
     }
 
