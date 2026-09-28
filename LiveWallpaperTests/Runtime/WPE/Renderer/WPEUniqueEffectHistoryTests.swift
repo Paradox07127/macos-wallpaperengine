@@ -5,10 +5,10 @@ import LiveWallpaperProWPE
 import Metal
 import Testing
 
-@Suite("WPE unique effect histories")
-struct WPEUniqueEffectHistoryTests {
-    @Test("Repeated effects isolate unique targets, binds, commands and material textures")
-    func graphScopesEveryReference() throws {
+@Suite("WPE unique effect graph scopes")
+struct WPEUniqueEffectGraphTests {
+    @Test("Repeated effects isolate unique targets, binds, commands and material textures", arguments: [false, true])
+    func graphScopesEveryReference(duplicateDeclaration: Bool) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         func write(_ name: String, _ value: [String: Any]) throws {
@@ -19,9 +19,13 @@ struct WPEUniqueEffectHistoryTests {
         try write("models/image.json", ["material": "materials/image.json"])
         try write("materials/image.json", ["passes": [["shader": "genericimage2", "textures": ["source"]]]])
         try write("materials/accumulate.json", ["passes": [["shader": "effects/test", "textures": ["_rt_History"]]]])
+        let history: [String: Any] = ["name": "_rt_History", "scale": 1, "format": "rgba8888", "unique": true]
+        var fbos: [[String: Any]] = [history, ["name": "_rt_Scratch", "scale": 1, "format": "rgba8888"]]
+        if duplicateDeclaration {
+            fbos.append(history)
+        }
         try write("effects/test/effect.json", [
-            "fbos": [["name": "_rt_History", "scale": 1, "format": "rgba8888", "unique": true],
-                     ["name": "_rt_Scratch", "scale": 1, "format": "rgba8888"]],
+            "fbos": fbos,
             "passes": [["material": "materials/accumulate.json", "target": "_rt_Scratch",
                         "bind": [["index": 1, "name": "_rt_History"]]],
                        ["command": "copy", "source": "_rt_Scratch", "target": "_rt_History"],
@@ -36,7 +40,8 @@ struct WPEUniqueEffectHistoryTests {
         #expect(graph.layers.count == 2)
         var names: Set<String> = []
         for layer in graph.layers {
-            let histories = layer.localFBOs.filter(\.unique)
+            var seen: Set<String> = []
+            let histories = layer.localFBOs.filter { $0.unique && seen.insert($0.name).inserted }
             #expect(histories.count == 2)
             for (index, fbo) in histories.enumerated() {
                 #expect(names.insert(fbo.name).inserted)
@@ -49,8 +54,32 @@ struct WPEUniqueEffectHistoryTests {
             }
         }
     }
+}
 
-    @Test("Unique feedback survives frames, stays outside the alias heap and resets on reload")
+@Suite("WPE unique effect histories")
+struct WPEUniqueEffectHistoryTests {
+    @Test("Only resolved bindings establish private history", arguments: [false, true])
+    func historyIgnoresOverriddenReferences(readHistory: Bool) throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let read = WPERenderPass(id: "read", phase: .effect(file: "test"), shader: "commands/copy",
+                                 source: .fbo("history"), target: .fbo(name: "scratch"), textures: [0: .fbo("history")],
+                                 binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let write = read.replacingTarget(.fbo(name: "history"))
+        let passes = [
+            WPEPreparedRenderPass(pass: read, shader: nil, textureBindings: [0: readHistory ? .fbo("history") : .asset("current")], comboValues: [:], uniformValues: [:]),
+            WPEPreparedRenderPass(pass: write, shader: nil, textureBindings: [0: .fbo("scratch")], comboValues: [:], uniformValues: [:]),
+        ]
+        let layer = WPERenderLayer(objectID: "test", objectName: "test", imagePath: "unused", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b",
+                                   localFBOs: [WPERenderFBO(name: "history", scale: 1, format: "rgba8888", unique: true)], passes: passes.map(\.pass))
+        let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: passes)])
+        let topology = executor.computeFBOAliasTopology(pipeline: pipeline)
+        #expect(topology.historyFBONames == (readHistory ? ["history"] : []))
+        let aliases = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: CGSize(width: 8, height: 8))
+        #expect(aliases.contains { $0.key.name == "history" } == !readHistory)
+    }
+
+    @Test("Unique feedback survives frames, stays outside the alias heap and resets on resize and reload")
     func temporalFeedback() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -117,6 +146,11 @@ struct WPEUniqueEffectHistoryTests {
         _ = try executor.render(pipeline: pipeline, size: CGSize(width: 9, height: 8), textures: [:], cameraUniforms: camera)
         let reset = try sample(#require(executor.previousFrameHistory?.namedTextures["_rt_unique_red"]))
         #expect(abs(Int(reset[0]) - 137) <= 2)
+        executor.releaseTransientResources()
+        #expect(executor.previousFrameHistory == nil)
+        _ = try executor.render(pipeline: pipeline, size: size, textures: [:], cameraUniforms: camera)
+        let reloaded = try sample(#require(executor.previousFrameHistory?.namedTextures["_rt_unique_red"]))
+        #expect(abs(Int(reloaded[0]) - 137) <= 2)
     }
 }
 #endif

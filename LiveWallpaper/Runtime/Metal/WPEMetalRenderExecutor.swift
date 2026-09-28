@@ -551,6 +551,7 @@ final class WPEMetalRenderExecutor {
     }
 
     struct PuppetAttachmentFrameContext {
+        let objectParentByID: [String: String]
         let layersByObjectID: [String: WPEPreparedRenderLayer]
         let skinningByObjectID: [String: PuppetSkinningState]
         let sceneSize: CGSize
@@ -1807,6 +1808,7 @@ final class WPEMetalRenderExecutor {
         }
         recordPuppetSkinningBreadcrumbs(pipeline: pipeline, skinningByObjectID: skinningByObjectID)
         return PuppetAttachmentFrameContext(
+            objectParentByID: parallaxObjectParentByID,
             layersByObjectID: layersByID,
             skinningByObjectID: skinningByObjectID,
             sceneSize: sceneSize

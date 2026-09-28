@@ -48,6 +48,7 @@ struct WPEPuppetAttachmentFollowTests {
             reason: "test"
         )
         return WPEMetalRenderExecutor.PuppetAttachmentFrameContext(
+            objectParentByID: [:],
             layersByObjectID: [parent.objectID: WPEPreparedRenderLayer(graphLayer: parent, passes: [])],
             skinningByObjectID: [parent.objectID: state],
             sceneSize: sceneSize
@@ -91,6 +92,7 @@ struct WPEPuppetAttachmentFollowTests {
         let grandchild = layer(id: "jewel", origin: childOrigin + SIMD3(10, 20, 0), parentObjectID: "face")
         let initial = context(parent: parent, boneTranslation: boneDelta)
         let chain = WPEMetalRenderExecutor.PuppetAttachmentFrameContext(
+            objectParentByID: [:],
             layersByObjectID: initial.layersByObjectID.merging([
                 "face": WPEPreparedRenderLayer(graphLayer: child, passes: []),
             ]) { first, _ in first }, skinningByObjectID: initial.skinningByObjectID, sceneSize: sceneSize
@@ -98,6 +100,24 @@ struct WPEPuppetAttachmentFollowTests {
         let moved = executor.layerApplyingAttachmentFollow(grandchild, context: chain)
         #expect(abs(moved.geometry.origin.x - grandchild.geometry.origin.x - Double(boneDelta.x)) < 0.01)
         #expect(abs(moved.geometry.origin.y - grandchild.geometry.origin.y - Double(boneDelta.y)) < 0.01)
+    }
+
+    @Test("Bone motion crosses a non-rendered transform host without following cycles")
+    func grandchildAcrossTransformHost() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let rig = layer(id: "rig", origin: SIMD3(1000, 800, 0), puppetPath: "models/rig.mdl")
+        let face = layer(id: "face", origin: childOrigin, parentObjectID: "rig", attachment: "head")
+        let jewel = layer(id: "jewel", origin: childOrigin + SIMD3(10, 20, 0), parentObjectID: "host")
+        let initial = context(parent: rig, boneTranslation: boneDelta)
+        let chain = WPEMetalRenderExecutor.PuppetAttachmentFrameContext(
+            objectParentByID: ["host": "face", "rig": "host"],
+            layersByObjectID: initial.layersByObjectID.merging([
+                "face": WPEPreparedRenderLayer(graphLayer: face, passes: []),
+            ]) { first, _ in first }, skinningByObjectID: initial.skinningByObjectID, sceneSize: sceneSize
+        )
+        let moved = executor.layerApplyingAttachmentFollow(jewel, context: chain)
+        #expect(abs(moved.geometry.origin.x - jewel.geometry.origin.x - Double(boneDelta.x)) < 0.01)
+        #expect(abs(moved.geometry.origin.y - jewel.geometry.origin.y - Double(boneDelta.y)) < 0.01)
     }
 
     @Test("Zero bone motion under a mirrored parent leaves the child at its bind-pose origin")

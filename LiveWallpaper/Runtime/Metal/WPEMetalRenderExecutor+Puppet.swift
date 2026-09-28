@@ -414,12 +414,15 @@ extension WPEMetalRenderExecutor {
         context: PuppetAttachmentFrameContext
     ) -> WPERenderLayer {
         var delta = SIMD2<Float>.zero
-        var current: WPERenderLayer? = layer
+        guard !context.layersByObjectID.isEmpty else { return layer }
+        var currentID: String? = layer.objectID
         var seen: Set<String> = []
-        while let child = current, seen.insert(child.objectID).inserted, seen.count <= 100 {
-            guard let parentID = child.parentObjectID,
-                  let parent = context.layersByObjectID[parentID]?.graphLayer else { break }
-            if let attachmentName = child.attachment,
+        while let childID = currentID, seen.insert(childID).inserted, seen.count <= 100 {
+            let child = childID == layer.objectID ? layer : context.layersByObjectID[childID]?.graphLayer
+            guard let parentID = child?.parentObjectID ?? context.objectParentByID[childID] else { break }
+            currentID = parentID
+            if let attachmentName = child?.attachment,
+               let parent = context.layersByObjectID[parentID]?.graphLayer,
                let parentState = context.skinningByObjectID[parentID], parentState.enabled,
                let attachment = parentState.attachmentsByName[attachmentName],
                attachment.boneIndex >= 0, attachment.boneIndex < parentState.palette.count {
@@ -431,7 +434,6 @@ extension WPEMetalRenderExecutor {
                 let animated = puppetModelPointToScene(SIMD2(currentAnchor.columns.3.x, currentAnchor.columns.3.y), layer: parent, sceneSize: context.sceneSize)
                 delta += animated - rest
             }
-            current = parent
         }
         guard delta.x.isFinite, delta.y.isFinite, delta != .zero else { return layer }
         return replacingGeometryOrigin(of: layer, bySceneOffset: delta, sceneSize: context.sceneSize)

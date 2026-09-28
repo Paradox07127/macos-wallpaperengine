@@ -951,10 +951,10 @@ struct WPERenderGraphBuilder: Sendable {
             // WPE's unique buffers belong to this effect instance, including when
             // the same effect occurs twice on one object. Shared scratch and scene
             // aliases keep their authored names.
-            let uniqueFBONames = Dictionary(uniqueKeysWithValues: asset.fbos.compactMap { fbo -> (String, String)? in
+            let uniqueFBONames = Dictionary(asset.fbos.compactMap { fbo -> (String, String)? in
                 guard fbo.unique, !WPETextureReference.isSceneAliasName(fbo.name) else { return nil }
                 return (fbo.name, "_rt_unique_\(object.id.utf8.count)_\(object.id)_\(effectIndex)_\(fbo.name)")
-            })
+            }, uniquingKeysWith: { first, _ in first })
             context.localFBOs.append(contentsOf: asset.fbos.map { fbo in
                 WPERenderFBO(name: uniqueFBONames[fbo.name] ?? fbo.name, scale: fbo.scale,
                              fit: fbo.fit, format: fbo.format, unique: fbo.unique, pixelSize: fbo.pixelSize)

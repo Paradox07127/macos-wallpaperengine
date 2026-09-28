@@ -299,9 +299,11 @@ extension WPEMetalRenderExecutor {
                 $0.unique && !WPETextureReference.isSceneAliasName($0.name)
             }.map(\.name))
             var history: Set<String> = []
-            for item in items {
-                history.formUnion(item.readFBONames.filter { unique.contains($0) && !written.contains($0) })
-                if case .named(let name) = WPEMetalTargetID(target: item.target) { written.insert(name) }
+            for layer in layers {
+                for pass in layer.passes {
+                    history.formUnion(pass.access.boundFBONames.filter { unique.contains($0) && !written.contains($0) })
+                    if case let .named(name) = WPEMetalTargetID(target: pass.pass.target) { written.insert(name) }
+                }
             }
             historyFBONames = history
             self.itemIndicesByKeyName = itemIndicesByKeyName
