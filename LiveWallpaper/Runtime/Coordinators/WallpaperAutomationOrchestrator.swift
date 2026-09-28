@@ -408,12 +408,12 @@ final class WallpaperAutomationOrchestrator {
             return
         }
         let decision = SchedulePolicy.decision(for: config, hour: Calendar.current.component(.hour, from: currentTime))
+        // Saving here would move the revision and discard a launch restore candidate that is still preparing.
+        guard decision != .none else { return }
         config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: slots, calendar: .current)
         // Saved before dispatch: a web or scene candidate gives up when the revision moves while it prepares.
         saveConfiguration(config)
-        if decision != .none {
-            noteAutomaticSwitch(screen, .schedule)
-        }
+        noteAutomaticSwitch(screen, .schedule)
 
         switch decision {
         case .none:

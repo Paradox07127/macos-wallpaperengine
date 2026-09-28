@@ -1126,6 +1126,23 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(marks == [.schedule, .playlist])
     }
 
+    @Test("A schedule check that finds the planned wallpaper already showing leaves the configuration revision alone")
+    func settledScheduleCheckKeepsRevision() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        var showingPlan = Self.plannedConfiguration(for: screen).applyingAutomationEntry(Self.dayPage)
+        showingPlan.displayFingerprint = screen.displayFingerprint
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([showingPlan]))
+        var restores = 0
+        let orchestrator = Self.scheduleOrchestrator(
+            store: store, screen: screen, clock: { automationTime(12, 0, 30) },
+            restore: { _, _ in restores += 1 }
+        )
+        let revision = store.revision(for: screen.id)
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(restores == 0)
+        #expect(store.revision(for: screen.id) == revision, "a check with nothing to switch invalidated the restore candidate in flight")
+    }
+
     private static func pickByHand(on screen: Screen, in store: WallpaperConfigurationStore) throws {
         var picked = try #require(store.get(for: screen.id))
         picked.activeWallpaper = .html(source: .inline("picked"), config: .default)
