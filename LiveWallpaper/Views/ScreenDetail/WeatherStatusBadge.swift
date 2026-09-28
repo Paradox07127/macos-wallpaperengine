@@ -6,8 +6,7 @@ struct WeatherStatusBadge: View {
     var weatherService: WeatherReactiveService
     var refresh: () -> Void
 
-    /// Accessory apps (LSUIElement) cannot show the system Location permission dialog directly; we surface a one-tap shortcut to System Settings instead.
-    private var needsLocationSettingsLink: Bool {
+    private var needsLocationAuthorizationAction: Bool {
         guard SettingsManager.shared.loadGlobalSettings().weatherLocation.source == .coreLocation else { return false }
         switch weatherService.locationStatus {
         case .notDetermined, .denied: return true
@@ -72,23 +71,14 @@ struct WeatherStatusBadge: View {
                     .accessibilityHidden(true)
             }
 
-            if needsLocationSettingsLink {
-                Button(action: Self.openLocationSettings) {
-                    Text(
-                        "Open Settings",
-                        comment: "Weather badge button label that jumps to System Settings → Location Services."
-                    )
+            if needsLocationAuthorizationAction {
+                Button { performLocationAuthorizationAction() } label: {
+                    locationActionLabel
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(CapsuleButtonStyle(preset: .small))
-                .help(Text(
-                    "Open System Settings → Privacy & Security → Location Services",
-                    comment: "Tooltip for the Open Settings button on the weather badge."
-                ))
-                .accessibilityLabel(Text(
-                    "Open Location Services settings",
-                    comment: "A11y label for the weather badge Open Settings button."
-                ))
+                .help(locationActionHelp)
+                .accessibilityLabel(locationActionAccessibilityLabel)
             }
 
             Button(action: refresh) {
@@ -107,6 +97,43 @@ struct WeatherStatusBadge: View {
         }
         .padding(.vertical, 4)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+    }
+
+    private var locationActionLabel: Text {
+        if weatherService.locationStatus == .notDetermined {
+            Text("Grant Access")
+        } else {
+            Text("Open Settings")
+        }
+    }
+
+    private var locationActionHelp: Text {
+        if weatherService.locationStatus == .notDetermined {
+            Text("Grant Access")
+        } else {
+            Text("Open System Settings → Privacy & Security → Location Services")
+        }
+    }
+
+    private var locationActionAccessibilityLabel: Text {
+        if weatherService.locationStatus == .notDetermined {
+            Text("Grant Access")
+        } else {
+            Text("Open Location Services settings")
+        }
+    }
+
+    func performLocationAuthorizationAction(openSettings: () -> Void = Self.openLocationSettings) {
+        guard needsLocationAuthorizationAction else { return }
+        switch weatherService.locationStatus {
+        case .notDetermined:
+            weatherService.requestLocationAuthorizationIfNeeded()
+            refresh()
+        case .denied:
+            openSettings()
+        default:
+            break
+        }
     }
 
     static func openLocationSettings() {

@@ -229,6 +229,46 @@ struct WeatherLocationProviderFallbackTests {
         #expect(resolution == .unresolved)
     }
 
+    @Test("Weather badge first grant refreshes in-app; denied access opens System Settings")
+    func weatherBadgeRoutesExplicitPermissionAction() async {
+        let original = SettingsManager.shared.loadGlobalSettings()
+        defer { SettingsManager.shared.saveGlobalSettings(original) }
+        var settings = original
+        settings.weatherLocation = WeatherLocationPreference(source: .coreLocation)
+        SettingsManager.shared.saveGlobalSettings(settings)
+        let provider = StaticWeatherLocationProvider(resolution: WeatherLocationResolution(
+            coordinate: nil, resolvedSource: .coreLocation, displayName: nil,
+            error: "Denied", failureKind: .permissionDenied
+        ))
+        let service = WeatherReactiveService(locationProvider: provider)
+        defer { service.shutdown() }
+        var refreshCount = 0
+        var settingsOpenCount = 0
+        let badge = WeatherStatusBadge(weatherService: service) {
+            refreshCount += 1
+            service.refresh()
+        }
+
+        badge.performLocationAuthorizationAction { settingsOpenCount += 1 }
+        #expect(provider.requestAuthorizationCount == 1)
+        #expect(refreshCount == 1)
+        #expect(settingsOpenCount == 0)
+        #expect(await eventually { service.locationStatus == .denied })
+
+        badge.performLocationAuthorizationAction { settingsOpenCount += 1 }
+        #expect(settingsOpenCount == 1)
+        #expect(provider.requestAuthorizationCount == 1)
+        #expect(refreshCount == 1)
+        for source in [WeatherLocationPreference.Source.manual, .off] {
+            settings.weatherLocation.source = source
+            SettingsManager.shared.saveGlobalSettings(settings)
+            badge.performLocationAuthorizationAction { settingsOpenCount += 1 }
+        }
+        #expect(settingsOpenCount == 1)
+        #expect(provider.requestAuthorizationCount == 1)
+        #expect(refreshCount == 1)
+    }
+
     @Test("Background weather and migrated sources never ask for first location authorization")
     func backgroundRefreshRequiresExplicitAuthorization() async throws {
         let original = SettingsManager.shared.loadGlobalSettings()
@@ -638,6 +678,7 @@ private final class FakeWeatherCoreLocationClient: WeatherCoreLocationRequesting
 private final class StaticWeatherLocationProvider: WeatherLocationProviding {
     let resolution: WeatherLocationResolution
     private(set) var resolveCount = 0
+    private(set) var requestAuthorizationCount = 0
 
     init(resolution: WeatherLocationResolution) {
         self.resolution = resolution
@@ -648,7 +689,7 @@ private final class StaticWeatherLocationProvider: WeatherLocationProviding {
         return resolution
     }
 
-    func requestCoreLocationAuthorizationIfNeeded() {}
+    func requestCoreLocationAuthorizationIfNeeded() { requestAuthorizationCount += 1 }
 }
 
 @MainActor
