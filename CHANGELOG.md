@@ -13,6 +13,78 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.0] — 2026-09-28
+
+### Added
+
+- Redesigned management window. Overview, Wallpaper Library, Saved, System
+  Wallpaper, Workshop and Settings share one layout on a frosted window
+  background, with Liquid Glass controls and capsules.
+- Overview shows your wallpapers on a 3D shelf (facing-in by default; fan and
+  focus-row styles; half-open or hidden). Cards fly into the library grid,
+  Finder files dropped on the shelf join the library, and a library card can
+  be dragged straight onto a display.
+- Hovering a shelf, grid or Workshop card plays its GIF preview; a
+  now-playing capsule marks what each display is running.
+- Library and Workshop items open in one shared detail modal that shows the
+  preview at its source size, flags low-resolution previews and lists the
+  wallpaper's facts, including a web page's source and sharing.
+- Wallpaper transitions: crossfade (default), Meteor, Ink Bloom, Light Leak,
+  Aurora Curtain, Light Weave, random or none, under Settings → General.
+  With Reduce Motion on, animated transitions become a short crossfade.
+- Overlay editor: a top strip with Layers and Effect Layer panels and a
+  preview mode, an Add Widget drawer, drag-to-place tiles, per-widget hiding,
+  a corner remove button, and swiping between displays.
+- Saved shows Bookmarks and Schemes side by side. Pro: Workshop items can be
+  bookmarked before downloading, and Workshop bookmarks travel in `.lwconfig`.
+- Daily Schedule gets preset slots and an editable timeline; the library can
+  filter by unsupported items and storage kind, and search by Workshop ID and
+  type name.
+- The playlist queue shows thumbnails, video details and the playing row.
+- The status capsule shows memory, RAM scope and battery, says what raised
+  the load, and warns on real memory pressure instead of occupancy.
+- Settings search lands on the matched row; Edit → Undo and Redo act on the
+  window's own undo stack; Option-click applies a library card.
+- Pro: Workshop browsing keeps its search, filters and results across
+  navigation.
+
+### Changed
+
+- The pre-redesign settings window, its pages and the old onboarding flow are
+  gone; the redesigned window is the only interface.
+- Audio capture runs only while something uses it; after a failure it waits
+  for an explicit retry.
+- Weather needs explicit location consent, which the status badge can grant
+  directly, and stops with the global render switch.
+- Web wallpapers are denied camera, microphone and geolocation access.
+- Desktop images are read without the Screen Recording permission.
+- Simplified Chinese, Traditional Chinese, Japanese and Spanish terms and
+  punctuation are unified across the app.
+
+### Fixed
+
+- Clicks on empty areas of an interactive overlay widget pass through to the
+  desktop.
+- Retry reapplies the wallpaper that failed, and the menu bar play key
+  follows what you asked for.
+- Cancelling a download no longer interrupts a running apply.
+- Scene edits made just before a display's identity changed are rejected
+  instead of landing on the wrong display; resetting a scene records its undo
+  only after the reset is saved.
+- Two scheme confirmations always showed English; counts use proper singular
+  forms in English and Spanish.
+- Settings search no longer shows the system's autocompletion.
+- Pro: Workshop size backfill and delete markers target the item's own Steam
+  folder; items imported from Steam's folder keep their ID and are recognised
+  as in use.
+- Pro: a busy or silent Steam connector reports "didn't respond" instead of
+  blaming SteamCMD.
+
+### Removed
+
+- The ineffective wallpaper type badge controls and the system wallpaper
+  background from empty display setup.
+
 ## [0.7.1] — 2026-09-18
 
 ### Added

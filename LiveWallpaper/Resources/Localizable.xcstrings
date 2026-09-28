@@ -1,114 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Move Overlay Object" : {
-      "comment" : "Undo/Redo action name after moving a widget, music layer or clock.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move Overlay Object"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mover objeto superpuesto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オーバーレイオブジェクトを移動"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移動疊加物件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移动叠加对象"
-          }
-        }
-      }
-    },
-    "Retry Save" : {
-      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry Save"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar guardar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存を再試行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重試儲存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试保存"
-          }
-        }
-      }
-    },
-    "Your latest changes aren't saved yet. Keep Loomscreen open and retry." : {
-      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your latest changes aren't saved yet. Keep Loomscreen open and retry."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los últimos cambios aún no se han guardado. Mantén Loomscreen abierto e inténtalo de nuevo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新の変更はまだ保存されていません。Loomscreenを開いたまま再試行してください。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新變更尚未儲存。請保持 Loomscreen 開啟並重試。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新更改尚未保存。请保持 Loomscreen 打开并重试。"
-          }
-        }
-      }
-    },
     "" : {
 
     },
@@ -2150,6 +2042,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 核"
+          }
+        }
+      }
+    },
+    "%lld Displays Configured" : {
+      "comment" : "Status capsule footer: displays that have a wallpaper set. The placeholder is the count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Display Configured"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Displays Configured"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pantalla configurada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pantallas configuradas"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台のディスプレイに設定済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台显示器已设置壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台顯示器已設定桌布"
           }
         }
       }
@@ -18647,6 +18599,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "嚴重過熱"
+          }
+        }
+      }
+    },
+    "Critical Memory" : {
+      "comment" : "Status capsule headline: macOS reports memory pressure at the critical level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Critical Memory"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria crítica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ危険"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存严重不足"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體嚴重不足"
           }
         }
       }
@@ -36002,6 +35990,42 @@
         }
       }
     },
+    "Low Memory" : {
+      "comment" : "Status capsule headline: macOS reports memory pressure at the warning level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Memory"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poca memoria"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ不足"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存紧张"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體緊張"
+          }
+        }
+      }
+    },
     "Low Power" : {
       "comment" : "Power widget: Low Power Mode chip.",
       "extractionState" : "manual",
@@ -38713,6 +38737,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向左移動"
+          }
+        }
+      }
+    },
+    "Move Overlay Object" : {
+      "comment" : "Undo/Redo action name after moving a widget, music layer or clock.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Overlay Object"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover objeto superpuesto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーバーレイオブジェクトを移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动叠加对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動疊加物件"
           }
         }
       }
@@ -43229,6 +43289,42 @@
         }
       }
     },
+    "Only visible widgets receive clicks. Empty areas remain click-through." : {
+      "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only visible widgets receive clicks. Empty areas remain click-through."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo los widgets visibles reciben clics. Los clics en las zonas vacías llegan al fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示中のウィジェットのみクリックを受け付けます。空白部分のクリックは背後に届きます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅可见的小组件接收点击，空白区域的点击将穿透至下方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅可見的小工具接收點按，空白區域的點按會穿透至下方。"
+          }
+        }
+      }
+    },
     "Opacity" : {
       "comment" : "Now Playing DIY slider: opacity of the whole layer.",
       "extractionState" : "manual",
@@ -46293,6 +46389,42 @@
         }
       }
     },
+    "Pauses on Battery" : {
+      "comment" : "Status capsule footer: the pause-on-battery preference is enabled. It does not mean the Mac is on battery now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauses on Battery"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa con batería"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー駆動時に一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用电池时暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用電池時暫停"
+          }
+        }
+      }
+    },
     "Pauses when windows cover about %@ of the display; resumes when the desktop is revealed." : {
       "comment" : "Pause threshold. %@ is a locale-formatted percentage, currently 85 percent.",
       "extractionState" : "manual",
@@ -49333,77 +49465,6 @@
         }
       }
     },
-    "Re-grant Access" : {
-      "comment" : "Button to request Location Services again.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Re-grant Access"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a conceder acceso"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アクセスを再許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授权"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授權"
-          }
-        }
-      }
-    },
-    "Re-grant audio access" : {
-      "comment" : "A button that can be tapped to re-grant audio access.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Re-grant audio access"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a conceder acceso al audio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声アクセスを再許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授权音频访问"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授權音訊存取"
-          }
-        }
-      }
-    },
     "Re-pick" : {
       "localizations" : {
         "en" : {
@@ -49802,7 +49863,7 @@
       }
     },
     "Ready" : {
-      "comment" : "Workshop paste row status badge.",
+      "comment" : "Audio response is enabled and waiting for compatible content.\nWorkshop paste row status badge.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -54882,6 +54943,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重試預覽"
+          }
+        }
+      }
+    },
+    "Retry Save" : {
+      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar guardar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存を再試行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試儲存"
           }
         }
       }
@@ -68265,6 +68362,42 @@
         }
       }
     },
+    "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory." : {
+      "comment" : "Status capsule sentence beside the Low Memory or Critical Memory headline. The placeholder is this app's own memory footprint.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac tiene poca memoria; Loomscreen usa %@. Cerrar las apps que no estés usando libera memoria."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac のメモリが不足しています。Loomscreen は %@ を使用しています。使っていないアプリを終了するとメモリを解放できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机内存紧张，Loomscreen 占用 %@。退出暂不使用的应用可以释放内存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 記憶體緊張，Loomscreen 佔用 %@。結束暫不使用的應用程式可以釋放記憶體。"
+          }
+        }
+      }
+    },
     "The Mac is running hot. Quitting apps you are not using helps it cool down." : {
       "comment" : "Status capsule sentence beside the Running Hot headline (macOS thermal pressure: serious).",
       "extractionState" : "manual",
@@ -73371,7 +73504,7 @@
       }
     },
     "Unavailable" : {
-      "comment" : "Login item service unavailable.\nWorkshop item removed or hidden on Steam.",
+      "comment" : "Login item service unavailable.\nSystem audio capture could not start.\nWorkshop item removed or hidden on Steam.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -76714,40 +76847,6 @@
         }
       }
     },
-    "Wallpaper type" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper type"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipo de fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙タイプ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布類型"
-          }
-        }
-      }
-    },
     "Wallpaper type badge" : {
       "comment" : "Accessibility label for the thumbnail type badge switch.",
       "extractionState" : "manual",
@@ -76886,6 +76985,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布已全部關閉"
+          }
+        }
+      }
+    },
+    "Wallpapers Off" : {
+      "comment" : "Status capsule footer: the master wallpaper switch is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpapers Off"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondos desactivados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙オフ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布已關閉"
           }
         }
       }
@@ -78956,6 +79091,42 @@
         }
       }
     },
+    "Your latest changes aren't saved yet. Keep Loomscreen open and retry." : {
+      "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your latest changes aren't saved yet. Keep Loomscreen open and retry."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los últimos cambios aún no se han guardado. Mantén Loomscreen abierto e inténtalo de nuevo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新の変更はまだ保存されていません。Loomscreenを開いたまま再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新更改尚未保存。请保持 Loomscreen 打开并重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新變更尚未儲存。請保持 Loomscreen 開啟並重試。"
+          }
+        }
+      }
+    },
     "Your password goes only to Valve's SteamCMD on this Mac and is never stored." : {
       "comment" : "Sign-in privacy note.",
       "localizations" : {
@@ -79121,282 +79292,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 密碼與 Steam 令牌驗證碼只會交給 SteamCMD。Loomscreen 既不儲存，也不會傳往別處。"
-          }
-        }
-      }
-    },
-    "Low Memory" : {
-      "comment" : "Status capsule headline: macOS reports memory pressure at the warning level.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Low Memory"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poca memoria"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メモリ不足"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内存紧张"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "記憶體緊張"
-          }
-        }
-      }
-    },
-    "Critical Memory" : {
-      "comment" : "Status capsule headline: macOS reports memory pressure at the critical level.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Critical Memory"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Memoria crítica"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メモリ危険"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内存严重不足"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "記憶體嚴重不足"
-          }
-        }
-      }
-    },
-    "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory." : {
-      "comment" : "Status capsule sentence beside the Low Memory or Critical Memory headline. The placeholder is this app's own memory footprint.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El Mac tiene poca memoria; Loomscreen usa %@. Cerrar las apps que no estés usando libera memoria."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac のメモリが不足しています。Loomscreen は %@ を使用しています。使っていないアプリを終了するとメモリを解放できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机内存紧张，Loomscreen 占用 %@。退出暂不使用的应用可以释放内存。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這台 Mac 記憶體緊張，Loomscreen 佔用 %@。結束暫不使用的應用程式可以釋放記憶體。"
-          }
-        }
-      }
-    },
-    "Wallpapers Off" : {
-      "comment" : "Status capsule footer: the master wallpaper switch is off.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpapers Off"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondos desactivados"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙オフ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸已关闭"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布已關閉"
-          }
-        }
-      }
-    },
-    "Pauses on Battery" : {
-      "comment" : "Status capsule footer: the pause-on-battery preference is enabled. It does not mean the Mac is on battery now.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pauses on Battery"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pausa con batería"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バッテリー駆動時に一時停止"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用电池时暂停"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用電池時暫停"
-          }
-        }
-      }
-    },
-    "%lld Displays Configured" : {
-      "comment" : "Status capsule footer: displays that have a wallpaper set. The placeholder is the count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld Display Configured"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld Displays Configured"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld pantalla configurada"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld pantallas configuradas"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台のディスプレイに設定済み"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台显示器已设置壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台顯示器已設定桌布"
-          }
-        }
-      }
-    },
-    "Only visible widgets receive clicks. Empty areas remain click-through." : {
-      "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only visible widgets receive clicks. Empty areas remain click-through."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅可见的小组件接收点击，空白区域的点击将穿透至下方。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅可見的小工具接收點按，空白區域的點按會穿透至下方。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "表示中のウィジェットのみクリックを受け付けます。空白部分のクリックは背後に届きます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo los widgets visibles reciben clics. Los clics en las zonas vacías llegan al fondo."
           }
         }
       }
