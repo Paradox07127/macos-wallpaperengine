@@ -131,6 +131,29 @@ struct SceneSettingsOwnerTests {
         await Self.waitUntil { harness.applied?.sceneDescriptor?.propertyOverrides.isEmpty == true }
     }
 
+    @Test("A pending edit cannot follow a reused display ID onto a different display")
+    func pendingEditRejectsReusedDisplayID() async throws {
+        let harness = try Harness(displayID: nil, displayName: "Original display")
+        defer { harness.close() }
+        let owner = try harness.appliedOwner { _, _, _, _ in }
+        let property = try #require(owner.editor.presentation?.sections[1].properties.first)
+        owner.setValue(.number(0.9), for: property, commit: .coalesced)
+        let pending = try #require(owner.commitTask)
+        let replacement = Screen(nsScreen: SceneSettingsTestScreen(displayID: nil, name: "Replacement display"))
+        #expect(replacement.id == harness.screen.id)
+        #expect(replacement.displayFingerprint != harness.screen.displayFingerprint)
+        harness.registry.screens = [replacement]
+        harness.manager.refreshScreens()
+        let descriptor = owner.descriptor.withPropertyOverrides(["gain": .number(0.25)])
+        var config = ScreenConfiguration(screenID: replacement.id, wallpaper: .scene(descriptor))
+        config.displayFingerprint = replacement.displayFingerprint
+        harness.manager.configurationStore.save(config)
+        await pending.value
+        let actual = harness.manager.getConfiguration(for: replacement)?.activeWallpaper
+        #expect(actual == .scene(descriptor), "the old panel changed the replacement display")
+        #expect(owner.descriptor.propertyOverrides["gain"] == .number(0.5), "a rejected edit was published as committed")
+    }
+
     @Test("A preset change whose session rebuild commits later is reported only once it is committed", .timeLimit(.minutes(1)))
     func presetChangeReportsAfterDeferredCommit() async throws {
         let harness = try Harness(displayID: 0xED33_0007)
@@ -249,8 +272,8 @@ struct SceneSettingsOwnerTests {
         let manager: ScreenManager
         var owner: SceneSettingsOwner!
 
-        init(displayID: UInt32 = 0xED33_0001, onUndoableChange: SceneSettingsOwner.UndoableChange? = nil) throws {
-            screen = Screen(nsScreen: SceneSettingsTestScreen(displayID: displayID))
+        init(displayID: UInt32? = 0xED33_0001, displayName: String = "Scene settings test", onUndoableChange: SceneSettingsOwner.UndoableChange? = nil) throws {
+            screen = Screen(nsScreen: SceneSettingsTestScreen(displayID: displayID, name: displayName))
             registry = FakeDisplayRegistry(screens: [screen])
             manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
                 restoreSavedWallpapers: false, startAutomation: false,
@@ -326,10 +349,12 @@ struct SceneSettingsOwnerTests {
 }
 
 private final class SceneSettingsTestScreen: NSScreen {
-    let displayID: UInt32
+    let displayID: UInt32?
+    let name: String
 
-    init(displayID: UInt32) {
+    init(displayID: UInt32?, name: String = "Scene settings test") {
         self.displayID = displayID
+        self.name = name
         super.init()
     }
 
@@ -342,11 +367,11 @@ private final class SceneSettingsTestScreen: NSScreen {
     }
 
     override var deviceDescription: [NSDeviceDescriptionKey: Any] {
-        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
+        displayID.map { [NSDeviceDescriptionKey("NSScreenNumber"): $0] } ?? [:]
     }
 
     override var localizedName: String {
-        "Scene settings test"
+        name
     }
 
     override var maximumFramesPerSecond: Int {

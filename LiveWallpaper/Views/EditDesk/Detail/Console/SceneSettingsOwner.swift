@@ -71,7 +71,8 @@ final class SceneSettingsOwner {
 
     /// nil once the display is gone. The manager replaces `Screen` objects on every display refresh, and its scene mutations take only the current one.
     private var currentScreen: Screen? {
-        guard let screen = screenManager.screen(withID: screenID) else {
+        guard let screen = screenManager.screen(withID: screenID),
+              screen.displayFingerprint == displayFingerprint else {
             Logger.notice("Scene settings: display \(screenID) is no longer connected", category: .ui)
             return nil
         }
@@ -193,12 +194,11 @@ final class SceneSettingsOwner {
     private func commitDescriptor(_ next: SceneDescriptor) async {
         commitTask?.cancel()
         commitTask = nil
-        guard descriptor != next else { return }
+        guard descriptor != next, let screen = currentScreen else { return }
         descriptor = next
         onDescriptorChange(next)
         synchronizeEditor(force: true)
         refreshPresetDerivedState()
-        guard let screen = currentScreen else { return }
         if let attemptID {
             screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
         } else {
@@ -353,11 +353,10 @@ final class SceneSettingsOwner {
     /// so an un-awaited flush would overwrite a later preset commit.
     private func commitEditorState() async {
         let next = descriptor.withPropertyOverrides(editor.overrides)
-        guard descriptor != next else { return }
+        guard descriptor != next, let screen = currentScreen else { return }
         descriptor = next
         onDescriptorChange(next)
         refreshPresetDerivedState()
-        guard let screen = currentScreen else { return }
         if let attemptID {
             screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
         } else {
