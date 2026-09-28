@@ -36,7 +36,8 @@ what shipped at that time; current behavior is documented in `docs/`.
   preview mode, an Add Widget drawer, drag-to-place tiles, per-widget hiding,
   a corner remove button, and swiping between displays.
 - Saved shows Bookmarks and Schemes side by side. Pro: Workshop items can be
-  bookmarked before downloading, and Workshop bookmarks travel in `.lwconfig`.
+  bookmarked before downloading, and Workshop bookmarks travel in `.lwconfig`
+  ([#138](https://github.com/Paradox07127/macos-wallpaperengine/pull/138), thanks @wscn04).
 - Daily Schedule gets preset slots and an editable timeline; the library can
   filter by unsupported items and storage kind, and search by Workshop ID and
   type name.
@@ -46,7 +47,7 @@ what shipped at that time; current behavior is documented in `docs/`.
 - Settings search lands on the matched row; Edit → Undo and Redo act on the
   window's own undo stack; Option-click applies a library card.
 - Pro: Workshop browsing keeps its search, filters and results across
-  navigation.
+  navigation ([#139](https://github.com/Paradox07127/macos-wallpaperengine/pull/139), thanks @wscn04).
 
 ### Changed
 
