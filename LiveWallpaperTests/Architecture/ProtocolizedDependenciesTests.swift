@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import os
 import SwiftUI
 import Testing
-@testable import LiveWallpaper
 
 @Suite("Protocolized ScreenManager dependencies")
 @MainActor
@@ -584,6 +585,26 @@ struct ProtocolizedDependenciesTests {
         #expect(actor.contains("func requiresSystemAudioCapture() -> Bool"))
         #expect(!settings.contains("SystemAudioCaptureManager.shared.retain()"))
         #expect(!settings.contains("SystemAudioCaptureManager.shared.release()"))
+    }
+
+    @Test("Audio state observation is passive and receives capture transitions")
+    func audioStateObservationDoesNotCreateDemand() {
+        let service = RecordingAudioCaptureService()
+        service.fails = false
+        let manager = SystemAudioCaptureManager(makeService: { service })
+        defer { manager.shutdown() }
+        manager.setEnabled(true)
+        let changes = LockedCounter()
+        withObservationTracking {
+            #expect(manager.state == .idle)
+        } onChange: {
+            changes.increment()
+        }
+        #expect(service.startCount == 0)
+        #expect(changes.value == 0)
+        manager.retain()
+        #expect(changes.value == 1)
+        #expect(manager.state == .capturing)
     }
 
     @Test("Failed audio capture stays suppressed across demand churn in the same enabled epoch")

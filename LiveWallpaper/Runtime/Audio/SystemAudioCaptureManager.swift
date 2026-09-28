@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperCore
+import Observation
 import os
 
 @MainActor
@@ -12,6 +13,7 @@ protocol SystemAudioCaptureServing: AnyObject {
 extension SystemAudioCaptureService: SystemAudioCaptureServing {}
 
 @MainActor
+@Observable
 final class SystemAudioCaptureManager {
     static let shared = SystemAudioCaptureManager()
 

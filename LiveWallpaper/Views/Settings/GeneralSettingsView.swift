@@ -17,7 +17,6 @@ enum GeneralSettingsPage: Equatable {
 struct GeneralSettingsView: View {
     enum SystemStatusScope {
         case loginItem
-        case audioCapture
         case weatherLocation
     }
 
@@ -45,11 +44,6 @@ struct GeneralSettingsView: View {
     @State var videoCacheBudgetMB: Double
 
     @State var audioResponseEnabled: Bool
-    #if !LITE_BUILD
-    @State var audioCaptureState: SystemAudioCaptureManager.State
-    @State var audioStatusRefreshPending = false
-    @State private var audioStatusRefreshGeneration = 0
-    #endif
     @State var adaptiveFrameRateEnabled: Bool
     #if !LITE_BUILD
     @AppStorage(WPEOffMainRenderFlag.defaultsKey) var offMainRenderEnabled = true
@@ -99,9 +93,6 @@ struct GeneralSettingsView: View {
         _adaptiveFrameRateEnabled = State(initialValue: settings.adaptiveFrameRateEnabled)
         _weatherLocation = State(initialValue: settings.weatherLocation)
         _loginItemStatus = State(initialValue: Self.initialLoginItemStatus(for: page))
-        #if !LITE_BUILD
-        _audioCaptureState = State(initialValue: Self.initialAudioCaptureState(for: page))
-        #endif
         _locationAuthorizationStatus = State(initialValue: Self.initialLocationAuthorizationStatus(for: page))
     }
 
@@ -287,11 +278,7 @@ struct GeneralSettingsView: View {
         case .general:
             [.loginItem]
         case .integrations:
-            #if !LITE_BUILD
-            [.audioCapture, .weatherLocation]
-            #else
             [.weatherLocation]
-            #endif
         case .performancePower, .backupRestore, .advanced, .about:
             []
         }
@@ -301,13 +288,6 @@ struct GeneralSettingsView: View {
         guard page == .general else { return .notRegistered }
         return SMAppService.mainApp.status
     }
-
-    #if !LITE_BUILD
-    private static func initialAudioCaptureState(for page: GeneralSettingsPage) -> SystemAudioCaptureManager.State {
-        guard page == .integrations else { return .idle }
-        return SystemAudioCaptureManager.shared.state
-    }
-    #endif
 
     private static func initialLocationAuthorizationStatus(for page: GeneralSettingsPage) -> CLAuthorizationStatus {
         guard page == .integrations else { return .notDetermined }
@@ -332,13 +312,6 @@ struct GeneralSettingsView: View {
         case .loginItem:
             loginItemStatusRefreshGeneration += 1
             return loginItemStatusRefreshGeneration
-        case .audioCapture:
-            #if !LITE_BUILD
-            audioStatusRefreshGeneration += 1
-            return audioStatusRefreshGeneration
-            #else
-            return 0
-            #endif
         case .weatherLocation:
             weatherStatusRefreshGeneration += 1
             return weatherStatusRefreshGeneration
@@ -349,10 +322,6 @@ struct GeneralSettingsView: View {
         switch scope {
         case .loginItem:
             loginItemStatusRefreshPending = pending
-        case .audioCapture:
-            #if !LITE_BUILD
-            audioStatusRefreshPending = pending
-            #endif
         case .weatherLocation:
             weatherStatusRefreshPending = pending
         }
@@ -362,10 +331,6 @@ struct GeneralSettingsView: View {
         switch scope {
         case .loginItem:
             loginItemStatus = SMAppService.mainApp.status
-        case .audioCapture:
-            #if !LITE_BUILD
-            audioCaptureState = SystemAudioCaptureManager.shared.state
-            #endif
         case .weatherLocation:
             refreshLocationAuthorizationStatus()
         }
@@ -377,12 +342,6 @@ struct GeneralSettingsView: View {
             guard loginItemStatusRefreshGeneration == generation else { return }
             loginItemStatusRefreshPending = false
             loginItemStatus = SMAppService.mainApp.status
-        case .audioCapture:
-            #if !LITE_BUILD
-            guard audioStatusRefreshGeneration == generation else { return }
-            audioStatusRefreshPending = false
-            audioCaptureState = SystemAudioCaptureManager.shared.state
-            #endif
         case .weatherLocation:
             guard weatherStatusRefreshGeneration == generation else { return }
             weatherStatusRefreshPending = false

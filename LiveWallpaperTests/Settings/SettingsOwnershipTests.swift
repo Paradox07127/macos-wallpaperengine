@@ -14,7 +14,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         #expect(fixtureValues.count == Set(fixtureValues).count, "A state field must have exactly one candidate owner")
         #expect(actual == Set(fixtureValues))
-        #expect(actual.count == 45, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
+        #expect(actual.count == 41, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
     @Test("Each page mounts only its own system-capability probe")
@@ -36,7 +36,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(!propertyDefaults.contains("SystemAudioCaptureManager.shared.state"))
         #expect(!propertyDefaults.contains("CLLocationManager().authorizationStatus"))
         #expect(initializer.contains("Self.initialLoginItemStatus(for: page)"))
-        #expect(initializer.contains("Self.initialAudioCaptureState(for: page)"))
+        #expect(!initializer.contains("SystemAudioCaptureManager"))
         #expect(initializer.contains("Self.initialLocationAuthorizationStatus(for: page)"))
         #expect(Self.occurrences(".onAppear { refreshSystemStatusIndicators() }", in: source) == 1)
 
@@ -52,11 +52,11 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         }
 
         #expect(scopes.contains("case .general:\n            [.loginItem]"))
-        #expect(scopes.contains("case .integrations:\n            #if !LITE_BUILD\n            [.audioCapture, .weatherLocation]"))
+        #expect(scopes.contains("case .integrations:\n            [.weatherLocation]"))
         #expect(scopes.contains("case .performancePower, .backupRestore, .advanced, .about:\n            []"))
 
         #expect(OwnershipFixture.mountCalls(for: .general, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 2, audioStateReads: 0, locationStatusReads: 0))
-        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 2, locationStatusReads: 2))
+        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
         #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
         #expect(OwnershipFixture.mountCalls(for: .backupRestore, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 0))
     }
@@ -309,7 +309,8 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         let about = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AboutTab.swift")
         let detail = try RepositoryRoot.source("LiveWallpaper/Views/Settings/DetailContent.swift")
 
-        #expect(root.contains("#if !LITE_BUILD\n    @State var audioCaptureState"))
+        #expect(!root.contains("audioCaptureState"))
+        #expect(audio.contains("#if !LITE_BUILD\n    private var audioCaptureState"))
         #expect(audio.contains("#if !LITE_BUILD\n        Section"))
         // Rendering is gated as a whole section, not row by row: gating only the rows
         // would leave Lite with a "Rendering" header and nothing under it.

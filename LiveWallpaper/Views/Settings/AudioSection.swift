@@ -43,14 +43,12 @@ extension GeneralSettingsView {
     }
 
     #if !LITE_BUILD
+    private var audioCaptureState: SystemAudioCaptureManager.State {
+        SystemAudioCaptureManager.shared.state
+    }
+
     func applyAudioResponseEnabled(_ enabled: Bool) {
         SystemAudioCaptureManager.shared.setEnabled(enabled)
-        audioCaptureState = SystemAudioCaptureManager.shared.state
-        if enabled {
-            scheduleSystemStatusRefresh(.audioCapture)
-        } else {
-            audioStatusRefreshPending = false
-        }
     }
 
     private var audioStatusText: String {
@@ -59,7 +57,7 @@ extension GeneralSettingsView {
         }
         switch audioCaptureState {
         case .capturing:
-            return String(localized: "Granted", bundle: .appLanguage, comment: "Permission granted.")
+            return String(localized: "Active", bundle: .appLanguage, comment: "System audio capture is currently running.")
         case .failed:
             return String(localized: "Unavailable", bundle: .appLanguage, comment: "System audio capture could not start.")
         case .idle:
@@ -100,7 +98,7 @@ extension GeneralSettingsView {
     }
 
     private var audioShowsRetry: Bool {
-        guard audioResponseEnabled, !audioStatusRefreshPending else { return false }
+        guard audioResponseEnabled else { return false }
         switch audioCaptureState {
         case .capturing, .idle:
             return false
@@ -113,8 +111,6 @@ extension GeneralSettingsView {
         audioResponseEnabled = true
         updateGlobalSettings()
         SystemAudioCaptureManager.shared.retryAccessRequest()
-        audioCaptureState = SystemAudioCaptureManager.shared.state
-        scheduleSystemStatusRefresh(.audioCapture)
     }
     #endif
 }

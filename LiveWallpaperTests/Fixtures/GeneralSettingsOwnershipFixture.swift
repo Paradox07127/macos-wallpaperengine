@@ -49,10 +49,6 @@ enum OwnershipFixture {
         ],
         .audio: [
             "audioResponseEnabled",
-            "audioCaptureState",
-            "audioStatusRefreshPending",
-            "audioStatusRefreshGeneration",
-            "isAudioCaptureStatusConsumerRetained",
         ],
         .weather: [
             "weatherLocation",
@@ -79,24 +75,17 @@ enum OwnershipFixture {
         ],
     ]
 
-    static func mountCalls(for page: Page, sku: ProductSKU) -> MountCalls {
+    static func mountCalls(for page: Page, sku _: ProductSKU) -> MountCalls {
         let statusReads: MountCalls
         switch page {
         case .general:
             statusReads = MountCalls(settingsReads: 0, loginStatusReads: 2, audioStateReads: 0, locationStatusReads: 0)
         case .integrations:
-            // One page now owns both probes; Lite compiles the audio row out entirely.
-            let audioStateReads: Int
-            switch sku {
-            case .pro:
-                audioStateReads = 2
-            case .lite, .unconfigured:
-                audioStateReads = 0
-            }
+            // Audio state is observed in the row; mounting never starts an audio probe.
             statusReads = MountCalls(
                 settingsReads: 0,
                 loginStatusReads: 0,
-                audioStateReads: audioStateReads,
+                audioStateReads: 0,
                 locationStatusReads: 2
             )
         case .performancePower, .backupRestore, .advanced, .about:

@@ -5052,6 +5052,42 @@
         }
       }
     },
+    "Active" : {
+      "comment" : "System audio capture is currently running.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動作中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運作中"
+          }
+        }
+      }
+    },
     "Active for %lld apps" : {
       "comment" : "App exceptions subtitle. Placeholder is the rule count.",
       "extractionState" : "manual",
