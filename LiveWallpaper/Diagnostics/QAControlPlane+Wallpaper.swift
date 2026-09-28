@@ -214,10 +214,13 @@ extension QAControlPlane {
 
     private func resolveScreen(_ arguments: [String: Any]) throws -> Screen {
         guard let manager = screenManager else { throw QAError.message("ScreenManager unavailable") }
-        guard let raw = arguments["screenID"] as? NSNumber else {
+        guard let raw = arguments["screenID"] else {
             throw QAError.message("Missing screenID; call state.dump for the list")
         }
-        let id = CGDirectDisplayID(truncating: raw)
+        let requested = try Self.number(raw, "screenID")
+        guard let id = CGDirectDisplayID(exactly: requested) else {
+            throw QAError.message("Rejected screenID: expected an integer from 0 through \(UInt32.max)")
+        }
         guard let screen = manager.screens.first(where: { $0.id == id }) else {
             throw QAError.message("No screen with id \(id); call state.dump for the list")
         }

@@ -23,7 +23,9 @@ final class QAControlPlane {
     /// One worker per connection: serial serving would let a silent client hold everyone else.
     private let workers = DispatchQueue(label: "com.loomscreen.qa-control-plane.worker", attributes: .concurrent)
 
-    private init() {}
+    init(screenManager: ScreenManager? = nil) {
+        self.screenManager = screenManager
+    }
 
     static func startIfEnabled(screenManager: ScreenManager) {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
