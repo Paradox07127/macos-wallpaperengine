@@ -113,12 +113,12 @@ enum SchedulePolicy {
     ) -> ScreenConfiguration {
         let hour = calendar.component(.hour, from: now)
         guard configuration.wallpaperMode == .schedule,
-              var slots = configuration.scheduleSlots,
               let entry = plannedEntry(for: configuration, hour: hour),
               isSameContent(entry.content, edited),
               entry.content != edited else { return configuration }
         var result = configuration
-        if let index = slots.firstIndex(where: { $0.containsHour(hour) }), slots[index].wallpaper != nil {
+        if var slots = configuration.scheduleSlots,
+           let index = slots.firstIndex(where: { $0.containsHour(hour) }), slots[index].wallpaper != nil {
             slots[index].wallpaper?.content = edited
             result.scheduleSlots = slots
         } else {

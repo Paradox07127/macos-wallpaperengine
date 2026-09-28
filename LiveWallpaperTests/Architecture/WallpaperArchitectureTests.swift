@@ -1276,6 +1276,23 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(written.scheduleSlots?.first?.wallpaper?.id == entry.id)
     }
 
+    @Test("A scene edit is written back to the fallback when the plan has no slots")
+    func sceneEditWritesBackToFallbackWithoutSlots() {
+        let scene = SceneDescriptor(workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let entry = WallpaperQueueEntry(title: "Scene", content: .scene(scene))
+        var config = ScreenConfiguration(screenID: 1, wallpaper: entry.content)
+        config.wallpaperMode = .schedule
+        config.scheduleSlots = nil
+        config.scheduleFallback = entry
+        let edited = scene.withPropertyOverrides(["gain": .number(0.5)])
+
+        let written = SchedulePolicy.writingBack(.scene(edited), into: config, now: automationTime(13), calendar: .current)
+
+        #expect(written.scheduleFallback?.content == .scene(edited))
+        #expect(written.scheduleFallback?.id == entry.id)
+        #expect(written.scheduleSlots == nil)
+    }
+
     @Test("Both save paths claim an unsettled slot for a hand-picked wallpaper")
     func bothSaveFunnelsClaimUnsettledSlot() throws {
         let screen = Screen(nsScreen: AutomationTestNSScreen(displayID: 0xA170_0001))

@@ -26,6 +26,8 @@ final class SceneSettingsOwner {
     /// Called once a preset change or a reset has landed on the applied wallpaper, with the descriptors before and
     /// after it; the closure it gets lands the pending edit of whichever owner edits that display by then.
     private let onUndoableChange: UndoableChange?
+    /// How long a preset change or a reset waits for its commit; past it no undo step is recorded.
+    var confirmationTimeout = ApplyRouter.defaultConfirmationTimeout
     /// The owner editing each display's applied scene now, by display fingerprint. A step's flush looks it up when it
     /// runs: rebuilding the panel releases the owner that recorded the step, and the new one holds the pending edit.
     private static var appliedSceneOwners: [String: WeakOwner] = [:]
@@ -166,7 +168,7 @@ final class SceneSettingsOwner {
             // An engine colour or audio change rebuilds the session, which stores `next` only once it is prepared.
             let outcome = await ApplyRouter.awaitApplied(
                 matching: { $0.activeWallpaper == .scene(next) }, with: screenManager, on: screen.id,
-                committedAfter: screenManager.configurationRevision(for: screen), timeout: ApplyRouter.defaultConfirmationTimeout,
+                committedAfter: screenManager.configurationRevision(for: screen), timeout: confirmationTimeout,
                 dispatch: {
                     await self.commitDescriptor(next)
                     return nil
@@ -324,8 +326,26 @@ final class SceneSettingsOwner {
         )
         Task { @MainActor in
             let before = descriptor
-            await commitPendingEditorState()
-            reportUndoableChange(.resetSceneSettings, from: before, to: descriptor)
+            let next = descriptor.withPropertyOverrides(editor.overrides)
+            guard attemptID == nil, before != next else {
+                await commitPendingEditorState()
+                return
+            }
+            guard let screen = currentScreen else { return }
+            // Without live bindings the commit rebuilds the session, which stores `next` only once it is prepared.
+            let outcome = await ApplyRouter.awaitApplied(
+                matching: { $0.activeWallpaper == .scene(next) }, with: screenManager, on: screen.id,
+                committedAfter: screenManager.configurationRevision(for: screen), timeout: confirmationTimeout,
+                dispatch: {
+                    await self.commitPendingEditorState()
+                    return nil
+                }
+            )
+            guard outcome == .applied else {
+                Logger.notice("Scene settings reset on display \(screen.id) was not committed; no undo step recorded", category: .ui)
+                return
+            }
+            reportUndoableChange(.resetSceneSettings, from: before, to: next)
         }
     }
 
