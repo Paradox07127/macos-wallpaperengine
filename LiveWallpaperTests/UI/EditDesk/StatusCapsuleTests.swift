@@ -7,56 +7,86 @@ import Testing
 struct StatusCapsuleTests {
     @Test("Below both thresholds and thermal nominal reads as normal")
     func normalBand() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .nominal)
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, memoryPressure: .normal, thermal: .nominal)
         #expect(health == .normal)
     }
 
     @Test("CPU at the elevated threshold reads as elevated load")
     func elevatedByCPU() {
-        let health = StatusCapsuleModel.health(cpuPercent: 60, memoryFraction: 0.1, thermal: .nominal)
+        let health = StatusCapsuleModel.health(cpuPercent: 60, memoryFraction: 0.1, memoryPressure: .normal, thermal: .nominal)
         #expect(health == .elevatedLoad)
     }
 
-    @Test("Memory at the elevated threshold reads as elevated load")
-    func elevatedByMemory() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.60, thermal: .nominal)
-        #expect(health == .elevatedLoad)
+    @Test("Memory occupancy alone never warns while the kernel reports normal pressure")
+    func occupancyAloneIsNormal() {
+        for memory in [0.60, 0.90] {
+            let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: memory, memoryPressure: .normal, thermal: .nominal)
+            #expect(health == .normal, Comment(rawValue: "memory \(memory)"))
+        }
+    }
+
+    @Test("Warning and critical memory pressure raise their own bands even at low occupancy")
+    func memoryPressureBands() {
+        let warning = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.4, memoryPressure: .warning, thermal: .nominal)
+        #expect(warning == .memoryWarning)
+        let critical = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.4, memoryPressure: .critical, thermal: .nominal)
+        #expect(critical == .memoryCritical)
+    }
+
+    @Test("Memory pressure outranks CPU load and a fair thermal state")
+    func memoryPressureOutranksCPUAndFairHeat() {
+        #expect(StatusCapsuleModel.health(cpuPercent: 95, memoryFraction: 0.4, memoryPressure: .warning, thermal: .nominal) == .memoryWarning)
+        #expect(StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.4, memoryPressure: .warning, thermal: .fair) == .memoryWarning)
+    }
+
+    @Test("Serious and critical heat still win over memory pressure")
+    func heatWinsOverMemoryPressure() {
+        #expect(StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.4, memoryPressure: .critical, thermal: .serious) == .thermalSerious)
+        #expect(StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.4, memoryPressure: .critical, thermal: .critical) == .thermalCritical)
     }
 
     @Test("A fair thermal state reads as thermal fair even with idle CPU/memory")
     func elevatedByThermalFair() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .fair)
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, memoryPressure: .normal, thermal: .fair)
         #expect(health == .thermalFair)
     }
 
     @Test("CPU at the hot threshold reads as high load")
     func hotByCPU() {
-        let health = StatusCapsuleModel.health(cpuPercent: 85, memoryFraction: 0.1, thermal: .nominal)
+        let health = StatusCapsuleModel.health(cpuPercent: 85, memoryFraction: 0.1, memoryPressure: .normal, thermal: .nominal)
         #expect(health == .highLoad)
     }
 
     @Test("A serious thermal state reads as thermal serious even with idle CPU/memory")
     func hotByThermalSerious() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .serious)
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, memoryPressure: .normal, thermal: .serious)
         #expect(health == .thermalSerious)
     }
 
     @Test("A critical thermal state reads as thermal critical")
     func hotByThermalCritical() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .critical)
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, memoryPressure: .normal, thermal: .critical)
         #expect(health == .thermalCritical)
     }
 
-    @Test("Memory past the hot threshold with a nominal thermal state reads as high load, not overheating")
-    func highMemoryIsLoadNotHeat() {
-        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.9, thermal: .nominal)
-        #expect(StatusCapsuleModel.headlineKey(for: health) == "High Load")
+    @Test("Critical memory pressure with a nominal thermal state reads as memory, not overheating")
+    func memoryPressureIsMemoryNotHeat() {
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.9, memoryPressure: .critical, thermal: .nominal)
+        #expect(StatusCapsuleModel.headlineKey(for: health) == "Critical Memory")
     }
 
-    @Test("Nothing counts as rendering while wallpapers are off")
-    func nothingRendersWhileWallpapersAreOff() {
-        #expect(StatusCapsuleModel.renderingCount(configured: 2, wallpapersEnabled: false) == 0)
-        #expect(StatusCapsuleModel.renderingCount(configured: 2, wallpapersEnabled: true) == 2)
+    @Test("The footer counts configured displays, says when wallpapers are off, and names only an enabled battery pause")
+    func footerLabels() {
+        #expect(StatusCapsuleModel.footerLabels(configured: 2, wallpapersEnabled: true, pausesOnBattery: false) == [.displaysConfigured(2)])
+        #expect(
+            StatusCapsuleModel.footerLabels(configured: 2, wallpapersEnabled: true, pausesOnBattery: true)
+                == [.displaysConfigured(2), .pausesOnBattery]
+        )
+        #expect(StatusCapsuleModel.footerLabels(configured: 2, wallpapersEnabled: false, pausesOnBattery: false) == [.wallpapersOff])
+        #expect(
+            StatusCapsuleModel.footerLabels(configured: 0, wallpapersEnabled: false, pausesOnBattery: true)
+                == [.wallpapersOff, .pausesOnBattery]
+        )
     }
 
     @Test("Headline keys map one-to-one to health bands")
@@ -64,6 +94,8 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.headlineKey(for: .normal) == "System Normal")
         #expect(StatusCapsuleModel.headlineKey(for: .elevatedLoad) == "Elevated Load")
         #expect(StatusCapsuleModel.headlineKey(for: .highLoad) == "High Load")
+        #expect(StatusCapsuleModel.headlineKey(for: .memoryWarning) == "Low Memory")
+        #expect(StatusCapsuleModel.headlineKey(for: .memoryCritical) == "Critical Memory")
         #expect(StatusCapsuleModel.headlineKey(for: .thermalFair) == "Running Warm")
         #expect(StatusCapsuleModel.headlineKey(for: .thermalSerious) == "Running Hot")
         #expect(StatusCapsuleModel.headlineKey(for: .thermalCritical) == "Critical Heat")
@@ -74,7 +106,9 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.dotColor(for: .normal) == DesignTokens.EditDesk.Colors.success)
         #expect(StatusCapsuleModel.dotColor(for: .elevatedLoad) == DesignTokens.EditDesk.Colors.warning)
         #expect(StatusCapsuleModel.dotColor(for: .thermalFair) == DesignTokens.EditDesk.Colors.warning)
+        #expect(StatusCapsuleModel.dotColor(for: .memoryWarning) == DesignTokens.EditDesk.Colors.warning)
         #expect(StatusCapsuleModel.dotColor(for: .highLoad) == DesignTokens.EditDesk.Colors.danger)
+        #expect(StatusCapsuleModel.dotColor(for: .memoryCritical) == DesignTokens.EditDesk.Colors.danger)
         #expect(StatusCapsuleModel.dotColor(for: .thermalSerious) == DesignTokens.EditDesk.Colors.danger)
         #expect(StatusCapsuleModel.dotColor(for: .thermalCritical) == DesignTokens.EditDesk.Colors.danger)
     }
@@ -99,15 +133,29 @@ struct StatusCapsuleTests {
 
     private static let appFootprint: UInt64 = 1_288_490_189
 
-    private static func note(cpu: Double, memory: Double, thermal: ProcessInfo.ThermalState = .nominal) -> StatusCapsuleNote {
+    private static func note(
+        cpu: Double, memory: Double, pressure: SystemMemoryPressureLevel = .normal, thermal: ProcessInfo.ThermalState = .nominal
+    ) -> StatusCapsuleNote {
         StatusCapsuleModel.note(
-            cpuPercent: cpu, memoryFraction: memory, thermal: thermal, appCPUPercent: 3, appMemoryBytes: appFootprint
+            cpuPercent: cpu, memoryFraction: memory, memoryPressure: pressure, thermal: thermal,
+            appCPUPercent: 3, appMemoryBytes: appFootprint
         )
     }
 
-    @Test("The reviewed panel (CPU 9%, memory 62%) names the whole system's memory and says nothing needs doing")
-    func elevatedMemoryIsNamedAsTheSystems() {
-        #expect(Self.note(cpu: 9, memory: 0.62) == .systemMemory(fraction: 0.62, appBytes: Self.appFootprint, suggestsAction: false))
+    @Test("The reviewed panel (CPU 9%, memory 62%) under normal pressure is normal, not a memory warning")
+    func occupancyAloneHasTheNormalNote() {
+        #expect(Self.note(cpu: 9, memory: 0.62) == .normal)
+        #expect(Self.note(cpu: 10, memory: 0.9) == .normal)
+    }
+
+    @Test("Memory pressure names the whole system's memory and suggests acting, even at low occupancy")
+    func memoryPressureSuggestsActing() {
+        for pressure in [SystemMemoryPressureLevel.warning, .critical] {
+            #expect(
+                Self.note(cpu: 10, memory: 0.4, pressure: pressure)
+                    == .lowMemory(appBytes: Self.appFootprint)
+            )
+        }
     }
 
     @Test("CPU past the elevated line is named as the whole system's CPU, with this app's share beside it")
@@ -115,10 +163,10 @@ struct StatusCapsuleTests {
         #expect(Self.note(cpu: 72, memory: 0.3) == .systemCPU(percent: 72, appPercent: 3, suggestsAction: false))
     }
 
-    @Test("High load suggests acting, and names whichever reading is higher")
-    func highLoadSuggestsActingOnTheHigherReading() {
-        #expect(Self.note(cpu: 10, memory: 0.9) == .systemMemory(fraction: 0.9, appBytes: Self.appFootprint, suggestsAction: true))
+    @Test("High CPU load suggests acting and names the CPU, however full memory is")
+    func highLoadSuggestsActingOnTheCPU() {
         #expect(Self.note(cpu: 95, memory: 0.9) == .systemCPU(percent: 95, appPercent: 3, suggestsAction: true))
+        #expect(Self.note(cpu: 95, memory: 0.1) == .systemCPU(percent: 95, appPercent: 3, suggestsAction: true))
     }
 
     @Test("Heat notes follow the thermal state the headline names")
@@ -130,9 +178,10 @@ struct StatusCapsuleTests {
 
     @Test("Before the first reading neither the headline nor the note claims the system is normal")
     func noReadingsIsNotCalledNormal() {
-        let health = StatusCapsuleModel.health(cpuPercent: 0, memoryFraction: 0, thermal: .nominal)
+        let health = StatusCapsuleModel.health(cpuPercent: 0, memoryFraction: 0, memoryPressure: .normal, thermal: .nominal)
         #expect(StatusCapsuleModel.headlineKey(for: health) != "System Normal")
         #expect(Self.note(cpu: 0, memory: 0) == .waitingForReadings)
+        #expect(Self.note(cpu: 0, memory: 0, pressure: .critical) == .waitingForReadings)
         #expect(Self.note(cpu: 10, memory: 0.1) == .normal, "control: real low readings are normal")
     }
 
@@ -141,22 +190,28 @@ struct StatusCapsuleTests {
         var disagreements: [String] = []
         for cpu in stride(from: 0.0, through: 100, by: 5) {
             for memory in stride(from: 0.0, through: 1, by: 0.05) {
-                for thermal in [ProcessInfo.ThermalState.nominal, .fair, .serious, .critical] {
-                    let health = StatusCapsuleModel.health(cpuPercent: cpu, memoryFraction: memory, thermal: thermal)
-                    let note = Self.note(cpu: cpu, memory: memory, thermal: thermal)
-                    let agrees = switch (health, note) {
-                    case (.noReadings, .waitingForReadings), (.normal, .normal),
-                         (.thermalFair, .heat(.fair)), (.thermalSerious, .heat(.serious)), (.thermalCritical, .heat(.critical)):
-                        true
-                    case let (.elevatedLoad, .systemMemory(_, _, act)), let (.elevatedLoad, .systemCPU(_, _, act)):
-                        !act
-                    case let (.highLoad, .systemMemory(_, _, act)), let (.highLoad, .systemCPU(_, _, act)):
-                        act
-                    default:
-                        false
-                    }
-                    if !agrees {
-                        disagreements.append("cpu \(cpu) memory \(memory) \(thermal.rawValue): \(health) vs \(note)")
+                for pressure in SystemMemoryPressureLevel.allCases {
+                    for thermal in [ProcessInfo.ThermalState.nominal, .fair, .serious, .critical] {
+                        let health = StatusCapsuleModel.health(
+                            cpuPercent: cpu, memoryFraction: memory, memoryPressure: pressure, thermal: thermal
+                        )
+                        let note = Self.note(cpu: cpu, memory: memory, pressure: pressure, thermal: thermal)
+                        let agrees = switch (health, note) {
+                        case (.noReadings, .waitingForReadings), (.normal, .normal),
+                             (.thermalFair, .heat(.fair)), (.thermalSerious, .heat(.serious)), (.thermalCritical, .heat(.critical)):
+                            true
+                        case (.memoryWarning, .lowMemory), (.memoryCritical, .lowMemory):
+                            true
+                        case let (.elevatedLoad, .systemCPU(_, _, act)):
+                            !act
+                        case let (.highLoad, .systemCPU(_, _, act)):
+                            act
+                        default:
+                            false
+                        }
+                        if !agrees {
+                            disagreements.append("cpu \(cpu) memory \(memory) \(pressure) \(thermal.rawValue): \(health) vs \(note)")
+                        }
                     }
                 }
             }

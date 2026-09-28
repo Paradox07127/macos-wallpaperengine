@@ -2154,65 +2154,6 @@
         }
       }
     },
-    "%lld Displays Rendering" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld Display Rendering"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld Displays Rendering"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Renderizando %lld pantalla"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Renderizando %lld pantallas"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台のディスプレイで描画中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台显示器正在渲染"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 台顯示器正在渲染"
-          }
-        }
-      }
-    },
     "%lld duplicate" : {
       "comment" : "Paste queue ingestion summary fragment.",
       "localizations" : {
@@ -24529,7 +24470,7 @@
       }
     },
     "Elevated Load" : {
-      "comment" : "Status capsule headline: CPU or memory is at the elevated band.",
+      "comment" : "Status capsule headline: system CPU is at the elevated band.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -31404,7 +31345,7 @@
       }
     },
     "High Load" : {
-      "comment" : "Status capsule headline: CPU or memory is at the hot band. Not a temperature.",
+      "comment" : "Status capsule headline: system CPU is at the hot band. Not a temperature.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -49392,41 +49333,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "電源轉接器"
-          }
-        }
-      }
-    },
-    "Power Saver" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Power Saver"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ahorro de energía"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "省電力"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "省电"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "省電"
           }
         }
       }
@@ -68657,78 +68563,6 @@
         }
       }
     },
-    "System memory is %@ in use; Loomscreen uses %@. If the Mac slows down, quit apps you are not using." : {
-      "comment" : "Status capsule sentence beside the High Load headline when memory set it. First placeholder is the whole system's memory in use as a percent, second is this app's own memory footprint.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System memory is %@ in use; Loomscreen uses %@. If the Mac slows down, quit apps you are not using."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El sistema usa el %@ de la memoria; Loomscreen usa %@. Si el Mac va lento, cierra las apps que no estés usando."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システムのメモリ使用率は %@ で、そのうち Loomscreen が %@ を使用しています。この Mac の動作が遅くなったら、使っていないアプリを終了してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统内存已使用 %@，其中 Loomscreen 占用 %@。如果本机运行变慢，请退出暂不使用的应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統記憶體已使用 %@，其中 Loomscreen 佔用 %@。如果這台 Mac 變慢，請結束暫不使用的應用程式。"
-          }
-        }
-      }
-    },
-    "System memory is %@ in use; Loomscreen uses %@. No action needed." : {
-      "comment" : "Status capsule sentence beside the Elevated Load headline when memory set it. First placeholder is the whole system's memory in use as a percent, second is this app's own memory footprint.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System memory is %@ in use; Loomscreen uses %@. No action needed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El sistema usa el %@ de la memoria; Loomscreen usa %@. No hace falta hacer nada."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システムのメモリ使用率は %@ で、そのうち Loomscreen が %@ を使用しています。対応は不要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统内存已使用 %@，其中 Loomscreen 占用 %@，无需处理。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統記憶體已使用 %@，其中 Loomscreen 佔用 %@，無需處理。"
-          }
-        }
-      }
-    },
     "System Normal" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -82009,6 +81843,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 密碼與 Steam 令牌驗證碼只會交給 SteamCMD。Loomscreen 既不儲存，也不會傳往別處。"
+          }
+        }
+      }
+    },
+    "Low Memory" : {
+      "comment" : "Status capsule headline: macOS reports memory pressure at the warning level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Memory"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poca memoria"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ不足"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存紧张"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體緊張"
+          }
+        }
+      }
+    },
+    "Critical Memory" : {
+      "comment" : "Status capsule headline: macOS reports memory pressure at the critical level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Critical Memory"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria crítica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ危険"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存严重不足"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體嚴重不足"
+          }
+        }
+      }
+    },
+    "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory." : {
+      "comment" : "Status capsule sentence beside the Low Memory or Critical Memory headline. The placeholder is this app's own memory footprint.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac is low on memory; Loomscreen uses %@. Quitting apps you are not using frees memory."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El Mac tiene poca memoria; Loomscreen usa %@. Cerrar las apps que no estés usando libera memoria."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac のメモリが不足しています。Loomscreen は %@ を使用しています。使っていないアプリを終了するとメモリを解放できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机内存紧张，Loomscreen 占用 %@。退出暂不使用的应用可以释放内存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 記憶體緊張，Loomscreen 佔用 %@。結束暫不使用的應用程式可以釋放記憶體。"
+          }
+        }
+      }
+    },
+    "Wallpapers Off" : {
+      "comment" : "Status capsule footer: the master wallpaper switch is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpapers Off"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondos desactivados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙オフ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布已關閉"
+          }
+        }
+      }
+    },
+    "Pauses on Battery" : {
+      "comment" : "Status capsule footer: the pause-on-battery preference is enabled. It does not mean the Mac is on battery now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauses on Battery"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa con batería"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー駆動時に一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用电池时暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用電池時暫停"
+          }
+        }
+      }
+    },
+    "%lld Displays Configured" : {
+      "comment" : "Status capsule footer: displays that have a wallpaper set. The placeholder is the count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Display Configured"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Displays Configured"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pantalla configurada"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pantallas configuradas"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台のディスプレイに設定済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台显示器已设置壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台顯示器已設定桌布"
           }
         }
       }

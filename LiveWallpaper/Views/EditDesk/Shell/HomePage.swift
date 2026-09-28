@@ -760,11 +760,12 @@ struct HomePage: View {
     private var statusCapsule: StatusCapsule {
         StatusCapsule(
             content: StatusCapsuleContent(rawValue: statusCapsuleRaw) ?? EditDeskPreferences.statusCapsuleContentDefault,
-            renderingScreenCount: StatusCapsuleModel.renderingCount(
+            footerLabels: StatusCapsuleModel.footerLabels(
                 configured: screenManager.screens.filter { screenManager.getConfiguration(for: $0) != nil }.count,
-                wallpapersEnabled: screenManager.wallpapersGloballyEnabled
+                wallpapersEnabled: screenManager.wallpapersGloballyEnabled,
+                pausesOnBattery: SettingsManager.shared.loadGlobalSettings().globalPauseOnBattery
             ),
-            batterySaverOn: SettingsManager.shared.loadGlobalSettings().globalPauseOnBattery
+            memoryPressure: { [screenManager] in screenManager.memoryPressureLevel }
         )
     }
 

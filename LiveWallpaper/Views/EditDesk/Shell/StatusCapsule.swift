@@ -4,15 +4,21 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum StatusCapsuleHealth: Equatable {
-    case noReadings, normal, elevatedLoad, highLoad, thermalFair, thermalSerious, thermalCritical
+    case noReadings, normal, elevatedLoad, highLoad, memoryWarning, memoryCritical, thermalFair, thermalSerious, thermalCritical
+}
+
+enum StatusCapsuleFooterLabel: Equatable {
+    case wallpapersOff
+    case displaysConfigured(Int)
+    case pausesOnBattery
 }
 
 /// The sentence beside the headline: which reading set it, whether that reading is the whole system's, and whether to act.
 enum StatusCapsuleNote: Equatable {
     case waitingForReadings
     case normal
-    /// `fraction` is the whole system's; `appBytes` is this app's own footprint.
-    case systemMemory(fraction: Double, appBytes: UInt64, suggestsAction: Bool)
+    /// The kernel reports memory pressure; `appBytes` is this app's own footprint.
+    case lowMemory(appBytes: UInt64)
     /// Both in percent of the whole machine, as `SystemMonitor` reports them.
     case systemCPU(percent: Double, appPercent: Double, suggestsAction: Bool)
     case heat(ProcessInfo.ThermalState)
@@ -41,8 +47,11 @@ enum StatusCapsuleDismissal {
 
 /// Pure headline/dot/thermal mapping — kept static so tests drive it without `SystemMonitor`.
 enum StatusCapsuleModel {
-    static func health(cpuPercent: Double, memoryFraction: Double, thermal: ProcessInfo.ThermalState) -> StatusCapsuleHealth {
-        let load = max(cpuPercent / 100, memoryFraction)
+    /// Memory occupancy only gates the first sample; the kernel's pressure level is what says memory is short.
+    static func health(
+        cpuPercent: Double, memoryFraction: Double, memoryPressure: SystemMemoryPressureLevel, thermal: ProcessInfo.ThermalState
+    ) -> StatusCapsuleHealth {
+        let load = cpuPercent / 100
         switch thermal {
         case .critical: return .thermalCritical
         case .serious: return .thermalSerious
@@ -50,6 +59,11 @@ enum StatusCapsuleModel {
         }
         // Memory reads 0 until `SystemMonitor`'s first sample; a running Mac never uses none.
         guard memoryFraction > 0 else { return .noReadings }
+        switch memoryPressure {
+        case .critical: return .memoryCritical
+        case .warning: return .memoryWarning
+        case .normal: break
+        }
         if load >= Design.Load.hot {
             return .highLoad
         }
@@ -60,10 +74,12 @@ enum StatusCapsuleModel {
     }
 
     static func note(
-        cpuPercent: Double, memoryFraction: Double, thermal: ProcessInfo.ThermalState,
+        cpuPercent: Double, memoryFraction: Double, memoryPressure: SystemMemoryPressureLevel, thermal: ProcessInfo.ThermalState,
         appCPUPercent: Double, appMemoryBytes: UInt64
     ) -> StatusCapsuleNote {
-        let band = Self.health(cpuPercent: cpuPercent, memoryFraction: memoryFraction, thermal: thermal)
+        let band = Self.health(
+            cpuPercent: cpuPercent, memoryFraction: memoryFraction, memoryPressure: memoryPressure, thermal: thermal
+        )
         switch band {
         case .noReadings:
             return .waitingForReadings
@@ -71,12 +87,10 @@ enum StatusCapsuleModel {
             return .normal
         case .thermalFair, .thermalSerious, .thermalCritical:
             return .heat(thermal)
+        case .memoryWarning, .memoryCritical:
+            return .lowMemory(appBytes: appMemoryBytes)
         case .elevatedLoad, .highLoad:
-            // The larger of the two is the reading `health` put in this band.
-            if cpuPercent / 100 >= memoryFraction {
-                return .systemCPU(percent: cpuPercent, appPercent: appCPUPercent, suggestsAction: band == .highLoad)
-            }
-            return .systemMemory(fraction: memoryFraction, appBytes: appMemoryBytes, suggestsAction: band == .highLoad)
+            return .systemCPU(percent: cpuPercent, appPercent: appCPUPercent, suggestsAction: band == .highLoad)
         }
     }
 
@@ -86,6 +100,8 @@ enum StatusCapsuleModel {
         case .normal: "System Normal"
         case .elevatedLoad: "Elevated Load"
         case .highLoad: "High Load"
+        case .memoryWarning: "Low Memory"
+        case .memoryCritical: "Critical Memory"
         case .thermalFair: "Running Warm"
         case .thermalSerious: "Running Hot"
         case .thermalCritical: "Critical Heat"
@@ -96,8 +112,8 @@ enum StatusCapsuleModel {
         switch health {
         case .noReadings: DesignTokens.EditDesk.Colors.textTertiary
         case .normal: DesignTokens.EditDesk.Colors.success
-        case .elevatedLoad, .thermalFair: DesignTokens.EditDesk.Colors.warning
-        case .highLoad, .thermalSerious, .thermalCritical: DesignTokens.EditDesk.Colors.danger
+        case .elevatedLoad, .memoryWarning, .thermalFair: DesignTokens.EditDesk.Colors.warning
+        case .highLoad, .memoryCritical, .thermalSerious, .thermalCritical: DesignTokens.EditDesk.Colors.danger
         }
     }
 
@@ -111,9 +127,13 @@ enum StatusCapsuleModel {
         }
     }
 
-    /// Displays that keep a wallpaper render it only while the master switch is on.
-    static func renderingCount(configured: Int, wallpapersEnabled: Bool) -> Int {
-        wallpapersEnabled ? configured : 0
+    /// `pausesOnBattery` is the user's preference, not a claim that playback is paused right now.
+    static func footerLabels(configured: Int, wallpapersEnabled: Bool, pausesOnBattery: Bool) -> [StatusCapsuleFooterLabel] {
+        var labels: [StatusCapsuleFooterLabel] = [wallpapersEnabled ? .displaysConfigured(configured) : .wallpapersOff]
+        if pausesOnBattery {
+            labels.append(.pausesOnBattery)
+        }
+        return labels
     }
 
     /// `scope` is `RAMScopePicker`'s value: "app" reads this process, anything else the whole system.
@@ -150,8 +170,9 @@ enum StatusCapsuleModel {
 
 struct StatusCapsule: View {
     let content: StatusCapsuleContent
-    let renderingScreenCount: Int
-    let batterySaverOn: Bool
+    let footerLabels: [StatusCapsuleFooterLabel]
+    /// Read whenever the `SystemMonitor` readings redraw the capsule; the source is not observable.
+    let memoryPressure: () -> SystemMemoryPressureLevel
 
     private static let dialSize: CGFloat = 52
     /// Four dials plus their gaps and the panel padding; right-anchored, so it stays in the window.
@@ -173,6 +194,7 @@ struct StatusCapsule: View {
         StatusCapsuleModel.health(
             cpuPercent: monitor.systemCpuUsage,
             memoryFraction: monitor.systemMemoryUsage,
+            memoryPressure: memoryPressure(),
             thermal: monitor.thermalState
         )
     }
@@ -181,6 +203,7 @@ struct StatusCapsule: View {
         StatusCapsuleModel.note(
             cpuPercent: monitor.systemCpuUsage,
             memoryFraction: monitor.systemMemoryUsage,
+            memoryPressure: memoryPressure(),
             thermal: monitor.thermalState,
             appCPUPercent: monitor.cpuUsage,
             appMemoryBytes: monitor.memoryUsage
@@ -394,9 +417,12 @@ struct StatusCapsule: View {
 
     private var footerRow: some View {
         HStack(spacing: 4) {
-            Text("\(renderingScreenCount) Displays Rendering")
-            Text(verbatim: "·")
-            Text(batterySaverOn ? "Power Saver" : "Performance")
+            ForEach(Array(footerLabels.enumerated()), id: \.offset) { index, label in
+                if index > 0 {
+                    Text(verbatim: "·")
+                }
+                footerText(label)
+            }
             if let battery = StatusCapsuleModel.batteryReadout(powerSource) {
                 Text(verbatim: "·")
                 HStack(spacing: 2) {
@@ -417,6 +443,14 @@ struct StatusCapsule: View {
         .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
     }
 
+    private func footerText(_ label: StatusCapsuleFooterLabel) -> Text {
+        switch label {
+        case .wallpapersOff: Text("Wallpapers Off")
+        case let .displaysConfigured(count): Text("\(count) Displays Configured")
+        case .pausesOnBattery: Text("Pauses on Battery")
+        }
+    }
+
     private func percentText(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
     }
@@ -427,12 +461,9 @@ struct StatusCapsule: View {
             return Text("Waiting for the first system readings.")
         case .normal:
             return Text("System CPU, memory and heat are normal. No action needed.")
-        case let .systemMemory(fraction, appBytes, suggestsAction):
-            let used = percentText(fraction * 100)
+        case let .lowMemory(appBytes):
             let app = FormatUtils.formatBytes(appBytes)
-            return suggestsAction
-                ? Text("System memory is \(used) in use; Loomscreen uses \(app). If the Mac slows down, quit apps you are not using.")
-                : Text("System memory is \(used) in use; Loomscreen uses \(app). No action needed.")
+            return Text("The Mac is low on memory; Loomscreen uses \(app). Quitting apps you are not using frees memory.")
         case let .systemCPU(percent, appPercent, suggestsAction):
             let busy = percentText(percent)
             let app = percentText(appPercent)

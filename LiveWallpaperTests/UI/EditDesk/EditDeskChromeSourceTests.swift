@@ -58,7 +58,7 @@ struct EditDeskChromeSourceTests {
         let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
         #expect(!capsule.contains("Performance Settings"))
         #expect(!capsule.contains("onOpenPerformanceSettings"))
-        #expect(capsule.contains("Displays Rendering"), "the footer's remaining line stays")
+        #expect(capsule.contains("Displays Configured"), "the footer's remaining line stays")
         let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
         #expect(!home.contains("onOpenPerformanceSettings"))
     }
