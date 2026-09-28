@@ -396,6 +396,33 @@ struct ConfigurationPorterBookmarkMergeTests {
         #expect(library.contains { $0.id == existing.id })
         #expect(library.contains { $0.id == incoming.id })
     }
+
+    @Test("Library bookmarks survive an export and import, merged into the marks made since")
+    func libraryBookmarksRoundTripThroughApply() throws {
+        let store = LibraryBookmarkStore.shared
+        let exported = "bookmark:\(UUID())"
+        let markedSince = "bookmark:\(UUID())"
+        defer {
+            store.remove(exported)
+            store.remove(markedSince)
+        }
+        store.add(exported)
+        let data = try ConfigurationPorter.encode(ConfigurationBundle(libraryBookmarks: ConfigurationPorter.currentBundle().libraryBookmarks))
+        store.remove(exported)
+        store.add(markedSince)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let backup = try decoder.decode(ConfigurationBundle.self, from: data)
+        let summary = ConfigurationPorter.apply(backup)
+
+        #expect(store.contains(exported), "the backup's library bookmarks did not come back")
+        #expect(store.contains(markedSince), "the import cleared a mark made after the backup")
+        #expect(summary.totalBookmarkCount == backup.libraryBookmarks?.count, "the import summary leaves the library bookmarks out")
+
+        ConfigurationPorter.apply(ConfigurationBundle())
+        #expect(store.contains(markedSince), "a backup without library bookmarks cleared the marks")
+    }
 }
 
 @Suite("SettingsManager: file-store migration from UserDefaults")

@@ -842,6 +842,7 @@ struct HomePage: View {
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {
         switch chip {
         case .all: "all"
+        case .bookmarks: "bookmarks"
         case .recent: "recent"
         case .steam: "steam"
         case .local: "local"
@@ -856,6 +857,7 @@ struct HomePage: View {
     static func chipTitle(_ chip: SavedLibraryModel.Chip) -> LocalizedStringKey {
         switch chip {
         case .all: "All"
+        case .bookmarks: "Bookmarks"
         case .recent: "Recent"
         case .steam: "Steam"
         case .local: "Local"
@@ -1842,10 +1844,16 @@ struct LibraryGridTile: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if badges.needsUpdate {
-                ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
-                    .padding(DesignTokens.EditDesk.Spacing.s8)
+            let isBookmarked = LibraryBookmarkStore.shared.contains(item.id)
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                if badges.needsUpdate {
+                    ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
+                }
+                if isBookmarked || isHovering {
+                    LibraryBookmarkBadge(isBookmarked: isBookmarked) { LibraryBookmarkStore.shared.toggle(item.id) }
+                }
             }
+            .padding(DesignTokens.EditDesk.Spacing.s8)
         }
         .aspectRatio(StageGeometry.cardAspectRatio, contentMode: .fit)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)

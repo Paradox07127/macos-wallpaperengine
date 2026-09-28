@@ -11,6 +11,8 @@ extension ConfigurationPorter {
             wallpaperBookmarks: manager.loadWallpaperBookmarks(),
             screenSchemes: manager.loadScreenSchemes()
         )
+        let libraryBookmarks = LibraryBookmarkStore.shared.ids
+        bundle.libraryBookmarks = libraryBookmarks.isEmpty ? nil : libraryBookmarks
         #if !LITE_BUILD
         let workshopBookmarks = WorkshopBookmarkStore.shared.bookmarks
         bundle.workshopBookmarks = workshopBookmarks.isEmpty ? nil : workshopBookmarks
@@ -25,9 +27,11 @@ extension ConfigurationPorter {
         #else
         let workshopBookmarkCount = bundle.workshopBookmarks?.count
         #endif
+        // Library bookmarks are reported on the saved-bookmarks line.
+        let bookmarkCounts = [bundle.wallpaperBookmarks?.count, bundle.libraryBookmarks?.count].compactMap { $0 }
         return ApplySummary(
             displayCount: bundle.screenConfigurations?.count,
-            bookmarkCount: bundle.wallpaperBookmarks?.count,
+            bookmarkCount: bookmarkCounts.isEmpty ? nil : bookmarkCounts.reduce(0, +),
             workshopBookmarkCount: workshopBookmarkCount,
             schemeCount: bundle.screenSchemes?.count,
             didRestoreGlobalSettings: bundle.globalSettings != nil
@@ -69,6 +73,8 @@ extension ConfigurationPorter {
             manager.saveScreenSchemes(merged)
             SchemeStore.shared.reload()
         }
+
+        bundle.mergeLibraryBookmarks(into: .shared)
 
         #if !LITE_BUILD
         bundle.mergeWorkshopBookmarks(into: .shared)

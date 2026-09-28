@@ -42,6 +42,8 @@ public struct ConfigurationBundle: Codable, Sendable {
     public var screenSchemes: [ScreenScheme]?
     /// nil = the backup carries no Workshop bookmarks: written before they existed, by Lite, or with none saved.
     public var workshopBookmarks: [WorkshopBookmark]?
+    /// `LibraryBookmarkStore.ids`; nil = the backup carries no library bookmarks: written before they existed, or with none marked.
+    public var libraryBookmarks: [String]?
 
     public init(
         schemaVersion: Int = ConfigurationBundle.currentSchemaVersion,
@@ -52,7 +54,8 @@ public struct ConfigurationBundle: Codable, Sendable {
         globalSettings: GlobalSettings? = nil,
         wallpaperBookmarks: [WallpaperBookmark]? = nil,
         screenSchemes: [ScreenScheme]? = nil,
-        workshopBookmarks: [WorkshopBookmark]? = nil
+        workshopBookmarks: [WorkshopBookmark]? = nil,
+        libraryBookmarks: [String]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.appBundleID = appBundleID
@@ -63,6 +66,7 @@ public struct ConfigurationBundle: Codable, Sendable {
         self.wallpaperBookmarks = wallpaperBookmarks
         self.screenSchemes = screenSchemes
         self.workshopBookmarks = workshopBookmarks
+        self.libraryBookmarks = libraryBookmarks
     }
 }
 
@@ -73,5 +77,11 @@ public extension ConfigurationBundle {
         for bookmark in workshopBookmarks ?? [] {
             store.add(bookmark)
         }
+    }
+
+    /// Import adds the backup's marks; nothing marked here is cleared.
+    @MainActor
+    func mergeLibraryBookmarks(into store: LibraryBookmarkStore) {
+        store.merge(libraryBookmarks ?? [])
     }
 }

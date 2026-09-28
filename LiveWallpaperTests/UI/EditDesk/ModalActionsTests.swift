@@ -162,10 +162,10 @@ struct ModalActionsTests {
         let rows = modal.headerActions(
             for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         )
-        #expect(rows.map(\.kind) == [.showInFinder, .rename, .removeFromLibrary])
-        try #require(rows.count == 3)
-        #expect(rows.map(\.isDestructive) == [false, false, true])
-        rows[1].perform()
+        #expect(rows.map(\.kind) == [.showInFinder, .bookmark(isBookmarked: false), .rename, .removeFromLibrary])
+        try #require(rows.count == 4)
+        #expect(rows.map(\.isDestructive) == [false, false, false, true])
+        rows[2].perform()
         #expect(requested == ["rename"])
         // Control: the context menus keep Apply to and All Displays; only the title row drops them.
         #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).count == rows.count + 2)
@@ -179,7 +179,10 @@ struct ModalActionsTests {
             createdAt: .distantPast, lastUsedAt: nil, onDisplays: [], thumbnail: nil,
             metadata: nil, isVariant: false, parentID: nil, isSupported: true
         )
-        #expect(modal.headerActions(for: aerial, requestRename: {}, requestDelete: {}).map(\.kind) == [.showInFinder])
+        #expect(
+            modal.headerActions(for: aerial, requestRename: {}, requestDelete: {}).map(\.kind)
+                == [.showInFinder, .bookmark(isBookmarked: false)]
+        )
         #if !LITE_BUILD
         var inputs = fixture.inputs()
         inputs.phase = { _ in fixture.phase }
@@ -188,13 +191,13 @@ struct ModalActionsTests {
         let idle = installedModal.headerActions(
             for: installed, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         )
-        #expect(idle.map(\.kind) == [.showInFinder, .openInSteam, .checkForUpdate, .delete])
+        #expect(idle.map(\.kind) == [.showInFinder, .openInSteam, .bookmark(isBookmarked: false), .checkForUpdate, .delete])
         idle.last?.perform()
         #expect(requested == ["rename", "delete"])
         fixture.phase = .downloading
         #expect(
             installedModal.headerActions(for: installed, requestRename: {}, requestDelete: {}).map(\.kind)
-                == [.showInFinder, .openInSteam, .cancelUpdate, .delete]
+                == [.showInFinder, .openInSteam, .bookmark(isBookmarked: false), .cancelUpdate, .delete]
         )
         #endif
     }
@@ -333,17 +336,18 @@ struct ModalActionsTests {
             String(localized: "Apply to", bundle: .appLanguage),
             String(localized: "All Displays", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
+            String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Rename", bundle: .appLanguage),
             String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
         ])
-        try #require(rows.count == 5)
-        #expect(rows.map(\.isEnabled) == [true, true, true, true, true])
-        #expect(rows.map(\.isDestructive) == [false, false, false, false, true])
+        try #require(rows.count == 6)
+        #expect(rows.map(\.isEnabled) == [true, true, true, true, true, true])
+        #expect(rows.map(\.isDestructive) == [false, false, false, false, false, true])
         #expect(rows[0].submenu.map(\.title) == ["Left", "Center", "Right"])
         try #require(rows[0].submenu.count == 3)
         rows[0].submenu[1].action()
         #expect(fixture.applied.map(\.1) == [2])
-        rows[3].action()
+        rows[4].action()
         #expect(requested == ["rename"])
 
         current.isSupported = false
@@ -359,6 +363,7 @@ struct ModalActionsTests {
             String(localized: "All Displays", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Open in Steam", bundle: .appLanguage),
+            String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Check for updates", bundle: .appLanguage),
             String(localized: "Delete", bundle: .appLanguage),
         ])

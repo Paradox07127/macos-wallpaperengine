@@ -48,9 +48,11 @@ final class ModalActions {
     private let applyToAll: @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     /// Where removing and renaming a saved entry are recorded; nil records nothing.
     private let undo: EditDeskUndoStack?
+    private let libraryBookmarks: LibraryBookmarkStore
 
     init(
         inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
+        libraryBookmarks: LibraryBookmarkStore = .shared,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
@@ -58,6 +60,7 @@ final class ModalActions {
         self.bookmarks = bookmarks
         self.thumbnails = thumbnails
         self.undo = undo
+        self.libraryBookmarks = libraryBookmarks
         self.apply = apply
         self.applyToAll = applyToAll
     }
@@ -84,6 +87,7 @@ final class ModalActions {
         var inputs = Inputs.live(library: library, screenManager: screenManager)
         inputs.installedLibrary = installedLibrary
         let store = BookmarkStore.shared
+        let libraryBookmarks = LibraryBookmarkStore.shared
         let coordinator = WorkshopDownloadCoordinator.shared
         inputs.phase = { coordinator.phase(for: $0) }
         inputs.progress = { coordinator.progress[$0] }
@@ -96,8 +100,13 @@ final class ModalActions {
         inputs.cancelUpdate = { coordinator.cancel($0) }
         inputs.deleteInstalled = { entry, model in
             model.performDelete(entry, services: InstalledLibraryModel.DeleteServices(
-                containsBookmark: { WorkshopBookmarkActions.contains(workshopID: $0, store: store) },
-                removeBookmarks: { WorkshopBookmarkActions.removeAll(workshopID: $0, store: store) },
+                containsBookmark: {
+                    WorkshopBookmarkActions.contains(workshopID: $0, store: store) || libraryBookmarks.contains("workshop:\($0)")
+                },
+                removeBookmarks: {
+                    WorkshopBookmarkActions.removeAll(workshopID: $0, store: store)
+                    libraryBookmarks.remove("workshop:\($0)")
+                },
                 removeImportIfMatching: {
                     screenManager.removeWPEImport(workshopID: $0.workshopID, matchingImportedAt: $0.importedAt)
                 },
@@ -112,7 +121,10 @@ final class ModalActions {
                 }
             ))
         }
-        self.init(inputs: inputs, bookmarks: store, thumbnails: thumbnails, undo: undo, apply: apply, applyToAll: applyToAll)
+        self.init(
+            inputs: inputs, bookmarks: store, thumbnails: thumbnails, undo: undo, libraryBookmarks: libraryBookmarks,
+            apply: apply, applyToAll: applyToAll
+        )
     }
     #endif
 
@@ -278,13 +290,17 @@ final class ModalActions {
                 applyToAll(intent, inputs.displays().map(\.id))
             }
         )
+        actions.isBookmarked = libraryBookmarks.contains(id)
+        actions.toggleBookmark = { [self] in libraryBookmarks.toggle(id) }
         if case .bookmark = item.source {
             actions.removeFromSaved = { [self] in
                 guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source,
                       let index = bookmarks.bookmarks.firstIndex(where: { $0.id == bookmark.id }) else { return }
                 let removed = bookmarks.bookmarks[index]
+                let marked = libraryBookmarks.contains(id)
                 bookmarks.remove(removed.id)
-                undo?.recordRemoval(of: removed, at: index)
+                libraryBookmarks.remove(id)
+                undo?.recordRemoval(of: removed, at: index, marked: marked)
             }
             actions.rename = { [self] name in
                 guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source,

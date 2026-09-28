@@ -213,6 +213,10 @@ struct WallpaperModalActions {
     var deleteInstalled: (@MainActor () -> Void)?
     /// Saved entries only; takes the new name.
     var rename: (@MainActor (String) -> Void)?
+    /// Marks or unmarks the entry in the library's Bookmarks.
+    var toggleBookmark: (@MainActor () -> Void)?
+    /// The entry's mark when these actions were built; picks the row's title and glyph.
+    var isBookmarked = false
 }
 
 extension WallpaperModalActions {
@@ -227,6 +231,9 @@ extension WallpaperModalActions {
         }
         if let openInSteam {
             actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
+        }
+        if let toggleBookmark {
+            actions.append(ModalHeaderAction(kind: .bookmark(isBookmarked: isBookmarked), perform: toggleBookmark))
         }
         if rename != nil {
             actions.append(ModalHeaderAction(kind: .rename, perform: requestRename))
@@ -273,6 +280,14 @@ extension WallpaperModalActions {
         if let openInSteam {
             items.append(StageMenuItem(
                 title: String(localized: "Open in Steam", bundle: .appLanguage), isEnabled: true, action: openInSteam
+            ))
+        }
+        if let toggleBookmark {
+            items.append(StageMenuItem(
+                title: isBookmarked
+                    ? String(localized: "Remove Bookmark", bundle: .appLanguage)
+                    : String(localized: "Add Bookmark", bundle: .appLanguage),
+                isEnabled: true, action: toggleBookmark
             ))
         }
         if rename != nil {

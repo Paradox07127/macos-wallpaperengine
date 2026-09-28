@@ -18,6 +18,15 @@ struct EditDeskUndoStackTests {
         )
     }
 
+    private func markingStack(_ marks: LibraryBookmarkStore) -> EditDeskUndoStack {
+        EditDeskUndoStack(
+            manager: manager,
+            router: ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .seconds(5)),
+            bookmarks: bookmarks,
+            libraryBookmarks: marks
+        )
+    }
+
     /// The displays a configuration step names; empty for the other kinds.
     private static func fingerprints(_ step: EditDeskUndoStack.Step?) -> [String] {
         guard case let .displays(displays)? = step?.change else { return [] }
@@ -328,6 +337,54 @@ struct EditDeskUndoStackTests {
         _ = try #require(await stack.redo())
         #expect(bookmarks.bookmarks.map(\.id) == [first.id, last.id])
         #expect(stack.retainedCoverFileNames == ["middle.png"], "undo can bring the entry back again")
+    }
+
+    @Test("Removing a marked library entry takes its bookmark mark along; undo puts both back, redo takes both out", .timeLimit(.minutes(1)))
+    func removedEntryTakesItsBookmarkMarkAlong() async throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "EditDeskUndoStackTests")
+        defer { suite.discard() }
+        let marks = LibraryBookmarkStore(defaults: suite.defaults)
+        let stack = markingStack(marks)
+        let saved = bookmarks.add(label: "Marked", content: Self.page("m"))
+        let itemID = "bookmark:\(saved.id)"
+        marks.add(itemID)
+        let store = bookmarks
+        var inputs = ModalActions.Inputs()
+        inputs.item = { id in store.bookmarks.map(SavedBookmarks.item(for:)).first { $0.id == id } }
+        let modal = ModalActions(
+            inputs: inputs, bookmarks: bookmarks, thumbnails: ShelfThumbnailCache(), undo: stack, libraryBookmarks: marks,
+            apply: { _, _ in }, applyToAll: { _, _ in }
+        )
+        let actions = modal.actions(for: SavedBookmarks.item(for: saved))
+        #expect(actions.isBookmarked, "control: the entry was not marked before its removal")
+
+        let removeFromSaved = try #require(actions.removeFromSaved)
+        removeFromSaved()
+        #expect(!marks.contains(itemID), "the removed entry's mark stayed behind")
+
+        _ = try #require(await stack.undo())
+        #expect(bookmarks.bookmarks.contains { $0.id == saved.id })
+        #expect(marks.contains(itemID), "undo brought the entry back without its mark")
+
+        _ = try #require(await stack.redo())
+        #expect(!marks.contains(itemID), "redo left the mark of the entry it took out")
+        _ = try #require(await stack.undo())
+        #expect(marks.contains(itemID), "the second undo lost the mark")
+    }
+
+    @Test("An unmarked entry put back by undo stays unmarked", .timeLimit(.minutes(1)))
+    func unmarkedEntryComesBackUnmarked() async throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "EditDeskUndoStackTests")
+        defer { suite.discard() }
+        let marks = LibraryBookmarkStore(defaults: suite.defaults)
+        let stack = markingStack(marks)
+        let saved = bookmarks.add(label: "Plain", content: Self.page("p"))
+        let removed = try #require(bookmarks.bookmarks.first { $0.id == saved.id })
+        bookmarks.remove(saved.id)
+        stack.recordRemoval(of: removed, at: 0)
+
+        _ = try #require(await stack.undo())
+        #expect(marks.ids.isEmpty)
     }
 
     @Test("A removed widget goes back at its old index after the editor's pending write lands; redo takes it off by ID", .timeLimit(.minutes(1)))

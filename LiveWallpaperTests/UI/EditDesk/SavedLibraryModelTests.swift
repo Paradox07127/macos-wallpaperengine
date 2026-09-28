@@ -122,9 +122,27 @@ struct SavedLibraryModelTests {
         #expect(model.items.first { $0.title == "Idle" }?.onDisplays == [])
     }
 
-    @Test("The filter chips are All, Recent, Steam, Local and Aerials")
-    func chipsAreTheFiveFilters() {
-        #expect(SavedLibraryModel.Chip.allCases == [.all, .recent, .steam, .local, .aerials])
+    @Test("The filter chips are All, Bookmarks, Recent, Steam, Local and Aerials")
+    func chipsAreTheSixFilters() {
+        #expect(SavedLibraryModel.Chip.allCases == [.all, .bookmarks, .recent, .steam, .local, .aerials])
+    }
+
+    @Test("Bookmarks keeps only the marked rows, and follows a mark added or taken off")
+    func bookmarksChipKeepsOnlyMarkedRows() {
+        let marked = bookmark("Marked")
+        let plain = bookmark("Plain")
+        var marks: Set<String> = ["bookmark:\(marked.id)", "aerial:/sky.mov", "bookmark:gone"]
+        var source = inputs([marked, plain], aerials: [aerial()])
+        source.libraryBookmarks = { marks }
+        let model = SavedLibraryModel(inputs: source)
+        model.chip = .bookmarks
+        #expect(Set(model.visibleItems.map(\.id)) == ["bookmark:\(marked.id)", "aerial:/sky.mov"])
+
+        marks = ["bookmark:\(plain.id)"]
+        model.refresh()
+        #expect(model.visibleItems.map(\.title) == ["Plain"])
+        model.chip = .all
+        #expect(model.visibleItems.count == 3, "control: the other rows left the library, not just the chip")
     }
 
     @Test func recentlyUsedSortPutsNilLastAndBreaksTiesByCreation() {

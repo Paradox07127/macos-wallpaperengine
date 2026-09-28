@@ -178,6 +178,9 @@ final class EditDeskUndoStack {
     @ObservationIgnored private let manager: any UndoRestoring
     @ObservationIgnored private let router: ApplyRouter
     @ObservationIgnored private let bookmarks: BookmarkStore
+    @ObservationIgnored private let libraryBookmarks: LibraryBookmarkStore
+    /// Removed Wallpaper Library entries whose library bookmark goes back with them.
+    @ObservationIgnored private var markedRemovals: Set<UUID> = []
     /// Displays named by recordings that have not settled them yet; an undo waits for these.
     @ObservationIgnored private var unsettledDisplays = 0
     /// Moves with every recorded step and with `removeAll`; an undo that sees it move keeps its result off the redo stack.
@@ -188,10 +191,14 @@ final class EditDeskUndoStack {
     @ObservationIgnored private var settleWaiter: CheckedContinuation<Void, Never>?
 
     /// `router` confirms each restore as it confirms an apply, with the same timeout.
-    init(manager: any UndoRestoring, router: ApplyRouter, bookmarks: BookmarkStore) {
+    init(
+        manager: any UndoRestoring, router: ApplyRouter, bookmarks: BookmarkStore,
+        libraryBookmarks: LibraryBookmarkStore = .shared
+    ) {
         self.manager = manager
         self.router = router
         self.bookmarks = bookmarks
+        self.libraryBookmarks = libraryBookmarks
     }
 
     /// Covers of Wallpaper Library entries a step can still bring back; the cover sweep has to keep them.
@@ -238,6 +245,7 @@ final class EditDeskUndoStack {
         movementCoalescingStep = nil
         undoSteps.removeAll()
         redoSteps.removeAll()
+        markedRemovals.removeAll()
         generation += 1
     }
 
@@ -269,8 +277,11 @@ final class EditDeskUndoStack {
 
     // MARK: Recording changes that are already done
 
-    /// `bookmark` and `index` as they were before the entry left the Wallpaper Library.
-    func recordRemoval(of bookmark: WallpaperBookmark, at index: Int) {
+    /// `bookmark` and `index` as they were before the entry left the Wallpaper Library; `marked`: it had a library bookmark.
+    func recordRemoval(of bookmark: WallpaperBookmark, at index: Int, marked: Bool = false) {
+        if marked {
+            markedRemovals.insert(bookmark.id)
+        }
         record(.removeFromSaved, .bookmark(bookmark, index: index), announcing: String(
             localized: "Removed from Wallpaper Library", bundle: .appLanguage,
             comment: "Toast after an entry left the Wallpaper Library in the Edit Desk; it offers Undo."
@@ -487,16 +498,24 @@ final class EditDeskUndoStack {
     }
 
     private func restore(_ bookmark: WallpaperBookmark, at index: Int?) -> Ran {
+        let itemID = "bookmark:\(bookmark.id)"
         guard let index else {
             guard let at = bookmarks.bookmarks.firstIndex(where: { $0.id == bookmark.id }) else {
                 return Ran(skipped: [.init(name: bookmark.label, reason: .changedAfterward)])
             }
             let current = bookmarks.bookmarks[at]
             bookmarks.remove(current.id)
+            if libraryBookmarks.contains(itemID) {
+                libraryBookmarks.remove(itemID)
+                markedRemovals.insert(current.id)
+            }
             return Ran(inverse: .bookmark(current, index: at), restored: [current.label])
         }
         // An entry already back under its ID counts as restored: `insert` leaves it where it is.
         bookmarks.insert(bookmark, at: index)
+        if markedRemovals.remove(bookmark.id) != nil {
+            libraryBookmarks.add(itemID)
+        }
         return Ran(inverse: .bookmark(bookmark, index: nil), restored: [bookmark.label])
     }
 

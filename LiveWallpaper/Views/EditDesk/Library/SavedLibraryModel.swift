@@ -6,7 +6,7 @@ import Observation
 
 @MainActor @Observable
 final class SavedLibraryModel {
-    enum Chip: CaseIterable { case all, recent, steam, local, aerials }
+    enum Chip: CaseIterable { case all, bookmarks, recent, steam, local, aerials }
     enum Sort: CaseIterable {
         case recentlyUsed, name, type
         #if !LITE_BUILD
@@ -34,6 +34,8 @@ final class SavedLibraryModel {
     struct Inputs {
         var bookmarks: @MainActor () -> [WallpaperBookmark] = { [] }
         var aerials: @MainActor () -> AerialsState = { AerialsState() }
+        /// The row IDs the user marked as bookmarks.
+        var libraryBookmarks: @MainActor () -> Set<LibraryItem.ID> = { [] }
         #if !LITE_BUILD
         var history: @MainActor () -> [WPEHistoryEntry] = { [] }
         /// Content is nil for installed rows, which match by origin instead.
@@ -66,6 +68,7 @@ final class SavedLibraryModel {
             let sidecar = LibraryMetadataSidecar()
             var inputs = Inputs()
             inputs.bookmarks = { BookmarkStore.shared.bookmarks }
+            inputs.libraryBookmarks = { Set(LibraryBookmarkStore.shared.ids) }
             inputs.aerials = {
                 let library = AppleAerialsLibrary.shared
                 return AerialsState(
@@ -137,6 +140,7 @@ final class SavedLibraryModel {
     #endif
     var query = ""
     private(set) var items: [LibraryItem] = []
+    private(set) var bookmarkedIDs: Set<LibraryItem.ID> = []
     private(set) var aerialsStatus = AerialsState()
     /// Each row's last use when the current browse began; nil while none is open.
     private var usageSnapshot: [LibraryItem.ID: Date]?
@@ -176,11 +180,12 @@ final class SavedLibraryModel {
         observeStores()
     }
 
-    /// `BookmarkStore` and `AppleAerialsLibrary` only persist; nothing posts a notification for
-    /// an add / remove / rename, so the live model tracks them through Observation.
+    /// `BookmarkStore`, `LibraryBookmarkStore` and `AppleAerialsLibrary` only persist; nothing posts a notification
+    /// for an add / remove / rename, so the live model tracks them through Observation.
     func observeStores() {
         withObservationTracking {
             _ = BookmarkStore.shared.bookmarks
+            _ = LibraryBookmarkStore.shared.ids
             _ = AppleAerialsLibrary.shared.assets
             _ = AppleAerialsLibrary.shared.isAuthorized
         } onChange: { [weak self] in
@@ -196,6 +201,7 @@ final class SavedLibraryModel {
     var visibleItems: [LibraryItem] {
         let filtered: [LibraryItem] = switch chip {
         case .all: items
+        case .bookmarks: items.filter { bookmarkedIDs.contains($0.id) }
         case .recent:
             // The recent shelf is limited to the 14 most recently used items before sorting.
             Array(items.filter { usage(of: $0) != nil }.sorted(by: recentlyUsed).prefix(14))
@@ -371,6 +377,7 @@ final class SavedLibraryModel {
             ))
         }
         aerialsStatus = inputs.aerials()
+        bookmarkedIDs = inputs.libraryBookmarks()
         let active = inputs.activeWallpapers()
         merged += aerialsStatus.assets.map { asset in
             let source = LibraryItem.Source.aerial(asset)
