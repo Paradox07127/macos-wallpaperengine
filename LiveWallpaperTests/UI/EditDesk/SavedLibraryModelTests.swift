@@ -131,7 +131,7 @@ struct SavedLibraryModelTests {
     func bookmarksChipKeepsOnlyMarkedRows() {
         let marked = bookmark("Marked")
         let plain = bookmark("Plain")
-        var marks: Set<String> = ["bookmark:\(marked.id)", "aerial:/sky.mov", "bookmark:gone"]
+        var marks: Set = ["bookmark:\(marked.id)", "aerial:/sky.mov", "bookmark:gone"]
         var source = inputs([marked, plain], aerials: [aerial()])
         source.libraryBookmarks = { marks }
         let model = SavedLibraryModel(inputs: source)

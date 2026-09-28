@@ -6,7 +6,7 @@ import Testing
 struct LibraryBookmarkStoreTests {
     private static func defaults() throws -> (UserDefaults, String) {
         let suite = "LibraryBookmarkStoreTests.\(UUID().uuidString)"
-        return (try #require(UserDefaults(suiteName: suite)), suite)
+        return try (#require(UserDefaults(suiteName: suite)), suite)
     }
 
     @Test("Marks keep the order they were added in, each once, across a relaunch")

@@ -28,7 +28,7 @@ extension ConfigurationPorter {
         let workshopBookmarkCount = bundle.workshopBookmarks?.count
         #endif
         // Library bookmarks are reported on the saved-bookmarks line.
-        let bookmarkCounts = [bundle.wallpaperBookmarks?.count, bundle.libraryBookmarks?.count].compactMap { $0 }
+        let bookmarkCounts = [bundle.wallpaperBookmarks?.count, bundle.libraryBookmarks?.count].compactMap(\.self)
         return ApplySummary(
             displayCount: bundle.screenConfigurations?.count,
             bookmarkCount: bookmarkCounts.isEmpty ? nil : bookmarkCounts.reduce(0, +),

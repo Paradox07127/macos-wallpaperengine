@@ -65,7 +65,7 @@ public final class LibraryBookmarkStore {
             return
         }
         do {
-            defaults.set(try JSONEncoder().encode(updated), forKey: Self.preferencesKey)
+            try defaults.set(JSONEncoder().encode(updated), forKey: Self.preferencesKey)
             ids = updated
             hasStorageError = false
         } catch {
