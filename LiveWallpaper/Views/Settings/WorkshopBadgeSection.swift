@@ -3,43 +3,13 @@ import SwiftUI
 
 struct WorkshopBadgeSection: View {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
-    @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true
     @AppStorage(CardBadgeSettings.showsResolution, store: .appScoped()) private var showsResolution = true
     @AppStorage(CardBadgeSettings.showsInLibrary, store: .appScoped()) private var showsInLibrary = true
     @AppStorage(CardBadgeSettings.showsUpdate, store: .appScoped()) private var showsUpdate = true
     @AppStorage(CardBadgeSettings.showsInUse, store: .appScoped()) private var showsInUse = true
-    @AppStorage(CardBadgeSettings.typeStyle, store: .appScoped()) private var typeStyle: CardTypeBadgeStyle = .icon
 
     var body: some View {
         Section {
-            SettingRow(
-                icon: "square.stack.3d.up",
-                iconColor: .indigo,
-                title: "Wallpaper type"
-            ) {
-                Toggle("", isOn: $showsType)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel(Text("Wallpaper type badge"))
-            }
-
-            SettingRow(
-                icon: "textformat",
-                iconColor: .indigo,
-                title: "Type badge style"
-            ) {
-                Picker("", selection: $typeStyle) {
-                    Text("Icon").tag(CardTypeBadgeStyle.icon)
-                    Text("Name").tag(CardTypeBadgeStyle.text)
-                    Text("Icon and name").tag(CardTypeBadgeStyle.iconAndText)
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-                .disabled(!showsType)
-                .accessibilityLabel(Text("Type badge style"))
-            }
-
             SettingRow(
                 icon: "star",
                 iconColor: .yellow,

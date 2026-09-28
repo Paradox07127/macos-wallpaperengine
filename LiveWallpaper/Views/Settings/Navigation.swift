@@ -555,12 +555,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     label: "Thumbnail badges",
                     anchor: .workshopBadges,
                     rows: [
-                        "Wallpaper type", "Type badge style", "Rating", "Resolution", "Already installed",
+                        "Rating", "Resolution", "Already installed",
                         "Update available", "Currently in use",
                     ],
                     keywords: [
                         "badge", "thumbnail badges", "rating", "resolution",
-                        "wallpaper type", "in use", "update available",
+                        "in use", "update available",
                     ]
                 ),
                 SettingsNavigationSearchTarget(
