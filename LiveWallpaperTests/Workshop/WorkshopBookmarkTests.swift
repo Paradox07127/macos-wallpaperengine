@@ -170,7 +170,7 @@ struct WorkshopBookmarkTests {
             "LiveWallpaper/Views/EditDesk/Library/ModalActions.swift",
         ] {
             let source = try RepositoryRoot.source(path)
-            #expect(source.contains("removeBookmarks: { WorkshopBookmarkActions.removeAll("), Comment(rawValue: path))
+            #expect(source.contains("WorkshopBookmarkActions.removeAll(workshopID: $0, store: store)"), Comment(rawValue: path))
             #expect(!source.contains("removeWPEBookmarks(workshopID: $0) }"), Comment(rawValue: path))
         }
     }
