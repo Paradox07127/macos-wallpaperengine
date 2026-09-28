@@ -105,7 +105,7 @@ struct EmptyDisplaySetup: View {
     private var backgroundControl: some View {
         if loading {
             ProgressView().controlSize(.small).padding(8)
-        } else if wallpaper != nil || CGPreflightScreenCaptureAccess() {
+        } else {
             HStack(spacing: 8) {
                 if wallpaper == nil {
                     Text("Preview unavailable").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
@@ -114,16 +114,6 @@ struct EmptyDisplaySetup: View {
                     .help(Text("Refresh macOS wallpaper"))
                     .accessibilityLabel(Text("Refresh macOS wallpaper"))
             }
-        } else {
-            Button("Show macOS wallpaper") {
-                if CGRequestScreenCaptureAccess() {
-                    refreshID = UUID()
-                } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            .adaptiveGlassButton(size: .small)
-            .help(Text("Screen recording access is used only to preview this display’s wallpaper."))
         }
     }
 

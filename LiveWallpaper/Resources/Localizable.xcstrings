@@ -57409,41 +57409,6 @@
         }
       }
     },
-    "Screen recording access is used only to preview this display’s wallpaper." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Screen recording access is used only to preview this display’s wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El acceso a la grabación de pantalla solo se usa para previsualizar el fondo de esta pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面収録のアクセス権は、このディスプレイの壁紙のプレビューにのみ使用します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "录屏权限仅用于预览此显示器的壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "螢幕錄製權限僅用於預覽此顯示器的桌布。"
-          }
-        }
-      }
-    },
     "Scripted content may not display when disabled." : {
       "comment" : "JavaScript toggle tooltip. Disabling scripts can affect scripted content; do not claim that every web wallpaper becomes blank.",
       "extractionState" : "manual",
@@ -59973,41 +59938,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示歌詞"
-          }
-        }
-      }
-    },
-    "Show macOS wallpaper" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show macOS wallpaper"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el fondo de macOS"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOSの壁紙を表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示 macOS 壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示 macOS 桌布"
           }
         }
       }
