@@ -354,6 +354,11 @@ struct EditDeskLibraryStateTests {
     private static func pickSort(row index: Int, in window: NSWindow, rowMidY: CGFloat) async -> Bool {
         let plus = NSHostingView(rootView: GlassIconButton("plus", size: .regular) {}).fittingSize.width
         let trailing = (window.contentView?.bounds.width ?? 0) - DesignTokens.EditDesk.Spacing.gutter - plus - DesignTokens.EditDesk.Spacing.s8
+        let hider = TransparentPopovers()
+        NotificationCenter.default.addObserver(
+            hider, selector: #selector(TransparentPopovers.willShow(_:)), name: NSPopover.willShowNotification, object: nil
+        )
+        defer { NotificationCenter.default.removeObserver(hider) }
         click(NSPoint(x: trailing - 8, y: rowMidY), in: window)
         var rows: [NSButton] = []
         await settle(window) {
@@ -415,4 +420,15 @@ struct EditDeskLibraryStateTests {
     }
 
     private final class WindowDelegate: NSObject, NSWindowDelegate {}
+
+    /// `parkOffScreen()` leaves a corner of this titled window on a display at alpha 0; a popover anchored
+    /// in it opens on that display, so it is made transparent before it is ordered in.
+    @MainActor
+    private final class TransparentPopovers: NSObject {
+        @objc func willShow(_ notification: Notification) {
+            guard let popover = notification.object as? NSPopover else { return }
+            popover.animates = false
+            popover.contentViewController?.view.window?.alphaValue = 0
+        }
+    }
 }

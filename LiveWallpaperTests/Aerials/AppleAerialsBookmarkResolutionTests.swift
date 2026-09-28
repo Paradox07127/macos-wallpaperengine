@@ -44,9 +44,11 @@ struct AppleAerialsBookmarkResolutionTests {
         defer { try? fileManager.removeItem(at: directory) }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        // This host may be unable to mint a security-scoped bookmark for a plain
-        // temp directory; skip rather than assert a false failure.
-        guard (try? DirectoryBookmarks.createReadOnlyBookmark(for: directory)) != nil else { return }
+        do {
+            _ = try DirectoryBookmarks.createReadOnlyBookmark(for: directory)
+        } catch {
+            try Test.cancel(Comment(rawValue: "This host cannot mint a security-scoped bookmark (\(error)); the stale refresh would have nothing to store"))
+        }
 
         withSavedBookmarkState {
             let library = AppleAerialsLibrary()

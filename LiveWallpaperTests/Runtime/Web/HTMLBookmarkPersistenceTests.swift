@@ -220,7 +220,7 @@ struct HTMLBookmarkPersistenceTests {
     }
 
     @Test("WPE session resolution refreshes screen and history owners without losing effective Data")
-    func wpeRuntimeRefreshPersistsEveryOwner() async throws {
+    func wpeRuntimeRefreshPersistsScreenAndHistoryOwners() async throws {
         let root = try Self.makeTempDirectory()
         let configurationRoot = root.appendingPathComponent("configuration", isDirectory: true)
         let manager = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
