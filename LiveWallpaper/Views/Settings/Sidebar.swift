@@ -128,10 +128,7 @@ private struct SettingsSidebarSearchField: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            TextField("Search Settings", text: $text)
-                .textFieldStyle(.plain)
-                .font(DesignTokens.Typography.body)
-                .accessibilityLabel(Text("Search Settings"))
+            Input(text: $text)
 
             if !text.isEmpty {
                 Button {
@@ -156,6 +153,50 @@ private struct SettingsSidebarSearchField: View {
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                 .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 1)
+        }
+    }
+
+    private struct Input: NSViewRepresentable {
+        @Binding var text: String
+
+        func makeNSView(context: Context) -> NSTextField {
+            let field = NSTextField(frame: .zero)
+            field.isBezeled = false
+            field.drawsBackground = false
+            field.focusRingType = .none
+            field.font = .preferredFont(forTextStyle: .body)
+            field.isAutomaticTextCompletionEnabled = false
+            field.cell?.usesSingleLineMode = true
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            field.delegate = context.coordinator
+            return field
+        }
+
+        func updateNSView(_ field: NSTextField, context: Context) {
+            context.coordinator.text = $text
+            if field.stringValue != text {
+                field.stringValue = text
+            }
+            let prompt = String(localized: "Search Settings", bundle: .appLanguage)
+            field.placeholderString = prompt
+            field.setAccessibilityLabel(prompt)
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(text: $text)
+        }
+
+        final class Coordinator: NSObject, NSTextFieldDelegate {
+            var text: Binding<String>
+
+            init(text: Binding<String>) {
+                self.text = text
+            }
+
+            func controlTextDidChange(_ notification: Notification) {
+                guard let field = notification.object as? NSTextField else { return }
+                text.wrappedValue = field.stringValue
+            }
         }
     }
 }

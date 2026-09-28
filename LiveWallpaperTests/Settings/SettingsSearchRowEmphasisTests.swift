@@ -130,6 +130,15 @@ struct SettingsSearchRowEmphasisTests {
         #expect(box.height <= 60, "the marks span \(Int(box.height))pt: the section title is marked along with the row")
     }
 
+    @Test("The settings search does not offer native text completion")
+    func searchDoesNotOfferNativeCompletions() async throws {
+        try await Self.withSettingsWindow { _, root in
+            let field = try #require(Self.views(root).compactMap { $0 as? NSTextField }.first { $0.isEditable })
+            let completionEnabled = field.isAutomaticTextCompletionEnabled
+            #expect(!completionEnabled)
+        }
+    }
+
     @Test("Picking a result scrolls the matching row of a long page into view and marks that row, not its section title")
     func resultMarksItsRow() async throws {
         let query = "Show wallpaper in screen captures"
