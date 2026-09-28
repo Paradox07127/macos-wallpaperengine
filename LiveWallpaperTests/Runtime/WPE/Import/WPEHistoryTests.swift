@@ -90,6 +90,37 @@ struct WPEHistoryTests {
         }
     }
 
+    @Test("A folder size measured for one entry is stored on that entry, not on another folder sharing its id", .timeLimit(.minutes(1)))
+    func measuredSizeLandsOnMeasuredEntry() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("history-size-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func entry(inFolder itemID: String, importedAt: Double) throws -> WPEHistoryEntry {
+            let folder = root.appendingPathComponent("steamapps/workshop/content/431960/\(itemID)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(count: 4096).write(to: folder.appendingPathComponent("scene.pkg"))
+            let origin = try WPEOrigin(
+                workshopID: "2585024298", title: "Item \(itemID)", originalType: .scene,
+                sourceFolderBookmark: folder.bookmarkData(),
+                cacheRelativePath: "wpe-cache/2585024298", previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: importedAt))
+        }
+
+        let manager = SettingsManager.shared
+        manager.cleanAllSettings(applyLoginSetting: false)
+        defer { manager.cleanAllSettings(applyLoginSetting: false) }
+        let measured = try entry(inFolder: "2585024298", importedAt: 1)
+        manager.recordWPEImport(measured)
+        try manager.recordWPEImport(entry(inFolder: "3159206868", importedAt: 2))
+
+        _ = await loadWPELocalProjectInfo(for: measured)
+
+        let recent = manager.loadGlobalSettings().recentWPEImports
+        #expect(recent.map(\.origin.steamFolderItemID) == ["3159206868", "2585024298"])
+        #expect(recent.map { $0.sizeBytes != nil } == [false, true])
+    }
+
     @Test("Caps at maxRecentWPEImports, dropping the oldest")
     func capsAtMaxRecentImports() throws {
         withIsolatedGlobalSettings {
@@ -138,13 +169,14 @@ struct WPEHistoryTests {
             manager.recordWPEImport(makeEntry("1"))
             #expect(manager.loadGlobalSettings().recentWPEImports.first?.sizeBytes == nil)
 
-            manager.updateWPEImportSize(workshopID: "1", sizeBytes: 2048)
+            let importedAt = Date(timeIntervalSince1970: 1)
+            manager.updateWPEImportSize(workshopID: "1", matchingImportedAt: importedAt, sizeBytes: 2048)
             #expect(manager.loadGlobalSettings().recentWPEImports.first?.sizeBytes == 2048)
 
-            manager.updateWPEImportSize(workshopID: "1", sizeBytes: 9999)
+            manager.updateWPEImportSize(workshopID: "1", matchingImportedAt: importedAt, sizeBytes: 9999)
             #expect(manager.loadGlobalSettings().recentWPEImports.first?.sizeBytes == 2048)
 
-            manager.updateWPEImportSize(workshopID: "missing", sizeBytes: 1)
+            manager.updateWPEImportSize(workshopID: "missing", matchingImportedAt: importedAt, sizeBytes: 1)
             #expect(manager.loadGlobalSettings().recentWPEImports.count == 1)
         }
     }

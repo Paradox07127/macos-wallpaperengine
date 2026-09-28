@@ -464,10 +464,10 @@ final class SettingsManager {
         #endif
     }
 
-    func updateWPEImportSize(workshopID: String, sizeBytes: Int64) {
+    func updateWPEImportSize(workshopID: String, matchingImportedAt importedAt: Date, sizeBytes: Int64) {
         var settings = loadGlobalSettings()
         guard let index = settings.recentWPEImports.firstIndex(where: {
-            $0.origin.workshopID == workshopID
+            $0.origin.workshopID == workshopID && $0.importedAt == importedAt
         }), settings.recentWPEImports[index].sizeBytes == nil else { return }
         settings.recentWPEImports[index].sizeBytes = sizeBytes
         saveGlobalSettings(settings)
@@ -527,9 +527,11 @@ final class SettingsManager {
         guard let index = settings.recentWPEImports.firstIndex(where: {
             $0.origin.workshopID == workshopID && $0.importedAt == importedAt
         }) else { return false }
-        settings.recentWPEImports.remove(at: index)
+        let removed = settings.recentWPEImports.remove(at: index)
         if recordingDeleteTombstone {
-            _ = Self.insertDeleteTombstone(workshopID: workshopID, into: &settings)
+            // The download scan checks tombstones against Steam folder names; a manifest's id can name another item.
+            let tombstone = Self.steamFolderItemID(removed.origin) ?? workshopID
+            _ = Self.insertDeleteTombstone(workshopID: tombstone, into: &settings)
         }
         saveGlobalSettings(settings)
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)

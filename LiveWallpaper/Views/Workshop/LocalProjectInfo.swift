@@ -57,6 +57,7 @@ func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectIn
     if let freshSize = outcome.freshSize {
         await SettingsManager.shared.updateWPEImportSize(
             workshopID: entry.origin.workshopID,
+            matchingImportedAt: entry.importedAt,
             sizeBytes: freshSize
         )
     }

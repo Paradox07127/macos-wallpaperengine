@@ -59,6 +59,56 @@ struct WPEDeleteTombstoneTests {
         }
     }
 
+    @Test("Deleting an entry whose manifest names another item keeps its own folder out of the scan, not the other item's", .timeLimit(.minutes(1)))
+    func deleteTombstonesTheDeletedSteamFolder() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEDeleteTombstoneTests-\(UUID().uuidString)", isDirectory: true)
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.WPEDeleteTombstone", function: #function)
+        defer {
+            suite.discard()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let original = "2585024298"
+        let reupload = "3159206868"
+        func steamFolder(_ itemID: String) throws -> URL {
+            let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(itemID, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let manifest = #"{"workshopid":"\#(original)","title":"Item \#(itemID)","type":"video","file":"video.mp4"}"#
+            try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
+            try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
+            return folder
+        }
+        _ = try steamFolder(original)
+        let reuploadFolder = try steamFolder(reupload)
+        let doctor = SteamCMDDoctorService(defaults: suite.defaults)
+        doctor.workdirBookmarkData = try root.bookmarkData()
+
+        let manager = SettingsManager.shared
+        manager.cleanAllSettings(applyLoginSetting: false)
+        defer { manager.cleanAllSettings(applyLoginSetting: false) }
+        // workshopID is the manifest's id; the folder is the re-upload's.
+        let deleted = try WPEHistoryEntry(
+            origin: WPEOrigin(
+                workshopID: original, title: "Re-upload", originalType: .video,
+                sourceFolderBookmark: reuploadFolder.bookmarkData(),
+                cacheRelativePath: nil, previewFileName: nil, entryFile: "video.mp4", resourceLocation: .sourceFolder
+            ),
+            importedAt: Date(timeIntervalSince1970: 1)
+        )
+        manager.recordWPEImport(deleted)
+        #expect(manager.removeWPEImport(workshopID: original, matchingImportedAt: deleted.importedAt))
+
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() })
+        )
+        await coordinator.ingestExistingDownloads(using: doctor)
+
+        #expect(
+            manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == [original],
+            "the deleted re-upload came back, or the original item nobody deleted was kept out"
+        )
+    }
+
     private func makeReaddedEntry(_ workshopID: String) -> WPEHistoryEntry {
         WPEHistoryEntry(
             origin: WPEOrigin(
