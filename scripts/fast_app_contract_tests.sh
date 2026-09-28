@@ -211,6 +211,9 @@ SUITES=(
   SceneSettingsOwnerTests
   DetailTransitionTests
   SettingsSearchLocalizationTests
+  NavigationTests
+  InspectorResizeStepTests
+  WorkshopDetailCopyTests
   SettingsConfirmationSourceTests
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
   # closure on GetApplicationEventTarget() registered but never fired.
