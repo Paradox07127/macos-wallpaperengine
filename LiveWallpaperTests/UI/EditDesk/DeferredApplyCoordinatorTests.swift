@@ -519,12 +519,19 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         false
     }
 
-    func configurationRevision(for _: Screen) -> UInt64 {
-        0
+    private var revisions: [CGDirectDisplayID: UInt64] = [:]
+
+    func configurationRevision(for screen: Screen) -> UInt64 {
+        revisions[screen.id] ?? 0
     }
 
-    func setSceneWallpaper(descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen) {
+    func beginSceneApply(
+        descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork? {
         Issue.record("Unexpected scene route")
+        completion(.failed(.applyNotConfirmed))
+        return nil
     }
 
     func importWallpaperEngineProject(at _: URL, for _: Screen) async -> ScreenManager.WPEProjectApplyOutcome {
@@ -532,13 +539,14 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         return .rejected(reason: "Unexpected route")
     }
 
-    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
+    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot? {
         beginExplicitWallpaperSelection(for: screen)
         appliedEntries.append(entry)
         appliedScreens.append(screen)
         if confirmsImmediately {
             confirm(entry, on: screen)
         }
+        return nil
     }
 
     func confirm(_ entry: WPEHistoryEntry, on screen: Screen) {
@@ -547,6 +555,7 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         )))
         configuration.wpeOrigin = entry.origin
         configurations[screen.id] = configuration
+        revisions[screen.id, default: 0] += 1
         NotificationCenter.default.post(
             name: .wallpaperConfigurationDidChange, object: nil, userInfo: ["screenID": screen.id]
         )

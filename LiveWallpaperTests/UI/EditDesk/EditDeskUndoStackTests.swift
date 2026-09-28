@@ -602,12 +602,20 @@ final class UndoTestManager: UndoRestoring {
     }
 
     #if !LITE_BUILD
-    func setSceneWallpaper(descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen) {}
+    func beginSceneApply(
+        descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork? {
+        completion(.failed(.applyNotConfirmed))
+        return nil
+    }
 
     func importWallpaperEngineProject(at _: URL, for _: Screen) async -> ScreenManager.WPEProjectApplyOutcome {
         .rejected(reason: "Not used by undo")
     }
 
-    func activateWPEHistoryEntry(_: WPEHistoryEntry, for _: Screen) async {}
+    func activateWPEHistoryEntry(_: WPEHistoryEntry, for _: Screen) async -> WallpaperFailureSnapshot? {
+        nil
+    }
     #endif
 }

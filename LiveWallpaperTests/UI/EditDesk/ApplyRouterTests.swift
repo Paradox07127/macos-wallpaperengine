@@ -306,6 +306,142 @@ struct ApplyRouterTests {
         #expect(manager.calls == [.scene(descriptor, manager.origin)])
     }
 
+    @Test("A scene with the same identity waits for its own commit")
+    func sameSceneIdentityWaitsForCommit() async throws {
+        let manager = NeverConfirmingWallpaperApplying()
+        let original = try #require(manager.projectContent.sceneDescriptor)
+        let updated = original.withPropertyOverrides(["gain": .number(0.75)])
+        manager.configuration.activeWallpaper = .scene(original)
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true)
+        var report: ApplyReport?
+        let task = Task { report = await router.apply(.scene(descriptor: updated, origin: nil), to: manager.screen) }
+        await waitUntil { !manager.calls.isEmpty }
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(report == nil)
+        manager.commit(.scene(updated))
+        await task.value
+        #expect(report?.outcome == .applied)
+    }
+
+    @Test("Cancelling an older scene request does not cancel its replacement")
+    func sceneCancellationOwnsOnlyItsWork() async throws {
+        let manager = NeverConfirmingWallpaperApplying()
+        let descriptor = try #require(manager.projectContent.sceneDescriptor)
+        let cancellation = ApplyCancellation()
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true)
+        let first = Task { await router.apply(.scene(descriptor: descriptor, origin: nil), to: manager.screen, cancellation: cancellation) }
+        await waitUntil { manager.sceneTasks.count == 1 }
+        let updated = descriptor.withPropertyOverrides(["gain": .number(0.75)])
+        let second = Task { await router.apply(.scene(descriptor: updated, origin: nil), to: manager.screen) }
+        await waitUntil { manager.sceneTasks.count == 2 }
+        cancellation.cancel()
+        #expect(await first.value.cancelled)
+        #expect(manager.sceneTasks[0].isCancelled)
+        #expect(!manager.sceneTasks[1].isCancelled)
+        #expect(manager.cancelledPreparations.isEmpty)
+        manager.commit(.scene(updated))
+        #expect(await second.value.outcome == .applied)
+    }
+
+    @Test("A scene deadline cancels its preparing candidate")
+    func sceneDeadlineRetiresItsWork() async throws {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .milliseconds(30))
+        let descriptor = try #require(manager.projectContent.sceneDescriptor)
+        let report = await router.apply(.scene(descriptor: descriptor, origin: nil), to: manager.screen)
+        #expect(report.outcome == .failed(.applyNotConfirmed))
+        #expect(manager.sceneTasks.first?.isCancelled == true)
+        #expect(manager.cancelledPreparations.isEmpty)
+    }
+
+    @Test("A timed-out scene never installs when its cancellation-ignoring preparation finishes later")
+    func lateScenePreparationCannotInstallAfterDeadline() async throws {
+        let manager = PreparingSceneWallpaperApplying()
+        defer { manager.runtimeManager.tearDownForTermination() }
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .milliseconds(30))
+        let descriptor = try #require(manager.projectContent.sceneDescriptor)
+        let report = await router.apply(.scene(descriptor: descriptor, origin: nil), to: manager.screen)
+        #expect(report.outcome == .failed(.applyNotConfirmed))
+        #expect(manager.candidate.prepareCallCount == 1)
+        manager.candidate.completePreparation(with: .ready)
+        await waitUntil { manager.candidate.cleanupCount == 1 }
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(manager.screen.runtimeSession == nil)
+        #expect(manager.commits == 0)
+    }
+
+    @Test("An already installed scene is a successful no-op without a configuration write")
+    func installedSceneIsNoOp() async {
+        let fixture = ApplySceneFixture(id: 0xEDA0_0002)
+        defer { fixture.close() }
+        let session = ApplySceneSession()
+        fixture.screen.installRuntimeSession(session)
+        let revision = fixture.manager.configurationRevision(for: fixture.screen)
+        let router = ApplyRouter(manager: fixture.manager, bookmarks: bookmarks, sceneCapable: true)
+        let report = await router.apply(.scene(descriptor: fixture.descriptor, origin: nil), to: fixture.screen)
+        #expect(report.outcome == .applied)
+        #expect(fixture.screen.runtimeSession === session)
+        #expect(fixture.manager.configurationRevision(for: fixture.screen) == revision)
+    }
+
+    @Test("A scene selected while wallpapers are off succeeds as a saved configuration")
+    func sceneWhileOffIsSaved() async {
+        let fixture = ApplySceneFixture(id: 0xEDA0_0003)
+        defer { fixture.close() }
+        fixture.manager.wallpapersGloballyEnabled = false
+        let updated = fixture.descriptor.withPropertyOverrides(["gain": .number(0.75)])
+        let router = ApplyRouter(manager: fixture.manager, bookmarks: bookmarks, sceneCapable: true)
+        let report = await router.apply(.scene(descriptor: updated, origin: nil), to: fixture.screen)
+        #expect(report.outcome == .applied)
+        #expect(fixture.manager.getConfiguration(for: fixture.screen)?.activeWallpaper == .scene(updated))
+        #expect(fixture.screen.runtimeSession == nil)
+        #expect(fixture.manager.wallpaperLoads.attempt(for: fixture.screen) == nil)
+    }
+
+    @Test("A replaced display cannot receive a scene selection")
+    func staleSceneTargetIsRejected() async {
+        let fixture = ApplySceneFixture(id: 0xEDA0_0004)
+        defer { fixture.close() }
+        let revision = fixture.manager.configurationRevision(for: fixture.screen)
+        fixture.manager.screens = []
+        let router = ApplyRouter(manager: fixture.manager, bookmarks: bookmarks, sceneCapable: true)
+        let report = await router.apply(.scene(descriptor: fixture.descriptor, origin: nil), to: fixture.screen)
+        #expect(report.outcome == .failed(.applyNotConfirmed))
+        #expect(fixture.manager.configurationRevision(for: fixture.screen) == revision)
+    }
+
+    @Test("Reapplying a stored scene with an unavailable source must not report success", arguments: ["scene", "bookmark", "workshop"])
+    func unavailableStoredSceneDoesNotApply(route: String) async throws {
+        let fixture = ApplySceneFixture(id: 0xEDA0_0001)
+        defer { fixture.close() }
+        let (manager, screen, descriptor) = (fixture.manager, fixture.screen, fixture.descriptor)
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .seconds(1))
+        let intent: ApplyIntent
+        switch route {
+        case "bookmark":
+            intent = .bookmark(WallpaperBookmark(label: "Unavailable scene", content: .scene(descriptor)))
+        case "workshop":
+            let origin = WPEOrigin(
+                workshopID: descriptor.workshopID, title: "Unavailable scene", originalType: .scene,
+                sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil
+            )
+            var configuration = try #require(manager.getConfiguration(for: screen))
+            configuration.wpeOrigin = origin
+            manager.saveConfiguration(configuration)
+            intent = .installedWorkshop(WPEHistoryEntry(origin: origin, importedAt: Date()))
+        default:
+            intent = .scene(descriptor: descriptor, origin: nil)
+        }
+        let report = await router.apply(intent, to: screen)
+        #expect(report.outcome != .applied)
+        #expect(screen.runtimeSession == nil)
+        #expect(manager.wallpaperLoads.attempt(for: screen)?.phase == .failed)
+    }
+
     @Test func projectRoutes() async {
         let url = URL(fileURLWithPath: "/fixture/project")
         let report = await router().apply(.wpeProjectFolder(url), to: manager.screen)
@@ -478,6 +614,102 @@ struct ApplyRouterTests {
     }
 }
 
+#if !LITE_BUILD
+@MainActor
+private final class ApplySceneFixture {
+    let screen: Screen
+    let manager: ScreenManager
+    let descriptor = SceneDescriptor(
+        workshopID: "missing-apply-fixture", cacheRelativePath: "missing-apply-fixture", entryFile: "scene.json", capabilityTier: .imageOnly
+    )
+
+    init(id: UInt32) {
+        let nsScreen = ApplyTestNSScreen()
+        nsScreen.displayID = id
+        screen = Screen(nsScreen: nsScreen)
+        manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
+        ))
+        manager.wallpapersGloballyEnabled = true
+        var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor))
+        configuration.displayFingerprint = screen.displayFingerprint
+        manager.saveConfiguration(configuration)
+    }
+
+    func close() {
+        manager.tearDownForTermination()
+        manager.configurationStore.remove(for: screen.id)
+    }
+}
+
+@MainActor
+private final class ApplySceneSession: WallpaperRuntimeSession {
+    let wallpaperType: WallpaperType = .scene
+    let summary: WallpaperSessionSummary = .notConfigured
+    let videoPlayer: WallpaperVideoPlayer? = nil
+    let wallpaperWindow: NSWindow? = nil
+    func show() {}
+    func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+    func updateFrame(to _: CGRect) {}
+    var result: WallpaperPreparationResult? = .ready
+    private var continuation: CheckedContinuation<WallpaperPreparationResult, Never>?
+    private(set) var prepareCallCount = 0
+    private(set) var cleanupCount = 0
+    func cleanup() {
+        cleanupCount += 1
+    }
+
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        prepareCallCount += 1
+        if let result {
+            return result
+        }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func completePreparation(with result: WallpaperPreparationResult) {
+        self.result = result
+        continuation?.resume(returning: result)
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class PreparingSceneWallpaperApplying: RecordingWallpaperApplying {
+    let candidate: ApplySceneSession = {
+        let session = ApplySceneSession()
+        session.result = nil
+        return session
+    }()
+
+    private(set) var commits = 0
+    lazy var runtimeManager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+        restoreSavedWallpapers: false, startAutomation: false,
+        powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+        playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+        featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
+    ))
+
+    override func beginSceneApply(
+        descriptor: SceneDescriptor, origin _: WPEOrigin?, for screen: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork? {
+        runtimeManager.wallpapersGloballyEnabled = true
+        let generation = runtimeManager.beginExplicitWallpaperSelection(for: screen)
+        return runtimeManager.beginPreparedAmbientSession(
+            candidate, for: screen, replacing: nil, generation: generation,
+            proposedConfiguration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor)),
+            expectedConfigurationRevision: runtimeManager.configurationRevision(for: screen), timeout: .seconds(3),
+            beforeCommit: { self.commits += 1; return true }, afterCommit: {},
+            completion: { result, _ in completion(result == .ready ? .applied : .failed(.applyNotConfirmed)) }
+        )
+    }
+}
+#endif
+
 @MainActor
 private final class LibraryImportLog {
     var batches: [[URL]] = []
@@ -616,9 +848,21 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         workshopID: "42", cacheRelativePath: "42", entryFile: "scene.json", capabilityTier: .imageOnly
     ))
 
-    func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen) {
+    var sceneTasks: [Task<Void, Never>] = []
+    private var sceneCompletions: [CGDirectDisplayID: @MainActor (ApplyOutcome) -> Void] = [:]
+
+    func beginSceneApply(
+        descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork? {
         record(.scene(descriptor, origin), for: screen)
+        sceneCompletions[screen.id] = completion
+        let work = RuntimePreparationWork()
+        let task = Task { do { try await Task.sleep(for: .seconds(60)) } catch {} }
+        work.task = task
+        sceneTasks.append(task)
         didDispatch(.scene(descriptor), origin: origin, for: screen)
+        return work
     }
 
     func importWallpaperEngineProject(at url: URL, for screen: Screen) async -> ScreenManager.WPEProjectApplyOutcome {
@@ -630,9 +874,10 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         return outcome
     }
 
-    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
+    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot? {
         record(.workshop(entry), for: screen)
         didDispatch(projectContent, origin: entry.origin, for: screen)
+        return nil
     }
     #endif
 
@@ -644,6 +889,9 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         configurations[target.id]?.wpeOrigin = origin
         revisions[target.id, default: 0] += 1
         notify(screenID: target.id)
+        #if !LITE_BUILD
+        sceneCompletions.removeValue(forKey: target.id)?(.applied)
+        #endif
     }
 
     func configurationRevision(for screen: Screen) -> UInt64 {

@@ -23,8 +23,9 @@ extension ScreenManager {
         return outcome
     }
 
-    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
-        guard !isTerminating else { return }
+    @discardableResult
+    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot? {
+        guard !isTerminating else { return nil }
         beginExplicitWallpaperSelection(for: screen)
         let id = wallpaperLoads.begin(for: screen, title: entry.origin.title, origin: entry.origin)
         await wpeImportCoordinator.activateHistoryEntry(entry, for: screen)
@@ -33,6 +34,8 @@ extension ScreenManager {
                 failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.source", reason: error.localizedDescription), stage: .importing)
             } else { wallpaperLoads.clear(for: screen, matching: id) }
         }
+        let attempt = wallpaperLoads.attempt(for: screen)
+        return attempt?.id == id ? attempt?.failure : nil
     }
 
     func removeWPEImport(workshopID: String) {

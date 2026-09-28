@@ -113,9 +113,12 @@ protocol WallpaperApplying {
     /// Moves with every write of `screen`'s stored configuration, a write that repeats its content included.
     func configurationRevision(for screen: Screen) -> UInt64
     #if !LITE_BUILD
-    func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen)
+    func beginSceneApply(
+        descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork?
     func importWallpaperEngineProject(at folderURL: URL, for screen: Screen) async -> ScreenManager.WPEProjectApplyOutcome
-    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async
+    func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot?
     #endif
 }
 
@@ -138,6 +141,23 @@ extension ScreenManager: WallpaperApplying {
     func configurationRevision(for screen: Screen) -> UInt64 {
         configurationStore.revision(for: screen.id)
     }
+
+    #if !LITE_BUILD
+    func beginSceneApply(
+        descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen,
+        completion: @escaping @MainActor (ApplyOutcome) -> Void
+    ) -> RuntimePreparationWork? {
+        setSceneWallpaper(descriptor: descriptor, origin: origin, for: screen) { result, failure in
+            if result == .ready {
+                completion(.applied)
+            } else if result != .cancelled, let failure {
+                completion(.prepareFailed(reason: failure.cause.reason, attemptID: failure.id))
+            } else {
+                completion(.failed(.applyNotConfirmed))
+            }
+        }
+    }
+    #endif
 }
 
 @MainActor
@@ -185,6 +205,15 @@ final class ApplyRouter {
         let outcome: ApplyOutcome
         switch intent {
         case let .bookmark(bookmark):
+            #if !LITE_BUILD
+            if case let .scene(descriptor) = bookmark.content {
+                leaveSpanMode()
+                outcome = await applyScene(
+                    descriptor, origin: bookmark.wpeOrigin, to: screen, cancellation: cancellation, bookmarkID: bookmark.id
+                )
+                break
+            }
+            #endif
             // `applyBookmark` returns Void and only logs when a video bookmark no longer resolves.
             if let failure = Self.sourceFailure(of: bookmark.content) {
                 outcome = .failed(failure)
@@ -225,19 +254,21 @@ final class ApplyRouter {
         #if !LITE_BUILD
         case let .scene(descriptor, origin):
             leaveSpanMode()
-            outcome = await applyConfirmed(.scene(descriptor), to: screen, cancellation: cancellation) {
-                manager.setSceneWallpaper(descriptor: descriptor, origin: origin, for: screen)
-            }
+            outcome = await applyScene(descriptor, origin: origin, to: screen, cancellation: cancellation)
         case let .wpeProjectFolder(url):
             leaveSpanMode()
             outcome = await applyProject(url, to: screen, cancellation: cancellation)
         case let .installedWorkshop(entry):
             leaveSpanMode()
+            let revision = manager.configurationRevision(for: screen)
             outcome = await Self.awaitApplied(
                 matching: { self.matches(entry.origin, configuration: $0) },
-                with: manager, on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
+                with: manager, on: screen.id, committedAfter: revision,
+                timeout: confirmationTimeout, cancellation: cancellation,
                 dispatch: {
-                    await manager.activateWPEHistoryEntry(entry, for: screen)
+                    if let failure = await manager.activateWPEHistoryEntry(entry, for: screen) {
+                        return .prepareFailed(reason: failure.cause.reason, attemptID: failure.id)
+                    }
                     return nil
                 }
             )
@@ -255,6 +286,46 @@ final class ApplyRouter {
             queuedVideos: queuedVideos
         )
     }
+
+    #if !LITE_BUILD
+    private func applyScene(
+        _ descriptor: SceneDescriptor, origin: WPEOrigin?, to screen: Screen, cancellation: ApplyCancellation?, bookmarkID: UUID? = nil
+    ) async -> ApplyOutcome {
+        guard !Task.isCancelled, cancellation?.isCancelled != true,
+              manager.screen(withID: screen.id)?.displayFingerprint == screen.displayFingerprint else {
+            return .failed(.applyNotConfirmed)
+        }
+        if let bookmarkID {
+            bookmarks.touch(bookmarkID)
+        }
+        let (results, continuation) = AsyncStream<ApplyOutcome>.makeStream()
+        let work = manager.beginSceneApply(descriptor: descriptor, origin: origin, for: screen) { outcome in
+            continuation.yield(outcome)
+            continuation.finish()
+        }
+        cancellation?.onCancel = {
+            work?.cancel()
+            continuation.yield(.failed(.applyNotConfirmed))
+            continuation.finish()
+        }
+        let deadline = Task {
+            do { try await Task.sleep(for: confirmationTimeout) } catch { return }
+            work?.cancel()
+            continuation.yield(.failed(.applyNotConfirmed))
+            continuation.finish()
+        }
+        defer {
+            deadline.cancel()
+            cancellation?.onCancel = nil
+            continuation.finish()
+        }
+        for await outcome in results {
+            return outcome
+        }
+        work?.cancel()
+        return .failed(.applyNotConfirmed)
+    }
+    #endif
 
     private func contentsByScreen() -> [CGDirectDisplayID: WallpaperContent?] {
         Dictionary(uniqueKeysWithValues: manager.screens.map { ($0.id, manager.getConfiguration(for: $0)?.activeWallpaper) })

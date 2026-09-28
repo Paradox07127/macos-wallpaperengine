@@ -2,6 +2,8 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
+typealias WallpaperPreparationCompletion = @MainActor (WallpaperPreparationResult, WallpaperFailureSnapshot?) -> Void
+
 @MainActor
 extension ScreenManager {
     func commitPreparedAmbientConfiguration(
@@ -27,6 +29,7 @@ extension ScreenManager {
         effectsCoordinator.retireWork(for: screenID, player: player)
     }
 
+    @discardableResult
     func beginPreparedAmbientSession(
         _ candidate: any WallpaperRuntimeSession,
         for screen: Screen,
@@ -37,13 +40,15 @@ extension ScreenManager {
         expectedConfigurationRevision: UInt64,
         timeout: Duration,
         beforeCommit: @MainActor @escaping () -> Bool,
-        afterCommit: @MainActor @escaping () -> Void
-    ) {
+        afterCommit: @MainActor @escaping () -> Void,
+        completion: WallpaperPreparationCompletion? = nil
+    ) -> RuntimePreparationWork {
         let screenID = screen.id
         let work = RuntimePreparationWork()
         let task = Task { @MainActor [weak self, weak screen, weak work] in
             guard let self, let screen else {
                 candidate.cleanup()
+                completion?(.cancelled, nil)
                 return
             }
             // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
@@ -169,8 +174,11 @@ extension ScreenManager {
                     for: screenID
                 )
             }
+            let attempt = wallpaperLoads.attempt(for: screen)
+            completion?(result, attempt?.id == attemptID ? attempt?.failure : nil)
         }
         work.task = task
         transitionRegistry.setRuntimePreparation(work, for: screenID)
+        return work
     }
 }

@@ -10,13 +10,18 @@ extension ScreenManager {
         return current.workshopID
     }
 
+    @discardableResult
     func activateAmbientWallpaper(
         _ definition: WallpaperSessionDefinition,
         for screen: Screen,
         configuration: ScreenConfiguration,
-        beforeCommit: @MainActor @escaping () -> Bool = { true }
-    ) {
-        guard !isTerminating else { return }
+        beforeCommit: @MainActor @escaping () -> Bool = { true },
+        completion: WallpaperPreparationCompletion? = nil
+    ) -> RuntimePreparationWork? {
+        guard !isTerminating else {
+            completion?(.cancelled, nil)
+            return nil
+        }
         let generation = bumpTransition(for: screen.id)
         let expected = screen.runtimeSession
         let attemptID: UUID?
@@ -158,7 +163,8 @@ extension ScreenManager {
                     failWallpaperAttempt(attemptID, for: screen, cause: WallpaperFailureCause(code: "scene.source_unavailable", reason: String(localized: "The scene source could not be opened. Check its location and access permission.", bundle: .appLanguage)), stage: .source)
                 }
                 Logger.warning("Scene wallpaper for screen \(screen.id) (workshop \(descriptor.workshopID)) could not be built — cache missing or descriptor invalid", category: .screenManager)
-                return
+                completion?(.failed, wallpaperLoads.attempt(for: screen)?.failure)
+                return nil
             }
             if let originalOrigin = configuration.wpeOrigin,
                let finalRuntimeOrigin,
@@ -195,10 +201,12 @@ extension ScreenManager {
             Logger.notice("Preparing scene wallpaper (workshop \(descriptor.workshopID))\(LogPrivacyRedactor.titleFragment(configuration.wpeOrigin?.title)) for screen \(screen.id)", category: .screenManager)
             #else
             _ = descriptor
-            return
+            completion?(.failed, nil)
+            return nil
             #endif
         case .video:
-            return
+            completion?(.failed, nil)
+            return nil
         }
 
         // Fail closed if config revision advances while this candidate prepares.
@@ -226,7 +234,7 @@ extension ScreenManager {
             )
             afterCommit()
         }
-        beginPreparedAmbientSession(
+        return beginPreparedAmbientSession(
             candidate,
             for: screen,
             replacing: expected,
@@ -236,7 +244,8 @@ extension ScreenManager {
             expectedConfigurationRevision: expectedConfigurationRevision,
             timeout: timeout,
             beforeCommit: transactionalBeforeCommit,
-            afterCommit: transactionalAfterCommit
+            afterCommit: transactionalAfterCommit,
+            completion: completion
         )
     }
 }

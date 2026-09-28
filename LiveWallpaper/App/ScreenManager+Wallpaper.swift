@@ -20,8 +20,15 @@ extension ScreenManager {
         )
     }
 
-    func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen) {
-        guard !isTerminating else { return }
+    @discardableResult
+    func setSceneWallpaper(
+        descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen,
+        completion: WallpaperPreparationCompletion? = nil
+    ) -> RuntimePreparationWork? {
+        guard !isTerminating, screens.contains(where: { $0 === screen }) else {
+            completion?(.cancelled, nil)
+            return nil
+        }
         beginExplicitWallpaperSelection(for: screen)
         var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) ?? ScreenConfiguration(
             screenID: screen.id,
@@ -31,11 +38,12 @@ extension ScreenManager {
            configuration.wpeOrigin == origin,
            screen.runtimeSession?.wallpaperType == .scene {
             Logger.info("Scene wallpaper already active for screen \(screen.id); keeping existing scene session", category: .screenManager)
-            return
+            completion?(.ready, nil)
+            return nil
         }
 
         configuration.setSceneWallpaper(descriptor, origin: origin)
-        restoreWallpaperSession(
+        return restoreWallpaperSession(
             for: screen,
             configuration: configuration,
             preservingState: false,
@@ -43,7 +51,8 @@ extension ScreenManager {
             beforeCommit: { [weak self] in
                 self?.saveConfiguration(configuration)
                 return self != nil
-            }
+            },
+            sceneCompletion: completion
         )
     }
 

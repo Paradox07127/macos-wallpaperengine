@@ -225,14 +225,19 @@ extension ScreenManager {
         restoreWallpaperSession(for: screen, configuration: config, preservingState: false)
     }
 
+    @discardableResult
     func restoreWallpaperSession(
         for screen: Screen,
         configuration: ScreenConfiguration,
         preservingState: Bool,
         intent: WallpaperSessionRestoreIntent = .persistedConfiguration,
-        beforeCommit: @MainActor @escaping () -> Bool = { true }
-    ) {
-        guard !isTerminating else { return }
+        beforeCommit: @MainActor @escaping () -> Bool = { true },
+        sceneCompletion: WallpaperPreparationCompletion? = nil
+    ) -> RuntimePreparationWork? {
+        guard !isTerminating else {
+            sceneCompletion?(.cancelled, nil)
+            return nil
+        }
         guard let definition = WallpaperSessionDefinition(configuration: configuration) else {
             switch intent {
             case .persistedConfiguration:
@@ -241,14 +246,19 @@ extension ScreenManager {
             case .proposal:
                 Logger.warning("Rejecting malformed wallpaper proposal for screen \(screen.id); keeping current runtime and configuration", category: .screenManager)
             }
-            return
+            sceneCompletion?(.failed, nil)
+            return nil
         }
 
         guard wallpapersGloballyEnabled else {
-            guard beforeCommit() else { return }
+            guard beforeCommit() else {
+                sceneCompletion?(.failed, nil)
+                return nil
+            }
             if screen.runtimeSession != nil { releaseRuntimeSession(screen) }
             notifyWallpaperSessionChanged()
-            return
+            sceneCompletion?(.ready, nil)
+            return nil
         }
 
         switch definition {
@@ -261,19 +271,21 @@ extension ScreenManager {
                 intent: intent,
                 beforeCommit: beforeCommit
             )
+            return nil
         case .html(let source, let htmlConfig):
-            activateAmbientWallpaper(
+            return activateAmbientWallpaper(
                 .html(source, htmlConfig),
                 for: screen,
                 configuration: configuration,
                 beforeCommit: beforeCommit
             )
         case .scene(let descriptor):
-            activateAmbientWallpaper(
+            return activateAmbientWallpaper(
                 .scene(descriptor),
                 for: screen,
                 configuration: configuration,
-                beforeCommit: beforeCommit
+                beforeCommit: beforeCommit,
+                completion: sceneCompletion
             )
         }
     }
