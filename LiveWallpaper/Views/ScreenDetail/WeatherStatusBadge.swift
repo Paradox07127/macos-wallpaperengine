@@ -123,7 +123,7 @@ struct WeatherStatusBadge: View {
         }
     }
 
-    func performLocationAuthorizationAction(openSettings: () -> Void = Self.openLocationSettings) {
+    func performLocationAuthorizationAction(openSettings: @MainActor () -> Void = Self.openLocationSettings) {
         guard needsLocationAuthorizationAction else { return }
         switch weatherService.locationStatus {
         case .notDetermined:
