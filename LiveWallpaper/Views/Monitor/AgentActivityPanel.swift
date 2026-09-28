@@ -46,6 +46,13 @@ struct AgentActivityPanel: View {
                 Spacer()
             })
         }
+        .background {
+            Button("Close") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .frame(width: 860, height: 620)
         .background(DesignTokens.Colors.pageBackground)
         .task { await observe() }

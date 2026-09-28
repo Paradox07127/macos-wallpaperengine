@@ -185,8 +185,13 @@ final class EditDeskRouter {
         case .workshop:
             closeDetail()
             select(.workshop)
+        case .configuration:
+            showDetail(displayID, section: .wallpaper)
         case .overlay:
             showDetail(displayID, section: .overlay)
+        case .settings:
+            closeDetail()
+            openSettings(.general)
         }
         pendingOnboardingStep = step
     }

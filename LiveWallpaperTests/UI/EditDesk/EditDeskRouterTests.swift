@@ -272,7 +272,9 @@ struct EditDeskRouterTests {
             (.home, .home, nil, .home, nil),
             (.library, .library, nil, .library, nil),
             (.workshop, .workshop, nil, .workshop, nil),
+            (.configuration, .home, 7, .configuration, .wallpaper),
             (.overlay, .home, 7, .overlay, .overlay),
+            (.settings, .settings, nil, .settings, nil),
         ]
         for (step, page, detailDisplayID, pendingStep, pendingSection) in cases {
             let router = makeRouter(.screen(42))

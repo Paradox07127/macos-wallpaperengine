@@ -35,6 +35,7 @@ enum OnboardingCapsuleFit {
 /// SCREENS S9's "Get Started ● ● ○ ○" pill. Lives in `TopBar`'s trailing cluster and vanishes for
 /// good once every visible page is completed or skipped.
 struct OnboardingCapsule: View {
+    @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
     @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
     @State private var isHovering = false
@@ -50,7 +51,7 @@ struct OnboardingCapsule: View {
                 .onHover { isHovering = $0 }
                 .help(Text("Welcome Tour"))
                 .accessibilityLabel(Text("Get Started"))
-                .accessibilityValue(Text("Step \(dots.filter(\.self).count) of \(dots.count)"))
+                .accessibilityValue(Text("Tour progress: \(dots.filter(\.self).count) / \(dots.count)"))
                 .appLanguagePopover(isPresented: $menuPresented, arrowEdge: .bottom) { menu(progress) }
         }
     }
@@ -87,7 +88,9 @@ struct OnboardingCapsule: View {
             if let step = progress.currentPage {
                 Button {
                     menuPresented = false
-                    router?.showOnboardingStep(step, displayID: CGMainDisplayID())
+                    if let router {
+                        pageGuide?.startTour(progress: progress, router: router, from: step)
+                    }
                 } label: {
                     Text(
                         "Next Step: \(Text(Self.pageTitle(step)))",
@@ -101,7 +104,7 @@ struct OnboardingCapsule: View {
                 progress.dismissRemaining()
             } label: {
                 Text(
-                    "Skip Welcome Tour",
+                    "End Welcome Tour",
                     comment: "Get Started capsule menu item that marks every remaining welcome tour step as skipped."
                 )
             }
@@ -116,7 +119,16 @@ struct OnboardingCapsule: View {
         case .home: "Overview"
         case .library: "Wallpaper Library"
         case .workshop: "Workshop"
+        case .configuration: "Wallpaper controls"
         case .overlay: "Overlays"
+        case .settings: "Settings"
         }
+    }
+}
+
+struct OnboardingPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? DesignTokens.Opacity.dimmedIcon : 1)
     }
 }

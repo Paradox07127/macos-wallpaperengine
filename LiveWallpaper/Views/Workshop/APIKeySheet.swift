@@ -59,6 +59,10 @@ struct SteamWebAPIKeyEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text("Optional: choose Get a key, sign in on Steam's official website and follow its instructions. Paste your own 32-character key below, wait for validation, then Save. If your account cannot create a key, skip this setting; SteamCMD downloads do not need it.")
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)

@@ -310,7 +310,7 @@ enum StageGeometry {
 
     // MARK: Arrangement
 
-    /// `topInset` is the band the overview onboarding card occupies (R-27); the arrangement gets
+    /// `topInset` reserves space for the wallpaper-off banner; the arrangement gets
     /// what is left and re-centres in it.
     static func stageRect(windowSize: CGSize, topInset: CGFloat = 0) -> CGRect {
         CGRect(

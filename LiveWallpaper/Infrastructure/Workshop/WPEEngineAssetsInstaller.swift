@@ -50,7 +50,7 @@ final class WPEEngineAssetsInstaller {
                     )
                 case .steamCMDUnavailable:
                     String(
-                        localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                        localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.",
                         bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
                     )
                 case .unparsedOutput:
@@ -254,7 +254,7 @@ final class WPEEngineAssetsInstaller {
         case .timedOut:
             fail(String(localized: "The download timed out. Try again.", bundle: .appLanguage, comment: "Engine-assets download timed out."))
         case .steamCMDUnavailable:
-            fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
+            fail(String(localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
         case .steamUnreachable:
             fail(String(localized: "Couldn't reach Steam while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed because Steam could not be reached."))
         case .unrecognized:

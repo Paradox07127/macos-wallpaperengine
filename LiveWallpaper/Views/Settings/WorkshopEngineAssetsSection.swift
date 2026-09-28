@@ -18,7 +18,7 @@ struct WorkshopEngineAssetsSection: View {
                 icon: "shippingbox",
                 iconColor: .brown,
                 title: "Wallpaper Engine assets",
-                info: "Shared assets required by some scenes. Linked files are read-only."
+                info: "Set up shared assets before using scene wallpapers to avoid missing textures and effects. Video wallpapers do not need them. Linked files are read-only."
             ) {
                 engineAssetsControl
                     .frame(maxHeight: 24)

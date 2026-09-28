@@ -15,6 +15,13 @@ struct AppExceptionsSheet: View {
             content
             footer
         }
+        .background {
+            Button("Close") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .frame(minWidth: 480, idealWidth: 540, maxWidth: 720, minHeight: 340, idealHeight: 440, maxHeight: 640)
     }
 

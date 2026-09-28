@@ -125,7 +125,7 @@ struct SteamCMDSetupSheet: View {
 
     private var homebrewDetail: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            Text("Run in Terminal to install system-wide. Then choose Locate automatically.")
+            Text("Homebrew must already be installed; otherwise choose Install with Loomscreen. Run this command in Terminal, then open Settings › Workshop › Steam connection and choose Locate automatically.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

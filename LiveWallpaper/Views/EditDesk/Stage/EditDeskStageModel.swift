@@ -293,8 +293,8 @@ final class EditDeskStageModel {
     var interactionBlocked = false
     /// Only the wallpaper grid reports this; other library pages do not hand scrolls to the stage.
     var gridAtTop = false
-    /// What the library stacks above the grid's first row inside its scroll view (the onboarding card,
-    /// the display banner), in points; the stage lands its cards that much lower.
+    /// Height of the display banner above the grid's first row inside its scroll view;
+    /// the stage lands its cards that much lower.
     var gridContentInset: CGFloat = 0
     /// How far the mounted grid is scrolled from its top, in points. Not observed: it changes on every
     /// scroll frame, and the stage reads it only as it starts to leave the library.
@@ -305,8 +305,8 @@ final class EditDeskStageModel {
     var dropHintText = ""
     /// How many cards' thumbnails to keep decoded around the visible run.
     var shelfRenderBudget = StageGeometry.shelfCapacity
-    /// Band at the top of the stage the display arrangement must keep clear, so the overview
-    /// onboarding card does not sit on the displays (R-27). Springs to its new value.
+    /// Band at the top of the stage kept clear for the wallpaper-off banner.
+    /// Springs to its new value.
     var arrangementTopInset: CGFloat = 0
     /// The sections of the menu a right-click or Control-click opens on a display; nil or empty opens none.
     @ObservationIgnored var displayMenu: (@MainActor (StageDisplay.ID) -> [[StageMenuItem]])?

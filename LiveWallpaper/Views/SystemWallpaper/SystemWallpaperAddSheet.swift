@@ -11,6 +11,7 @@ struct SystemWallpaperAddSheet: View {
     @State private var selection: Set<SystemWallpaperCandidate.ID> = []
     @State private var isPublishing = false
     @State private var failures: [String] = []
+    @State private var isClosed = false
 
     private var candidates: [SystemWallpaperCandidate] {
         SystemWallpaperCandidate.all(bookmarks: store.bookmarks, service: service)
@@ -41,15 +42,19 @@ struct SystemWallpaperAddSheet: View {
                     .padding(.vertical, DesignTokens.Spacing.sm)
             }
 
+            if isPublishing {
+                Text("Adding videos continues after you close this window. Check System Wallpaper for the result.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, DesignTokens.Spacing.lg)
+            }
             SheetFooterBar(
                 primaryTitle: "Add",
                 primaryAction: publishSelection,
                 primaryDisabled: selection.isEmpty || isPublishing,
-                cancelTitle: "Cancel",
-                cancelAction: { dismiss() }
+                cancelTitle: isPublishing ? "Close" : "Cancel",
+                cancelAction: { isClosed = true; dismiss() }
             )
-            // Publish failures only show in this sheet; closing it mid-publish would lose them.
-            .disabled(isPublishing)
         }
         .frame(width: 620, height: 560)
         .background(DesignTokens.Colors.pageBackground)
@@ -121,7 +126,8 @@ struct SystemWallpaperAddSheet: View {
             }
             isPublishing = false
             failures = collected
-            if collected.isEmpty {
+            service.reportPublishFailures(collected)
+            if collected.isEmpty, !isClosed {
                 dismiss()
             }
         }

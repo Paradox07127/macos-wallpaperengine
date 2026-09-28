@@ -45,7 +45,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var dropHint = ""
     private var progress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private var row = StageSpring(value: 0, target: 0, parameters: StageSpring.row)
-    /// The onboarding card's band; the arrangement re-centres in what is left (R-27).
+    /// Space reserved for the wallpaper-off banner; the arrangement re-centres below it.
     private var arrangementInset = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private let gesture = ShelfGestureController(clock: CACurrentMediaTime)
     private var attached = true

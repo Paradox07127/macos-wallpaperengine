@@ -82,6 +82,7 @@ struct AddOverlayDrawer: View {
         .frame(height: height, alignment: .top)
         .clipped()
         .onChange(of: interaction.placements) { boardFull = false }
+        .pageGuideTarget(.overlayAdd)
         .onChange(of: session.identity) { boardFull = false }
     }
 

@@ -573,6 +573,13 @@ final class WallpaperExportService {
         postLibraryChanged()
     }
 
+    /// Preserve batch failures after the add sheet closes, including failures followed by successes.
+    func reportPublishFailures(_ failures: [String]) {
+        if !failures.isEmpty {
+            lastError = failures.joined(separator: "\n")
+        }
+    }
+
     func clearLastError() {
         lastError = nil
     }

@@ -44,13 +44,14 @@ struct DetailTopBar: View {
             Spacer(minLength: 8).background(WindowDragRegion())
             AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing) {
                 HStack(spacing: GlassToolbarMetrics.groupSpacing) {
-                    sectionPicker
+                    sectionPicker.pageGuideTarget(.detailLayers)
                     if section == .wallpaper, let until = schedulePausedUntil, let resume = actions.resumeSchedule {
                         schedulePause(until: until, resume: resume)
                     }
-                    GlassToolbarGroup { displayActions }
-                    GlassToolbarGroup { sharedActions }
+                    GlassToolbarGroup { displayActions }.pageGuideTarget(.detailActions)
+                    GlassToolbarGroup { sharedActions }.pageGuideTarget(.detailShared)
                     GlassToolbarGroup {
+                        PageGuideButton(context: section == .wallpaper ? .configuration : .overlays)
                         icon("sidebar.right", "Settings") { inspectorVisible.toggle() }
                             .disabled(section == .wallpaper && !hasWallpaper)
                     }

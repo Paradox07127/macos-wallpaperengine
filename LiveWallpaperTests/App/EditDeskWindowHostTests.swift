@@ -85,10 +85,7 @@ struct EditDeskWindowHostTests {
         }
         legacy.set(true, forKey: OnboardingProgress.legacyKey)
         let progress = OnboardingProgress(defaults: defaults, legacyDefaults: legacy, workshopAvailable: true)
-        let wallpaper: WallpaperContent = .html(source: .inline("before"), config: .default)
-        var inputs = OnboardingSignals.Inputs()
-        inputs.wallpapers = { [wallpaper] in [1: wallpaper] }
-        let signals = OnboardingSignals(progress: progress, inputs: inputs, notificationCenter: NotificationCenter())
+        let guide = PageGuideSession()
         let router = EditDeskRouter(
             initialNavigation: .general, initialAddWallpaperRequest: nil,
             initialOnboardingRequested: cold, isWorkshopAvailable: { true }
@@ -97,13 +94,14 @@ struct EditDeskWindowHostTests {
         if !cold {
             router.handle(Notification(name: EditDeskRoot.restartOnboardingNotification))
         }
-        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, pageGuide: guide)
         #expect(progress.handled.isEmpty)
+        #expect(guide.isTour)
         #expect(router.page == .home)
         #expect(router.detailDisplayID == nil)
         #expect(!router.onboardingRequested)
         progress.record(.home)
-        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, pageGuide: guide)
         #expect(progress.completed == [.home])
     }
 

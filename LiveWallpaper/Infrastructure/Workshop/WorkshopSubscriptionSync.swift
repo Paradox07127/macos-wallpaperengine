@@ -80,7 +80,7 @@ final class WorkshopSubscriptionSync {
             ))
         case .steamCMDUnavailable:
             fail(String(
-                localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.",
                 bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
             ))
         case .timedOut:

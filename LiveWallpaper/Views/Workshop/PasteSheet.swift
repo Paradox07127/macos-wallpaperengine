@@ -34,6 +34,13 @@ struct PasteSheet: View {
                 primaryAction: { dismiss() }
             )
         }
+        .background {
+            Button("Close") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .frame(
             minWidth: SteamSheetWidth.dense,
             idealWidth: SteamSheetWidth.dense,

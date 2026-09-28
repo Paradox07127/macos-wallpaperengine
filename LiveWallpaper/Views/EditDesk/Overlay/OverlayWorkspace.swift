@@ -85,6 +85,7 @@ struct OverlayWorkspace: View {
             .overlay(alignment: .top) { Divider() }
             .contentColumnBackground()
         }
+        .pageGuideTarget(.overlayCanvas)
         .coordinateSpace(name: Self.dragSpace)
         .overlay(alignment: .topLeading) { ghost }
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: layersVisible)

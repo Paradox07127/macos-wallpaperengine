@@ -52,7 +52,7 @@ struct WorkshopSteamMenu: View {
             Button("Sync subscribed wallpapers", action: onSyncSubscriptions)
             Button("Add from Workshop URL or ID", action: onDownloadByLink)
             Button("Import a Local Folder", action: onImportLocalFolder)
-            Button("Set Web API key", action: onEnterAPIKey)
+            Button("Steam Web API key (optional)", action: onEnterAPIKey)
             if !steamCMDReady {
                 Divider()
                 Button("Set up SteamCMD", action: onInstallSteamCMD)

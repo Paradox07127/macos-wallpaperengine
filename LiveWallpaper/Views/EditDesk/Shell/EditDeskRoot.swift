@@ -7,8 +7,8 @@ struct EditDeskRoot: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @State private var router: EditDeskRouter?
+    @State private var pageGuide = PageGuideSession()
     @State private var progress: OnboardingProgress?
-    @State private var signals: OnboardingSignals?
     /// One centre for every page: `HomePage` is not on the tree while Workshop is showing.
     @State private var toasts = EditDeskToastCenter()
     /// The window's undo history; it goes with the window, so closing it empties the history.
@@ -95,6 +95,7 @@ struct EditDeskRoot: View {
                                         showsBackButton: false
                                     )
                                     .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
+                                    .pageGuideTarget(.settingsSidebar)
                                     Divider()
                                     SettingsDetailContent(
                                         selection: $router.settingsSelection,
@@ -108,6 +109,8 @@ struct EditDeskRoot: View {
                         .ignoresSafeArea()
                     }
                 }
+                .allowsHitTesting(pageGuide.context == nil)
+                .accessibilityHidden(pageGuide.context != nil)
                 .environment(progress)
                 .environment(router)
             } else {
@@ -161,6 +164,21 @@ struct EditDeskRoot: View {
             WallpaperFailureDetails(failure: failure, onDismiss: dismiss)
         }
         #endif
+        .environment(pageGuide)
+        .overlayPreferenceValue(PageGuideAnchorKey.self) { anchors in
+            PageGuideHost(session: pageGuide, anchors: anchors, onOpenWorkshopSettings: openGuideSettings)
+                .ignoresSafeArea()
+        }
+        .onChange(of: router?.page) {
+            if let router {
+                pageGuide.closeIfOutsideRoute(router)
+            }
+        }
+        .onChange(of: router?.detailDisplayID) {
+            if let router {
+                pageGuide.closeIfOutsideRoute(router)
+            }
+        }
         .modifier(UndoCommands(undo: undo, toasts: toasts))
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
         .providesGalleryCardPreferences()
@@ -172,16 +190,7 @@ struct EditDeskRoot: View {
                 defaults: .appScoped(), legacyDefaults: .standard,
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport)
             )
-            var inputs = OnboardingSignals.Inputs.live(screenManager: screenManager)
-            #if !LITE_BUILD
-            inputs.installWorkshopHooks = { imported in
-                WorkshopFolderImportCoordinator.shared.onLocalLibraryImported = imported
-            }
-            inputs.workshopDownloadConfirmed = { [steamDoctor] in steamDoctor.isDownloadConfirmed }
-            #endif
-            let signals = OnboardingSignals(progress: progress, inputs: inputs)
             self.progress = progress
-            self.signals = signals
             let undo = EditDeskUndoStack(
                 manager: screenManager,
                 router: ApplyRouter(
@@ -203,7 +212,10 @@ struct EditDeskRoot: View {
                 isWorkshopAvailable: { [featureCatalog] in featureCatalog.isEnabled(.wpeImport) }
             )
             self.router = router
-            Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+            if progress.handled.isEmpty, !progress.hasPresentedTour {
+                router.onboardingRequested = true
+            }
+            Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
             #if !LITE_BUILD
             let session = makeWorkshopSession(undo: undo)
             workshopSession = session
@@ -217,9 +229,14 @@ struct EditDeskRoot: View {
         .modifier(RouterNotifications(router: router, screenManager: screenManager))
         #endif
         .onChange(of: router?.onboardingRequested) {
-            guard let router, let progress, let signals else { return }
-            Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+            guard let router, let progress else { return }
+            Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
         }
+    }
+
+    private func openGuideSettings(_ anchor: SettingsSearchAnchor) {
+        pageGuide.close()
+        router?.openSettings(.workshopSetup, anchor: anchor)
     }
 
     /// Off `body`: the first `HomePage(…)` in this file pays for building HomePage's memberwise initializer.
@@ -227,13 +244,13 @@ struct EditDeskRoot: View {
         HomePage(router: router, toasts: toasts, library: library)
     }
 
-    static func consumeOnboardingRequest(router: EditDeskRouter, progress: OnboardingProgress, signals: OnboardingSignals) {
+    static func consumeOnboardingRequest(router: EditDeskRouter, progress: OnboardingProgress, pageGuide: PageGuideSession) {
         guard router.onboardingRequested else { return }
         progress.reset()
-        signals.rebaseline()
         router.closeDetail()
         router.select(.home)
         router.onboardingRequested = false
+        pageGuide.startTour(progress: progress, router: router)
     }
 
     #if !LITE_BUILD

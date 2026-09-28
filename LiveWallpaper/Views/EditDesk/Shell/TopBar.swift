@@ -25,7 +25,7 @@ struct TopBar<Trailing: View>: View {
 
     private var budget: TopBarBudget.Layout {
         TopBarBudget.layout(
-            windowWidth: windowWidth, pillWidth: pillWidth,
+            windowWidth: windowWidth - 36, pillWidth: pillWidth,
             capsuleWidth: OnboardingCapsuleFit.width(progress: progress),
             statusWidth: statusWidth
         )
@@ -39,6 +39,7 @@ struct TopBar<Trailing: View>: View {
         }
         .overlay(alignment: .center) {
             NavPill(selection: $page, workshopAvailable: workshopAvailable)
+                .pageGuideTarget(.navigation)
                 .onGeometryChange(for: CGFloat.self, of: \.size.width) { pillWidth = $0 }
         }
         .padding(.horizontal, DesignTokens.Spacing.lg)
@@ -51,8 +52,10 @@ struct TopBar<Trailing: View>: View {
             if budget.showsCapsule {
                 OnboardingCapsule()
             }
+            PageGuideButton(context: .page(page))
             trailing()
             status
+                .pageGuideTarget(.status)
                 .onGeometryChange(for: CGFloat.self, of: \.size.width) { statusWidth = $0 }
         }
     }

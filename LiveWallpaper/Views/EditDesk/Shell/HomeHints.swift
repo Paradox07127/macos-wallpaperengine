@@ -37,11 +37,24 @@ struct HomeHints: View {
         let progress = stage.progress
         let libraryHintOpacity = Self.hiddenHintOpacity(progress)
         ZStack {
+            if progress == 0,
+               let target = StageGeometry.arrangement(
+                   frames: stage.displays.map(\.frame),
+                   in: StageGeometry.stageRect(windowSize: stage.stageSize, topInset: stage.arrangementTopInset)
+               ).contentRects.first {
+                Color.clear
+                    .frame(width: target.width, height: target.height)
+                    .pageGuideTarget(.display)
+                    .position(x: target.midX, y: target.midY)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             Button { stage.setProgress(1, animated: true) } label: {
                 hint("⌃ Wallpaper Library", opacity: libraryHintOpacity)
                     .foregroundStyle(isLibraryHintHovered ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .pageGuideTarget(.shelfHandle)
             .onHover { isLibraryHintHovered = $0 }
             .allowsHitTesting(libraryHintOpacity > ShelfChromeRide.interactiveOpacity)
             .accessibilityHidden(libraryHintOpacity <= ShelfChromeRide.interactiveOpacity)

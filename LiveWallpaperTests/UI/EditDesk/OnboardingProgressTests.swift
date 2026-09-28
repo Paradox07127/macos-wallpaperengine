@@ -5,7 +5,7 @@ import Testing
 @MainActor
 @Suite("Onboarding progress")
 struct OnboardingProgressTests {
-    @Test("Fresh progress filters Workshop and renumbers the visible steps", arguments: [false, true])
+    @Test("Fresh progress filters Workshop from the visible pages", arguments: [false, true])
     func fresh(workshopAvailable: Bool) throws {
         let stores = try Stores()
         defer { stores.remove() }
@@ -14,8 +14,7 @@ struct OnboardingProgressTests {
         #expect(progress.dismissed.isEmpty)
         #expect(progress.currentPage == .home)
         #expect(!progress.isFinished)
-        #expect(progress.visiblePages == (workshopAvailable ? [.home, .library, .workshop, .overlay] : [.home, .library, .overlay]))
-        #expect(progress.stepNumber(of: .overlay) == (workshopAvailable ? 4 : 3))
+        #expect(progress.visiblePages == (workshopAvailable ? [.home, .library, .workshop, .configuration, .overlay, .settings] : [.home, .library, .configuration, .overlay, .settings]))
         #expect(stores.defaults.dictionary(forKey: OnboardingProgress.storageKey)?["migratedFromLegacy"] as? Bool == true)
     }
 
@@ -31,7 +30,7 @@ struct OnboardingProgressTests {
         #expect(progress.completed == (legacy == true ? Set(OnboardingProgress.Page.allCases) : []))
         #expect(progress.isFinished == (legacy == true))
         let snapshot = try #require(stores.defaults.dictionary(forKey: OnboardingProgress.storageKey))
-        #expect(Set(snapshot.keys) == ["completed", "dismissed", "migratedFromLegacy"])
+        #expect(Set(snapshot.keys) == ["completed", "dismissed", "migratedFromLegacy", "hasPresentedTour"])
         #expect(snapshot["migratedFromLegacy"] as? Bool == true)
         #expect(stores.legacy.object(forKey: OnboardingProgress.legacyKey) as? Bool == legacy)
     }
@@ -63,8 +62,10 @@ struct OnboardingProgressTests {
     func handling(workshopAvailable: Bool) throws {
         let stores = try Stores()
         defer { stores.remove() }
+        stores.defaults.set([
+            "completed": [], "dismissed": ["home"], "migratedFromLegacy": true,
+        ], forKey: OnboardingProgress.storageKey)
         let progress = stores.progress(workshopAvailable: workshopAvailable)
-        progress.dismiss(.home)
         #expect(progress.handled == [.home])
         #expect(progress.completed.isEmpty)
         #expect(progress.currentPage == .library)
@@ -72,9 +73,7 @@ struct OnboardingProgressTests {
         progress.record(.home)
         #expect(progress.completed == [.home])
         #expect(progress.dismissed.isEmpty)
-        for page in progress.visiblePages where page != .home {
-            progress.dismiss(page)
-        }
+        progress.dismissRemaining()
         #expect(progress.isFinished)
         #expect(progress.currentPage == nil)
         let reloaded = stores.progress(workshopAvailable: workshopAvailable)
@@ -109,6 +108,144 @@ struct OnboardingProgressTests {
         #expect(progress.isFinished)
         #expect(!stores.progress(workshopAvailable: true).isFinished)
         #expect(stores.progress(workshopAvailable: true).currentPage == .workshop)
+    }
+
+    @Test("Next works without importing or signing in", arguments: [false, true])
+    func explicitAdvancement(workshopAvailable: Bool) throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        let progress = stores.progress(workshopAvailable: workshopAvailable)
+        #expect(progress.handled.isEmpty)
+        #expect(progress.currentPage == .home)
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { workshopAvailable })
+        let guide = PageGuideSession()
+        guide.startTour(progress: progress, router: router)
+        for _ in 0 ..< guide.stepCount {
+            guide.next()
+        }
+        #expect(guide.context == nil)
+        #expect(progress.isFinished)
+        #expect(stores.progress(workshopAvailable: workshopAvailable).isFinished)
+        progress.reset()
+    }
+
+    @Test("Resuming starts at the first unfinished page")
+    func resumesUnfinishedPage() throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        let progress = stores.progress()
+        progress.record(.home)
+        progress.record(.library)
+        let guide = PageGuideSession()
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true })
+        guide.startTour(progress: progress, router: router)
+        #expect(guide.tourPage == .workshop)
+        #expect(router.page == .workshop)
+        #expect(guide.stepNumber == PageGuideContext.overview.steps.count + PageGuideContext.library.steps.count + 1)
+        #expect(!progress.isFinished)
+    }
+
+    @Test("External navigation closes a tour while its own routing preserves it")
+    func externalNavigationClosesTour() throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        let progress = stores.progress()
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true })
+        let guide = PageGuideSession()
+        guide.startTour(progress: progress, router: router)
+        guide.closeIfOutsideRoute(router)
+        #expect(guide.isTour)
+        for _ in PageGuideContext.overview.steps {
+            guide.next()
+        }
+        guide.closeIfOutsideRoute(router)
+        #expect(guide.tourPage == .library)
+        router.openSettings(.general)
+        guide.closeIfOutsideRoute(router)
+        #expect(guide.context == nil)
+        #expect(progress.completed == [.home])
+        guide.startTour(progress: progress, router: router, from: .configuration)
+        guide.closeIfOutsideRoute(router)
+        #expect(guide.isTour)
+        router.closeDetail()
+        guide.closeIfOutsideRoute(router)
+        #expect(guide.context == nil)
+    }
+
+    @Test("Closing a guide leaves no step for a pending geometry update")
+    func closingClearsCurrentStep() {
+        let guide = PageGuideSession()
+        #expect(guide.currentStep == nil)
+        guide.start(.workshop)
+        #expect(guide.currentStep != nil)
+        guide.close()
+        #expect(guide.currentStep == nil)
+        guide.start(.workshop)
+        for _ in PageGuideContext.workshop.steps {
+            guide.next()
+        }
+        #expect(guide.currentStep == nil)
+    }
+
+    @Test("Every page guide can move back, finish, close and reopen")
+    func pageGuides() {
+        let session = PageGuideSession()
+        for context in PageGuideContext.allCases {
+            session.start(context)
+            #expect(!context.steps.isEmpty)
+            session.next()
+            session.back()
+            #expect(session.index == 0)
+            for _ in context.steps {
+                session.next()
+            }
+            #expect(session.context == nil)
+            session.start(context)
+            #expect(session.index == 0)
+            session.close()
+            #expect(session.context == nil)
+        }
+    }
+
+    @Test("Floating tour routes pages, goes back, preserves unfinished steps and finishes", arguments: [false, true])
+    func floatingTour(workshopAvailable: Bool) throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        let progress = stores.progress(workshopAvailable: workshopAvailable)
+        let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { workshopAvailable })
+        let guide = PageGuideSession()
+        guide.startTour(progress: progress, router: router)
+        #expect(guide.tourPage == .home)
+        guide.next()
+        guide.close()
+        #expect(progress.handled.isEmpty)
+        #expect(stores.progress(workshopAvailable: workshopAvailable).hasPresentedTour)
+        guide.startTour(progress: progress, router: router)
+        for _ in guide.steps {
+            guide.next()
+        }
+        #expect(guide.tourPage == .library)
+        #expect(router.page == .library)
+        guide.back()
+        #expect(guide.tourPage == .home)
+        #expect(router.page == .home)
+        guide.next()
+        #expect(guide.tourPage == .library)
+        var count = 0
+        let total = guide.stepCount
+        while guide.context != nil, count < 100 {
+            let previous = guide.stepNumber
+            #expect(guide.stepCount == total)
+            guide.next()
+            if guide.context != nil {
+                #expect(guide.stepNumber == previous + 1)
+            }
+            count += 1
+        }
+        #expect(count < 100)
+        #expect(progress.isFinished)
+        #expect(router.page == .settings)
+        #expect(guide.context == nil)
     }
 
     @MainActor

@@ -3,7 +3,7 @@ import Observation
 
 @MainActor @Observable
 final class OnboardingProgress {
-    enum Page: String, CaseIterable { case home, library, workshop, overlay }
+    enum Page: String, CaseIterable { case home, library, workshop, configuration, overlay, settings }
 
     static let storageKey = "loomscreen.ui.editDesk.onboarding.v1"
     static let legacyKey = "Onboarding.Completed"
@@ -12,6 +12,7 @@ final class OnboardingProgress {
         Self.pages(workshopAvailable: workshopAvailable)
     }
 
+    private(set) var hasPresentedTour = false
     private(set) var completed: Set<Page>
     private(set) var dismissed: Set<Page>
     @ObservationIgnored private let workshopAvailable: Bool
@@ -23,6 +24,7 @@ final class OnboardingProgress {
         if let snapshot = defaults.dictionary(forKey: Self.storageKey) {
             completed = Self.pages(in: snapshot, key: "completed")
             dismissed = Self.pages(in: snapshot, key: "dismissed")
+            hasPresentedTour = snapshot["hasPresentedTour"] as? Bool ?? !completed.union(dismissed).isEmpty
         } else {
             completed = legacyDefaults.bool(forKey: Self.legacyKey) ? Set(Page.allCases) : []
             dismissed = []
@@ -42,18 +44,14 @@ final class OnboardingProgress {
         visiblePages.first { !handled.contains($0) }
     }
 
-    func stepNumber(of page: Page) -> Int {
-        visiblePages.firstIndex(of: page).map { $0 + 1 } ?? 0
+    func markTourPresented() {
+        hasPresentedTour = true
+        persist()
     }
 
     func record(_ page: Page) {
         completed.insert(page)
         dismissed.remove(page)
-        persist()
-    }
-
-    func dismiss(_ page: Page) {
-        dismissed.insert(page)
         persist()
     }
 
@@ -63,6 +61,7 @@ final class OnboardingProgress {
     }
 
     func reset() {
+        hasPresentedTour = false
         completed.removeAll()
         dismissed.removeAll()
         persist()
@@ -81,6 +80,7 @@ final class OnboardingProgress {
             "completed": Page.allCases.filter(completed.contains).map(\.rawValue),
             "dismissed": Page.allCases.filter(dismissed.contains).map(\.rawValue),
             "migratedFromLegacy": true,
+            "hasPresentedTour": hasPresentedTour,
         ]
         defaults.set(snapshot, forKey: Self.storageKey)
     }

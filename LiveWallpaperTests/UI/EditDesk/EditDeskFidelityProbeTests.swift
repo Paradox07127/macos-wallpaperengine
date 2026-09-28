@@ -1625,45 +1625,18 @@ struct S9LocalizationWidthTests {
         return Int((height(boxWidth) / single).rounded())
     }
 
-    /// SCREENS S9's card: a two-line message in a 460pt box, a 30pt button row, a two-line footnote.
-    @Test(
-        "Every onboarding card's message, buttons and footnote fit their S9 boxes in all five languages",
-        arguments: [true, false]
-    )
-    func cardChromeFits(sceneCapable: Bool) throws {
-        // The narrowest the card ever is: the 1040 window minus both gutters and the detail
-        // page's 372pt inspector.
-        let narrowBox = StageGeometry.minimumWindow.width - 2 * OnboardingCardMetrics.gutter - DetailGeometry.inspectorWidth
-        var overflowing: [String] = []
+    @Test("Guide copy fits a compact floating panel in all five languages")
+    func cardChromeFits() throws {
         for language in Self.languages {
             let localized = try bundle(language)
-            for page in OnboardingProgress.Page.allCases {
-                let content = OnboardingCardContent.of(page, sceneCapable: sceneCapable)
-                let message = NSLocalizedString(content.message.probeKey, bundle: localized, comment: "")
-                let messageLines = lines(
-                    message, size: 15, weight: .semibold, boxWidth: OnboardingCardMetrics.messageMaxWidth
-                )
-                let buttons = content.buttons.map {
-                    width(NSLocalizedString($0.title.probeKey, bundle: localized, comment: ""), size: 12, weight: .bold)
-                        + 2 * DesignTokens.EditDesk.Spacing.s14
-                }
-                let row = buttons.reduce(0, +)
-                    + CGFloat(max(0, buttons.count - 1)) * DesignTokens.EditDesk.Spacing.s8
-                let skip = width(NSLocalizedString("Skip", bundle: localized, comment: ""), size: 11)
-                let footnote = NSLocalizedString(content.footnote.probeKey, bundle: localized, comment: "")
-                let footnoteLines = lines(
-                    footnote, size: 11, boxWidth: narrowBox - skip - DesignTokens.EditDesk.Spacing.s12
-                )
-                ProbeRenderer.report(
-                    "S9.card.\(sceneCapable ? "pro" : "lite").\(language).\(page)",
-                    "messageLines=\(messageLines) buttonRow=\(row) footnoteLines=\(footnoteLines)"
-                )
-                if messageLines > 2 || footnoteLines > 2 || row > narrowBox {
-                    overflowing.append("\(language)/\(page)")
+            for context in PageGuideContext.allCases {
+                for step in context.steps {
+                    let message = NSLocalizedString(step.message.probeKey, bundle: localized, comment: "")
+                    let count = lines(message, size: 13, boxWidth: PageGuideLayout.preferredWidth - 32)
+                    #expect(count <= 10, Comment(rawValue: "\(language)/\(context): \(count) lines"))
                 }
             }
         }
-        #expect(overflowing.isEmpty, Comment(rawValue: "clipped by lineLimit(2) or the button row: \(overflowing)"))
     }
 
     /// The wizard is a fixed 446×526 sheet, so a longer translation has nowhere to go.
@@ -1732,7 +1705,7 @@ struct S9LocalizationWidthTests {
 @MainActor
 struct AccessibilityModeFidelityTests {
     private static let newViews = [
-        "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCard.swift",
+        "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift",
         "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift",
         "LiveWallpaper/Views/EditDesk/Onboarding/SteamWizard.swift",
         "LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift",
@@ -1829,9 +1802,8 @@ struct AccessibilityModeFidelityTests {
         let backdrop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskBackdrop.swift")
         #expect(backdrop.contains("accessibilityReduceTransparency"))
         #expect(backdrop.contains("if frosted, !reduceTransparency"), "the blur must be gated on the setting")
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCard.swift")
-        #expect(card.contains("accessibilityReduceMotion"))
-        #expect(card.contains("guard !reduceMotion else { return .opacity }"), "R-36: the card's transition must fade only")
+        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift")
+        #expect(!card.contains("withAnimation"), "Guide placement must not animate across the page")
         let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
         #expect(home.contains("stage.increaseContrast = page.contrast == .increased"), "the stage never hears about contrast")
     }

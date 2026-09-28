@@ -40,7 +40,7 @@ enum TopBarBudget {
         let status: CGFloat? = statusWidth > 0 ? statusWidth : nil
         var width = clusterWidth([capsule, status])
         var showsCapsule = capsule != nil
-        // The capsule is a first-launch hint whose progress the onboarding card already spells out,
+        // The capsule opens the welcome tour, which is also available from Settings › About,
         // so it goes whole rather than push the permanent nav pill off centre.
         if width > room, showsCapsule {
             width = clusterWidth([status])

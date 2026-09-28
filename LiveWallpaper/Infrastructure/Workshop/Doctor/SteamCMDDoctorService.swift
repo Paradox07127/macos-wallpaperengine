@@ -942,7 +942,7 @@ final class SteamCMDDoctorService {
         case .steamCMDUnavailable:
             setProbe(.cachedLogin, status: .red(
                 message: String(
-                    localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                    localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.",
                     bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
                 ),
                 command: nil
@@ -1114,7 +1114,7 @@ final class SteamCMDDoctorService {
             return .timedOut
         case .steamCMDUnavailable:
             return .notConfigured(reason: String(
-                localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.",
                 bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
             ))
         case .unrecognized:

@@ -3,10 +3,10 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Pins SCREENS.md S9 (card geometry, capsule, Steam wizard) and the mount points R-27/R-28/R-30 fix.
+/// Covers the floating guide, replay entry points and the separate Steam setup form.
 @Suite("Edit Desk onboarding UI")
 struct OnboardingUITests {
-    private static let card = "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCard.swift"
+    private static let card = "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift"
     private static let capsule = "LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift"
     private static let wizard = "LiveWallpaper/Views/EditDesk/Onboarding/SteamWizard.swift"
     private static let home = "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift"
@@ -15,60 +15,42 @@ struct OnboardingUITests {
     private static let detailHost = "LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift"
     private static let workshopPage = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift"
 
-    // MARK: Card geometry (SCREENS S9)
-
-    @Test("Card metrics are the S9 numbers and the stage inset is derived from them")
-    func cardMetrics() {
-        #expect(OnboardingCardMetrics.headerTop == 56)
-        #expect(OnboardingCardMetrics.cardTop == 110)
-        #expect(OnboardingCardMetrics.cardHeight == 170)
-        #expect(OnboardingCardMetrics.gutter == 24)
-        #expect(OnboardingCardMetrics.messageMaxWidth == 540)
-        #expect(OnboardingCardMetrics.primaryButtonHeight == 30)
-        // R-27: the arrangement gives up the card's band plus one gutter, nothing more.
-        #expect(OnboardingCardMetrics.stageTopInset == 304)
-        #expect(
-            OnboardingCardMetrics.stageTopInset
-                == OnboardingCardMetrics.cardTop + OnboardingCardMetrics.cardHeight + OnboardingCardMetrics.gutter
-        )
-    }
-
-    @Test(
-        "Every page's card carries a timing, a title, a message, at least one button and a footnote",
-        arguments: [true, false]
-    )
-    func cardContent(sceneCapable: Bool) {
-        for page in OnboardingProgress.Page.allCases {
-            let content = OnboardingCardContent.of(page, sceneCapable: sceneCapable)
-            #expect(!content.buttons.isEmpty, Comment(rawValue: "\(page) has no action"))
-            #expect(content.buttons.count <= 2, Comment(rawValue: "\(page) has more than the two S9 buttons"))
-            #expect(content.buttons.first?.isPrimary == true, Comment(rawValue: "\(page) leads with a secondary button"))
-            #expect(content.buttons.dropFirst().allSatisfy { !$0.isPrimary })
+    @Test("Every page guide has unique, nonempty explanations")
+    func uniqueExplanations() {
+        for context in PageGuideContext.allCases {
+            let messages = context.steps.map(\.message.probeKey)
+            #expect(!messages.isEmpty)
+            #expect(messages.allSatisfy { !$0.isEmpty })
+            #expect(Set(messages).count == messages.count)
         }
-        #expect(OnboardingCardContent.of(.home, sceneCapable: sceneCapable).buttons.count == 2)
-        #expect(OnboardingCardContent.of(.library, sceneCapable: sceneCapable).buttons.count == 1)
-        #expect(OnboardingCardContent.of(.workshop, sceneCapable: sceneCapable).buttons.count == 2)
-        #expect(OnboardingCardContent.of(.overlay, sceneCapable: sceneCapable).buttons.count == 1)
     }
 
-    @Test("Lite's cards do not point at Wallpaper Engine projects or the Workshop")
-    func liteCardsLeaveOutWallpaperEngine() {
-        let lite: [OnboardingProgress.Page] = [.home, .library, .overlay]
-        for page in lite {
-            let content = OnboardingCardContent.of(page, sceneCapable: false)
-            for key in [content.message.probeKey] + content.buttons.map(\.title.probeKey) {
-                #expect(!key.contains("Wallpaper Engine"), Comment(rawValue: "\(page): \(key)"))
-                #expect(!key.contains("Workshop"), Comment(rawValue: "\(page): \(key)"))
+    @Test("Steam instructions cover prerequisites and link to the relevant settings")
+    func steamSetupCoverage() {
+        let steps = PageGuideContext.workshop.steps
+        #expect(steps.filter { $0.settingsAnchor == .workshopConnection }.count == 3)
+        #expect(steps.contains { $0.settingsAnchor == .workshopSetup })
+        #expect(steps.contains { $0.settingsAnchor == .workshopAssets })
+        let text = steps.map(\.message.probeKey).joined(separator: " ")
+        for concept in ["SteamCMD", "library folder", "Steam Guard", "without a Steam Web API key", "Missing assets", "without signing in"] {
+            #expect(text.contains(concept), Comment(rawValue: concept))
+        }
+    }
+
+    @Test("Guide panels stay in the window and avoid controls on all four edges")
+    func floatingPanelPlacement() {
+        for size in [CGSize(width: 1040, height: 640), CGSize(width: 1280, height: 800), CGSize(width: 1600, height: 1000)] {
+            let targets = [CGRect(x: 400, y: 0, width: 240, height: 56),
+                           CGRect(x: 0, y: 90, width: 210, height: size.height - 90),
+                           CGRect(x: size.width - 372, y: 56, width: 372, height: size.height - 56),
+                           CGRect(x: 0, y: size.height - 130, width: size.width, height: 130)]
+            for target in targets {
+                let frame = PageGuideLayout.frame(in: size, panel: CGSize(width: 380, height: 280), target: target)
+                #expect(CGRect(origin: .zero, size: size).contains(frame))
+                #expect(frame.minY >= PageGuideLayout.topClearance)
+                #expect(!frame.intersects(target))
             }
         }
-        // Control: `probeKey` falls back to "" when the mirror misses, which would pass every check above.
-        #expect(OnboardingCardContent.of(.home, sceneCapable: true).message.probeKey.contains("Wallpaper Engine"))
-    }
-
-    @Test("The step line counts within the visible pages, so Lite reads n / 3")
-    func stepLine() {
-        #expect(OnboardingCardContent.stepText(step: 3, total: 4) == "STEP 3 / 4")
-        #expect(OnboardingCardContent.stepText(step: 3, total: 3) == "STEP 3 / 3")
     }
 
     // MARK: Capsule (R-28)
@@ -82,7 +64,7 @@ struct OnboardingUITests {
         #expect(OnboardingCapsuleModel.dots(visible: lite, handled: [.home]) == [true, false, false])
     }
 
-    @Test("The detail top bar stays out of it — the overlay card carries its own step line")
+    @Test("The floating guide owns the only step counter")
     func detailTopBarHasNoCapsule() throws {
         let source = try RepositoryRoot.source(Self.detailTopBar)
         #expect(!source.contains("OnboardingCapsule"))
@@ -100,48 +82,19 @@ struct OnboardingUITests {
         #expect(capsuleIndex.lowerBound < statusIndex.lowerBound, "the capsule must sit left of StatusCapsule")
     }
 
-    // MARK: Mount points (R-27)
-
-    @Test("The overview card hangs in the home ZStack, gated on a resting stage with nothing over it")
-    func homeCardMount() throws {
-        let source = try RepositoryRoot.source(Self.home)
-        #expect(source.contains("OnboardingCard(page: .home"))
-        #expect(source.contains("router.page == .home && stage.progress == 0 && !interactionLock"))
-        #expect(source.contains("promptImport"))
-        #expect(source.contains("router.libraryFocus = .aerials"))
+    @Test("Tutorials never reserve space in the actual page layout")
+    func noEmbeddedTutorials() throws {
+        for path in [Self.home, Self.workshopPage, Self.detailHost,
+                     "LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift",
+                     "LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift"] {
+            let source = try RepositoryRoot.source(path)
+            #expect(!source.contains("OnboardingCard("))
+            #expect(!source.contains("OnboardingCardMetrics"))
+            #expect(!source.contains("onboardingInset"))
+        }
     }
 
-    @Test("The library card rides the wallpaper grid's scroll view, above the real tiles")
-    func libraryCardMount() throws {
-        let source = try RepositoryRoot.source(Self.home)
-        let grid = try #require(source.range(of: "private var wallpaperGrid: some View {"))
-        let tail = String(source[grid.upperBound...])
-        let cardIndex = try #require(tail.range(of: "OnboardingCard(page: .library"))
-        let emptyIndex = try #require(tail.range(of: "IllustratedEmptyState("))
-        #expect(cardIndex.lowerBound < emptyIndex.lowerBound, "the card must precede the grid's own content")
-    }
-
-    @Test("The workshop card sits under the top bar and ahead of BrowsePane, which it must not cover")
-    func workshopCardMount() throws {
-        let source = try RepositoryRoot.source(Self.workshopPage)
-        #expect(source.contains("OnboardingCard(page: .workshop"))
-        let cardIndex = try #require(source.range(of: "\n            onboardingCard\n"))
-        let browseIndex = try #require(source.range(of: "BrowsePane("))
-        #expect(cardIndex.lowerBound < browseIndex.lowerBound)
-        // R-27: browsing stays available while the card is up.
-        #expect(source.contains("showsOnboardingCard ? OnboardingCardMetrics.blockHeight"))
-    }
-
-    @Test("The overlay card mounts in the detail host's overlay section and records on a persisted object")
-    func overlayCardMount() throws {
-        let source = try RepositoryRoot.source(Self.detailHost)
-        #expect(source.contains("OnboardingCard(page: .overlay"))
-        #expect(source.contains("section == .overlay"))
-        #expect(source.contains("session.onObjectPersisted = { progress?.record(.overlay) }"))
-        #expect(source.contains("setClockEnabled(true)"))
-    }
-
-    @Test("Every card host reads the progress as an optional, so an uninjected host does not trap")
+    @Test("Optional progress environments allow hosts outside the tutorial")
     func optionalEnvironment() throws {
         for path in [Self.card, Self.capsule, Self.home, Self.topBar, Self.detailHost, Self.workshopPage] {
             let source = try RepositoryRoot.source(path)
@@ -173,9 +126,13 @@ struct OnboardingUITests {
         // The library grant and the standard-location scan go through the Settings row's own entry points.
         #expect(source.contains("authorizeSteamLibrary(startingAtScannedPath: true)"))
         #expect(source.contains("setupController.prepare()"))
+        #expect(source.contains("SteamCMDSetupSheet(onConfirmManagedInstall:"))
+        #expect(source.contains("isShowingInstall = true"))
+        #expect(!source.contains("OnboardingProgress"))
+        #expect(!source.contains("steps(progress)"))
         #expect(!source.contains("SteamConnectorClient.signInSteamAccount"), "that call belongs to SteamSignInSheet")
         #expect(!source.contains("SecureField"), "the wizard must not grow its own password field")
-        // GAP §3.6: the Web API key and the engine assets stay in Settings.
+        // Optional API keys and scene resources have dedicated Settings destinations.
         #expect(!source.contains("SteamWebAPIKeyEntrySheet"))
         #expect(!source.contains("engineAssets"))
     }

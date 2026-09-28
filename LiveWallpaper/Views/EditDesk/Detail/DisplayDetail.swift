@@ -122,6 +122,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                 onClose: { inspectorVisible = false },
                 main: { wallpaperPreview }, inspector: { width in
                     inspector(width)
+                        .pageGuideTarget(.inspector)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .overlay(alignment: .leading) { Divider() }
                         .contentColumnBackground()

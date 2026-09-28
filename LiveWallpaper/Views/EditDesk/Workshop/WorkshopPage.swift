@@ -14,15 +14,12 @@ struct WorkshopPage: View {
     @Environment(SteamCMDDoctorService.self) private var doctor
     @Environment(WorkshopSetupController.self) private var setupController
     @Environment(\.featureCatalog) private var featureCatalog
-    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
 
     /// Kept under its original key so a dismissal recorded by earlier builds still counts.
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped())
     private var privateSessionNoticeShown = false
 
     @State private var isShowingWizard = false
-    /// Decided when the wizard opens: recording the step while it is up must not pull its header away.
-    @State private var wizardShowsTourStep = false
     @State private var isShowingPasteSheet = false
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
@@ -36,7 +33,6 @@ struct WorkshopPage: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            onboardingCard
             BrowsePane(
                 viewModel: session.browse,
                 doctor: doctor,
@@ -45,14 +41,14 @@ struct WorkshopPage: View {
                 onOpenItem: { presentedItemID = $0.id },
                 matureReveal: session.matureReveal
             )
-            .padding(.top, showsOnboardingCard ? OnboardingCardMetrics.blockHeight : DesignTokens.EditDesk.Spacing.topBar)
+            .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
             TopBar(
                 page: pageBinding,
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport),
                 windowWidth: stageSize.width,
                 status: nil
             ) {
-                steamMenu
+                steamMenu.pageGuideTarget(.steamMenu)
             }
             WorkshopModalHost(
                 presentedItemID: $presentedItemID,
@@ -77,29 +73,6 @@ struct WorkshopPage: View {
     }
 
     // MARK: Chrome
-
-    /// R-27: browsing stays available while the card is up, so the pane is pushed below it
-    /// instead of being covered by it.
-    private var showsOnboardingCard: Bool {
-        progress?.handled.contains(.workshop) == false
-    }
-
-    @ViewBuilder
-    private var onboardingCard: some View {
-        if showsOnboardingCard {
-            OnboardingCard(page: .workshop) { action in
-                switch action {
-                case .connectSteam:
-                    presentWizard()
-                case .importLocalLibrary:
-                    SteamWizard.importLocalFolder()
-                case .chooseFile, .tryAerials, .importMore, .addClock:
-                    break
-                }
-            }
-            .frame(height: OnboardingCardMetrics.blockHeight)
-        }
-    }
 
     /// Writing `router.page` straight from the pill skips `select`, which records the page to come
     /// back to and turns Workshop away when the SKU does not have it.
@@ -137,9 +110,9 @@ struct WorkshopPage: View {
 
         func body(content: Content) -> some View {
             content
-                .sheet(isPresented: page.$isShowingWizard) {
+                .infoOverlay(isPresented: page.$isShowingWizard) { close in
                     AppLanguageScope(defaults: .appScoped()) {
-                        SteamWizard(progress: page.wizardShowsTourStep ? page.progress : nil)
+                        SteamWizard(onDismiss: close)
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {
@@ -205,7 +178,6 @@ struct WorkshopPage: View {
     // MARK: Actions
 
     private func presentWizard() {
-        wizardShowsTourStep = showsOnboardingCard
         isShowingWizard = true
     }
 

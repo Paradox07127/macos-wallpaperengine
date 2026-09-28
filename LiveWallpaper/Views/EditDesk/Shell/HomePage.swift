@@ -12,7 +12,7 @@ struct HomePage: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.galleryCardPreferences) private var cardPreferences
-    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+    @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     #if !LITE_BUILD
     /// Optional: a page mounted without the Workshop services (tests) still opens the modal, minus update and delete.
@@ -229,7 +229,7 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .background {
-                    if page.handlesEscape {
+                    if page.handlesEscape, page.pageGuide?.context == nil {
                         Button { page.pressEscape() } label: { EmptyView() }
                             .keyboardShortcut(.cancelAction)
                             .opacity(0)
@@ -291,13 +291,13 @@ struct HomePage: View {
             content.onChange(of: page.router.pendingOnboardingStep, initial: true) { _, step in
                 guard let step else { return }
                 page.router.pendingOnboardingStep = nil
-                // An open modal keeps the step's card out of view.
+                // Clear item details before presenting the tour over the page.
                 page.presentedItemID = nil
                 switch step {
                 case .home:
-                    // The overview card only shows on a stage at rest, not with the shelf half open.
+                    // Explain the display arrangement from its resting state.
                     page.stage.setProgress(0, animated: !page.reduceMotion)
-                case .library, .workshop, .overlay:
+                case .library, .workshop, .configuration, .overlay, .settings:
                     break
                 }
             }
@@ -349,8 +349,6 @@ struct HomePage: View {
                 .modifier(CoveredByDetail(covered: detailCovers))
             shelfChrome
                 .zIndex(landedOnLibrary ? 0 : -1)
-                .modifier(CoveredByDetail(covered: detailCovers))
-            homeOnboardingCard
                 .modifier(CoveredByDetail(covered: detailCovers))
             wallpapersOffBanner
                 .modifier(CoveredByDetail(covered: detailCovers))
@@ -413,7 +411,7 @@ struct HomePage: View {
             if router.page == .library {
                 stage.setProgress(2, animated: false)
             } else if HomeDefaultState(rawValue: homeDefaultRaw) == .halfOpen, stage.progress == 0,
-                      progress?.handled.contains(.home) != false, screenManager.wallpapersGloballyEnabled {
+                      pageGuide?.context != .overview, screenManager.wallpapersGloballyEnabled {
                 // Off, the stage stays at rest: the banner that turns wallpapers back on only shows there.
                 stage.setProgress(1, animated: false)
             }
@@ -426,8 +424,8 @@ struct HomePage: View {
         .modifier(ApplyHook(page: self))
         .modifier(DisplayCommands(page: self))
         .modifier(LibraryItemCommands(page: self))
-        .onChange(of: progress?.handled) {
-            if router.page == .home, progress?.handled.isEmpty == true {
+        .onChange(of: pageGuide?.context) {
+            if router.page == .home, pageGuide?.context == .overview {
                 stage.setProgress(0, animated: !reduceMotion)
             }
         }
@@ -599,36 +597,23 @@ struct HomePage: View {
     // MARK: Chrome
 
     private var shelfChrome: some View {
-        chipsRow.modifier(ShelfChromeRide(stage: stage))
+        chipsRow.pageGuideTarget(.libraryTools)
+            .modifier(ShelfChromeRide(stage: stage))
     }
 
-    /// R-27: the overview card belongs to the resting stage, so a half-open shelf, the detail page
-    /// or any modal takes it off screen rather than layering it over them.
+    /// Keep the wallpaper-off banner on the resting overview, clear of details and modals.
     private var isRestingOverview: Bool {
         router.page == .home && stage.progress == 0 && !interactionLock
-    }
-
-    /// While wallpapers are off the band is the off banner's, not the card's.
-    private var showsHomeCard: Bool {
-        isRestingOverview && screenManager.wallpapersGloballyEnabled
-    }
-
-    /// The gate above says *where* the card may hang; this one says whether it is actually drawn,
-    /// which is what the arrangement gives up its top band for.
-    fileprivate var homeCardClaimsStage: Bool {
-        showsHomeCard && progress?.handled.contains(.home) == false
     }
 
     private var offBannerClaimsStage: Bool {
         isRestingOverview && !screenManager.wallpapersGloballyEnabled
     }
 
-    /// The top band the display arrangement leaves to the off banner or the onboarding card.
+    /// The top band the display arrangement leaves to the off banner.
     fileprivate var stageTopInset: CGFloat {
         if offBannerClaimsStage {
             offBannerHeight + DesignTokens.EditDesk.Spacing.gutter
-        } else if homeCardClaimsStage {
-            OnboardingCardMetrics.stageTopInset
         } else {
             0
         }
@@ -641,32 +626,6 @@ struct HomePage: View {
                 .onGeometryChange(for: CGFloat.self, of: \.size.height) { offBannerHeight = $0 }
                 .padding(.horizontal, DesignTokens.EditDesk.Spacing.gutter)
                 .padding(.top, StageGeometry.topBarHeight)
-        }
-    }
-
-    @ViewBuilder
-    private var homeOnboardingCard: some View {
-        if showsHomeCard {
-            OnboardingCard(page: .home) { action in
-                switch action {
-                case .chooseFile:
-                    promptImport()
-                case .tryAerials:
-                    router.select(.library)
-                    router.libraryFocus = .aerials
-                case .importMore, .connectSteam, .importLocalLibrary, .addClock:
-                    break
-                }
-            }
-        }
-    }
-
-    private func performLibraryCardAction(_ action: OnboardingCardAction) {
-        switch action {
-        case .importMore:
-            promptLibraryImport()
-        case .chooseFile, .tryAerials, .connectSteam, .importLocalLibrary, .addClock:
-            break
         }
     }
 
@@ -713,7 +672,7 @@ struct HomePage: View {
         router.libraryTarget.flatMap { target in screenManager.screens.first { $0.id == target } }
     }
 
-    /// Between the display banner, the onboarding card and the grid inside the library's scroll view.
+    /// Between the display banner and the grid inside the library's scroll view.
     private static let libraryStackSpacing = DesignTokens.Spacing.sm
 
     /// What the library stacks above the grid's first row inside its scroll view.
@@ -721,9 +680,6 @@ struct HomePage: View {
         var inset: CGFloat = 0
         if libraryTargetScreen != nil {
             inset += libraryBannerHeight + Self.libraryStackSpacing
-        }
-        if progress?.handled.contains(.library) == false {
-            inset += OnboardingCardMetrics.blockHeight + Self.libraryStackSpacing
         }
         return inset
     }
@@ -863,8 +819,8 @@ struct HomePage: View {
                             .help(Text("Previous Wallpaper"))
                     }
                     GlassIconButton(playback.glyph) { stage.emit(.playbackTapped(playback.displayID, .toggle)) }
-                    .disabled(!playback.canToggle)
-                    .help(Text(playback.intendsToPlay ? "Pause" : "Play"))
+                        .disabled(!playback.canToggle)
+                        .help(Text(playback.intendsToPlay ? "Pause" : "Play"))
                     if playback.showsPlaylistControls {
                         GlassIconButton("forward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .next)) }
                             .disabled(!playback.canChangeEntry)
@@ -916,12 +872,6 @@ struct HomePage: View {
                 VStack(spacing: Self.libraryStackSpacing) {
                     if let screen = libraryTargetScreen {
                         libraryTargetBanner(for: screen)
-                    }
-                    // R-27: eligibility is the page, not what the filter left behind, so the card rides
-                    // above an empty result set just as it does above real tiles.
-                    if progress?.handled.contains(.library) == false {
-                        OnboardingCard(page: .library, perform: performLibraryCardAction)
-                            .frame(height: OnboardingCardMetrics.blockHeight)
                     }
                     if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
                         AerialsSourceStatusCard()

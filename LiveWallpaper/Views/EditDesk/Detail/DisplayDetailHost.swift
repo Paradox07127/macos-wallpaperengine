@@ -30,7 +30,7 @@ struct DisplayDetailHost: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+    @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @State private var coordinator: DetailTransitionCoordinator?
     @State private var section: DetailSection = .wallpaper
@@ -79,21 +79,7 @@ struct DisplayDetailHost: View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
-                if section == .overlay, let overlaySession {
-                    // R-27/R-28: the card stays in the canvas column and carries its own STEP line,
-                    // because the detail top bar has no room for the capsule.
-                    OnboardingCard(page: .overlay, trailingInset: DetailGeometry.inspectorWidth) { action in
-                        switch action {
-                        case .addClock:
-                            overlaySession.setClockEnabled(true)
-                        case .chooseFile, .tryAerials, .importMore, .connectSteam, .importLocalLibrary:
-                            break
-                        }
-                    }
-                    .frame(height: OnboardingCardMetrics.blockHeight)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                }
-                if !modalPresented {
+                if !modalPresented, pageGuide?.context == nil {
                     Button(action: router.closeDetail) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
@@ -149,7 +135,7 @@ struct DisplayDetailHost: View {
             heroVisible: coordinator?.heroVisible ?? false,
             returning: coordinator?.phase == .returning,
             actions: actions(for: screen),
-            hud: { hud(for: screen) },
+            hud: { hud(for: screen).pageGuideTarget(.playback) },
             inspector: { width in inspector(for: screen, width: width) },
             overlayCanvas: { size in
                 if let overlaySession {
@@ -157,7 +143,6 @@ struct DisplayDetailHost: View {
                                      size: size, layersVisible: $layersVisible,
                                      inspectorVisible: $overlayInspectorVisible,
                                      inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
-                                     topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
                                      recapture: { refreshCover(id); overlaySession.capturePreview() },
                                      swipe: { swipe($0) }, switchEdge: switchEdge,
                                      copyLayer: { requestOverlayCopy(.kind($0, name: $1)) })
@@ -246,10 +231,6 @@ struct DisplayDetailHost: View {
         section == .overlay ? $overlayInspectorVisible : $inspectorVisible
     }
 
-    private var showsOverlayOnboarding: Bool {
-        section == .overlay && progress?.handled.contains(.overlay) == false
-    }
-
     // MARK: Handshake
 
     /// The hooks are reassigned here rather than at init so they capture the installed view.
@@ -286,7 +267,6 @@ struct DisplayDetailHost: View {
                     guard identity.fingerprint == screen.displayFingerprint else { return }
                     undo?.recordMove(move, from: screen) { session?.flushPendingEdits() }
                 }
-                session.onObjectPersisted = { progress?.record(.overlay) }
                 session.onWidgetsRemoved = { [weak session, undo] removed in
                     undo?.recordRemoval(of: removed, from: screen) { session?.flushPendingEdits() }
                 }

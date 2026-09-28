@@ -1036,6 +1036,27 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.status == .empty)
     }
 
+    @Test("A closed add sheet can report a mixed batch failure on the destination page")
+    func closedSheetBatchFailure() async throws {
+        let rig = try makeRig()
+        let invalid = WallpaperBookmark(label: "Missing", content: .video(bookmarkData: Data("missing".utf8), packageEntryName: "clip.mp4"))
+        var failures: [String] = []
+        do {
+            _ = try await rig.service.publish(bookmark: invalid)
+        } catch {
+            failures.append(error.localizedDescription)
+        }
+        _ = try await rig.service.publish(bookmark: rig.makeVideoBookmark())
+        #expect(rig.service.lastError == nil)
+        #expect(!failures.isEmpty)
+        rig.service.reportPublishFailures(failures)
+        rig.service.refresh()
+        #expect(rig.service.items.count == 1)
+        #expect(rig.service.status == .failed(failures.joined(separator: "\n")))
+        rig.service.clearLastError()
+        #expect(rig.service.lastError == nil)
+    }
+
     // MARK: - Corruption tolerance
 
     @Test("A corrupt manifest is refused, not treated as an empty library")

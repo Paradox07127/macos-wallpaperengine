@@ -75,7 +75,7 @@ struct EditDeskAccessibilityTests {
     func swiftUITreeIsNotReadableOffscreen() async throws {
         let progress = try progress()
         let nodes = await hostedNodes(size: StageGeometry.designWindow) {
-            OnboardingCard(page: .home) { _ in }
+            PageGuideButton(context: .overview)
                 .environment(progress)
         }
         print("AX card = \(nodes.map { "\($0.role)|\($0.label)" })")
@@ -88,29 +88,18 @@ struct EditDeskAccessibilityTests {
 
     /// The accessibility the two onboarding views carry, read off the source. Each expectation is
     /// one line of the 实机 walk: what VoiceOver should say, and what it must not repeat.
-    @Test("The onboarding card and capsule name themselves and hide their decoration")
+    @Test("The floating guide and capsule name themselves and hide their decoration")
     func onboardingContracts() throws {
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCard.swift")
-        // The step line and the page title read as one heading, so the rotor can land on it.
-        #expect(card.contains("accessibilityElement(children: .combine)"))
+        let card = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingPageGuide.swift")
         #expect(card.contains("accessibilityAddTraits(.isHeader)"))
-        // The glyph is decoration; the message beside it already says what the step is.
-        let icon = try #require(card.range(of: "Image(systemName: content.icon)"))
-        let hidden = try #require(card.range(of: "accessibilityHidden(true)"))
-        #expect(icon.lowerBound < hidden.lowerBound, "the card's icon would be read out as a symbol name")
-        // Both action buttons and Skip are real `Button`s with a spoken label.
-        #expect(card.contains("accessibilityLabel(Text(title))"))
-        #expect(card.contains(#"accessibilityLabel(Text("Skip this step"))"#), "\"Skip\" alone does not say what it skips")
-        #expect(
-            card.contains(#"accessibilityLabel(Text("Step \(progress.stepNumber(of: page)) of \(progress.visiblePages.count)"))"#),
-            "VoiceOver would read the design's English STEP n / m"
-        )
-
+        #expect(card.contains("accessibilityHidden(true)"))
+        #expect(card.contains(".keyboardShortcut(.cancelAction)"))
+        #expect(card.contains(#"accessibilityIdentifier("pageGuide.next")"#))
         let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift")
         #expect(capsule.contains("accessibilityElement(children: .ignore)"), "each dot would become its own element")
         #expect(capsule.contains(#"accessibilityLabel(Text("Get Started"))"#))
         // The value is the progress itself, so the pill answers "how far in am I".
-        #expect(capsule.contains(#"accessibilityValue(Text("Step \(dots.filter(\.self).count) of \(dots.count)"))"#))
+        #expect(capsule.contains(#"accessibilityValue(Text("Tour progress: \(dots.filter(\.self).count) / \(dots.count)"))"#))
     }
 
     /// 6.1c's two entry points are drawn into a CALayer, so the display element carries them as
@@ -159,10 +148,8 @@ struct EditDeskAccessibilityTests {
             wizard.contains("accessibilityElement(children: .combine)"),
             "each status row must read as one element, not a title, a glyph and a detail"
         )
-        #expect(
-            wizard.contains(#"accessibilityLabel(Text("Step \(progress.stepNumber(of: .workshop)) of \(dots.count)"))"#),
-            "VoiceOver would read the design's English STEP n / m"
-        )
+        #expect(wizard.contains(#"accessibilityLabel(Text("Close"))"#))
+        #expect(!wizard.contains("OnboardingProgress"), "Steam setup must not repeat the tutorial's step counter")
         // The Steam button is one of the title row's glyph buttons, each labelled by its own title.
         let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
         #expect(modal.contains("ModalHeaderAction(kind: .openInSteam"), "the Workshop modal draws a Steam button of its own")

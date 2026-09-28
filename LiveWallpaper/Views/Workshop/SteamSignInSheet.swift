@@ -33,6 +33,10 @@ struct SteamSignInSheet: View {
                     title: "Sign in to Steam",
                     subtitle: "SteamCMD downloads Workshop items using this account."
                 )
+                Text("Use the account name, not your profile nickname, for the account that owns Wallpaper Engine. This sign-in is separate from the Steam app. Complete Steam Guard when prompted.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 fields
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle.fill")
@@ -157,7 +161,7 @@ struct SteamSignInSheet: View {
         case .unavailable:
             phase = .form
             errorText = String(
-                localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                localized: "SteamCMD could not be launched. Open Settings › Workshop › Steam connection to install it or locate an existing copy.",
                 bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
             )
         case .failed:
