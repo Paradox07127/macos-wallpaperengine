@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// The Edit Desk window's canvas. `frosted` swaps the flat fill for the desktop blurred behind the
-/// window; Reduce Transparency and Increase Contrast keep the flat fill, which is what both settings ask for.
+/// window (Liquid Glass on macOS 26+); Reduce Transparency and Increase Contrast keep the flat fill, which is what both settings ask for.
 struct EditDeskBackdrop: View {
     let frosted: Bool
 
@@ -13,7 +13,14 @@ struct EditDeskBackdrop: View {
     var body: some View {
         Group {
             if frosted, !reduceTransparency, contrast != .increased {
-                BehindWindowBlur()
+                if AdaptiveGlass.isAvailable {
+                    // The half-strength canvas under the glass keeps text on the page legible over a busy desktop.
+                    Color.clear.adaptiveGlassScrimmed(
+                        cornerRadius: 0, scrim: DesignTokens.EditDesk.Colors.background.opacity(0.5)
+                    )
+                } else {
+                    BehindWindowBlur()
+                }
             } else {
                 DesignTokens.EditDesk.Colors.background
             }
