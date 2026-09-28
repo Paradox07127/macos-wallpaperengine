@@ -17,7 +17,7 @@ struct HTMLSnapshotRequest: Sendable {
 }
 
 @MainActor
-final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate {
+final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate, WKUIDelegate {
     let webView: WKWebView
     private let request: HTMLSnapshotRequest
     private var continuation: CheckedContinuation<Bool, Never>?
@@ -35,6 +35,9 @@ final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate {
     init(webView: WKWebView, request: HTMLSnapshotRequest) {
         self.webView = webView
         self.request = request
+        super.init()
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
     }
 
     func waitForLoadOutcome() async -> Bool {
@@ -74,6 +77,8 @@ final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate {
         guard !isCancelled else { return }
         isCancelled = true
         webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
         complete(reason: .failure)
         completeSnapshot(nil)
     }
@@ -84,6 +89,28 @@ final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate {
         let continuation = snapshotContinuation
         snapshotContinuation = nil
         continuation?.resume(returning: image)
+    }
+
+    // Wallpapers never need camera, microphone, or website geolocation access.
+    // Omitting the media callback makes WebKit fall back to a permission prompt.
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.deny)
+    }
+
+    @available(macOS 27.0, *)
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.deny)
     }
 
     nonisolated func webView(

@@ -689,3 +689,102 @@ struct ThumbnailServiceAdmissionTests {
         #expect(await gate.activeCount == 0)
     }
 }
+
+@Suite("HTML wallpaper permission boundaries")
+@MainActor
+struct HTMLWallpaperPermissionTests {
+    @Test("Live wallpaper delegates deny camera, microphone, and combined capture")
+    func liveWallpaperDeniesMediaCapture() async throws {
+        let frame = try await permissionFrame()
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+        defer { view.cleanup() }
+        let delegate = try #require(view.webView.uiDelegate)
+        expectMediaDenied(by: delegate, webView: view.webView, frame: frame)
+    }
+
+    @Test("Thumbnail owner installs denial delegate and clears both delegates on cancellation")
+    func thumbnailDeniesMediaCaptureAndClearsDelegates() async throws {
+        let frame = try await permissionFrame()
+        let pending = makePendingSnapshot()
+        let webView = pending.webView
+        #expect(webView.navigationDelegate === pending)
+        #expect(webView.uiDelegate === pending)
+        let delegate = try #require(webView.uiDelegate)
+        expectMediaDenied(by: delegate, webView: webView, frame: frame)
+        pending.cancel()
+        #expect(webView.navigationDelegate == nil)
+        #expect(webView.uiDelegate == nil)
+        #expect(await pending.waitForLoadOutcome() == false)
+    }
+
+    @Test("Both wallpaper delegates deny website geolocation on supported macOS")
+    func websiteGeolocationDenied() async throws {
+        if #available(macOS 27.0, *) {
+            let frame = try await permissionFrame()
+            let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+            let pending = makePendingSnapshot()
+            defer { view.cleanup(); pending.cancel() }
+            for webView in [view.webView, pending.webView] {
+                let delegate = try #require(webView.uiDelegate)
+                var decisions: [WKPermissionDecision] = []
+                delegate.webView?(
+                    webView,
+                    requestGeolocationPermissionFor: frame.securityOrigin,
+                    initiatedByFrame: frame,
+                    decisionHandler: { decisions.append($0) }
+                )
+                #expect(decisions == [.deny])
+            }
+        }
+    }
+
+    private func expectMediaDenied(by delegate: any WKUIDelegate, webView: WKWebView, frame: WKFrameInfo) {
+        for type in [WKMediaCaptureType.camera, .microphone, .cameraAndMicrophone] {
+            var decisions: [WKPermissionDecision] = []
+            delegate.webView?(
+                webView,
+                requestMediaCapturePermissionFor: frame.securityOrigin,
+                initiatedByFrame: frame,
+                type: type,
+                decisionHandler: { decisions.append($0) }
+            )
+            #expect(decisions == [.deny])
+        }
+    }
+
+    private func makePendingSnapshot() -> PendingHTMLSnapshot {
+        let url = URL(string: "about:blank")!
+        return PendingHTMLSnapshot(webView: WKWebView(), request: HTMLSnapshotRequest(
+            source: .url(url), loadURL: url, cacheKey: "permissions",
+            effectiveConfig: .default, localReadAccessRoot: nil
+        ))
+    }
+
+    /// Obtain a real WebKit frame without requesting hardware, location, or network access.
+    private func permissionFrame() async throws -> WKFrameInfo {
+        let webView = WKWebView()
+        let probe = PermissionFrameProbe()
+        webView.navigationDelegate = probe
+        defer { webView.stopLoading(); webView.navigationDelegate = nil }
+        webView.loadHTMLString("<html><body>permission fixture</body></html>", baseURL: nil)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while probe.frame == nil && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return try #require(probe.frame)
+    }
+}
+
+@MainActor
+private final class PermissionFrameProbe: NSObject, WKNavigationDelegate {
+    var frame: WKFrameInfo?
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        frame = navigationAction.sourceFrame
+        decisionHandler(.cancel)
+    }
+}

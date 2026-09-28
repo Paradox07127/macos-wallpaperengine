@@ -1222,6 +1222,28 @@ extension HTMLWallpaperView: WKNavigationDelegate {
 // MARK: - WKUIDelegate
 
 extension HTMLWallpaperView: WKUIDelegate {
+    // Wallpapers never need camera, microphone, or website geolocation access.
+    // Omitting the media callback makes WebKit fall back to a permission prompt.
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.deny)
+    }
+
+    @available(macOS 27.0, *)
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.deny)
+    }
+
     /// `window.open` has no user-gesture guarantee — always refuse.
     func webView(
         _ webView: WKWebView,

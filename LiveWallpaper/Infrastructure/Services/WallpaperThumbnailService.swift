@@ -211,7 +211,6 @@ final class WallpaperThumbnailService {
 
         let pending = PendingHTMLSnapshot(webView: webView, request: request)
         pendingWebViews[producerID] = pending
-        webView.navigationDelegate = pending
 
         let didStart = request.loadURL.isFileURL
             ? request.loadURL.startAccessingSecurityScopedResource()
@@ -221,7 +220,6 @@ final class WallpaperThumbnailService {
             if pendingWebViews[producerID] === pending {
                 pendingWebViews[producerID] = nil
             }
-            webView.navigationDelegate = nil
             if didStart {
                 request.loadURL.stopAccessingSecurityScopedResource()
             }
