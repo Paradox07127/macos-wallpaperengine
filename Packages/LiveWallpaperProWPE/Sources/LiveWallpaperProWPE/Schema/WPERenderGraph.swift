@@ -39,6 +39,8 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public let parentObjectID: String?
     /// Named MDAT anchor on the parent puppet this layer follows. `nil` when unattached.
     public let attachment: String?
+    /// Bind anchor in the parent model space, separate from the script-authored local origin.
+    public let attachmentOriginOffset: SIMD3<Double>
     public let animationLayers: [WPESceneAnimationLayer]
     public let authoredJSON: WPERenderLayerAuthoredJSON
     public let geometry: WPERenderLayerGeometry
@@ -70,6 +72,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         puppetPath: String? = nil,
         parentObjectID: String? = nil,
         attachment: String? = nil,
+        attachmentOriginOffset: SIMD3<Double> = .zero,
         animationLayers: [WPESceneAnimationLayer] = [],
         authoredJSON: WPERenderLayerAuthoredJSON = .empty,
         geometry: WPERenderLayerGeometry,
@@ -92,6 +95,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.puppetPath = puppetPath
         self.parentObjectID = parentObjectID
         self.attachment = attachment
+        self.attachmentOriginOffset = attachmentOriginOffset
         self.animationLayers = animationLayers
         self.authoredJSON = authoredJSON
         self.geometry = geometry

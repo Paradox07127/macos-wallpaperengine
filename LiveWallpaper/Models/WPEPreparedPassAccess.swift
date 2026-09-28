@@ -20,6 +20,10 @@ final class WPEPreparedPassAccess: Equatable, Sendable {
     /// Arrays/dictionaries share their CoW storage when the pass is copied.
     let textureReferences: [WPETextureReference]
     let fboNames: [String]
+    // Load/ping-pong decisions need actual bindings: authored bind "previous"
+    // means the chain input and may have been lowered to an unrelated FBO.
+    let readsTargetHistory: Bool
+    let boundFBONames: Set<String>
     let hasPreviousReference: Bool
     let hasSceneAliasReference: Bool
     let hasNamedFBOReference: Bool
@@ -38,6 +42,22 @@ final class WPEPreparedPassAccess: Equatable, Sendable {
         references.append(contentsOf: rawBinds.values)
         references.append(contentsOf: textureBindings.values)
         textureReferences = references
+
+        var bound = rawTextures
+        for (slot, bind) in rawBinds {
+            bound[slot] = bind == .previous ? source : bind
+        }
+        bound.merge(textureBindings) { _, prepared in prepared }
+        if bound[0] == nil {
+            bound[0] = source
+        }
+        readsTargetHistory = bound.values.contains(.previous)
+        boundFBONames = Set(bound.values.compactMap {
+            if case let .fbo(name) = $0 {
+                return name
+            }
+            return nil
+        })
 
         var names: [String] = []
         var previous = false

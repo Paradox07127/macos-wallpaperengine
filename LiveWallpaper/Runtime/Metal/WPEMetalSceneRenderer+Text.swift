@@ -360,6 +360,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: adjusted(geometry)!,

@@ -267,6 +267,8 @@ extension WPEMetalRenderExecutor {
         }
 
         let items: [Item]
+        /// Only explicit reads of private FBOs before their first write are temporal feedback.
+        let historyFBONames: Set<String>
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
         /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
@@ -292,6 +294,16 @@ extension WPEMetalRenderExecutor {
             layers: [WPEPreparedRenderLayer]
         ) {
             self.items = items
+            var written: Set<String> = []
+            let unique = Set(layers.flatMap { $0.graphLayer.localFBOs }.filter {
+                $0.unique && !WPETextureReference.isSceneAliasName($0.name)
+            }.map(\.name))
+            var history: Set<String> = []
+            for item in items {
+                history.formUnion(item.readFBONames.filter { unique.contains($0) && !written.contains($0) })
+                if case .named(let name) = WPEMetalTargetID(target: item.target) { written.insert(name) }
+            }
+            historyFBONames = history
             self.itemIndicesByKeyName = itemIndicesByKeyName
             self.signature = signature
             self.sizingLayerIndices = sizingLayerIndices
@@ -449,6 +461,8 @@ extension WPEMetalRenderExecutor {
             if let key = scratch.keys[index] {
                 touch(key, index)
                 if item.marksSecondary { scratch.secondaryKeys.insert(key) }
+                // History outlives this frame's alias heap. Keep a discrete allocation.
+                if topology.historyFBONames.contains(key.name) { scratch.nonAliasKeys.insert(key) }
             }
             for name in item.readFBONames {
                 guard let indices = topology.itemIndicesByKeyName[name] else { continue }

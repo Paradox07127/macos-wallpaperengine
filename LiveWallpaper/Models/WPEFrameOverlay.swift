@@ -155,6 +155,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: changesTint ? geometry.applyingPresentation(alpha: alpha, color: color) : geometry,

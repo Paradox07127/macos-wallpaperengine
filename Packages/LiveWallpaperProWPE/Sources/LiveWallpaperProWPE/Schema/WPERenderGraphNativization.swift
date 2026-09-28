@@ -95,6 +95,7 @@ extension WPERenderLayer {
             puppetPath: wpeNativized(puppetPath),
             parentObjectID: wpeNativized(parentObjectID),
             attachment: wpeNativized(attachment),
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,

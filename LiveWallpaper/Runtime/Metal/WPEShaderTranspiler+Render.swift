@@ -178,7 +178,10 @@ extension WPEShaderTranspiler {
                 out.append("    // WPE-DIAGNOSTIC: varying '\(varying.name)' has no reconstruction rule and fell back to a \(fallback) default; this likely renders incorrectly.")
             }
             if let arrayLength = varying.arrayLength {
-                let initializers = texCoordBoxFilterInitializers(varying: varying, availableUniforms: uniformNames)
+                let initializers = gaussianTexCoordInitializers(
+                    varying: varying, shaderName: shaderName,
+                    availableUniforms: uniformNames, comboValues: comboValues
+                ) ?? texCoordBoxFilterInitializers(varying: varying, availableUniforms: uniformNames)
                     ?? Array(repeating: initializer, count: arrayLength)
                 out.append("    [[maybe_unused]] \(varying.metalType) \(varying.name)[\(arrayLength)] = { \(initializers.joined(separator: ", ")) };")
             } else if let arrayDimension = varying.arrayDimension {
@@ -980,6 +983,25 @@ extension WPEShaderTranspiler {
         default:
             return "\(varying.metalType)(0)"
         }
+    }
+
+    /// blur_gaussian.vert emits a distinct texel offset for every tap, including its vertical variant.
+    private static func gaussianTexCoordInitializers(
+        varying: WPEVaryingDecl,
+        shaderName: String,
+        availableUniforms: Set<String>,
+        comboValues: [String: Int]
+    ) -> [String]? {
+        guard texCoordZWFamilyName(shaderName: shaderName) == "blur_gaussian",
+              varying.name == "v_TexCoord", varying.metalType == "float2",
+              let count = varying.arrayLength,
+              hasUniforms("g_Scale", "g_Texture0Resolution", in: availableUniforms) else { return nil }
+        let counts = [0: 13, 1: 7, 2: 3]
+        guard count == counts[comboValues["KERNEL"] ?? 0] else { return nil }
+        let step = comboValues["VERTICAL"] == 1
+            ? "float2(0.0, g_Scale.y / g_Texture0Resolution.w)"
+            : "float2(g_Scale.x / g_Texture0Resolution.z, 0.0)"
+        return (0..<count).map { "in.uv + \(step) * \(Float($0 - count / 2))" }
     }
 
     /// The generic array path would call `varyingInitializer` once and repeat it, collapsing the 4-tap box filter to a point sample.

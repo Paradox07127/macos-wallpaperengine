@@ -149,7 +149,13 @@ final class WPEMetalPipelineCache {
             attachment.destinationAlphaBlendFactor = .one
 
         case "premultipliedmultiply":
-            fallthrough
+            attachment.isBlendingEnabled = true
+            attachment.rgbBlendOperation = .add
+            attachment.alphaBlendOperation = .add
+            attachment.sourceRGBBlendFactor = .destinationColor
+            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
+            attachment.sourceAlphaBlendFactor = .zero
+            attachment.destinationAlphaBlendFactor = .one
 
         case "multiply":
             attachment.isBlendingEnabled = true

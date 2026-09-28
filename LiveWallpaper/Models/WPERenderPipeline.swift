@@ -209,14 +209,20 @@ extension WPEPreparedRenderPipeline {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        let attachmentOffsets = Dictionary(
+            layers.map { ($0.graphLayer.objectID, $0.graphLayer.attachmentOriginOffset) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var memo: [String: WPERenderObjectTransform] = [:]
 
         func localTransform(for id: String) -> WPERenderObjectTransform? {
             let base = layerLocalTransforms[id] ?? hostTransforms[id]
-            return base?.applying(
-                origin: origins[id],
-                scale: scales[id],
-                angles: angles[id]
+            guard let authored = base?.applying(
+                origin: origins[id], scale: scales[id], angles: angles[id]
+            ) else { return nil }
+            return authored.applying(
+                origin: authored.origin + (attachmentOffsets[id] ?? .zero),
+                scale: nil, angles: nil
             )
         }
 
@@ -536,7 +542,7 @@ private extension WPERenderLayer {
         return WPERenderLayer(
             objectID: objectID, objectName: objectName, visible: visible,
             imagePath: imagePath, materialPath: materialPath, puppetPath: puppetPath,
-            parentObjectID: parentObjectID, attachment: attachment, animationLayers: animationLayers,
+            parentObjectID: parentObjectID, attachment: attachment, attachmentOriginOffset: attachmentOriginOffset, animationLayers: animationLayers,
             authoredJSON: authoredJSON, geometry: adjusted, localGeometry: localGeometry,
             compositeA: compositeA, compositeB: compositeB, localFBOs: localFBOs,
             passes: passes, groupRenderTarget: groupRenderTarget,
@@ -607,6 +613,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: adjustedGeometry,
@@ -640,6 +647,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry.resolved(at: time),

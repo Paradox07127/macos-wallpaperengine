@@ -99,7 +99,7 @@ struct WPERenderGraphBuilderTests {
         #expect(layer.materialPath == "materials/layer.json")
         #expect(layer.localFBOs == [
             WPERenderFBO(
-                name: "_rt_CustomBuffer",
+                name: "_rt_unique_1_7_0__rt_CustomBuffer",
                 scale: 4,
                 fit: 512,
                 format: "rgba_backbuffer",
@@ -123,7 +123,7 @@ struct WPERenderGraphBuilderTests {
         #expect(effectPass.combos["OVERRIDE"] == 1)
         #expect(effectPass.constants["base"]?.numberValue == 0.25)
         #expect(effectPass.constants["strength"]?.numberValue == 0.75)
-        #expect(effectPass.target == .fbo(name: "_rt_CustomBuffer"))
+        #expect(effectPass.target == .fbo(name: "_rt_unique_1_7_0__rt_CustomBuffer"))
         #expect(effectPass.authoredJSON.effectDocument?["futureEffectRoot"]?["revision"] == .number(7))
         #expect(effectPass.authoredJSON.effectPass?["futureEffectPass"]?["mode"] == .string("oracle"))
         #expect(effectPass.authoredJSON.materialDocument?["futureEffectMaterialRoot"]?["values"]?[1] == .bool(false))
@@ -513,6 +513,17 @@ struct WPERenderGraphBuilderTests {
 
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
         let beam = try #require(graph.layers.first { $0.objectID == "96" })
+
+        #expect(beam.attachmentOriginOffset == SIMD3<Double>(-100, 100, 0))
+        let prepared = WPEPreparedRenderPipeline(layers: graph.layers.map {
+            WPEPreparedRenderLayer(graphLayer: $0, passes: [])
+        })
+        let ticked = prepared.applyingLayerTransforms(
+            origins: [:], scales: [:], angles: ["unrelated-ring": .zero],
+            parentByID: document.objectParentByID,
+            hostTransforms: WPEMetalSceneRenderer.ancestorLocalTransforms(in: document)
+        )
+        #expect(ticked.layers.first { $0.graphLayer.objectID == "96" }?.graphLayer.geometry == beam.geometry)
 
         // parent origin (1000,1000) + scale·child local origin (100,200) + scale·anchor offset (-100,100): x cancels.
         #expect(beam.geometry.origin == SIMD3<Double>(1000, 1000 + 300 * scale, 0))

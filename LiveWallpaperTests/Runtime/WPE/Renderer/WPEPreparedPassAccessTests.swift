@@ -17,6 +17,8 @@ struct WPEPreparedPassAccessTests {
         #expect(access.source == .fbo("chain-input"))
         #expect(access.rawTextures[2] == .asset("mask"))
         #expect(access.rawBinds[0] == .previous)
+        #expect(!access.readsTargetHistory)
+        #expect(access.boundFBONames == ["chain-input"])
         #expect(access.preparedBindings[0] == .fbo("chain-input"))
         #expect(Array(access.references(in: .rawBinds)) == [.previous])
         #expect(access.references(in: .preparedBindings).contains(.fbo("chain-input")))

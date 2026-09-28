@@ -115,7 +115,7 @@ struct WPERenderGraphBuilder: Sendable {
             objectParentByID: document.objectParentByID,
             hostDepthByObjectID: Self.authoredParallaxDepthByObjectID(document)
         )
-        let attachmentAligned = applyAttachmentAnchorOffsets(to: parallaxAligned)
+        let attachmentAligned = applyAttachmentAnchorOffsets(to: parallaxAligned, parentByID: document.objectParentByID)
         return WPERenderGraph(layers: applyComposelayerGroups(
             to: attachmentAligned,
             objectParentByID: document.objectParentByID
@@ -445,7 +445,9 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    private func applyAttachmentAnchorOffsets(to layers: [WPERenderLayer]) -> [WPERenderLayer] {
+    private func applyAttachmentAnchorOffsets(
+        to layers: [WPERenderLayer], parentByID: [String: String]
+    ) -> [WPERenderLayer] {
         guard layers.contains(where: { $0.attachment != nil && $0.parentObjectID != nil }) else {
             return layers
         }
@@ -457,24 +459,45 @@ struct WPERenderGraphBuilder: Sendable {
             modelCache[path] = model
             return model
         }
-        return layers.map { layer in
+        var localOffsets: [String: SIMD3<Double>] = [:]
+        var sceneOffsets: [String: SIMD3<Double>] = [:]
+        for layer in layers {
             guard let attachmentName = layer.attachment,
                   let parentID = layer.parentObjectID,
                   let parent = layersByID[parentID],
                   let puppetPath = parent.puppetPath,
                   let model = parentModel(forPuppetPath: puppetPath),
-                  let offset = Self.staticAttachmentOffset(
+                  let local = Self.attachmentLocalOffset(
                       attachmentName: attachmentName,
                       parentGeometry: parent.geometry,
                       parentModel: model
-                  ) else {
-                return layer
+                  ) else { continue }
+            localOffsets[layer.objectID] = local
+            let parentTransform = WPERenderObjectTransform(
+                origin: .zero, scale: parent.geometry.scale, angles: parent.geometry.angles
+            )
+            sceneOffsets[layer.objectID] = parentTransform.combining(child: WPERenderObjectTransform(
+                origin: local, scale: SIMD3(repeating: 1), angles: .zero
+            )).origin
+        }
+        // An unattached grandchild still inherits its parent's bind-anchor displacement.
+        // Walk the document chain as transform-only hosts may not have render layers.
+        return layers.map { layer in
+            var offset = SIMD3<Double>.zero
+            var current: String? = layer.objectID
+            var seen: Set<String> = []
+            while let id = current, seen.insert(id).inserted, seen.count <= 100 {
+                offset += sceneOffsets[id] ?? .zero
+                current = parentByID[id]
             }
-            return layer.replacingGeometryOrigin(addingSceneOffset: offset)
+            return layer.replacingGeometryOrigin(
+                addingSceneOffset: offset,
+                attachmentOriginOffset: localOffsets[layer.objectID] ?? .zero
+            )
         }
     }
 
-    private static func staticAttachmentOffset(
+    private static func attachmentLocalOffset(
         attachmentName: String,
         parentGeometry: WPERenderLayerGeometry,
         parentModel: WPEPuppetModel
@@ -482,10 +505,7 @@ struct WPERenderGraphBuilder: Sendable {
         guard let attachment = parentModel.attachments.first(where: { $0.name == attachmentName }) else {
             return nil
         }
-        // The hierarchy-composed bind-world transform plus MDAT matrix locates the joint;
-        // the skin-weighted centroid is only a fallback when bind data is unavailable.
         let anchorPoint: SIMD2<Double>
-        // Character-sheet puppets (MDLV0019/0020) must use the bind-anchor pivot: mesh vertices are the exploded source sheet, so the skin-weighted centroid is meaningless.
         let isCharacterSheet = parentModel.version >= 19 && parentModel.version <= 20
         if useAttachmentBindAnchor || isCharacterSheet,
            let bindAnchor = bindAnchorPoint(for: attachment, model: parentModel) {
@@ -495,20 +515,9 @@ struct WPERenderGraphBuilder: Sendable {
         } else {
             return nil
         }
-        // The puppet mesh draws model→scene with no Y flip, so map the anchor with a +Y sign; subtract
-        // the parent mesh center so the offset is in the same composite frame the vertex shader uses.
-        let local = SIMD2<Double>(
-            parentGeometry.scale.x * (anchorPoint.x - parentGeometry.puppetMeshCenter.x),
-            parentGeometry.scale.y * (anchorPoint.y - parentGeometry.puppetMeshCenter.y)
-        )
-        let cosine = cos(parentGeometry.angles.z)
-        let sine = sin(parentGeometry.angles.z)
+        let local = anchorPoint - parentGeometry.puppetMeshCenter
         guard local.x.isFinite, local.y.isFinite else { return nil }
-        return SIMD3<Double>(
-            cosine * local.x - sine * local.y,
-            sine * local.x + cosine * local.y,
-            0
-        )
+        return SIMD3(local.x, local.y, 0)
     }
 
     private static func skinnedJoint(of boneIndex: Int, in meshes: [WPEPuppetMesh]) -> SIMD2<Double>? {
@@ -936,10 +945,20 @@ struct WPERenderGraphBuilder: Sendable {
             )
         }
 
-            for effect in object.effects where Self.buildsIntoGraph(effect) {
+        for (effectIndex, effect) in object.effects.enumerated() where Self.buildsIntoGraph(effect) {
                 let visibilityGate = Self.scriptVisibilityGate(for: effect)
             let asset = try loadEffect(path: effect.fileRelativePath)
-            context.localFBOs.append(contentsOf: asset.fbos)
+            // WPE's unique buffers belong to this effect instance, including when
+            // the same effect occurs twice on one object. Shared scratch and scene
+            // aliases keep their authored names.
+            let uniqueFBONames = Dictionary(uniqueKeysWithValues: asset.fbos.compactMap { fbo -> (String, String)? in
+                guard fbo.unique, !WPETextureReference.isSceneAliasName(fbo.name) else { return nil }
+                return (fbo.name, "_rt_unique_\(object.id.utf8.count)_\(object.id)_\(effectIndex)_\(fbo.name)")
+            })
+            context.localFBOs.append(contentsOf: asset.fbos.map { fbo in
+                WPERenderFBO(name: uniqueFBONames[fbo.name] ?? fbo.name, scale: fbo.scale,
+                             fit: fbo.fit, format: fbo.format, unique: fbo.unique, pixelSize: fbo.pixelSize)
+            })
             let effectDeclaredFBONames = Set(asset.fbos.map(\.name))
             var overrideIndex = 0
             for (effectPassIndex, effectPass) in asset.passes.enumerated() {
@@ -969,6 +988,7 @@ struct WPERenderGraphBuilder: Sendable {
                         materialUserTextures: material.userTextures,
                         overrideOwnerPath: effect.fileRelativePath,
                         overrideDeclaredFBONames: effectDeclaredFBONames,
+                        uniqueFBONames: uniqueFBONames,
                         binds: effectPass.binds,
                         explicitTarget: effectPass.target.map { .fbo(name: $0) },
                             visibilityGate: visibilityGate,
@@ -994,6 +1014,7 @@ struct WPERenderGraphBuilder: Sendable {
                         effectIdentity: effectIdentity,
                         overrideOwnerPath: effect.fileRelativePath,
                         overrideDeclaredFBONames: effectDeclaredFBONames,
+                        uniqueFBONames: uniqueFBONames,
                         binds: effectPass.binds,
                         explicitTarget: target.map { .fbo(name: $0) },
                             visibilityGate: visibilityGate,
@@ -1168,13 +1189,22 @@ struct WPERenderGraphBuilder: Sendable {
         materialUserTextures: [WPESceneUserTextureBinding] = [],
         overrideOwnerPath: String = "",
         overrideDeclaredFBONames: Set<String> = [],
+        uniqueFBONames: [String: String] = [:],
         binds: [Int: WPETextureReference],
         explicitTarget: WPERenderTarget?,
             visibilityGate: WPEPassVisibilityGate? = nil,
         to context: inout LayerBuildContext
     ) throws {
         for materialPass in passes {
-            let target = explicitTarget ?? .layerComposite(name: context.nextComposite)
+            let target: WPERenderTarget = if case let .fbo(name) = explicitTarget {
+                .fbo(name: uniqueFBONames[name] ?? name)
+            } else {
+                explicitTarget ?? .layerComposite(name: context.nextComposite)
+            }
+            func scoped(_ reference: WPETextureReference) -> WPETextureReference {
+                guard case let .fbo(name) = reference, let uniqueName = uniqueFBONames[name] else { return reference }
+                return .fbo(uniqueName)
+            }
             var merged = materialPass.merging(override: override) { path in
                 self.textureReference(
                     path,
@@ -1188,10 +1218,10 @@ struct WPERenderGraphBuilder: Sendable {
                 id: passID,
                 phase: phase,
                 shader: merged.shader,
-                source: context.source,
+                source: scoped(context.source),
                 target: target,
-                textures: merged.textures,
-                binds: binds,
+                textures: merged.textures.mapValues(scoped),
+                binds: binds.mapValues(scoped),
                 constants: merged.constants,
                 combos: merged.combos,
                 userTextureBindings: WPERenderUserTextureBindings(
@@ -2222,6 +2252,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,
@@ -2248,6 +2279,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,
@@ -2274,6 +2306,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,
@@ -2300,6 +2333,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,
@@ -2316,7 +2350,10 @@ private extension WPERenderLayer {
         )
     }
 
-    func replacingGeometryOrigin(addingSceneOffset offset: SIMD3<Double>) -> WPERenderLayer {
+    func replacingGeometryOrigin(
+        addingSceneOffset offset: SIMD3<Double>,
+        attachmentOriginOffset: SIMD3<Double>? = nil
+    ) -> WPERenderLayer {
         let g = geometry
         let newGeometry = WPERenderLayerGeometry(
             origin: SIMD3<Double>(g.origin.x + offset.x, g.origin.y + offset.y, g.origin.z + offset.z),
@@ -2341,6 +2378,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset ?? self.attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: newGeometry,
@@ -2367,6 +2405,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,

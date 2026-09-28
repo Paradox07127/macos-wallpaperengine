@@ -457,6 +457,9 @@ struct OracleCorpusCaptureTests {
                 resolutionDiagnostics: renderer.resolutionTracer.snapshot(),
                 frameOrdinal: index
             )
+            if let image = WPEMetalTextureSnapshotter.shared.snapshot(from: texture) {
+                WPESceneDebugArtifacts.shared.recordFirstFrame(image: image)
+            }
             WPESceneDebugArtifacts.shared.endSession()
             print("[oracle-capture] [\(id)] advanced to frame \(index) "
                   + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")

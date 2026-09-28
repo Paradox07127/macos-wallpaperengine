@@ -1219,8 +1219,11 @@ final class WPEMetalRenderExecutor {
         previousFrameHistory = PreviousFrameHistory(
             sceneSize: size,
             sceneTexture: frameState.latestSceneTexture,
-            // Never carry named FBOs across frames. A precise "carry only `.previous`-read targets" filter was tried and REGRESSED: effect-bind `{name:"previous"}` lowers to the SAME `.previous` token as true cross-frame feedback.
-            namedTextures: [:]
+            // `previous` is also an intra-effect source token: never infer history from it.
+            // Only explicitly named, unique read-before-write buffers survive a frame.
+            namedTextures: frameState.latestNamedTextures.filter {
+                cachedFBOAliasTopology?.historyFBONames.contains($0.key) == true
+            }
         )
         return graded
     }
@@ -2902,9 +2905,9 @@ final class WPEMetalRenderExecutor {
     }
 
     func passReadsCurrentTarget(_ pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID) -> Bool {
-        if pass.access.hasPreviousReference { return true }
+        if pass.access.readsTargetHistory { return true }
         guard case .named(let name) = targetID else { return false }
-        return pass.access.fboNames.contains(name)
+        return pass.access.boundFBONames.contains(name)
     }
 
     func translatedPipelineState(

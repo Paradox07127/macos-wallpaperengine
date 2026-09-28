@@ -83,6 +83,23 @@ struct WPEPuppetAttachmentFollowTests {
         #expect(origin.z == childOrigin.z)
     }
 
+    @Test("An unattached grandchild inherits the attached parent's bone motion exactly once")
+    func grandchildFollowsAttachment() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let parent = layer(id: "rig", origin: SIMD3(1000, 800, 0), puppetPath: "models/rig.mdl")
+        let child = layer(id: "face", origin: childOrigin, parentObjectID: "rig", attachment: "head")
+        let grandchild = layer(id: "jewel", origin: childOrigin + SIMD3(10, 20, 0), parentObjectID: "face")
+        let initial = context(parent: parent, boneTranslation: boneDelta)
+        let chain = WPEMetalRenderExecutor.PuppetAttachmentFrameContext(
+            layersByObjectID: initial.layersByObjectID.merging([
+                "face": WPEPreparedRenderLayer(graphLayer: child, passes: []),
+            ]) { first, _ in first }, skinningByObjectID: initial.skinningByObjectID, sceneSize: sceneSize
+        )
+        let moved = executor.layerApplyingAttachmentFollow(grandchild, context: chain)
+        #expect(abs(moved.geometry.origin.x - grandchild.geometry.origin.x - Double(boneDelta.x)) < 0.01)
+        #expect(abs(moved.geometry.origin.y - grandchild.geometry.origin.y - Double(boneDelta.y)) < 0.01)
+    }
+
     @Test("Zero bone motion under a mirrored parent leaves the child at its bind-pose origin")
     func zeroDeltaUnderMirroredParentIsNoOp() throws {
         let origin = try followedOrigin(parentScale: SIMD3<Double>(-1, -1, 1), angleZ: 0.7, boneTranslation: .zero)

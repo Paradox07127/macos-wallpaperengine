@@ -413,27 +413,27 @@ extension WPEMetalRenderExecutor {
         _ layer: WPERenderLayer,
         context: PuppetAttachmentFrameContext
     ) -> WPERenderLayer {
-        guard let parentID = layer.parentObjectID,
-              let attachmentName = layer.attachment,
-              let parent = context.layersByObjectID[parentID]?.graphLayer,
-              let parentState = context.skinningByObjectID[parentID],
-              parentState.enabled,
-              let attachment = parentState.attachmentsByName[attachmentName],
-              attachment.boneIndex >= 0,
-              attachment.boneIndex < parentState.palette.count else {
-            return layer
+        var delta = SIMD2<Float>.zero
+        var current: WPERenderLayer? = layer
+        var seen: Set<String> = []
+        while let child = current, seen.insert(child.objectID).inserted, seen.count <= 100 {
+            guard let parentID = child.parentObjectID,
+                  let parent = context.layersByObjectID[parentID]?.graphLayer else { break }
+            if let attachmentName = child.attachment,
+               let parentState = context.skinningByObjectID[parentID], parentState.enabled,
+               let attachment = parentState.attachmentsByName[attachmentName],
+               attachment.boneIndex >= 0, attachment.boneIndex < parentState.palette.count {
+                let rawBind = parentState.boneBindByIndex[attachment.boneIndex] ?? matrix_identity_float4x4
+                let restBind = parentState.assembledBoneBindByIndex[attachment.boneIndex] ?? rawBind
+                let currentAnchor = parentState.palette[attachment.boneIndex] * (rawBind * attachment.matrix)
+                let restAnchor = restBind * attachment.matrix
+                let rest = puppetModelPointToScene(SIMD2(restAnchor.columns.3.x, restAnchor.columns.3.y), layer: parent, sceneSize: context.sceneSize)
+                let animated = puppetModelPointToScene(SIMD2(currentAnchor.columns.3.x, currentAnchor.columns.3.y), layer: parent, sceneSize: context.sceneSize)
+                delta += animated - rest
+            }
+            current = parent
         }
-        let rawBoneBind = parentState.boneBindByIndex[attachment.boneIndex] ?? matrix_identity_float4x4
-        let assembledBoneBind = parentState.assembledBoneBindByIndex[attachment.boneIndex] ?? rawBoneBind
-        // CURRENT = palette * (rawBind * MDAT) because palette is `currentWorld · rawBind⁻¹`. REST = assembledBind * MDAT (frame-0 for character sheets); delta is animated motion only.
-        let anchorCurrentModel = parentState.palette[attachment.boneIndex] * (rawBoneBind * attachment.matrix)
-        let anchorBindModel = assembledBoneBind * attachment.matrix
-        let bindPoint = SIMD2<Float>(anchorBindModel.columns.3.x, anchorBindModel.columns.3.y)
-        let currentPoint = SIMD2<Float>(anchorCurrentModel.columns.3.x, anchorCurrentModel.columns.3.y)
-        let bindScene = puppetModelPointToScene(bindPoint, layer: parent, sceneSize: context.sceneSize)
-        let currentScene = puppetModelPointToScene(currentPoint, layer: parent, sceneSize: context.sceneSize)
-        let delta = SIMD2<Float>(currentScene.x - bindScene.x, currentScene.y - bindScene.y)
-        guard delta.x.isFinite, delta.y.isFinite else { return layer }
+        guard delta.x.isFinite, delta.y.isFinite, delta != .zero else { return layer }
         return replacingGeometryOrigin(of: layer, bySceneOffset: delta, sceneSize: context.sceneSize)
     }
 
@@ -513,6 +513,7 @@ extension WPEMetalRenderExecutor {
             puppetPath: layer.puppetPath,
             parentObjectID: layer.parentObjectID,
             attachment: layer.attachment,
+            attachmentOriginOffset: layer.attachmentOriginOffset,
             animationLayers: layer.animationLayers,
             authoredJSON: layer.authoredJSON,
             geometry: adjustedGeometry,
@@ -2400,6 +2401,7 @@ private extension WPERenderLayer {
             puppetPath: puppetPath,
             parentObjectID: parentObjectID,
             attachment: attachment,
+            attachmentOriginOffset: attachmentOriginOffset,
             animationLayers: animationLayers,
             authoredJSON: authoredJSON,
             geometry: geometry,
