@@ -29,16 +29,23 @@ struct SettingsConfirmationSourceTests {
         #expect(hostsAddSheet, "the settings page's sheet does not host SystemWallpaperAddSheet")
     }
 
-    @Test("The Add Video sheet cannot be closed while it publishes")
-    func addVideoSheetStaysOpenWhilePublishing() throws {
+    @Test("The Add Video sheet can close while publishing retains results and rejects a second publish")
+    func addVideoSheetCanCloseWhilePublishing() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift")
         let footer = try Self.slice(source, from: "SheetFooterBar(", to: ".frame(width:")
         let chooseFiles = try Self.slice(source, from: "private var chooseFilesRow", to: "private func toggle")
         let footerLocks = footer.contains(".disabled(isPublishing)")
         let chooseFilesLocks = chooseFiles.contains(".disabled(isPublishing)")
         let addStaysGated = footer.contains("primaryDisabled: selection.isEmpty || isPublishing")
-        #expect(footerLocks, "Cancel and its Esc shortcut close the sheet mid-publish, so later failures have nowhere to show")
-        #expect(chooseFilesLocks, "Choose Files closes the sheet mid-publish, so later failures have nowhere to show")
+        #expect(!footerLocks, "publishing must not disable Close or its Escape shortcut")
+        let marksClosed = footer.contains("cancelAction: { isClosed = true; dismiss() }")
+        #expect(marksClosed)
+        let publishing = try Self.slice(source, from: "private func publishSelection()", to: "\n}\n")
+        let retainsFailures = publishing.contains("service.reportPublishFailures(collected)")
+        let avoidsSecondDismiss = publishing.contains("if collected.isEmpty, !isClosed")
+        #expect(retainsFailures, "failures must remain in the service after the sheet closes")
+        #expect(avoidsSecondDismiss, "completion must not dismiss another presentation")
+        #expect(chooseFilesLocks, "Choose Files must not start a second publishing operation")
         #expect(addStaysGated, "Add can start a second publish while one is running")
     }
 
