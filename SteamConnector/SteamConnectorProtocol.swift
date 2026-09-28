@@ -1698,6 +1698,206 @@ enum SteamCMDDiagnosisRemedy {
     }
 }
 
+/// UTF-8 byte framing shared by pipe and PTY readers. Once a line exceeds the
+/// budget, none of it is eligible for semantic parsing, including its suffix.
+struct SteamCMDOutputFramer {
+    static let maxLineBytes = 64 * 1024
+    private var pending = Data()
+    private var dropping = false
+    private var previousWasCR = false
+    private(set) var discardedByteCount = 0
+    var pendingByteCount: Int {
+        pending.count
+    }
+
+    var partialLine: String? {
+        dropping ? nil : Self.text(pending)
+    }
+
+    mutating func append(_ chunk: Data) -> [String] {
+        var lines: [String] = []
+        for byte in chunk {
+            if byte == 10, previousWasCR {
+                previousWasCR = false
+                continue
+            }
+            previousWasCR = byte == 13
+            if byte == 10 || byte == 13 {
+                if !dropping {
+                    lines.append(Self.text(pending))
+                }
+                pending.removeAll(keepingCapacity: true)
+                dropping = false
+            } else if dropping {
+                discardedByteCount += 1
+            } else if pending.count == Self.maxLineBytes {
+                discardedByteCount += pending.count + 1
+                pending.removeAll(keepingCapacity: true)
+                dropping = true
+            } else {
+                pending.append(byte)
+            }
+        }
+        return lines
+    }
+
+    mutating func finish() -> [String] {
+        defer {
+            pending.removeAll(keepingCapacity: true)
+            dropping = false
+            previousWasCR = false
+        }
+        return dropping || pending.isEmpty ? [] : [Self.text(pending)]
+    }
+
+    /// Strip terminal decoration only after assembling bytes: a split UTF-8
+    /// scalar or ANSI escape remains intact until more bytes arrive.
+    private static func text(_ data: Data) -> String {
+        enum Escape { case none, start, csi, osc, oscEnd }
+        var state = Escape.none
+        var plain: [UInt8] = []
+        plain.reserveCapacity(data.count)
+        for byte in data {
+            switch state {
+            case .none:
+                if byte == 27 {
+                    state = .start
+                } else {
+                    plain.append(byte)
+                }
+            case .start:
+                if byte == 91 {
+                    state = .csi
+                } else if byte == 93 {
+                    state = .osc
+                } else {
+                    state = .none
+                }
+            case .csi:
+                if (0x40 ... 0x7E).contains(byte) {
+                    state = .none
+                }
+            case .osc:
+                if byte == 7 {
+                    state = .none
+                } else if byte == 27 {
+                    state = .oscEnd
+                }
+            case .oscEnd:
+                state = byte == 92 || byte == 7 ? .none : .osc
+            }
+        }
+        // Terminal bytes may be malformed; preserve readable replacement characters.
+        // swiftlint:disable:next optional_data_string_conversion
+        return String(decoding: plain, as: UTF8.self)
+    }
+}
+
+/// Only accepted lines reach both the diagnostic tail and downstream parsers.
+/// Keeping a raw suffix of a rejected line here would reintroduce false success
+/// through the callers' contains-based parsers even if the summary rejected it.
+struct SteamCMDOutputAccumulator {
+    private var framer = SteamCMDOutputFramer()
+    private var tail = SteamCMDOutputTail(maxBytes: 1 << 20)
+    private var summary = SteamCMDOutputSemanticSummary()
+    var pendingByteCount: Int {
+        framer.pendingByteCount
+    }
+
+    var retainedByteCount: Int {
+        tail.retainedByteCount
+    }
+
+    var discardedLineByteCount: Int {
+        framer.discardedByteCount
+    }
+
+    mutating func append(_ chunk: Data) -> [String] {
+        let lines = framer.append(chunk)
+        retain(lines)
+        return lines
+    }
+
+    mutating func finish() {
+        retain(framer.finish())
+    }
+
+    private mutating func retain(_ lines: [String]) {
+        for line in lines {
+            summary.consume(line)
+            tail.append(Data((line + "\n").utf8))
+        }
+    }
+
+    var output: String {
+        let omitted = discardedLineByteCount == 0 ? ""
+            : "[\(discardedLineByteCount) bytes in overlong output lines omitted]\n"
+        return omitted + summary.rendered(with: tail)
+    }
+}
+
+/// Retains one unfinished line plus classified state, never the login transcript.
+/// Prompts and refusals work without a newline. Success is committed only once
+/// the line ends (or EOF), so an overlong line cannot leave a success behind.
+struct SteamCMDLoginOutputAccumulator {
+    private var framer = SteamCMDOutputFramer()
+    private var completedEvent: SteamCMDLoginOutputClassifier.Event?
+    var retainedByteCount: Int {
+        framer.pendingByteCount
+    }
+
+    mutating func append(_ chunk: Data) {
+        consume(framer.append(chunk))
+    }
+
+    mutating func finish() {
+        consume(framer.finish())
+    }
+
+    private mutating func consume(_ lines: [String]) {
+        for line in lines {
+            completedEvent = preferred(completedEvent, SteamCMDLoginOutputClassifier.event(inTranscript: line))
+        }
+    }
+
+    var event: SteamCMDLoginOutputClassifier.Event? {
+        guard let partial = framer.partialLine,
+              let candidate = SteamCMDLoginOutputClassifier.event(inTranscript: partial) else {
+            return completedEvent
+        }
+        switch candidate {
+        case .loggedIn:
+            return completedEvent
+        default:
+            // A refusal can stop the child immediately without manufacturing success.
+            return preferred(completedEvent, candidate)
+        }
+    }
+
+    /// Match the existing classifier's precedence without retaining old text.
+    private func preferred(
+        _ first: SteamCMDLoginOutputClassifier.Event?, _ second: SteamCMDLoginOutputClassifier.Event?
+    ) -> SteamCMDLoginOutputClassifier.Event? {
+        guard let first else { return second }
+        guard let second else { return first }
+        func priority(_ event: SteamCMDLoginOutputClassifier.Event) -> Int {
+            switch event {
+            case .loggedIn: 0
+            case .rateLimited: 1
+            case .noConnection: 2
+            case .invalidGuardCode: 3
+            case .invalidPassword: 4
+            case .refused: 5
+            case .waitingForMobileConfirmation: 6
+            case .guardCodeTotpPrompt: 7
+            case .guardCodeEmailPrompt: 8
+            case .passwordPrompt: 9
+            }
+        }
+        return priority(first) <= priority(second) ? first : second
+    }
+}
+
 /// Bounded retention for a child process's output — a ring buffer, not an
 /// ever-growing `Data`: SteamCMD can emit hundreds of megabytes on a bad
 /// day, and "accumulate everything, take the last 500 characters" is the

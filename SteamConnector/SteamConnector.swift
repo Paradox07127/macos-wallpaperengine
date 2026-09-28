@@ -109,7 +109,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         timeout: TimeInterval,
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         operationID: String? = nil,
-        isCancelled: @Sendable () -> Bool = { false },
+        isCancelled: @escaping @Sendable () -> Bool = { false },
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
         // Every SteamCMD execution in this process funnels through here, so this
@@ -190,7 +190,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         timeout: TimeInterval,
         profileHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         activeOperationID: String? = nil,
-        isCancelled: @Sendable () -> Bool = { false },
+        isCancelled: @escaping @Sendable () -> Bool = { false },
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
         let process = Process()
@@ -227,9 +227,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // Downloaded item", public buildid) even after the ring has evicted them.
         let state = OSAllocatedUnfairLock(
             initialState: (
-                output: SteamCMDOutputTail(maxBytes: 1 << 20),
-                summary: SteamCMDOutputSemanticSummary(),
-                pending: "",
+                output: SteamCMDOutputAccumulator(),
                 timedOut: false,
                 finished: false
             )
@@ -242,32 +240,39 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         handle.readabilityHandler = { source in
             // Already torn down: never touch shared state after the waiter left.
             guard !state.withLock({ $0.finished }) else { return }
-            let chunk = source.availableData
-            guard !chunk.isEmpty else {
+            // One read of currently available bytes. FileHandle.read(upToCount:)
+            // can wait to fill its request on a pipe, delaying short progress lines.
+            var bytes = [UInt8](repeating: 0, count: 16 * 1024)
+            let count = Darwin.read(source.fileDescriptor, &bytes, bytes.count)
+            if count < 0, errno == EINTR {
+                return
+            }
+            guard count > 0 else {
                 let alreadyFinished = state.withLock { s -> Bool in
-                    if s.finished { return true }
+                    if s.finished {
+                        return true
+                    }
+                    if !isCancelled() {
+                        s.output.finish()
+                    }
                     s.finished = true
                     return false
                 }
-                if !alreadyFinished { done.signal() }
+                if !alreadyFinished {
+                    done.signal()
+                }
                 return
             }
+            let chunk = Data(bytes.prefix(count))
             let lines: [String] = state.withLock { s in
-                s.output.append(chunk)
-                s.pending += String(decoding: chunk, as: UTF8.self)
-                var complete: [String] = []
-                while let newline = s.pending.firstIndex(of: "\n") {
-                    complete.append(String(s.pending[..<newline]))
-                    s.pending = String(s.pending[s.pending.index(after: newline)...])
-                }
-                // Every line is offered to the summary, whether or not anyone is
-                // listening for progress — the facts it keeps are read from the
-                // final output, not streamed.
-                for line in complete { s.summary.consume(line) }
-                return complete
+                guard !s.finished, !isCancelled() else { return [] }
+                return s.output.append(chunk)
             }
             guard let onLine else { return }
-            for line in lines { onLine(line) }
+            for line in lines {
+                guard !isCancelled(), !state.withLock({ $0.finished }) else { return }
+                onLine(line)
+            }
         }
 
         if done.wait(timeout: .now() + timeout) == .timedOut {
@@ -290,9 +295,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // deallocated; a leaked descriptor per run adds up over a session.
         try? handle.close()
 
-        let snapshot = state.withLock { (output: $0.output, summary: $0.summary, timedOut: $0.timedOut) }
+        let snapshot = state.withLock { (output: $0.output, timedOut: $0.timedOut) }
         return SteamCMDRun(
-            output: snapshot.summary.rendered(with: snapshot.output),
+            output: snapshot.output.output,
             timedOut: snapshot.timedOut,
             exitCode: process.terminationStatus
         )
@@ -1125,7 +1130,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         binaryPath: String,
         request: SteamCMDLoginRequest,
         operationID: String,
-        isCancelled: @Sendable () -> Bool,
+        isCancelled: @escaping @Sendable () -> Bool,
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()
     ) -> SteamCMDLoginResult {
         guard !SteamCMDExecutionFence.refusesExecution(of: binaryPath) else {
@@ -1182,10 +1187,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     offset += written
                 }
             }
-            data.resetBytes(in: 0..<data.count)
+            data.resetBytes(in: 0 ..< data.count)
         }
 
-        var transcript = ""
+        var transcript = SteamCMDLoginOutputAccumulator()
         var sentPassword = false
         var sentGuardCode = false
         let deadline = Date().addingTimeInterval(
@@ -1202,15 +1207,22 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard !isCancelled() else { break }
             var pollDescriptor = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
             let ready = poll(&pollDescriptor, 1, 500)
+            var reachedEOF = false
             if ready > 0 {
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 let count = read(master, &buffer, buffer.count)
                 // EOF/EIO: the child closed its side — it exited.
-                guard count > 0 else { break }
-                transcript += String(decoding: buffer[0..<count], as: UTF8.self)
+                reachedEOF = count <= 0
+                if reachedEOF {
+                    transcript.finish()
+                } else {
+                    transcript.append(Data(buffer[0 ..< count]))
+                }
             }
-            guard let event = SteamCMDLoginOutputClassifier.event(inTranscript: transcript) else {
-                if !process.isRunning { break }
+            guard let event = transcript.event else {
+                if reachedEOF {
+                    break
+                }
                 continue
             }
             guard !isCancelled() else { break }
@@ -1220,7 +1232,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     sentPassword = true
                     write(secret: request.password)
                 }
-                if !process.isRunning { break readLoop }
+                if reachedEOF {
+                    break readLoop
+                }
             case .guardCodeEmailPrompt, .guardCodeTotpPrompt:
                 if let code = request.guardCode, !sentGuardCode {
                     sentGuardCode = true
@@ -1232,10 +1246,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                         ? .guardCodeEmailRequired : .guardCodeTotpRequired
                     break readLoop
                 }
-                if !process.isRunning { break readLoop }
+                if reachedEOF {
+                    break readLoop
+                }
             case .waitingForMobileConfirmation:
                 // Not an outcome — the user is reaching for their phone.
-                if !process.isRunning { break readLoop }
+                if reachedEOF {
+                    break readLoop
+                }
             case .invalidPassword:
                 outcome = .invalidPassword
                 break readLoop
@@ -1256,7 +1274,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 outcome = .success
                 // +quit is already queued. Keep draining output until SteamCMD
                 // finishes saving its session and exits on its own.
-                if !process.isRunning {
+                if reachedEOF {
                     break readLoop
                 }
             }
@@ -1272,7 +1290,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
         }
         if process.isRunning {
-            if outcome == .failed || outcome == .success {
+            if (outcome == .failed && refusalReason == nil) || outcome == .success {
                 outcome = .timedOut
             }
             process.terminate()
@@ -1769,7 +1787,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         steamCMDPath: String,
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         operationID: String? = nil,
-        isCancelled: @Sendable () -> Bool = { false }
+        isCancelled: @escaping @Sendable () -> Bool = { false }
     ) -> SteamCachedLoginResult {
         let run = runSteamCMD(
             steamCMDPath: steamCMDPath,
