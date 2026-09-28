@@ -1,58 +1,37 @@
-import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// One calm entry point over the selected display's macOS wallpaper.
+/// Setup actions for a display without a configured wallpaper.
 struct EmptyDisplaySetup: View {
     let screen: Screen
     let chooseFile: () -> Void
     let applyWebSource: (HTMLSource) -> Void
     /// nil while the wallpaper library is empty.
     var chooseFromLibrary: (() -> Void)?
-    @State private var wallpaper: CGImage?
     @State private var showsWebSetup = false
-    @State private var loading = true
-    @State private var refreshID = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                if let wallpaper {
-                    Image(decorative: wallpaper, scale: 1)
-                        .resizable().scaledToFill()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .overlay(Color.black.opacity(0.12))
+            VStack(spacing: 0) {
+                Spacer(minLength: 24)
+                if showsWebSetup {
+                    HTMLEmptyState(screen: screen, config: .default, apply: applyWebSource)
+                        .frame(width: min(540, proxy.size.width - 64), height: min(380, proxy.size.height - 100))
+                        .adaptiveGlassSurface(.roundedRectangle(24))
+                        .overlay(alignment: .topLeading) {
+                            GlassIconButton("chevron.left") { showsWebSetup = false }
+                                .help(Text("Set up this display"))
+                                .accessibilityLabel(Text("Set up this display"))
+                                .padding(16)
+                        }
+                } else {
+                    introduction
                 }
-                VStack(spacing: 0) {
-                    Spacer(minLength: 24)
-                    if showsWebSetup {
-                        HTMLEmptyState(screen: screen, config: .default, apply: applyWebSource)
-                            .frame(width: min(540, proxy.size.width - 64), height: min(380, proxy.size.height - 100))
-                            .adaptiveGlassSurface(.roundedRectangle(24))
-                            .overlay(alignment: .topLeading) {
-                                GlassIconButton("chevron.left") { showsWebSetup = false }
-                                    .help(Text("Set up this display"))
-                                    .accessibilityLabel(Text("Set up this display"))
-                                    .padding(16)
-                            }
-                    } else {
-                        introduction
-                    }
-                    Spacer(minLength: 24)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Spacer(minLength: 24)
             }
-            .overlay(alignment: .topTrailing) { backgroundControl.padding(16) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-        }
-        .task(id: refreshID) { await refresh() }
-        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)) { _ in
-            refreshID = UUID()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshID = UUID()
         }
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: showsWebSetup)
     }
@@ -99,30 +78,5 @@ struct EmptyDisplaySetup: View {
         }
         Button { showsWebSetup = true } label: { Label("Web", systemImage: "globe") }
             .adaptiveGlassButton(size: .large)
-    }
-
-    @ViewBuilder
-    private var backgroundControl: some View {
-        if loading {
-            ProgressView().controlSize(.small).padding(8)
-        } else {
-            HStack(spacing: 8) {
-                if wallpaper == nil {
-                    Text("Preview unavailable").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
-                }
-                GlassIconButton("arrow.clockwise") { refreshID = UUID() }
-                    .help(Text("Refresh macOS wallpaper"))
-                    .accessibilityLabel(Text("Refresh macOS wallpaper"))
-            }
-        }
-    }
-
-    @MainActor
-    private func refresh() async {
-        loading = true
-        let image = await DesktopWallpaperPreview.load(for: screen)
-        guard !Task.isCancelled else { return }
-        wallpaper = image
-        loading = false
     }
 }
