@@ -163,7 +163,10 @@ struct RuntimeTests {
             await AppTerminationCoordinator.run(
                 stopMonitorProducers: { await runtime.shutdown() },
                 flushMonitorCursors: { await probe.record("cursor-flush") },
-                flushSettings: { await probe.record("settings-flush") }
+                flushSettings: {
+                    await probe.record("settings-flush")
+                    return true
+                }
             )
         }
 

@@ -1,19 +1,23 @@
 import Foundation
+import LiveWallpaperCore
 
 enum AppTerminationCoordinator {
     typealias AsyncStep = @Sendable () async -> Void
     typealias BlockingStep = @Sendable () -> Void
 
     static func shutdownForApplication() async {
-        await run(
+        let saved = await run(
             stopMonitorProducers: { await Runtime.shared.shutdown() },
             flushMonitorCursors: {
                 await runBlockingOffMainActor {
                     SourceRegistration.flushCursorStoreForTermination()
                 }
             },
-            flushSettings: { _ = await SettingsManager.shared.flushPendingWrites() }
+            flushSettings: { await SettingsManager.shared.flushPendingWrites() }
         )
+        if !saved {
+            Logger.error("Application is quitting with settings that could not be saved", category: .settings)
+        }
     }
 
     /// Cursor persistence is synchronous by design so termination can wait for the exact committed revision.
@@ -26,13 +30,14 @@ enum AppTerminationCoordinator {
         }
     }
 
+    @discardableResult
     static func run(
         stopMonitorProducers: AsyncStep,
         flushMonitorCursors: AsyncStep,
-        flushSettings: AsyncStep
-    ) async {
+        flushSettings: @Sendable () async -> Bool
+    ) async -> Bool {
         await stopMonitorProducers()
         await flushMonitorCursors()
-        await flushSettings()
+        return await flushSettings()
     }
 }

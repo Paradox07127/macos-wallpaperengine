@@ -82,6 +82,35 @@ struct SettingsPersistenceFailureTests {
         await TestScratch.discard(root, flushing: manager, restarted)
     }
 
+    @Test("Termination reports a failed final disk promotion instead of a successful save")
+    func terminationPreservesFlushFailure() async throws {
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.ExitFlush")
+        defer { defaults.discard() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ExitFlush-\(UUID())")
+        let directory = ConfigurationDirectory(root: root)
+        let files = PromotionFailureFileManager()
+        let manager = SettingsManager(directory: directory, defaults: defaults.defaults, fileManager: files)
+        var settings = manager.loadGlobalSettings()
+        settings.globalPauseOnBattery = false
+        manager.saveGlobalSettings(settings)
+        #expect(await manager.flushPendingWrites())
+        files.failPromotions(to: [directory.url(for: .globalSettings)])
+        settings.globalPauseOnBattery = true
+        manager.saveGlobalSettings(settings)
+
+        let saved = await AppTerminationCoordinator.run(
+            stopMonitorProducers: {},
+            flushMonitorCursors: {},
+            flushSettings: { await manager.flushPendingWrites() }
+        )
+        #expect(!saved)
+        #expect(files.refusedPromotions(to: "global-settings.json") > 0)
+        #expect(manager.persistenceStatus.hasFailure)
+        #expect(AtomicFileStore<GlobalSettings>(fileURL: directory.url(for: .globalSettings)).read()?.globalPauseOnBattery == false)
+        files.allowPromotions()
+        await TestScratch.discard(root, flushing: manager)
+    }
+
     @Test("A failing global domain does not make a successful screen snapshot dirty; newer edits win on retry")
     func independentDomainsAndNewestRetry() async throws {
         let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.SM01")

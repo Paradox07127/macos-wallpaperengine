@@ -31,32 +31,51 @@ final class WorkshopFolderImportCoordinator {
 
     /// Requests made while an import runs, each imported as its own batch in arrival order.
     private var pendingFolders: [[URL]] = []
+    @ObservationIgnored private var importTask: Task<Void, Never>?
+    private var isTerminated = false
     @ObservationIgnored private let importService: WallpaperEngineImportService
+    @ObservationIgnored private let settings: SettingsManager
     @ObservationIgnored private let fileManager: FileManager
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        settings: SettingsManager = .shared
     ) {
         self.importService = importService
         self.fileManager = fileManager
+        self.settings = settings
     }
 
     /// One pass for every folder: a request made while another import or the download scan runs waits for it.
     func importProjects(from folders: [URL]) {
+        guard !isTerminated else { return }
         guard importer == nil else {
             pendingFolders.append(folders)
             return
         }
         importer = .folders
-        Task { [weak self] in
-            await self?.importQueue(startingWith: folders)
+        importTask = Task { [weak self] in
+            guard let self else { return }
+            await importQueue(startingWith: folders)
+            importTask = nil
         }
+    }
+
+    func shutdown() {
+        isTerminated = true
+        pendingFolders.removeAll()
+        importTask?.cancel()
+        progress = nil
+    }
+
+    private var allowsImport: Bool {
+        !isTerminated && !Task.isCancelled
     }
 
     private func importQueue(startingWith folders: [URL]) async {
         var next: [URL]? = folders
-        while let batch = next {
+        while let batch = next, allowsImport {
             await importAll(from: batch)
             next = pendingFolders.isEmpty ? nil : pendingFolders.removeFirst()
         }
@@ -106,7 +125,10 @@ final class WorkshopFolderImportCoordinator {
         var wallpaperEntries = 0
         progress = Progress(title: title, completed: 0, total: projectFolders.count)
         for projectFolder in projectFolders {
-            switch await importOne(projectFolder, deliberate: true, onWallpaperImported: { wallpaperEntries += 1 }) {
+            guard allowsImport else { return }
+            let outcome = await importOne(projectFolder, deliberate: true, onWallpaperImported: { wallpaperEntries += 1 })
+            guard allowsImport else { return }
+            switch outcome {
             case .imported: imported += 1
             case .rejected: rejected += 1
             case .unreadable: unreadable += 1
@@ -121,16 +143,16 @@ final class WorkshopFolderImportCoordinator {
 
     /// Skipped, not queued, while anything else imports: the scan reruns on the next Workshop visit.
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
-        guard importer == nil else { return }
+        guard allowsImport, importer == nil else { return }
         importer = .downloadScan
         defer {
             importer = nil
-            if !pendingFolders.isEmpty {
+            if !isTerminated, !pendingFolders.isEmpty {
                 importProjects(from: pendingFolders.removeFirst())
             }
         }
 
-        let settings = SettingsManager.shared.loadGlobalSettings()
+        let settings = settings.loadGlobalSettings()
         // Re-import when the stored source bookmark no longer resolves.
         var known = Set(
             settings.recentWPEImports
@@ -155,7 +177,7 @@ final class WorkshopFolderImportCoordinator {
 
         // Scan adds/relinks only; never prune on absence (unplugged drive ≠ deleted).
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
-            guard let self else { return }
+            guard let self, allowsImport else { return }
             let id = folder.lastPathComponent
             guard !known.contains(id) else { return }
             let isRelink = staleIDs.contains(id)
@@ -165,7 +187,7 @@ final class WorkshopFolderImportCoordinator {
             }
         }
 
-        guard added > 0 || repaired > 0 else { return }
+        guard allowsImport, added > 0 || repaired > 0 else { return }
         WorkshopToastCenter.shared.post(
             headline: String(localized: "Library synced", bundle: .appLanguage, comment: "Toast headline after auto-importing existing SteamCMD downloads."),
             title: String(localized: "SteamCMD downloads", bundle: .appLanguage, comment: "Toast subject for the SteamCMD download sync."),
@@ -213,10 +235,13 @@ final class WorkshopFolderImportCoordinator {
         preservesHistory: Bool = false,
         onWallpaperImported: (@MainActor () -> Void)? = nil
     ) async -> ProjectImportOutcome {
+        guard allowsImport else { return .unreadable }
         do {
-            switch try await importService.importProject(folder: projectFolder) {
+            let result = try await importService.importProject(folder: projectFolder)
+            guard allowsImport else { return .unreadable }
+            switch result {
             case .ready(_, let origin), .unsupported(let origin):
-                SettingsManager.shared.recordWPEImport(
+                settings.recordWPEImport(
                     WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil),
                     clearsDeleteTombstone: deliberate,
                     preservesHistory: preservesHistory
@@ -224,7 +249,7 @@ final class WorkshopFolderImportCoordinator {
                 onWallpaperImported?()
                 return .imported
             case let .workshopPreset(preset):
-                await SettingsManager.shared.registerScenePreset(
+                await settings.registerScenePreset(
                     preset,
                     clearsDeleteTombstone: deliberate
                 )

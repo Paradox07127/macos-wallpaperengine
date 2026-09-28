@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 @Suite("Workshop folder import — queued requests")
@@ -42,8 +43,8 @@ struct WorkshopFolderImportCoordinatorTests {
 
     // MARK: - Folder import and download scan share one importer
 
-    @Test(.timeLimit(.minutes(1)))
-    func aFolderRequestWaitsForTheDownloadScan() async throws {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func aFolderRequestWaitsForTheDownloadScan(cancelScan: Bool) async throws {
         let steam = try SteamDownloads()
         let folder = try unreadableLibrary()
         defer {
@@ -61,6 +62,9 @@ struct WorkshopFolderImportCoordinatorTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(finished.batches == 0, "a folder import ran while the download scan was still writing")
 
+        if cancelScan {
+            scan.cancel()
+        }
         await gate.release()
         await scan.value
         try await settle { !coordinator.isImporting }
@@ -116,6 +120,98 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(finished.batches == 2, "a folder import stayed locked out after a failed download scan")
     }
 
+    @Test("An import returning after final flush cannot publish history", .timeLimit(.minutes(1)))
+    func lateImportCannotWriteAfterTerminationFlush() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderExit-\(UUID())")
+        let folder = root.appendingPathComponent("project")
+        try writeVideoProject(at: folder, workshopID: "late-exit")
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FolderExit")
+        defer { defaults.discard() }
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
+        let gate = SuccessfulValidationGate()
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in await gate.park() }, makeBookmark: { Data($0.path.utf8) }),
+            settings: manager
+        )
+        let finished = ImportBatchLog()
+        coordinator.onLocalLibraryImported = { _ in finished.batches += 1 }
+        coordinator.importProjects(from: [folder])
+        try await settle { await gate.entries == 1 }
+        #expect(await gate.entries == 1)
+
+        let presetFolder = root.appendingPathComponent("preset")
+        try writePresetProject(at: presetFolder)
+        coordinator.importProjects(from: [presetFolder])
+        coordinator.shutdown()
+        coordinator.shutdown()
+        coordinator.importProjects(from: [presetFolder])
+        #expect(await manager.flushPendingWrites())
+        await gate.release()
+        try await settle { !coordinator.isImporting }
+
+        #expect(manager.loadGlobalSettings().recentWPEImports.isEmpty)
+        #expect(manager.loadGlobalSettings().scenePresets.isEmpty)
+        #expect(finished.batches == 0)
+        #expect(!manager.persistenceStatus.hasUnsavedChanges)
+        await TestScratch.discard(root, flushing: manager)
+    }
+
+    @Test("A borrowed download scan cannot publish after shutdown", .timeLimit(.minutes(1)))
+    func lateDownloadScanCannotWriteAfterTerminationFlush() async throws {
+        let steam = try SteamDownloads()
+        defer { steam.discard() }
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.ScanExit")
+        defer { defaults.discard() }
+        let root = steam.root.appendingPathComponent("settings")
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults.defaults)
+        let gate = SuccessfulValidationGate()
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in await gate.park() }, makeBookmark: { Data($0.path.utf8) }),
+            settings: manager
+        )
+        let scan = Task { await coordinator.ingestExistingDownloads(using: steam.doctor) }
+        try await settle { await gate.entries == 1 }
+        #expect(await gate.entries == 1)
+        coordinator.shutdown()
+        #expect(await manager.flushPendingWrites())
+        await gate.release()
+        await scan.value
+        #expect(manager.loadGlobalSettings().recentWPEImports.isEmpty)
+        #expect(!manager.persistenceStatus.hasUnsavedChanges)
+        await coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(await gate.entries == 1)
+        await TestScratch.discard(root, flushing: manager)
+    }
+
+    @Test("Completed wallpaper and preset imports survive the final flush", .timeLimit(.minutes(1)))
+    func completedImportsRemainDurable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderSaved-\(UUID())")
+        let folder = root.appendingPathComponent("project")
+        let presetFolder = root.appendingPathComponent("preset")
+        try writeVideoProject(at: folder, workshopID: "saved-exit")
+        try writePresetProject(at: presetFolder)
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FolderSaved")
+        defer { defaults.discard() }
+        let directory = ConfigurationDirectory(root: root.appendingPathComponent("settings"))
+        let manager = SettingsManager(directory: directory, defaults: defaults.defaults)
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { Data($0.path.utf8) }),
+            settings: manager
+        )
+        let finished = ImportBatchLog()
+        coordinator.onLocalLibraryImported = { _ in finished.batches += 1 }
+        coordinator.importProjects(from: [folder])
+        coordinator.importProjects(from: [presetFolder])
+        try await settle { !coordinator.isImporting }
+        #expect(finished.batches == 2)
+        coordinator.shutdown()
+        #expect(await manager.flushPendingWrites())
+        let restarted = SettingsManager(directory: directory, defaults: defaults.defaults)
+        #expect(restarted.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == ["saved-exit"])
+        #expect(restarted.loadGlobalSettings().scenePresets["3471679253"]?.baseWorkshopID == "3470764447")
+        await TestScratch.discard(root, flushing: manager, restarted)
+    }
+
     private func importer(parkingOn gate: ValidationGate) -> WallpaperEngineImportService {
         WallpaperEngineImportService(
             validateVideo: { _ in try await gate.park() },
@@ -139,6 +235,12 @@ private func writeVideoProject(at folder: URL, workshopID: String) throws {
     let manifest = #"{"workshopid":"\#(workshopID)","title":"Held","type":"video","file":"video.mp4"}"#
     try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
     try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
+}
+
+private func writePresetProject(at folder: URL) throws {
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let manifest = #"{"workshopid":"3471679253","title":"Preset","dependency":"3470764447","preset":{}}"#
+    try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
 }
 
 /// A scratch Steam library holding one downloaded video item, and a doctor bound to it.
@@ -185,6 +287,21 @@ private actor ValidationGate {
             continuation.resume(throwing: CancellationError())
         }
         parked = []
+    }
+}
+
+private actor SuccessfulValidationGate {
+    private(set) var entries = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func park() async {
+        entries += 1
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

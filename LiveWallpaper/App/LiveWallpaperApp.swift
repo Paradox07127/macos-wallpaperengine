@@ -411,6 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         QAControlPlane.shutdown()
         #endif
         #if !LITE_BUILD
+        WorkshopFolderImportCoordinator.shared.shutdown()
         SystemAudioCaptureManager.shared.shutdown()
         #endif
 
@@ -427,6 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } catch {
                     return
                 }
+                Logger.error("Application termination exceeded its save/cleanup budget; pending work is not confirmed complete", category: .settings)
                 reply()
             }
 
