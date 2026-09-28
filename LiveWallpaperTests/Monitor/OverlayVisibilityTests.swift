@@ -482,6 +482,49 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
     // MARK: - Two modules, one board (live controller)
 
     @MainActor
+    @Test("real overlay window releases empty space, hidden hosts and the last removed widget")
+    func optedInWindowLifecycle() async throws {
+        let runtime = makeRuntime()
+        let controller = OverlayController(runtime: runtime)
+        defer { controller.teardownAll() }
+        var overlay = MonitorOverlayConfiguration(
+            enabled: true, level: .desktop,
+            board: MonitorBoardConfiguration(widgets: [
+                MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.5, y: 0.5),
+            ], mouseInteractionEnabled: true)
+        )
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        controller.apply(overlay: overlay, screenID: 409, screenFrame: frame)
+        let window = try #require(controller.debugWindow(screenID: 409, module: .monitor))
+        let tile = window.convertPoint(toScreen: NSPoint(x: 497, y: 197))
+        let empty = window.convertPoint(toScreen: NSPoint(x: 700, y: 50))
+        #expect(window.acceptsMouseMovedEvents)
+        #expect(controller.debugIsTrackingPointer)
+        controller.debugMovePointer(to: tile)
+        #expect(!window.ignoresMouseEvents)
+        controller.debugMovePointer(to: empty)
+        #expect(window.ignoresMouseEvents)
+        controller.debugMovePointer(to: tile)
+        controller.updateVisibility(isUserAbsent: true, occludedScreenIDs: [])
+        #expect(window.ignoresMouseEvents)
+        #expect(!controller.debugIsTrackingPointer)
+        controller.updateVisibility(isUserAbsent: false, occludedScreenIDs: [])
+        #expect(controller.debugIsTrackingPointer)
+        controller.debugMovePointer(to: tile)
+        #expect(!window.ignoresMouseEvents)
+        overlay.board.widgets[0].isHidden = true
+        controller.apply(overlay: overlay, screenID: 409, screenFrame: frame)
+        #expect(window.ignoresMouseEvents)
+        #expect(!controller.debugIsTrackingPointer)
+        overlay.board.widgets.removeAll()
+        controller.apply(overlay: overlay, screenID: 409, screenFrame: frame)
+        #expect(window.ignoresMouseEvents)
+        controller.teardownAll()
+        await controller.waitUntilRuntimeSettled()
+        await runtime.shutdown()
+    }
+
+    @MainActor
     @Test("music hosts its own window while the Monitor board stays off")
     func musicModuleRunsWithTheMonitorBoardOff() async {
         let runtime = makeRuntime()

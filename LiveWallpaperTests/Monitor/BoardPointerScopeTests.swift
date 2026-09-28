@@ -55,7 +55,7 @@ struct BoardPointerScopeTests {
     }
 
     @MainActor
-    @Test("wholeBoard accepts every point and widgetsOnly accepts none")
+    @Test("explicit editing takes the board, normal interaction takes only visible tiles")
     func scopeExtremes() {
         let host = PointerBoard.makeHost()
 
@@ -64,10 +64,9 @@ struct BoardPointerScopeTests {
             #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(point)))
         }
 
-        // The board never resolves to this scope any more; if something forced
-        // it, the board still has to refuse rather than swallow desktop clicks.
         host.setPointerScope(.widgetsOnly)
-        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+        #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.emptySpot)))
     }
 
     @MainActor
@@ -78,7 +77,44 @@ struct BoardPointerScopeTests {
         #expect(HostView.pointerScope(for: passive, isEditing: true) == .wholeBoard)
 
         let optedIn = PointerBoard.configuration(mouseInteractionEnabled: true)
-        #expect(HostView.pointerScope(for: optedIn, isEditing: false) == .wholeBoard)
+        #expect(HostView.pointerScope(for: optedIn, isEditing: false) == .widgetsOnly)
+    }
+
+    @MainActor
+    @Test("opting in cannot capture an empty or entirely hidden desktop board")
+    func emptyAndHiddenBoardsPassThrough() {
+        var config = PointerBoard.configuration(mouseInteractionEnabled: true)
+        config.widgets.removeAll()
+        #expect(HostView.pointerScope(for: config, isEditing: false) == .none)
+        let host = PointerBoard.makeHost(mouseInteractionEnabled: true)
+        host.apply(configuration: config)
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.emptySpot)))
+        config = PointerBoard.configuration(mouseInteractionEnabled: true)
+        config.widgets[0].isHidden = true
+        host.apply(configuration: config)
+        #expect(host.pointerScope == .none)
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+    }
+
+    @MainActor
+    @Test("a persisted opt-in limits mouse delivery to the current tile, excluding its gutter")
+    func visibleTileGateFollowsEdits() throws {
+        var config = PointerBoard.configuration(mouseInteractionEnabled: true)
+        let persisted = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: JSONEncoder().encode(config))
+        let host = PointerBoard.makeHost()
+        host.apply(configuration: persisted)
+        #expect(host.pointerScope == .widgetsOnly)
+        #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(CGPoint(x: 401, y: 301))))
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.emptySpot)))
+        config.widgets[0].x = 0
+        config.widgets[0].y = 0
+        host.apply(configuration: config)
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+        #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(CGPoint(x: 85, y: 85))))
+        config.mouseInteractionEnabled = false
+        host.apply(configuration: config)
+        #expect(host.pointerScope == .none)
     }
 
     @Test("a hidden widgetsOnly host needs no pointer tracking")

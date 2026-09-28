@@ -87,7 +87,7 @@ struct BoardSettingsView: View {
             icon: "cursorarrow.rays",
             iconColor: draft.mouseInteractionEnabled ? .blue : .secondary,
             title: "Mouse Interaction",
-            info: "Receives clicks that would otherwise reach the desktop."
+            info: "Only visible widgets receive clicks. Empty areas remain click-through."
         ) {
             Toggle("", isOn: Binding(
                 get: { draft.mouseInteractionEnabled },

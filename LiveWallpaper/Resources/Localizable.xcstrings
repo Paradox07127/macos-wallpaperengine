@@ -49899,42 +49899,6 @@
         }
       }
     },
-    "Receives clicks that would otherwise reach the desktop." : {
-      "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Receives clicks that would otherwise reach the desktop."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recibe los clics que de otro modo llegarían al escritorio."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デスクトップに届くクリックを受け取ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收原本会传递到桌面的点击。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收原本會傳遞到桌面的點擊。"
-          }
-        }
-      }
-    },
     "Receives pointer movement and clicks." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -79464,6 +79428,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 台顯示器已設定桌布"
+          }
+        }
+      }
+    },
+    "Only visible widgets receive clicks. Empty areas remain click-through." : {
+      "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only visible widgets receive clicks. Empty areas remain click-through."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅可见的小组件接收点击，空白区域的点击将穿透至下方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅可見的小工具接收點按，空白區域的點按會穿透至下方。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示中のウィジェットのみクリックを受け付けます。空白部分のクリックは背後に届きます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo los widgets visibles reciben clics. Los clics en las zonas vacías llegan al fondo."
           }
         }
       }

@@ -27,6 +27,7 @@ final class OverlayWindow: NSPanel {
         isExcludedFromWindowsMenu = true
         isRestorable = false
         isMovable = false
+        acceptsMouseMovedEvents = true
         animationBehavior = .none
         // Must match the wallpaper underneath: a capturable overlay over a hidden wallpaper screenshots as widgets floating on the system desktop picture.
         sharingType = WallpaperCapturePolicy.windowSharingType

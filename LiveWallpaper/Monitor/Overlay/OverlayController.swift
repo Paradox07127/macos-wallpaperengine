@@ -324,6 +324,7 @@ final class OverlayController: NSObject {
                 if case .monitor(let view, _) = host.content {
                     host.content = .monitor(view, edited)
                 }
+                updateInteractive(host)
                 onOverlayEdited?(screenID, edited)
                 reconcileVisibilityAndRuntime()
             }
@@ -456,6 +457,18 @@ final class OverlayController: NSObject {
         Set(hosts.keys)
     }
 
+    func debugWindow(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> OverlayWindow? {
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.window
+    }
+
+    var debugIsTrackingPointer: Bool {
+        !pointerMonitors.isEmpty
+    }
+
+    func debugMovePointer(to point: NSPoint) {
+        pointerMoved(screenPoint: point)
+    }
+
     func board(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> MonitorBoardConfiguration? {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.boardConfig
     }
@@ -487,8 +500,12 @@ final class OverlayController: NSObject {
     }
 
     private func applyWindowMouseEvents(to host: Host, screenPoint: NSPoint? = nil) {
-        guard !OverlayPointerGate.pointerIsCaptured else { return }
         let scope = host.pointerScope
+        guard host.isVisible, scope != .none else {
+            host.window.setInteractive(false)
+            return
+        }
+        guard !OverlayPointerGate.pointerIsCaptured else { return }
         let point = screenPoint ?? NSEvent.mouseLocation
         host.window.setInteractive(OverlayPointerGate.windowTakesMouseEvents(
             scope: scope,
@@ -533,8 +550,8 @@ final class OverlayController: NSObject {
         pointerMonitors.removeAll()
     }
 
-    private func pointerMoved() {
-        let point = NSEvent.mouseLocation
+    private func pointerMoved(screenPoint: NSPoint? = nil) {
+        let point = screenPoint ?? NSEvent.mouseLocation
         for host in hosts.values where host.pointerScope == .widgetsOnly && host.isVisible {
             applyWindowMouseEvents(to: host, screenPoint: point)
         }
@@ -572,6 +589,10 @@ final class OverlayController: NSObject {
         }
         restackSameLevelHosts()
 
+        for host in hosts.values where host.isVisible {
+            applyWindowMouseEvents(to: host)
+        }
+        refreshPointerTracking()
         scheduleRuntimeReconciliation()
     }
 

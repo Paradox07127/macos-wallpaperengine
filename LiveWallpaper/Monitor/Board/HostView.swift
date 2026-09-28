@@ -8,7 +8,7 @@ enum PointerScope: Equatable, Sendable {
     case none
     /// Only the rectangles of widgets that asked for the pointer are live.
     case widgetsOnly
-    /// The whole board takes the pointer (edit mode, or Mouse Interaction on).
+    /// The whole board takes the pointer during explicit editing.
     case wholeBoard
 }
 
@@ -223,9 +223,11 @@ final class HostView: NSView {
         for configuration: MonitorBoardConfiguration,
         isEditing: Bool
     ) -> PointerScope {
-        // No tile asks for the pointer on its own: the board is either being
-        // edited, opted in wholesale, or plain wallpaper.
-        isEditing || configuration.mouseInteractionEnabled ? .wholeBoard : .none
+        if isEditing {
+            return .wholeBoard
+        }
+        return configuration.mouseInteractionEnabled && configuration.widgets.contains { !$0.isHidden }
+            ? .widgetsOnly : .none
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -243,9 +245,19 @@ final class HostView: NSView {
         case .wholeBoard:
             return true
         case .widgetsOnly:
-            // Board tiles never claim the pointer by themselves; the Now Playing
-            // layer, which does, has its own host.
-            return false
+            guard bounds.contains(local) else { return false }
+            let geometry = MonitorBoardGeometry(boardSize: bounds.size, safeArea: interactionModel.safeArea)
+            guard !geometry.isDegenerate else { return false }
+            let point = isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
+            return interactionModel.placements.contains { placement in
+                guard !placement.isHidden else { return false }
+                let size = geometry.pixelSize(for: placement.kind, size: placement.size)
+                let origin = LayoutEngine.pixelOrigin(
+                    normalized: CGPoint(x: placement.x, y: placement.y), boardSize: geometry.boardSize
+                )
+                let rect = CGRect(origin: geometry.clampOrigin(origin, footprint: size), size: size)
+                return geometry.renderRect(forRawRect: rect).contains(point)
+            }
         }
     }
 

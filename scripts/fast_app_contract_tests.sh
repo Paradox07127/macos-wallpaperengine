@@ -59,6 +59,8 @@ SUITES=(
   # this pins the ordering in source; deleting the guard left everything green.
   CacheInventoryArbitrationTests
   OverlayVisibilityLifecycleCharacterizationTests
+  BoardPointerScopeTests
+  MusicLayerPointerGateTests
   RuntimeLeaseChurnCharacterizationTests
   MonitorSamplerOwnershipCharacterizationTests
   SuspendEnergyTests
