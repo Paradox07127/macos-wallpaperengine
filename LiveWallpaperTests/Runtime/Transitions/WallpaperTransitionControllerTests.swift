@@ -592,9 +592,9 @@ struct WallpaperTransitionControllerTests {
 @Suite("Wallpaper transition setting")
 @MainActor
 struct WallpaperTransitionSettingTests {
-    private func scratchDefaults() throws -> (UserDefaults, String) {
-        let name = "WallpaperTransitionSettingTests.\(UUID().uuidString)"
-        return try (#require(UserDefaults(suiteName: name)), name)
+    private func scratchDefaults(variant: String = "", function: String = #function) throws -> (UserDefaults, String) {
+        let suite = try TestScratch.defaultsSuite(prefix: "WallpaperTransitionSettingTests\(variant)", function: function)
+        return (suite.defaults, suite.name)
     }
 
     @Test("An unset or unknown value reads as the crossfade")
@@ -609,7 +609,7 @@ struct WallpaperTransitionSettingTests {
 
     @Test("Every choice round-trips through the stored key", arguments: WallpaperTransitionChoice.allCases)
     func choicePersists(choice: WallpaperTransitionChoice) throws {
-        let (defaults, name) = try scratchDefaults()
+        let (defaults, name) = try scratchDefaults(variant: ".\(choice.rawValue)")
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(choice.rawValue, forKey: WallpaperTransitionChoice.defaultsKey)
         #expect(WallpaperTransitionChoice.stored(in: defaults) == choice)

@@ -1183,8 +1183,8 @@ struct S8aGridFidelityTests {
 @Suite("Fidelity S8b Workshop modal", .serialized)
 @MainActor
 struct S8bModalFidelityTests {
-    private func doctor() -> SteamCMDDoctorService {
-        SteamCMDDoctorService(defaults: UserDefaults(suiteName: "fidelity-probe-\(UUID().uuidString)")!)
+    private func doctor(function: String = #function) throws -> SteamCMDDoctorService {
+        try SteamCMDDoctorService(defaults: TestScratch.defaultsSuite(prefix: "fidelity-probe", function: function).defaults)
     }
 
     private func modal(windowSize: CGSize, doctor: SteamCMDDoctorService) -> some View {
@@ -1248,7 +1248,7 @@ struct S8bModalFidelityTests {
         let tag = "\(Int(window.width))x\(Int(window.height))"
         let panel = ModalGeometry.panelFrame(in: window)
         let expected = Self.previewBox(in: panel)
-        let service = doctor()
+        let service = try doctor()
         let workshopImage = await ProbeRenderer.render("S8b-\(tag)-dark", size: window) {
             ZStack { Color(white: 0.5); modal(windowSize: window, doctor: service) }
         }

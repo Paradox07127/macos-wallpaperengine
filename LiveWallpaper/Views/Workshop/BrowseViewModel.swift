@@ -319,6 +319,8 @@ final class BrowseViewModel {
     }
 
     @ObservationIgnored private var inflightFetch: Task<Bool, Never>?
+    /// The refresh `onAppear` started, kept so tests can await it before discarding their scratch cache.
+    @ObservationIgnored private(set) var appearRefresh: Task<Void, Never>?
     @ObservationIgnored private var currentRequestToken: UInt64 = 0
     /// The path the last fetch went to; nil before the first fetch.
     @ObservationIgnored private var fetchedKeyless: Bool?
@@ -373,9 +375,9 @@ final class BrowseViewModel {
     func onAppear() {
         let defaultsChanged = applySettingsDefaults()
         if let fetchedKeyless, fetchedKeyless != usesKeylessSearch {
-            Task { await browsePathChanged() }
+            appearRefresh = Task { await browsePathChanged() }
         } else if defaultsChanged || presetVisibilityChanged || (!hasLoadedPage && !isLoading && lastError == nil) {
-            Task { await reload() }
+            appearRefresh = Task { await reload() }
         }
     }
 

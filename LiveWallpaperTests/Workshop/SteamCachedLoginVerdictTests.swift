@@ -68,10 +68,9 @@ struct SteamCachedLoginVerdictTests {
     @Test("network and refusal verdicts carry their reason into the probe")
     @MainActor
     func networkVerdictsExplainThemselves() throws {
-        let defaults = try #require(UserDefaults(
-            suiteName: "LiveWallpaperTests.CachedLoginVerdict.\(UUID().uuidString)"
-        ))
-        let doctor = SteamCMDDoctorService(defaults: defaults)
+        let scratch = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.CachedLoginVerdict")
+        defer { scratch.discard() }
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
         doctor.username = "user"
         let binary = URL(fileURLWithPath: "/displayed/steamcmd")
 

@@ -7,7 +7,7 @@ import Testing
 struct OnboardingProgressTests {
     @Test("Fresh progress filters Workshop from the visible pages", arguments: [false, true])
     func fresh(workshopAvailable: Bool) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(workshopAvailable)")
         defer { stores.remove() }
         let progress = stores.progress(workshopAvailable: workshopAvailable)
         #expect(progress.completed.isEmpty)
@@ -20,7 +20,7 @@ struct OnboardingProgressTests {
 
     @Test("Legacy true, false and missing are checked once", arguments: [true, false, nil] as [Bool?])
     func migration(legacy: Bool?) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(String(describing: legacy))")
         defer { stores.remove() }
         if let legacy {
             stores.legacy.set(legacy, forKey: OnboardingProgress.legacyKey)
@@ -60,7 +60,7 @@ struct OnboardingProgressTests {
 
     @Test("Recorded and dismissed pages jointly finish the tour", arguments: [false, true])
     func handling(workshopAvailable: Bool) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(workshopAvailable)")
         defer { stores.remove() }
         stores.defaults.set([
             "completed": [], "dismissed": ["home"], "migratedFromLegacy": true,
@@ -85,7 +85,7 @@ struct OnboardingProgressTests {
 
     @Test("Skipping the rest dismisses what is left and keeps what was completed", arguments: [false, true])
     func skippingTheRestFinishesTheTour(workshopAvailable: Bool) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(workshopAvailable)")
         defer { stores.remove() }
         let progress = stores.progress(workshopAvailable: workshopAvailable)
         progress.record(.home)
@@ -112,7 +112,7 @@ struct OnboardingProgressTests {
 
     @Test("Next works without importing or signing in", arguments: [false, true])
     func explicitAdvancement(workshopAvailable: Bool) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(workshopAvailable)")
         defer { stores.remove() }
         let progress = stores.progress(workshopAvailable: workshopAvailable)
         #expect(progress.handled.isEmpty)
@@ -209,7 +209,7 @@ struct OnboardingProgressTests {
 
     @Test("Floating tour routes pages, goes back, preserves unfinished steps and finishes", arguments: [false, true])
     func floatingTour(workshopAvailable: Bool) throws {
-        let stores = try Stores()
+        let stores = try Stores(variant: ".\(workshopAvailable)")
         defer { stores.remove() }
         let progress = stores.progress(workshopAvailable: workshopAvailable)
         let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { workshopAvailable })
@@ -250,14 +250,17 @@ struct OnboardingProgressTests {
 
     @MainActor
     private struct Stores {
-        let name = "OnboardingProgressTests.\(UUID())"
-        let legacyName = "OnboardingProgressTests.legacy.\(UUID())"
+        let name: String
+        let legacyName: String
         let defaults: UserDefaults
         let legacy: UserDefaults
 
-        init() throws {
-            defaults = try #require(UserDefaults(suiteName: name))
-            legacy = try #require(UserDefaults(suiteName: legacyName))
+        /// Parameterized tests pass their argument as `variant`: parallel cases must not share a suite.
+        init(variant: String = "", function: String = #function) throws {
+            let current = try TestScratch.defaultsSuite(prefix: "OnboardingProgressTests\(variant)", function: function)
+            let previous = try TestScratch.defaultsSuite(prefix: "OnboardingProgressTests.legacy\(variant)", function: function)
+            (name, defaults) = (current.name, current.defaults)
+            (legacyName, legacy) = (previous.name, previous.defaults)
         }
 
         func progress(workshopAvailable: Bool = true) -> OnboardingProgress {

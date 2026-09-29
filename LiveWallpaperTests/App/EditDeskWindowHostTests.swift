@@ -75,13 +75,12 @@ struct EditDeskWindowHostTests {
 
     @Test("The root consumes cold and warm tour requests once", arguments: [false, true])
     func consumesTourOnce(cold: Bool) throws {
-        let suite = "EditDeskWindowHostTests.tour.\(UUID())"
-        let legacySuite = "EditDeskWindowHostTests.legacy.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        let legacy = try #require(UserDefaults(suiteName: legacySuite))
+        let tourSuite = try TestScratch.defaultsSuite("EditDeskWindowHostTests.tour.\(cold)")
+        let legacySuite = try TestScratch.defaultsSuite("EditDeskWindowHostTests.legacy.\(cold)")
+        let (defaults, legacy) = (tourSuite.defaults, legacySuite.defaults)
         defer {
-            defaults.removePersistentDomain(forName: suite)
-            legacy.removePersistentDomain(forName: legacySuite)
+            tourSuite.discard()
+            legacySuite.discard()
         }
         legacy.set(true, forKey: OnboardingProgress.legacyKey)
         let progress = OnboardingProgress(defaults: defaults, legacyDefaults: legacy, workshopAvailable: true)

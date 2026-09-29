@@ -59,8 +59,8 @@ struct EditDeskAccessibilityTests {
         return found
     }
 
-    private func progress() throws -> OnboardingProgress {
-        let defaults = try #require(UserDefaults(suiteName: "wp64.accessibility.\(UUID().uuidString)"))
+    private func progress(function: String = #function) throws -> OnboardingProgress {
+        let defaults = try TestScratch.defaultsSuite(prefix: "wp64.accessibility", function: function).defaults
         return OnboardingProgress(defaults: defaults, legacyDefaults: defaults, workshopAvailable: true)
     }
 

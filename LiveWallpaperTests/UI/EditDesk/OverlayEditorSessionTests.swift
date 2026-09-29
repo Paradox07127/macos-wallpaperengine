@@ -210,9 +210,9 @@ struct OverlayEditorSessionTests {
 
     @Test("Effects use the applied draft, remember their type, and are disabled without a configuration")
     func effectWriter() throws {
-        let suite = "OverlayEditorSessionTests.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let suite = try TestScratch.defaultsSuite(prefix: "OverlayEditorSessionTests")
+        defer { suite.discard() }
+        let defaults = suite.defaults
         let store = FakeOverlayStore()
         store.snapshots[store.displays[0]]?.configuration?.particleEffect = .rain
         let session = OverlayEditorSession(defaults: defaults)

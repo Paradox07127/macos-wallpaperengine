@@ -212,6 +212,7 @@ struct WallpaperExportServiceTests {
             build: "42", bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex", pid: 0
         )
         let rig = try makeRig(expectedProvider: installed)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let file = rig.root.appendingPathComponent("provider.json")
         // Init only reads: the test host is the real app and must not declare itself into the real container.
         #expect(!FileManager.default.fileExists(atPath: file.path))
@@ -223,6 +224,7 @@ struct WallpaperExportServiceTests {
     @Test("No bundled appex means no declaration file")
     func launchWithoutProviderDeclaresNothing() throws {
         let rig = try makeRig(expectedProvider: nil)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         rig.service.declareBundledProvider()
         #expect(!FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("provider.json").path))
     }
@@ -235,6 +237,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("SharedRemoval-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let video = videos.appendingPathComponent("clip.mp4")
         let thumbnail = videos.appendingPathComponent("clip.jpg")
         try Data("v".utf8).write(to: video)
@@ -266,6 +269,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("SharedRemovalPersistFail-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let video = videos.appendingPathComponent("clip.mp4")
         try Data("v".utf8).write(to: video)
         let manifest = SystemWallpaperManifest(
@@ -306,6 +310,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("OrphanSweep-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let referenced = videos.appendingPathComponent("keep.mp4")
         let oldOrphan = videos.appendingPathComponent("orphan.mp4")
         let youngOrphan = videos.appendingPathComponent("young.mp4")
@@ -335,6 +340,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("OrphanSweepStaging-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
 
         // `copyItem` carries the source's mtime over, so a staging file for a
         // year-old video reads as ancient the whole time the copy is running.
@@ -361,6 +367,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("OrphanSweepStale-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let staging = videos.appendingPathComponent(
             SystemWallpaperLibrary.stagingFileName(
                 itemID: "crashed", ext: "mp4",
@@ -382,6 +389,7 @@ struct WallpaperExportServiceTests {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("LockFailClosed-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         // A directory where the lock file belongs makes `open(…, O_WRONLY)` fail
         // with EISDIR — the stand-in for a root where the lock cannot be taken.
         try FileManager.default.createDirectory(
@@ -398,6 +406,7 @@ struct WallpaperExportServiceTests {
     @Test("A corrupt manifest fails the publish instead of rewriting the library away")
     func corruptManifestDoesNotSwallowExistingItems() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(named: "first.mp4", label: "First")
         try await rig.service.publish(bookmark: bookmark)
         let before = try rig.manifestOnDisk()
@@ -430,6 +439,7 @@ struct WallpaperExportServiceTests {
     @Test("A manifest that exists but cannot be read fails the publish like a corrupt one")
     func unreadableManifestFailsPublish() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let first = try rig.makeVideoBookmark(named: "first.mp4", label: "First")
         try await rig.service.publish(bookmark: first)
         try denyReads(rig.manifestURL)
@@ -450,6 +460,7 @@ struct WallpaperExportServiceTests {
     @Test("A republish that fails after the swap restores the video it displaced")
     func failedRepublishRestoresPreviousFiles() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let original = Data("original-payload".utf8)
         let first = try rig.makeVideoBookmark(named: "first.mp4", bytes: original, label: "First")
         try await rig.service.publish(bookmark: first)
@@ -484,6 +495,7 @@ struct WallpaperExportServiceTests {
     @Test("A republish under a new extension keeps the thumbnail the old entry points at")
     func failedRepublishWithNewExtensionKeepsThumbnail() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(named: "first.mp4", bytes: Data("original".utf8))
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
@@ -516,6 +528,7 @@ struct WallpaperExportServiceTests {
     @Test("A republish under a new extension drops the copy the old entry named")
     func republishWithNewExtensionRemovesOldVideo() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(named: "first.mp4", bytes: Data("original".utf8))
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
@@ -539,6 +552,7 @@ struct WallpaperExportServiceTests {
     func removeDuringPublishIsNotUndone() async throws {
         let hook = PublishHook()
         let rig = try makeRig(duringThumbnail: hook)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(bytes: Data("original".utf8))
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
@@ -567,6 +581,7 @@ struct WallpaperExportServiceTests {
     @Test("A failure in the middle of a multi-file import is not erased by a later success")
     func batchPublishKeepsMidListFailure() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let first = rig.sourceDirectory.appendingPathComponent("one.mp4")
         let third = rig.sourceDirectory.appendingPathComponent("three.mp4")
         for url in [first, third] { try Data("bytes".utf8).write(to: url) }
@@ -586,6 +601,7 @@ struct WallpaperExportServiceTests {
             .appendingPathComponent("OrphanSweepBackup-\(UUID().uuidString)")
         let videos = root.appendingPathComponent("Videos")
         try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         // The backup *is* the previously published video, so it carries that
         // file's mtime — months old for anything published a while ago.
         let backup = videos.appendingPathComponent(
@@ -624,6 +640,7 @@ struct WallpaperExportServiceTests {
     @Test("A Workshop video is sliced out of its package, not copied whole")
     func publishExtractsPackagedVideo() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let (bookmark, payload) = try rig.makePackagedVideoBookmark()
 
         try await rig.service.publish(bookmark: bookmark)
@@ -638,6 +655,7 @@ struct WallpaperExportServiceTests {
     @Test("A package missing the named video fails instead of publishing an empty file")
     func publishRejectsMissingPackageEntry() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let (bookmark, _) = try rig.makePackagedVideoBookmark(entryName: "video.mp4")
         let broken = WallpaperBookmark(
             label: bookmark.label,
@@ -659,6 +677,7 @@ struct WallpaperExportServiceTests {
     @Test("Publish copies the video, writes the thumbnail, and records both in the manifest")
     func publishWritesFilesAndManifest() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bytes = Data("unique-payload-\(UUID())".utf8)
         let bookmark = try rig.makeVideoBookmark(bytes: bytes, label: "Sunset")
 
@@ -686,6 +705,7 @@ struct WallpaperExportServiceTests {
     @Test("A failed thumbnail fails the publish and rolls the copy back — the panel refuses thumbnailless tiles")
     func publishFailsWithoutThumbnail() async throws {
         let rig = try makeRig(thumbnailJPEG: nil)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
 
         await #expect(throws: WallpaperExportService.ServiceError.thumbnailFailed) {
@@ -701,6 +721,7 @@ struct WallpaperExportServiceTests {
     @Test("A failed republish leaves the published copy playable — the live file is only touched by the atomic swap")
     func republishThumbnailFailureKeepsOldCopy() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(bytes: Data("original-bytes".utf8))
         try await rig.service.publish(bookmark: bookmark)
         let fileName = try #require(rig.service.items.first?.fileName)
@@ -734,6 +755,7 @@ struct WallpaperExportServiceTests {
     @Test("Publish rejects content that is not a video at all")
     func publishRejectsUnsupportedContent() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let web = WallpaperBookmark(
             label: "Web",
             content: .html(source: .file(bookmarkData: Data("x".utf8)), config: .default)
@@ -751,6 +773,7 @@ struct WallpaperExportServiceTests {
     @Test("Remove deletes both files and rewrites the manifest")
     func removeCleansUp() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
@@ -767,6 +790,7 @@ struct WallpaperExportServiceTests {
     @Test("Removing the item the system is playing is allowed — it is the only way out")
     func removeAllowsInUseItem() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
@@ -791,6 +815,7 @@ struct WallpaperExportServiceTests {
     @Test("An unhealthy heartbeat reads as system-incompatible")
     func statusSystemIncompatible() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -805,6 +830,7 @@ struct WallpaperExportServiceTests {
     @Test("An unhealthy verdict from a different OS build is ignored — the layout may be fine after an update")
     func statusIgnoresStaleOSVersionVerdict() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -829,6 +855,7 @@ struct WallpaperExportServiceTests {
     @Test("An unhealthy verdict from an older revision of the layout check is ignored")
     func statusIgnoresStaleRuntimeCheckVerdict() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -865,6 +892,7 @@ struct WallpaperExportServiceTests {
     @Test("In-use covers every active choice, not just the first display's")
     func isItemInUseChecksAllActiveChoices() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -881,6 +909,7 @@ struct WallpaperExportServiceTests {
     @Test("No items reads as empty")
     func statusEmpty() throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         rig.service.refresh()
         #expect(rig.service.status == .empty)
     }
@@ -888,6 +917,7 @@ struct WallpaperExportServiceTests {
     @Test("Items with a missing, stale, or choiceless heartbeat read as published-not-selected")
     func statusPublishedNotSelected() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
 
@@ -914,6 +944,7 @@ struct WallpaperExportServiceTests {
     @Test("A fresh heartbeat matching an item reads as in-use with its title")
     func statusInUse() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "Aurora")
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -932,6 +963,7 @@ struct WallpaperExportServiceTests {
             pid: 0
         )
         let rig = try makeRig(expectedProvider: installed)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "Aurora")
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -956,6 +988,7 @@ struct WallpaperExportServiceTests {
             pid: 0
         )
         let rig = try makeRig(expectedProvider: installed)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "Aurora")
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -979,6 +1012,7 @@ struct WallpaperExportServiceTests {
             pid: 0
         )
         let rig = try makeRig(expectedProvider: installed)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "Aurora")
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -1004,6 +1038,7 @@ struct WallpaperExportServiceTests {
             pid: 0
         )
         let rig = try makeRig(expectedProvider: installed)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "Aurora")
         try await rig.service.publish(bookmark: bookmark)
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
@@ -1023,6 +1058,7 @@ struct WallpaperExportServiceTests {
     @Test("A failed operation surfaces as failed until dismissed")
     func statusFailedOverlay() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let packaged = WallpaperBookmark(
             label: "Packed",
             content: .video(bookmarkData: Data("x".utf8), packageEntryName: "inner.mp4")
@@ -1039,6 +1075,7 @@ struct WallpaperExportServiceTests {
     @Test("A closed add sheet can report a mixed batch failure on the destination page")
     func closedSheetBatchFailure() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let invalid = WallpaperBookmark(label: "Missing", content: .video(bookmarkData: Data("missing".utf8), packageEntryName: "clip.mp4"))
         var failures: [String] = []
         do {
@@ -1062,6 +1099,7 @@ struct WallpaperExportServiceTests {
     @Test("A corrupt manifest is refused, not treated as an empty library")
     func corruptManifestIsRefused() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
         try Data("{not json]".utf8).write(to: rig.manifestURL)
 
@@ -1082,6 +1120,7 @@ struct WallpaperExportServiceTests {
     @Test("Republishing the same bookmark replaces its item instead of duplicating it")
     func republishReplaces() async throws {
         let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bookmark = try rig.makeVideoBookmark(label: "First")
         try await rig.service.publish(bookmark: bookmark)
         var renamed = bookmark

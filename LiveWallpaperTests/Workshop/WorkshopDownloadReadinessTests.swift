@@ -15,11 +15,11 @@ struct WorkshopDownloadReadinessTests {
 
     /// A bookmark the shared resolver can actually resolve (plain bookmark to a
     /// real folder; the live resolver falls back to plain resolution).
-    private func resolvableBookmark() throws -> Data {
+    private func resolvableBookmark() throws -> (bookmark: Data, directory: URL) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DownloadReadiness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return try dir.bookmarkData()
+        return try (dir.bookmarkData(), dir)
     }
 
     private func configureAllGreen(_ service: SteamCMDDoctorService, bookmark: Data) {
@@ -45,7 +45,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("A red binary-identity probe blocks downloads")
     func redIdentityProbeBlocksDownloads() throws {
         let service = try makeService()
-        configureAllGreen(service, bookmark: try resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         service.setProbe(.binaryIdentity, status: .red(message: "signature mismatch", command: nil))
 
         #expect(service.downloadBlocker != nil)
@@ -56,7 +58,9 @@ struct WorkshopDownloadReadinessTests {
         // Control: probes are not persisted, so .notRun must never block —
         // otherwise every launch demands a manual probe run before downloading.
         let service = try makeService()
-        configureAllGreen(service, bookmark: try resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         service.setProbe(.binaryIdentity, status: .notRun)
 
         #expect(service.downloadBlocker == nil)
@@ -69,7 +73,9 @@ struct WorkshopDownloadReadinessTests {
         #expect(service.downloadBlocker == .steamCMD)
         service.binaryPath = "/tmp/steamcmd"
         #expect(service.downloadBlocker == .library)
-        service.workdirBookmarkData = try resolvableBookmark()
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        service.workdirBookmarkData = grant.bookmark
         #expect(service.downloadBlocker == .account)
         service.username = "someone"
         #expect(service.downloadBlocker == nil)
@@ -80,7 +86,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("Confirmation needs a session proven this launch, not one nobody has refuted yet")
     func confirmationNeedsAGreenSession() throws {
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         service.setProbe(.cachedLogin, status: .notRun)
         #expect(service.isDownloadReady)
         #expect(!service.isDownloadConfirmed)
@@ -91,7 +99,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("An untested session after relaunch can attempt a cached download")
     func unknownSessionDoesNotMeanLoggedOut() throws {
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         service.setProbe(.cachedLogin, status: .notRun)
         #expect(service.downloadBlocker == nil)
         #expect(!service.isGreen(.cachedLogin))
@@ -102,7 +112,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("An operation reporting login-required demotes the green probe")
     func loginRequiredDemotesCachedLogin() throws {
         let service = try makeService()
-        configureAllGreen(service, bookmark: try resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         #expect(service.isGreen(.cachedLogin))
         #expect(service.downloadBlocker == nil)
 
@@ -121,7 +133,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("Removing the saved session stops an in-flight result from greening the probe")
     func removedSessionIgnoresInFlightResults() throws {
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         let inFlight = service.accountGeneration
 
         service.forgetSignedInSession()
@@ -140,7 +154,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("A transient network failure reddens the probe but does not block downloads")
     func transientFailureDoesNotBlockDownloads() throws {
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
 
         for outcome in [SteamCachedLoginOutcome.noConnection, .timedOut, .rateLimited] {
             service.applyCachedLoginOutcome(
@@ -161,7 +177,9 @@ struct WorkshopDownloadReadinessTests {
         // Control for the transient case above: these verdicts are about the
         // account, not the network, and must still gate.
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
 
         for outcome in [SteamCachedLoginOutcome.noCachedSession, .sessionExpired, .loginFailed] {
             service.applyCachedLoginOutcome(
@@ -176,7 +194,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("An operation that started under another account cannot colour this one")
     func staleOperationResultsAreIgnored() throws {
         let service = try makeService()
-        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
         service.setProbe(.cachedLogin, status: .notRun)
         let stale = service.accountGeneration
         try service.setUsername("bob")
@@ -197,7 +217,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("Red Workshop-wide diagnostics never block downloads")
     func advisoryProbesNeverBlockDownloads() throws {
         let service = try makeService()
-        configureAllGreen(service, bookmark: try resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
 
         for kind in [DoctorProbeKind.workshopContent, .sceneResources, .connector] {
             service.setProbe(kind, status: .red(message: "failing", command: nil))
@@ -251,7 +273,9 @@ struct WorkshopDownloadReadinessTests {
     @Test("Everything green with a resolvable grant is ready")
     func allGreenResolvableIsReady() throws {
         let service = try makeService()
-        configureAllGreen(service, bookmark: try resolvableBookmark())
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        configureAllGreen(service, bookmark: grant.bookmark)
 
         #expect(service.downloadBlocker == nil)
         #expect(service.isDownloadReady)

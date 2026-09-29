@@ -42,7 +42,7 @@ private struct HandoffHost {
     /// page's tile size, left at the default when nil.
     init(
         size: CGSize, count: Int = 60, onboarding: Bool = false, target: Bool = false, onLibrary: Bool = true,
-        backdrop: NSColor? = nil, tileSize: TileSizeBox? = nil
+        backdrop: NSColor? = nil, tileSize: TileSizeBox? = nil, function: String = #function
     ) throws {
         let screen = Screen(nsScreen: HandoffScreen())
         manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
@@ -83,10 +83,10 @@ private struct HandoffHost {
             root = AnyView(TileSized(box: tileSize, content: root))
         }
         if onboarding {
-            let name = "handoff.\(UUID().uuidString)"
-            let defaults = try #require(UserDefaults(suiteName: name))
+            let suite = try TestScratch.defaultsSuite(prefix: "handoff", function: function)
+            let defaults = suite.defaults
             root = AnyView(root.environment(OnboardingProgress(defaults: defaults, legacyDefaults: defaults, workshopAvailable: false)))
-            suiteName = name
+            suiteName = suite.name
         } else {
             suiteName = nil
         }

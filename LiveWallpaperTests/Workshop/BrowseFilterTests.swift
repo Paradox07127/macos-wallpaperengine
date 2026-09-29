@@ -1117,9 +1117,11 @@ struct BrowseRequestShapeTests {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.defaultSort.onAppear")
         defer { suite.discard() }
         let store = MutableSettings(defaultSort: "mostPopular")
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
+        defer { await model.appearRefresh?.value }
         #expect(model.preferredSort == .mostPopular)
 
         store.settings.workshopDefaultSort = "lastUpdated"
@@ -1139,9 +1141,11 @@ struct BrowseRequestShapeTests {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.defaultSort.onAppearSession")
         defer { suite.discard() }
         let store = MutableSettings(defaultSort: "mostPopular")
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
+        defer { await model.appearRefresh?.value }
 
         model.updateSort(.newest)
         store.settings.workshopDefaultSort = "lastUpdated"
@@ -1157,12 +1161,14 @@ struct BrowseRequestShapeTests {
     func onAppearReconcilesKeyPathFlippedOffPage() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearKeyPath")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(
             services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() },
             publicSource: Self.makeStubbedPublicSource()
         )
+        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage && !model.usesKeylessSearch)
 
@@ -1179,9 +1185,11 @@ struct BrowseRequestShapeTests {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearPresets")
         defer { suite.discard() }
         let store = MutableSettings(defaultSort: "mostPopular")
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
+        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage && model.currentRequest.excludedTags.contains("Preset"))
 
@@ -1196,9 +1204,11 @@ struct BrowseRequestShapeTests {
     func onAppearWithNothingChangedKeepsPage() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearUnchanged")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
+        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage)
 
@@ -1216,7 +1226,8 @@ struct BrowseRequestShapeTests {
     func rejectedKeyBrowsesKeyless() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.rejectedKey")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         await services.noteAuthVerdict(accepted: false, keyFingerprint: WorkshopQueryService.keyFingerprint(Self.stubbedKey))
         try #require(services.isKeyless)
@@ -1240,7 +1251,8 @@ struct BrowseRequestShapeTests {
     func keyLossLeavesCreatorScope() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.keyLossCreator")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource())
         model.applyScopeForTesting(creator: .init(steamID: "76561198000000001", name: nil))
@@ -1259,7 +1271,8 @@ struct BrowseRequestShapeTests {
     func keylessCreatorFetchIsRefused() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.keylessCreatorRefused")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         await services.noteAuthVerdict(accepted: false, keyFingerprint: WorkshopQueryService.keyFingerprint(Self.stubbedKey))
         let model = BrowseViewModel(services: services, defaults: suite.defaults, publicSource: Self.makeStubbedPublicSource())
@@ -1277,7 +1290,8 @@ struct BrowseRequestShapeTests {
     func keyRejectedNoticeLifecycle() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.rejectedKeyNotice")
         defer { suite.discard() }
-        let services = Self.makeStubbedServices()
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults)
         let fingerprint = WorkshopQueryService.keyFingerprint(Self.stubbedKey)
@@ -1309,7 +1323,7 @@ struct BrowseRequestShapeTests {
         )
     }
 
-    private static func makeStubbedServices() -> WorkshopServices {
+    private static func makeStubbedServices() -> (services: WorkshopServices, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-browse-reload-\(UUID().uuidString)", isDirectory: true)
         let keychain = WorkshopKeychainStore(
@@ -1325,7 +1339,7 @@ struct BrowseRequestShapeTests {
             session: URLSession(configuration: config),
             countIssuedRequest: {}
         )
-        return WorkshopServices(keychain: keychain, cache: cache, queryService: service)
+        return (WorkshopServices(keychain: keychain, cache: cache, queryService: service), directory)
     }
 
     @Test("Next stays live when the client filter shrank a full page")
