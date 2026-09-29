@@ -25,6 +25,21 @@ struct LibraryBookmarkStoreTests {
         #expect(!reopened.contains("bookmark:B"))
     }
 
+    @Test("After Clean All Settings, the next mark does not write the cleared ones back")
+    func resetAfterSettingsClearedForgetsOldMarks() throws {
+        let (defaults, suite) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = LibraryBookmarkStore(defaults: defaults)
+        store.add("a")
+        store.add("b")
+        defaults.removeObject(forKey: LibraryBookmarkStore.preferencesKey)
+        store.resetAfterSettingsCleared()
+        store.add("c")
+
+        #expect(store.ids == ["c"])
+        #expect(LibraryBookmarkStore(defaults: defaults).ids == ["c"])
+    }
+
     @Test("Removing or toggling off a mark drops only that mark")
     func removalKeepsTheOtherMarks() throws {
         let (defaults, suite) = try Self.defaults()

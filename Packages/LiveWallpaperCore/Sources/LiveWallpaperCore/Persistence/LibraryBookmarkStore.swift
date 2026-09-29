@@ -59,6 +59,12 @@ public final class LibraryBookmarkStore {
         save(merged)
     }
 
+    public func resetAfterSettingsCleared() {
+        ids = []
+        isArchiveUnreadable = false
+        hasStorageError = false
+    }
+
     private func save(_ updated: [String]) {
         guard !isArchiveUnreadable else {
             hasStorageError = true
