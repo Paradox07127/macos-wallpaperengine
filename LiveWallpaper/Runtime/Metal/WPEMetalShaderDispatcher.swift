@@ -705,11 +705,22 @@ struct WPEMetalShaderDispatcher {
         }
 
         resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
+        #if DEBUG
+        let (packedUniforms, uniformSources) = try executor.withUniformSourceTracing(
+            enabled: WPECanonicalTraceRecorder.shared.isAccumulating
+        ) {
+            try executor.packTranslatedUniformsForBinding(
+                for: pass, layout: result.uniformLayout,
+                texturesBySlot: resolvedTexturesBySlot
+            )
+        }
+        #else
         let packedUniforms = try executor.packTranslatedUniformsForBinding(
             for: pass,
             layout: result.uniformLayout,
             texturesBySlot: resolvedTexturesBySlot
         )
+        #endif
         #if !LITE_BUILD && DEBUG
         WPECanonicalTraceRecorder.shared.recordCustomPass(
             pass: pass,
@@ -726,7 +737,8 @@ struct WPEMetalShaderDispatcher {
                 depthTest: pass.pass.depthTest,
                 depthWrite: pass.pass.depthWrite,
                 reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
-            )
+            ),
+            uniformSources: uniformSources
         )
         #endif
 

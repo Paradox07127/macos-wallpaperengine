@@ -157,7 +157,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         textureBindings: [TextureBindingInput],
         packedUniformSlots: [SIMD4<Float>],
         usesObjectQuad: Bool,
-        nativeState: NativeRenderState
+        nativeState: NativeRenderState,
+        uniformSources: [WPEUniformValueSource]? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -237,7 +238,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "slot": 0,
             "resource": bufferResource,
             "rawBytesSha256": sha256Hex(packedBytes),
-            "variables": WPECanonicalUniformTrace.variables(layout: result.uniformLayout, slots: packedUniformSlots),
+            "variables": WPECanonicalUniformTrace.variables(
+                layout: result.uniformLayout, slots: packedUniformSlots, sources: uniformSources
+            ),
             "packedSlots": WPECanonicalUniformTrace.floatSlots(packedUniformSlots),
             "rawSlotBits": WPECanonicalUniformTrace.bitSlots(packedUniformSlots),
         ]

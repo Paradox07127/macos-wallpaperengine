@@ -89,7 +89,8 @@ struct WPECanonicalUniformTraceTests {
                                            samplerNames: [], textureSlotCount: 0),
             textureBindings: [], packedUniformSlots: slots, usesObjectQuad: false,
             nativeState: .scenePass(blendMode: "normal", alphaWritePolicy: .all, cullMode: "nocull",
-                                    depthAttached: false, depthTest: "disabled", depthWrite: "disabled", reversedZ: false)
+                                    depthAttached: false, depthTest: "disabled", depthWrite: "disabled", reversedZ: false),
+            uniformSources: [.passConstant("counter")]
         )
         let data = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
@@ -99,6 +100,8 @@ struct WPECanonicalUniformTraceTests {
         let buffers = try #require(passes[0]["constantBuffers"] as? [[String: Any]])
         let variables = try #require(buffers[0]["variables"] as? [[String: Any]])
         #expect((variables[0]["value"] as? NSNumber)?.intValue == -1)
+        #expect((variables[0]["bindingSource"] as? [String: String])?["key"] == "counter")
+        #expect((variables[0]["bindingSource"] as? [String: String])?["kind"] == "pass-constant")
         #expect(!recorder.isAccumulating)
         #expect(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])) == nil)

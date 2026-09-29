@@ -24,14 +24,22 @@ enum WPECanonicalUniformTrace {
         slots.map { slot in (0 ..< 4).map { slot[$0].bitPattern } }
     }
 
-    static func variables(layout: [WPEUniformSlot], slots: [SIMD4<Float>]) -> [[String: Any]] {
-        layout.map { uniform in
+    static func variables(
+        layout: [WPEUniformSlot], slots: [SIMD4<Float>], sources: [WPEUniformValueSource]? = nil
+    ) -> [[String: Any]] {
+        layout.enumerated().map { index, uniform -> [String: Any] in
             var record: [String: Any] = [
                 "name": uniform.name, "type": uniform.glslType,
                 "slot": uniform.slot, "slotCount": uniform.slotCount,
+                "byteOffset": uniform.slot * 16,
                 "arrayLength": uniform.arrayLength.map { $0 as Any } ?? NSNull(),
                 "materialName": uniform.materialName.map { $0 as Any } ?? NSNull(),
             ]
+            if let sources, sources.count == layout.count {
+                record["bindingSource"] = sources[index].traceValue
+            } else {
+                record["bindingSource"] = ["kind": "unrecorded"]
+            }
             guard let type = uniform.typeLayout, uniform.slot >= 0,
                   uniform.slot <= slots.count, uniform.slotCount > 0,
                   uniform.slotCount <= slots.count - uniform.slot,

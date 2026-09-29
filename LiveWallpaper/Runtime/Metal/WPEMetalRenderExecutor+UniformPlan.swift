@@ -225,6 +225,9 @@ extension WPEMetalRenderExecutor {
                named: Self.texelSizeUniformName,
                sceneSize: currentScenePixelSize
            ) {
+            #if DEBUG
+            recordUniformSource(.derived(.texelSize))
+            #endif
             return value
         }
         if plan.isTexelSizeHalf,
@@ -232,6 +235,9 @@ extension WPEMetalRenderExecutor {
                named: Self.texelSizeHalfUniformName,
                sceneSize: currentScenePixelSize
            ) {
+            #if DEBUG
+            recordUniformSource(.derived(.texelSizeHalf))
+            #endif
             return value
         }
         if plan.isScreen,
@@ -239,16 +245,25 @@ extension WPEMetalRenderExecutor {
                named: Self.screenUniformName,
                sceneSize: currentScenePixelSize
            ) {
+            #if DEBUG
+            recordUniformSource(.derived(.screen))
+            #endif
             return value
         }
         if let slot = plan.textureResolutionSlot,
            let texture = texturesBySlot?[slot] {
             let resolution = texturesBySlot?.resolution(at: slot)
                 ?? WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+            #if DEBUG
+            recordUniformSource(.derived(.textureResolution(slot)))
+            #endif
             return resolution.shaderValue
         }
         if let slot = plan.textureRotationSlot,
            let descriptor = texturesBySlot?.samplingDescriptor(at: slot) {
+            #if DEBUG
+            recordUniformSource(.derived(.textureRotation(slot)))
+            #endif
             return .vector([
                 Double(descriptor.rotation.x),
                 Double(descriptor.rotation.y),
@@ -258,6 +273,9 @@ extension WPEMetalRenderExecutor {
         }
         if let slot = plan.textureTranslationSlot,
            let descriptor = texturesBySlot?.samplingDescriptor(at: slot) {
+            #if DEBUG
+            recordUniformSource(.derived(.textureTranslation(slot)))
+            #endif
             return .vector([
                 Double(descriptor.translation.x),
                 Double(descriptor.translation.y)
@@ -269,18 +287,30 @@ extension WPEMetalRenderExecutor {
             switch step {
             case .frameGlobal(let name):
                 if let value = frame.value(named: name, passID: pass.id) {
+                    #if DEBUG
+                    recordUniformSource(.frameContext(name))
+                    #endif
                     return value
                 }
             case .passValue(let key):
                 if let value = pass.uniformValues[key] {
+                    #if DEBUG
+                    recordUniformSource(.passValue(key))
+                    #endif
                     return value
                 }
             case .passConstant(let key):
                 if let value = pass.pass.constants[key] {
+                    #if DEBUG
+                    recordUniformSource(.passConstant(key))
+                    #endif
                     return value
                 }
             }
         }
+        #if DEBUG
+        recordUniformSource(plan.defaultValue == nil ? .missing : .authoredDefault)
+        #endif
         return plan.defaultValue
     }
 }

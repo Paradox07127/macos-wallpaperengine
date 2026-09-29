@@ -261,6 +261,8 @@ SERIAL_SUITES=(
   DisplayDetailHostTests
   SceneSettingsOwnerTests
   ConfigurationPorterBookmarkMergeTests
+  WPEEffectProjectionReplayTests
+  WPEUniformSourceTraceTests
 )
 
 action="test"

@@ -140,6 +140,9 @@ final class WPEMetalRenderExecutor {
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
     var frameUniformContext: WPEFrameUniformContext = .empty
+    #if DEBUG
+    var uniformSourceTrace: [WPEUniformValueSource]?
+    #endif
     /// Previous logical shader timestamp and its derived delta. A fail-close
     /// frame can call `render` twice with the same timestamp; the second encode
     /// must reuse the first encode's `g_Frametime`, not collapse it to zero.
@@ -3054,6 +3057,9 @@ final class WPEMetalRenderExecutor {
                let packing = plans[index].directPacking,
                let vector = directUniformVector(packing, texturesBySlot: texturesBySlot) {
                 slots[u.slot] = vector
+                #if DEBUG
+                recordUniformSource(.derived(packing))
+                #endif
                 continue
             }
             let value = resolvedUniformValue(
