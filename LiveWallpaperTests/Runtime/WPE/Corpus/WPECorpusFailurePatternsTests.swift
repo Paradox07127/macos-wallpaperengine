@@ -1,8 +1,8 @@
 import Foundation
 @testable import LiveWallpaper
 import Metal
+import OSLog
 import Testing
-@testable import LiveWallpaper
 
 @MainActor
 @Suite("WPE corpus failure patterns")
@@ -721,6 +721,7 @@ struct WPECorpusFailurePatternsTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    @Test("Unused program-scope constants compile without warnings")
     func unusedProgramScopeConstantsCompileWithoutWarnings() throws {
         // A fresh name per run: Metal's compile cache would replay a hit without re-emitting warnings.
         let tag = "U" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
