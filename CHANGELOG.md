@@ -13,24 +13,34 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
-## [Unreleased]
+## [0.8.1] — 2026-09-29
 
 ### Added
 
 - Wallpaper Library entries can be marked with a yellow bookmark, and the
   Bookmarks filter lists only the marked ones.
-- Pro: a pink heart likes a Workshop item to download later, and the Workshop
-  page lists your likes next to Browse.
+- Pro: a pink heart likes a Workshop item to download later, and the Liked
+  toggle in the Workshop filter bar lists only your likes.
 
 ### Changed
 
+- The welcome tour is a set of dismissible spotlight guides with one step
+  counter, covering display setup, overlays, basic settings and Steam setup.
 - The Saved page is now Schemes and lists saved display setups only; its
   Bookmarks tab is replaced by the Wallpaper Library's Bookmarks filter.
+- Pro: the Steam account menu on the Workshop page is a glass capsule.
 
 ### Fixed
 
 - Pro: unliking a Workshop item (formerly removing its bookmark) no longer
   deletes its saved scenes from the Wallpaper Library.
+- Pro: scene layers attached to another layer keep their offset through
+  scripted transforms and child layers, and Gaussian blurs and multiply
+  blending over transparent areas render correctly again.
+- Pro: effect histories no longer leak between layers, and scenes that
+  declare the same history buffer twice load.
+- Redacting private details from very long log lines no longer slows down
+  bug reports.
 
 ## [0.8.0] — 2026-09-28
 

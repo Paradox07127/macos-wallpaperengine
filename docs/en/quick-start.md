@@ -146,4 +146,4 @@ The Workshop browser retains its query, filters, page, and selected item when sw
 
 ## Like Workshop wallpapers for later
 
-Use the pink heart on a Workshop catalog card, its context menu, or the detail view to like a wallpaper before downloading it. Switch the Workshop page from **Browse** to **Likes** to see what you liked, open details, and download later. Liking is local and does not download, subscribe to, or apply the item. Pro `.lwconfig` exports include your likes. They do not include the downloaded wallpaper media.
+Use the pink heart on a Workshop catalog card, its context menu, or the detail view to like a wallpaper before downloading it. Turn on **Liked** in the Workshop filter bar to see what you liked, open details, and download later. Liking is local and does not download, subscribe to, or apply the item. Pro `.lwconfig` exports include your likes. They do not include the downloaded wallpaper media.

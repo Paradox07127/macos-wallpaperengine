@@ -89,7 +89,7 @@ separate from identically named project properties.
 - **Bookmarks**: mark wallpapers you use often with the yellow bookmark, then
   pick the **Bookmarks** filter in the Wallpaper Library to list only those.
 - **Likes** (Pro): the pink heart on a Workshop item keeps it to download
-  later; the Workshop page's **Likes** list shows everything you liked.
+  later; the **Liked** toggle in the Workshop filter bar shows everything you liked.
 - **Schemes**: a full display setup, including wallpaper, overlays,
   playback, effects, playlist and schedule. Applying a scheme replaces that
   display's setup after confirmation. Positions adapt to the target display.
