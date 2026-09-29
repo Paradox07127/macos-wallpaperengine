@@ -33,6 +33,7 @@ enum WorkshopRequestCounter {
 struct BrowseFilterRibbon: View {
     let viewModel: BrowseViewModel
     let hasWebAPIKey: Bool
+    @Binding var showsLikes: Bool
 
     @State private var isFilterPanelExpanded = false
     @State private var filterRowsHeight: CGFloat = 240
@@ -65,6 +66,8 @@ struct BrowseFilterRibbon: View {
                 activeFilterCount: activeFilterCount,
                 isDisabled: controlsDisabled
             )
+            // Likes are local: this stays live while the Steam-backed controls are disabled.
+            WorkshopLikedToggle(isOn: $showsLikes)
 
             Spacer(minLength: DesignTokens.Spacing.sm)
 

@@ -946,7 +946,7 @@ struct BrowseRequestShapeTests {
     func miscellaneousActiveFilterCount() throws {
         let (model, suite) = try Self.makeModel("misc.count")
         defer { suite.discard() }
-        let ribbon = BrowseFilterRibbon(viewModel: model, hasWebAPIKey: true)
+        let ribbon = BrowseFilterRibbon(viewModel: model, hasWebAPIKey: true, showsLikes: .constant(false))
 
         #expect(ribbon.activeFilterCount == 0)
         model.toggleMiscellaneous("Approved")

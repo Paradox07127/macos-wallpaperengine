@@ -153,6 +153,15 @@ struct WorkshopPageSourceTests {
         }
     }
 
+    @Test("Liked is a toggle in the filter ribbon, not a segmented row above it")
+    func likedIsARibbonToggle() throws {
+        let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
+        #expect(ribbon.contains("WorkshopLikedToggle("), "the ribbon has no Liked toggle")
+        let pane = try RepositoryRoot.source(Self.browsePane)
+        #expect(!pane.contains("GlassSegmentedPicker("), "Browse / Likes is a segmented row above the ribbon again")
+        #expect(pane.contains("showsLikes: Binding("), "the ribbon's Liked toggle does not drive the listing")
+    }
+
     @Test("The workshop grid and its skeleton share one column preset")
     func gridAndSkeletonShareTheColumnPreset() throws {
         let source = try RepositoryRoot.source(Self.browsePane)

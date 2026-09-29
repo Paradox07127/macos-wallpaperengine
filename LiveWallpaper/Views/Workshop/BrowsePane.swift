@@ -83,6 +83,10 @@ struct BrowsePane: View {
                     listing.wrappedValue = .results
                 }
             }
+            // Keyed on the user's query inputs, not `reload()`: a preset-visibility reload must not leave Likes.
+            .onChange(of: queryInputs) { _, _ in
+                listing.wrappedValue = .results
+            }
     }
 
     private var mainColumn: some View {
@@ -95,10 +99,9 @@ struct BrowsePane: View {
 
     private var gridColumn: some View {
         VStack(spacing: 0) {
-            listingPicker
+            filterBand
             switch listing.wrappedValue {
             case .results:
-                filterBand
                 keyRejectedBanner
                 content
                     .overlay(alignment: .top) { rateLimitBanner }
@@ -108,21 +111,30 @@ struct BrowsePane: View {
         }
     }
 
-    private var listingPicker: some View {
-        GlassSegmentedPicker(selection: listing, values: [.results, .likes], shell: .editDesk) { value, isSelected in
-            Text(Self.title(for: value))
-                .font(DesignTokens.EditDesk.Typography.navItem)
-                .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
-        }
-        .fixedSize()
-        .padding(.vertical, DesignTokens.EditDesk.Spacing.s8)
+    private struct QueryInputs: Equatable {
+        let searchInput: String
+        let searchTextTarget: WorkshopSearchTextTarget
+        let sort: WorkshopSortMode
+        let timeFrame: WorkshopTimeFrame
+        let types: Set<WorkshopContentTypeFilter>
+        let ageRatings: Set<WorkshopAgeRatingFilter>
+        let resolutions: Set<WorkshopResolutionFilter>
+        let genres: Set<String>
+        let miscellaneous: Set<String>
     }
 
-    private static func title(for listing: WorkshopSession.Listing) -> LocalizedStringKey {
-        switch listing {
-        case .results: "Browse"
-        case .likes: "Likes"
-        }
+    private var queryInputs: QueryInputs {
+        QueryInputs(
+            searchInput: viewModel.searchInput,
+            searchTextTarget: viewModel.searchTextTarget,
+            sort: viewModel.preferredSort,
+            timeFrame: viewModel.preferredTimeFrame,
+            types: viewModel.selectedTypes,
+            ageRatings: viewModel.selectedAgeRatings,
+            resolutions: viewModel.selectedResolutions,
+            genres: viewModel.selectedGenres,
+            miscellaneous: viewModel.selectedMiscellaneous
+        )
     }
 
     @ViewBuilder
@@ -195,7 +207,11 @@ struct BrowsePane: View {
             // requiredtags / excludedtags), so the ribbon stays live without a key.
             BrowseFilterRibbon(
                 viewModel: viewModel,
-                hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch
+                hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch,
+                showsLikes: Binding(
+                    get: { listing.wrappedValue == .likes },
+                    set: { listing.wrappedValue = $0 ? .likes : .results }
+                )
             )
         }
     }

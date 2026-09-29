@@ -47,6 +47,28 @@ struct WorkshopFiltersToggle: View {
     }
 }
 
+struct WorkshopLikedToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isOn ? "heart.fill" : "heart")
+                    .foregroundStyle(isOn ? AnyShapeStyle(DesignTokens.Colors.like) : AnyShapeStyle(.foreground))
+                Text("Liked")
+            }
+            .font(DesignTokens.Typography.caption)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .help(Text("Show only wallpapers you liked"))
+        .accessibilityLabel(Text("Liked"))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
 /// Top-aligned so the label stays put when chips wrap onto several lines.
 struct WorkshopFilterRow<Content: View>: View {
     private let title: LocalizedStringKey
