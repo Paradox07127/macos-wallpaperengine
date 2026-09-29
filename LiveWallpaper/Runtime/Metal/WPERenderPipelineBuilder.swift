@@ -202,7 +202,7 @@ private struct WPEShaderLoadResult: Equatable, Sendable {
     let materialUniformNames: [String: String]
 }
 
-enum WPEShaderStage: Hashable, Sendable {
+enum WPEShaderStage: String, Codable, Hashable, Sendable {
     case vertex
     case fragment
 }

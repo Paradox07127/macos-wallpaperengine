@@ -141,7 +141,8 @@ struct WPESwiftShaderCompiler: Sendable {
             mslSource: mslSource,
             uniformLayout: uniformLayout,
             samplerNames: samplerNames,
-            textureSlotCount: textureSlotCount
+            textureSlotCount: textureSlotCount,
+            shaderInterface: WPEShaderInterfaceParser.parse(vertex: processedVertex, fragment: processedFragment)
         )
     }
 

@@ -42,6 +42,7 @@ PARALLEL_SUITES=(
   WPESceneSectionStateTests
   WPEUniqueEffectGraphTests
   WPEPreparedPassAccessTests
+  WPEShaderInterfaceTests
   # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
   # code into a severity tier and a set of recovery buttons has to be gated, or
   # a newly minted code lands in the wrong tier without anything going red.

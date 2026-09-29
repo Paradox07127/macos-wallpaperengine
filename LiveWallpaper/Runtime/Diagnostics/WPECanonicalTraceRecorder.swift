@@ -58,6 +58,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var frameComplete = false
     private var passes: [[String: Any]] = []
     private var resources: ResourceTables = ResourceTables()
+    private var semanticCoverage: [WPEShaderSemanticCoverage] = []
     private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
 
     private let artifacts: WPESceneDebugArtifacts
@@ -132,6 +133,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         scene = SceneContext(workshopID: workshopID, projectJsonPath: projectJsonPath, descriptor: descriptor)
         frameComplete = false
         passes.removeAll(keepingCapacity: true)
+        semanticCoverage.removeAll(keepingCapacity: true)
         resources = ResourceTables()
         self.shaderImplementationInventory = shaderImplementationInventory
         lock.unlock()
@@ -165,6 +167,15 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
 
+        let coverage = WPEShaderSemanticCoverage.fragmentOnly(
+            passID: pass.id,
+            authoredEffectID: shaderImplementationInventory.first { $0.renderPassID == pass.id }?.stableEffectID,
+            shaderName: pass.pass.shader,
+            sourceClassification: pass.shader?.executionClassification.rawValue,
+            sourceFingerprint: pass.shader?.sourceFingerprint,
+            interface: result.shaderInterface, layout: result.uniformLayout, sources: uniformSources
+        )
+        semanticCoverage.append(coverage)
         let ordinal = passes.count
         let target = destination.id
         let targetTexture = destination.texture
@@ -279,7 +290,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "constantBuffers": [constantBuffer],
             "state": state,
             "output": output,
-            "implementation": implementationRecord(for: pass.shader)
+            "implementation": implementationRecord(for: pass.shader),
+            "semanticCoverage": coverage.jsonObject(),
         ]
         passes.append(passRecord)
     }
@@ -737,6 +749,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         guard let scene, !frameComplete else { lock.unlock(); return nil }
         frameComplete = true
         let passSnapshot = passes
+        let semanticCoverageSnapshot = semanticCoverage
         let resourceSnapshot = resources
         let shaderImplementationInventorySnapshot = shaderImplementationInventory
         lock.unlock()
@@ -814,6 +827,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "capture": capture,
             "resources": resourceBlock,
             "passes": passSnapshot,
+            "semanticCoverage": WPEShaderSemanticCoverage.jsonObject(WPEShaderSemanticCoverage.Summary(semanticCoverageSnapshot)),
             "shaderImplementationInventory": shaderImplementationInventorySnapshot.map(
                 Self.shaderImplementationInventoryRecord
             ),

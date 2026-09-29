@@ -81,6 +81,8 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let samplerNames: [String]
     /// Fragment texture/sampler arity; cached because a hit restores MSL without re-running the transpiler.
     let textureSlotCount: Int
+    /// Rebuilt from the request on cold and warm compilation; never inferred from generated MSL.
+    var shaderInterface: WPEShaderInterface?
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {

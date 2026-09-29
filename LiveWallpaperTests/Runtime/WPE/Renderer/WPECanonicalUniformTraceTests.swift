@@ -102,9 +102,20 @@ struct WPECanonicalUniformTraceTests {
         #expect((variables[0]["value"] as? NSNumber)?.intValue == -1)
         #expect((variables[0]["bindingSource"] as? [String: String])?["key"] == "counter")
         #expect((variables[0]["bindingSource"] as? [String: String])?["kind"] == "pass-constant")
+        let coverage = try #require(passes[0]["semanticCoverage"] as? [String: Any])
+        #expect(coverage["passID"] as? String == "layer.0")
+        let summary = try #require(trace["semanticCoverage"] as? [String: Any])
+        #expect(summary["scope"] as? String == "observed-custom-draws-only")
+        #expect(summary["observedDraws"] as? Int == 1)
+        #expect(summary["uniquePasses"] as? Int == 1)
         #expect(!recorder.isAccumulating)
         #expect(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])) == nil)
+        recorder.beginScene(workshopID: "second-scene", projectJsonPath: nil, descriptor: "reset")
+        let reset = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
+                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
+        let resetTrace = try #require(JSONSerialization.jsonObject(with: reset) as? [String: Any])
+        #expect((resetTrace["semanticCoverage"] as? [String: Any])?["observedDraws"] as? Int == 0)
     }
 }
 #endif
