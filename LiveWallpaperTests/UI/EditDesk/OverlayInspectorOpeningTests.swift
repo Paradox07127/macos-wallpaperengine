@@ -274,15 +274,24 @@ private enum InspectorRender {
             window.contentView = nil
             window.close()
         }
-        let deadline = Date().addingTimeInterval(0.7)
-        while Date() < deadline {
+        func capture() throws -> Pixels {
             host.layoutSubtreeIfNeeded()
-            try? await Task.sleep(for: .milliseconds(10))
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            return try Pixels(#require(bitmap.cgImage), pointWidth: size.width)
         }
-        host.layoutSubtreeIfNeeded()
-        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        return try Pixels(#require(bitmap.cgImage), pointWidth: size.width)
+        // A control can draw a run-loop turn after the first layout; two matching captures in a row mean the column has settled.
+        var pixels = try capture()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+            let next = try capture()
+            if next == pixels {
+                break
+            }
+            pixels = next
+        }
+        return pixels
     }
 }
 
@@ -302,7 +311,7 @@ private struct RGB: Equatable, CustomStringConvertible {
 }
 
 /// sRGB bytes of a cached display; coordinates are points from the top left.
-private struct Pixels {
+private struct Pixels: Equatable {
     private let width: Int
     private let height: Int
     private let scale: CGFloat

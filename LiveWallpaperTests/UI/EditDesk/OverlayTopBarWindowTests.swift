@@ -31,7 +31,6 @@ struct OverlayTopBarWindowTests {
     func stripLayout(_ layout: Layout) throws {
         let fixture = TopBarFixture(size: layout.size, settingsShown: layout.settingsShown)
         defer { fixture.close() }
-        fixture.settle()
         let column = try #require(fixture.column, "the canvas column never mounted")
         let before = try #require(fixture.state.preview, "the canvas never reported its preview frame")
         let collapsed = fixture.state.frames
@@ -59,29 +58,17 @@ struct OverlayTopBarWindowTests {
         let english = try AppLanguageOverride.with(.english) { () throws -> CGRect in
             let fixture = TopBarFixture(size: size, settingsShown: true)
             defer { fixture.close() }
-            fixture.settle()
             return try #require(fixture.state.frames[.previewContents])
         }
         try AppLanguageOverride.with(.spanish) {
             let fixture = TopBarFixture(size: size, settingsShown: true)
             defer { fixture.close() }
-            fixture.settle()
             let column = try #require(fixture.column, "the canvas column never mounted")
             let spanish = try #require(fixture.state.frames[.previewContents])
             #expect(spanish.width > english.width + 4, "control: the Spanish menu (\(spanish.width)pt) is no wider than the English one (\(english.width)pt)")
             Self.expectStrip(fixture.state.frames, in: column, "es 1040")
             Self.report(fixture.state.frames, "es 1040")
         }
-    }
-
-    @Test("Probe images at 1040×644 with the settings column: both panels closed, then both open")
-    func probeImages() throws {
-        let fixture = TopBarFixture(size: CGSize(width: 1040, height: 644), settingsShown: true)
-        defer { fixture.close() }
-        fixture.settle()
-        fixture.writeImage("overlay-top-bar-1040-collapsed")
-        try fixture.openBothPanels()
-        fixture.writeImage("overlay-top-bar-1040-expanded")
     }
 
     private static func expectStrip(_ frames: [OverlayTopBarItem: CGRect], in column: CGRect, _ label: String) {
@@ -116,6 +103,22 @@ struct OverlayTopBarWindowTests {
     private static func same(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
         abs(lhs.minX - rhs.minX) <= 0.5 && abs(lhs.minY - rhs.minY) <= 0.5
             && abs(lhs.width - rhs.width) <= 0.5 && abs(lhs.height - rhs.height) <= 0.5
+    }
+}
+
+/// Only writes images to look at; its own suite keeps it off the fast shard's list, as the fidelity probes are.
+@Suite("Overlay top strip probe images")
+@MainActor
+struct OverlayTopBarProbeTests {
+    @Test("Probe images at 1040×644 with the settings column: both panels closed, then both open")
+    func probeImages() throws {
+        let fixture = TopBarFixture(size: CGSize(width: 1040, height: 644), settingsShown: true)
+        defer { fixture.close() }
+        fixture.settle()
+        fixture.writeImage("overlay-top-bar-1040-collapsed")
+        try fixture.openBothPanels()
+        fixture.settle()
+        fixture.writeImage("overlay-top-bar-1040-expanded")
     }
 }
 
@@ -195,7 +198,7 @@ private final class TopBarFixture {
         manager.tearDownForTermination()
     }
 
-    /// Runs the main run loop so SwiftUI lays out and delivers its preferences; synchronous, so a language override holds throughout.
+    /// Runs the main run loop past the panels' 0.22 s open animation, so a probe image shows them at rest.
     func settle(_ seconds: TimeInterval = 0.6) {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
@@ -220,7 +223,6 @@ private final class TopBarFixture {
         let effect = try #require(state.frames[.effect], "the effect panel reported no frame")
         click(CGPoint(x: layers.minX + 30, y: layers.minY + OverlayWorkspaceLayout.panelTitleHeight / 2))
         click(CGPoint(x: effect.minX + 30, y: effect.minY + OverlayWorkspaceLayout.panelTitleHeight / 2))
-        settle()
         #expect(state.layersVisible, "clicking the layers title did not open the panel")
         let opened = try #require(state.frames[.effect])
         #expect(opened.height > effect.height + 40, "clicking the effect title did not open the panel: \(effect.height) → \(opened.height)")
@@ -238,8 +240,9 @@ private final class TopBarFixture {
                 return
             }
             window.sendEvent(event)
-            settle(0.05)
         }
+        // The strip reports its new frames from inside this pass; the open animation only moves pixels.
+        host.layoutSubtreeIfNeeded()
     }
 
     func writeImage(_ name: String) {

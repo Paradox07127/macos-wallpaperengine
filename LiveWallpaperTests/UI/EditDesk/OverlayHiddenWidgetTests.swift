@@ -212,7 +212,6 @@ struct OverlayHiddenWidgetTests {
 
         /// `point` has a top-left origin; window coordinates start bottom-left.
         func click(window point: CGPoint) async {
-            try? await Task.sleep(for: .milliseconds(300))
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 guard let event = NSEvent.mouseEvent(
                     with: type, location: NSPoint(x: point.x, y: size.height - point.y), modifierFlags: [],
@@ -270,10 +269,7 @@ struct OverlayHiddenWidgetTests {
 
         /// Every switch in the panel, top row first.
         func switches() async -> [NSSwitch] {
-            for _ in 0 ..< 20 {
-                host.layoutSubtreeIfNeeded()
-                try? await Task.sleep(for: .milliseconds(10))
-            }
+            host.layoutSubtreeIfNeeded()
             var found: [NSSwitch] = []
             func collect(_ view: NSView) {
                 if let control = view as? NSSwitch {
@@ -359,11 +355,6 @@ private enum Snapshot {
     }
 
     static func cache(_ host: NSView, pointWidth: CGFloat) async throws -> Pixels {
-        let deadline = Date().addingTimeInterval(0.7)
-        while Date() < deadline {
-            host.layoutSubtreeIfNeeded()
-            try? await Task.sleep(for: .milliseconds(10))
-        }
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
