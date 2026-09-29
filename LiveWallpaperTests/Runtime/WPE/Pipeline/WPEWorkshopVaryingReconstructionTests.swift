@@ -373,8 +373,23 @@ struct WPEWorkshopVaryingReconstructionTests {
     }
     """
 
-    @Test("Iris Movement + cursor mode offsets by zero, not by the screen UV")
+    @Test("Iris Movement + cursor mode projects the pointer through the inverse effect projection")
     func reconstructsIrisMovementCursorOffset() throws {
+        let source = """
+        uniform vec2 g_CursorScale;
+        uniform vec2 g_CursorScaleMultiplier;
+        uniform vec2 g_CursorScaleLimit;
+        uniform vec2 g_PointerPosition;
+        uniform mat4 g_EffectTextureProjectionMatrixInverse;
+        """ + "\n" + Self.irisMovementFragment
+        let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: source, comboValues: [:])
+        #expect(msl.contains("v_TexCoordIris = wpe_iris_follow_cursor("))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
+        try compileMSL(msl)
+    }
+
+    @Test("Iris Movement + cursor mode without the inverse projection stays diagnosed")
+    func irisMovementCursorOffsetWithoutProjectionIsDiagnosed() throws {
         let source = """
         uniform vec2 g_CursorScale;
         uniform vec2 g_CursorScaleMultiplier;
@@ -382,9 +397,8 @@ struct WPEWorkshopVaryingReconstructionTests {
         uniform vec2 g_PointerPosition;
         """ + "\n" + Self.irisMovementFragment
         let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: source, comboValues: [:])
-        #expect(msl.contains("v_TexCoordIris = float2(0.0);"))
-        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
-        try compileMSL(msl)
+        #expect(msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
+        #expect(!msl.contains("v_TexCoordIris = wpe_iris_follow_cursor("))
     }
 
     @Test("Iris Movement + manual mode offsets by the authored XY")

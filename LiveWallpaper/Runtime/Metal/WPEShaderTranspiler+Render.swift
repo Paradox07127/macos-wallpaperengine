@@ -495,6 +495,25 @@ extension WPEShaderTranspiler {
                 da.y += cos(time) * noiseAmount;
                 return da * scale * 0.001;
             }
+            inline float2 wpe_iris_follow_cursor(float2 pointer, float4x4 inverseProjection, float2 scale, float2 multiplier, float2 limit) {
+                float2 c = pointer;
+                c.y = 1.0 - c.y;
+                c = (c - 0.5) * 2.0;
+                float4 t = inverseProjection * float4(c, 0.0, 1.0);
+                t.xy = clamp(t.xy, -limit, limit);
+                t.x *= -1.0;
+                return t.xy * scale * multiplier * 0.001;
+            }
+            inline float2 wpe_depth_parallax_offset(float2 parallaxPosition, float4x4 inverseProjection) {
+                float3x3 rot = float3x3(inverseProjection[0].xyz, inverseProjection[1].xyz, inverseProjection[2].xyz);
+                float2 dirX = (rot * float3(1.0, 0.0, 0.0)).xy;
+                float2 dirY = (rot * float3(0.0, 1.0, 0.0)).xy;
+                // Layers without a composite pass get a zero matrix; the unit-axis fallback avoids normalize(0) = NaN and reduces to g_ParallaxPosition.
+                float2 projectedDirX = dot(dirX, dirX) > 0.0 ? normalize(dirX) : float2(1.0, 0.0);
+                float2 projectedDirY = dot(dirY, dirY) > 0.0 ? normalize(dirY) : float2(0.0, 1.0);
+                float2 prlxInput = parallaxPosition * 2.0 - 1.0;
+                return (projectedDirX * prlxInput.x + projectedDirY * prlxInput.y) * 0.5 + 0.5;
+            }
             inline float wpe_foliage_aspect(float4 texture0Resolution, float ratio) {
                 float aspect = wpe_safe_ratio(texture0Resolution.z, texture0Resolution.w) * ratio;
                 return abs(aspect) > 0.000001 ? aspect : 1.0;
@@ -872,10 +891,16 @@ extension WPEShaderTranspiler {
                hasUniforms("g_Manual_XY", "g_ManualScale", "g_ManualScaleMultiplier", in: availableUniforms) {
                 return "g_Manual_XY * g_ManualScale * g_ManualScaleMultiplier * -0.001"
             }
-            // FOLLOWCURSOR branch: the offset is `mul(cursor, g_EffectTextureProjectionMatrixInverse)`, and that matrix is not supplied (packs zero), so the authored result is zero.
             if varying.metalType == "float2",
-               availableUniforms.contains("g_CursorScale") {
-                return "float2(0.0)"
+               hasUniforms(
+                "g_PointerPosition",
+                "g_EffectTextureProjectionMatrixInverse",
+                "g_CursorScale",
+                "g_CursorScaleMultiplier",
+                "g_CursorScaleLimit",
+                in: availableUniforms
+               ) {
+                return "wpe_iris_follow_cursor(g_PointerPosition, g_EffectTextureProjectionMatrixInverse, g_CursorScale, g_CursorScaleMultiplier, g_CursorScaleLimit)"
             }
         case "v_TexCoordNoise":
             // foliage variant: tiled noise rotated by g_Direction (needs g_Ratio too).
@@ -925,7 +950,11 @@ extension WPEShaderTranspiler {
                 return "0.0"
             }
         case "v_ParallaxOffset":
-            // Use `g_ParallaxPosition` (neutral 0.5 when centered); the full matrix form is excluded from fragment injection.
+            // With the inverse effect projection, rotate/mirror the input like depthparallax.vert; otherwise `g_ParallaxPosition` (neutral 0.5 when centered).
+            if varying.metalType == "float2",
+               hasUniforms("g_ParallaxPosition", "g_EffectTextureProjectionMatrixInverse", in: availableUniforms) {
+                return "wpe_depth_parallax_offset(g_ParallaxPosition, g_EffectTextureProjectionMatrixInverse)"
+            }
             if varying.metalType == "float2" {
                 return availableUniforms.contains("g_ParallaxPosition") ? "g_ParallaxPosition" : "float2(0.5)"
             }

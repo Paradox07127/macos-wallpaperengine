@@ -550,6 +550,65 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    @Test("v_ParallaxOffset projects g_ParallaxPosition through the inverse effect projection when the fragment has it")
+    func reconstructsParallaxOffsetFromInverseProjection() throws {
+        let source = """
+        #version 410 core
+        uniform sampler2D g_Texture0;
+        uniform vec2 g_ParallaxPosition;
+        uniform mat4 g_EffectTextureProjectionMatrixInverse;
+        in vec4 v_TexCoord;
+        in vec2 v_ParallaxOffset;
+        void main() {
+            gl_FragColor = texture(g_Texture0, v_TexCoord.xy + (v_ParallaxOffset - 0.5) * 0.1);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "effects/depthparallax",
+            preprocessedSource: source
+        )
+        #expect(result.mslSource.contains("float2 v_ParallaxOffset = wpe_depth_parallax_offset("))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
+    @Test("The vertex-only inverse effect projection reaches the fragment layout; other vertex matrices do not")
+    func vertexOnlyInverseEffectProjectionIsInjectedIntoFragment() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let compiler = WPESwiftShaderCompiler(device: device)
+        let request = WPEShaderCompileRequest(
+            shaderName: "effects/depthparallax",
+            processedVertexSource: """
+            uniform mat4 g_ModelViewProjectionMatrix;
+            uniform mat4 g_EffectTextureProjectionMatrixInverse;
+            uniform vec2 g_ParallaxPosition;
+            in vec3 a_Position;
+            void main() {
+                gl_Position = mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix);
+            }
+            """,
+            processedFragmentSource: """
+            uniform sampler2D g_Texture0;
+            in vec4 v_TexCoord;
+            in vec2 v_ParallaxOffset;
+            void main() {
+                gl_FragColor = texture(g_Texture0, v_TexCoord.xy + (v_ParallaxOffset - 0.5) * 0.1);
+            }
+            """,
+            sourceHash: "vertex-only-inverse-effect-projection-test",
+            comboValues: [:],
+            textureBindings: [:]
+        )
+        let result = try compiler.compile(request)
+        let matrix = try #require(result.uniformLayout.first { $0.name == "g_EffectTextureProjectionMatrixInverse" })
+        #expect(matrix.slotCount == 4)
+        #expect(!result.uniformLayout.contains { $0.name == "g_ModelViewProjectionMatrix" })
+        #expect(result.mslSource.contains("wpe_depth_parallax_offset("))
+        #expect(result.library.makeFunction(name: "wpe_translated_fragment") != nil)
+    }
+
     @Test("ivec/bvec uniforms unpack all components, not just .x")
     func unpacksIntAndBoolVectorUniforms() throws {
         let source = """
