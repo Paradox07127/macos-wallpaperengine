@@ -7,6 +7,13 @@ import Testing
 struct LocalizationCoverageTests {
     private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja", "es"]
 
+    /// Every file `projectSwiftFiles` sweeps, read and comment-blanked once per test process.
+    private static let projectSources = Result {
+        try projectSwiftFiles(["LiveWallpaper", "Packages"]).map { path in
+            try SourceFile(path: path, text: String(contentsOfFile: path, encoding: .utf8))
+        }
+    }
+
     static func projectSwiftFiles(_ roots: [String]) throws -> [String] {
         let base = RepositoryRoot.url("")
         var found: [String] = []
@@ -29,7 +36,7 @@ struct LocalizationCoverageTests {
         var i = 0
         let needle = Array("String(localized:")
         while i < chars.count {
-            guard i + needle.count <= chars.count,
+            guard chars[i] == "S", i + needle.count <= chars.count,
                   Array(chars[i..<(i + needle.count)]) == needle else {
                 // Allow whitespace/newline between `String(` and `localized:`.
                 if chars[i] == "S", let open = Self.matchLooseOpening(chars, at: i) {
@@ -105,7 +112,7 @@ struct LocalizationCoverageTests {
     @Test("Literal localization keys used in source still exist in the catalog")
     func literalLocalizationKeysExistInCatalog() throws {
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
-        let scan = try LocalizedLiteralScan.scanRepository(["LiveWallpaper", "Packages"])
+        let scan = try LocalizedLiteralScan.scanRepository()
 
         #expect(scan.fileCount > 100, "Source sweep collapsed to \(scan.fileCount) files — the key scan is unenforced")
         #expect(scan.keys.count > 500, "Only \(scan.keys.count) literal keys matched — the scan patterns stopped matching")
@@ -123,7 +130,7 @@ struct LocalizationCoverageTests {
     @Test("Interpolated localized literals resolve to a catalog key")
     func interpolatedLocalizationKeysExistInCatalog() throws {
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
-        let sites = try InterpolatedLiteralScan.scanRepository(["LiveWallpaper", "Packages"])
+        let sites = try InterpolatedLiteralScan.scanRepository()
 
         #expect(sites.count > 30, "Only \(sites.count) interpolated sites matched — the scan stopped matching")
         let keys = Array(catalog.strings.keys)
@@ -319,14 +326,15 @@ struct LocalizationCoverageTests {
 
         var offenders: [String] = []
         var checked = 0
-        for path in try Self.projectSwiftFiles(["LiveWallpaper", "Packages"]) {
-            if sharedWithAppExtension.contains(where: { path.hasSuffix($0) }) { continue }
-            let source = try String(contentsOfFile: path, encoding: .utf8)
-            for call in Self.stringLocalizedCalls(in: source) {
+        for file in try Self.projectSources.get() {
+            if sharedWithAppExtension.contains(where: { file.path.hasSuffix($0) }) {
+                continue
+            }
+            for call in Self.stringLocalizedCalls(in: file.text) {
                 checked += 1
                 if !call.contains("bundle:") {
                     let firstLine = call.split(separator: "\n").first.map(String.init) ?? call
-                    offenders.append("\(path): \(firstLine.prefix(80))")
+                    offenders.append("\(file.path): \(firstLine.prefix(80))")
                 }
             }
         }
@@ -353,13 +361,12 @@ struct LocalizationCoverageTests {
         }
         var offenders: [String] = []
         var checked = 0
-        for path in try Self.projectSwiftFiles(["LiveWallpaper", "Packages"]) {
-            let source = try LocalizedLiteralScan.scannableText(in: String(contentsOfFile: path, encoding: .utf8))
-            for call in Self.stringLocalizedCalls(in: source) {
-                for site in InterpolatedLiteralScan.parse(call, path: path) where isPlural(site) {
+        for file in try Self.projectSources.get() {
+            for call in Self.stringLocalizedCalls(in: file.scannable) {
+                for site in InterpolatedLiteralScan.parse(call, path: file.path) where isPlural(site) {
                     checked += 1
                     if !call.contains("locale: AppLanguagePreference.current.locale") {
-                        offenders.append("\(RepositoryRoot.relativePath(of: URL(fileURLWithPath: path))): \(site.literal.prefix(60))")
+                        offenders.append("\(RepositoryRoot.relativePath(of: URL(fileURLWithPath: file.path))): \(site.literal.prefix(60))")
                     }
                 }
             }
@@ -385,9 +392,7 @@ struct LocalizationCoverageTests {
         #expect(#"format: String(localized: "Say \"%1$@\" to %2$@", bundle: .appLanguage)"#.contains(literal(#"Say "%1$@" to %2$@"#)))
 
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
-        let source = try Self.projectSwiftFiles(["LiveWallpaper", "Packages"])
-            .map { try LocalizedLiteralScan.scannableText(in: String(contentsOfFile: $0, encoding: .utf8)) }
-            .joined(separator: "\n")
+        let source = try Self.projectSources.get().map(\.scannable).joined(separator: "\n")
         let unreachable = catalog.strings.keys.sorted().filter { key in
             key.range(of: #"%\d+\$"#, options: .regularExpression) != nil && !source.contains(literal(key))
         }
@@ -485,7 +490,18 @@ struct LocalizationCoverageTests {
             "Wallpaper Engine Cache",
         ]
 
-        let hits = disallowedPhrases.filter { source.contains($0) }
+        // Each search walks the whole multi-megabyte text, so they run side by side.
+        let found = await withTaskGroup(of: String?.self) { group in
+            for phrase in disallowedPhrases {
+                group.addTask { source.contains(phrase) ? phrase : nil }
+            }
+            var matched: Set<String> = []
+            for await case let phrase? in group {
+                matched.insert(phrase)
+            }
+            return matched
+        }
+        let hits = disallowedPhrases.filter(found.contains)
         #expect(hits.isEmpty, "User-facing import copy still implies online Workshop/WPE coupling: \(hits)")
         let usesWorkshopTitle = await MainActor.run {
             NavPill.title(for: .workshop) == LocalizedStringKey("Workshop")
@@ -495,6 +511,18 @@ struct LocalizationCoverageTests {
 
     private static func projectFile(_ relativePath: String) throws -> String {
         try RepositoryRoot.source(relativePath)
+    }
+}
+
+private struct SourceFile {
+    let path: String
+    let text: String
+    let scannable: String
+
+    init(path: String, text: String) {
+        self.path = path
+        self.text = text
+        scannable = LocalizedLiteralScan.scannableText(in: text)
     }
 }
 
@@ -509,31 +537,39 @@ private enum LocalizedLiteralScan {
 
     static var patternCount: Int { patterns.count }
 
-    static func scanRepository(_ relativePaths: [String]) throws -> (keys: [Hit], fileCount: Int) {
-        var collected: [Hit] = []
-        var fileCount = 0
-        for relativePath in relativePaths {
+    /// Shipping sources under LiveWallpaper and Packages, read and comment-blanked once per test
+    /// process; `path` is repository-relative.
+    static let repositorySources = Result {
+        try ["LiveWallpaper", "Packages"].flatMap { relativePath in
             // Package test fixtures are free to spell any string they like; only
             // shipping sources owe the catalog a key.
-            for url in RepositoryRoot.swiftFiles(under: relativePath) where !url.path.contains("/Tests/") {
-                fileCount += 1
-                let source = try String(contentsOf: url, encoding: .utf8)
-                let display = RepositoryRoot.relativePath(of: url)
-                collected.append(contentsOf: keys(in: source, path: display))
+            try RepositoryRoot.swiftFiles(under: relativePath).filter { !$0.path.contains("/Tests/") }.map { url in
+                try SourceFile(path: RepositoryRoot.relativePath(of: url), text: String(contentsOf: url, encoding: .utf8))
             }
         }
-        return (collected, fileCount)
+    }
+
+    static func scanRepository() throws -> (keys: [Hit], fileCount: Int) {
+        let sources = try repositorySources.get()
+        return (sources.flatMap { keys(inScannable: $0.scannable, path: $0.path) }, sources.count)
     }
 
     static func keys(in source: String, path: String) -> [Hit] {
-        let scannable = scannableText(in: source)
+        keys(inScannable: scannableText(in: source), path: path)
+    }
+
+    private static func keys(inScannable scannable: String, path: String) -> [Hit] {
         let range = NSRange(scannable.startIndex..<scannable.endIndex, in: scannable)
         return patterns.flatMap { pattern in
-            pattern.matches(in: scannable, range: range).compactMap { match -> Hit? in
+            // Matches come in source order, so each hit only counts the newlines since the last one.
+            var counted = scannable.startIndex
+            var line = 1
+            return pattern.matches(in: scannable, range: range).compactMap { match -> Hit? in
                 guard let keyRange = Range(match.range(at: 1), in: scannable) else { return nil }
                 let key = String(scannable[keyRange])
                 guard !key.isEmpty, !key.contains("\\") else { return nil }
-                let line = scannable[scannable.startIndex..<keyRange.lowerBound].filter { $0 == "\n" }.count + 1
+                line += scannable[counted ..< keyRange.lowerBound].filter { $0 == "\n" }.count
+                counted = keyRange.lowerBound
                 return Hit(key: key, location: "\(path):\(line)")
             }
         }
@@ -575,7 +611,7 @@ private enum LocalizedLiteralScan {
         while index < line.endIndex {
             let character = line[index]
             let next = line.index(after: index)
-            let pair = next < line.endIndex ? String([character, line[next]]) : ""
+            let pair = next < line.endIndex ? String(character) + String(line[next]) : ""
             if depth > 0 {
                 if pair == "*/" { depth -= 1; index = line.index(after: next); continue }
                 if pair == "/*" { depth += 1; index = line.index(after: next); continue }
@@ -621,9 +657,14 @@ private struct StringCatalog: Decodable {
     let sourceLanguage: String
     let strings: [String: Entry]
 
+    /// Decoded once per test process; every test here reads the same value.
+    private static let decoded = Dictionary(uniqueKeysWithValues: ["Localizable.xcstrings", "InfoPlist.xcstrings"].map { name in
+        (name, Result { try JSONDecoder().decode(StringCatalog.self, from: RepositoryRoot.data("LiveWallpaper/Resources/\(name)")) })
+    })
+
     static func load(named name: String) throws -> StringCatalog {
-        let data = try RepositoryRoot.data("LiveWallpaper/Resources/\(name)")
-        return try JSONDecoder().decode(StringCatalog.self, from: data)
+        guard let catalog = decoded[name] else { throw CocoaError(.fileReadNoSuchFile) }
+        return try catalog.get()
     }
 
     func keysMissingLocalization(_ locale: String) -> [String] {
@@ -689,11 +730,13 @@ private struct StringCatalog: Decodable {
         }
     }
 
+    private static let placeholderExpression = try? NSRegularExpression(
+        pattern: #"%(?:(\d+)\$)?[+\- #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|ll|[hlLzjtq])?[diuoxXfFeEgGaAcCsSp@]"#
+    )
+
     private static func placeholders(in value: String) -> [String] {
-        let pattern = #"%(?:(\d+)\$)?[+\- #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|ll|[hlLzjtq])?[diuoxXfFeEgGaAcCsSp@]"#
-        let expression = try? NSRegularExpression(pattern: pattern)
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
-        return expression?.matches(in: value, range: range).compactMap { match in
+        return placeholderExpression?.matches(in: value, range: range).compactMap { match in
             Range(match.range, in: value).map { String(value[$0]) }
         } ?? []
     }
@@ -706,8 +749,7 @@ private struct StringCatalog: Decodable {
     }
 
     private static func containsLiteralPercent(in value: String) -> Bool {
-        let placeholderPattern = #"%(?:(\d+)\$)?[+\- #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|ll|[hlLzjtq])?[diuoxXfFeEgGaAcCsSp@]"#
-        guard let expression = try? NSRegularExpression(pattern: placeholderPattern) else {
+        guard let expression = placeholderExpression else {
             return value.contains("%")
         }
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
@@ -848,15 +890,8 @@ private enum InterpolatedLiteralScan {
         }
     }
 
-    static func scanRepository(_ relativePaths: [String]) throws -> [Site] {
-        var sites: [Site] = []
-        for relativePath in relativePaths {
-            for url in RepositoryRoot.swiftFiles(under: relativePath) where !url.path.contains("/Tests/") {
-                let source = LocalizedLiteralScan.scannableText(in: try String(contentsOf: url, encoding: .utf8))
-                sites.append(contentsOf: parse(source, path: RepositoryRoot.relativePath(of: url)))
-            }
-        }
-        return sites
+    static func scanRepository() throws -> [Site] {
+        try LocalizedLiteralScan.repositorySources.get().flatMap { parse($0.scannable, path: $0.path) }
     }
 
     private static let pattern = try? NSRegularExpression(
