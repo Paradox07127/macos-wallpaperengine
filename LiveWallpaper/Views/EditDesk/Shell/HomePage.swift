@@ -14,6 +14,7 @@ struct HomePage: View {
     @Environment(\.galleryCardPreferences) private var cardPreferences
     @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
+    @Environment(WallpaperExportService.self) private var exportService: WallpaperExportService?
     #if !LITE_BUILD
     /// Optional: a page mounted without the Workshop services (tests) still opens the modal, minus update and delete.
     @Environment(SteamCMDDoctorService.self) private var doctor: SteamCMDDoctorService?
@@ -558,18 +559,20 @@ struct HomePage: View {
         #if LITE_BUILD
         ModalActions(
             library: library, screenManager: screenManager, thumbnails: thumbnails, undo: undo,
-            apply: applyFromModal, applyToAll: applyAllFromModal
+            exportService: exportService, apply: applyFromModal, applyToAll: applyAllFromModal
         )
         #else
         if let doctor {
             return ModalActions(
                 library: library, screenManager: screenManager, thumbnails: thumbnails, doctor: doctor,
-                installedLibrary: installedLibrary, undo: undo, apply: applyFromModal, applyToAll: applyAllFromModal
+                installedLibrary: installedLibrary, undo: undo, exportService: exportService,
+                apply: applyFromModal, applyToAll: applyAllFromModal
             )
         }
         return ModalActions(
             inputs: .live(library: library, screenManager: screenManager), bookmarks: .shared,
-            thumbnails: thumbnails, undo: undo, apply: applyFromModal, applyToAll: applyAllFromModal
+            thumbnails: thumbnails, undo: undo, exportService: exportService,
+            apply: applyFromModal, applyToAll: applyAllFromModal
         )
         #endif
     }

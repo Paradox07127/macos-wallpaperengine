@@ -646,6 +646,9 @@ final class SettingsManager {
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
 
         defaults.removeObject(forKey: WorkshopBookmarkStore.preferencesKey)
+        defaults.removeObject(forKey: LibraryBookmarkStore.preferencesKey)
+        defaults.removeObject(forKey: SavedLibraryModel.bookmarksMigratedKey)
+        LibraryBookmarkStore.shared.resetAfterSettingsCleared()
         #if !LITE_BUILD
         WorkshopBookmarkStore.shared.resetAfterSettingsCleared()
         #endif

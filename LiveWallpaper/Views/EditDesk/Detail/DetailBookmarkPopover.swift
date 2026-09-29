@@ -4,9 +4,39 @@ import SwiftUI
 /// The display's wallpaper as a Wallpaper Library entry, for the top bar's bookmark.
 @MainActor
 enum DetailBookmark {
-    /// Exact content: a scene's overrides and preset are part of it, so a changed look is a separate entry.
-    static func existing(for configuration: ScreenConfiguration?, in store: BookmarkStore) -> WallpaperBookmark? {
-        configuration.flatMap { store.equivalentBookmark(content: $0.activeWallpaper) }
+    /// `itemID` comes from `SavedLibraryModel.itemID(showing:)`. `captureCover` takes the saved entry whose cover the display's frame becomes.
+    static func target(
+        for configuration: ScreenConfiguration, itemID: LibraryItem.ID?, sourceDisplayName: String?,
+        store: BookmarkStore, marks: LibraryBookmarkStore, undo: EditDeskUndoStack?,
+        captureCover: @escaping (UUID) -> Void
+    ) -> DetailBookmarkTarget {
+        DetailBookmarkTarget(
+            itemID: itemID,
+            isBookmarked: itemID.map { marks.contains($0) } ?? false,
+            saved: store.bookmarks.first { itemID == "bookmark:\($0.id)" },
+            defaultLabel: BookmarkStore.defaultLabel(for: configuration.activeWallpaper, sourceDisplayName: sourceDisplayName),
+            save: { label in
+                if let itemID {
+                    marks.add(itemID)
+                    return
+                }
+                let saved = save(configuration, label: label, sourceDisplayName: sourceDisplayName, in: store)
+                marks.add("bookmark:\(saved.id)")
+                captureCover(saved.id)
+            },
+            update: { existing, label in
+                if label != existing.label {
+                    store.rename(existing.id, to: label)
+                    undo?.recordRename(of: existing)
+                }
+                captureCover(existing.id)
+            },
+            remove: {
+                if let itemID {
+                    marks.remove(itemID)
+                }
+            }
+        )
     }
 
     /// `videoName` resolves a video's file name, which the content alone does not carry.
@@ -27,23 +57,21 @@ enum DetailBookmark {
             sourceDisplayName: sourceDisplayName, wpeOrigin: configuration.wpeOrigin
         )
     }
-
-    static func remove(_ id: UUID, from store: BookmarkStore, undo: EditDeskUndoStack?) {
-        guard let index = store.bookmarks.firstIndex(where: { $0.id == id }) else { return }
-        let removed = store.bookmarks[index]
-        store.remove(id)
-        undo?.recordRemoval(of: removed, at: index)
-    }
 }
 
 /// What the host hands the top bar's bookmark; nil in `DetailActions` while the display has no wallpaper.
 struct DetailBookmarkTarget {
-    /// The entry already holding this exact wallpaper, if any.
-    let existing: WallpaperBookmark?
+    /// The library row running this wallpaper; nil while none does.
+    let itemID: LibraryItem.ID?
+    let isBookmarked: Bool
+    /// The saved entry that is that row, the only kind of row that can be renamed.
+    let saved: WallpaperBookmark?
     let defaultLabel: String
+    /// Marks the row, adding a saved entry under this name first when there is no row.
     var save: (String) -> Void
     var update: (WallpaperBookmark, String) -> Void
-    var remove: (WallpaperBookmark) -> Void
+    /// Unmarks the row; the row stays in the library.
+    var remove: () -> Void
 }
 
 struct DetailBookmarkPopover: View {
@@ -69,46 +97,52 @@ struct DetailBookmarkPopover: View {
     }
 
     private func form(_ target: DetailBookmarkTarget) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            if target.existing == nil {
-                header("bookmark", Text("Save Bookmark"))
-            } else {
+        // Named when saving adds the entry, renamed once a marked row is a saved entry; any other row keeps its name.
+        let renamed = target.isBookmarked ? target.saved : nil
+        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            if target.isBookmarked {
                 header("bookmark.fill", Text("Bookmarked"))
+            } else {
+                header("bookmark", Text("Save Bookmark"))
             }
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                Text("Name")
-                    .font(DesignTokens.Typography.badge)
-                    .foregroundStyle(.secondary)
-                TextField(target.defaultLabel, text: $nameDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .font(DesignTokens.Typography.body)
-                    .onSubmit { commit(target) }
+            if target.itemID == nil || renamed != nil {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    Text("Name")
+                        .font(DesignTokens.Typography.badge)
+                        .foregroundStyle(.secondary)
+                    TextField(target.defaultLabel, text: $nameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(DesignTokens.Typography.body)
+                        .onSubmit { commit(target) }
+                }
             }
             HStack(spacing: DesignTokens.Spacing.xs) {
-                if let existing = target.existing {
+                if target.isBookmarked {
                     Button(role: .destructive) {
-                        target.remove(existing)
+                        target.remove()
                         close()
                     } label: {
-                        Label("Remove Bookmark", systemImage: "trash")
+                        Label("Remove Bookmark", systemImage: "bookmark.slash")
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .destructiveControlTint()
                 }
                 Spacer()
-                Button { commit(target) } label: {
-                    if target.existing == nil {
-                        Label("Save", systemImage: "plus")
-                    } else {
-                        Label("Update", systemImage: "arrow.triangle.2.circlepath")
+                if !target.isBookmarked || renamed != nil {
+                    Button { commit(target) } label: {
+                        if target.isBookmarked {
+                            Label("Update", systemImage: "arrow.triangle.2.circlepath")
+                        } else {
+                            Label("Save", systemImage: "plus")
+                        }
                     }
+                    .adaptiveGlassButton(.prominent, size: .small)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .adaptiveGlassButton(.prominent, size: .small)
-                .keyboardShortcut(.defaultAction)
             }
         }
-        .onAppear { nameDraft = target.existing?.label ?? "" }
+        .onAppear { nameDraft = renamed?.label ?? "" }
     }
 
     private func header(_ systemImage: String, _ title: Text) -> some View {
@@ -124,10 +158,10 @@ struct DetailBookmarkPopover: View {
 
     private func commit(_ target: DetailBookmarkTarget) {
         let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let existing = target.existing {
-            target.update(existing, name)
-        } else {
+        if !target.isBookmarked {
             target.save(name)
+        } else if let saved = target.saved {
+            target.update(saved, name)
         }
         close()
     }

@@ -217,10 +217,14 @@ struct WallpaperModalActions {
     var toggleBookmark: (@MainActor () -> Void)?
     /// The entry's mark when these actions were built; picks the row's title and glyph.
     var isBookmarked = false
+    /// Adds a saved video to System Wallpaper or takes it out; nil where System Wallpaper can't take the entry.
+    var toggleSystemWallpaper: (@MainActor () -> Void)?
+    /// Whether the entry was in System Wallpaper when these actions were built; picks the row's title.
+    var isInSystemWallpaper = false
 }
 
 extension WallpaperModalActions {
-    /// The modal's title-row buttons: every context-menu row that is not an apply, each once. The bottom
+    /// The modal's title-row buttons: every context-menu row that is not an apply or System Wallpaper, each once. The bottom
     /// row applies. `requestRename` and `requestDelete` open the presenter's own alert and confirmation.
     func headerActions(
         isUpdating: Bool, requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
@@ -297,6 +301,14 @@ extension WallpaperModalActions {
                     comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."
                 ),
                 isEnabled: true, action: requestRename
+            ))
+        }
+        if let toggleSystemWallpaper {
+            items.append(StageMenuItem(
+                title: isInSystemWallpaper
+                    ? String(localized: "Remove from System Wallpaper", bundle: .appLanguage)
+                    : String(localized: "Add to System Wallpaper", bundle: .appLanguage),
+                isEnabled: true, action: toggleSystemWallpaper
             ))
         }
         if let removeFromSaved {

@@ -202,6 +202,40 @@ struct ModalActionsTests {
         #endif
     }
 
+    @Test("A saved video's context menu adds it to System Wallpaper or takes it out; a web page's offers neither")
+    func savedVideoOffersSystemWallpaper() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModalActionsTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let published = video()
+        let manifest = SystemWallpaperManifest(version: SystemWallpaperManifest.currentVersion, items: [
+            .init(id: published.id.uuidString, title: "Video", fileName: "video.mov", thumbnailFileName: nil, addedAt: .distantPast),
+        ])
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try SystemWallpaperCoding.encoder.encode(manifest).write(to: root.appendingPathComponent("manifest.json"))
+        let service = WallpaperExportService(dependencies: .init(
+            sharedRoot: root, resolver: .live, now: Date.init, makeThumbnailJPEG: { _ in nil }
+        ))
+        let fixture = Fixture()
+        let modal = ModalActions(
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(),
+            exportService: service, apply: { _, _ in }, applyToAll: { _, _ in }
+        )
+        let titles = { (bookmark: WallpaperBookmark) in
+            modal.menuItems(for: item(bookmark), requestRename: {}, requestDelete: {}).map(\.title)
+        }
+        let add = String(localized: "Add to System Wallpaper", bundle: .appLanguage)
+        let remove = String(localized: "Remove from System Wallpaper", bundle: .appLanguage)
+
+        #expect(titles(video()).contains(add), "a saved video's menu offers no way into System Wallpaper")
+        #expect(titles(published).contains(remove), "a published video's menu offers no way out of System Wallpaper")
+        #expect(!titles(published).contains(add))
+        let page = titles(WallpaperBookmark(label: "Page", content: .html(source: .inline("p"), config: .default)))
+        #expect(!page.contains(add) && !page.contains(remove), "a web page is offered to System Wallpaper")
+        let withoutService = fixture.modal().menuItems(for: item(video()), requestRename: {}, requestDelete: {}).map(\.title)
+        #expect(!withoutService.contains(add), "a library without the export service offers System Wallpaper")
+    }
+
     @Test("An aerial and a web page say where they live; an aerial has no import date or source row")
     func fileFactsNameTheSource() async throws {
         let modal = Fixture().modal()

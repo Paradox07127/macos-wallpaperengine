@@ -542,6 +542,44 @@ struct SavedLibraryModelTests {
         #expect(variant?.source == .bookmark(saved))
     }
 
+    @Test("The marks carried over are the installed rows saved entries fold into, each once; a tuned variant is not one")
+    func foldedBookmarksMarkTheirWorkshopRows() {
+        func saved(_ workshopID: String, overrides: [String: WallpaperEngineProjectPropertyValue] = [:]) -> WallpaperBookmark {
+            var entry = bookmark("Saved \(workshopID)")
+            entry.wpeOrigin = origin(workshopID)
+            entry.content = .scene(descriptor(overrides: overrides))
+            return entry
+        }
+        var video = bookmark("Video")
+        video.wpeOrigin = origin("9", type: .video)
+        let bookmarks = [
+            saved("2"), saved("1"), saved("2"), saved("3", overrides: ["speed": .number(2)]), saved("4"), video, bookmark("Plain"),
+        ]
+
+        let marks = SavedLibraryModel.foldedBookmarkMarks(bookmarks, installed: ["1", "2", "3", "9"])
+
+        #expect(marks == ["workshop:2", "workshop:1", "workshop:9"], Comment(rawValue: "\(marks)"))
+    }
+
+    @Test("The carry-over runs once: a mark taken off afterwards stays off")
+    func foldedBookmarkMigrationRunsOnce() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "SavedLibraryModelTests")
+        defer { suite.discard() }
+        let marks = LibraryBookmarkStore(defaults: suite.defaults)
+        marks.add("bookmark:kept")
+        var folded = bookmark("Folded")
+        folded.wpeOrigin = origin("123")
+        folded.content = .scene(descriptor())
+
+        SavedLibraryModel.migrateFoldedBookmarks([folded], installed: ["123"], into: marks, defaults: suite.defaults)
+
+        #expect(marks.ids == ["bookmark:kept", "workshop:123"])
+        #expect(suite.defaults.bool(forKey: "loomscreen.library.bookmarks.migrated.v1"))
+        marks.remove("workshop:123")
+        SavedLibraryModel.migrateFoldedBookmarks([folded], installed: ["123"], into: marks, defaults: suite.defaults)
+        #expect(marks.ids == ["bookmark:kept"], "the carry-over ran a second time")
+    }
+
     @Test func unsupportedInstalledTypesRemainInTheLibrary() {
         let types: [WPEType] = [.video, .web, .scene, .application, .unknown]
         var source = inputs()

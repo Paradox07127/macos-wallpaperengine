@@ -769,26 +769,13 @@ struct DisplayDetailHost: View {
 
     private func bookmarkTarget(for screen: Screen) -> DetailBookmarkTarget? {
         guard let configuration = screenManager.getConfiguration(for: screen) else { return nil }
-        let store = BookmarkStore.shared
         let source = DetailBookmark.sourceDisplayName(for: configuration.activeWallpaper) {
             screenManager.bookmarkDisplayName(for: $0)
         }
-        return DetailBookmarkTarget(
-            existing: DetailBookmark.existing(for: configuration, in: store),
-            defaultLabel: BookmarkStore.defaultLabel(for: configuration.activeWallpaper, sourceDisplayName: source),
-            save: { label in
-                let saved = DetailBookmark.save(configuration, label: label, sourceDisplayName: source, in: store)
-                screenManager.captureCover(forBookmark: saved.id, from: screen)
-            },
-            update: { existing, label in
-                if label != existing.label {
-                    store.rename(existing.id, to: label)
-                    undo?.recordRename(of: existing)
-                }
-                screenManager.captureCover(forBookmark: existing.id, from: screen)
-            },
-            remove: { existing in DetailBookmark.remove(existing.id, from: store, undo: undo) }
-        )
+        return DetailBookmark.target(
+            for: configuration, itemID: library?.itemID(showing: configuration), sourceDisplayName: source,
+            store: .shared, marks: .shared, undo: undo
+        ) { screenManager.captureCover(forBookmark: $0, from: screen) }
     }
 
     private func togglePlayback(on screen: Screen) {

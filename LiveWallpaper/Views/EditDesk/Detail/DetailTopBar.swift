@@ -95,7 +95,7 @@ struct DetailTopBar: View {
             icon("list.bullet", "Playlist & Schedule", action: openAutomation)
                 .disabled(!hasWallpaper || attemptShown)
         }
-        let bookmarked = actions.bookmark?.existing != nil
+        let bookmarked = actions.bookmark?.isBookmarked == true
         icon(bookmarked ? "bookmark.fill" : "bookmark", bookmarked ? "Bookmarked" : "Bookmark",
              help: bookmarked ? Text("Bookmarked — click to rename or remove") : Text("Bookmark this wallpaper")) {
             bookmarkPresented.toggle()

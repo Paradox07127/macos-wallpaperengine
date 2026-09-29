@@ -176,8 +176,66 @@ final class SavedLibraryModel {
     }
 
     convenience init(screenManager: ScreenManager) {
-        self.init(inputs: .live(screenManager: screenManager))
+        let inputs = Inputs.live(screenManager: screenManager)
+        #if !LITE_BUILD
+        Self.migrateFoldedBookmarks(
+            inputs.bookmarks(), installed: Set(inputs.history().map(\.id)), into: .shared, defaults: .appScoped()
+        )
+        #endif
+        self.init(inputs: inputs)
         observeStores()
+    }
+
+    /// Set once the Workshop rows standing in for saved entries have been marked; the marking never runs again.
+    nonisolated static let bookmarksMigratedKey = "loomscreen.library.bookmarks.migrated.v1"
+
+    #if !LITE_BUILD
+    /// A saved entry of an installed project is listed as that project's row, unless overrides tune its scene.
+    static func foldsIntoWorkshopRow(_ content: WallpaperContent) -> Bool {
+        content.sceneDescriptor?.propertyOverrides.isEmpty ?? true
+    }
+
+    /// The rows of `installed` Workshop IDs that saved entries fold into, each once, in the entries' order.
+    static func foldedBookmarkMarks(_ bookmarks: [WallpaperBookmark], installed: Set<String>) -> [LibraryItem.ID] {
+        var marks: [LibraryItem.ID] = []
+        for bookmark in bookmarks {
+            guard let workshopID = bookmark.wpeOrigin?.workshopID, installed.contains(workshopID),
+                  foldsIntoWorkshopRow(bookmark.content), !marks.contains("workshop:\(workshopID)") else { continue }
+            marks.append("workshop:\(workshopID)")
+        }
+        return marks
+    }
+
+    static func migrateFoldedBookmarks(
+        _ bookmarks: [WallpaperBookmark], installed: Set<String>, into marks: LibraryBookmarkStore, defaults: UserDefaults
+    ) {
+        guard !defaults.bool(forKey: bookmarksMigratedKey) else { return }
+        marks.merge(foldedBookmarkMarks(bookmarks, installed: installed))
+        defaults.set(true, forKey: bookmarksMigratedKey)
+    }
+    #endif
+
+    /// The row running what `configuration` shows: its saved entry, else the installed Workshop row a saved
+    /// entry of it would fold into, else the aerial it plays; nil when the library has no such row.
+    func itemID(showing configuration: ScreenConfiguration) -> LibraryItem.ID? {
+        let content = configuration.activeWallpaper
+        let saved = items.first { item in
+            guard case let .bookmark(bookmark) = item.source else { return false }
+            return bookmark.content == content
+        }
+        if let saved {
+            return saved.id
+        }
+        #if !LITE_BUILD
+        if let workshopID = configuration.wpeOrigin?.workshopID, Self.foldsIntoWorkshopRow(content),
+           items.contains(where: { $0.id == "workshop:\(workshopID)" }) {
+            return "workshop:\(workshopID)"
+        }
+        #endif
+        return items.first { item in
+            guard case let .aerial(asset) = item.source else { return false }
+            return aerial(asset, matches: content)
+        }?.id
     }
 
     /// `BookmarkStore`, `LibraryBookmarkStore` and `AppleAerialsLibrary` only persist; nothing posts a notification
@@ -352,15 +410,14 @@ final class SavedLibraryModel {
             #if !LITE_BUILD
             if let workshopID = bookmark.wpeOrigin?.workshopID,
                let index = merged.firstIndex(where: { $0.id == "workshop:\(workshopID)" }) {
-                if let descriptor = bookmark.content.sceneDescriptor, !descriptor.propertyOverrides.isEmpty {
-                    parentID = merged[index].id
-                } else {
+                if Self.foldsIntoWorkshopRow(bookmark.content) {
                     if let used = bookmark.lastUsedAt,
                        merged[index].lastUsedAt.map({ used > $0 }) ?? true {
                         merged[index].lastUsedAt = used
                     }
                     continue
                 }
+                parentID = merged[index].id
             }
             #endif
             let kind: LibraryItem.Kind = switch bookmark.content {

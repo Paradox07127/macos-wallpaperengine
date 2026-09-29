@@ -291,6 +291,8 @@ struct SettingsManagerTests {
             "loomscreen.sidebar.displayOrder.v1",
             "monitor.source.claude.bookmark",
             "monitor.source.codex.bookmark",
+            "loomscreen.library.bookmarks.v1",
+            "loomscreen.library.bookmarks.migrated.v1",
         ]
         for key in auxiliaryKeys {
             defaults.set(Data([0x01]), forKey: key)

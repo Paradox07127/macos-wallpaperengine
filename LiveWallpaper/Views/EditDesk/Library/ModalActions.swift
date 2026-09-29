@@ -49,10 +49,12 @@ final class ModalActions {
     /// Where removing and renaming a saved entry are recorded; nil records nothing.
     private let undo: EditDeskUndoStack?
     private let libraryBookmarks: LibraryBookmarkStore
+    /// nil offers no System Wallpaper rows.
+    private let exportService: WallpaperExportService?
 
     init(
         inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
-        libraryBookmarks: LibraryBookmarkStore = .shared,
+        libraryBookmarks: LibraryBookmarkStore = .shared, exportService: WallpaperExportService? = nil,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
@@ -61,6 +63,7 @@ final class ModalActions {
         self.thumbnails = thumbnails
         self.undo = undo
         self.libraryBookmarks = libraryBookmarks
+        self.exportService = exportService
         self.apply = apply
         self.applyToAll = applyToAll
     }
@@ -68,19 +71,20 @@ final class ModalActions {
     #if LITE_BUILD
     convenience init(
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
-        undo: EditDeskUndoStack?,
+        undo: EditDeskUndoStack?, exportService: WallpaperExportService?,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
         self.init(
-            inputs: .live(library: library, screenManager: screenManager),
-            bookmarks: .shared, thumbnails: thumbnails, undo: undo, apply: apply, applyToAll: applyToAll
+            inputs: .live(library: library, screenManager: screenManager), bookmarks: .shared, thumbnails: thumbnails,
+            undo: undo, exportService: exportService, apply: apply, applyToAll: applyToAll
         )
     }
     #else
     convenience init(
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
         doctor: SteamCMDDoctorService, installedLibrary: InstalledLibraryModel, undo: EditDeskUndoStack?,
+        exportService: WallpaperExportService?,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
@@ -123,7 +127,7 @@ final class ModalActions {
         }
         self.init(
             inputs: inputs, bookmarks: store, thumbnails: thumbnails, undo: undo, libraryBookmarks: libraryBookmarks,
-            apply: apply, applyToAll: applyToAll
+            exportService: exportService, apply: apply, applyToAll: applyToAll
         )
     }
     #endif
@@ -308,6 +312,18 @@ final class ModalActions {
                 bookmarks.rename(before.id, to: name)
                 guard bookmarks.bookmarks.first(where: { $0.id == before.id })?.label != before.label else { return }
                 undo?.recordRename(of: before)
+            }
+        }
+        if let exportService, EditDeskRouter.systemWallpaperSupported,
+           case let .bookmark(bookmark) = item.source, case .video = bookmark.content {
+            let published = exportService.isPublished(bookmarkID: bookmark.id)
+            actions.isInSystemWallpaper = published
+            actions.toggleSystemWallpaper = {
+                if published {
+                    try? exportService.remove(itemID: bookmark.id.uuidString)
+                } else {
+                    Task { try? await exportService.publish(bookmark: bookmark) }
+                }
             }
         }
         if Self.revealBookmark(for: item) != nil {
