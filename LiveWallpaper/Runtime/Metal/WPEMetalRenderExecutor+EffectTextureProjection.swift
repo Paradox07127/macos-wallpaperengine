@@ -5,7 +5,6 @@ import Metal
 import simd
 
 extension WPEMetalRenderExecutor {
-
     /// `nil` = the layer has no pass compositing into the scene or its group target.
     func effectTextureProjectionMatrix(
         for layer: WPERenderLayer,
@@ -13,7 +12,9 @@ extension WPEMetalRenderExecutor {
         sourceTexture: MTLTexture
     ) -> simd_double4x4? {
         guard let composite = layer.passes.last(where: { pass in
-            if case .scene = pass.target { return true }
+            if case .scene = pass.target {
+                return true
+            }
             return isGroupRenderTarget(pass.target, layer: layer)
         }) else {
             return nil

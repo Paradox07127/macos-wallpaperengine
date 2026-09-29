@@ -174,7 +174,9 @@ struct WPESwiftShaderCompiler: Sendable {
     }
 
     private static func shouldExposeVertexUniformToFragment(_ uniform: WPEUniformDecl) -> Bool {
-        if uniform.type == "mat4", uniform.name == "g_EffectTextureProjectionMatrixInverse" { return true }
+        if uniform.type == "mat4", uniform.name == "g_EffectTextureProjectionMatrixInverse" {
+            return true
+        }
         return !uniform.type.hasPrefix("mat") && !uniform.name.hasPrefix("g_Model")
     }
 }

@@ -30,7 +30,7 @@ enum WPEUniformValueSource: Equatable {
                 "key": inverse
                     ? WPEMetalObjectUniforms.effectTextureProjectionMatrixInverseUniformName
                     : WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName,
-                "scope": "layer"
+                "scope": "layer",
             ]
         case .authoredDefault: ["kind": "authored-default", "scope": "declaration"]
         case .missing: ["kind": "missing", "scope": "none"]
