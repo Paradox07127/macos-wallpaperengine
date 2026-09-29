@@ -193,7 +193,7 @@ extension WPEShaderTranspiler {
         return regex.stringByReplacingMatches(
             in: line,
             range: NSRange(line.startIndex..., in: line),
-            withTemplate: "$1constant $2"
+            withTemplate: "$1[[maybe_unused]] constant $2"
         )
     }
 
@@ -644,7 +644,7 @@ extension WPEShaderTranspiler {
             } else {
                 qualifier = ""
             }
-            let outputQualifier = qualifier == "const " && isTopLevel(fullRange.lowerBound, in: result) ? "constant " : qualifier
+            let outputQualifier = qualifier == "const " && isTopLevel(fullRange.lowerBound, in: result) ? "[[maybe_unused]] constant " : qualifier
             let name = String(result[nameRange])
             let outputName = name == "kernel" ? "kernelValues" : name
             if outputName != name {

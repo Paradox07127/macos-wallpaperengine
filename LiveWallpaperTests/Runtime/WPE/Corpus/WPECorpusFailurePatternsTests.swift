@@ -1,4 +1,5 @@
 import Foundation
+@testable import LiveWallpaper
 import Metal
 import Testing
 @testable import LiveWallpaper
@@ -718,6 +719,36 @@ struct WPECorpusFailurePatternsTests {
         #expect(result.mslSource.contains("constant float3 LUMINANCE_FACTOR = float3(0.2126, 0.7152, 0.0722);"))
         #expect(result.mslSource.contains("#define NORMALIZED_LUMINANCE_FACTOR (normalize(LUMINANCE_FACTOR))"))
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
+    func unusedProgramScopeConstantsCompileWithoutWarnings() throws {
+        // A fresh name per run: Metal's compile cache would replay a hit without re-emitting warnings.
+        let tag = "U" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let source = """
+        #version 410 core
+        const float PI_\(tag) = 3.1415;
+        const float WEIGHTS_\(tag)[2] = float[2](0.25, 0.75);
+        void main() {
+            gl_FragColor = vec4(1.0);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "test_shader_unused_constants",
+            preprocessedSource: source
+        )
+        #expect(result.mslSource.contains("constant float PI_\(tag) = 3.1415;"))
+        #expect(result.mslSource.contains("constant float WEIGHTS_\(tag)[2] = "))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        let start = Date()
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+        // Metal reports compile warnings only to the unified log ("[Metal Compiler Warning]"), never through the API.
+        let store = try OSLogStore(scope: .currentProcessIdentifier)
+        let warnings = try store.getEntries(at: store.position(date: start))
+            .compactMap { ($0 as? OSLogEntryLog)?.composedMessage }
+            .filter { $0.contains(tag) }
+        #expect(warnings.isEmpty, "\(warnings)")
     }
 
     @Test("Main-local const scalars remain automatic variables")

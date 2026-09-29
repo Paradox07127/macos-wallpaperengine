@@ -867,6 +867,16 @@ extension WPEShaderTranspiler {
                ) {
                 return "wpe_iris_texcoord(g_Time, g_Speed, g_PhaseOffset, g_Rough, g_NoiseAmount, g_Scale)"
             }
+            // Iris Movement + (workshop 2973943998) MANUALCONTROL branch.
+            if varying.metalType == "float2",
+               hasUniforms("g_Manual_XY", "g_ManualScale", "g_ManualScaleMultiplier", in: availableUniforms) {
+                return "g_Manual_XY * g_ManualScale * g_ManualScaleMultiplier * -0.001"
+            }
+            // FOLLOWCURSOR branch: the offset is `mul(cursor, g_EffectTextureProjectionMatrixInverse)`, and that matrix is not supplied (packs zero), so the authored result is zero.
+            if varying.metalType == "float2",
+               availableUniforms.contains("g_CursorScale") {
+                return "float2(0.0)"
+            }
         case "v_TexCoordNoise":
             // foliage variant: tiled noise rotated by g_Direction (needs g_Ratio too).
             if varying.metalType == "float4",

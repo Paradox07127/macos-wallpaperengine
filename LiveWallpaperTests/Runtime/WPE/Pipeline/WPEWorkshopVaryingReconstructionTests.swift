@@ -363,5 +363,47 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordRipple'"))
         try compileMSL(msl)
     }
+
+    private static let irisMovementFragment = """
+    uniform sampler2D g_Texture0;
+    varying vec4 v_TexCoord;
+    varying vec2 v_TexCoordIris;
+    void main() {
+        gl_FragColor = texSample2D(g_Texture0, v_TexCoord.xy + v_TexCoordIris.xy);
+    }
+    """
+
+    @Test("Iris Movement + cursor mode offsets by zero, not by the screen UV")
+    func reconstructsIrisMovementCursorOffset() throws {
+        let source = """
+        uniform vec2 g_CursorScale;
+        uniform vec2 g_CursorScaleMultiplier;
+        uniform vec2 g_CursorScaleLimit;
+        uniform vec2 g_PointerPosition;
+        """ + "\n" + Self.irisMovementFragment
+        let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: source, comboValues: [:])
+        #expect(msl.contains("v_TexCoordIris = float2(0.0);"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
+        try compileMSL(msl)
+    }
+
+    @Test("Iris Movement + manual mode offsets by the authored XY")
+    func reconstructsIrisMovementManualOffset() throws {
+        let source = """
+        uniform vec2 g_ManualScale;
+        uniform vec2 g_ManualScaleMultiplier;
+        uniform vec2 g_Manual_XY;
+        """ + "\n" + Self.irisMovementFragment
+        let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: source, comboValues: [:])
+        #expect(msl.contains("v_TexCoordIris = g_Manual_XY * g_ManualScale * g_ManualScaleMultiplier * -0.001;"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
+        try compileMSL(msl)
+    }
+
+    @Test("Iris offset with no known vertex uniforms keeps the diagnostic")
+    func irisOffsetWithoutVertexUniformsStillFallsBack() throws {
+        let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: Self.irisMovementFragment, comboValues: [:])
+        #expect(msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
+    }
 }
 #endif
