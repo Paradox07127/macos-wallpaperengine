@@ -18,7 +18,7 @@ run_package_tests() {
       echo "ERROR: invalid package name '$package'." >&2
       exit 64
     fi
-    package_log="$(mktemp "$scratch_root/${package}-tests.XXXXXX")"
+    package_log="$scratch_root/${package}-tests.log"
     echo "== Package tests: $package =="
     echo "Raw log: $package_log"
     if swift test --package-path "Packages/$package" \

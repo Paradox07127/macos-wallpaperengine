@@ -119,6 +119,8 @@ resign_sparkle_helpers() {
   # drop the processed sandbox.
   local ent
   ent="$(mktemp -t loomscreen-sparkle-ent.XXXXXX)"
+  # `set -e` exits mid-function on a failed codesign; expanded now because `ent` is local.
+  trap "rm -f $(printf %q "$ent")" EXIT
   # `:-` writes XML to stdout. Bare `-` dumps a text blob codesign will not
   # accept back as `--entitlements`.
   codesign -d --entitlements :- --xml "$app" 2>/dev/null >"$ent"
@@ -144,6 +146,7 @@ resign_sparkle_helpers() {
   codesign -f -s "$identity" -o runtime "$sparkle"
   codesign -f -s "$identity" -o runtime --entitlements "$ent" "$app"
   rm -f "$ent"
+  trap - EXIT
 
   local host_team
   host_team="$(codesign_team_id "$app")"
