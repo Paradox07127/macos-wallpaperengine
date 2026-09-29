@@ -33,7 +33,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     static let expectedSchemaVersion = 21
-    static let expectedFingerprint = "76586ddab3b349c10bbd8747759ab685936d19813516cb1883ed06dc7b248e8b"
+    static let expectedFingerprint = "a6fcbac3e2a4836cf1ec896a2b5c74e62f9bf93477b19bb3d2521cb4c4f15966"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

@@ -34,7 +34,8 @@ struct WPESwiftShaderCompiler: Sendable {
                     shaderName: request.shaderName,
                     processedVertex: request.processedVertexSource,
                     processedFragment: request.processedFragmentSource,
-                    recordFailure: recordFailure
+                    recordFailure: recordFailure,
+                    alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots, premultipliedOutput: request.premultipliedOutput)
                 )
             } catch {
                 translationCache.remove(cacheKey)
@@ -94,7 +95,8 @@ struct WPESwiftShaderCompiler: Sendable {
             shaderName: request.shaderName,
             processedVertex: request.processedVertexSource,
             processedFragment: request.processedFragmentSource,
-            recordFailure: recordFailure
+            recordFailure: recordFailure,
+            alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots, premultipliedOutput: request.premultipliedOutput)
         )
         if let payload = WPEShaderTranslationCache.Payload.from(result) {
             translationCache.store(payload, for: cacheKey)
@@ -112,7 +114,8 @@ struct WPESwiftShaderCompiler: Sendable {
         shaderName: String,
         processedVertex: String,
         processedFragment: String,
-        recordFailure: Bool
+        recordFailure: Bool,
+        alphaContract: WPEShaderAlphaContract
     ) throws -> WPEShaderCompileResult {
         let library: MTLLibrary
         do {
@@ -142,7 +145,8 @@ struct WPESwiftShaderCompiler: Sendable {
             uniformLayout: uniformLayout,
             samplerNames: samplerNames,
             textureSlotCount: textureSlotCount,
-            shaderInterface: WPEShaderInterfaceParser.parse(vertex: processedVertex, fragment: processedFragment)
+            shaderInterface: WPEShaderInterfaceParser.parse(vertex: processedVertex, fragment: processedFragment),
+            alphaContract: alphaContract
         )
     }
 

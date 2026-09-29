@@ -90,13 +90,21 @@ struct WPECanonicalUniformTraceTests {
             textureBindings: [], packedUniformSlots: slots, usesObjectQuad: false,
             nativeState: .scenePass(blendMode: "normal", alphaWritePolicy: .all, cullMode: "nocull",
                                     depthAttached: false, depthTest: "disabled", depthWrite: "disabled", reversedZ: false),
-            uniformSources: [.passConstant("counter")]
+            uniformSources: [.passConstant("counter")], vertexPath: .skewObjectQuad
         )
         let data = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
         let trace = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let passes = try #require(trace["passes"] as? [[String: Any]])
         #expect(passes.count == 1)
+        let vertex = try #require(passes[0]["vertexContract"] as? [String: Any])
+        #expect(vertex["function"] as? String == "wpe_skew_object_quad_vertex")
+        #expect(vertex["authoredVertexExecuted"] as? Bool == false)
+        let ids = try #require(passes[0]["shaders"] as? [String: String])
+        let resources = try #require(trace["resources"] as? [String: Any])
+        let shaders = try #require(resources["shaders"] as? [String: [String: Any]])
+        let vs = try #require(ids["vs"])
+        #expect(shaders[vs]?["entryPoint"] as? String == "wpe_skew_object_quad_vertex")
         let buffers = try #require(passes[0]["constantBuffers"] as? [[String: Any]])
         let variables = try #require(buffers[0]["variables"] as? [[String: Any]])
         #expect((variables[0]["value"] as? NSNumber)?.intValue == -1)
@@ -104,6 +112,11 @@ struct WPECanonicalUniformTraceTests {
         #expect((variables[0]["bindingSource"] as? [String: String])?["kind"] == "pass-constant")
         let coverage = try #require(passes[0]["semanticCoverage"] as? [String: Any])
         #expect(coverage["passID"] as? String == "layer.0")
+        let color = try #require(passes[0]["colorContract"] as? [String: Any])
+        #expect(color["schema"] as? String == "wpe.pass-color-contract.v1")
+        #expect(color["shaderOutputAlphaOperation"] as? String == "unverified")
+        #expect((color["attachment"] as? [String: Any])?["hardwareRGBTransfer"] as? String == "identity")
+        #expect(color["finalDisplayTransfer"] as? String == "outside-pass-contract")
         let summary = try #require(trace["semanticCoverage"] as? [String: Any])
         #expect(summary["scope"] as? String == "observed-custom-draws-only")
         #expect(summary["observedDraws"] as? Int == 1)

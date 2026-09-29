@@ -160,7 +160,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         packedUniformSlots: [SIMD4<Float>],
         usesObjectQuad: Bool,
         nativeState: NativeRenderState,
-        uniformSources: [WPEUniformValueSource]? = nil
+        uniformSources: [WPEUniformValueSource]? = nil,
+        vertexPath: WPEPassVertexPath? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -181,7 +182,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         let targetTexture = destination.texture
         let targetResource = renderTargetResourceID(target)
         let fragmentShaderID = shaderID(stage: "fs", stableInput: result.mslSource)
-        let vertexShaderID = shaderID(stage: "vs", stableInput: result.vertexFunctionName)
+        let selectedVertexPath = vertexPath ?? (usesObjectQuad ? .objectQuad : .fullscreenQuad)
+        let selectedVertexFunction = selectedVertexPath.functionName(default: result.vertexFunctionName)
+        let vertexShaderID = shaderID(stage: "vs", stableInput: selectedVertexFunction)
         let packedBytes = packedUniformBytes(packedUniformSlots)
         let bufferResource = "buf-mac-pass-\(ordinal)"
 
@@ -201,8 +204,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         )
         resources.shaders[vertexShaderID] = shaderResource(
             stage: "vertex",
-            entryPoint: result.vertexFunctionName,
-            source: result.vertexFunctionName,
+            entryPoint: selectedVertexFunction,
+            source: selectedVertexFunction,
             path: nil,
             layout: [],
             samplers: []
@@ -292,6 +295,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "output": output,
             "implementation": implementationRecord(for: pass.shader),
             "semanticCoverage": coverage.jsonObject(),
+            "vertexContract": selectedVertexPath.traceRecord(defaultFunction: result.vertexFunctionName),
+            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: result.alphaContract,
+                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
         ]
         passes.append(passRecord)
     }
@@ -406,6 +412,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "state": state,
             "output": output,
             "builtin": ["kind": builtinKind],
+            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: nil,
+                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
             "implementation": implementationRecord(for: pass.shader)
         ]
         passes.append(passRecord)
@@ -990,6 +998,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "width": jsonOrNull(texture?.width),
             "height": jsonOrNull(texture?.height),
             "format": jsonOrNull(texture.map { pixelFormatName($0.pixelFormat) }),
+            "colorView": jsonOrNull(texture.map { WPEPixelColorContract($0.pixelFormat).jsonObject() }),
             "mips": jsonOrNull(texture?.mipmapLevelCount),
             "sha256": NSNull(),
             "png": NSNull()
@@ -1002,6 +1011,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "width": texture.width,
             "height": texture.height,
             "format": pixelFormatName(texture.pixelFormat),
+            "colorStorage": WPEPixelColorContract(texture.pixelFormat).jsonObject(),
             "lineage": ["pass-\(String(format: "%04d", ordinal))"]
         ]
     }

@@ -60,6 +60,10 @@ enum WPEAuthoredShaderProbe {
         let source = """
         #include <metal_stdlib>
         using namespace metal;
+        // WPE's vector-first spelling represents a column-vector matrix product.
+        inline float4 mul(float4 v, float4x4 m) { return m * v; }
+        inline float3 mul(float3 v, float3x3 m) { return m * v; }
+        inline float3x3 CAST3X3(float4x4 m) { return float3x3(m[0].xyz, m[1].xyz, m[2].xyz); }
         struct ProbeVSUniforms { float4 vals[\(max(1, vertexUniforms.reduce(0) { $0 + $1.slotCount }))]; };
         struct ProbeFSUniforms { float4 vals[\(max(1, fragmentUniforms.reduce(0) { $0 + $1.slotCount }))]; };
         struct ProbeVaryings {
@@ -109,13 +113,15 @@ enum WPEAuthoredShaderProbe {
     }
 
     private static func body(_ source: String) throws -> String {
-        let active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source)
+        let active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: WPEShaderPreprocessor.normalizeNewlines(source))
         let masked = WPEShaderTranspiler.maskComments(active)
         guard let main = WPEShaderTranspiler.locateMain(in: masked) else { throw Failure.unsupportedSource }
         let outside = String(masked[..<main.lowerBound]) + String(masked[main.upperBound...])
-        // No helpers, macros, global executable code or initializers in this experiment.
-        let declarations = outside.components(separatedBy: "\n").filter {
-            !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#version")
+        // Only numeric combo defines are allowed; no function macros or executable globals.
+        let declarations = outside.components(separatedBy: "\n").filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return !trimmed.hasPrefix("#version")
+                && trimmed.range(of: #"^#\s*define\s+[A-Za-z_][A-Za-z0-9_]*\s+[0-9]+\s*$"#, options: .regularExpression) == nil
         }.joined(separator: "\n")
         let pattern = #"\b(?:uniform|attribute|varying|in|out)\s+[A-Za-z_][A-Za-z0-9_]*\s+[A-Za-z_][A-Za-z0-9_]*\s*;"#
         let stripped = declarations.replacingOccurrences(of: pattern, with: "", options: .regularExpression)

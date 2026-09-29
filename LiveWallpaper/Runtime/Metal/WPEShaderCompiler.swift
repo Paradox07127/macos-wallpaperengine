@@ -83,6 +83,8 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let textureSlotCount: Int
     /// Rebuilt from the request on cold and warm compilation; never inferred from generated MSL.
     var shaderInterface: WPEShaderInterface?
+    /// Restored from the request, including warm cache hits.
+    var alphaContract: WPEShaderAlphaContract?
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {

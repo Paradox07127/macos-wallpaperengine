@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
@@ -93,14 +94,69 @@ struct WPEAuthoredShaderProbeTests {
             processedFragmentSource: "void main() { gl_FragColor = vec4(0.5); }",
             sourceHash: "stage-inventory-fixture", comboValues: [:], textureBindings: [:]
         )
-        let cold = try compiler.compile(request)
+        let alphaRequest = request.replacingPremultipliedAlphaSettings(inputSlots: [7], output: true)
+        let cold = try compiler.compile(alphaRequest)
         #expect(cold.shaderInterface?.variables(stage: .vertex, kind: .attribute).count == 1)
         cache.dropMemoryForTesting()
-        let disk = try compiler.compile(request)
-        let memory = try compiler.compile(request)
+        let disk = try compiler.compile(alphaRequest)
+        let memory = try compiler.compile(alphaRequest)
         #expect(disk.shaderInterface == cold.shaderInterface && memory.shaderInterface == cold.shaderInterface)
         #expect(disk.mslSource == cold.mslSource && memory.mslSource == cold.mslSource)
+        #expect(cold.alphaContract == .init(unpremultipliedInputSlots: [7], premultipliedOutput: true))
+        #expect(disk.alphaContract == cold.alphaContract && memory.alphaContract == cold.alphaContract)
         #expect(cache.diskHitCountForTesting == 1 && cache.memoryHitCountForTesting == 1)
+    }
+
+    @Test(.enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_DEPTHPARALLAX_VERTEX_PATH") != nil,
+                   "opt-in: provide the locally owned depthparallax vertex source"))
+    func actualDepthParallaxVertexFeedsResolutionAndProjectionVaryings() throws {
+        let path = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_DEPTHPARALLAX_VERTEX_PATH"))
+        let data = try Data(contentsOf: path)
+        let source = try #require(String(data: data, encoding: .utf8))
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        print("[authored-vertex-probe] sourceSHA256=\(hash) bytes=\(data.count)")
+        let identity: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        let matrices: [([Double], SIMD2<Float>)] = [
+            ([0.914285660, 0, 0, 0, 0, 0.863999963, 0, 0, 0, 0, 3999.999756, 0, -0.000359072, -0.045459863, -1499.999878, 1], .init(0.75, 0.25)),
+            ([0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], .init(0.75, 0.75)),
+        ]
+        for mask in [0, 1] {
+            let vertex = "#define MASK \(mask)\n" + source
+            let fragment = """
+            varying vec4 v_TexCoord;
+            varying vec2 v_ParallaxOffset;
+            void main() { gl_FragColor = vec4(v_ParallaxOffset, v_TexCoord.zw); }
+            """
+            for (inverse, expected) in matrices {
+                let uniforms: [String: WPESceneShaderConstantValue] = [
+                    "g_ModelViewProjectionMatrix": .vector(identity),
+                    "g_EffectTextureProjectionMatrix": .vector(identity),
+                    "g_EffectTextureProjectionMatrixInverse": .vector(inverse),
+                    "g_Texture1Resolution": .vector([512, 256, 320, 160]),
+                    "g_Texture2Resolution": .vector([1024, 512, 256, 128]),
+                    "g_ParallaxPosition": .vector([0.75, 0.25]), "g_Screen": .vector([4, 4, 1]),
+                ]
+                let pixels = try replay(vertex: vertex, fragment: fragment, vertexValues: uniforms)
+                for y in 0 ..< 4 {
+                    for x in 0 ..< 4 {
+                        let pixel = pixels[y * 4 + x]
+                        #expect(abs(pixel.x - expected.x) < 0.00001 && abs(pixel.y - expected.y) < 0.00001)
+                        #expect(abs(pixel.z - (Float(x) + 0.5) / 4 * 0.625) < 0.00001)
+                        #expect(abs(pixel.w - (Float(y) + 0.5) / 4 * 0.625) < 0.00001)
+                    }
+                }
+                if mask == 1 {
+                    let maskFragment = "varying vec2 v_TexCoordMask; void main() { gl_FragColor = vec4(v_TexCoordMask, 0.0, 1.0); }"
+                    let maskPixels = try replay(vertex: vertex, fragment: maskFragment, vertexValues: uniforms)
+                    for y in 0 ..< 4 {
+                        for x in 0 ..< 4 {
+                            #expect(abs(maskPixels[y * 4 + x].x - (Float(x) + 0.5) / 4 * 0.25) < 0.00001)
+                            #expect(abs(maskPixels[y * 4 + x].y - (Float(y) + 0.5) / 4 * 0.25) < 0.00001)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func replay(

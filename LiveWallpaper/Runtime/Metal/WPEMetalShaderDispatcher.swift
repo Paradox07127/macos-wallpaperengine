@@ -726,6 +726,18 @@ struct WPEMetalShaderDispatcher {
             effectTextureProjection: effectTextureProjection
         )
         #endif
+
+        // The selected geometry must name the same VS in the pipeline and trace.
+        let usesSkewVertex = usesObjectQuad && executor.isVertexSkewPass(pass)
+        let vertexPath = WPEPassVertexPath.select(shape: usesShapeQuad, object: usesObjectQuad, skew: usesSkewVertex)
+        let pipelineState = try executor.translatedPipelineState(
+            for: result,
+            vertexName: vertexPath.functionOverride,
+            blendMode: pass.pass.blending,
+            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            colorPixelFormat: destination.texture.pixelFormat,
+            depthPixelFormat: depthPixelFormat
+        )
         #if !LITE_BUILD && DEBUG
         WPECanonicalTraceRecorder.shared.recordCustomPass(
             pass: pass,
@@ -743,30 +755,10 @@ struct WPEMetalShaderDispatcher {
                 depthWrite: pass.pass.depthWrite,
                 reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
             ),
-            uniformSources: uniformSources
+            uniformSources: uniformSources,
+            vertexPath: vertexPath
         )
         #endif
-
-        // `effects/skew` MODE=1 displaces quad geometry in the vertex stage; a plain object quad would drop the effect (transpiled fragment leaves UV untouched).
-        let usesSkewVertex = usesObjectQuad && executor.isVertexSkewPass(pass)
-        let vertexName: String?
-        if usesShapeQuad {
-            vertexName = "wpe_shape_quad_vertex"
-        } else if usesSkewVertex {
-            vertexName = "wpe_skew_object_quad_vertex"
-        } else if usesObjectQuad {
-            vertexName = "wpe_object_quad_vertex"
-        } else {
-            vertexName = nil
-        }
-        let pipelineState = try executor.translatedPipelineState(
-            for: result,
-            vertexName: vertexName,
-            blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
-            colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
-        )
         encoder.setRenderPipelineState(pipelineState)
 
         if !packedUniforms.isEmpty {
