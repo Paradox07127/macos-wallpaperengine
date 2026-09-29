@@ -124,6 +124,15 @@ private enum LoopSeamVideoFixture {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-loopseam-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        var encoded = false
+        defer {
+            if !encoded {
+                if writer.status == .writing {
+                    writer.cancelWriting()
+                }
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
         let width = 640
         let height = 360
         let input = AVAssetWriterInput(
@@ -174,6 +183,7 @@ private enum LoopSeamVideoFixture {
                 NSLocalizedDescriptionKey: "AVAssetWriter finished with status \(writer.status.rawValue)"
             ])
         }
+        encoded = true
         return outputURL
     }
 }

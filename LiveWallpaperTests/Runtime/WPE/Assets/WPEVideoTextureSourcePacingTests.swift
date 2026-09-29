@@ -315,6 +315,15 @@ private enum SyntheticVideoFixture {
             try FileManager.default.removeItem(at: outputURL)
         }
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        var encoded = false
+        defer {
+            if !encoded {
+                if writer.status == .writing {
+                    writer.cancelWriting()
+                }
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
         let width = 64
         let height = 64
         let videoSettings: [String: Any] = [
@@ -368,6 +377,7 @@ private enum SyntheticVideoFixture {
                 writer.error?.localizedDescription ?? "writer ended with status \(writer.status.rawValue)"
             )
         }
+        encoded = true
         return outputURL
     }
 

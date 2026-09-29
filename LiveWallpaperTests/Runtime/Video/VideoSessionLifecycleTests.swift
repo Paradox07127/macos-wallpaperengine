@@ -1749,6 +1749,15 @@ private enum ManualPauseVideoFixture {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("manual-pause-hibernate-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        var encoded = false
+        defer {
+            if !encoded {
+                if writer.status == .writing {
+                    writer.cancelWriting()
+                }
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
         let width = 128
         let height = 128
         let input = AVAssetWriterInput(
@@ -1810,6 +1819,7 @@ private enum ManualPauseVideoFixture {
                 writer.error?.localizedDescription ?? "status \(writer.status.rawValue)"
             )
         }
+        encoded = true
         return outputURL
     }
 

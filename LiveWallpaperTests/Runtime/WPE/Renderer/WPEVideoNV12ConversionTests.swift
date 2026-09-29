@@ -430,6 +430,15 @@ private enum SyntheticNV12VideoFixture {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-nv12-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        var encoded = false
+        defer {
+            if !encoded {
+                if writer.status == .writing {
+                    writer.cancelWriting()
+                }
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+        }
         let width = 64
         let height = 64
         let frameRate: Int32 = 24
@@ -480,6 +489,7 @@ private enum SyntheticNV12VideoFixture {
         guard writer.status == .completed else {
             throw WriterError.setupFailed(writer.error?.localizedDescription ?? "status \(writer.status.rawValue)")
         }
+        encoded = true
         return outputURL
     }
 
