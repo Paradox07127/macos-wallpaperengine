@@ -263,6 +263,8 @@ SERIAL_SUITES=(
   ConfigurationPorterBookmarkMergeTests
   WPEEffectProjectionReplayTests
   WPEUniformSourceTraceTests
+  WPEEffectTextureProjectionTests
+  WPEEffectTextureProjectionConsumerReplayTests
 )
 
 action="test"
