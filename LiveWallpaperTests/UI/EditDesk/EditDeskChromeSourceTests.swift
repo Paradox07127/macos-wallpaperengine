@@ -297,11 +297,8 @@ struct EditDeskChromeSourceTests {
             }
         }
         let home = "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift"
-        let bookmarks = "LiveWallpaper/Views/EditDesk/Saved/BookmarksLibraryView.swift"
         #expect(presenters[".wallpaperDeleteConfirmation("] == [home])
-        #expect(presenters[".wallpaperRenameAlert("]?.sorted() == [bookmarks, home])
-        let saved = try RepositoryRoot.source(bookmarks)
-        #expect(saved.contains("{ bookmarks.rename($0) }"), "the Saved page's rename would act on whichever bookmark is current")
+        #expect(presenters[".wallpaperRenameAlert("] == [home])
         let source = try RepositoryRoot.source(home)
         let start = try #require(source.range(of: "private struct LibraryItemCommands: ViewModifier {"))
         let commands = try #require(source[start.upperBound...].components(separatedBy: "\n    }\n").first)

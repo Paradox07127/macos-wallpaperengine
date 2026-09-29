@@ -35,9 +35,22 @@ enum WorkshopBookmarkActions {
         browseItems: [WorkshopQueryItem], workshopStore: WorkshopBookmarkStore = .shared
     ) -> [WorkshopQueryItem] {
         workshopStore.bookmarks.reversed().map { bookmark in
-            let saved = SavedBookmarks.queryItem(bookmark)
+            let saved = queryItem(bookmark)
             return browseItems.first { $0.id == bookmark.id }?.preservingDetails(from: saved) ?? saved
         }
+    }
+
+    /// Known metadata survives offline reopening; legacy references remain usable.
+    static func queryItem(_ bookmark: WorkshopBookmark) -> WorkshopQueryItem {
+        if let item = bookmark.queryItemSnapshot {
+            return item
+        }
+        return WorkshopQueryItem(
+            id: bookmark.id, rawTitle: bookmark.rawTitle, shortDescription: "", creatorID: nil,
+            previewImageURL: bookmark.previewImageURL, fileSizeBytes: nil, timeUpdated: nil,
+            subscriptionCount: nil, rating: nil, tags: bookmark.tags, visibility: .unknown,
+            isBanned: false, steamCommunityURL: WorkshopCommunityURL.item(itemID: bookmark.id)
+        )
     }
 
     /// Preserve a richer successful read without changing bookmark identity/order.
@@ -45,19 +58,6 @@ enum WorkshopBookmarkActions {
         guard let saved = store.bookmarks.first(where: { $0.id == item.id }),
               let snapshot = item.preservingDetails(from: saved.queryItemSnapshot).bookmarkDetailsSnapshot else { return }
         store.updateDetailsSnapshot(snapshot, for: item.id)
-    }
-
-    /// A confirmed delete: the local bookmark always goes; a failed Workshop write surfaces through `hasStorageError`.
-    static func remove(
-        _ bookmark: WallpaperBookmark,
-        store: BookmarkStore = .shared,
-        workshopStore: WorkshopBookmarkStore = .shared
-    ) {
-        store.remove(bookmark.id)
-        if let workshopID = bookmark.wpeOrigin?.workshopID ?? bookmark.content.sceneDescriptor?.workshopID,
-           let id = UInt64(workshopID), workshopStore.contains(id) {
-            workshopStore.remove(id)
-        }
     }
 }
 #endif

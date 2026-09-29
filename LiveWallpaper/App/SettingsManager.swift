@@ -644,6 +644,7 @@ final class SettingsManager {
         defaults.removeObject(forKey: WallpaperTransitionChoice.defaultsKey)
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
+        defaults.removeObject(forKey: "loomscreen.savedLibrary.selectedTab.v1") // Saved page tab; nothing reads it now
 
         defaults.removeObject(forKey: WorkshopBookmarkStore.preferencesKey)
         defaults.removeObject(forKey: LibraryBookmarkStore.preferencesKey)

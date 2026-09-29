@@ -13,12 +13,6 @@ final class EditDeskRouter {
         case aerials
     }
 
-    enum SavedTab: String {
-        case bookmarks, schemes
-
-        static let preferencesKey = "loomscreen.savedLibrary.selectedTab.v1"
-    }
-
     /// What to import and which display it lands on, in one value: as two notifications the target
     /// could arrive after the prompt had already picked a display.
     struct AddWallpaperRequest: Hashable {
@@ -33,8 +27,6 @@ final class EditDeskRouter {
     var libraryFocus: LibraryFocus?
     /// The display the library page is choosing a wallpaper for; nil when none is preselected.
     var libraryTarget: CGDirectDisplayID?
-    /// The Saved page tab to show, applied once through `takeSavedTab()`; nil keeps the remembered one.
-    var pendingSavedTab: SavedTab?
     var settingsSelection: SettingsNavigation?
     var settingsSearchText = ""
     var pendingSettingsSearchAnchor: SettingsSearchAnchor?
@@ -77,9 +69,6 @@ final class EditDeskRouter {
         case .appleAerials:
             page = .library
             libraryFocus = .aerials
-        case .bookmarks:
-            page = .schemes
-            pendingSavedTab = .bookmarks
         case .systemWallpaper:
             page = systemWallpaperAvailable ? .systemWallpaper : .library
         case .workshop:
@@ -194,17 +183,6 @@ final class EditDeskRouter {
             openSettings(.general)
         }
         pendingOnboardingStep = step
-    }
-
-    func openSaved(_ tab: SavedTab) {
-        select(.schemes)
-        pendingSavedTab = tab
-    }
-
-    func takeSavedTab() -> SavedTab? {
-        let tab = pendingSavedTab
-        pendingSavedTab = nil
-        return tab
     }
 
     func takeLibraryFocus() -> LibraryFocus? {

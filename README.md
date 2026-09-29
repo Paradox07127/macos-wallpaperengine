@@ -50,7 +50,7 @@
 - **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.
 - **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.
 - **Global shortcuts** — eight bindable actions, from play/pause-all to reload.
-- **Saved wallpapers and schemes** — bookmarks change the content; schemes restore a display's full setup. `.lwconfig` backs up settings and references; media files and machine-specific file grants are not portable with it.
+- **Bookmarks, likes and schemes** — mark favorite wallpapers with a yellow bookmark and filter the library by it; Pro likes Workshop items with a pink heart to download later; schemes restore a display's full setup. `.lwconfig` backs up settings and references; media files and machine-specific file grants are not portable with it.
 - **Five interface languages** — English, 简体中文, 繁體中文, 日本語 and Español.
 - **Private by design** — no Loomscreen account or usage telemetry. Optional online features contact their respective services.
 

@@ -37,6 +37,15 @@ struct EditDeskUndoStackTests {
         .html(source: .inline(name), config: .default)
     }
 
+    /// The library row of a saved web page, as the wallpaper library lists it.
+    private static func item(for bookmark: WallpaperBookmark) -> LiveWallpaper.LibraryItem {
+        LiveWallpaper.LibraryItem(
+            id: "bookmark:\(bookmark.id)", title: bookmark.label, kind: .web, source: .bookmark(bookmark),
+            isSteam: false, createdAt: bookmark.createdAt, lastUsedAt: bookmark.lastUsedAt, onDisplays: [],
+            thumbnail: .bookmark(bookmark), metadata: nil, isVariant: false, parentID: nil, isSupported: true
+        )
+    }
+
     /// Records a confirmed apply of `content` on `screens`.
     @discardableResult
     private func apply(_ content: WallpaperContent, on screens: [Screen], in stack: EditDeskUndoStack) -> UUID? {
@@ -350,12 +359,12 @@ struct EditDeskUndoStackTests {
         marks.add(itemID)
         let store = bookmarks
         var inputs = ModalActions.Inputs()
-        inputs.item = { id in store.bookmarks.map(SavedBookmarks.item(for:)).first { $0.id == id } }
+        inputs.item = { id in store.bookmarks.map(Self.item(for:)).first { $0.id == id } }
         let modal = ModalActions(
             inputs: inputs, bookmarks: bookmarks, thumbnails: ShelfThumbnailCache(), undo: stack, libraryBookmarks: marks,
             apply: { _, _ in }, applyToAll: { _, _ in }
         )
-        let actions = modal.actions(for: SavedBookmarks.item(for: saved))
+        let actions = modal.actions(for: Self.item(for: saved))
         #expect(actions.isBookmarked, "control: the entry was not marked before its removal")
 
         let removeFromSaved = try #require(actions.removeFromSaved)

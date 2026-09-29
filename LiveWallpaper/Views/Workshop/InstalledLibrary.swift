@@ -418,45 +418,6 @@ final class InstalledLibraryModel {
         NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
 
-    /// Toggles the playable local bookmark. A Workshop entry saved for later does not count as one:
-    /// tapping it adds the local bookmark, and removing that bookmark clears both.
-    func toggleBookmark(
-        _ entry: WPEHistoryEntry,
-        store: BookmarkStore,
-        workshopStore: WorkshopBookmarkStore = .shared,
-        resolver: WPECachedContentResolver = WPECachedContentResolver()
-    ) {
-        errorMessage = nil
-        let workshopID = entry.origin.workshopID
-        if store.containsWPEBookmark(workshopID: workshopID) {
-            if let id = UInt64(workshopID), workshopStore.contains(id) {
-                workshopStore.remove(id)
-                guard !workshopStore.hasStorageError else {
-                    errorMessage = String(
-                        localized: "Couldn't save your likes. Your existing likes have been kept.",
-                        bundle: .appLanguage, comment: "Workshop like persistence failure."
-                    )
-                    return
-                }
-            }
-            store.removeWPEBookmarks(workshopID: workshopID)
-            return
-        }
-        guard let content = resolver.content(for: entry.origin) else {
-            errorMessage = String(
-                localized: "Couldn't add \(entry.origin.title) to Bookmarks.",
-                bundle: .appLanguage, comment: "Workshop installed bookmark failure. Placeholder is the wallpaper title."
-            )
-            return
-        }
-        _ = store.add(
-            label: entry.origin.title,
-            content: content,
-            sourceDisplayName: workshopID,
-            wpeOrigin: entry.origin
-        )
-    }
-
     func canAddBookmark(_ entry: WPEHistoryEntry) -> Bool {
         let origin = entry.origin
         guard let entryFile = origin.entryFile, !entryFile.isEmpty else { return false }

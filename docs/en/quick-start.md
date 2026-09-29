@@ -19,7 +19,7 @@ Skipping onboarding is fine — everything below works from the Settings window.
 ## 2) Know the two surfaces
 
 - **Menu bar icon** — day-to-day control: add a wallpaper, global on/off, per-display play/pause and prev/next, volume, live CPU/GPU/RAM/thermal strip, reload, quit.
-- **Management window** (menu bar → **Manage**) — the top navigation opens **Overview**, **Wallpaper Library**, **Saved**, **System Wallpaper**, **Workshop** (Pro), and **Settings**. Overview shows your displays; click one to edit it. Settings has its own sidebar for General, Display Defaults, Performance, Integrations, Shortcuts, Backup and the other settings pages.
+- **Management window** (menu bar → **Manage**) — the top navigation opens **Overview**, **Wallpaper Library**, **Schemes**, **System Wallpaper**, **Workshop** (Pro), and **Settings**. Overview shows your displays; click one to edit it. Settings has its own sidebar for General, Display Defaults, Performance, Integrations, Shortcuts, Backup and the other settings pages.
 
 ## 3) Configure one display end-to-end
 
@@ -52,14 +52,14 @@ overlapping ranges show an error and prevent saving. A range can cross midnight.
 fallback wallpaper for uncovered hours. Automation pauses while you're away
 (lock or display sleep), then reconciles on wake rather than replaying missed slots.
 
-## 6) Saved wallpapers and schemes
+## 6) Bookmarks and schemes
 
-Save a wallpaper from the display header, then find it under **Saved → Bookmarks**.
-A bookmark changes the content while preserving the target display's settings.
-Use **Saved → Schemes** for a full display setup, including playback, overlays,
-playlist and schedule. Applying a scheme replaces that display's setup after
-confirmation. Schemes reference local files; moving them to another Mac may
-require selecting those files again.
+Mark wallpapers you use often with the yellow bookmark, from a wallpaper's menu
+or its detail, then pick the **Bookmarks** filter in the **Wallpaper Library** to
+list only those. Use the **Schemes** page for a full display setup, including
+playback, overlays, playlist and schedule. Applying a scheme replaces that
+display's setup after confirmation. Schemes reference local files; moving them
+to another Mac may require selecting those files again.
 
 ## 7) Global shortcuts
 
@@ -144,6 +144,6 @@ preset keeps your changes.
 
 The Workshop browser retains its query, filters, page, and selected item when switching between pages in the management window, including Settings and the wallpaper library. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.
 
-## Save Workshop wallpapers for later
+## Like Workshop wallpapers for later
 
-Use the bookmark button on a Workshop catalog card, its context menu, or the detail view to save a wallpaper before downloading it. Saved → Bookmarks includes a Workshop Bookmarks section where you can open details and download later. Saving is local and does not download, subscribe to, or apply the item. Existing local bookmarks and the Schemes tab remain available. Pro `.lwconfig` exports include Workshop bookmark metadata. They do not include the downloaded wallpaper media.
+Use the pink heart on a Workshop catalog card, its context menu, or the detail view to like a wallpaper before downloading it. Switch the Workshop page from **Browse** to **Likes** to see what you liked, open details, and download later. Liking is local and does not download, subscribe to, or apply the item. Pro `.lwconfig` exports include your likes. They do not include the downloaded wallpaper media.

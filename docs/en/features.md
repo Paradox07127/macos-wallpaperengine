@@ -11,7 +11,7 @@ and the app target's build gates.
 
 - **Menu bar**: add a wallpaper, global on/off, per-display playback and volume,
   playlist navigation, CPU/GPU/RAM/thermal status, updates, settings and quit.
-- **Management window**: Overview, Wallpaper Library, **Saved** (bookmarks and display schemes),
+- **Management window**: Overview, Wallpaper Library, **Schemes** (saved display setups),
   System Wallpaper (macOS 26+), Workshop (Pro), and Settings.
 - **Display editor**: Wallpaper and Overlays tabs. Overlays uses one canvas,
   a layer list, an object inspector and an add palette for widgets, clock and music;
@@ -84,11 +84,13 @@ follow Loomscreen's video controls rather than claiming exact WPE parity.
 Preset volume multiplies the display's volume. These engine settings are kept
 separate from identically named project properties.
 
-## Saved content and automation
+## Bookmarks, schemes and automation
 
-- **Saved → Bookmarks**: bookmarks keep the wallpaper content. Applying one
-  leaves the target display's playback and overlay settings in place.
-- **Saved → Schemes**: a full display setup, including wallpaper, overlays,
+- **Bookmarks**: mark wallpapers you use often with the yellow bookmark, then
+  pick the **Bookmarks** filter in the Wallpaper Library to list only those.
+- **Likes** (Pro): the pink heart on a Workshop item keeps it to download
+  later; the Workshop page's **Likes** list shows everything you liked.
+- **Schemes**: a full display setup, including wallpaper, overlays,
   playback, effects, playlist and schedule. Applying a scheme replaces that
   display's setup after confirmation. Positions adapt to the target display.
 - **Playlists**: videos, drag-reordering, shuffle and 1–1440 minute rotation.

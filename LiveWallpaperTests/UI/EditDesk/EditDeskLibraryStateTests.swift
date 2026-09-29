@@ -57,11 +57,11 @@ struct EditDeskLibraryStateTests {
                 shelf() == ["S4b Alpha", "S4b Beta"],
                 Comment(rawValue: "the shelf is \(shelf()): All adds Gamma, Recently Used puts Beta first")
             )
-            // The Saved page's own search field stays in the window for a moment after the switch.
+            // The Schemes page's own search field stays in the window for a moment after the switch.
             let alone = await Self.settle(window) {
                 Self.views(in: window).compactMap { $0 as? NSTextField }.filter(\.isEditable).count == 1
             }
-            #expect(alone, "the Saved page's search field is still in the window")
+            #expect(alone, "the Schemes page's search field is still in the window")
             #expect(Self.searchField(in: window)?.stringValue == "S4b", "the search came back empty")
         }
     }

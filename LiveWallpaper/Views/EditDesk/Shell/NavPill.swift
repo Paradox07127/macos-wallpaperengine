@@ -25,8 +25,8 @@ struct NavPill: View {
                 .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
             if item == .schemes {
                 label
-                    .help(Text("Saved wallpapers and saved display setups"))
-                    .accessibilityHint(Text("Saved wallpapers and saved display setups"))
+                    .help(Text("Display setups you saved"))
+                    .accessibilityHint(Text("Display setups you saved"))
             } else {
                 label
             }
@@ -38,7 +38,7 @@ struct NavPill: View {
         switch item {
         case .home: "Overview"
         case .library: "Wallpaper Library"
-        case .schemes: "Saved"
+        case .schemes: "Schemes"
         case .systemWallpaper: "System Wallpaper"
         case .workshop: "Workshop"
         case .settings: "Settings"

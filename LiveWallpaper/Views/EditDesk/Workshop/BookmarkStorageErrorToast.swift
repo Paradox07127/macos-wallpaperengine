@@ -31,9 +31,9 @@ enum BookmarkStorageErrorToast {
         }
         return center.post(
             String(
-                localized: "Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved.",
+                localized: "Couldn't read your likes. Reset discards them so new likes can be saved.",
                 bundle: .appLanguage,
-                comment: "Workshop bookmark alert when the saved bookmarks can't be decoded; the Reset button discards them."
+                comment: "Workshop likes alert when the saved likes can't be decoded; the Reset button discards them."
             ),
             style: .failure,
             action: EditDeskToastCenter.Toast.Action(

@@ -95,19 +95,6 @@ struct WorkshopBookmarkTests {
         #expect(workshop.bookmarks.map(\.rawTitle) == [nil])
     }
 
-    @Test("Deleting a local bookmark removes it and its saved-for-later entry")
-    func deletingALocalBookmarkClearsBoth() throws {
-        let (local, workshop, suite) = try Self.stores("delete")
-        defer { suite.discard() }
-        let bookmark = Self.addLocal("424242", to: local)
-        workshop.add(Self.saved(424_242))
-
-        WorkshopBookmarkActions.remove(bookmark, store: local, workshopStore: workshop)
-
-        #expect(local.bookmarks.isEmpty)
-        #expect(!workshop.contains(424_242))
-    }
-
     @Test("The pane's like set is the Workshop store alone")
     func bookmarkedIDsAreTheWorkshopStore() throws {
         let (local, workshop, suite) = try Self.stores("idSet")
@@ -132,32 +119,6 @@ struct WorkshopBookmarkTests {
 
         #expect(items.map(\.id) == [3, 2, 1])
         #expect(items.map(\.rawTitle) == ["Rain", "Loaded", "Rain"])
-    }
-
-    @Test("A saved-for-later entry on the Installed page becomes a playable bookmark in one tap")
-    func installedTogglePromotesSavedEntry() throws {
-        let (local, workshop, suite) = try Self.stores("promote")
-        defer { suite.discard() }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let cache = root.appendingPathComponent("wpe-cache/424242", isDirectory: true)
-        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        try Data([0, 1]).write(to: cache.appendingPathComponent("video.mp4"))
-        workshop.add(Self.saved(424_242))
-        let model = InstalledLibraryModel(dependencies: .init(
-            loadEntries: { [] }, loadRemoteUpdateEpochs: { [:] }, saveRemoteUpdateEpochs: { _ in },
-            loadLastUpdateCheckEpoch: { 0 }, saveLastUpdateCheckEpoch: { _ in },
-            makeMetadataService: { SteamWorkshopMetadataService() }, now: Date.init, prefetchPreviewURLs: { _ in }
-        ))
-        let resolver = WPECachedContentResolver(applicationSupportRootURL: root, makeBookmark: { Data($0.path.utf8) })
-
-        model.toggleBookmark(
-            WPEHistoryEntry(origin: Self.origin("424242"), importedAt: Date()),
-            store: local, workshopStore: workshop, resolver: resolver
-        )
-
-        #expect(local.containsWPEBookmark(workshopID: "424242"))
-        #expect(model.errorMessage == nil)
     }
 
     @Test("A card wired the way Browse wires it saves its item on the first click and removes it on the second")

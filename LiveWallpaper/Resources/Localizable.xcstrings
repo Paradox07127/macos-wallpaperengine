@@ -1696,65 +1696,6 @@
         }
       }
     },
-    "%lld bookmarks" : {
-      "comment" : "Library status bar: the number of saved bookmarks. %lld is the count.",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld bookmark"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld bookmarks"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld marcador"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld marcadores"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマーク %lld 件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 個書籤"
-          }
-        }
-      }
-    },
     "%lld changed from the scene's defaults" : {
       "comment" : "Status line under the preset picker when no preset is applied.",
       "localizations" : {
@@ -17337,35 +17278,6 @@
         }
       }
     },
-    "Couldn't add %@ to Bookmarks." : {
-      "comment" : "Workshop installed bookmark failure. Placeholder is the wallpaper title.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo añadir %@ a Marcadores."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ をブックマークに追加できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法将 %@ 添加到书签。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法將 %@ 加入書籤。"
-          }
-        }
-      }
-    },
     "Couldn't add %lld of the selected videos." : {
       "comment" : "Playlist and schedule panel: some chosen video files could not be bookmarked. Placeholder is how many.",
       "localizations" : {
@@ -18087,42 +17999,6 @@
         }
       }
     },
-    "Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved." : {
-      "comment" : "Workshop bookmark alert when the saved bookmarks can't be decoded; the Reset button discards them.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't read Workshop bookmarks. Reset discards them so new bookmarks can be saved."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudieron leer los marcadores del Workshop. «Restablecer» los descarta para poder guardar marcadores nuevos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップのブックマークを読み込めませんでした。「リセット」するとこれらのブックマークは破棄され、新しいブックマークを保存できるようになります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法读取创意工坊书签。“重置”会丢弃这些书签，之后即可保存新书签。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法讀取工作坊書籤。「重設」會捨棄這些書籤，之後即可儲存新書籤。"
-          }
-        }
-      }
-    },
     "Couldn't read the downloaded files." : {
       "comment" : "Workshop import failed: unreadable download.",
       "localizations" : {
@@ -18184,6 +18060,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取此設定檔：%@"
+          }
+        }
+      }
+    },
+    "Couldn't read your likes. Reset discards them so new likes can be saved." : {
+      "comment" : "Workshop likes alert when the saved likes can't be decoded; the Reset button discards them.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read your likes. Reset discards them so new likes can be saved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer tus Me gusta. «Restablecer» los descarta para poder guardar nuevos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいねを読み込めませんでした。「リセット」するとこれらのいいねは破棄され、新しいいいねを保存できるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取喜欢。“重置”会丢弃这些喜欢，之后即可保存新的喜欢。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取喜歡。「重設」會捨棄這些喜歡，之後即可儲存新的喜歡。"
           }
         }
       }
@@ -21529,6 +21441,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示器名稱"
+          }
+        }
+      }
+    },
+    "Display setups you saved" : {
+      "comment" : "Help and accessibility hint for the Schemes item in the top navigation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display setups you saved"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuraciones de pantalla que guardaste"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存したディスプレイ構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你保存的显示器方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你儲存的顯示器方案"
           }
         }
       }
@@ -38205,76 +38152,6 @@
         }
       }
     },
-    "No bookmarks match your search" : {
-      "comment" : "Title of an empty state when there are no bookmarks that match the current search.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No bookmarks match your search"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ningún marcador coincide con tu búsqueda"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検索に一致するブックマークがありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有与搜索匹配的书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有符合搜尋的書籤"
-          }
-        }
-      }
-    },
-    "No bookmarks yet" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No bookmarks yet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay marcadores"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマークはまだありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚无书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無書籤"
-          }
-        }
-      }
-    },
     "No description provided." : {
       "comment" : "Placeholder when a Workshop item has no description.",
       "localizations" : {
@@ -53683,41 +53560,6 @@
         }
       }
     },
-    "Saved" : {
-      "comment" : "Sidebar row for the combined saved-wallpapers and saved-setups library.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saved"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存済み"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已保存"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已儲存"
-          }
-        }
-      }
-    },
     "Saved by you" : {
       "comment" : "Scene preset picker section for presets the user created.",
       "localizations" : {
@@ -53749,41 +53591,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你儲存的"
-          }
-        }
-      }
-    },
-    "Saved library tab" : {
-      "comment" : "A11y label for the capsule switching between saved wallpapers and saved setups.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saved library tab"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pestañas de la página «Guardado»"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「保存済み」ページのタブ切り替え"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“已保存”页面的标签切换"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「已儲存」頁面的標籤切換"
           }
         }
       }
@@ -53854,41 +53661,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已儲存到所有顯示器，桌布目前已全部關閉。"
-          }
-        }
-      }
-    },
-    "Saved wallpapers and saved display setups" : {
-      "comment" : "A11y hint for the Saved sidebar row.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saved wallpapers and saved display setups"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondos de pantalla guardados y configuraciones de pantalla guardadas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存した壁紙と保存したディスプレイ構成"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已保存的壁纸与已保存的显示器方案"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已儲存的桌布與已儲存的顯示器方案"
           }
         }
       }
@@ -55279,42 +55051,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋設定"
-          }
-        }
-      }
-    },
-    "Search bookmarks" : {
-      "comment" : "A label for a search bar in the bookmarks library.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search bookmarks"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar marcadores"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマークを検索"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜尋書籤"
           }
         }
       }
@@ -76016,41 +75752,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工作坊"
-          }
-        }
-      }
-    },
-    "Workshop Bookmarks" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workshop Bookmarks"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Marcadores del Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップのブックマーク"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创意工坊书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "工作坊書籤"
           }
         }
       }

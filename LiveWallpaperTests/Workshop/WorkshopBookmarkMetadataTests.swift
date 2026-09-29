@@ -30,7 +30,7 @@ struct WorkshopBookmarkMetadataTests {
         )
     }
 
-    @Test("Browse save survives archive restart and feeds the Saved modal's description, author and rating")
+    @Test("Browse save survives archive restart and feeds the Likes modal's description, author and rating")
     func browseToSavedRoundTrip() throws {
         let scratch = try TestScratch.defaultsSuite(prefix: "WorkshopBookmarkMetadataTests")
         defer { scratch.discard() }
@@ -39,7 +39,7 @@ struct WorkshopBookmarkMetadataTests {
         let original = item()
         WorkshopBookmarkActions.toggle(original, workshopStore: workshop)
         let restarted = WorkshopBookmarkStore(defaults: scratch.defaults)
-        let restored = try SavedBookmarks.queryItem(#require(restarted.bookmarks.first))
+        let restored = try WorkshopBookmarkActions.queryItem(#require(restarted.bookmarks.first))
         #expect(restored.shortDescription == original.shortDescription)
         #expect(restored.creatorPersonaName == "Fixture Author")
         #expect(restored.creatorID == original.creatorID)
@@ -68,7 +68,7 @@ struct WorkshopBookmarkMetadataTests {
         #expect(saved.createdAt == createdAt)
         #expect(saved.id == 731)
         #expect(restarted.bookmarks.count == 1)
-        let restored = SavedBookmarks.queryItem(saved)
+        let restored = WorkshopBookmarkActions.queryItem(saved)
         #expect(restored.shortDescription == "A quiet synthetic desert")
         #expect(restored.creatorPersonaName == "Fixture Author")
         #expect(restored.rating?.totalVotes == 179)
@@ -83,13 +83,13 @@ struct WorkshopBookmarkMetadataTests {
         let wrong = try WorkshopBookmark(id: 732, rawTitle: "Other", previewImageURL: nil, tags: [],
                                          detailsSnapshot: #require(item().bookmarkDetailsSnapshot))
         #expect(wrong.queryItemSnapshot == nil)
-        let fallback = SavedBookmarks.queryItem(wrong)
+        let fallback = WorkshopBookmarkActions.queryItem(wrong)
         #expect(fallback.id == 732)
         #expect(fallback.shortDescription.isEmpty)
         #expect(fallback.rating == nil)
         let corrupt = WorkshopBookmark(id: 731, rawTitle: "Still saved", previewImageURL: nil, tags: [],
                                        detailsSnapshot: Data("invalid".utf8))
-        #expect(SavedBookmarks.queryItem(corrupt).title == "Still saved")
+        #expect(WorkshopBookmarkActions.queryItem(corrupt).title == "Still saved")
         #expect(item(id: 732, description: "", rich: false).preservingDetails(from: item()).rating == nil)
         let snapshot = try #require(item().bookmarkDetailsSnapshot)
         var payload = try #require(JSONSerialization.jsonObject(with: snapshot) as? [String: Any])
@@ -122,7 +122,7 @@ struct WorkshopBookmarkMetadataTests {
         WorkshopBookmarkActions.refreshDetails(item(description: " ", rich: false), in: store)
         let restarted = WorkshopBookmarkStore(defaults: scratch.defaults)
         let saved = try #require(restarted.bookmarks.first)
-        let restored = SavedBookmarks.queryItem(saved)
+        let restored = WorkshopBookmarkActions.queryItem(saved)
         #expect(restored.displayDescription == "Desert\nA quiet night [2026]")
         #expect(restored.shortDescription == item().shortDescription)
         #expect(restored.creatorPersonaName == "Fixture Author")
@@ -170,7 +170,7 @@ struct WorkshopBookmarkMetadataTests {
         fields.removeValue(forKey: "detailDescription")
         let oldData = try JSONSerialization.data(withJSONObject: fields)
         let bookmark = WorkshopBookmark(id: 731, rawTitle: "Legacy", previewImageURL: nil, tags: [], detailsSnapshot: oldData)
-        let restored = SavedBookmarks.queryItem(bookmark)
+        let restored = WorkshopBookmarkActions.queryItem(bookmark)
         #expect(restored.detailDescription == nil)
         #expect(restored.displayDescription == original.shortDescription)
         #expect(restored.creatorPersonaName == original.creatorPersonaName)

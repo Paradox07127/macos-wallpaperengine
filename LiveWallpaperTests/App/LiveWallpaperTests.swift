@@ -293,6 +293,7 @@ struct SettingsManagerTests {
             "monitor.source.codex.bookmark",
             "loomscreen.library.bookmarks.v1",
             "loomscreen.library.bookmarks.migrated.v1",
+            "loomscreen.savedLibrary.selectedTab.v1",
         ]
         for key in auxiliaryKeys {
             defaults.set(Data([0x01]), forKey: key)

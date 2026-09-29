@@ -13,6 +13,25 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [Unreleased]
+
+### Added
+
+- Wallpaper Library entries can be marked with a yellow bookmark, and the
+  Bookmarks filter lists only the marked ones.
+- Pro: a pink heart likes a Workshop item to download later, and the Workshop
+  page lists your likes next to Browse.
+
+### Changed
+
+- The Saved page is now Schemes and lists saved display setups only; its
+  Bookmarks tab is replaced by the Wallpaper Library's Bookmarks filter.
+
+### Fixed
+
+- Pro: unliking a Workshop item (formerly removing its bookmark) no longer
+  deletes its saved scenes from the Wallpaper Library.
+
 ## [0.8.0] — 2026-09-28
 
 ### Added

@@ -9,7 +9,7 @@ import Testing
 struct EditDeskRouterTests {
     @Test("General settings notification opens general and clears the search")
     func openGeneralSettings() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         router.settingsSearchText = "volume"
         router.pendingSettingsSearchAnchor = .displayDefaultsVideo
         router.handle(Notification(name: .openGeneralSettings))
@@ -63,7 +63,7 @@ struct EditDeskRouterTests {
 
     @Test("Add wallpaper notification carries the display it targets and is consumed once")
     func promptAddWallpaper() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         router.handle(Notification(name: .promptAddWallpaper, userInfo: [
             "kind": "html-folder", "screenID": CGDirectDisplayID(42),
         ]))
@@ -114,11 +114,11 @@ struct EditDeskRouterTests {
 
     @Test("Onboarding notification stores the request without navigating")
     func showOnboarding() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         #expect(!router.onboardingRequested)
         router.handle(Notification(name: .showOnboarding))
         #expect(router.onboardingRequested)
-        #expect(router.page == .schemes)
+        #expect(router.page == .workshop)
     }
 
     @Test("No initial navigation opens home and stores the initial prompt")
@@ -161,14 +161,6 @@ struct EditDeskRouterTests {
         #expect(router.libraryFocus == .aerials)
     }
 
-    @Test("Initial bookmarks navigation opens the Saved page on Bookmarks")
-    func initialBookmarks() {
-        let router = makeRouter(.bookmarks)
-        #expect(router.page == .schemes)
-        #expect(router.pendingSavedTab == .bookmarks)
-        #expect(router.libraryFocus == nil)
-    }
-
     @Test("Initial system wallpaper navigation opens its own page, and the wallpaper library before macOS 26")
     func initialSystemWallpaper() {
         let router = makeRouter(.systemWallpaper)
@@ -193,7 +185,7 @@ struct EditDeskRouterTests {
         #expect(older.page == .library)
     }
 
-    @Test("The library focus only picks a chip, and Manage Schemes opens the Saved page on Schemes")
+    @Test("The library focus only picks a chip, and Manage Schemes opens the Schemes page")
     func libraryFocusNoLongerNamesPages() throws {
         let router = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRouter.swift")
         let start = try #require(router.range(of: "enum LibraryFocus"))
@@ -201,7 +193,7 @@ struct EditDeskRouterTests {
         #expect(!focus.contains("schemes"), "Schemes is still a focus of the library page")
         #expect(!focus.contains("systemWallpaper"), "System Wallpaper is still a focus of the library page")
         let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
-        #expect(host.contains("router.openSaved(.schemes)"), "Manage Schemes does not open the Saved page on Schemes")
+        #expect(host.contains("router.select(.schemes)"), "Manage Schemes does not open the Schemes page")
     }
 
     @Test("Initial workshop navigation opens the available workshop")
@@ -242,14 +234,14 @@ struct EditDeskRouterTests {
 
     @Test("Settings back preserves the origin across settings destinations and defaults to home")
     func backFromSettings() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         router.openSettings(.general)
-        #expect(router.previousPage == .schemes)
+        #expect(router.previousPage == .workshop)
         router.openSettings(.displayDefaults, anchor: .displayDefaultsVideo)
-        #expect(router.previousPage == .schemes)
+        #expect(router.previousPage == .workshop)
         #expect(router.pendingSettingsSearchAnchor == .displayDefaultsVideo)
         router.backFromSettings()
-        #expect(router.page == .schemes)
+        #expect(router.page == .workshop)
 
         let initialSettings = makeRouter(.general)
         initialSettings.backFromSettings()
@@ -258,7 +250,7 @@ struct EditDeskRouterTests {
 
     @Test("Detail commands return home and close the display detail")
     func detailCommands() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         router.showDetail(42)
         #expect(router.page == .home)
         #expect(router.detailDisplayID == 42)
@@ -313,9 +305,9 @@ struct EditDeskRouterTests {
 
     @Test("Unknown notifications leave navigation unchanged")
     func unknownNotification() {
-        let router = makeRouter(.bookmarks)
+        let router = makeRouter(.workshop)
         router.handle(Notification(name: Notification.Name("EditDeskRouterTests.unknown")))
-        #expect(router.page == .schemes)
+        #expect(router.page == .workshop)
         #expect(router.previousPage == nil)
         #expect(router.pendingAddWallpaper == nil)
         #expect(!router.onboardingRequested)

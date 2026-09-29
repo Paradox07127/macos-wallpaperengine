@@ -136,8 +136,6 @@ struct EditDeskRoot: View {
             EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })
         }
         #if !LITE_BUILD
-        // The Saved page opens a Workshop bookmark in the Workshop page's modal, which runs on this session.
-        .environment(workshopSession)
         .onChange(of: deferredApplyTicketStates, initial: true) { _, _ in announceSettledTickets() }
         .onChange(of: WorkshopBookmarkStore.shared.hasStorageError, initial: true) { syncBookmarkErrorToast() }
         .onChange(of: toasts.toasts.map(\.id)) { syncBookmarkErrorToast() }
