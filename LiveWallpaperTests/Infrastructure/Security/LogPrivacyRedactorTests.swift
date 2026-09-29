@@ -233,4 +233,91 @@ struct LogPrivacyRedactorTests {
         #expect(scrubbed == "installer <ip-redacted> finished")
     }
 
+    // MARK: - Exact-output pins
+
+    private static let pins: [(input: String, expected: String)] = [
+        ("/Users/alice", "<path>/<redacted>"),
+        ("open '/Users/dave' now", "open '<path>/<redacted>' now"),
+        ("/Volumes/Backup/Users/carol/notes.txt", "<path>/notes.txt"),
+
+        ("Connect https://alice:s3cret@cdn.example.com/asset.mp4 now", "Connect https://<redacted>@cdn.example.com/asset.mp4 now"),
+        ("see (https://bob@host.example/x) here", "see (https://<redacted>@host.example/x) here"),
+        (#""x://u:p@h/y""#, #""x://<redacted>@h/y""#),
+        ("abchttps://user@host/x", "abchttps://<redacted>@host/x"),
+        ("1https://user@host/x", "1https://<redacted>@host/x"),
+        ("2+ssh://git@example.com/repo", "2+ssh://<redacted>@example.com/repo"),
+        ("ftp://user@192.168.1.20/file", "ftp://<redacted>@<ip-redacted>/file"),
+
+        ("Fetch https://cdn.x.com/a.mp4?token=abc&lat=37.78 failed", "Fetch https://cdn.x.com/a.mp4?<query-redacted> failed"),
+        ("Failed livewallpaper://wallpaper/index.html?n=session-secret", "Failed livewallpaper://wallpaper/index.html?<query-redacted>"),
+        ("https://h.example/p?q=1#frag", "https://h.example/p?<query-redacted>"),
+        ("(https://h.example/p?q=1)", "(https://h.example/p?<query-redacted>"),
+        ("abchttps://h.example/p?q=1", "abchttps://h.example/p?<query-redacted>"),
+        ("1https://h.example/p?q=1", "1https://h.example/p?<query-redacted>"),
+
+        ("Redirect app://trusted/callback#access-token", "Redirect app://trusted/callback#<fragment-redacted>"),
+        (#""x://h/p#frag" end"#, #""x://h/p#<fragment-redacted>" end"#),
+        ("-https://h/p#f", "-https://h/p#<fragment-redacted>"),
+        (".x://h/p#f", ".x://h/p#<fragment-redacted>"),
+
+        ("Loading file:///Users/bob/wallpaper.mov now", "Loading file://<redacted> now"),
+        ("(file:///private/var/a.txt)", "(file://<redacted>"),
+        ("file://host/share?x=1", "file://<redacted>"),
+
+        ("/Users/alice/Movies/Sunset.mp4", "<path>/Sunset.mp4"),
+        ("/Volumes/Studio/ClientX/secret.mov", "<path>/secret.mov"),
+        ("/private/var/folders/ab/session.json", "<path>/session.json"),
+        ("/tmp/build/out.log", "<path>/out.log"),
+        ("/var/log/system.log", "<path>/system.log"),
+        ("/home/eve/.config/app.toml", "<path>/app.toml"),
+        ("/opt/homebrew/bin/ffmpeg", "<path>/ffmpeg"),
+        ("/mnt/data/x.bin", "<path>/x.bin"),
+        ("/Applications/LiveWallpaper.app/Contents/MacOS/LiveWallpaper", "<path>/LiveWallpaper"),
+        ("GET https://cdn.example.com/tmp/a.mp4 failed", "GET https://cdn.example.com<path>/a.mp4 failed"),
+        ("/Library/Caches/x.plist", "/Library/Caches/x.plist"),
+        ("~/Library/Logs/runtime.log", "~/Library/Logs/runtime.log"),
+
+        ("URLError -1009: lat=37.7749, longitude: -122.4194", "URLError -1009: lat=<redacted>, longitude=<redacted>"),
+        ("Latitude = 12.5", "Latitude=<redacted>"),
+        ("Set api_key=AKIA1234567890ABCDEF in header", "Set api_key=<redacted> in header"),
+        ("password: hunter2", "password=<redacted>"),
+        ("refresh-token=abc&x=1", "refresh-token=<redacted>&x=1"),
+        ("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig", "Authorization: Bearer <redacted>"),
+        ("Token abc123", "Token <redacted>"),
+        ("Authorization: Basic dXNlcjpwYXNzd29yZA==", "Authorization: Basic <redacted>"),
+
+        ("Resolved owner 76561198012345678 for item 3226487183", "Resolved owner <steamid-redacted> for item 3226487183"),
+        ("SteamID: [U:1:1267132100] reported by probe", "SteamID: <steamid-redacted> reported by probe"),
+        ("Connection refused from 192.168.1.20:27036", "Connection refused from <ip-redacted>:27036"),
+        ("Bound to 2001:db8::1 on port 443", "Bound to <ip-redacted> on port 443"),
+        ("Route via fe80:0:0:0:1ff:fe23:4567:890a is down", "Route via <ip-redacted> is down"),
+        ("Bonjour registered Johns-MacBook-Pro.local on the network", "Bonjour registered <host-redacted> on the network"),
+        ("removed ssfn1234567890123456789 from container", "removed ssfn<redacted> from container"),
+        ("cached personaname=GabeN for 76561198012345678", "cached personaname=<redacted> for <steamid-redacted>"),
+        ("probe says Persona Name: 半藏 Hanzo Main and more", "probe says Persona Name: <redacted>"),
+        ("doctor: Account: gaben_at_home ", "doctor: Account: <redacted> "),
+        ("Logging in user 'gaben' [U:1:42] to Steam Public...OK", "Logging in user '<redacted>' <steamid-redacted> to Steam Public...OK"),
+    ]
+
+    @Test("Each rule produces its pinned output, and scrubbing that output again is a no-op", arguments: pins)
+    func pinnedOutput(input: String, expected: String) {
+        #expect(LogPrivacyRedactor.scrub(input) == expected)
+        #expect(LogPrivacyRedactor.scrub(expected) == expected)
+    }
+
+    @Test("Own HOME alone collapses to ~")
+    func pinnedBareHome() {
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
+        guard home.hasPrefix("/Users/") else { return }
+        #expect(LogPrivacyRedactor.scrub(home) == "~")
+    }
+
+    @Test("A long unbroken letter run scrubs unchanged within a clock budget")
+    func longLetterRunIsLinear() {
+        let run = String(repeating: "log", count: 8000)
+        var scrubbed = ""
+        let elapsed = ContinuousClock().measure { scrubbed = LogPrivacyRedactor.scrub(run) }
+        #expect(scrubbed == run)
+        #expect(elapsed < .seconds(2))
+    }
 }

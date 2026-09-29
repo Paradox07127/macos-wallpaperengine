@@ -73,12 +73,14 @@ public enum LogPrivacyRedactor {
     private static let rules: [Rule] = [
         // `/Users/<name>` (or `/Volumes/.../Users/<name>`) → keep relative path useful for triage.
         Rule(pattern: #"/Users/[^/\s'"]+"#, template: "/Users/<redacted>"),
+        // Schemes start only at the head of a scheme-character run, so a long letter run is scanned once,
+        // not once per letter; the `[0-9+.-]*` lead keeps `1https://u@h` redacted where a bare anchor would not.
         // URL userinfo for any hierarchical scheme.
-        Rule(pattern: #"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s'"@]+@([^/\s'"]+)"#, template: "$1<redacted>@$2"),
+        Rule(pattern: #"(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*://)[^/\s'"@]+@([^/\s'"]+)"#, template: "$1<redacted>@$2"),
         // Query/fragment can carry signed CDN credentials, session nonces, coordinates and
         // OAuth tokens; covers custom schemes as well as http(s).
-        Rule(pattern: ##"([A-Za-z][A-Za-z0-9+.-]*://[^\s'"?#]+)\?[^\s'"#]*(?:#[^\s'"]*)?"##, template: "$1?<query-redacted>"),
-        Rule(pattern: ##"([A-Za-z][A-Za-z0-9+.-]*://[^\s'"#]+)#[^\s'"]*"##, template: "$1#<fragment-redacted>"),
+        Rule(pattern: ##"(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*://[^\s'"?#]+)\?[^\s'"#]*(?:#[^\s'"]*)?"##, template: "$1?<query-redacted>"),
+        Rule(pattern: ##"(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*://[^\s'"#]+)#[^\s'"]*"##, template: "$1#<fragment-redacted>"),
         Rule(pattern: #"file://[^\s'"]+"#, template: "file://<redacted>"),
         // Common absolute roots: keep only the final component for extension/type triage —
         // directory names can identify a person or organization.
