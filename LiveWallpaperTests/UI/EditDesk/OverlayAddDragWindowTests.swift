@@ -27,7 +27,6 @@ struct OverlayAddDragWindowTests {
         await fixture.press(Self.cpuTile)
         await fixture.drag(through: [CGPoint(x: Self.cpuTile.x + 3, y: Self.cpuTile.y), CGPoint(x: Self.cpuTile.x + 20, y: Self.cpuTile.y), end])
         await fixture.release(end)
-        await fixture.settle { false }
         #expect(fixture.session.interaction.placements.count == afterClick, "a drag released on the strip added a widget")
         #expect(fixture.session.addDrop == nil)
     }
@@ -71,13 +70,11 @@ struct OverlayAddDragWindowTests {
         await fixture.drag(through: [CGPoint(x: Self.cpuTile.x + 20, y: Self.cpuTile.y - 20), Self.onCanvas])
         #expect(await fixture.settle { fixture.session.addDrop != nil }, "the drag never reached the session")
         fixture.escape()
-        await fixture.settle { false }
         #expect(fixture.closes == 1, "Escape closed the page while a tile was being dragged")
         #expect(fixture.session.addDrop == nil, "Escape left the drag running")
         let later = CGPoint(x: Self.onCanvas.x + 10, y: Self.onCanvas.y + 10)
         await fixture.drag(through: [later])
         await fixture.release(later)
-        await fixture.settle { false }
         #expect(fixture.session.interaction.placements.count == before, "the cancelled drag still dropped a widget")
     }
 
@@ -119,7 +116,6 @@ struct OverlayAddDragWindowTests {
         #expect(await fixture.settle { fixture.closes == 1 }, "the drag's Escape monitor was still installed")
         let placements = fixture.session.interaction.placements.count
         await fixture.release(onCanvas)
-        await fixture.settle { false }
         #expect(fixture.session.interaction.placements.count == placements, "the ended drag still dropped a widget")
         #expect(NSCursor.current == NSCursor.crosshair, "the release popped the cursor a second time")
     }

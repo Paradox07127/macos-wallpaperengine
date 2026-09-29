@@ -154,14 +154,15 @@ private final class OpeningCanvasFixture {
     }
 
     func click(board point: CGPoint) async {
-        await settle { false }
+        // Commits pending state, so the press hits the canvas as the test last set it.
+        window.contentView?.layoutSubtreeIfNeeded()
         await send(.leftMouseDown, board: point)
         await send(.leftMouseUp, board: point)
     }
 
     /// `offset` is in window points.
     func drag(board start: CGPoint, by offset: CGSize) async {
-        await settle { false }
+        window.contentView?.layoutSubtreeIfNeeded()
         await send(.leftMouseDown, board: start)
         for step in [CGFloat(0.1), 0.5, 1] {
             let point = CGPoint(x: start.x + offset.width * step / Self.scale, y: start.y + offset.height * step / Self.scale)

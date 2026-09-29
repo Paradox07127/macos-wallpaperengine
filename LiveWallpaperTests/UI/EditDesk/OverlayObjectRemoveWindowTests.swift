@@ -229,7 +229,8 @@ private final class RemoveWindowFixture {
 
     /// `point` is in board points with a top-left origin; window coordinates start bottom-left.
     func click(board point: CGPoint) async {
-        await settle { false }
+        // Commits a selection made just before the click, or the click lands on the object before its remove button is drawn.
+        window.contentView?.layoutSubtreeIfNeeded()
         let location = NSPoint(x: point.x * Self.scale, y: size.height - point.y * Self.scale)
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             guard let event = NSEvent.mouseEvent(
