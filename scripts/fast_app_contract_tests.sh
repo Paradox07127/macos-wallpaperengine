@@ -23,14 +23,14 @@ the Lite host, which needs a real signing certificate (see below).
 EOF
 }
 
-SUITES=(
+# Run together in one test host with Swift Testing's in-process parallelism.
+# A suite that fails beside others belongs in SERIAL_SUITES.
+PARALLEL_SUITES=(
   GeneralSettingsOwnershipCharacterizationTests
   SettingsPersistenceFailureTests
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
-  # Screen ↔ runtime-session ownership, including the crossfade retire path.
-  ScreenRuntimeOwnershipTests
   InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests
@@ -66,7 +66,6 @@ SUITES=(
   BoardPointerScopeTests
   MusicLayerPointerGateTests
   RuntimeLeaseChurnCharacterizationTests
-  RuntimeTests
   MonitorSamplerOwnershipCharacterizationTests
   SuspendEnergyTests
   RepositoryRootTests
@@ -111,17 +110,11 @@ SUITES=(
   # Preview ownership and authored slider values must survive UI refactors.
   WPESliderDetentBudgetTests
   WallpaperCoverStoreTests
-  PreviewWorkGateTests
-  PreviewRequestPoolTests
   PreviewFilesystemWorkTests
   HTMLSnapshotProducerOwnershipTests
-  ThumbnailServiceAdmissionTests
-  # Cancelled playlist media work must not repopulate an invalidated cache.
-  PlaylistMetadataLifecycleTests
   # InstalledPreviewPlaybackLifecycleTests stays in the opt-in full app run: the hosted runner
   # image turns Reduce Motion on, which vetoes preview playback, so its "must animate" checks fail.
   WPEPreviewURLCacheTests
-  TileTaskTests
   PreviewFrameTimingTests
   # System Wallpaper publish/status machine, including the provider stamp: a
   # leftover appex used to condemn the installed one and pause the whole page.
@@ -135,7 +128,6 @@ SUITES=(
   EditDeskShelfContinuityTests
   EditDeskWindowHostTests
   EditDeskRouterTests
-  ShelfThumbnailCacheTests
   LibraryMetadataSidecarTests
   ScreenPresentationTests
   EditDeskPreferencesTests
@@ -151,18 +143,12 @@ SUITES=(
   OverlayLayerListTests
   OverlayRuntimeContractTests
   OverlayObjectRemoveWindowTests
-  OverlayInspectorOpeningTests
   SavedPageTests
   DetailBookmarkTests
-  OverlayTopBarWindowTests
   OverlayRemoveAllTests
   OverlayHiddenWidgetTests
-  DetailResizeWindowTests
-  EditDeskToastHostPlacementTests
   EditDeskModalChromeTests
-  PopoverEscapeTests
   MatureRevealStateTests
-  DeferredApplyCoordinatorTests
   CollapsibleDescriptionTests
   WorkshopSessionTests
   BrowsePaginationMetadataTests
@@ -174,8 +160,6 @@ SUITES=(
   WorkshopPageSourceTests
   GalleryCardPreferencesTests
   BrowseCardEditDeskLayoutTests
-  WorkshopModalTests
-  WorkshopModalHostTests
   WallpaperEngineProjectWorkshopIDTests
   DeferredApplyToastsTests
   OnboardingProgressTests
@@ -193,7 +177,6 @@ SUITES=(
   WallpaperAutomationCoordinatorTests
   EditDeskStageViewTests
   ShelfGridFlightTests
-  DisplayStateResolverTests
   ApplyRouterTests
   LibraryImporterTests
   EditDeskApplyQueueTests
@@ -202,7 +185,6 @@ SUITES=(
   StatusCapsuleTests
   EditDeskChromeSourceTests
   EditDeskCanvasOwnershipTests
-  LibraryDragControllerTests
   EditDeskPageSeparatorSourceTests
   EditDeskBrowseSeparatorRenderTests
   SheetSeparatorSourceTests
@@ -214,8 +196,6 @@ SUITES=(
   ModalActionsTests
   WorkshopCoverSaveTimeTests
   DisplayDetailTests
-  DisplayDetailHostTests
-  SceneSettingsOwnerTests
   DetailTransitionTests
   SettingsSearchLocalizationTests
   NavigationTests
@@ -254,6 +234,34 @@ SUITES=(
   OverlaysInspectorPanelPickerTests
 )
 
+# These fail when other suites run beside them: they share process-wide state
+# (display configuration, the undo stack, the one ScreenManager, preview queues)
+# or hold a wall-clock budget. Run afterwards with parallelism off.
+SERIAL_SUITES=(
+  # Screen ↔ runtime-session ownership, including the crossfade retire path.
+  ScreenRuntimeOwnershipTests
+  RuntimeTests
+  PreviewWorkGateTests
+  PreviewRequestPoolTests
+  ThumbnailServiceAdmissionTests
+  # Cancelled playlist media work must not repopulate an invalidated cache.
+  PlaylistMetadataLifecycleTests
+  TileTaskTests
+  ShelfThumbnailCacheTests
+  OverlayInspectorOpeningTests
+  OverlayTopBarWindowTests
+  DetailResizeWindowTests
+  EditDeskToastHostPlacementTests
+  PopoverEscapeTests
+  DeferredApplyCoordinatorTests
+  WorkshopModalTests
+  WorkshopModalHostTests
+  DisplayStateResolverTests
+  LibraryDragControllerTests
+  DisplayDetailHostTests
+  SceneSettingsOwnerTests
+)
+
 action="test"
 run_lite=1
 case "${1:-}" in
@@ -265,7 +273,7 @@ case "${1:-}" in
     run_lite=0
     ;;
   --list)
-    printf '%s\n' "${SUITES[@]}"
+    printf '%s\n' "${PARALLEL_SUITES[@]}" "${SERIAL_SUITES[@]}"
     exit 0
     ;;
   -h|--help)
@@ -278,35 +286,47 @@ case "${1:-}" in
     ;;
 esac
 
-only_testing=()
-for suite in "${SUITES[@]}"; do
-  only_testing+=("-only-testing:LiveWallpaperTests/$suite")
-done
+# run_pass LABEL RESULT_BUNDLE ACTION PARALLEL(YES|NO) SUITE...
+run_pass() {
+  local label="$1" result_bundle="$2" pass_action="$3" parallel="$4"
+  shift 4
+  local parallel_flags=(-parallel-testing-enabled "$parallel")
+  if [[ "$parallel" == "YES" ]]; then
+    # One host process: clones would all share one app container and defaults domain.
+    parallel_flags+=(-parallel-testing-worker-count 1)
+  fi
+  local only_testing=() required_suites=() suite
+  for suite in "$@"; do
+    only_testing+=("-only-testing:LiveWallpaperTests/$suite")
+    required_suites+=("--require-suite" "$suite")
+  done
 
-echo "== Fast app architecture/security contracts (${#SUITES[@]} suites) =="
-required_suites=()
-for suite in "${SUITES[@]}"; do
-  required_suites+=("--require-suite" "$suite")
-done
+  python3 scripts/xcode_test_runner.py \
+    --label "$label" \
+    --result-bundle "$result_bundle" \
+    --minimum-test-count 1 \
+    --slowest 10 \
+    "${required_suites[@]}" \
+    -- \
+    -project LiveWallpaper.xcodeproj \
+    -scheme LiveWallpaper \
+    -destination 'platform=macOS,arch=arm64' \
+    -derivedDataPath "$DERIVED_DATA" \
+    -enableCodeCoverage NO \
+    "${parallel_flags[@]}" \
+    "${only_testing[@]}" \
+    "$pass_action" \
+    CODE_SIGN_IDENTITY=- \
+    CODE_SIGN_STYLE=Manual \
+    SWIFT_EMIT_LOC_STRINGS=NO
+}
 
-python3 scripts/xcode_test_runner.py \
-  --label "Fast app architecture/security contracts" \
-  --result-bundle "$RESULT_BUNDLE" \
-  --minimum-test-count 1 \
-  --slowest 10 \
-  "${required_suites[@]}" \
-  -- \
-  -project LiveWallpaper.xcodeproj \
-  -scheme LiveWallpaper \
-  -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath "$DERIVED_DATA" \
-  -enableCodeCoverage NO \
-  -parallel-testing-enabled NO \
-  "${only_testing[@]}" \
-  "$action" \
-  CODE_SIGN_IDENTITY=- \
-  CODE_SIGN_STYLE=Manual \
-  SWIFT_EMIT_LOC_STRINGS=NO
+echo "== Fast app architecture/security contracts (${#PARALLEL_SUITES[@]} parallel + ${#SERIAL_SUITES[@]} serial suites) =="
+run_pass "Fast app architecture/security contracts (parallel)" \
+  "$RESULT_BUNDLE" "$action" YES "${PARALLEL_SUITES[@]}"
+# The pass above already built into DERIVED_DATA with the same settings.
+run_pass "Fast app architecture/security contracts (serial)" \
+  "${RESULT_BUNDLE%.xcresult}-serial.xcresult" test-without-building NO "${SERIAL_SUITES[@]}"
 
 # The Lite host is a different binary, so a Pro-scheme pass says nothing about
 # it. Own derived data: sharing one build.db across two schemes deadlocks.
