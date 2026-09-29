@@ -6,6 +6,7 @@ enum WPEUniformValueSource: Equatable {
     case frameContext(String)
     case passValue(String)
     case passConstant(String)
+    case effectTextureProjection(inverse: Bool)
     case authoredDefault
     case missing
 
@@ -23,6 +24,14 @@ enum WPEUniformValueSource: Equatable {
         case let .frameContext(key): ["kind": "frame-context", "key": key, "scope": "frame/pass"]
         case let .passValue(key): ["kind": "pass-value", "key": key, "scope": "pass"]
         case let .passConstant(key): ["kind": "pass-constant", "key": key, "scope": "pass"]
+        case let .effectTextureProjection(inverse):
+            [
+                "kind": "layer-derived",
+                "key": inverse
+                    ? WPEMetalObjectUniforms.effectTextureProjectionMatrixInverseUniformName
+                    : WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName,
+                "scope": "layer"
+            ]
         case .authoredDefault: ["kind": "authored-default", "scope": "declaration"]
         case .missing: ["kind": "missing", "scope": "none"]
         }

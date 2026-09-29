@@ -87,10 +87,10 @@ extension WPEMetalShaderDispatcher {
         } else if let effect = WPEEffectDispatchDescriptor.table[kind] {
             let parallax = effect.appliesCameraParallax ? frameState.cameraParallax : .neutral
             usesObjectQuad = effect.supportsObjectQuad
-                && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: parallax)
+                && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: parallax)
         } else {
             usesObjectQuad = executor.usesObjectQuadGeometry(
-                for: pass,
+                for: pass.pass,
                 layer: layer,
                 cameraParallax: frameState.cameraParallax
             )

@@ -3,6 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
 
 @Suite("Uniform binding source trace")
@@ -48,6 +49,32 @@ struct WPEUniformSourceTraceTests {
         #expect((records[2]["bindingSource"] as? [String: String])?["kind"] == "missing")
         #expect(records[5]["byteOffset"] as? Int == 80)
         #expect(JSONSerialization.isValidJSONObject(records))
+    }
+
+    @Test
+    func drawContextSuppliesEffectTextureProjection() throws {
+        let executor = try makeExecutor()
+        let matrix = WPEMetalObjectUniforms.effectTextureProjectionMatrix(quad: WPEObjectQuadUniforms(
+            centerAndSize: SIMD4(-75.76, 43.84, 4066.68, 2287.5),
+            sceneSizeAndRotation: SIMD4(3840, 2160, 0.3, 0),
+            uvSignAndPadding: SIMD4(1, 1, 0, 0)
+        ))
+        let layout = [
+            WPEUniformSlot(name: "u_Missing", glslType: "float", slot: 0, slotCount: 1),
+            WPEUniformSlot(name: "g_EffectTextureProjectionMatrixInverse", glslType: "mat4", slot: 5, slotCount: 4),
+        ]
+        let (slots, sources) = try executor.withUniformSourceTracing {
+            try executor.packTranslatedUniforms(for: makePass(), layout: layout, effectTextureProjection: { matrix })
+        }
+        let inverse = WPEMetalObjectUniforms.safeInverse(matrix)
+        #expect(sources == [.missing, .effectTextureProjection(inverse: true)])
+        #expect(Array(slots[5 ..< 9]) == [inverse.columns.0, inverse.columns.1, inverse.columns.2, inverse.columns.3]
+            .map { SIMD4<Float>($0) })
+        let records = WPECanonicalUniformTrace.variables(layout: layout, slots: slots, sources: sources)
+        let source = records[1]["bindingSource"] as? [String: String]
+        #expect(source?["kind"] == "layer-derived")
+        #expect(source?["key"] == "g_EffectTextureProjectionMatrixInverse")
+        #expect(source?["scope"] == "layer")
     }
 
     @Test(arguments: [false, true])

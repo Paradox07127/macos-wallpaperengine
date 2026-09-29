@@ -13,6 +13,28 @@ enum WPEMetalObjectUniforms {
         modelViewProjectionMatrixInverseUniformName
     ]
 
+    static let effectTextureProjectionMatrixUniformName = "g_EffectTextureProjectionMatrix"
+    static let effectTextureProjectionMatrixInverseUniformName = "g_EffectTextureProjectionMatrixInverse"
+
+    /// Maps the layer's local [-1,1] square into its composite target's clip space: the
+    /// `wpe_object_quad_vertex` placement times diag(size/2, 1, 1). UV-sign mirroring flips the local axis.
+    static func effectTextureProjectionMatrix(quad: WPEObjectQuadUniforms) -> simd_double4x4 {
+        let halfWidth = Double(max(quad.sceneSizeAndRotation.x, 1)) / 2
+        let halfHeight = Double(max(quad.sceneSizeAndRotation.y, 1)) / 2
+        let halfW = Double(quad.centerAndSize.z) / 2
+        let halfH = Double(quad.centerAndSize.w) / 2
+        let rotation = Double(quad.sceneSizeAndRotation.z)
+        let c = cos(rotation), s = sin(rotation)
+        let signX: Double = quad.uvSignAndPadding.x < 0 ? -1 : 1
+        let signY: Double = quad.uvSignAndPadding.y < 0 ? -1 : 1
+        return simd_double4x4(
+            SIMD4(signX * halfW * c / halfWidth, signX * halfW * s / halfHeight, 0, 0),
+            SIMD4(-signY * halfH * s / halfWidth, signY * halfH * c / halfHeight, 0, 0),
+            SIMD4(0, 0, 1, 0),
+            SIMD4(Double(quad.centerAndSize.x) / halfWidth, Double(quad.centerAndSize.y) / halfHeight, 0, 1)
+        )
+    }
+
     /// Object/layer matrices are 16-value column-major arrays;
     /// `g_NormalModelMatrix` is a 9-value column-major array.
     static func uniformValues(

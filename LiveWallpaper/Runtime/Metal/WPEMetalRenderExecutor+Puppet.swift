@@ -967,10 +967,10 @@ extension WPEMetalRenderExecutor {
         )
         let quadUniforms = objectQuadUniforms(
             for: layer,
-            sceneSize: objectQuadSceneSize(for: pass, layer: layer, destination: destination, frameState: frameState),
+            sceneSize: objectQuadSceneSize(for: pass.pass, layer: layer, destination: destination, frameState: frameState),
             cameraParallax: frameState.cameraParallax,
             sourceTexture: sourceTexture,
-            cameraUniforms: objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
+            cameraUniforms: objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
         )
         let localSize = puppetCompositeLocalSize(for: layer, sourceTexture: sourceTexture)
         let paletteState = puppetBonePalette(for: skinningState)
@@ -1991,14 +1991,14 @@ extension WPEMetalRenderExecutor {
         let quadUniforms = objectQuadUniforms(
             for: layer,
             sceneSize: objectQuadSceneSize(
-                for: pass,
+                for: pass.pass,
                 layer: layer,
                 destination: destination,
                 frameState: frameState
             ),
             cameraParallax: frameState.cameraParallax,
             sourceTexture: processed,
-            cameraUniforms: objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
+            cameraUniforms: objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
         )
         let localSize = puppetCompositeLocalSize(for: layer, sourceTexture: processed)
         let paletteState = puppetBonePalette(for: skinningState)

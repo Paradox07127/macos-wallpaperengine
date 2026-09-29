@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import simd
 
 extension WPEMetalRenderExecutor {
 
@@ -39,6 +40,8 @@ extension WPEMetalRenderExecutor {
         /// terminal only when this exact binding carries a frame descriptor.
         let textureRotationSlot: Int?
         let textureTranslationSlot: Int?
+        /// nil = not an effect-texture projection uniform; true = the inverse. Falls through without a draw context.
+        let effectTextureProjectionInverse: Bool?
         let steps: [UniformResolutionStep]
         let defaultValue: WPESceneShaderConstantValue?
     }
@@ -132,9 +135,19 @@ extension WPEMetalRenderExecutor {
             textureResolutionSlot: Self.textureResolutionSlotIndex(for: uniform.name),
             textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
             textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
+            effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
             steps: steps,
             defaultValue: uniform.defaultValue
         )
+    }
+
+    private static func effectTextureProjectionInverse(for uniform: WPEUniformSlot) -> Bool? {
+        guard uniform.slotCount == 4 else { return nil }
+        switch uniform.name {
+        case WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName: return false
+        case WPEMetalObjectUniforms.effectTextureProjectionMatrixInverseUniformName: return true
+        default: return nil
+        }
     }
 
     private static func directUniformPacking(for uniform: WPEUniformSlot) -> DirectUniformPacking? {
@@ -217,8 +230,18 @@ extension WPEMetalRenderExecutor {
         plan: UniformResolutionPlan,
         pass: WPEPreparedRenderPass,
         frame: WPEFrameUniformContext,
-        texturesBySlot: WPEMetalTextureSlotTable?
+        texturesBySlot: WPEMetalTextureSlotTable?,
+        effectTextureProjection: (() -> simd_double4x4?)?
     ) -> WPESceneShaderConstantValue? {
+        if let inverse = plan.effectTextureProjectionInverse,
+           let matrix = effectTextureProjection?() {
+            #if DEBUG
+            recordUniformSource(.effectTextureProjection(inverse: inverse))
+            #endif
+            return .vector(WPEMetalObjectUniforms.flattenedColumnMajor(
+                inverse ? WPEMetalObjectUniforms.safeInverse(matrix) : matrix
+            ))
+        }
         // PIXEL size, not world size: `g_TexelSize` is the FBO chain head, which is the scaled scene output — a world-sized texel would narrow every blur kernel by the scale.
         if plan.isTexelSize,
            let value = Self.texelSizeValue(

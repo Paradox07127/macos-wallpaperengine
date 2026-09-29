@@ -478,7 +478,7 @@ extension WPEMetalShaderDispatcher {
     ) throws {
         let cameraParallax = descriptor.appliesCameraParallax ? frameState.cameraParallax : .neutral
         let usesObjectQuad = descriptor.supportsObjectQuad
-            && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: cameraParallax)
+            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: .effect,

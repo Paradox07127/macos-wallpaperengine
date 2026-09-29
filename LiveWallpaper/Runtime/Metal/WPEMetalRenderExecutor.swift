@@ -1312,7 +1312,8 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniformsForBinding(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
-        texturesBySlot: WPEMetalTextureSlotTable? = nil
+        texturesBySlot: WPEMetalTextureSlotTable? = nil,
+        effectTextureProjection: (() -> simd_double4x4?)? = nil
     ) throws -> PackedTranslatedUniforms {
         guard !layout.isEmpty else { return .empty }
         if let frameSlot = currentUniformArenaSlot,
@@ -1320,12 +1321,16 @@ final class WPEMetalRenderExecutor {
                slotCount: Self.translatedSlotCount(for: layout), frameSlot: frameSlot
            ) {
             try packTranslatedUniformSlots(
-                for: pass, layout: layout, texturesBySlot: texturesBySlot, into: region.storage
+                for: pass, layout: layout, texturesBySlot: texturesBySlot,
+                effectTextureProjection: effectTextureProjection, into: region.storage
             )
             return .arena(region)
         }
         return .array(
-            try packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: texturesBySlot)
+            try packTranslatedUniforms(
+                for: pass, layout: layout, texturesBySlot: texturesBySlot,
+                effectTextureProjection: effectTextureProjection
+            )
         )
     }
 
@@ -2223,14 +2228,14 @@ final class WPEMetalRenderExecutor {
     }
 
     func usesObjectQuadGeometry(
-        for pass: WPEPreparedRenderPass,
+        for pass: WPERenderPass,
         layer: WPERenderLayer,
         cameraParallax: WPECameraParallaxFrame = .neutral
     ) -> Bool {
-        if isGroupRenderTarget(pass.pass.target, layer: layer) {
+        if isGroupRenderTarget(pass.target, layer: layer) {
             return true
         }
-        guard case .scene = pass.pass.target else { return false }
+        guard case .scene = pass.target else { return false }
         if layer.geometry == .identity {
             // Route identity full-frame layers through the object quad only when there's an actual parallax shift. Gated on `amount != 0` AND a live cursor: a nonzero `smoothed` alone would drag full-frame layers off the fullscreen path for a zero shift.
             return layer.parallaxDepth != SIMD2<Double>(0, 0)
@@ -2266,28 +2271,28 @@ final class WPEMetalRenderExecutor {
     }
 
     func objectQuadSceneSize(
-        for pass: WPEPreparedRenderPass,
+        for pass: WPERenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
         frameState: WPEMetalFrameState
     ) -> CGSize {
-        guard isGroupRenderTarget(pass.pass.target, layer: layer) else {
+        guard isGroupRenderTarget(pass.target, layer: layer) else {
             return frameState.sceneSize
         }
         // WORLD canvas, never `destination.texture` dimensions: with render scaling the group RT is allocated `pixelScale` smaller, and quad NDC math built on the texture size would grow every group member by 1/pixelScale.
         return targetPool.worldCanvasSize(
-            for: pass.pass.target,
+            for: pass.target,
             layer: layer,
             sceneSize: frameState.sceneSize
         )
     }
 
     func objectQuadCameraUniforms(
-        for pass: WPEPreparedRenderPass,
+        for pass: WPERenderPass,
         layer: WPERenderLayer,
         frameState: WPEMetalFrameState
     ) -> WPEMetalCameraUniforms {
-        isGroupRenderTarget(pass.pass.target, layer: layer) ? .identity : frameState.cameraUniforms
+        isGroupRenderTarget(pass.target, layer: layer) ? .identity : frameState.cameraUniforms
     }
 
     /// The static half of the shift, `(nodePos - camPos) * depth * amount`, must be evaluated ONCE at the root — feeding each child its own origin turns the rigid translation into an anisotropic scale of the subtree about the scene centre by `(1 + depth * amount)`.
@@ -3029,12 +3034,14 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniforms(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
-        texturesBySlot: WPEMetalTextureSlotTable? = nil
+        texturesBySlot: WPEMetalTextureSlotTable? = nil,
+        effectTextureProjection: (() -> simd_double4x4?)? = nil
     ) throws -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         try slots.withUnsafeMutableBufferPointer {
             try packTranslatedUniformSlots(
-                for: pass, layout: layout, texturesBySlot: texturesBySlot, into: $0
+                for: pass, layout: layout, texturesBySlot: texturesBySlot,
+                effectTextureProjection: effectTextureProjection, into: $0
             )
         }
         return slots
@@ -3047,6 +3054,7 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable?,
+        effectTextureProjection: (() -> simd_double4x4?)? = nil,
         into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
     ) throws {
         let plans = uniformPlans(for: pass, layout: layout)
@@ -3066,7 +3074,8 @@ final class WPEMetalRenderExecutor {
                 plan: plans[index],
                 pass: pass,
                 frame: frame,
-                texturesBySlot: texturesBySlot
+                texturesBySlot: texturesBySlot,
+                effectTextureProjection: effectTextureProjection
             )
             try WPEUniformPacking.pack(value, uniform: u, into: slots)
         }

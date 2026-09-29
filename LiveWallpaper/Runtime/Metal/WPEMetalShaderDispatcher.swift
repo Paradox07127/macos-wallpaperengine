@@ -128,14 +128,14 @@ struct WPEMetalShaderDispatcher {
         var quadUniforms = executor.objectQuadUniforms(
             for: layer,
             sceneSize: executor.objectQuadSceneSize(
-                for: pass,
+                for: pass.pass,
                 layer: layer,
                 destination: destination,
                 frameState: frameState
             ),
             cameraParallax: cameraParallax,
             sourceTexture: sourceTexture,
-            cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
+            cameraUniforms: executor.objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
         )
         encoder.setVertexBytes(
             &quadUniforms,
@@ -155,7 +155,7 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: variant,
@@ -189,7 +189,7 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat,
         fetchSceneColor: Bool
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: fetchSceneColor ? .blendCompositeFramebufferFetch : .blendComposite,
@@ -252,7 +252,7 @@ struct WPEMetalShaderDispatcher {
         let fragmentName = pass.pass.shader == "commands/copy"
             ? "wpe_copy_fragment"
             : "wpe_util_copy_fragment"
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: .copy,
@@ -322,7 +322,7 @@ struct WPEMetalShaderDispatcher {
                 sceneSize: frameState.sceneSize,
                 cameraParallax: frameState.cameraParallax,
                 sourceTexture: firstTexture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
+                cameraUniforms: executor.objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
             )
             uniforms.uvSignAndPadding.z = clearAlphaValue(for: pass)
             encoder.setFragmentBytes(
@@ -371,7 +371,7 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState,
                 currentTargetID: destination.id
             )
-            let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+            let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
             encoder.setRenderPipelineState(try executor.passPipelineState(
                 passID: pass.pass.id,
                 variant: .compose,
@@ -415,7 +415,7 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: .genericImage2,
@@ -466,7 +466,7 @@ struct WPEMetalShaderDispatcher {
     ) throws {
         let primarySlot = 0
         let maskSlot = 1
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
             variant: .genericImage4,
@@ -595,7 +595,7 @@ struct WPEMetalShaderDispatcher {
         }
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
         let usesObjectQuad = !usesShapeQuad
-            && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
+            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
         if WPESceneDebugArtifacts.shared.isEnabled, Self.isWaveLikePass(pass) {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(
@@ -705,20 +705,25 @@ struct WPEMetalShaderDispatcher {
         }
 
         resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
+        let effectTextureProjection = {
+            executor.effectTextureProjectionMatrix(for: layer, frameState: frameState, sourceTexture: destination.texture)
+        }
         #if DEBUG
         let (packedUniforms, uniformSources) = try executor.withUniformSourceTracing(
             enabled: WPECanonicalTraceRecorder.shared.isAccumulating
         ) {
             try executor.packTranslatedUniformsForBinding(
                 for: pass, layout: result.uniformLayout,
-                texturesBySlot: resolvedTexturesBySlot
+                texturesBySlot: resolvedTexturesBySlot,
+                effectTextureProjection: effectTextureProjection
             )
         }
         #else
         let packedUniforms = try executor.packTranslatedUniformsForBinding(
             for: pass,
             layout: result.uniformLayout,
-            texturesBySlot: resolvedTexturesBySlot
+            texturesBySlot: resolvedTexturesBySlot,
+            effectTextureProjection: effectTextureProjection
         )
         #endif
         #if !LITE_BUILD && DEBUG
@@ -771,7 +776,7 @@ struct WPEMetalShaderDispatcher {
             var shapeUniforms = executor.shapeQuadUniforms(
                 for: layer,
                 sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
+                    for: pass.pass,
                     layer: layer,
                     destination: destination,
                     frameState: frameState
@@ -810,7 +815,7 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat
     ) throws {
         let usesObjectQuad = executor.usesObjectQuadGeometry(
-            for: pass,
+            for: pass.pass,
             layer: layer,
             cameraParallax: frameState.cameraParallax
         )

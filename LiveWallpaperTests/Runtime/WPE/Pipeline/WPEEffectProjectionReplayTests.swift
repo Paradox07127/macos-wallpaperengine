@@ -4,6 +4,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
 
 @Suite("Effect projection isolated GPU replay", .serialized)
@@ -67,18 +68,39 @@ struct WPEEffectProjectionReplayTests {
         }
     }
 
-    private func replay(matrix: [Double]?, normalized: Bool, bodyOverride: String? = nil) throws -> [Float] {
+    @Test
+    func drawContextMatrixReachesTheFragment() throws {
+        let forward = WPEMetalObjectUniforms.effectTextureProjectionMatrix(quad: WPEObjectQuadUniforms(
+            centerAndSize: SIMD4(0, 0, 1920, 1080),
+            sceneSizeAndRotation: SIMD4(3840, 2160, 0.5235988, 0),
+            uvSignAndPadding: SIMD4(1, 1, 0, 0)
+        ))
+        let expected = WPEMetalObjectUniforms.flattenedColumnMajor(WPEMetalObjectUniforms.safeInverse(forward))
+        let probe = try replay(matrix: nil, normalized: false, effectTextureProjection: forward, expectedUpload: expected)
+        #expect(probe == [expected[0], expected[1], expected[4], expected[5]].map(Float.init))
+    }
+
+    private func replay(
+        matrix: [Double]?,
+        normalized: Bool,
+        bodyOverride: String? = nil,
+        effectTextureProjection: simd_double4x4? = nil,
+        expectedUpload: [Double]? = nil
+    ) throws -> [Float] {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let request = request(normalized: normalized, bodyOverride: bodyOverride)
         defer { WPEShaderTranslationCache.shared.remove(request.translationCacheKey) }
         let result = try WPESwiftShaderCompiler(device: device).compile(request)
         let pass = pass(matrix: matrix)
-        let slots = try executor.packTranslatedUniforms(for: pass, layout: result.uniformLayout)
+        let slots = try executor.packTranslatedUniforms(
+            for: pass, layout: result.uniformLayout,
+            effectTextureProjection: effectTextureProjection.map { value in { value } }
+        )
         let matrixSlot = try #require(result.uniformLayout.first { $0.name == Self.matrixName })
         #expect(matrixSlot.slotCount == 4)
         let uploaded = slots[matrixSlot.slot ..< matrixSlot.slot + 4].flatMap { [$0.x, $0.y, $0.z, $0.w] }
-        #expect(uploaded == (matrix ?? [Double](repeating: 0, count: 16)).map(Float.init))
+        #expect(uploaded == (expectedUpload ?? matrix ?? [Double](repeating: 0, count: 16)).map(Float.init))
 
         let pipeline = try executor.translatedPipelineState(
             for: result, blendMode: "disabled", alphaWritePolicy: .all,

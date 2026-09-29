@@ -254,7 +254,7 @@ extension WPEMetalSceneRenderer {
         WPETranslatedPipelinePrewarmPlan.vertexNames(
             target: pass.pass.target,
             shapePointCount: layer.geometry.shapePoints?.count,
-            objectQuadAtRest: executor.usesObjectQuadGeometry(for: pass, layer: layer),
+            objectQuadAtRest: executor.usesObjectQuadGeometry(for: pass.pass, layer: layer),
             parallaxMayEnableObjectQuad: {
                 guard case .scene = pass.pass.target else { return false }
                 return layer.geometry == .identity
