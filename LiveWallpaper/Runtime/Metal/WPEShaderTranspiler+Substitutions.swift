@@ -81,12 +81,32 @@ extension WPEShaderTranspiler {
         s = rewriteArrayCopyInitialization(s)
         s = rewriteFloatArraySubscripts(s)
         s = rewriteHLSLImplicitConversions(s, uniforms: uniforms, functionDeclarations: functionDeclarations)
+        s = rewriteGLSLMatrixConstructors(s)
 
         s = rewriteReferenceParameters(s)
 
         s = stripInParameterQualifier(s)
 
         return s
+    }
+
+    /// Metal lacks GLSL's cross-size matrix constructors; a helper evaluates the argument once.
+    private static func rewriteGLSLMatrixConstructors(_ source: String) -> String {
+        let masked = maskComments(source)
+        guard let regex = try? NSRegularExpression(pattern: #"(?<![:A-Za-z0-9_])float([234])x\1\s*\("#) else {
+            return source
+        }
+        var result = source
+        for match in regex.matches(in: masked, range: NSRange(masked.startIndex..., in: masked)).reversed() {
+            guard let range = Range(match.range, in: masked),
+                  let dimension = Range(match.range(at: 1), in: masked) else { continue }
+            let open = masked.index(before: range.upperBound)
+            guard let close = matchingDelimiter(in: masked, open: open, openChar: "(", closeChar: ")"),
+                  topLevelArgumentRanges(in: masked, open: open, close: close).count == 1 else { continue }
+            let lower = result.index(result.startIndex, offsetBy: masked.distance(from: masked.startIndex, to: range.lowerBound))
+            result.replaceSubrange(lower ..< result.index(lower, offsetBy: 8), with: "wpe_glsl_mat\(masked[dimension])")
+        }
+        return result
     }
 
     /// GLSL `smoothstep` is undefined when the edges are equal; Metal can turn that 0/0 into NaNs. Route through a hard-threshold helper.

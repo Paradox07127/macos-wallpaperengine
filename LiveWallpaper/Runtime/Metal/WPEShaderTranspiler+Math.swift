@@ -59,6 +59,27 @@ extension WPEShaderTranspiler {
                 lines.append("inline \(type) wpe_glsl_mix(\(type) x, \(type) y, bool a) { return a ? y : x; }")
             }
         }
+        lines.append(glslMatrixConstructorPrelude)
+        return lines.joined(separator: "\n")
+    }
+
+    /// GLSL 4.60 §5.4.2 copies the overlapping rectangle and fills the rest from identity.
+    private static var glslMatrixConstructorPrelude: String {
+        var lines: [String] = []
+        for target in 2 ... 4 {
+            let type = "float\(target)x\(target)"
+            lines.append("template<typename T> inline \(type) wpe_glsl_mat\(target)(T m) { return \(type)(m); }")
+            for source in 2 ... 4 where source != target {
+                let columns = (0 ..< target).map { column in
+                    let rows = (0 ..< target).map { row in
+                        column < source && row < source ? "m[\(column)][\(row)]" : (column == row ? "1.0" : "0.0")
+                    }
+                    return "float\(target)(\(rows.joined(separator: ", ")))"
+                }
+                lines.append("inline \(type) wpe_glsl_mat\(target)(float\(source)x\(source) m) { return \(type)(\(columns.joined(separator: ", "))); }")
+            }
+        }
+        lines.append("inline float2x2 wpe_glsl_mat2(float4 m) { return float2x2(m.xy, m.zw); }")
         return lines.joined(separator: "\n")
     }
 
