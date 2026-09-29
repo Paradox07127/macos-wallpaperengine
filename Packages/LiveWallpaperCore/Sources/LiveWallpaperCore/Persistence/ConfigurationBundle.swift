@@ -80,8 +80,9 @@ public extension ConfigurationBundle {
     }
 
     /// Import adds the backup's marks; nothing marked here is cleared.
+    /// `renaming` maps a backup mark to the ID of the entry it was merged into.
     @MainActor
-    func mergeLibraryBookmarks(into store: LibraryBookmarkStore) {
-        store.merge(libraryBookmarks ?? [])
+    func mergeLibraryBookmarks(into store: LibraryBookmarkStore, renaming: [String: String] = [:]) {
+        store.merge((libraryBookmarks ?? []).map { renaming[$0] ?? $0 })
     }
 }

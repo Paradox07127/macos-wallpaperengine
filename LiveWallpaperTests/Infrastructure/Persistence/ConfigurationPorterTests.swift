@@ -324,7 +324,7 @@ struct ConfigurationPorterBookmarkMergeTests {
         let merged = ConfigurationPorter.mergingWallpaperBookmarks(
             existing: [existing],
             imported: [importedDuplicate, importedNew]
-        )
+        ).bookmarks
 
         #expect(merged.count == 2)
         #expect(merged.first?.id == existing.id)
@@ -341,7 +341,7 @@ struct ConfigurationPorterBookmarkMergeTests {
         let merged = ConfigurationPorter.mergingWallpaperBookmarks(
             existing: [existing],
             imported: [importedSameID]
-        )
+        ).bookmarks
 
         #expect(merged.count == 1)
         #expect(merged.first?.label == "Mine")
@@ -362,7 +362,7 @@ struct ConfigurationPorterBookmarkMergeTests {
         let merged = ConfigurationPorter.mergingWallpaperBookmarks(
             existing: [existing],
             imported: [fresh, freshAgain, freshSameID, plain, styled]
-        )
+        ).bookmarks
 
         #expect(merged.map(\.label) == ["Mine", "Fresh", "Plain", "Styled"])
     }
@@ -395,6 +395,28 @@ struct ConfigurationPorterBookmarkMergeTests {
         #expect(library.count == 2, "Import must merge into the library, not replace it")
         #expect(library.contains { $0.id == existing.id })
         #expect(library.contains { $0.id == incoming.id })
+    }
+
+    @Test("A backup mark on an entry folded into an existing one lands on the kept entry")
+    func libraryBookmarkFollowsDedupedEntry() {
+        let manager = SettingsManager.shared
+        let store = LibraryBookmarkStore.shared
+        let previous = manager.loadWallpaperBookmarks()
+        let content = WallpaperContent.video(bookmarkData: Data([0xC0]))
+        let kept = WallpaperBookmark(label: "Mine", content: content)
+        let backupCopy = WallpaperBookmark(label: "Backup copy", content: content)
+        defer {
+            manager.saveWallpaperBookmarks(previous)
+            BookmarkStore.shared.reload()
+            store.remove("bookmark:\(kept.id)")
+            store.remove("bookmark:\(backupCopy.id)")
+        }
+        manager.saveWallpaperBookmarks([kept])
+
+        ConfigurationPorter.apply(ConfigurationBundle(wallpaperBookmarks: [backupCopy], libraryBookmarks: ["bookmark:\(backupCopy.id)"]))
+
+        #expect(store.contains("bookmark:\(kept.id)"), "the restored mark points at the dropped duplicate, not the kept entry")
+        #expect(!store.contains("bookmark:\(backupCopy.id)"))
     }
 
     @Test("Library bookmarks survive an export and import, merged into the marks made since")

@@ -260,6 +260,7 @@ SERIAL_SUITES=(
   LibraryDragControllerTests
   DisplayDetailHostTests
   SceneSettingsOwnerTests
+  ConfigurationPorterBookmarkMergeTests
 )
 
 action="test"

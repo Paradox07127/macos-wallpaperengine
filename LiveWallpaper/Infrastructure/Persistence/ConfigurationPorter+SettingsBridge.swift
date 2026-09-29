@@ -54,13 +54,17 @@ extension ConfigurationPorter {
             manager.reconcileScenePresetSnapshots()
         }
 
+        var renamedLibraryBookmarks: [String: String] = [:]
         if let bookmarks = bundle.wallpaperBookmarks {
             let merged = mergingWallpaperBookmarks(
                 existing: manager.loadWallpaperBookmarks(),
                 imported: bookmarks
             )
-            manager.saveWallpaperBookmarks(merged)
+            manager.saveWallpaperBookmarks(merged.bookmarks)
             BookmarkStore.shared.reload()
+            for (dropped, kept) in merged.keptIDs {
+                renamedLibraryBookmarks["bookmark:\(dropped)"] = "bookmark:\(kept)"
+            }
         }
 
         // Schemes are per-machine archives like bookmarks, so a backup that
@@ -74,7 +78,7 @@ extension ConfigurationPorter {
             SchemeStore.shared.reload()
         }
 
-        bundle.mergeLibraryBookmarks(into: .shared)
+        bundle.mergeLibraryBookmarks(into: .shared, renaming: renamedLibraryBookmarks)
 
         #if !LITE_BUILD
         bundle.mergeWorkshopBookmarks(into: .shared)
@@ -92,18 +96,22 @@ extension ConfigurationPorter {
     static func mergingWallpaperBookmarks(
         existing: [WallpaperBookmark],
         imported: [WallpaperBookmark]
-    ) -> [WallpaperBookmark] {
+    ) -> (bookmarks: [WallpaperBookmark], keptIDs: [UUID: UUID]) {
         var merged = existing
         var ids = Set(existing.map(\.id))
-        var contents = Dictionary(grouping: existing.map(\.content), by: mergeBucket)
-        for candidate in imported {
+        var entries = Dictionary(grouping: existing, by: { mergeBucket($0.content) })
+        var keptIDs: [UUID: UUID] = [:]
+        for candidate in imported where !ids.contains(candidate.id) {
             let bucket = mergeBucket(candidate.content)
-            guard !ids.contains(candidate.id), !(contents[bucket] ?? []).contains(candidate.content) else { continue }
+            if let kept = entries[bucket]?.first(where: { $0.content == candidate.content }) {
+                keptIDs[candidate.id] = kept.id
+                continue
+            }
             merged.append(candidate)
             ids.insert(candidate.id)
-            contents[bucket, default: []].append(candidate.content)
+            entries[bucket, default: []].append(candidate)
         }
-        return merged
+        return (merged, keptIDs)
     }
 
     /// Built only from fields `WallpaperContent.==` compares, so equal contents always share a bucket.
