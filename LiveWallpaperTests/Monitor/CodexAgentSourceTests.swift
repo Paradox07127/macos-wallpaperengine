@@ -116,15 +116,15 @@ struct CodexAgentSourceTests {
     @Test("Scanner bounds descendants and round-robins discovered legacy roots")
     func scannerBoundsUnexpectedLayouts() throws {
         let root = try Self.makeTempDirectory()
-        let outside = try Self.makeTempDirectory()
         defer {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o700],
                 ofItemAtPath: root.appendingPathComponent("sessions/04-locked").path
             )
             try? FileManager.default.removeItem(at: root)
-            try? FileManager.default.removeItem(at: outside)
         }
+        let outside = try Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: outside) }
         let now = Date()
         let sessions = root.appendingPathComponent("sessions", isDirectory: true)
         try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)

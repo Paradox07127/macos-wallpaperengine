@@ -70,7 +70,9 @@ struct WPEEngineAssetsInstallerTests {
     }
 
     @MainActor
-    private func makeDoctorWithInstallOnDisk(function: String = #function) throws -> SteamCMDDoctorService {
+    private func makeDoctorWithInstallOnDisk(
+        function: String = #function
+    ) throws -> (doctor: SteamCMDDoctorService, directory: URL) {
         let scratch = try TestScratch.defaultsSuite(
             prefix: "LiveWallpaperTests.WPEEngineAssetsInstaller", function: function
         )
@@ -80,17 +82,23 @@ struct WPEEngineAssetsInstallerTests {
         let assets = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: steamRoot)
             .appendingPathComponent("assets", isDirectory: true)
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
-        try Data().write(to: assets.appendingPathComponent("shaders.txt"))
-        doctor.workdirBookmarkData = try steamRoot.bookmarkData()
+        do {
+            try Data().write(to: assets.appendingPathComponent("shaders.txt"))
+            doctor.workdirBookmarkData = try steamRoot.bookmarkData()
+        } catch {
+            try? FileManager.default.removeItem(at: steamRoot)
+            throw error
+        }
         doctor.binaryPath = "/tmp/steamcmd"
         doctor.username = "someone"
-        return doctor
+        return (doctor, steamRoot)
     }
 
     @Test("Update with a managed install on disk runs SteamCMD instead of re-linking the folder")
     @MainActor
     func updateWithManagedInstallReachesConnector() async throws {
-        let doctor = try makeDoctorWithInstallOnDisk()
+        let (doctor, steamRoot) = try makeDoctorWithInstallOnDisk()
+        defer { try? FileManager.default.removeItem(at: steamRoot) }
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: nil)
         )
@@ -109,7 +117,8 @@ struct WPEEngineAssetsInstallerTests {
     @Test("Control: a first download links the folder already on disk without running SteamCMD")
     @MainActor
     func firstDownloadAdoptsInstallOnDisk() async throws {
-        let doctor = try makeDoctorWithInstallOnDisk()
+        let (doctor, steamRoot) = try makeDoctorWithInstallOnDisk()
+        defer { try? FileManager.default.removeItem(at: steamRoot) }
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: false, installedBuildID: nil)
         )

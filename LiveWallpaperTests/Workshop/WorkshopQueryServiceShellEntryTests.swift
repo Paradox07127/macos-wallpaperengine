@@ -11,7 +11,8 @@ struct WorkshopQueryServiceShellEntryTests {
 
     @Test("Access-denied shells are dropped and an untitled item falls back to its id")
     func shellsDroppedAndUntitledFallsBackToID() async throws {
-        let service = Self.makeService()
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, searchText: "shells"))
 
         #expect(page.items.map(\.id) == [111, 222])
@@ -23,22 +24,24 @@ struct WorkshopQueryServiceShellEntryTests {
 
     @Test("Control: banned or non-public entries are dropped, public ones kept")
     func bannedAndNonPublicDropped() async throws {
-        let service = Self.makeService()
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, searchText: "hidden"))
 
         #expect(page.items.map(\.id) == [555])
     }
 
-    fileprivate static func makeService() -> WorkshopQueryService {
+    fileprivate static func makeService() -> (service: WorkshopQueryService, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-query-shell-\(UUID().uuidString)", isDirectory: true)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkshopQueryShellStub.self]
-        return WorkshopQueryService(
+        let service = WorkshopQueryService(
             keychain: WorkshopKeychainStore(directory: directory, slot: WorkshopKeychainSlotSpy(stored: Self.validKey).slot()),
             cache: WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache")),
             session: URLSession(configuration: config)
         )
+        return (service, directory)
     }
 }
 
@@ -48,7 +51,8 @@ struct WorkshopQueryServiceShellEntryTests {
 struct WorkshopQueryServiceResultFieldTests {
     @Test("A 200 with result 2 is an error, not an empty page; it is neither cached nor an auth success")
     func failedResultThrows() async throws {
-        let service = WorkshopQueryServiceShellEntryTests.makeService()
+        let (service, serviceDirectory) = WorkshopQueryServiceShellEntryTests.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let verdicts = VerdictLog()
         await service.setAuthVerdictHandler { accepted, _ in verdicts.append(accepted) }
         let request = WorkshopQueryRequest(sort: .mostPopular, searchText: "failed")
@@ -61,7 +65,8 @@ struct WorkshopQueryServiceResultFieldTests {
 
     @Test("Control: result 1, or no result at all, with total 0 is an empty page", arguments: ["resultOK", "noResult"])
     func emptyPagesStayEmpty(searchText: String) async throws {
-        let service = WorkshopQueryServiceShellEntryTests.makeService()
+        let (service, serviceDirectory) = WorkshopQueryServiceShellEntryTests.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, searchText: searchText))
 
@@ -73,7 +78,8 @@ struct WorkshopQueryServiceResultFieldTests {
     /// page; a total of 100 on page 1 with no list is a broken response.
     @Test("A 200 with total 100 and no list is an error, not an empty page; neither cached nor an auth success")
     func missingListWithItemsToShowThrows() async throws {
-        let service = WorkshopQueryServiceShellEntryTests.makeService()
+        let (service, serviceDirectory) = WorkshopQueryServiceShellEntryTests.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let verdicts = VerdictLog()
         await service.setAuthVerdictHandler { accepted, _ in verdicts.append(accepted) }
         let request = WorkshopQueryRequest(sort: .mostPopular, searchText: "noList100")
@@ -85,7 +91,8 @@ struct WorkshopQueryServiceResultFieldTests {
 
     @Test("Control: past the last page, a missing list is a legitimate empty page")
     func missingListPastTheLastPageIsEmpty() async throws {
-        let service = WorkshopQueryServiceShellEntryTests.makeService()
+        let (service, serviceDirectory) = WorkshopQueryServiceShellEntryTests.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         let page = try await service.fetch(
             WorkshopQueryRequest(sort: .mostPopular, searchText: "noList100", page: 3, numPerPage: 50)
@@ -98,7 +105,8 @@ struct WorkshopQueryServiceResultFieldTests {
 
     @Test("A total of Int.max neither traps nor yields a page count")
     func hugeTotalDoesNotTrap() async throws {
-        let service = WorkshopQueryServiceShellEntryTests.makeService()
+        let (service, serviceDirectory) = WorkshopQueryServiceShellEntryTests.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, searchText: "hugeTotal"))
 

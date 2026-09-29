@@ -7,12 +7,12 @@ import Testing
 @Suite("Scene preset registration")
 struct ScenePresetLibraryRegistrationTests {
 
-    private func manager(function: String = #function) throws -> SettingsManager {
+    private func manager(function: String = #function) throws -> (manager: SettingsManager, directory: URL) {
+        let defaults = try TestScratch.defaultsSuite(prefix: "preset-reg", function: function).defaults
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("preset-reg-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let defaults = try TestScratch.defaultsSuite(prefix: "preset-reg", function: function).defaults
-        return SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults)
+        return (SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults), root)
     }
 
     private func workshopPreset(
@@ -29,7 +29,8 @@ struct ScenePresetLibraryRegistrationTests {
 
     @Test("A re-download refreshes values but keeps the name the user gave it")
     func redownloadPreservesLocalRename() async throws {
-        let sut = try manager()
+        let (sut, root) = try manager()
+        defer { await TestScratch.discard(root, flushing: sut) }
         await sut.registerScenePreset(workshopPreset(name: "Steam Title", values: ["a": .number(1)]))
         sut.renameScenePreset(id: "3471679253", to: "My Night Look")
 
@@ -45,7 +46,8 @@ struct ScenePresetLibraryRegistrationTests {
 
     @Test("Control: without a rename the incoming title is adopted")
     func titleUpdatesWhenUserNeverRenamed() async throws {
-        let sut = try manager()
+        let (sut, root) = try manager()
+        defer { await TestScratch.discard(root, flushing: sut) }
         await sut.registerScenePreset(workshopPreset(name: "Old Title", values: ["a": .number(1)]))
         await sut.registerScenePreset(workshopPreset(name: "New Title", values: ["a": .number(1)]))
 
@@ -54,7 +56,8 @@ struct ScenePresetLibraryRegistrationTests {
 
     @Test("The descriptor hook runs after the library write and before observers")
     func thenPersistRunsBetweenWriteAndNotification() async throws {
-        let sut = try manager()
+        let (sut, root) = try manager()
+        defer { await TestScratch.discard(root, flushing: sut) }
         // Written on the main actor and read from the notification observer,
         // which this suite's `@MainActor` isolation posts on the same actor —
         // the ordering under test is exactly what makes the two never overlap.

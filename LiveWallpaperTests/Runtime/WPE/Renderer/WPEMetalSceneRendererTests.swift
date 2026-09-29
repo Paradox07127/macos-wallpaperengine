@@ -2045,30 +2045,35 @@ private struct StaticPresentRetryFixture {
     static func make() async throws -> Self {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try MetalSceneFixture.solidColorScene()
-        let renderer = try WPEMetalSceneRenderer(
-            descriptor: fixture.descriptor,
-            cacheRootURL: fixture.root,
-            dependencyMounts: [],
-            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
-            device: device
-        )
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.contentView = renderer.nsView
-        window.parkOffScreen()
-        if let layer = renderer.nsView.layer as? CAMetalLayer {
-            let size = renderer.nsView.convertToBacking(renderer.nsView.bounds).size
-            if size.width > 0, size.height > 0 {
-                layer.drawableSize = size
+        do {
+            let renderer = try WPEMetalSceneRenderer(
+                descriptor: fixture.descriptor,
+                cacheRootURL: fixture.root,
+                dependencyMounts: [],
+                frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                device: device
+            )
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            window.isReleasedWhenClosed = false
+            window.contentView = renderer.nsView
+            window.parkOffScreen()
+            if let layer = renderer.nsView.layer as? CAMetalLayer {
+                let size = renderer.nsView.convertToBacking(renderer.nsView.bounds).size
+                if size.width > 0, size.height > 0 {
+                    layer.drawableSize = size
+                }
             }
+            try await renderer.load()
+            return Self(fixture: fixture, renderer: renderer, window: window)
+        } catch {
+            fixture.cleanup()
+            throw error
         }
-        try await renderer.load()
-        return Self(fixture: fixture, renderer: renderer, window: window)
     }
 
     func cleanup() {

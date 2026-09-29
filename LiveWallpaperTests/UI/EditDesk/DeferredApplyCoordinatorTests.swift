@@ -267,7 +267,7 @@ struct DeferredApplyCoordinatorTests {
     @Test("Cancelling the initial import rejects its late ready result before library publication")
     func cancelledInitialImportCannotPublish() async throws {
         let fixture = try DownloadAttemptFixture(name: "cancelledInitialImport", startsWithDependencies: false)
-        defer { fixture.gate.release(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
         let downloads = fixture.downloads
         let attempt = try #require(downloads.download(itemID: 420_000_042, title: "Initial", using: fixture.downloader))
         let task = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
@@ -287,13 +287,12 @@ struct DeferredApplyCoordinatorTests {
         #expect(downloads.phase(for: 420_000_042) == .idle)
         #expect(!downloads.isBusy(420_000_042))
         #expect(downloads.activeAttempt(for: 420_000_042) == nil)
-        await fixture.discard()
     }
 
     @Test("Late dependency reimport cannot resurrect a deleted item or overwrite a retry", arguments: [false, true])
     func cancelledDependencyReimportCannotPublish(startRetry: Bool) async throws {
         let fixture = try DownloadAttemptFixture(name: "cancelledReimport-\(startRetry)")
-        defer { fixture.gate.release(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
         let downloads = fixture.downloads
         let first = try #require(downloads.download(itemID: 420_000_042, title: "Old", using: fixture.downloader))
         let oldTask = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
@@ -320,7 +319,6 @@ struct DeferredApplyCoordinatorTests {
                 Issue.record("The existing repository lock should reject the overlapping mutation")
                 fixture.gate.release()
                 await oldTask.value
-                await fixture.discard()
                 return
             }
         }
@@ -339,13 +337,12 @@ struct DeferredApplyCoordinatorTests {
         #expect(first.outcome == .cancelled)
         #expect(!downloads.isBusy(420_000_042) && downloads.activeAttempt(for: 420_000_042) == nil)
         #expect(!downloads.fetchingDependencies.contains(420_000_042))
-        await fixture.discard()
     }
 
     @Test("A current dependency reimport publishes the resolved library item and success once")
     func currentDependencyReimportPublishes() async throws {
         let fixture = try DownloadAttemptFixture(name: "currentReimport")
-        defer { fixture.gate.release(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Current", using: fixture.downloader))
         let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
         let reachedReimport = await fixture.waitForReimport()
@@ -355,7 +352,6 @@ struct DeferredApplyCoordinatorTests {
         await task.value
         guard case let .succeeded(entry)? = attempt.outcome else {
             Issue.record("Expected a resolved dependency import")
-            await fixture.discard()
             return
         }
         #expect(entry.origin.missingDependencyIDs.isEmpty)
@@ -364,7 +360,6 @@ struct DeferredApplyCoordinatorTests {
         #expect(!fixture.downloads.isBusy(420_000_042))
         #expect(fixture.toasts.lastEvent?.isSuccess == true)
         #expect(fixture.toasts.lastEvent?.token == 1)
-        await fixture.discard()
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -628,29 +623,34 @@ private final class DownloadAttemptFixture {
     let downloads: WorkshopDownloadCoordinator
 
     init(name: String, startsWithDependencies: Bool = true) throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("download-attempt-\(UUID())", isDirectory: true)
-        self.root = root
         let defaults = try TestScratch.defaultsSuite("DeferredApplyCoordinatorTests.\(name)")
         self.defaults = defaults
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("download-attempt-\(UUID())", isDirectory: true)
+        self.root = root
+        let content = root.appendingPathComponent("content", isDirectory: true)
+        let item = content.appendingPathComponent("420000042", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
+            let manifest = startsWithDependencies
+                ? #"{"workshopid":"420000042","title":"Needs dependency","type":"scene","file":"scene.json","dependencies":["990000099"]}"#
+                : #"{"workshopid":"420000042","title":"Initial video","type":"video","file":"video.mp4"}"#
+            try Data(manifest.utf8).write(to: item.appendingPathComponent("project.json"))
+            let project = try WallpaperEngineProject.read(from: item)
+            let expectedDependencies = startsWithDependencies ? ["990000099"] : []
+            try #require(project.dependencyWorkshopIDs == expectedDependencies, "Fixture must survive the real manifest ID validator")
+            if !startsWithDependencies {
+                try Data([0]).write(to: item.appendingPathComponent("video.mp4"))
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: root)
+            throw error
+        }
         let settings = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
         self.settings = settings
         let toasts = WorkshopToastCenter()
         self.toasts = toasts
         let gate = DownloadImportGate()
         self.gate = gate
-        let content = root.appendingPathComponent("content", isDirectory: true)
-        let item = content.appendingPathComponent("420000042", isDirectory: true)
-        try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
-        let manifest = startsWithDependencies
-            ? #"{"workshopid":"420000042","title":"Needs dependency","type":"scene","file":"scene.json","dependencies":["990000099"]}"#
-            : #"{"workshopid":"420000042","title":"Initial video","type":"video","file":"video.mp4"}"#
-        try Data(manifest.utf8).write(to: item.appendingPathComponent("project.json"))
-        let project = try WallpaperEngineProject.read(from: item)
-        let expectedDependencies = startsWithDependencies ? ["990000099"] : []
-        try #require(project.dependencyWorkshopIDs == expectedDependencies, "Fixture must survive the real manifest ID validator")
-        if !startsWithDependencies {
-            try Data([0]).write(to: item.appendingPathComponent("video.mp4"))
-        }
         downloader = DownloadFixtureSource(root: content)
         let importer = WallpaperEngineImportService(
             validateVideo: { _ in await gate.wait() },

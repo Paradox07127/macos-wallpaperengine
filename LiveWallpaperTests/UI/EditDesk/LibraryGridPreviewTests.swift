@@ -83,34 +83,39 @@ private struct GridPreviewScenes {
     init() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("grid-preview-\(UUID().uuidString)", isDirectory: true)
         var bookmarks: [Row: WallpaperBookmark] = [:]
-        for row in Row.allCases {
-            let folder = root.appendingPathComponent("\(row)", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let file = row == .still ? "preview.png" : "preview.gif"
-            let colors = row == .still ? [Self.frames[0]] : Self.frames
-            try Self.encode(colors, as: row == .still ? .png : .gif, to: folder.appendingPathComponent(file))
-            let bookmark = try folder.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-            let workshopID = "grid-preview-\(row)-\(UUID().uuidString)"
-            let origin = WPEOrigin(
-                workshopID: workshopID, title: "\(row)", originalType: .scene, sourceFolderBookmark: bookmark,
-                cacheRelativePath: nil, previewFileName: file
-            )
-            let scene = SceneDescriptor(workshopID: workshopID, cacheRelativePath: workshopID, entryFile: "scene.json", capabilityTier: .imageOnly)
-            bookmarks[row] = WallpaperBookmark(label: "\(row)", content: .scene(scene), wpeOrigin: origin)
+        var projects: [Project: WPEHistoryEntry] = [:]
+        do {
+            for row in Row.allCases {
+                let folder = root.appendingPathComponent("\(row)", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = row == .still ? "preview.png" : "preview.gif"
+                let colors = row == .still ? [Self.frames[0]] : Self.frames
+                try Self.encode(colors, as: row == .still ? .png : .gif, to: folder.appendingPathComponent(file))
+                let bookmark = try folder.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let workshopID = "grid-preview-\(row)-\(UUID().uuidString)"
+                let origin = WPEOrigin(
+                    workshopID: workshopID, title: "\(row)", originalType: .scene, sourceFolderBookmark: bookmark,
+                    cacheRelativePath: nil, previewFileName: file
+                )
+                let scene = SceneDescriptor(workshopID: workshopID, cacheRelativePath: workshopID, entryFile: "scene.json", capabilityTier: .imageOnly)
+                bookmarks[row] = WallpaperBookmark(label: "\(row)", content: .scene(scene), wpeOrigin: origin)
+            }
+            for project in Project.allCases {
+                let folder = root.appendingPathComponent("\(project)", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try Self.encode(Self.frames, as: .gif, to: folder.appendingPathComponent("preview.gif"))
+                let origin = try WPEOrigin(
+                    workshopID: "grid-preview-\(project)-\(UUID().uuidString)", title: "\(project)", originalType: .scene,
+                    sourceFolderBookmark: folder.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil),
+                    cacheRelativePath: nil, previewFileName: "preview.gif"
+                )
+                projects[project] = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: root)
+            throw error
         }
         self.bookmarks = bookmarks
-        var projects: [Project: WPEHistoryEntry] = [:]
-        for project in Project.allCases {
-            let folder = root.appendingPathComponent("\(project)", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try Self.encode(Self.frames, as: .gif, to: folder.appendingPathComponent("preview.gif"))
-            let origin = try WPEOrigin(
-                workshopID: "grid-preview-\(project)-\(UUID().uuidString)", title: "\(project)", originalType: .scene,
-                sourceFolderBookmark: folder.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil),
-                cacheRelativePath: nil, previewFileName: "preview.gif"
-            )
-            projects[project] = WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 0))
-        }
         self.projects = projects
     }
 
@@ -176,11 +181,16 @@ private final class GridPreviewHost {
         if listsProjects {
             let entries = scenes.projects
             let projects = GridPreviewScenes.Project.allCases.compactMap { entries[$0] }
-            let covered = try #require(entries[.covered])
-            savedCover = try #require(WallpaperCoverStore.shared.storeWorkshopCover(
-                ProbeRenderer.solid(ProbeRenderer.thumbnailBlue, size: CGSize(width: 1024, height: 576)),
-                workshopID: covered.origin.workshopID, importedAt: covered.importedAt
-            ))
+            do {
+                let covered = try #require(entries[.covered])
+                savedCover = try #require(WallpaperCoverStore.shared.storeWorkshopCover(
+                    ProbeRenderer.solid(ProbeRenderer.thumbnailBlue, size: CGSize(width: 1024, height: 576)),
+                    workshopID: covered.origin.workshopID, importedAt: covered.importedAt
+                ))
+            } catch {
+                try? FileManager.default.removeItem(at: scenes.root)
+                throw error
+            }
             inputs.history = { projects }
             inputs.workshopCoverRevision = { entry in
                 WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt)

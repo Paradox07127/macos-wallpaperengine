@@ -137,6 +137,7 @@ struct SecurityScopedBookmarkResolverTests {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("bookmark-cache-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
         let bookmark = try folder.bookmarkData(
             options: [],
             includingResourceValuesForKeys: nil,

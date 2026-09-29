@@ -12,6 +12,7 @@ struct HTMLBookmarkPersistenceTests {
     @Test("Stale folder bookmark validates, CAS-saves, and survives manager restart")
     func staleFolderBookmarkPersistsAcrossRestart() async throws {
         let root = try Self.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appendingPathComponent("site", isDirectory: true)
         let index = folder.appendingPathComponent("index.html")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -26,6 +27,7 @@ struct HTMLBookmarkPersistenceTests {
             directory: ConfigurationDirectory(root: configurationRoot),
             bookmarkResolver: resolver
         )
+        defer { await TestScratch.discard(root, flushing: manager) }
         let screenID: UInt32 = 980_001
         manager.replaceAllConfigurations([
             ScreenConfiguration(
@@ -63,10 +65,10 @@ struct HTMLBookmarkPersistenceTests {
             directory: ConfigurationDirectory(root: configurationRoot),
             bookmarkResolver: freshResolver
         )
+        defer { await TestScratch.discard(root, flushing: manager, reloaded) }
 
         #expect(reloaded.getConfiguration(for: screenID)?.savedHTMLSource == updated.savedHTMLSource)
         #expect(reloaded.validateConfiguration(for: screenID))
-        await TestScratch.discard(root, flushing: manager, reloaded)
     }
 
     @Test("File bookmarks update active and saved copies together")
@@ -88,6 +90,7 @@ struct HTMLBookmarkPersistenceTests {
     func staleRefreshCompareAndSwapRejectsRegrant() async throws {
         let root = try Self.makeTempDirectory()
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root))
+        defer { await TestScratch.discard(root, flushing: manager) }
         let screenID: UInt32 = 980_003
         let newerGrant = Data("new-user-grant".utf8)
         manager.replaceAllConfigurations([
@@ -107,13 +110,13 @@ struct HTMLBookmarkPersistenceTests {
         #expect(current.savedHTMLSource == .file(bookmarkData: newerGrant))
         #expect(current.activeWallpaper == .html(source: .file(bookmarkData: newerGrant), config: .default))
         #expect(current.replacingHTMLBookmark(matching: original, with: refreshed) == nil)
-        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("Runtime builder carries refreshed HTML Data into its effective source and owner")
     func runtimeBuilderPersistsHTMLRefresh() async throws {
         let root = try Self.makeTempDirectory()
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root))
+        defer { await TestScratch.discard(root, flushing: manager) }
         let screenID: UInt32 = 980_004
         let source = HTMLSource.folder(bookmarkData: original, indexFileName: "index.html")
         manager.replaceAllConfigurations([
@@ -140,7 +143,6 @@ struct HTMLBookmarkPersistenceTests {
         let persisted = try #require(manager.getConfiguration(for: screenID))
         #expect(persisted.savedHTMLSource == effective)
         #expect(persisted.activeWallpaper == .html(source: effective, config: .default))
-        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("Detached callers hop to the MainActor HTML owner instead of invoking an unsafe Target")
@@ -224,6 +226,7 @@ struct HTMLBookmarkPersistenceTests {
         let root = try Self.makeTempDirectory()
         let configurationRoot = root.appendingPathComponent("configuration", isDirectory: true)
         let manager = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
+        defer { await TestScratch.discard(root, flushing: manager) }
         let origin = Self.makeWPEOrigin(bookmark: original)
         let entry = WPEHistoryEntry(
             origin: origin,
@@ -279,8 +282,8 @@ struct HTMLBookmarkPersistenceTests {
 
         await manager.flushPendingWrites()
         let reloaded = SettingsManager(directory: ConfigurationDirectory(root: configurationRoot))
+        defer { await TestScratch.discard(root, flushing: manager, reloaded) }
         #expect(reloaded.loadGlobalSettings().recentWPEImports.first?.origin.sourceFolderBookmark == refreshed)
-        await TestScratch.discard(root, flushing: manager, reloaded)
     }
 
     @Test("WPE refresh CAS rejects newer screen and history grants")

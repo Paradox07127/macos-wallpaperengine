@@ -11,7 +11,8 @@ struct BrowsePagingErrorTests {
     func failedPageTurnIsSurfaced() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.paging.error")
         defer { suite.discard() }
-        let services = Self.makeServices()
+        let (services, servicesDirectory) = Self.makeServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults)
 
@@ -39,7 +40,8 @@ struct BrowsePagingErrorTests {
     func failedPageTurnOffFilteredPageIsSurfaced() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.paging.filtered")
         defer { suite.discard() }
-        let services = Self.makeServices(stub: FilteredPageStub.self)
+        let (services, servicesDirectory) = Self.makeServices(stub: FilteredPageStub.self)
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults)
 
@@ -61,7 +63,8 @@ struct BrowsePagingErrorTests {
     func emptyLaterPageKeepsPager() throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.paging.emptyLater")
         defer { suite.discard() }
-        let services = Self.makeServices()
+        let (services, servicesDirectory) = Self.makeServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults)
 
@@ -76,7 +79,7 @@ struct BrowsePagingErrorTests {
     }
 
     @MainActor
-    private static func makeServices(stub: URLProtocol.Type = PagingStub.self) -> WorkshopServices {
+    private static func makeServices(stub: URLProtocol.Type = PagingStub.self) -> (services: WorkshopServices, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-browse-paging-\(UUID().uuidString)", isDirectory: true)
         let keychain = WorkshopKeychainStore(
@@ -92,7 +95,7 @@ struct BrowsePagingErrorTests {
             session: URLSession(configuration: config),
             countIssuedRequest: {}
         )
-        return WorkshopServices(keychain: keychain, cache: cache, queryService: service)
+        return (WorkshopServices(keychain: keychain, cache: cache, queryService: service), directory)
     }
 }
 

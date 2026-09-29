@@ -275,6 +275,7 @@ struct WorkshopKeychainStoreTests {
     func corruptFileDoesNotShadowKeychain() async throws {
         let spy = WorkshopKeychainSlotSpy(stored: Self.sampleKey)
         let env = Self.makeStore(slot: spy)
+        defer { try? FileManager.default.removeItem(at: env.directory) }
         try Self.writeContainerFile("not-a-hex-key!", at: env.fileURL)
 
         let loaded = try await env.store.loadWebAPIKey()
@@ -288,6 +289,7 @@ struct WorkshopKeychainStoreTests {
         let newerKey = String(repeating: "f9e8d7c6", count: 4)
         let spy = WorkshopKeychainSlotSpy(stored: newerKey)
         let env = Self.makeStore(slot: spy)
+        defer { try? FileManager.default.removeItem(at: env.directory) }
         // Same shape-valid content the pre-keychain versions persisted.
         try Self.writeContainerFile(Self.sampleKey, at: env.fileURL)
 

@@ -16,7 +16,7 @@ enum TestScratch {
         case defaultsSuiteUnavailable(String)
     }
 
-    /// Call as the last statement, not from `defer` (it cannot await). Pass *every*
+    /// Call from a `defer` right after the last manager built on `directory` exists. Pass *every*
     /// manager built on `directory`, read-only ones included: `init` alone queues writes.
     static func discard(_ directory: URL, flushing managers: SettingsManager...) async {
         for manager in managers {

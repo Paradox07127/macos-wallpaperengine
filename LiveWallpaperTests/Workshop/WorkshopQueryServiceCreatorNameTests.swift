@@ -10,7 +10,8 @@ struct WorkshopQueryServiceCreatorNameTests {
 
     @Test("The page is handed over before GetPlayerSummaries answers")
     func pageArrivesBeforePersonaNames() async throws {
-        let service = Self.makeService()
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let started = Date()
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
         let elapsed = Date().timeIntervalSince(started)
@@ -24,7 +25,8 @@ struct WorkshopQueryServiceCreatorNameTests {
 
     @Test("Personas arrive after the page and are written into the cached copy")
     func personasArriveAfterThePageAndReachTheCache() async throws {
-        let service = Self.makeService()
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let request = WorkshopQueryRequest(sort: .mostPopular)
 
         let page = try await service.fetch(request)
@@ -42,7 +44,8 @@ struct WorkshopQueryServiceCreatorNameTests {
     @Test("Each issued HTTP request bumps the request counter exactly once")
     func everyHTTPRequestIsCounted() async throws {
         let spy = RequestCountSpy()
-        let service = Self.makeService(countIssuedRequest: { spy.bump() })
+        let (service, serviceDirectory) = Self.makeService(countIssuedRequest: { spy.bump() })
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let request = WorkshopQueryRequest(sort: .mostPopular)
 
         let page = try await service.fetch(request)
@@ -58,12 +61,12 @@ struct WorkshopQueryServiceCreatorNameTests {
 
     private static func makeService(
         countIssuedRequest: @escaping @Sendable () -> Void = {}
-    ) -> WorkshopQueryService {
+    ) -> (service: WorkshopQueryService, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-query-personas-\(UUID().uuidString)", isDirectory: true)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkshopPersonaDelayStub.self]
-        return WorkshopQueryService(
+        let service = WorkshopQueryService(
             keychain: WorkshopKeychainStore(
                 directory: directory,
                 slot: WorkshopKeychainSlotSpy(stored: Self.validKey).slot()
@@ -72,6 +75,7 @@ struct WorkshopQueryServiceCreatorNameTests {
             session: URLSession(configuration: config),
             countIssuedRequest: countIssuedRequest
         )
+        return (service, directory)
     }
 }
 

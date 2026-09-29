@@ -40,11 +40,9 @@ struct LibraryImporterTests {
 
     @Test func plainFolderAddsTheVideosInsideIt() throws {
         let videos = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: videos) }
         let empty = try fixtureFolder()
-        defer {
-            try? FileManager.default.removeItem(at: videos)
-            try? FileManager.default.removeItem(at: empty)
-        }
+        defer { try? FileManager.default.removeItem(at: empty) }
         for name in ["one.mp4", "two.mov"] {
             try Data("fixture".utf8).write(to: videos.appendingPathComponent(name))
         }
@@ -57,11 +55,9 @@ struct LibraryImporterTests {
 
     @Test func sameLocalPageIsSavedOnce() throws {
         let site = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: site) }
         let otherSite = try fixtureFolder()
-        defer {
-            try? FileManager.default.removeItem(at: site)
-            try? FileManager.default.removeItem(at: otherSite)
-        }
+        defer { try? FileManager.default.removeItem(at: otherSite) }
         try Data("<html></html>".utf8).write(to: site.appendingPathComponent("index.html"))
         let plain = try site.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         let named = try site.bookmarkData(options: [], includingResourceValuesForKeys: [.nameKey], relativeTo: nil)

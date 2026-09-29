@@ -14,7 +14,8 @@ struct DetailPresetsFilterTests {
     @MainActor
     func keyedKeepsPresetsOnly() async throws {
         PresetsQueryStub.reset()
-        let services = Self.makeServices()
+        let (services, servicesDirectory) = Self.makeServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
 
         let outcome = try await DetailPresetsQuery.load(wallpaperID: Self.wallpaperID, services: services)
@@ -33,7 +34,8 @@ struct DetailPresetsFilterTests {
     @MainActor
     func keyLossReloads() async {
         PresetsQueryStub.reset()
-        let services = Self.makeServices()
+        let (services, servicesDirectory) = Self.makeServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = DetailPresetsModel()
 
@@ -56,7 +58,8 @@ struct DetailPresetsFilterTests {
     @MainActor
     func keylessIssuesNoRequest() async throws {
         PresetsQueryStub.reset()
-        let services = Self.makeServices()
+        let (services, servicesDirectory) = Self.makeServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         // A stored key that Valve refused: the keyed path would still run if
         // the section only looked at `hasWebAPIKey`.
         services.hasWebAPIKey = true
@@ -95,7 +98,7 @@ struct DetailPresetsFilterTests {
     }
 
     @MainActor
-    private static func makeServices() -> WorkshopServices {
+    private static func makeServices() -> (services: WorkshopServices, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-detail-presets-\(UUID().uuidString)", isDirectory: true)
         let keychain = WorkshopKeychainStore(
@@ -111,7 +114,7 @@ struct DetailPresetsFilterTests {
             session: URLSession(configuration: config),
             countIssuedRequest: {}
         )
-        return WorkshopServices(keychain: keychain, cache: cache, queryService: service)
+        return (WorkshopServices(keychain: keychain, cache: cache, queryService: service), directory)
     }
 }
 

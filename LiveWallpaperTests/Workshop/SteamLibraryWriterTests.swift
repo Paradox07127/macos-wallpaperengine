@@ -429,8 +429,9 @@ struct SteamLibraryWriterBehaviourTests {
     @Test("Publishing replaces a complete item, keeps the user's own files, and leaves Steam client configuration unchanged")
     func publishKeepsTargetOnlyFiles() throws {
         let source = try Self.makeTree()
+        defer { source.cleanup() }
         let target = try Self.makeTree()
-        defer { source.cleanup(); target.cleanup() }
+        defer { target.cleanup() }
         try Data("old".utf8).write(to: target.item.appendingPathComponent("obsolete.txt"))
         let config = target.root.appendingPathComponent("config/config.vdf")
         try FileManager.default.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)

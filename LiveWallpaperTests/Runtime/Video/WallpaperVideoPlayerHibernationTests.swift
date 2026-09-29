@@ -271,6 +271,7 @@ struct WallpaperVideoPlayerHibernationTests {
     @Test("Cleanup drains an armed hibernation and stays idempotent")
     func cleanupWhileHibernatedIsIdempotent() async throws {
         let harness = try await Harness.make()
+        defer { harness.removeFixture() }
 
         harness.player.setSuspended(true)
         harness.player.setHibernationEligible(true)
@@ -283,7 +284,6 @@ struct WallpaperVideoPlayerHibernationTests {
         #expect(!harness.player.hasInstalledPlaybackWindow)
         #expect(harness.player.player == nil)
         #expect(!harness.player.isShowingHibernationStillFrameForTesting)
-        harness.removeFixture()
     }
 
     @Test("Cleanup and hibernation share one teardown path")

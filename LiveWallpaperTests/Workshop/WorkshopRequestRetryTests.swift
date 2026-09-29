@@ -365,7 +365,8 @@ struct WorkshopRequestRetryTests {
     func keyedTransportFailureIsRetried() async throws {
         RetrySequenceStub.plan([.error(URLError(.timedOut)), .http(status: 200, headers: [:], body: Self.keyedPage)])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
 
@@ -380,7 +381,8 @@ struct WorkshopRequestRetryTests {
     func keyed403IsNotRetried() async throws {
         RetrySequenceStub.plan([.http(status: 403, headers: [:], body: Data("{}".utf8)), .http(status: 200, headers: [:], body: Self.keyedPage)])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         await #expect(throws: WorkshopQueryError.unauthorized) {
             try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
@@ -393,7 +395,8 @@ struct WorkshopRequestRetryTests {
     func keyedLongRetryAfterIsNotWaitedOut() async throws {
         RetrySequenceStub.plan([.http(status: 429, headers: ["Retry-After": "120"], body: Data()), .http(status: 200, headers: [:], body: Self.keyedPage)])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         await #expect(throws: WorkshopQueryError.rateLimited(retryAfter: 120)) {
             try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
@@ -411,7 +414,8 @@ struct WorkshopRequestRetryTests {
         let retryAt = formatter.string(from: RetryVirtualClock.epoch.addingTimeInterval(2))
         RetrySequenceStub.plan([.http(status: 429, headers: ["Retry-After": retryAt], body: Data()), .http(status: 200, headers: [:], body: Self.keyedPage)])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
 
@@ -424,7 +428,8 @@ struct WorkshopRequestRetryTests {
     func keyedCancellationDuringBackoffIsCancelled() async throws {
         RetrySequenceStub.plan([.http(status: 503, headers: [:], body: Data()), .http(status: 200, headers: [:], body: Self.keyedPage)])
         let policy = WorkshopRetryPolicy(sleep: { _ in throw CancellationError() })
-        let service = try await Self.makeKeyedService(policy: policy)
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: policy)
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         await #expect(throws: WorkshopQueryError.cancelled) {
             try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
@@ -441,7 +446,8 @@ struct WorkshopRequestRetryTests {
             .http(status: 200, headers: [:], body: Self.keyedPage),
         ])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         await #expect(throws: WorkshopQueryError.http(status: 503)) {
             try await service.fetch(WorkshopQueryRequest(sort: .mostPopular))
@@ -466,7 +472,8 @@ struct WorkshopRequestRetryTests {
         ])
         // The clock stays put, so the lookup starts inside the page's cooldown.
         let clock = RetryVirtualClock(advancesOnSleep: false)
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let request = WorkshopQueryRequest(sort: .mostPopular)
 
         let page = try await service.fetch(request)
@@ -484,7 +491,8 @@ struct WorkshopRequestRetryTests {
     func validateAPIKeyRetriesTransportFailure() async throws {
         RetrySequenceStub.plan([.error(URLError(.timedOut)), .http(status: 200, headers: [:], body: Data("{}".utf8))])
         let clock = RetryVirtualClock()
-        let service = try await Self.makeKeyedService(policy: clock.makePolicy())
+        let (service, serviceDirectory) = try await Self.makeKeyedService(policy: clock.makePolicy())
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
 
         #expect(try await service.validateAPIKey(Self.validKey))
         #expect(RetrySequenceStub.requestCount == 2)
@@ -553,7 +561,7 @@ struct WorkshopRequestRetryTests {
 
     // MARK: - Fixtures
 
-    private static func makeKeyedService(policy: WorkshopRetryPolicy) async throws -> WorkshopQueryService {
+    private static func makeKeyedService(policy: WorkshopRetryPolicy) async throws -> (service: WorkshopQueryService, directory: URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-request-retry-\(UUID().uuidString)", isDirectory: true)
         let keychain = WorkshopKeychainStore(
@@ -561,13 +569,14 @@ struct WorkshopRequestRetryTests {
             slot: WorkshopKeychainSlotSpy().slot()
         )
         try await keychain.setWebAPIKey(validKey)
-        return WorkshopQueryService(
+        let service = WorkshopQueryService(
             keychain: keychain,
             cache: WorkshopQueryCache(directoryURL: root.appendingPathComponent("cache", isDirectory: true)),
             session: RetrySequenceStub.makeSession(),
             retryPolicy: policy,
             countIssuedRequest: {}
         )
+        return (service, root)
     }
 
     @MainActor

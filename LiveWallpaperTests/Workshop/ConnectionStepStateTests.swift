@@ -16,17 +16,24 @@ struct ConnectionStepStateTests {
 
     /// A bookmark the shared resolver can actually resolve; `Data([0x01])`
     /// elsewhere in this file is a deliberately broken grant.
-    private func resolvableBookmark() throws -> Data {
+    private func resolvableBookmark() throws -> (bookmark: Data, directory: URL) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ConnectionStepState-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return try dir.bookmarkData()
+        do {
+            return try (dir.bookmarkData(), dir)
+        } catch {
+            try? FileManager.default.removeItem(at: dir)
+            throw error
+        }
     }
 
     @Test("A step that has not been checked yet is not a failure")
     func uncheckedStepDoesNotReadAsFailure() throws {
         let (service, _) = try makeService()
-        service.workdirBookmarkData = try resolvableBookmark()
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        service.workdirBookmarkData = grant.bookmark
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
         service.username = "someone"
@@ -139,7 +146,9 @@ struct ConnectionStepStateTests {
     @Test("All three steps green is the only way to read ready")
     func allStepsGreenReadsAsReady() throws {
         let (service, _) = try makeService()
-        service.workdirBookmarkData = try resolvableBookmark()
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        service.workdirBookmarkData = grant.bookmark
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
         service.username = "someone"

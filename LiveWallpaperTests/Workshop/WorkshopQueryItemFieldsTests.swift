@@ -101,7 +101,8 @@ struct WorkshopQueryItemFieldsTests {
     /// is the wallpaper it restyles.
     @Test("Keyed items carry vote data, creation time, comment count and children")
     func keyedItemFields() async throws {
-        let service = Self.makeService()
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         let page = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, searchText: "fields"))
 
         let preset = try #require(page.items.first { $0.id == 1_858_166_341 })
@@ -193,16 +194,17 @@ struct WorkshopQueryItemFieldsTests {
         #expect(page.items.dropFirst().flatMap(\.requiredItemIDs).isEmpty)
     }
 
-    private static func makeService() -> WorkshopQueryService {
+    private static func makeService() -> (service: WorkshopQueryService, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-query-fields-\(UUID().uuidString)", isDirectory: true)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkshopQueryFieldsStub.self]
-        return WorkshopQueryService(
+        let service = WorkshopQueryService(
             keychain: WorkshopKeychainStore(directory: directory, slot: WorkshopKeychainSlotSpy(stored: Self.validKey).slot()),
             cache: WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache")),
             session: URLSession(configuration: config)
         )
+        return (service, directory)
     }
 }
 

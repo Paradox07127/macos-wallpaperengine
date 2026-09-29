@@ -11,7 +11,8 @@ struct WorkshopAPIKeyRejectionTests {
     @MainActor
     func valveRejectionMarksStoredKeyRejected() async throws {
         let log = VerdictLog()
-        let service = try await Self.makeService()
+        let (service, serviceDirectory) = try await Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         await service.setAuthVerdictHandler { accepted, _ in log.append(accepted) }
 
         APIKeyRejectionURLProtocolStub.plan = { _ in
@@ -40,7 +41,8 @@ struct WorkshopAPIKeyRejectionTests {
     @Test("Network failure reports no verdict — offline must not mark a key bad")
     func networkErrorLeavesVerdictUntouched() async throws {
         let log = VerdictLog()
-        let service = try await Self.makeService()
+        let (service, serviceDirectory) = try await Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
         await service.setAuthVerdictHandler { accepted, _ in log.append(accepted) }
 
         APIKeyRejectionURLProtocolStub.plan = { _ in
@@ -52,7 +54,7 @@ struct WorkshopAPIKeyRejectionTests {
         #expect(log.values.isEmpty)
     }
 
-    private static func makeService() async throws -> WorkshopQueryService {
+    private static func makeService() async throws -> (service: WorkshopQueryService, directory: URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-key-rejection-\(UUID().uuidString)", isDirectory: true)
         let keychain = WorkshopKeychainStore(
@@ -62,11 +64,12 @@ struct WorkshopAPIKeyRejectionTests {
         try await keychain.setWebAPIKey(validKey)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [APIKeyRejectionURLProtocolStub.self]
-        return WorkshopQueryService(
+        let service = WorkshopQueryService(
             keychain: keychain,
             cache: WorkshopQueryCache(directoryURL: root.appendingPathComponent("cache", isDirectory: true)),
             session: URLSession(configuration: config)
         )
+        return (service, root)
     }
 }
 

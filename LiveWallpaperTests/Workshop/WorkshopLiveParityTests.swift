@@ -93,7 +93,9 @@ struct WorkshopLiveParityTests {
     @MainActor
     func keylessParity(sort: WorkshopSortMode) async throws {
         let request = Self.appRequest(sort: sort, numPerPage: WorkshopPublicBrowseURL.itemsPerPage)
-        let source = WorkshopPublicSearchSource(cache: WorkshopQueryCache(directoryURL: Self.freshCacheDirectory()))
+        let cacheDirectory = Self.freshCacheDirectory()
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        let source = WorkshopPublicSearchSource(cache: WorkshopQueryCache(directoryURL: cacheDirectory))
         let appIDs: [UInt64]
         do {
             let items = try await source.fetch(request).items
@@ -117,14 +119,20 @@ struct WorkshopLiveParityTests {
     func keyedParity(sort: WorkshopSortMode) async throws {
         let key = try #require(Self.apiKey)
         let request = Self.appRequest(sort: sort, numPerPage: 50)
+        let keychainDirectory = Self.freshCacheDirectory()
+        let cacheDirectory = Self.freshCacheDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: keychainDirectory)
+            try? FileManager.default.removeItem(at: cacheDirectory)
+        }
         let keychain = WorkshopKeychainStore(
-            directory: Self.freshCacheDirectory(),
+            directory: keychainDirectory,
             slot: WorkshopKeychainSlotSpy(stored: key).slot()
         )
         // `countIssuedRequest` defaults to the app's UserDefaults tally.
         let service = WorkshopQueryService(
             keychain: keychain,
-            cache: WorkshopQueryCache(directoryURL: Self.freshCacheDirectory()),
+            cache: WorkshopQueryCache(directoryURL: cacheDirectory),
             countIssuedRequest: {}
         )
         let appIDs: [UInt64]
@@ -156,13 +164,19 @@ struct WorkshopLiveParityTests {
         )
         let names = request.apiQueryItems(apiKey: "REDACTED", appID: WorkshopQueryService.wallpaperEngineAppID).map(\.name)
         #expect(names == ["key", "input_json"])
+        let keychainDirectory = Self.freshCacheDirectory()
+        let cacheDirectory = Self.freshCacheDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: keychainDirectory)
+            try? FileManager.default.removeItem(at: cacheDirectory)
+        }
         let keychain = WorkshopKeychainStore(
-            directory: Self.freshCacheDirectory(),
+            directory: keychainDirectory,
             slot: WorkshopKeychainSlotSpy(stored: key).slot()
         )
         let service = WorkshopQueryService(
             keychain: keychain,
-            cache: WorkshopQueryCache(directoryURL: Self.freshCacheDirectory()),
+            cache: WorkshopQueryCache(directoryURL: cacheDirectory),
             countIssuedRequest: {}
         )
         let page = try await service.fetch(request)
@@ -190,7 +204,9 @@ struct WorkshopLiveParityTests {
             excludedTags: Self.deselectedAgeTags + BrowseViewModel.excludedTags(showsPresets: false),
             miscellaneousTags: ["Approved"]
         )
-        let source = WorkshopPublicSearchSource(cache: WorkshopQueryCache(directoryURL: Self.freshCacheDirectory()))
+        let cacheDirectory = Self.freshCacheDirectory()
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        let source = WorkshopPublicSearchSource(cache: WorkshopQueryCache(directoryURL: cacheDirectory))
         let items = try await source.fetch(request).items
         let approved = items.filter { $0.tags.contains("Approved") }.count
         let named = items.filter { $0.creatorPersonaName != nil }.count
