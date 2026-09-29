@@ -43,6 +43,15 @@ struct EditDeskStageViewTests {
             && abs(actual.height - expected.height) < 0.00000001
     }
 
+    /// Yields the main actor until `condition` holds; past the deadline a task that never ran fails the test instead of spinning it forever.
+    private func yielding(until condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition(), ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        return condition()
+    }
+
     @Test("Manual and policy pauses render distinct text in the existing top-right pause pill")
     func pausePillText() throws {
         let model = makeModel()
@@ -770,9 +779,7 @@ struct EditDeskStageViewTests {
         let shell = try #require(view.displayLayers[1])
         let original = shell.content.frame
         let flight = Task { await model.flyTile(display: 1, to: CGRect(x: 100, y: 100, width: 800, height: 450)) }
-        while shell.content.superlayer === shell.layer {
-            await Task.yield()
-        }
+        try #require(await yielding(until: { shell.content.superlayer !== shell.layer }), "the flight never took off")
         let flightLayer = try #require(shell.content.superlayer)
         #expect(!view.debugSpringsSettled)
         model.setTileConcealed(display: 1, true)
@@ -814,9 +821,7 @@ struct EditDeskStageViewTests {
         let original = shell.content.frame
         let home = shell.content.convert(shell.content.bounds, to: view.layer)
         let first = Task { await model.flyTile(display: 1, to: CGRect(x: 50, y: 50, width: 700, height: 400)) }
-        while shell.content.superlayer === shell.layer {
-            await Task.yield()
-        }
+        try #require(await yielding(until: { shell.content.superlayer !== shell.layer }), "the first flight never took off")
         view.advance(dt: 1 / 60)
         model.setTileConcealed(display: 1, true)
         let destination = CGRect(x: 100, y: 100, width: 800, height: 450)
@@ -832,9 +837,7 @@ struct EditDeskStageViewTests {
         #expect(sameRect(shell.content.frame, destination))
         model.setTileConcealed(display: 1, true)
         let returning = Task { await model.returnTile(display: 1) }
-        while shell.content.opacity == 0 {
-            await Task.yield()
-        }
+        try #require(await yielding(until: { shell.content.opacity != 0 }), "the return never started")
         #expect(shell.content.superlayer !== shell.layer, "return reveals before it finishes flying home")
         for _ in 0 ..< 240 {
             view.advance(dt: 1 / 120)

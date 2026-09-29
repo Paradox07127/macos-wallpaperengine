@@ -164,7 +164,11 @@ struct EditDeskBrowseSeparatorRenderTests {
         let manager = Self.makeManager()
         defer { manager.tearDownForTermination() }
         let doctor = SteamCMDDoctorService(defaults: suite.defaults)
-        return await ProbeRenderer.render(nil, size: Self.size, appearance: dark ? .darkAqua : .aqua, settle: 1.5) {
+        // The pane's own appear path, run to the end before it mounts: the first layout draws the grid, so nothing is left to settle.
+        await services.refreshAPIKeyStatus()
+        await browse.reload()
+        try #require(browse.items.count == Self.items.count, "the cached page did not load, so the grid would render empty")
+        return await ProbeRenderer.render(nil, size: Self.size, appearance: dark ? .darkAqua : .aqua, settle: 0) {
             ZStack {
                 DesignTokens.EditDesk.Colors.background
                 BrowsePane(viewModel: browse, doctor: doctor, onRequestKeyEntry: {})
