@@ -105,10 +105,10 @@ final class ModalActions {
         inputs.deleteInstalled = { entry, model in
             model.performDelete(entry, services: InstalledLibraryModel.DeleteServices(
                 containsBookmark: {
-                    WorkshopBookmarkActions.contains(workshopID: $0, store: store) || libraryBookmarks.contains("workshop:\($0)")
+                    store.containsWPEBookmark(workshopID: $0) || libraryBookmarks.contains("workshop:\($0)")
                 },
                 removeBookmarks: {
-                    WorkshopBookmarkActions.removeAll(workshopID: $0, store: store)
+                    store.removeWPEBookmarks(workshopID: $0)
                     libraryBookmarks.remove("workshop:\($0)")
                 },
                 removeImportIfMatching: {

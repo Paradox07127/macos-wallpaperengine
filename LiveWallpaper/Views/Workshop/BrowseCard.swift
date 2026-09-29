@@ -40,8 +40,9 @@ struct BrowseCard: View, Equatable {
     var isRevealed: Bool = false
     /// nil keeps the reveal in this card's own `@State`.
     var onReveal: (() -> Void)?
+    /// Liked, in `WorkshopBookmarkStore`.
     var isBookmarked: Bool = false
-    /// nil hides every bookmark affordance.
+    /// nil hides every like affordance.
     var onBookmark: (() -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
@@ -90,7 +91,7 @@ struct BrowseCard: View, Equatable {
             : Text("Show details"))
         .accessibilityActions {
             if let onBookmark {
-                Button(isBookmarked ? "Remove Bookmark" : "Add Bookmark") {
+                Button(isBookmarked ? "Unlike" : "Like") {
                     guard isBookmarked || !item.isBanned else { return }
                     onBookmark()
                 }
@@ -164,10 +165,10 @@ struct BrowseCard: View, Equatable {
             isHovered: $isHovered
         )
         .overlay(alignment: .topLeading) {
-            if !shouldBlur, showsEditDeskTopRow {
+            if showsEditDeskTopRow {
                 EditDeskTopRow(
-                    inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered,
-                    resolution: editDeskMarks.resolution, status: editDeskStatus
+                    inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered && !shouldBlur,
+                    resolution: shouldBlur ? nil : editDeskMarks.resolution, status: editDeskStatus, like: likeMark
                 )
                 .padding(DesignTokens.Spacing.sm)
             }
@@ -237,8 +238,16 @@ struct BrowseCard: View, Equatable {
         return nil
     }
 
+    /// The heart stays up on a blurred card too: it marks the user's choice, not the picture.
     private var showsEditDeskTopRow: Bool {
-        isHovered || showsInUseBadge || editDeskMarks.resolution != nil || editDeskStatus != nil
+        likeMark != nil
+            || (!shouldBlur && (isHovered || showsInUseBadge || editDeskMarks.resolution != nil || editDeskStatus != nil))
+    }
+
+    /// Always up once liked; offered on hover otherwise, except on a banned item, which cannot be liked.
+    private var likeMark: EditDeskTopRow.Like? {
+        guard let onBookmark, isBookmarked || (isHovered && !item.isBanned) else { return nil }
+        return EditDeskTopRow.Like(isLiked: isBookmarked, toggle: onBookmark)
     }
 
     fileprivate static func editDeskMetaText(_ text: String) -> some View {
@@ -254,8 +263,8 @@ struct BrowseCard: View, Equatable {
     private var contextMenuItems: some View {
         if let onBookmark {
             Button(action: onBookmark) {
-                Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
-                      systemImage: isBookmarked ? "bookmark.fill" : "bookmark")
+                Label(isBookmarked ? "Unlike" : "Like",
+                      systemImage: isBookmarked ? "heart.fill" : "heart")
             }
             .disabled(item.isBanned && !isBookmarked)
 
@@ -376,7 +385,7 @@ struct BrowseCard: View, Equatable {
             parts.append(size)
         }
         if isBookmarked {
-            parts.append(String(localized: "Bookmarked", bundle: .appLanguage, comment: "Workshop item is saved locally."))
+            parts.append(String(localized: "Liked", bundle: .appLanguage, comment: "Workshop card VoiceOver: the item is liked."))
         }
         if showsEditDeskInLibraryCheck {
             parts.append(String(localized: "In Library", bundle: .appLanguage, comment: "Workshop card VoiceOver: item is already downloaded to the local library."))
@@ -407,10 +416,17 @@ private struct EditDeskTopRow: View {
         case needsUpdate, inLibrary
     }
 
+    struct Like {
+        let isLiked: Bool
+        let toggle: () -> Void
+    }
+
     let inUseBadge: NowPlayingBadge?
     let showsGIF: Bool
     let resolution: String?
     let status: Status?
+    /// nil draws no heart.
+    let like: Like?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -451,6 +467,9 @@ private struct EditDeskTopRow: View {
                     )
                 case nil:
                     EmptyView()
+                }
+                if let like {
+                    TileMarkBadge(mark: .like, isOn: like.isLiked, action: like.toggle)
                 }
             }
         }

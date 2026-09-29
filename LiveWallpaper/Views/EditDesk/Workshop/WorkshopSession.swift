@@ -8,9 +8,15 @@ import Observation
 @MainActor
 @Observable
 final class WorkshopSession {
+    enum Listing: Hashable {
+        case results, likes
+    }
+
     let browse: BrowseViewModel
     let deferredApply: DeferredApplyCoordinator
     let matureReveal = MatureRevealState()
+    /// Whether the page lists Steam's browse results or the items the user liked.
+    var listing: Listing = .results
 
     @ObservationIgnored private let confirmReadiness: @MainActor () async -> Void
     @ObservationIgnored private let ingestDownloads: @MainActor () async -> Void
@@ -46,6 +52,7 @@ final class WorkshopSession {
     @discardableResult
     func consumePendingDeepLink() -> String? {
         guard let query = WorkshopDeepLink.takePendingSearch() else { return nil }
+        listing = .results
         deepLinkSearch?.cancel()
         deepLinkSearch = Task { [browse] in await browse.searchFromDeepLink(query) }
         return query

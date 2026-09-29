@@ -87,6 +87,22 @@ struct WorkshopSessionTests {
         }
     }
 
+    @Test("The Likes listing is the session's, so it outlives a page switch; a deep-linked search brings the results back")
+    func listingOutlivesAPageSwitch() async throws {
+        try await withSession("workshop.session.listing") { session, _ in
+            #expect(session.listing == .results)
+            session.listing = .likes
+            #expect(session.listing == .likes)
+            WorkshopDeepLink.requestSearch("aurora")
+            #expect(session.consumePendingDeepLink() == "aurora")
+            #expect(session.listing == .results, "the deep-linked search would load behind the Likes list")
+        }
+        let page = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift")
+        #expect(page.contains("listing: Bindable(session).listing"), "the page keeps the listing where a page switch drops it")
+        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
+        #expect(!pane.contains("@State private var listing"), "the pane keeps the listing where a page switch drops it")
+    }
+
     @Test("A pending deep link is consumed exactly once")
     func deepLinkIsOneShot() async throws {
         try await withSession("workshop.session.deeplink") { session, _ in

@@ -282,10 +282,12 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         let backup = try RepositoryRoot.source("LiveWallpaper/Views/Settings/BackupSection.swift")
         #expect(backup.contains("let summary = ConfigurationPorter.apply(bundle)"))
-        #expect(backup.contains("if let count = ConfigurationPorter.importSummary(for: bundle).totalBookmarkCount {"),
+        #expect(backup.contains("let accepted = ConfigurationPorter.importSummary(for: bundle)"),
                 "Confirmation must count exactly the bookmark sections the shipping SKU imports")
-        #expect(backup.contains("if let count = summary.totalBookmarkCount {"),
-                "The result must include Workshop bookmarks in the existing localized bookmark feedback")
+        #expect(backup.contains("if let count = accepted.workshopBookmarkCount {"),
+                "The confirmation must list the Workshop likes apart from the library bookmarks")
+        #expect(backup.contains("if let count = summary.workshopBookmarkCount {"),
+                "The result must report the Workshop likes apart from the library bookmarks")
         let porter = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Persistence/ConfigurationPorter+SettingsBridge.swift")
         let preview = try Self.slice(porter, from: "static func importSummary(", until: "@discardableResult")
         let liteCount = try Self.slice(preview, from: "#if LITE_BUILD", until: "#else")

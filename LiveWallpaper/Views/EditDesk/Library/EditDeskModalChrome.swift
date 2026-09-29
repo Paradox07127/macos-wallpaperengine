@@ -117,8 +117,7 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, minHeight: ModalGeometry.iconButtonSize, alignment: .leading)
             ForEach(actions) { action in
-                let tint = action.kind == .bookmark(isBookmarked: true) ? DesignTokens.Colors.rating : nil
-                GlassIconButton(action.symbol, tint: tint, role: action.isDestructive ? .destructive : nil, action: action.perform)
+                GlassIconButton(action.symbol, tint: action.tint, role: action.isDestructive ? .destructive : nil, action: action.perform)
                     .help(Text(verbatim: action.title))
                     .accessibilityLabel(Text(verbatim: action.title))
             }

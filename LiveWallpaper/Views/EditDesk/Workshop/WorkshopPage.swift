@@ -39,7 +39,8 @@ struct WorkshopPage: View {
                 onRequestKeyEntry: { isShowingKeyEntry = true },
                 onDownloadByLink: { presentPasteFlow() },
                 onOpenItem: { presentedItemID = $0.id },
-                matureReveal: session.matureReveal
+                matureReveal: session.matureReveal,
+                listing: Bindable(session).listing
             )
             .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
             TopBar(
@@ -52,7 +53,9 @@ struct WorkshopPage: View {
             }
             WorkshopModalHost(
                 presentedItemID: $presentedItemID,
-                items: session.browse.items,
+                items: modalItems,
+                // A like's saved snapshot can be stale; a browse result is what Steam just sent.
+                refreshDetailsOnOpen: session.listing == .likes,
                 session: session,
                 toasts: toasts,
                 windowSize: stageSize,
@@ -70,6 +73,14 @@ struct WorkshopPage: View {
             presentedItemID = nil
         }
         .modifier(WorkshopPageSheets(page: self))
+    }
+
+    /// The grid the modal pages through, in the order the listing on screen shows it.
+    private var modalItems: [WorkshopQueryItem] {
+        switch session.listing {
+        case .results: session.browse.items
+        case .likes: WorkshopBookmarkActions.likedItems(browseItems: session.browse.items)
+        }
     }
 
     // MARK: Chrome

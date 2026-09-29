@@ -433,8 +433,8 @@ final class InstalledLibraryModel {
                 workshopStore.remove(id)
                 guard !workshopStore.hasStorageError else {
                     errorMessage = String(
-                        localized: "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.",
-                        bundle: .appLanguage, comment: "Workshop bookmark persistence failure."
+                        localized: "Couldn't save your likes. Your existing likes have been kept.",
+                        bundle: .appLanguage, comment: "Workshop like persistence failure."
                     )
                     return
                 }

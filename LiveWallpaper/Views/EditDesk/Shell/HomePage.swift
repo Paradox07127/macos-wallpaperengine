@@ -1853,7 +1853,7 @@ struct LibraryGridTile: View {
                     ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
                 }
                 if isBookmarked || isHovering {
-                    LibraryBookmarkBadge(isBookmarked: isBookmarked) { LibraryBookmarkStore.shared.toggle(item.id) }
+                    TileMarkBadge(mark: .bookmark, isOn: isBookmarked) { LibraryBookmarkStore.shared.toggle(item.id) }
                 }
             }
             .padding(DesignTokens.EditDesk.Spacing.s8)

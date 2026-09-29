@@ -54,29 +54,43 @@ struct WorkshopBookmarkTests {
 
     // MARK: - Actions
 
-    @Test("Saving from Browse writes the Workshop store only, and contains reads both stores")
+    @Test("Liking from Browse writes the Workshop store only, and a second tap unlikes")
     func toggleAndContains() throws {
         let (local, workshop, suite) = try Self.stores("toggle")
         defer { suite.discard() }
         let item = Self.queryItem(424_242)
 
-        WorkshopBookmarkActions.toggle(item, store: local, workshopStore: workshop)
+        WorkshopBookmarkActions.toggle(item, workshopStore: workshop)
         #expect(workshop.contains(424_242))
-        #expect(local.bookmarks.isEmpty, "saving for later must not create a playable bookmark")
+        #expect(WorkshopBookmarkActions.contains(424_242, workshopStore: workshop))
+        #expect(local.bookmarks.isEmpty, "liking must not create a playable bookmark")
 
-        _ = Self.addLocal("7", to: local)
-        #expect(WorkshopBookmarkActions.contains(7, store: local, workshopStore: workshop))
+        WorkshopBookmarkActions.toggle(item, workshopStore: workshop)
+        #expect(!WorkshopBookmarkActions.contains(424_242, workshopStore: workshop))
+    }
 
-        WorkshopBookmarkActions.toggle(item, store: local, workshopStore: workshop)
-        #expect(!WorkshopBookmarkActions.contains(424_242, store: local, workshopStore: workshop))
+    @Test("Unliking leaves the wallpaper library's saved entries for that item alone")
+    func unlikingKeepsLibraryEntries() throws {
+        let (local, workshop, suite) = try Self.stores("unlike")
+        defer { suite.discard() }
+        _ = Self.addLocal("424242", to: local)
+        workshop.add(Self.saved(424_242))
+
+        WorkshopBookmarkActions.toggle(Self.queryItem(424_242), workshopStore: workshop)
+
+        #expect(!workshop.contains(424_242))
+        #expect(local.containsWPEBookmark(workshopID: "424242"), "unliking deleted the library's saved entries for the item")
+        let actions = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
+        #expect(!actions.contains("removeWPEBookmarks"), "a like action deletes the library's saved entries")
+        #expect(!actions.contains("containsWPEBookmark"), "a library bookmark counts as a like")
     }
 
     @Test("An untitled item is saved without one app language's fallback title")
     func untitledItemKeepsNoTitle() throws {
-        let (local, workshop, suite) = try Self.stores("untitled")
+        let (_, workshop, suite) = try Self.stores("untitled")
         defer { suite.discard() }
 
-        WorkshopBookmarkActions.toggle(Self.queryItem(9, rawTitle: nil), store: local, workshopStore: workshop)
+        WorkshopBookmarkActions.toggle(Self.queryItem(9, rawTitle: nil), workshopStore: workshop)
 
         #expect(workshop.bookmarks.map(\.rawTitle) == [nil])
     }
@@ -94,27 +108,30 @@ struct WorkshopBookmarkTests {
         #expect(!workshop.contains(424_242))
     }
 
-    @Test("Deleting an installed item clears its id from both stores")
-    func removeAllClearsBothStores() throws {
-        let (local, workshop, suite) = try Self.stores("removeAll")
-        defer { suite.discard() }
-        _ = Self.addLocal("424242", to: local)
-        workshop.add(Self.saved(424_242))
-
-        WorkshopBookmarkActions.removeAll(workshopID: "424242", store: local, workshopStore: workshop)
-
-        #expect(!local.containsWPEBookmark(workshopID: "424242"))
-        #expect(!workshop.contains(424_242))
-    }
-
-    @Test("The pane's bookmark set covers both stores")
-    func bookmarkedIDsCoverBothStores() throws {
+    @Test("The pane's like set is the Workshop store alone")
+    func bookmarkedIDsAreTheWorkshopStore() throws {
         let (local, workshop, suite) = try Self.stores("idSet")
         defer { suite.discard() }
         workshop.add(Self.saved(1))
         _ = Self.addLocal("2", to: local)
 
-        #expect(WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop) == [1, 2])
+        #expect(WorkshopBookmarkActions.bookmarkedIDs(workshopStore: workshop) == [1])
+    }
+
+    @Test("The Likes list shows the stored likes newest first, a loaded result standing in for its snapshot")
+    func likedItemsAreNewestFirst() throws {
+        let (_, workshop, suite) = try Self.stores("likes")
+        defer { suite.discard() }
+        for id: UInt64 in [1, 2, 3] {
+            workshop.add(Self.saved(id))
+        }
+
+        let items = WorkshopBookmarkActions.likedItems(
+            browseItems: [Self.queryItem(2, rawTitle: "Loaded")], workshopStore: workshop
+        )
+
+        #expect(items.map(\.id) == [3, 2, 1])
+        #expect(items.map(\.rawTitle) == ["Rain", "Loaded", "Rain"])
     }
 
     @Test("A saved-for-later entry on the Installed page becomes a playable bookmark in one tap")
@@ -145,34 +162,34 @@ struct WorkshopBookmarkTests {
 
     @Test("A card wired the way Browse wires it saves its item on the first click and removes it on the second")
     func browseCardTogglesTheBookmark() throws {
-        let (local, workshop, suite) = try Self.stores("card")
+        let (_, workshop, suite) = try Self.stores("card")
         defer { suite.discard() }
         let item = Self.queryItem(424_242)
         let card = BrowseCard(
             item: item, cardPreferences: GalleryCardPreferences(), reduceMotion: true,
-            isBookmarked: WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id),
-            onBookmark: { WorkshopBookmarkActions.toggle(item, store: local, workshopStore: workshop) }
+            isBookmarked: WorkshopBookmarkActions.bookmarkedIDs(workshopStore: workshop).contains(item.id),
+            onBookmark: { WorkshopBookmarkActions.toggle(item, workshopStore: workshop) }
         )
-        let onBookmark = try #require(card.onBookmark, "the card hides its bookmark button")
+        let onBookmark = try #require(card.onBookmark, "the card hides its like button")
         #expect(!card.isBookmarked)
 
         onBookmark()
-        #expect(WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id))
+        #expect(WorkshopBookmarkActions.bookmarkedIDs(workshopStore: workshop).contains(item.id))
         onBookmark()
-        #expect(!WorkshopBookmarkActions.bookmarkedIDs(store: local, workshopStore: workshop).contains(item.id))
+        #expect(!WorkshopBookmarkActions.bookmarkedIDs(workshopStore: workshop).contains(item.id))
     }
 
     // MARK: - Wiring
 
-    @Test("Both installed-delete paths clear the Workshop store too")
-    func installedDeleteUsesBothStores() throws {
-        for path in [
-            "LiveWallpaper/Views/EditDesk/Library/ModalActions.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(source.contains("WorkshopBookmarkActions.removeAll(workshopID: $0, store: store)"), Comment(rawValue: path))
-            #expect(!source.contains("removeWPEBookmarks(workshopID: $0) }"), Comment(rawValue: path))
-        }
+    @Test("Deleting an installed item leaves its like alone and clears only the library's own marks")
+    func installedDeleteLeavesTheLike() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/ModalActions.swift")
+        let start = try #require(source.range(of: "inputs.deleteInstalled = {"))
+        let end = try #require(source.range(of: "removeImportIfMatching:", range: start.upperBound ..< source.endIndex))
+        let cleanup = String(source[start.lowerBound ..< end.lowerBound])
+        #expect(!cleanup.contains("WorkshopBookmark"), "deleting an installed item clears its like")
+        #expect(cleanup.contains("store.removeWPEBookmarks(workshopID: $0)"), "a deleted item's saved library entries stay behind")
+        #expect(cleanup.contains(#"libraryBookmarks.remove("workshop:\($0)")"#), "a deleted item's library bookmark stays behind")
     }
 
     @Test("Browse hands every card its bookmark state, read once per pass, and a toggle")
@@ -183,6 +200,7 @@ struct WorkshopBookmarkTests {
         #expect(pane.contains("onBookmark: { WorkshopBookmarkActions.toggle(item) }"), "a Browse card gets no bookmark action")
         // Control: one set per pass, not a store lookup per card.
         #expect(!pane.contains("WorkshopBookmarkActions.contains("))
+        #expect(pane.contains("WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)"), "the Likes list is not the stored likes")
 
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
         #expect(card.contains("var onBookmark: (() -> Void)?"))

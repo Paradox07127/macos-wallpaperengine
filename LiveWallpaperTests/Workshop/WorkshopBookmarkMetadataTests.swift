@@ -37,7 +37,7 @@ struct WorkshopBookmarkMetadataTests {
         let local = BookmarkStore(persistence: MemoryBookmarks())
         let workshop = WorkshopBookmarkStore(defaults: scratch.defaults)
         let original = item()
-        WorkshopBookmarkActions.toggle(original, store: local, workshopStore: workshop)
+        WorkshopBookmarkActions.toggle(original, workshopStore: workshop)
         let restarted = WorkshopBookmarkStore(defaults: scratch.defaults)
         let restored = try SavedBookmarks.queryItem(#require(restarted.bookmarks.first))
         #expect(restored.shortDescription == original.shortDescription)

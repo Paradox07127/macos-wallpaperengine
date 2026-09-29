@@ -45,8 +45,8 @@ struct WorkshopModal: View {
             titlebarInset: titlebarInset,
             title: item.title,
             actions: actions.headerActions(
-                for: item, isBookmarked: WorkshopBookmarkActions.contains(item.id),
-                toggleBookmark: { WorkshopBookmarkActions.toggle(item) }
+                for: item, isLiked: WorkshopBookmarkActions.contains(item.id),
+                toggleLike: { WorkshopBookmarkActions.toggle(item) }
             ),
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut,
@@ -229,7 +229,7 @@ struct WorkshopModal: View {
 
 extension WorkshopModalActions {
     func headerActions(
-        for item: WorkshopQueryItem, isBookmarked: Bool, toggleBookmark: @escaping @MainActor () -> Void
+        for item: WorkshopQueryItem, isLiked: Bool, toggleLike: @escaping @MainActor () -> Void
     ) -> [ModalHeaderAction] {
         var actions: [ModalHeaderAction] = []
         if let copyText {
@@ -237,8 +237,8 @@ extension WorkshopModalActions {
             actions.append(ModalHeaderAction(kind: .copyID) { copyText(String(item.id)) })
         }
         actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
-        if isBookmarked || !item.isBanned {
-            actions.append(ModalHeaderAction(kind: .bookmark(isBookmarked: isBookmarked), perform: toggleBookmark))
+        if isLiked || !item.isBanned {
+            actions.append(ModalHeaderAction(kind: .like(isLiked: isLiked), perform: toggleLike))
         }
         return actions
     }

@@ -10612,6 +10612,34 @@
         }
       }
     },
+    "Browse" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explorar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閲覧"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽"
+          }
+        }
+      }
+    },
     "Browse before connecting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18339,37 +18367,30 @@
         }
       }
     },
-    "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept." : {
-      "extractionState" : "manual",
+    "Couldn't save your likes. Your existing likes have been kept." : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept."
-          }
-        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudieron guardar los marcadores del Workshop. Se han conservado los existentes."
+            "value" : "No se pudieron guardar tus Me gusta. Se han conservado los existentes."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップのブックマークを保存できませんでした。既存のブックマークは保持されています。"
+            "value" : "いいねを保存できませんでした。既存のいいねは保持されています。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法保存创意工坊书签，原有书签已保留。"
+            "value" : "无法保存喜欢，原有的喜欢已保留。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法儲存工作坊書籤，原有書籤已保留。"
+            "value" : "無法儲存喜歡，原有的喜歡已保留。"
           }
         }
       }
@@ -31957,6 +31978,90 @@
         }
       }
     },
+    "Like" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Me gusta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいね"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜欢"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜歡"
+          }
+        }
+      }
+    },
+    "Liked" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te gusta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいね済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已喜欢"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已喜歡"
+          }
+        }
+      }
+    },
+    "Likes" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Me gusta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいね"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜欢"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜歡"
+          }
+        }
+      }
+    },
     "Limited Compatibility" : {
       "comment" : "Wallpaper Engine scene capability tier.",
       "extractionState" : "manual",
@@ -38357,6 +38462,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這一頁沒有可顯示的項目。"
+          }
+        }
+      }
+    },
+    "No liked wallpapers yet" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no te gusta ningún fondo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいねした壁紙はまだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有喜欢的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有喜歡的桌布"
           }
         }
       }
@@ -51672,6 +51805,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已還原 %lld 台顯示器的配置。"
+          }
+        }
+      }
+    },
+    "Restored %lld liked wallpapers." : {
+      "comment" : "Import success line: how many Workshop likes were restored. xcstrings provides a pluralized variant.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld liked wallpaper."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld liked wallpapers."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se ha restaurado %lld fondo que te gusta."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se han restaurado %lld fondos que te gustan."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいねした壁紙を %lld 件復元しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复 %lld 个喜欢的壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已還原 %lld 個喜歡的桌布。"
           }
         }
       }
@@ -70975,6 +71167,34 @@
         }
       }
     },
+    "Unlike" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar Me gusta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいねを取り消す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消喜欢"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消喜歡"
+          }
+        }
+      }
+    },
     "Unpacking timed out." : {
       "comment" : "Managed SteamCMD install error.",
       "extractionState" : "manual",
@@ -81186,6 +81406,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「%@」將從所有正在使用它的顯示器上移除。你在它之上做的改動會保留。"
+          }
+        }
+      }
+    },
+    "• %lld liked wallpapers" : {
+      "comment" : "Import confirmation bullet: how many Workshop likes the bundle includes. xcstrings provides a pluralized variant.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld liked wallpaper"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld liked wallpapers"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld fondo que te gusta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld fondos que te gustan"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• いいねした壁紙 %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• %lld 个喜欢的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• %lld 個喜歡的桌布"
           }
         }
       }

@@ -47,6 +47,9 @@ public enum DesignTokens {
         /// "needs attention" meaning.
         public static let rating = Color.yellow
 
+        /// The Workshop like mark, kept off `rating`'s yellow, which the library bookmark wears.
+        public static let like = Color.pink
+
         public enum Status {
             public static let active = Color(nsColor: .systemGreen)
             /// Actionable, non-alarming — an update being available is news, not a fault.

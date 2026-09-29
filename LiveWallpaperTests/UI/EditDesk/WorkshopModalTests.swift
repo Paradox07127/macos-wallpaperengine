@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 @Suite("Workshop modal — bottom-row state, status line, paging and source shape")
@@ -509,41 +510,43 @@ struct WorkshopModalTests {
     func titleRowCopiesTheLinkAndTheID() throws {
         let item = try item(posted: Date(timeIntervalSince1970: 0))
         let recorder = CopyRecorder()
-        let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item, isBookmarked: false) {}
-        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam, .bookmark(isBookmarked: false)])
+        let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item, isLiked: false) {}
+        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam, .like(isLiked: false)])
         for action in header.prefix(2) {
             action.perform()
         }
         #expect(recorder.texts == [item.steamCommunityURL.absoluteString, "42"])
         // Control: a host that cannot copy draws only the Steam button.
         #expect(
-            actions(copyText: nil).headerActions(for: item, isBookmarked: false) {}.map(\.kind)
-                == [.openInSteam, .bookmark(isBookmarked: false)]
+            actions(copyText: nil).headerActions(for: item, isLiked: false) {}.map(\.kind)
+                == [.openInSteam, .like(isLiked: false)]
         )
     }
 
-    @Test("The title row's bookmark follows the saved state and toggles it; a banned item can only be removed")
-    func titleRowTogglesTheBookmark() throws {
+    @Test("The title row's heart follows the like and toggles it, pink once liked; a banned item can only be unliked")
+    func titleRowTogglesTheLike() throws {
         let item = try item(posted: Date(timeIntervalSince1970: 0))
         let recorder = CopyRecorder()
-        func bookmark(_ item: WorkshopQueryItem, isBookmarked: Bool) -> ModalHeaderAction? {
-            actions(copyText: nil).headerActions(for: item, isBookmarked: isBookmarked) { recorder.texts.append("toggle") }
-                .first { $0.kind == .bookmark(isBookmarked: isBookmarked) }
+        func like(_ item: WorkshopQueryItem, isLiked: Bool) -> ModalHeaderAction? {
+            actions(copyText: nil).headerActions(for: item, isLiked: isLiked) { recorder.texts.append("toggle") }
+                .first { $0.kind == .like(isLiked: isLiked) }
         }
 
-        let add = try #require(bookmark(item, isBookmarked: false), "the title row has no bookmark button")
-        #expect(add.symbol == "bookmark")
-        #expect(add.title == String(localized: "Add Bookmark", bundle: .appLanguage))
+        let add = try #require(like(item, isLiked: false), "the title row has no like button")
+        #expect(add.symbol == "heart")
+        #expect(add.title == String(localized: "Like", bundle: .appLanguage))
+        #expect(add.tint == nil)
         add.perform()
         #expect(recorder.texts == ["toggle"])
 
-        let remove = try #require(bookmark(item, isBookmarked: true))
-        #expect(remove.symbol == "bookmark.fill")
-        #expect(remove.title == String(localized: "Remove Bookmark", bundle: .appLanguage))
+        let remove = try #require(like(item, isLiked: true))
+        #expect(remove.symbol == "heart.fill")
+        #expect(remove.title == String(localized: "Unlike", bundle: .appLanguage))
+        #expect(remove.tint == DesignTokens.Colors.like)
 
         let banned = try self.item(posted: Date(timeIntervalSince1970: 0), isBanned: true)
-        #expect(bookmark(banned, isBookmarked: false) == nil, "a banned item offers a save that does nothing")
-        #expect(bookmark(banned, isBookmarked: true) != nil)
+        #expect(like(banned, isLiked: false) == nil, "a banned item offers a like that does nothing")
+        #expect(like(banned, isLiked: true) != nil)
     }
 }
 #endif

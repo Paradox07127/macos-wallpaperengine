@@ -14,6 +14,8 @@ struct BrowsePane: View {
     var onOpenItem: ((WorkshopQueryItem) -> Void)?
     /// nil keeps each card's reveal in its own `@State`; a state makes reveals outlive the tiles.
     var matureReveal: MatureRevealState?
+    /// Kept by the caller, so the page comes back to the listing it left.
+    var listing: Binding<WorkshopSession.Listing> = .constant(.results)
 
     @Environment(WorkshopServices.self) private var services
     @Environment(ScreenManager.self) private var screenManager
@@ -70,6 +72,17 @@ struct BrowsePane: View {
             .onReceive(NotificationCenter.default.publisher(for: .workshopPresetVisibilityDidChange)) { _ in
                 Task { await viewModel.reload() }
             }
+            // A tag or creator picked in a liked item's modal scopes the results; they would load behind the Likes list.
+            .onChange(of: viewModel.pinnedTag) { _, tag in
+                if tag != nil {
+                    listing.wrappedValue = .results
+                }
+            }
+            .onChange(of: viewModel.creatorFilter) { _, creator in
+                if creator != nil {
+                    listing.wrappedValue = .results
+                }
+            }
     }
 
     private var mainColumn: some View {
@@ -82,10 +95,45 @@ struct BrowsePane: View {
 
     private var gridColumn: some View {
         VStack(spacing: 0) {
-            filterBand
-            keyRejectedBanner
-            content
-                .overlay(alignment: .top) { rateLimitBanner }
+            listingPicker
+            switch listing.wrappedValue {
+            case .results:
+                filterBand
+                keyRejectedBanner
+                content
+                    .overlay(alignment: .top) { rateLimitBanner }
+            case .likes:
+                likesContent
+            }
+        }
+    }
+
+    private var listingPicker: some View {
+        GlassSegmentedPicker(selection: listing, values: [.results, .likes], shell: .editDesk) { value, isSelected in
+            Text(Self.title(for: value))
+                .font(DesignTokens.EditDesk.Typography.navItem)
+                .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
+        }
+        .fixedSize()
+        .padding(.vertical, DesignTokens.EditDesk.Spacing.s8)
+    }
+
+    private static func title(for listing: WorkshopSession.Listing) -> LocalizedStringKey {
+        switch listing {
+        case .results: "Browse"
+        case .likes: "Likes"
+        }
+    }
+
+    @ViewBuilder
+    private var likesContent: some View {
+        let liked = WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)
+        if liked.isEmpty {
+            IllustratedEmptyState(symbol: "heart", title: "No liked wallpapers yet")
+        } else {
+            ScrollView {
+                cardGrid(liked)
+            }
         }
     }
 
@@ -184,18 +232,7 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
-                        let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()
-                        LibraryGalleryGrid(
-                            size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
-                        ) {
-                            ForEach(viewModel.displayedItems) { item in
-                                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
-                                    .equatable()
-                                    .id(item.id)
-                            }
-                        }
-                        .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-                        .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
+                        cardGrid(viewModel.displayedItems)
                     }
 
                     paginationBar
@@ -206,6 +243,21 @@ struct BrowsePane: View {
                 proxy.scrollTo(Self.gridTopAnchor, anchor: .top)
             }
         }
+    }
+
+    private func cardGrid(_ items: [WorkshopQueryItem]) -> some View {
+        let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()
+        return LibraryGalleryGrid(
+            size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
+        ) {
+            ForEach(items) { item in
+                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
+                    .equatable()
+                    .id(item.id)
+            }
+        }
+        .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
+        .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
     }
 
     private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {

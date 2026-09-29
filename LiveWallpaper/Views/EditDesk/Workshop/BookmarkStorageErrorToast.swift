@@ -25,7 +25,7 @@ enum BookmarkStorageErrorToast {
         }
         guard store.isArchiveUnreadable else {
             return center.post(
-                String(localized: "Couldn't save Workshop bookmarks. Your existing bookmarks have been kept.", bundle: .appLanguage),
+                String(localized: "Couldn't save your likes. Your existing likes have been kept.", bundle: .appLanguage),
                 style: .failure
             )
         }

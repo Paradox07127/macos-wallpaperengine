@@ -140,10 +140,16 @@ extension GeneralSettingsView {
                 bundle: .appLanguage, comment: "Import success line: global settings were restored."
             ))
         }
-        if let count = summary.totalBookmarkCount {
+        if let count = summary.bookmarkCount {
             lines.append(String(
                 localized: "Restored \(count) saved bookmarks.",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
+            ))
+        }
+        if let count = summary.workshopBookmarkCount {
+            lines.append(String(
+                localized: "Restored \(count) liked wallpapers.",
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import success line: how many Workshop likes were restored. xcstrings provides a pluralized variant."
             ))
         }
         if let count = summary.schemeCount {
@@ -178,10 +184,17 @@ extension GeneralSettingsView {
             #endif
         }
         var merged: [String] = []
-        if let count = ConfigurationPorter.importSummary(for: bundle).totalBookmarkCount {
+        let accepted = ConfigurationPorter.importSummary(for: bundle)
+        if let count = accepted.bookmarkCount {
             merged.append(String(
                 localized: "• \(count) saved bookmarks",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
+            ))
+        }
+        if let count = accepted.workshopBookmarkCount {
+            merged.append(String(
+                localized: "• \(count) liked wallpapers",
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Import confirmation bullet: how many Workshop likes the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
         if let count = bundle.screenSchemes?.count {

@@ -111,6 +111,7 @@ struct ModalHeaderAction: Identifiable {
     enum Kind: Hashable {
         case showInFinder, copyLink, copyID, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
         case bookmark(isBookmarked: Bool)
+        case like(isLiked: Bool)
     }
 
     let kind: Kind
@@ -135,6 +136,16 @@ struct ModalHeaderAction: Identifiable {
         case .cancelUpdate: "xmark.circle"
         case .removeFromLibrary, .delete: "trash"
         case let .bookmark(isBookmarked): isBookmarked ? "bookmark.fill" : "bookmark"
+        case let .like(isLiked): isLiked ? "heart.fill" : "heart"
+        }
+    }
+
+    /// nil draws the glyph in the button's own colour.
+    var tint: Color? {
+        switch kind {
+        case .bookmark(isBookmarked: true): DesignTokens.Colors.rating
+        case .like(isLiked: true): DesignTokens.Colors.like
+        default: nil
         }
     }
 
@@ -155,6 +166,8 @@ struct ModalHeaderAction: Identifiable {
         case .delete: String(localized: "Delete", bundle: .appLanguage)
         case .bookmark(isBookmarked: true): String(localized: "Remove Bookmark", bundle: .appLanguage)
         case .bookmark(isBookmarked: false): String(localized: "Add Bookmark", bundle: .appLanguage)
+        case .like(isLiked: true): String(localized: "Unlike", bundle: .appLanguage)
+        case .like(isLiked: false): String(localized: "Like", bundle: .appLanguage)
         }
     }
 }
