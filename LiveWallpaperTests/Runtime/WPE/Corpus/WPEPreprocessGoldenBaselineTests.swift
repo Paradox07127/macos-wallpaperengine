@@ -11,13 +11,32 @@ import Testing
 @Suite("WPE preprocess golden baseline", .serialized)
 struct WPEPreprocessGoldenBaselineTests {
     private enum Mode: String {
-        case capture, compare
+        case capture, compare, dump
     }
 
     private struct Entry: Codable, Equatable {
         let vertexSHA256: String
         let fragmentSHA256: String
         let sourceHash: String
+    }
+
+    private struct DumpEntry: Encodable {
+        let sceneID: String
+        let passOrdinal: Int
+        let passID: String
+        let shaderName: String
+        let comboValues: [String: Int]
+        let textureBindings: [Int: String]
+        let vertexPath: String?
+        let fragmentPath: String?
+        let preprocessError: String?
+    }
+
+    private struct DumpIndex: Encodable {
+        let schemaVersion = 1
+        let loadedScenes: [String]
+        let loadFailed: [String]
+        let entries: [DumpEntry]
     }
 
     private static var mode: Mode? {
@@ -27,6 +46,10 @@ struct WPEPreprocessGoldenBaselineTests {
 
     private static var baselinePath: String? {
         TestScratch.externalFixtureURL(pathKey: "WPE_PREPROCESS_GOLDEN_PATH")?.path
+    }
+
+    private static var dumpDirectory: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_PREPROCESS_DUMP_DIR")
     }
 
     private static var corpusRoot: URL? {
@@ -45,16 +68,15 @@ struct WPEPreprocessGoldenBaselineTests {
     @MainActor
     @Test(
         "Preprocessed shader sources match the golden baseline byte for byte",
-        .enabled(if: mode != nil, "opt-in: set WPE_PREPROCESS_GOLDEN=capture|compare"),
-        .enabled(if: mode == nil || baselinePath != nil, "set WPE_PREPROCESS_GOLDEN_PATH"),
+        .enabled(if: mode != nil, "opt-in: set WPE_PREPROCESS_GOLDEN=capture|compare|dump"),
+        .enabled(if: mode == nil || mode == .dump || baselinePath != nil, "set WPE_PREPROCESS_GOLDEN_PATH"),
+        .enabled(if: mode != .dump || dumpDirectory != nil, "set WPE_PREPROCESS_DUMP_DIR"),
         .enabled(if: mode == nil || corpusRoot != nil,
                  "set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_COVERAGE_CORPUS_ROOT"),
         .enabled(if: mode == nil || MTLCreateSystemDefaultDevice() != nil, "no Metal device")
     )
     func goldenBaseline() async throws {
         let mode = try #require(Self.mode)
-        let baselinePath = try #require(Self.baselinePath)
-        let baselineURL = URL(fileURLWithPath: baselinePath)
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = try #require(Self.corpusRoot)
         let engineRoot = Self.engineAssetsRoot(corpusRoot: root)
@@ -68,6 +90,9 @@ struct WPEPreprocessGoldenBaselineTests {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
         var entries: [String: Entry] = [:]
+        var dumpEntries: [DumpEntry] = []
+        var dumpSources: [String: String] = [:]
+        var loadedScenes: [String] = []
         var scenes = 0
         var loadFailed: [String] = []
         for folder in folders {
@@ -140,6 +165,18 @@ struct WPEPreprocessGoldenBaselineTests {
                             fragmentSHA256: Self.sha256(request.processedFragmentSource),
                             sourceHash: request.sourceHash
                         )
+                        if mode == .dump {
+                            let vertexPath = "\(id)-\(ordinal).vert"
+                            let fragmentPath = "\(id)-\(ordinal).frag"
+                            dumpSources[vertexPath] = request.processedVertexSource
+                            dumpSources[fragmentPath] = request.processedFragmentSource
+                            dumpEntries.append(DumpEntry(
+                                sceneID: id, passOrdinal: ordinal, passID: pass.id,
+                                shaderName: request.shaderName, comboValues: request.comboValues,
+                                textureBindings: request.textureBindings,
+                                vertexPath: vertexPath, fragmentPath: fragmentPath, preprocessError: nil
+                            ))
+                        }
                     } catch {
                         // A preprocess failure is part of the behaviour under test.
                         entries[key] = Entry(
@@ -147,9 +184,18 @@ struct WPEPreprocessGoldenBaselineTests {
                             fragmentSHA256: "error",
                             sourceHash: String(describing: error)
                         )
+                        if mode == .dump {
+                            dumpEntries.append(DumpEntry(
+                                sceneID: id, passOrdinal: ordinal, passID: pass.id,
+                                shaderName: shader.name, comboValues: pass.comboValues,
+                                textureBindings: pass.textureBindings.mapValues { String(describing: $0) },
+                                vertexPath: nil, fragmentPath: nil, preprocessError: String(describing: error)
+                            ))
+                        }
                     }
                 }
                 scenes += 1
+                loadedScenes.append(id)
             } catch {
                 print("[preprocess-golden] [\(id)] load failed: \(String(describing: error).prefix(160))")
                 loadFailed.append(id)
@@ -161,12 +207,26 @@ struct WPEPreprocessGoldenBaselineTests {
         #expect(!entries.isEmpty, "no non-builtin pass captured — check corpus root / engine assets")
 
         switch mode {
+        case .dump:
+            let directory = try #require(Self.dumpDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for (path, source) in dumpSources {
+                try Data(source.utf8).write(to: directory.appendingPathComponent(path))
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(DumpIndex(
+                loadedScenes: loadedScenes, loadFailed: loadFailed, entries: dumpEntries
+            )).write(to: directory.appendingPathComponent("index.json"))
+            print("[preprocess-golden] dumped \(dumpEntries.count) entries to \(directory.path)")
         case .capture:
+            let baselineURL = try URL(fileURLWithPath: #require(Self.baselinePath))
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(entries).write(to: baselineURL)
             print("[preprocess-golden] wrote \(entries.count) entries to \(baselineURL.path)")
         case .compare:
+            let baselineURL = try URL(fileURLWithPath: #require(Self.baselinePath))
             let baseline = try JSONDecoder().decode(
                 [String: Entry].self, from: Data(contentsOf: baselineURL)
             )
