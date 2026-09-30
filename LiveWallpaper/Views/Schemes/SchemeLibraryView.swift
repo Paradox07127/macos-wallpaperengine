@@ -122,7 +122,11 @@ struct SchemeLibraryView: View {
         if visible.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No schemes match your search"
+                title: "No Results",
+                primary: EmptyStateButtonAction("Clear filters") {
+                    searchText = ""
+                    typeFilter = .all
+                }
             )
         } else {
             ScrollView {

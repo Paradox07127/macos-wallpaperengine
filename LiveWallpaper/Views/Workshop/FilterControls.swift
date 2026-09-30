@@ -2,6 +2,11 @@
 import LiveWallpaperCore
 import SwiftUI
 
+enum WorkshopFilterLayout {
+    /// Wide enough for category names at the shared section-title size.
+    static let labelWidth: CGFloat = 120
+}
+
 struct WorkshopFiltersToggle: View {
     @Binding var isExpanded: Bool
     let activeFilterCount: Int
@@ -15,7 +20,7 @@ struct WorkshopFiltersToggle: View {
         Button {
             isExpanded.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
                 Image(systemName: "line.3.horizontal.decrease")
                 Text("Filters")
                 if activeFilterCount > 0 {
@@ -34,7 +39,7 @@ struct WorkshopFiltersToggle: View {
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .animation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.24)), value: isExpanded)
             }
-            .font(DesignTokens.Typography.body)
+            .font(DesignTokens.EditDesk.Typography.body)
         }
         .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .disabled(isDisabled)
@@ -53,12 +58,12 @@ struct WorkshopLikedToggle: View {
         Button {
             isOn.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
                 Image(systemName: isOn ? "heart.fill" : "heart")
                     .foregroundStyle(isOn ? AnyShapeStyle(DesignTokens.Colors.like) : AnyShapeStyle(.foreground))
                 Text("Liked")
             }
-            .font(DesignTokens.Typography.body)
+            .font(DesignTokens.EditDesk.Typography.body)
         }
         .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .help(Text("Show only wallpapers you liked"))
@@ -80,10 +85,10 @@ struct WorkshopFilterRow<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
             Text(title)
-                .font(DesignTokens.Typography.badge)
+                .font(DesignTokens.Typography.sectionTitle)
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .frame(width: 74, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: WorkshopFilterLayout.labelWidth, alignment: .leading)
                 // Centred on the first line of chips.
                 .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
             content

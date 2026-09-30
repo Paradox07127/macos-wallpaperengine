@@ -137,29 +137,34 @@ struct BrowsePane: View {
         )
     }
 
-    @ViewBuilder
     private var likesContent: some View {
         let liked = WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)
-        if liked.isEmpty {
-            IllustratedEmptyState(symbol: "heart", title: "No liked wallpapers yet")
-        } else {
-            ScrollView {
-                cardGrid(liked)
+        return VStack(spacing: 0) {
+            if liked.isEmpty {
+                LibraryGuideCard(
+                    icon: "heart",
+                    tint: DesignTokens.Colors.like,
+                    title: "No liked wallpapers yet",
+                    message: "Click the heart on a Workshop wallpaper to keep it here.",
+                    actionTitle: "Back to Browse",
+                    actionSystemImage: "chevron.left",
+                    action: { listing.wrappedValue = .results }
+                )
+            } else {
+                ScrollView { cardGrid(liked) }
             }
+            LibraryStatusBar(summary: Text("\(liked.count) wallpapers"))
         }
     }
 
     @ViewBuilder
     private var keyRejectedBanner: some View {
         if viewModel.showsKeyRejectedNotice {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(DesignTokens.Colors.Status.warning)
-                    .accessibilityHidden(true)
-                Text("Steam rejected the saved API key. Browsing without it.")
-                    .font(DesignTokens.Typography.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.warning,
+                symbol: "exclamationmark.triangle.fill",
+                title: Text("Steam rejected the saved API key. Browsing without it.")
+            ) {
                 Button("Open Settings") {
                     NotificationCenter.default.post(
                         name: .openSettingsSection,
@@ -172,21 +177,13 @@ struct BrowsePane: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                Button {
-                    viewModel.dismissKeyRejectedNotice()
-                } label: {
+                Button { viewModel.dismissKeyRejectedNotice() } label: {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .accessibilityLabel(Text("Dismiss"))
             }
-            .padding(.horizontal, DesignTokens.Spacing.md)
-            .padding(.vertical, DesignTokens.Spacing.sm)
-            .background(
-                DesignTokens.Colors.Status.warning.opacity(DesignTokens.Opacity.activeFill),
-                in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-            )
             .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
             .padding(.top, DesignTokens.LibraryFilterBar.verticalPadding)
         }
@@ -272,8 +269,7 @@ struct BrowsePane: View {
                     .id(item.id)
             }
         }
-        .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-        .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
+        .libraryGridPadding()
     }
 
     private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {
@@ -303,20 +299,13 @@ struct BrowsePane: View {
     @ViewBuilder
     private var pagingErrorBar: some View {
         if let error = viewModel.lastError, viewModel.showsPagingError, !viewModel.isRateLimited {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(DesignTokens.Colors.Status.warning)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    if let target = viewModel.failedPageTarget {
-                        Text("Couldn’t load page \(target).")
-                            .font(DesignTokens.Typography.captionEmphasized)
-                    }
-                    Text(verbatim: message(for: error))
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.warning,
+                symbol: "exclamationmark.triangle.fill",
+                title: viewModel.failedPageTarget.map { Text("Couldn’t load page \($0).") }
+                    ?? Text(verbatim: message(for: error)),
+                message: viewModel.failedPageTarget == nil ? nil : Text(verbatim: message(for: error))
+            ) {
                 if let target = viewModel.failedPageTarget {
                     Button("Retry") { Task { await viewModel.goToPage(target) } }
                         .buttonStyle(.bordered)
@@ -324,12 +313,6 @@ struct BrowsePane: View {
                         .disabled(viewModel.isPaging || viewModel.isLoading)
                 }
             }
-            .padding(.horizontal, DesignTokens.Spacing.md)
-            .padding(.vertical, DesignTokens.Spacing.sm)
-            .background(
-                DesignTokens.Colors.Status.warning.opacity(DesignTokens.Opacity.activeFill),
-                in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-            )
         }
     }
 
@@ -420,8 +403,7 @@ struct BrowsePane: View {
                     WorkshopSkeletonCard()
                 }
             }
-            .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-            .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
+            .libraryGridPadding()
         }
         .accessibilityLabel(Text("Loading Workshop results"))
     }
@@ -439,12 +421,12 @@ struct BrowsePane: View {
         ) {
             VStack(spacing: DesignTokens.Spacing.sm) {
                 Text(verbatim: WorkshopAPIKeyOwnershipInfo.prerequisitesLine)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
                 Text("[Get a key](https://steamcommunity.com/dev/apikey)  ·  [Steam Web API TOU](https://steamcommunity.com/dev/apiterms)  ·  [About Limited Accounts](https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A)")
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .tint(Color.accentColor)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
@@ -460,16 +442,16 @@ struct BrowsePane: View {
                             localized: "Paste a Workshop URL to install an item directly, without searching.",
                             bundle: .appLanguage, comment: "Workshop Browse fallback hint next to the “Or download by link” button."
                         ))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 360)
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
                     }
                     .padding(.top, DesignTokens.Spacing.xs)
                 }
 
                 Text(verbatim: WorkshopAPIKeyOwnershipInfo.passwordReassurance)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
@@ -580,26 +562,18 @@ struct BrowsePane: View {
     @ViewBuilder
     private var rateLimitBanner: some View {
         if viewModel.isRateLimited {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                HStack(spacing: DesignTokens.Spacing.sm) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(DesignTokens.Colors.Status.warning)
-                        .accessibilityHidden(true)
-                    Text("Steam is rate-limiting — retry in \(Self.countdown(rateLimitRemaining))")
-                        .font(.callout.weight(.medium))
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text("Steam is rate-limiting. Retry in \(Self.countdown(rateLimitRemaining))."))
-
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.warning,
+                symbol: "exclamationmark.triangle.fill",
+                title: Text("Steam is rate-limiting — retry in \(Self.countdown(rateLimitRemaining))")
+                    .accessibilityLabel(Text("Steam is rate-limiting. Retry in \(Self.countdown(rateLimitRemaining)).")),
+                surface: .chrome
+            ) {
                 Button("Retry") { Task { await viewModel.reload() } }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(rateLimitRemaining > 0)
             }
-            .padding(.horizontal, DesignTokens.Spacing.md)
-            .padding(.vertical, DesignTokens.Spacing.sm)
-            .adaptiveGlassSurface(.capsule, tint: DesignTokens.Colors.Status.warning)
-            .overlay(Capsule().strokeBorder(DesignTokens.Colors.Status.warning.opacity(0.35), lineWidth: 0.5))
             .padding(DesignTokens.Spacing.md)
             .transition(.move(edge: .top).combined(with: .opacity))
         }

@@ -45,14 +45,14 @@ struct LibraryGuideCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer(minLength: DesignTokens.GuidedLibrary.topSpacerHeight)
+        VStack(spacing: DesignTokens.Spacing.lg) {
+            Spacer(minLength: DesignTokens.Spacing.md)
 
             hero
 
-            VStack(spacing: 6) {
+            VStack(spacing: DesignTokens.Spacing.xs) {
                 Text(title)
-                    .font(DesignTokens.Typography.pageTitle.weight(.semibold))
+                    .font(DesignTokens.Typography.pageTitle)
                     .accessibilityAddTraits(.isHeader)
 
                 if let message {
@@ -75,14 +75,14 @@ struct LibraryGuideCard: View {
                     .frame(maxWidth: 380)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: DesignTokens.Spacing.md)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
     }
 
     private var hero: some View {
-        let disc = DesignTokens.GuidedLibrary.iconSize * 2.125
+        let disc = DesignTokens.EmptyState.iconSize * 2.125
         return ZStack {
             Circle()
                 .fill(tint.opacity(0.12))
@@ -90,7 +90,7 @@ struct LibraryGuideCard: View {
                 .overlay(Circle().strokeBorder(tint.opacity(0.18), lineWidth: 1))
 
             Image(systemName: icon)
-                .font(.system(size: DesignTokens.GuidedLibrary.iconSize, weight: .light))
+                .font(.system(size: DesignTokens.EmptyState.iconSize, weight: .light))
                 .foregroundStyle(tint)
                 .symbolRenderingMode(.hierarchical)
         }
@@ -100,10 +100,10 @@ struct LibraryGuideCard: View {
     @ViewBuilder
     private var actionRow: some View {
         if actionTitle != nil || secondaryTitle != nil {
-            HStack(spacing: 10) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
                 if let actionTitle, let action {
                     Button(action: action) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
                             if isActionInProgress {
                                 ProgressView()
                                     .controlSize(.small)

@@ -92,7 +92,11 @@ struct SystemWallpaperLibraryView: View {
     @ViewBuilder
     private var galleryScroll: some View {
         if filteredItems.isEmpty {
-            IllustratedEmptyState(symbol: "magnifyingglass", title: "No videos match your search")
+            IllustratedEmptyState(
+                symbol: "magnifyingglass",
+                title: "No Results",
+                primary: EmptyStateButtonAction("Clear filters") { searchText = "" }
+            )
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignTokens.LibraryGrid.spacing) {
@@ -292,7 +296,7 @@ struct SystemWallpaperTile: View {
                         .scaledToFill()
                 } else {
                     Image(systemName: "film")
-                        .font(.title)
+                        .font(DesignTokens.Typography.modalTitle)
                         .foregroundStyle(.secondary)
                 }
             }

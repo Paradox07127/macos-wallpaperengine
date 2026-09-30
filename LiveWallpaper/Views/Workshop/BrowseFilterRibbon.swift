@@ -32,10 +32,7 @@ struct BrowseFilterRibbon: View {
     // MARK: - Top row
 
     private var topRow: some View {
-        HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-            searchField
-            searchTargetMenu
-
+        LibraryToolbarRow {
             WorkshopFiltersToggle(
                 isExpanded: $isFilterPanelExpanded,
                 activeFilterCount: activeFilterCount,
@@ -43,37 +40,40 @@ struct BrowseFilterRibbon: View {
             )
             // Likes are local: this stays live while the Steam-backed controls are disabled.
             WorkshopLikedToggle(isOn: $showsLikes)
-
-            Spacer(minLength: DesignTokens.Spacing.sm)
-
+        } search: {
+            searchField
+            searchTargetMenu
+        } sort: {
             sortMenu
             timeFrameMenu
+        } actions: {
+            EmptyView()
         }
     }
 
     private var sortMenu: some View {
-        Menu {
-            Picker("Sort Order", selection: Binding(
-                get: { viewModel.preferredSort },
-                set: { viewModel.updateSort($0) }
-            )) {
+        LibrarySortControl(label: Text(verbatim: sortLabel(viewModel.preferredSort))) { dismiss in
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 ForEach(sortOptions) { option in
-                    Text(verbatim: sortLabel(option)).tag(option)
+                    Button {
+                        viewModel.updateSort(option)
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text(verbatim: sortLabel(option))
+                            Spacer()
+                            if viewModel.preferredSort == option {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    .accessibilityAddTraits(viewModel.preferredSort == option ? .isSelected : [])
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.inline)
-        } label: {
-            menuLabel(sortLabel(viewModel.preferredSort))
         }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
-        .fixedSize()
         .disabled(controlsDisabled)
         .help(Text("Sort criteria"))
         .accessibilityLabel(Text("Sort Order"))
-        .accessibilityValue(Text(verbatim: sortLabel(viewModel.preferredSort)))
     }
 
     /// Drawn like the library's sort button: `.large` glass is `LibraryFilterBar.controlHeight` tall around a 13pt label.
@@ -82,7 +82,7 @@ struct BrowseFilterRibbon: View {
             Text(verbatim: title)
             Text(verbatim: "▾")
         }
-        .font(DesignTokens.Typography.body)
+        .font(DesignTokens.EditDesk.Typography.body)
     }
 
     /// The gear fills while a narrower target is active — a `Menu` label ignores
@@ -106,7 +106,7 @@ struct BrowseFilterRibbon: View {
             }
         } label: {
             Image(systemName: viewModel.searchTextTarget == .all ? "gearshape" : "gearshape.fill")
-                .font(DesignTokens.Typography.body)
+                .font(DesignTokens.EditDesk.Typography.body)
         }
         .menuStyle(.button)
         .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
@@ -149,7 +149,7 @@ struct BrowseFilterRibbon: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                     WorkshopFilterRow("Type") {
-                        HStack(spacing: 6) {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
                             ForEach(WorkshopContentTypeFilter.selectableCases) { type in
                                 WorkshopFilterChip(
                                     title: Text(type.displayName),
@@ -163,7 +163,7 @@ struct BrowseFilterRibbon: View {
                     }
 
                     WorkshopFilterRow("Maturity") {
-                        HStack(spacing: 6) {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
                             ForEach(WorkshopAgeRatingFilter.allCases) { rating in
                                 WorkshopFilterChip(
                                     title: Text(verbatim: rating.displayName),
@@ -231,7 +231,7 @@ struct BrowseFilterRibbon: View {
                 Button("Clear filters") { viewModel.resetFilters() }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                    .padding(.leading, 74 + DesignTokens.Spacing.sm)
+                    .padding(.leading, WorkshopFilterLayout.labelWidth + DesignTokens.Spacing.sm)
             }
         }
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
@@ -241,7 +241,7 @@ struct BrowseFilterRibbon: View {
     }
 
     private func chipFlow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        WorkshopChipFlow(spacing: 6, lineSpacing: 6) {
+        WorkshopChipFlow(spacing: DesignTokens.Spacing.sm, lineSpacing: DesignTokens.Spacing.sm) {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -257,7 +257,6 @@ struct BrowseFilterRibbon: View {
             ),
             prompt: "Search the Workshop",
             isDisabled: controlsDisabled,
-            showsFocusRing: true,
             onSubmit: { Task { await viewModel.submitSearch() } },
             onClear: { Task { await viewModel.clearSearch() } }
         )
