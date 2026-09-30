@@ -89,6 +89,9 @@ PARALLEL_SUITES=(
   # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
   WPEWorkshopVaryingReconstructionTests
   WPERendererOwnershipCharacterizationTests
+  # Shared scene output geometry and frame leases use synthetic, hardware-free fixtures.
+  WPESceneSpanMappingTests
+  WPESceneSpanFramesTests
   # Name-table only, no Metal device: an unrecognised model material shader
   # silently swaps a .mdl mesh for a billboard quad (3470948192 star dome).
   # .mdl section versions. The corpus completeness case skips without
