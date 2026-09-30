@@ -656,7 +656,9 @@ extension ConfigurationPorterTests {
             manager.saveGlobalSettings(previousGlobal)
             manager.saveWallpaperBookmarks(previousBookmarks)
             BookmarkStore.shared.reload()
-            if !hadMark { store.remove("workshop:123") }
+            if !hadMark {
+                store.remove("workshop:123")
+            }
         }
         store.remove("workshop:123")
         let origin = WPEOrigin(

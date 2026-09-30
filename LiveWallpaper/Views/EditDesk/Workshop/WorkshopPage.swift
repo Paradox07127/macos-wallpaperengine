@@ -74,7 +74,9 @@ struct WorkshopPage: View {
             presentedItemID = nil
         }
         .onChange(of: pageGuide?.context != nil) { _, shown in
-            if shown { presentedItemID = nil }
+            if shown {
+                presentedItemID = nil
+            }
         }
         // Before the sheets modifier, so the wizard overlay itself stays enabled.
         .disabled(isShowingWizard)

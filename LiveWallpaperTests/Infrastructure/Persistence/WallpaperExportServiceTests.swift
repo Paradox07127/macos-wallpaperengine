@@ -586,7 +586,9 @@ struct WallpaperExportServiceTests {
         try await rig.service.publish(bookmark: rig.makeVideoBookmark())
         let one = rig.sourceDirectory.appendingPathComponent("one.mp4")
         let two = rig.sourceDirectory.appendingPathComponent("two.mp4")
-        for url in [one, two] { try Data("bytes".utf8).write(to: url) }
+        for url in [one, two] {
+            try Data("bytes".utf8).write(to: url)
+        }
 
         hook.run = { try? rig.service.clearLibrary() }
         await rig.service.publish(fileURLs: [one, two])
