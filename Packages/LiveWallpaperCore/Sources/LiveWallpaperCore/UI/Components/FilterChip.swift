@@ -40,7 +40,7 @@ public struct FilterChip: View {
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
                 .filterChipBackground(isSelected: isSelected)
         }
         .buttonStyle(.plain)

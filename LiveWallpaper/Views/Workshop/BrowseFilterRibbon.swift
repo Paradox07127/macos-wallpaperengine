@@ -43,9 +43,11 @@ struct BrowseFilterRibbon: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The grid under the ribbon opens with its own `formVerticalMargin`, which makes up the rest of the gap.
             topRow
                 .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
-                .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+                .padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)
+                .padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.Settings.formVerticalMargin)
 
             if isFilterPanelExpanded {
                 filterPanel
@@ -77,20 +79,37 @@ struct BrowseFilterRibbon: View {
     }
 
     private var sortMenu: some View {
-        Picker("Sort Order", selection: Binding(
-            get: { viewModel.preferredSort },
-            set: { viewModel.updateSort($0) }
-        )) {
-            ForEach(sortOptions) { option in
-                Text(verbatim: sortLabel(option)).tag(option)
+        Menu {
+            Picker("Sort Order", selection: Binding(
+                get: { viewModel.preferredSort },
+                set: { viewModel.updateSort($0) }
+            )) {
+                ForEach(sortOptions) { option in
+                    Text(verbatim: sortLabel(option)).tag(option)
+                }
             }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        } label: {
+            menuLabel(sortLabel(viewModel.preferredSort))
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .controlSize(.small)
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .fixedSize()
         .disabled(controlsDisabled)
         .help(Text("Sort criteria"))
+        .accessibilityLabel(Text("Sort Order"))
+        .accessibilityValue(Text(verbatim: sortLabel(viewModel.preferredSort)))
+    }
+
+    /// Drawn like the library's sort button: `.large` glass is `LibraryFilterBar.controlHeight` tall around a 13pt label.
+    private func menuLabel(_ title: String) -> some View {
+        HStack(spacing: DesignTokens.Spacing.xxs) {
+            Text(verbatim: title)
+            Text(verbatim: "▾")
+        }
+        .font(DesignTokens.Typography.body)
     }
 
     /// The gear fills while a narrower target is active — a `Menu` label ignores
@@ -114,10 +133,10 @@ struct BrowseFilterRibbon: View {
             }
         } label: {
             Image(systemName: viewModel.searchTextTarget == .all ? "gearshape" : "gearshape.fill")
+                .font(DesignTokens.Typography.body)
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .fixedSize()
         .disabled(controlsDisabled)
         .help(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
@@ -126,20 +145,28 @@ struct BrowseFilterRibbon: View {
     }
 
     private var timeFrameMenu: some View {
-        Picker("Time Frame", selection: Binding(
-            get: { timeFrameSelection },
-            set: { viewModel.updateTimeFrame($0) }
-        )) {
-            ForEach(WorkshopTimeFrame.allCases) { option in
-                Text(verbatim: option.title).tag(option)
+        Menu {
+            Picker("Time Frame", selection: Binding(
+                get: { timeFrameSelection },
+                set: { viewModel.updateTimeFrame($0) }
+            )) {
+                ForEach(WorkshopTimeFrame.allCases) { option in
+                    Text(verbatim: option.title).tag(option)
+                }
             }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        } label: {
+            menuLabel(timeFrameSelection.title)
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .controlSize(.small)
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .fixedSize()
         .disabled(controlsDisabled || !timeFrameApplies)
         .help(Text("Time frame applies to Most Popular"))
+        .accessibilityLabel(Text("Time Frame"))
+        .accessibilityValue(Text(verbatim: timeFrameSelection.title))
     }
 
     // MARK: - Expanding filter panel
@@ -402,7 +429,7 @@ struct WorkshopFilterChip: View {
             .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             .opacity(isSelected || isOptIn ? 1 : 0.5)
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
             .filterChipBackground(isSelected: isSelected)
         }
         .buttonStyle(.plain)

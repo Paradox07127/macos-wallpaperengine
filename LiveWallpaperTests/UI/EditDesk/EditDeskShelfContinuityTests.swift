@@ -100,6 +100,28 @@ struct EditDeskShelfContinuityTests {
         }
     }
 
+    @Test("Resting on the shelf shows the Keep Swiping hint for three seconds, and leaving for home or the library re-arms it")
+    func shelfHintDwellsThenLeaves() {
+        for p in [0.98, 1.0, 1.02] {
+            #expect(HomeHints.isRestingOnShelf(p), Comment(rawValue: "\(p) is not resting on the shelf"))
+        }
+        for p in [0.0, 0.9, 1.1, 2.0] {
+            #expect(!HomeHints.isRestingOnShelf(p), Comment(rawValue: "\(p) counts as resting on the shelf"))
+        }
+        for elapsed in [0.0, 1.5, 2.99] {
+            #expect(HomeHints.shelfHintShows(restingFor: elapsed), Comment(rawValue: "hidden after \(elapsed)s"))
+        }
+        for elapsed in [3.0, 3.5, 60] {
+            #expect(!HomeHints.shelfHintShows(restingFor: elapsed), Comment(rawValue: "still showing after \(elapsed)s"))
+        }
+        // Re-arming only where the progress fade has already hidden it, so it never pops back mid-gesture.
+        for p in Self.samples where HomeHints.rearmsShelfHint(p) {
+            #expect(HomeHints.shelfHintOpacity(p) < 0.01, Comment(rawValue: "re-arms at \(p) with the hint still showing"))
+        }
+        #expect(HomeHints.rearmsShelfHint(0) && HomeHints.rearmsShelfHint(2))
+        #expect(!HomeHints.rearmsShelfHint(1))
+    }
+
     @Test("The filter row fades in and then stays")
     func filterRowNeverFadesBack() {
         let row = ShelfChromeRide.opacity

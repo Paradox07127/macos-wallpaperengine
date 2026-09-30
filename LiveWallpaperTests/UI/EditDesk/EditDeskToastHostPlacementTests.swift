@@ -20,7 +20,13 @@ struct EditDeskToastHostPlacementTests {
         func save(_: [WallpaperBookmark]) {}
     }
 
-    @Test("An Undo toast sits top centre, below the tallest page top bar and in the window's upper half")
+    @Test("The toast's pill height is the page pill's drawn height")
+    func navPillHeightMatchesThePill() {
+        let pill = NSHostingView(rootView: NavPill(selection: .constant(.home), workshopAvailable: true))
+        #expect(pill.fittingSize.height == DesignTokens.EditDesk.Spacing.navPillHeight, Comment(rawValue: "the pill is \(pill.fittingSize.height)pt tall"))
+    }
+
+    @Test("An Undo toast sits top centre, just under the top bar's page pill and in the window's upper half")
     func undoToastSitsTopCentreBelowTheTopBar() async throws {
         let center = EditDeskToastCenter()
         center.post("Applied to Built-in Display", style: .success, undoStepID: UUID())
@@ -33,9 +39,13 @@ struct EditDeskToastHostPlacementTests {
             let painted = try await waitUntil { try host.image().boundingBox(Self.isToastPixel) != nil }
             try #require(painted, "the toast painted nothing")
             let toast = try #require(host.image().boundingBox(Self.isToastPixel))
-            let topBar = max(DesignTokens.EditDesk.Spacing.topBar, DetailGeometry.topBarHeight)
+            let pillBottom = (DesignTokens.EditDesk.Spacing.topBar + DesignTokens.EditDesk.Spacing.navPillHeight) / 2
             #expect(abs(toast.midX - host.size.width / 2) <= 1, Comment(rawValue: "toast \(toast) is off centre"))
-            #expect(toast.minY >= topBar, Comment(rawValue: "toast \(toast) reaches into the \(topBar)pt top bar"))
+            #expect(toast.minY >= pillBottom, Comment(rawValue: "toast \(toast) reaches into the page pill ending at \(pillBottom)"))
+            #expect(
+                toast.minY <= pillBottom + DesignTokens.Spacing.xs + 1,
+                Comment(rawValue: "toast \(toast) hangs further below the page pill than \(DesignTokens.Spacing.xs)pt")
+            )
             #expect(toast.maxY < host.size.height / 2, Comment(rawValue: "toast \(toast) is not in the upper half"))
         }
     }

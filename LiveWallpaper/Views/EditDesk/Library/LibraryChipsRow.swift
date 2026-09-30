@@ -51,10 +51,11 @@ struct LibraryChipsRow: View {
                 sortLabel
                 Text(verbatim: "▾")
             }
-            .font(DesignTokens.EditDesk.Typography.chip)
+            // `.large` glass is `LibraryFilterBar.controlHeight` tall around a 13pt label, not a 12pt one.
+            .font(DesignTokens.EditDesk.Typography.body)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
         }
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .regular)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .fixedSize()
         .accessibilityLabel(Text("Sort"))
         .accessibilityValue(sortLabel)
@@ -103,7 +104,7 @@ struct LibraryChipsRow: View {
     }
 
     private var importButton: some View {
-        GlassIconButton("plus", size: .regular, action: onImport)
+        GlassIconButton("plus", size: .large, action: onImport)
             .help(Text("Add to Library"))
             .accessibilityLabel(Text("Add to Library"))
     }

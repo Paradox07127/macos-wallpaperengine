@@ -22,8 +22,8 @@ struct WorkshopFiltersToggle: View {
                     Text(verbatim: "\(activeFilterCount)")
                         .font(DesignTokens.Typography.badge)
                         .foregroundStyle(DesignTokens.Colors.onAccentFill)
+                        // No vertical padding: any would stand the badge taller than the 13pt label and the button past `controlHeight`.
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
                         .background(Color.accentColor, in: Capsule())
                 }
                 Image(systemName: "chevron.down")
@@ -34,10 +34,9 @@ struct WorkshopFiltersToggle: View {
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .animation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.24)), value: isExpanded)
             }
-            .font(DesignTokens.Typography.caption)
+            .font(DesignTokens.Typography.body)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .disabled(isDisabled)
         .help(Text("Filter options"))
         .accessibilityLabel(Text("Filters"))
@@ -59,10 +58,9 @@ struct WorkshopLikedToggle: View {
                     .foregroundStyle(isOn ? AnyShapeStyle(DesignTokens.Colors.like) : AnyShapeStyle(.foreground))
                 Text("Liked")
             }
-            .font(DesignTokens.Typography.caption)
+            .font(DesignTokens.Typography.body)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .help(Text("Show only wallpapers you liked"))
         .accessibilityLabel(Text("Liked"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
@@ -86,7 +84,8 @@ struct WorkshopFilterRow<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .frame(width: 74, alignment: .leading)
-                .padding(.top, 4)
+                // Centred on the first line of chips.
+                .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
             content
         }
     }

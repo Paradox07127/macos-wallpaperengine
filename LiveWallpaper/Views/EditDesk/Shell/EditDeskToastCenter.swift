@@ -132,9 +132,9 @@ struct EditDeskToastHost: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
 
-    /// Below the tallest page top bar, so a toast never covers its buttons.
-    private static let newestTopInset = max(DesignTokens.EditDesk.Spacing.topBar, DetailGeometry.topBarHeight)
-        + DesignTokens.EditDesk.Spacing.s8
+    /// Just under the page pill, which the top bar centres on its midline.
+    private static let newestTopInset = (DesignTokens.EditDesk.Spacing.topBar + DesignTokens.EditDesk.Spacing.navPillHeight) / 2
+        + DesignTokens.Spacing.xs
     var body: some View {
         VStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
             ForEach(center.toasts.reversed()) { toast in

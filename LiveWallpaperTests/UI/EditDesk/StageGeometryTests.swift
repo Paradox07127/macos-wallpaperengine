@@ -115,20 +115,42 @@ struct StageGeometryTests {
         )
     }
 
-    @Test("Chip row rides the card row, then crosses to 70 across the second leg instead of switching")
+    @Test("Chip row rides the card row, then crosses to 60 across the second leg instead of switching")
     func chipRowTop() {
         #expect(StageGeometry.chipRowTop(progress: 0, windowSize: Self.designWindow) == 812)
         #expect(StageGeometry.chipRowTop(progress: 1, windowSize: Self.designWindow) == 632)
-        #expect(near(StageGeometry.chipRowTop(progress: 1.49, windowSize: Self.designWindow), 356.6))
-        #expect(StageGeometry.chipRowTop(progress: 1.5, windowSize: Self.designWindow) == 351)
-        #expect(StageGeometry.chipRowTop(progress: 2, windowSize: Self.designWindow) == 70)
+        #expect(near(StageGeometry.chipRowTop(progress: 1.49, windowSize: Self.designWindow), 351.7))
+        #expect(StageGeometry.chipRowTop(progress: 1.5, windowSize: Self.designWindow) == 346)
+        #expect(StageGeometry.chipRowTop(progress: 2, windowSize: Self.designWindow) == 60)
         // The row rides with the shelf: a short window must not drop it into the cards.
         for height in stride(from: CGFloat(700), through: 1400, by: 20) {
             let size = CGSize(width: 1280, height: height)
             let chips = StageGeometry.chipRowTop(progress: 1, windowSize: size)
             let cards = StageGeometry.rowFrame(style: .crate, index: 0, count: 8, focus: 0, windowSize: size)
-            #expect(chips + 26 <= cards.minY, Comment(rawValue: "at \(height): chips \(chips), cards \(cards.minY)"))
+            #expect(
+                chips + DesignTokens.LibraryFilterBar.controlHeight <= cards.minY,
+                Comment(rawValue: "at \(height): chips \(chips), cards \(cards.minY)")
+            )
         }
+    }
+
+    @Test("The library's filter row sits 4pt under the top bar and 22pt over its first card, like the Workshop's")
+    func filterRowMatchesTheWorkshopPage() throws {
+        #expect(StageGeometry.chipRowTopFull == 60)
+        #expect(StageGeometry.gridTop == 96)
+        #expect(StageGeometry.chipRowTopFull == DesignTokens.EditDesk.Spacing.topBar + DesignTokens.EditDesk.Spacing.filterRowInset)
+        let rowBottom = StageGeometry.chipRowTopFull + DesignTokens.LibraryFilterBar.controlHeight
+        let firstCard = StageGeometry.gridFrame(index: 0, windowWidth: Self.designWindow.width).minY
+        #expect(firstCard - rowBottom == DesignTokens.EditDesk.Spacing.filterRowToCards, Comment(rawValue: "first card at \(firstCard)"))
+
+        // The Workshop's ribbon hangs from the same two tokens under the page's top-bar inset.
+        let page = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift")
+        #expect(page.contains(".padding(.top, DesignTokens.EditDesk.Spacing.topBar)"))
+        let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
+        #expect(ribbon.contains(".padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)"))
+        #expect(ribbon.contains(".padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.Settings.formVerticalMargin)"))
+        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
+        #expect(pane.contains(".padding(.vertical, DesignTokens.Settings.formVerticalMargin)"), "the Workshop grid's top inset moved")
     }
 
     @Test("Snap spring converts to CASpringAnimation terms")

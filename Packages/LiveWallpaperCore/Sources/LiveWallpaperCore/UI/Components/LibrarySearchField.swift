@@ -71,8 +71,8 @@ public struct LibrarySearchField: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
         .frame(minWidth: minWidth, idealWidth: idealWidth, maxWidth: maxWidth)
+        .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         .background(Capsule().fill(Color.primary.opacity(0.04)))
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))

@@ -99,9 +99,9 @@ struct EditDeskChromeSourceTests {
             return try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }").first)
         }
         let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
-        #expect(row.contains(#"GlassIconButton("plus", size: .regular, action: onImport)"#))
+        #expect(row.contains(#"GlassIconButton("plus", size: .large, action: onImport)"#))
         #expect(row.contains(#".accessibilityLabel(Text("Add to Library"))"#))
-        #expect(row.contains(".adaptiveGlassButton(.regular, shape: .capsule, size: .regular)"))
+        #expect(row.contains(".adaptiveGlassButton(.regular, shape: .capsule, size: .large)"))
         #expect(row.contains(".appLanguagePopover(isPresented: $sortPresented, arrowEdge: .bottom) { sortMenu }"))
         #expect(row.contains(".onChange(of: stage.snappedIndex) { sortPresented = false }"), "the popover outlives a swipe")
         #expect(row.contains(".settingsPopoverChrome(width: 200)"))

@@ -66,6 +66,17 @@ struct LibrarySearchFieldTests {
         }
     }
 
+    @Test("The field is a filter-bar control's height, empty or holding text with its clear button")
+    func fieldIsTheFilterBarControlHeight() {
+        for text in ["", "forest"] {
+            let host = NSHostingView(rootView: LibrarySearchField(text: .constant(text), prompt: "Search").fixedSize())
+            #expect(
+                host.fittingSize.height == DesignTokens.LibraryFilterBar.controlHeight,
+                Comment(rawValue: "\"\(text)\": the field is \(host.fittingSize.height)pt tall")
+            )
+        }
+    }
+
     @Test("With a short prompt the field draws it only when the long one does not fit")
     func shortPromptStandsInWhenTheLongOneDoesNotFit() throws {
         let floor = try Self.hosted(Self.spanishLong, shortPrompt: "Buscar", width: DesignTokens.LibraryFilterBar.searchMinWidth)

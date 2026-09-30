@@ -68,14 +68,17 @@ enum StageGeometry {
     /// The filter row rides above the card row rather than sitting at a fixed y: pinned to the
     /// window's top it slides into the shelf as soon as the window gets short.
     static let chipRowGap: CGFloat = 52
-    static let chipRowTopFull: CGFloat = 70
+    /// The Workshop page's filter row sits at this same y.
+    static let chipRowTopFull: CGFloat = topBarHeight + DesignTokens.EditDesk.Spacing.filterRowInset
     static let chipRowSwitchProgress: Double = 1.5
     /// Past this the SwiftUI library grid is mounted over the stage and owns the library.
     static let libraryHandoffProgress: Double = 1.8
 
     // MARK: Grid (S3)
 
-    static let gridTop: CGFloat = 110
+    /// The grid's own `LibraryGrid.verticalPadding` makes up the rest of `filterRowToCards`.
+    static let gridTop: CGFloat = chipRowTopFull + DesignTokens.LibraryFilterBar.controlHeight
+        + DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.LibraryGrid.verticalPadding
     static let cardAspectRatio: CGFloat = 16 / 9
 
     // MARK: Gesture and motion (MOTION 1–4, 7)

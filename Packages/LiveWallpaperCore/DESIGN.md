@@ -83,6 +83,7 @@ System `NSColor`-backed → automatic light/dark + Increase Contrast.
 
 `Spacing` xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32
 `Corner` sm 6 · md 10 · lg 14 (content cards) · xl 18 (floating chrome)
+`LibraryFilterBar.controlHeight` 28 (HIG macOS large control height): every control on a filter bar — `FilterChip`, `LibrarySearchField`, sort and filter menus, `GlassIconButton(size: .large)` — is this tall.
 
 ## State opacity — `DesignTokens.Opacity`
 
@@ -171,6 +172,9 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Spacing.s14` | 14 | README Tokens #7 |
 | `Spacing.gutter` | 24 | README Tokens #7 |
 | `Spacing.topBar` | 56 | README Tokens #7 |
+| `Spacing.navPillHeight` | 32 | the top bar's page pill (`GlassSegmentedPicker` `.editDesk`: 26pt items, 3pt padding) |
+| `Spacing.filterRowInset` | `Spacing.xs` (4) | top bar's lower edge to a page's filter row (library, Workshop) |
+| `Spacing.filterRowToCards` | `Spacing.sm` + `LibraryGrid.verticalPadding` (22) | filter row's lower edge to the first row of cards (library, Workshop) |
 | `Spacing.workshopCardBandTop` | 24 | SCREENS S8 (Workshop grid card info band, `padding 24 10 10`) |
 | `Spacing.workshopCardBandInset` | 10 | SCREENS S8 (same band's sides and bottom) |
 | `Typography.badgeMono` | 11pt monospaced | README Tokens #2/#8 |

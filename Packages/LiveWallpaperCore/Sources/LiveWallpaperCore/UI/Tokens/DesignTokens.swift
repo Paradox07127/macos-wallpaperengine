@@ -299,6 +299,8 @@ public enum DesignTokens {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 10
         public static let contentSpacing: CGFloat = 10
+        /// Every control on a filter bar is this tall: the HIG macOS large control height.
+        public static let controlHeight: CGFloat = 28
         // Also reused by the narrow detail inspector, so they must stay legible at minimum width.
         public static let searchMinWidth: CGFloat = 132
         public static let searchIdealWidth: CGFloat = 168
@@ -626,6 +628,12 @@ public enum DesignTokens {
             public static let s14: CGFloat = 14
             public static let gutter: CGFloat = 24
             public static let topBar: CGFloat = 56
+            /// The top bar's page pill: `GlassSegmentedPicker`'s `.editDesk` shell, 26pt items in 3pt padding.
+            public static let navPillHeight: CGFloat = 32
+            /// A page's filter row sits this far under the top bar.
+            public static let filterRowInset: CGFloat = DesignTokens.Spacing.xs
+            /// From a filter row's lower edge to the top of the first row of cards under it.
+            public static let filterRowToCards: CGFloat = DesignTokens.Spacing.sm + DesignTokens.LibraryGrid.verticalPadding
             /// S8a's info band is `padding 24 10 10`: the top inset is the gradient's run-up, not
             /// text spacing, so it is far larger than the other three.
             public static let workshopCardBandTop: CGFloat = 24

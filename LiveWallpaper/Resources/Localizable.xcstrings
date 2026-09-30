@@ -3833,41 +3833,6 @@
         }
       }
     },
-    "⌄ Swipe Down to Return Home" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌄ Swipe Down to Return Home"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌄ Desliza hacia abajo para volver al inicio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌄ 下にスワイプしてホームに戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌄ 下滑返回主界面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌄ 下滑返回主畫面"
-          }
-        }
-      }
-    },
     "▶ GIF preview" : {
       "localizations" : {
         "es" : {
