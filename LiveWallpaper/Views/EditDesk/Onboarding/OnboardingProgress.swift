@@ -7,6 +7,7 @@ final class OnboardingProgress {
 
     static let storageKey = "loomscreen.ui.editDesk.onboarding.v1"
     static let legacyKey = "Onboarding.Completed"
+    private static let pagesAddedAfter080: Set<Page> = [.configuration, .settings]
 
     var visiblePages: [Page] {
         Self.pages(workshopAvailable: workshopAvailable)
@@ -25,6 +26,12 @@ final class OnboardingProgress {
             completed = Self.pages(in: snapshot, key: "completed")
             dismissed = Self.pages(in: snapshot, key: "dismissed")
             hasPresentedTour = snapshot["hasPresentedTour"] as? Bool ?? !completed.union(dismissed).isEmpty
+            // Only records written by 0.8.0 or earlier lack hasPresentedTour; a tour they finished stays finished despite the added pages.
+            if snapshot["hasPresentedTour"] == nil,
+               visiblePages.filter({ !Self.pagesAddedAfter080.contains($0) }).allSatisfy(handled.contains) {
+                dismissed.formUnion(Self.pagesAddedAfter080)
+                persist()
+            }
         } else {
             completed = legacyDefaults.bool(forKey: Self.legacyKey) ? Set(Page.allCases) : []
             dismissed = []

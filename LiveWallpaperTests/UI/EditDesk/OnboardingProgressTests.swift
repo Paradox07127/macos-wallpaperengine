@@ -97,6 +97,46 @@ struct OnboardingProgressTests {
         #expect(reloaded.dismissed == progress.dismissed)
     }
 
+    @Test("A finished 0.8.0 record stays finished after the tour gains pages", arguments: [false, true])
+    func finishedOldRecordStaysFinished(workshopAvailable: Bool) throws {
+        let stores = try Stores(variant: ".\(workshopAvailable)")
+        defer { stores.remove() }
+        stores.defaults.set([
+            "completed": ["home"], "dismissed": workshopAvailable ? ["library", "workshop", "overlay"] : ["library", "overlay"],
+            "migratedFromLegacy": true,
+        ], forKey: OnboardingProgress.storageKey)
+        let progress = stores.progress(workshopAvailable: workshopAvailable)
+        #expect(progress.isFinished)
+        #expect(progress.completed == [.home])
+        #expect(stores.progress(workshopAvailable: workshopAvailable).isFinished)
+    }
+
+    @Test("A record written after the tour gained pages still shows the new pages")
+    func newRecordKeepsNewPagesPending() throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        stores.defaults.set([
+            "completed": ["home"], "dismissed": ["library", "workshop", "overlay"],
+            "migratedFromLegacy": true, "hasPresentedTour": true,
+        ], forKey: OnboardingProgress.storageKey)
+        let progress = stores.progress()
+        #expect(!progress.isFinished)
+        #expect(progress.currentPage == .configuration)
+    }
+
+    @Test("An unfinished 0.8.0 record does not skip the new pages")
+    func unfinishedOldRecordKeepsNewPagesPending() throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        stores.defaults.set([
+            "completed": ["home", "library"], "dismissed": ["workshop"], "migratedFromLegacy": true,
+        ], forKey: OnboardingProgress.storageKey)
+        let progress = stores.progress()
+        #expect(!progress.isFinished)
+        #expect(progress.dismissed == [.workshop])
+        #expect(progress.currentPage == .configuration)
+    }
+
     @Test("Lite and Pro read the same saved record against their own visible pages")
     func liteAndProAgreement() throws {
         let stores = try Stores()
