@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import CryptoKit
+import Darwin
 import Foundation
 import LiveWallpaperProWPE
 import Metal
@@ -257,6 +258,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     private var memoryBytes = 0
     private let memoryByteLimit: Int
     private let memoryEntryLimit: Int
+    private let diskByteLimit: Int
     private var storesSincePrune = 0
     private let rootURL: URL
     private let fileManager: FileManager
@@ -268,9 +270,10 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     #endif
 
     init(rootURL: URL? = nil, memoryByteLimit: Int = maximumMemoryBytes,
-         memoryEntryLimit: Int = maximumMemoryEntries) {
+         memoryEntryLimit: Int = maximumMemoryEntries, diskByteLimit: Int = maximumDiskBytes) {
         self.memoryByteLimit = max(0, memoryByteLimit)
         self.memoryEntryLimit = max(0, memoryEntryLimit)
+        self.diskByteLimit = min(max(0, diskByteLimit), Self.maximumDiskBytes)
         self.fileManager = .default
         let base = rootURL ?? Self.defaultRootURL
         self.rootURL = base.appendingPathComponent("v\(Self.schemaVersion)", isDirectory: true)
@@ -338,7 +341,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         storeCountForTesting += 1
         #endif
         lock.unlock()
-        if let data {
+        if let data, data.count <= diskByteLimit {
             writeDisk(data, for: translationCacheKey)
         }
         if shouldPrune { pruneDisk() }
@@ -410,12 +413,67 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
 
     private func readDisk(_ translationCacheKey: String) -> (payload: Payload, bytes: Int)? {
         let url = fileURL(for: translationCacheKey)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
+        guard let data = readRegularCacheData(at: url) else { return nil }
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              Self.validCachedLayout(payload.uniformLayout),
+              payload.vertexUniformLayout.map(Self.validCachedLayout) ?? true,
+              (0 ... WPEShaderTranspiler.customTextureSlotLimit).contains(payload.textureSlotCount),
+              payload.vertexTextureSlotCount.map({ (0 ... WPEShaderTranspiler.customTextureSlotLimit).contains($0) }) ?? true else {
             try? fileManager.removeItem(at: url)
             return nil
         }
         return (payload, data.count)
+    }
+
+    /// The leaf must be a bounded regular file. The descriptor keeps checks and
+    /// reads on the same inode; parent-directory replacement is outside this contract.
+    private func readRegularCacheData(at url: URL) -> Data? {
+        guard diskByteLimit > 0 else { return nil }
+        let descriptor = url.withUnsafeFileSystemRepresentation { path in
+            path.map { Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK) } ?? -1
+        }
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        var info = stat()
+        guard Darwin.fstat(descriptor, &info) == 0,
+              info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              info.st_size >= 0, info.st_size <= Int64(diskByteLimit) else { return nil }
+        var data = Data()
+        data.reserveCapacity(Int(info.st_size))
+        var buffer = [UInt8](repeating: 0, count: min(64 * 1024, diskByteLimit + 1))
+        while true {
+            let count = buffer.withUnsafeMutableBytes {
+                Darwin.read(descriptor, $0.baseAddress, min($0.count, diskByteLimit - data.count + 1))
+            }
+            if count < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                return nil
+            }
+            if count == 0 {
+                return data
+            }
+            // A file growing after fstat must not bypass the admission size.
+            guard count <= diskByteLimit - data.count else {
+                return nil
+            }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+    }
+
+    private static func validCachedLayout(_ slots: [Payload.Slot]) -> Bool {
+        guard slots.count <= WPEShaderTranspiler.uniformSlotMaximum else { return false }
+        return slots.allSatisfy { slot in
+            guard let type = WPEUniformType(glslType: slot.glslType) else { return false }
+            let count = slot.arrayLength ?? 1
+            let maximum = WPEShaderTranspiler.uniformSlotMaximum
+            guard count > 0, count <= maximum / type.elementSlotCount,
+                  slot.slotCount == count * type.elementSlotCount,
+                  slot.slot >= 0, slot.slotCount <= maximum,
+                  slot.slot <= maximum - slot.slotCount else { return false }
+            return true
+        }
     }
 
     /// Evicts oldest-written, not LRU: a hit only reads, so this is insertion order.

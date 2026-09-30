@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import CryptoKit
+import Darwin
 import Foundation
 @testable import LiveWallpaper
 import Metal
@@ -141,6 +142,70 @@ struct WPEShaderTranslationCacheSchemaTests {
             #expect(diskOnly.memoryUsageForTesting().bytes == 0)
             #expect(diskOnly.diskHitCountForTesting == 1)
         }
+    }
+
+    @Test("Unsafe disk entries become cache misses and recompile", .timeLimit(.minutes(1)),
+          arguments: ["fifo", "directory", "symlink", "oversized", "invalid-layout"])
+    func unsafeDiskEntryRecompiles(kind: String) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let initialCache = WPEShaderTranslationCache(rootURL: root)
+        let request = WPEShaderCompileRequest(
+            shaderName: "disk-admission", processedVertexSource: "",
+            processedFragmentSource: "uniform int counter;\nvoid main() { gl_FragColor = vec4(float(counter)); }",
+            sourceHash: "disk-admission-fixture", comboValues: [:], textureBindings: [:]
+        )
+        let initial = try WPESwiftShaderCompiler(device: device, translationCache: initialCache).compile(request)
+        let directory = root.appendingPathComponent("v\(WPEShaderTranslationCache.schemaVersion)")
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        let data = try Data(contentsOf: file)
+        let external = root.appendingPathComponent("external.json")
+        try FileManager.default.removeItem(at: file)
+        switch kind {
+        case "fifo":
+            #expect(mkfifo(file.path, 0o600) == 0)
+        case "directory":
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+        case "symlink":
+            try data.write(to: external)
+            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: external)
+        case "oversized":
+            try Data(repeating: 0, count: data.count + 1).write(to: file)
+        default:
+            var payload = try JSONDecoder().decode(WPEShaderTranslationCache.Payload.self, from: data)
+            payload.vertexMSLSource = "cache must reject this before vertex slot arithmetic"
+            payload.vertexUniformLayout = [.init(name: "bad", glslType: "float", slot: Int.max, slotCount: 1)]
+            payload.vertexSamplerNames = []
+            payload.vertexTextureSlotCount = 0
+            try JSONEncoder().encode(payload).write(to: file)
+        }
+        let cache = WPEShaderTranslationCache(rootURL: root,
+                                              diskByteLimit: kind == "oversized" ? data.count : WPEShaderTranslationCache.maximumDiskBytes)
+        let repaired = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(repaired.mslSource == initial.mslSource)
+        #expect(cache.diskHitCountForTesting == 0)
+        #expect(cache.storeCountForTesting == 1)
+        if kind == "symlink" {
+            #expect(try Data(contentsOf: external) == data)
+        }
+    }
+
+    @Test("Disk admission preserves a payload beyond the memory budget")
+    func diskBudgetExceedsMemoryEntryBudget() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = cachePayload("larger than this test's memory budget")
+        let cache = WPEShaderTranslationCache(rootURL: root, memoryByteLimit: 1)
+        cache.store(payload, for: "disk-only")
+        #expect(cache.memoryUsageForTesting().entries == 0)
+        #expect(cache.lookup("disk-only") == payload)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(WPEShaderTranslationCache.maximumDiskBytes > WPEShaderTranslationCache.maximumMemoryBytes)
+        let limit = try JSONEncoder().encode(payload).count - 1
+        let noDisk = WPEShaderTranslationCache(rootURL: root, memoryByteLimit: 0, diskByteLimit: limit)
+        noDisk.store(payload, for: "too-large")
+        #expect(noDisk.lookup("too-large") == nil)
     }
 
     @Test("A translator edit forces a cache schema bump")
