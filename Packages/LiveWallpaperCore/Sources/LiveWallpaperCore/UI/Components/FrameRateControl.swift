@@ -176,10 +176,10 @@ public struct FrameRateControl: View {
             HStack {
                 Text(verbatim: displayedValue.title)
                     .monospacedDigit()
-                Spacer(minLength: 12)
+                Spacer(minLength: DesignTokens.Spacing.md)
                 customEntryField
             }
-            .font(.caption)
+            .font(DesignTokens.Typography.caption)
 
             Slider(value: sliderBinding, in: 0 ... scale.maximumPosition, onEditingChanged: editingChanged)
                 .controlSize(.small)
@@ -200,8 +200,8 @@ public struct FrameRateControl: View {
             presetMarkers
             if invalidInput {
                 inputHelp
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(DesignTokens.Colors.Status.danger)
             }
         }
     }
@@ -256,7 +256,7 @@ public struct FrameRateControl: View {
                     VStack(spacing: 3) {
                         Circle().fill(.secondary).frame(width: 3, height: 3)
                         Text(verbatim: preset == .matchDisplay ? preset.title : String(preset.rawValue))
-                            .font(.system(size: 10).monospacedDigit())
+                            .font(DesignTokens.Typography.metric)
                     }
                     .frame(width: 32, height: 24)
                     .contentShape(Rectangle())

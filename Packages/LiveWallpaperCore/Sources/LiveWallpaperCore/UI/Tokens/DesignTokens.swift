@@ -64,7 +64,6 @@ public enum DesignTokens {
         public enum LibraryTint {
             public static let aerials = Color(nsColor: .systemTeal)
             public static let systemWallpaper = Color(nsColor: .systemIndigo)
-            public static let bookmarks = Color(nsColor: .systemOrange)
             public static let schemes = Color(nsColor: .systemPurple)
         }
 
@@ -127,7 +126,14 @@ public enum DesignTokens {
         /// A step above `bodyEmphasized` (also 13pt semibold) so hierarchy stays legible.
         public static let sectionTitle = Font.title3.weight(.semibold)
 
-        public static let pageTitle = Font.title2
+        /// User-approved heading hierarchy (2026-09-30); card and section titles stay separate.
+        public static let pageTitle = Font.system(size: 17, weight: .semibold)
+        public static let sheetTitle = Font.system(size: 20, weight: .semibold)
+        public static let modalTitle = Font.system(size: 22, weight: .semibold)
+
+        /// Compact secondary copy and the small capsule action's native 11pt role.
+        public static let subheadline = Font.subheadline
+        public static let callout = Font.callout
 
         public static let hero = Font.largeTitle
 
@@ -266,9 +272,8 @@ public enum DesignTokens {
 
     public enum Inspector {
         public static let minWidth: CGFloat = 268
-        public static let idealWidth: CGFloat = 292
         public static let maxWidth: CGFloat = 480
-        public static let defaultWidth: CGFloat = idealWidth
+        public static let defaultWidth: CGFloat = 372
         public static let horizontalPadding: CGFloat = Spacing.md
         /// Shared geometry for inspector "label … [slider][value]" rows. `Typography.metric`
         /// is already monospaced, so call sites don't add `.monospacedDigit()`.
@@ -319,6 +324,17 @@ public enum DesignTokens {
         /// 480); `SettingsWindowLayoutTests` pins the relationship.
         public static let minWidth: CGFloat = 840
         public static let minHeight: CGFloat = 540
+    }
+
+    /// Shared content padding for ContainerGroupBoxStyle and its action tiles.
+    public enum GroupBox {
+        public static let inset: CGFloat = Spacing.md
+    }
+
+    /// Shared empty-state glyph geometry; standalone symbols keep precise point sizes.
+    public enum EmptyState {
+        public static let iconSize: CGFloat = 44
+        public static let compactIconSize: CGFloat = 28
     }
 
     public enum GuidedLibrary {
@@ -476,11 +492,6 @@ public enum DesignTokens {
                 light: NSColor(red: 37 / 255, green: 99 / 255, blue: 235 / 255, alpha: 1),
                 dark: NSColor(red: 96 / 255, green: 165 / 255, blue: 250 / 255, alpha: 1)
             )
-            public static let sceneGroupEffects = adaptive(
-                "SceneGroupEffects",
-                light: NSColor(red: 147 / 255, green: 51 / 255, blue: 234 / 255, alpha: 1),
-                dark: NSColor(red: 192 / 255, green: 132 / 255, blue: 252 / 255, alpha: 1)
-            )
             public static let sceneGroupColors = adaptive(
                 "SceneGroupColors",
                 light: NSColor(red: 176 / 255, green: 118 / 255, blue: 12 / 255, alpha: 1),
@@ -554,10 +565,6 @@ public enum DesignTokens {
             )
             /// Chips over the modal preview and float thumbnails (`bg .6`); fixed like every on-media colour.
             public static let mediaChipFill = Color.black.opacity(0.6)
-            public static let fillSecondaryButton = ink("FillSecondaryButton", 0.10)
-            /// S4 primary button: white on black in dark, inverted in light.
-            public static let primaryButtonFill = adaptive("PrimaryButtonFill", light: .black, dark: .white)
-            public static let primaryButtonText = adaptive("PrimaryButtonText", light: .white, dark: .black)
             /// S8a's grid card band (`.85`); heavier than `gradientCardBottom` because the band
             /// carries two lines of text over the artwork instead of one.
             public static let gradientWorkshopCardBottom = Color.black.opacity(0.85)
@@ -592,7 +599,6 @@ public enum DesignTokens {
             public static let statusExpanded: CGFloat = 14
             public static let modal: CGFloat = 18
             public static let floatPanel: CGFloat = 16
-            public static let button: CGFloat = 9
             public static let chip: CGFloat = 5
         }
 
@@ -649,16 +655,12 @@ public enum DesignTokens {
             public static let body = Font.system(size: 13)
             public static let cardTitle = Font.system(size: 12, weight: .semibold)
             public static let stageTitle = Font.system(size: 15, weight: .semibold)
-            public static let modalTitle = Font.system(size: 22, weight: .bold)
+            public static let modalTitle = DesignTokens.Typography.modalTitle
             public static let navItem = Font.system(size: 13)
             public static let floatName = Font.system(size: 11, weight: .semibold)
             public static let dropLabel = Font.system(size: 12, weight: .bold)
             public static let footnote = Font.system(size: 11)
-            /// SCREENS S9: page title over an onboarding card, and the Steam wizard's own title.
-            public static let onboardingTitle = Font.system(size: 17, weight: .bold)
-            public static let wizardTitle = Font.system(size: 22, weight: .bold)
-            public static let onboardingIcon = Font.system(size: 22)
-            public static let onboardingButton = Font.system(size: 12, weight: .bold)
+            public static let wizardTitle = DesignTokens.Typography.modalTitle
             /// S8a's grid card title; one step above `cardTitle`, which the library tiles keep.
             public static let workshopCardTitle = Font.system(size: 13, weight: .semibold)
         }

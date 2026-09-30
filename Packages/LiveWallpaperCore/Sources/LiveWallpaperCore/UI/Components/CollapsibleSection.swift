@@ -26,16 +26,16 @@ public struct CollapsibleSection<Content: View, TrailingAccessory: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
                 Button {
                     withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.28))) {
                         isExpanded.toggle()
                     }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
                         Label(title, systemImage: systemImage)
                             .font(DesignTokens.Typography.sectionTitle)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(DesignTokens.Colors.textPrimary)
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
@@ -56,7 +56,7 @@ public struct CollapsibleSection<Content: View, TrailingAccessory: View>: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .contentShape(Rectangle())
                 }
@@ -66,11 +66,11 @@ public struct CollapsibleSection<Content: View, TrailingAccessory: View>: View {
             }
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                     Divider()
                     content()
                 }
-                .padding(.top, 10)
+                .padding(.top, DesignTokens.Spacing.md)
                 .transition(
                     .asymmetric(
                         insertion: .opacity.combined(with: .move(edge: .top)),

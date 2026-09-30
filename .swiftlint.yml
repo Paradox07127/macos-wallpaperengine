@@ -93,7 +93,7 @@ disabled_rules:
 reporter: "xcode"
 
 # G4 (review 2026-07-06 cycle-3): font-token bypass guards. High-precision forms
-# only — the `.font(.system(size:))` form is deliberately NOT enforced because
+# only — general `.font(.system(size:))` expressions are not enforced because
 # DESIGN.md rule 1 exempts standalone SF Symbol sizing (99 of 113 remaining
 # inline sites, taxonomy in <private-notes>). Revisit if
 # an AST-based checker becomes available. Measured pt table: DESIGN.md Typography.
@@ -103,6 +103,20 @@ custom_rules:
     regex: '\.font\(\.system\(\.'
     message: "Use DesignTokens.Typography instead of .font(.system(.textStyle…)) — Core DESIGN.md rule 1"
     severity: warning
+  # Raw semantic styles bypass tokens just as .system(.caption) does.
+  token_bypass_bare_font:
+    match_kinds: [identifier]
+    name: "Bare text-style font"
+    regex: '\.font\(\s*\.(largeTitle|title[23]?|headline|subheadline|body|callout|footnote|caption2?)(?![A-Za-z0-9_])'
+    message: "Use DesignTokens.Typography instead of a bare semantic font (DESIGN.md rule 1)"
+    severity: warning
+  # High-precision Text/Label chains only. Standalone Image glyphs remain exempt;
+  # complex expressions still need review rather than a broad, noisy regex.
+  token_bypass_text_point_size:
+    name: "Inline Text or Label point size"
+    regex: '(?m)^[ \t]*(?:(let|var)\s+\w+\s*=\s*)?(Text|Label)\([^{}\n]*\)(\s*\.(?!font\b)[A-Za-z_]\w*\([^{}\n]*\))*\s*\.font\(\s*\.system\(\s*size:'
+    message: "Text and Label use DesignTokens.Typography; precise point sizes are for standalone symbols (DESIGN.md rule 1)"
+    severity: warning
   token_bypass_custom_font:
     name: "Inline custom font"
     regex: '\.font\(\.custom\('
@@ -111,8 +125,8 @@ custom_rules:
   # W0 (HIG UI-consistency program, 2026-08-31): token-bypass + wrapper-bypass
   # guards. Probes live in <private-notes> — run verify.py after ANY edit
   # to this section; expected.json defines both sides (caught + not caught).
-  # NOTE: `.font(.system(size:))` stays unenforced — DESIGN.md rule 1 exempts
-  # standalone SF Symbol sizing and regex cannot tell symbol from text (G4).
+  # NOTE: standalone SF Symbol sizing remains exempt. The Text/Label rule
+  # above only catches simple explicit modifier chains, not arbitrary expressions.
   token_bypass_literal_color:
     name: "Literal color value"
     regex: '(?<![A-Za-z0-9_])Color\((red:|\.sRGB\w*, *red:) *[0-9.]'
@@ -121,7 +135,7 @@ custom_rules:
     severity: warning
   token_bypass_literal_corner_radius:
     name: "Literal corner radius"
-    regex: 'cornerRadius:\s*[0-9]|\.cornerRadius\(\s*[0-9]'
+    regex: 'cornerRadius:\s*[0-9]|\.cornerRadius\(\s*[0-9]|\.roundedRectangle\(\s*[0-9]'
     message: "Radii come from DesignTokens.Corner — no stray numbers (DESIGN.md rule 5)"
     excluded: '.*/DesignTokens\.swift'
     severity: warning

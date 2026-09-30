@@ -9,7 +9,7 @@ struct DestructiveControlTint: ViewModifier {
             // same-hue and reads as low-contrast.
             .foregroundStyle(DesignTokens.Colors.Status.danger)
             .tint(DesignTokens.Colors.Status.danger)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
     }
 }
 

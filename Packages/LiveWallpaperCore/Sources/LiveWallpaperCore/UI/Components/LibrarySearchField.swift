@@ -42,7 +42,7 @@ public struct LibrarySearchField: View {
     }
 
     public var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             magnifier
 
             TextField(shownPrompt, text: $text)
@@ -63,26 +63,26 @@ public struct LibrarySearchField: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(DesignTokens.Typography.captionEmphasized)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
                 }
                 .buttonStyle(.borderless)
                 .help(Text("Clear search"))
                 .accessibilityLabel(Text("Clear search"))
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DesignTokens.Spacing.md)
         .frame(minWidth: minWidth, idealWidth: idealWidth, maxWidth: maxWidth)
         .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
-        .background(Capsule().fill(Color.primary.opacity(0.04)))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        .background(Capsule().fill(DesignTokens.Colors.textPrimary.opacity(0.04)))
+        .overlay(Capsule().strokeBorder(DesignTokens.Colors.textPrimary.opacity(0.10), lineWidth: 0.5))
         .contentShape(Capsule())
         .overlay {
             if showsFocusRing, isFocused {
-                Capsule().strokeBorder(Color.accentColor, lineWidth: 1.5)
+                Capsule().strokeBorder(DesignTokens.Colors.accent, lineWidth: 1.5)
             }
         }
-        .opacity(isDisabled ? 0.5 : 1)
+        .opacity(isDisabled ? DesignTokens.Opacity.disabledContent : 1)
     }
 
     private var shownPrompt: LocalizedStringKey {
@@ -93,9 +93,9 @@ public struct LibrarySearchField: View {
         return shortPrompt
     }
 
-    /// Both 12pt paddings, the magnifier (15pt at 2x, 14pt at 1x) and the 7pt gap; the text field's 2pt
+    /// Both horizontal insets, the magnifier (15pt at 2x, 14pt at 1x) and the shared gap; the text field's 2pt
     /// outset on each side cancels its cell's 2pt text inset.
-    private static let chrome: CGFloat = 2 * 12 + 15 + 7
+    private static let chrome: CGFloat = 2 * DesignTokens.Spacing.md + 15 + DesignTokens.Spacing.sm
 
     /// Whether `prompt` drawn in `font` fits unclipped in a field `width` wide.
     static func promptFits(_ prompt: String, width: CGFloat, font: NSFont) -> Bool {
@@ -112,7 +112,7 @@ public struct LibrarySearchField: View {
     private var magnifier: some View {
         let glyph = Image(systemName: "magnifyingglass")
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DesignTokens.Colors.textSecondary)
 
         if let onSubmit {
             Button(action: onSubmit) { glyph }

@@ -36,7 +36,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         symbol: String,
         title: LocalizedStringKey,
         message: LocalizedStringKey? = nil,
-        symbolColor: Color = .secondary,
+        symbolColor: Color = DesignTokens.Colors.textSecondary,
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard,
@@ -60,7 +60,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         symbol: String,
         verbatimTitle: String,
         message: LocalizedStringKey? = nil,
-        symbolColor: Color = .secondary,
+        symbolColor: Color = DesignTokens.Colors.textSecondary,
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard,
@@ -93,7 +93,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
                 if let message {
                     message
                         .font(messageFont)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -126,9 +126,9 @@ public struct IllustratedEmptyState<Extra: View>: View {
             if case .dropTarget = variant {
                 ZStack {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.04))
+                        .fill(DesignTokens.Colors.accent.opacity(0.04))
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.32), lineWidth: 1)
+                        .strokeBorder(DesignTokens.Colors.accent.opacity(0.32), lineWidth: 1)
                 }
             }
         }
@@ -137,36 +137,36 @@ public struct IllustratedEmptyState<Extra: View>: View {
 
     private var iconSize: CGFloat {
         switch variant {
-        case .standard, .dropTarget: return 44
-        case .compact: return 28
+        case .standard, .dropTarget: DesignTokens.EmptyState.iconSize
+        case .compact: DesignTokens.EmptyState.compactIconSize
         }
     }
 
     private var spacing: CGFloat {
         switch variant {
-        case .standard, .dropTarget: return DesignTokens.Spacing.md
-        case .compact: return DesignTokens.Spacing.sm
+        case .standard, .dropTarget: DesignTokens.Spacing.md
+        case .compact: DesignTokens.Spacing.sm
         }
     }
 
     private var verticalPadding: CGFloat {
         switch variant {
-        case .standard, .dropTarget: return DesignTokens.Spacing.xl
-        case .compact: return DesignTokens.Spacing.md
+        case .standard, .dropTarget: DesignTokens.Spacing.xl
+        case .compact: DesignTokens.Spacing.md
         }
     }
 
     private var titleFont: Font {
         switch variant {
-        case .standard, .dropTarget: return .headline
-        case .compact: return .subheadline
+        case .standard, .dropTarget: DesignTokens.Typography.bodyEmphasized
+        case .compact: DesignTokens.Typography.subheadline.weight(.semibold)
         }
     }
 
     private var messageFont: Font {
         switch variant {
-        case .standard, .dropTarget: return .footnote
-        case .compact: return .footnote
+        case .standard, .dropTarget: DesignTokens.Typography.caption
+        case .compact: DesignTokens.Typography.caption
         }
     }
 }
@@ -176,7 +176,7 @@ extension IllustratedEmptyState where Extra == EmptyView {
         symbol: String,
         title: LocalizedStringKey,
         message: LocalizedStringKey? = nil,
-        symbolColor: Color = .secondary,
+        symbolColor: Color = DesignTokens.Colors.textSecondary,
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard
@@ -197,7 +197,7 @@ extension IllustratedEmptyState where Extra == EmptyView {
         symbol: String,
         verbatimTitle: String,
         message: LocalizedStringKey? = nil,
-        symbolColor: Color = .secondary,
+        symbolColor: Color = DesignTokens.Colors.textSecondary,
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard

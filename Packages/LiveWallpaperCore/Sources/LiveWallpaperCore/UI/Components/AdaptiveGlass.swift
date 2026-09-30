@@ -41,7 +41,7 @@ public extension View {
     /// `stroked: false` suppresses the fallback path's own outline, for callers that
     /// already draw an edge on the same shape (else two hairlines on macOS 14/15).
     func adaptiveGlassSurface(
-        _ shape: AdaptiveGlassShape = .roundedRectangle(12),
+        _ shape: AdaptiveGlassShape = .roundedRectangle(DesignTokens.Corner.panel),
         tint: Color? = nil,
         interactive: Bool = false,
         stroked: Bool = true

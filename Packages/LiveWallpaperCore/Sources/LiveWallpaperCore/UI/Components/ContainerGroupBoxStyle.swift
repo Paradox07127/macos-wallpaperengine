@@ -4,12 +4,13 @@ public struct ContainerGroupBoxStyle: GroupBoxStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             configuration.label
+                .font(DesignTokens.Typography.sectionTitle)
             configuration.content
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DesignTokens.GroupBox.inset)
+        .padding(.vertical, DesignTokens.GroupBox.inset)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
                 .fill(DesignTokens.Colors.surfaceRaised)
@@ -17,7 +18,7 @@ public struct ContainerGroupBoxStyle: GroupBoxStyle {
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
                 .strokeBorder(
-                    DesignTokens.Colors.separator.opacity(0.55),
+                    DesignTokens.Colors.separator.opacity(DesignTokens.Opacity.strongStroke),
                     lineWidth: DesignTokens.Card.strokeWidth
                 )
         )

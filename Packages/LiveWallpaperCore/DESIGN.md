@@ -39,8 +39,9 @@ The symbol rides an overlay, so its own bounds never size the glass. Its point s
 
 ## Typography — `DesignTokens.Typography`
 
-24 ad-hoc sizes collapse into 7 roles (+3 emphasized variants). Dynamic-Type
-styles auto-scale with accessibility; `badge` is the only fixed size.
+Shared roles keep body and metadata on the native semantic text styles. The
+user-approved page/sheet/modal hierarchy is fixed at 17/20/22pt semibold
+(2026-09-30); card, section and empty-state titles retain their own roles.
 
 | Token | Font | ≈pt | Use | Absorbs |
 | --- | --- | --- | --- | --- |
@@ -50,14 +51,29 @@ styles auto-scale with accessibility; `badge` is the only fixed size.
 | `body` | `.body` | 13 | body copy, form labels | 12, 13 |
 | `bodyEmphasized` | `.body.semibold` | 13 | card / list-row titles | 13 (semibold) |
 | `sectionTitle` | `.title3.semibold` | 15 | group & inspector headers | 14, 15, 16 |
-| `pageTitle` | `.title2` | 17 | page / nav / sheet titles | 17, 18, 20, 22 |
-| `hero` | `.largeTitle` | 26 | empty-state / onboarding | 24–56 |
+| `pageTitle` | fixed semibold | 17 | page headings | 17 |
+| `sheetTitle` | fixed semibold | 20 | sheet headings | 20 |
+| `modalTitle` | fixed semibold | 22 | custom modal headings | 22 |
+| `subheadline` | `.subheadline` | 11 | compact secondary copy, small capsule actions | 11 |
+| `callout` | `.callout` | 12 | regular capsule actions | 12 |
+| `hero` | `.largeTitle` | 26 | deliberately prominent hero copy | 24–56 |
 | `metric` | `.caption.monospacedDigit()` | 10 | inline numeric readouts: slider %, fps, gauges | numeric readouts |
 | `metricEmphasized` | `.callout.monospaced.semibold.monospacedDigit()` | 12 | compact headline metrics in menu/status chrome | 12 (semibold monospaced) |
 | `code` | `.body.monospaced` | 13 | paths, commands, IDs, technical text | monospaced text |
 | `codeCaption` | `.caption.monospaced` | 10 | dense technical text: log lines, paths, IDs | caption-sized monospaced |
 
 > ≈pt = measured macOS text-style metrics at default size (caption1/caption2 = 10, subheadline = 11, callout = 12, body = 13). Lint tooling and exact-equivalence judgments must use these measured values.
+
+The shared `IllustratedEmptyState` uses `bodyEmphasized` for a standard title,
+`subheadline.semibold` for compact titles, and `caption` for supporting copy.
+Its standalone glyph is `EmptyState.iconSize` (44pt), or `compactIconSize`
+(28pt) in an inspector. Guided library onboarding can retain its illustration
+and 17pt page title. Compact sidebar group labels use `captionEmphasized`;
+Form and inspector section headers use `sectionTitle`.
+
+Library thumbnail titles use `EditDesk.Typography.cardTitle` (12pt semibold),
+one line with hover marquee. `ThumbnailTitleBand` adds no second backing
+surface over the existing thumbnail/card chrome.
 
 ## Color — `DesignTokens.Colors`
 
@@ -81,7 +97,8 @@ System `NSColor`-backed → automatic light/dark + Increase Contrast.
 
 ## Spacing & corners (existing)
 
-`Spacing` xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32
+`Spacing` xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · cardInset 14
+`GroupBox.inset` = `Spacing.md` (12), shared by panel containers and action tiles.
 `Corner` sm 6 · md 10 · lg 14 (content cards) · xl 18 (floating chrome)
 `LibraryFilterBar.controlHeight` 28 (HIG macOS large control height): every control on a filter bar — `FilterChip`, `LibrarySearchField`, sort and filter menus, `GlassIconButton(size: .large)` — is this tall.
 
@@ -110,7 +127,7 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Colors.textCapsule` | `#c8c8c8` | SCREENS S1 (方案胶囊 / status text) |
 | `Colors.success` | `#4ade80` | README Tokens #3 |
 | `Colors.warning` | `#f5b544` | README Tokens #3 |
-| `Colors.sceneGroupLayers/Effects/Colors` | `#60a5fa` / `#c084fc` / `#f5b544` | S6 scene sections; adaptive light `#2563eb` / `#9333ea` / `#b0760c` |
+| `Colors.sceneGroupLayers/Colors` | `#60a5fa` / `#f5b544` | S6 scene sections; adaptive light `#2563eb` / `#b0760c` |
 | `Colors.danger` | `#ff8080` | README Tokens #3 |
 | `Colors.link` | `#9ab4ff` | README Tokens #3 |
 | `Colors.strokeRegular` | white `.08`; Increase Contrast → `.35` | README Tokens #4; GAP_ANALYSIS §6 |
@@ -136,8 +153,6 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
-| `Colors.fillSecondaryButton` | white `.10` | onboarding card secondary button (SCREENS S9) |
-| `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | onboarding card primary button (SCREENS S9) |
 | `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) | SCREENS S8 (Workshop grid card info band) |
 | `Colors.inLibraryBadgeFill` | `rgba(74,222,128,.9)` (fixed) | SCREENS S8 (in-library ✓ disc) |
 | `Colors.inLibraryBadgeGlyph` | black (fixed) | SCREENS S8 (in-library ✓ glyph) |
@@ -156,7 +171,6 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Corner.statusExpanded` | 14 | SCREENS S1 (status capsule, expanded) |
 | `Corner.modal` | 18 | README Tokens #5 |
 | `Corner.floatPanel` | 16 | SCREENS S5 |
-| `Corner.button` | 9 | onboarding card buttons (SCREENS S9) |
 | `Corner.chip` | 5 | SCREENS S4/S5 (preview chips, float thumbnails) |
 | `Shadow.shell` | `0 5px 28px rgba(0,0,0,.22)`; radius = blur ÷ 2 | README Tokens #6 |
 | `Shadow.modal` | `0 10px 48px rgba(0,0,0,.38)`, light `.16`; radius = blur ÷ 2 | README Tokens #6 |
@@ -183,22 +197,19 @@ Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex,
 | `Typography.body` | 13pt | README Tokens #8 |
 | `Typography.cardTitle` | 12pt semibold | README Tokens #8 |
 | `Typography.stageTitle` | 15pt semibold | README Tokens #8 |
-| `Typography.modalTitle` | 22pt bold | README Tokens #8 |
+| `Typography.modalTitle` | alias of `DesignTokens.Typography.modalTitle` (22pt semibold) | user title hierarchy 2026-09-30 |
 | `Typography.navItem` | 13pt | SCREENS S1 (nav pill item) |
 | `Typography.floatName` | 11pt semibold | SCREENS S5 (thumbnail name) |
 | `Typography.dropLabel` | 12pt bold | SCREENS S5 (「松手替换」) |
 | `Typography.footnote` | 11pt | SCREENS S9 (onboarding card footnote) |
-| `Typography.onboardingTitle` | 17pt bold | SCREENS S9 (page title over an onboarding card) |
-| `Typography.wizardTitle` | 22pt bold | SCREENS S9 (Steam wizard title) |
-| `Typography.onboardingIcon` | 22pt | SCREENS S9 (onboarding card icon) |
-| `Typography.onboardingButton` | 12pt bold | SCREENS S9 (onboarding card buttons) |
+| `Typography.wizardTitle` | alias of `DesignTokens.Typography.modalTitle` (22pt semibold) | SCREENS S9 (Steam wizard title) |
 | `Typography.workshopCardTitle` | 13pt semibold | SCREENS S8 (Workshop grid card title) |
 
 Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
 
 ## Hard rules
 
-1. **No inline fonts** for text. Never `.font(.system(size:))` / `.font(.custom())` on `Text`/`Label` — use `DesignTokens.Typography`. (SF Symbol glyph sizing is exempt: a standalone `Image(systemName:)` may use `.font(.system(size:))` for precise sizing, or adopt a Typography token when it sits inline with text so the two scale together.)
+1. **No inline fonts** for text. Never bare `.font(.caption)` (or other semantic styles), `.font(.system(size:))` / `.font(.custom())` on `Text`/`Label` — use `DesignTokens.Typography`. (SF Symbol glyph sizing is exempt: a standalone `Image(systemName:)` may use `.font(.system(size:))` for precise sizing, or adopt a Typography token when it sits inline with text so the two scale together.)
 2. **No literal colors** for semantic elements. No `.orange` / `.yellow` / `.white` / `Color(red:…)` — use `DesignTokens.Colors`. This still applies to foreground colors layered over user media (video/thumbnail/scene previews) that must contrast the content rather than the theme — use `overlayForeground` / `onAccentFill`, not a raw literal.
 3. **Tabular digits** for live-updating numbers — use `Typography.metric` (or `.monospacedDigit()`) so columns don't jitter.
 4. **Adaptive surfaces.** Use `AdaptiveGlass` / `GalleryTileChrome`, never hardcoded `.ultraThinMaterial`; it honors Reduce Transparency.
@@ -210,3 +221,12 @@ Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geomet
 10. **Pages use a skeleton template** (contracts §3.1): settings form → `Form` + `.settingsFormChrome()`; library pages → `LibraryToolbarRow` (filters, search, sort, actions) + `LibraryGalleryGrid` + `LibraryStatusBar`; sheets → shared header + `SheetFooterBar`; popovers → `.settingsPopoverChrome`; empty states → `IllustratedEmptyState`. New pages that fit none: ask before inventing a skeleton.
 11. **Glass placement is version-tiered by position** (contracts §4): chrome/badges/toasts go through `AdaptiveGlass`; Form content areas and inspectors never take glass (HIG: no Liquid Glass in the content layer); the appex (deploys at 26.0) writes the 26+ path unconditionally. Enforced by `glass_outside_wrapper` / `material_outside_wrapper` / `appex_tautological_availability` lint rules.
 12. **One component per role — with one named exemption.** `ShelfCard` (Edit Desk stage/shelf) is a deliberate second card implementation beside `GalleryTileChrome`: the shelf animates 14 tilted cards in a CALayer tree, where SwiftUI views can't hit the frame budget. It must build its colors from `DesignTokens.EditDesk` values converted to `CGColor`, never a fresh literal. No other CALayer card may be added without extending this exemption (GAP_ANALYSIS.md D7).
+
+The font and corner lint rules run through `scripts/lint_changed_lines.py`:
+existing untouched violations do not block a new change. `token_bypass_bare_font`
+checks direct semantic styles, `token_bypass_text_point_size` checks simple
+Text/Label modifier chains, and `token_bypass_literal_corner_radius` also checks
+`.roundedRectangle(number)`. Complex point-size expressions still require review;
+standalone Image symbols retain the documented precise-size exemption.
+
+Run `python3 scripts/check_ui_lint_probes.py` after editing these UI guards.

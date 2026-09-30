@@ -35,8 +35,8 @@ struct GalleryTileChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
                         isSelected
-                            ? Color.accentColor
-                            : Color.primary.opacity(DesignTokens.Card.strokeOpacity),
+                            ? DesignTokens.Colors.accent
+                            : DesignTokens.Colors.textPrimary.opacity(DesignTokens.Card.strokeOpacity),
                         lineWidth: isSelected ? 2.5 : DesignTokens.Card.strokeWidth
                     )
             }
@@ -44,7 +44,7 @@ struct GalleryTileChrome: ViewModifier {
             // re-rasterised every frame of the spring, where opacity and offset are not.
             .shadow(
                 color: isSelected
-                    ? Color.accentColor.opacity(DesignTokens.Card.selectedShadowOpacity)
+                    ? DesignTokens.Colors.accent.opacity(DesignTokens.Card.selectedShadowOpacity)
                     : .black.opacity(isHovering
                                      ? DesignTokens.Card.shadowOpacity
                                      : DesignTokens.Card.restShadowOpacity),

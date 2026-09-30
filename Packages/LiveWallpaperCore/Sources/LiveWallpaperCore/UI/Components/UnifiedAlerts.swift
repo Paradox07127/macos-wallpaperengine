@@ -54,7 +54,7 @@ private struct TypedErrorAlertModifier<E: Error>: ViewModifier {
                let suggestion = localized.recoverySuggestion {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
                     Text(verbatim: localized.errorDescription ?? value.localizedDescription)
-                    Text(verbatim: suggestion).font(.caption)
+                    Text(verbatim: suggestion).font(DesignTokens.Typography.caption)
                 }
             } else {
                 Text(verbatim: value.localizedDescription)

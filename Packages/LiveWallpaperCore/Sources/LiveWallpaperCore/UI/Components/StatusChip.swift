@@ -51,9 +51,9 @@ public struct StatusChip: View {
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, DesignTokens.Spacing.sm)
         .padding(.vertical, 3)
-        .background(Capsule().fill(tint.opacity(0.12)))
+        .background(Capsule().fill(tint.opacity(DesignTokens.Opacity.selectedFill)))
         .fixedSize()
     }
 }

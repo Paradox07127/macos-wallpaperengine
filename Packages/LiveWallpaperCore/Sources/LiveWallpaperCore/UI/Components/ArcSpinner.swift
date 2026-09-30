@@ -21,7 +21,7 @@ public struct ArcSpinner: View {
     }
 
     public var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DesignTokens.Spacing.md) {
             ZStack {
                 Circle()
                     .stroke(tint.opacity(0.12), lineWidth: lineWidth)
@@ -50,11 +50,11 @@ public struct ArcSpinner: View {
 
             if let progressText {
                 Text(verbatim: progressText)
-                    .font(.caption.monospacedDigit())
+                    .font(DesignTokens.Typography.metric)
                     .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(0.92))
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DesignTokens.Spacing.md)
+                    .padding(.vertical, DesignTokens.Spacing.xs)
                     .thumbnailBadgeGlass()
                     .accessibilityLabel(Text(verbatim: progressText))
             }

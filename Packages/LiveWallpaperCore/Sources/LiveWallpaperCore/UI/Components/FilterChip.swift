@@ -6,12 +6,12 @@ struct FilterChipBackground: ViewModifier {
     func body(content: Content) -> some View {
         if isSelected {
             content
-                .background(Capsule().fill(Color.accentColor.opacity(DesignTokens.Opacity.selectedFill)))
-                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(DesignTokens.Opacity.strongStroke), lineWidth: 1))
+                .background(Capsule().fill(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.selectedFill)))
+                .overlay(Capsule().strokeBorder(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.strongStroke), lineWidth: 1))
         } else {
             content
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(DesignTokens.Opacity.activeFill), lineWidth: 0.5))
+                .background(Capsule().fill(DesignTokens.Colors.textPrimary.opacity(0.04)))
+                .overlay(Capsule().strokeBorder(DesignTokens.Colors.textPrimary.opacity(DesignTokens.Opacity.activeFill), lineWidth: 0.5))
         }
     }
 }
@@ -38,8 +38,8 @@ public struct FilterChip: View {
             title
                 .font(DesignTokens.Typography.caption)
                 .lineLimit(1)
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                .padding(.horizontal, 10)
+                .foregroundStyle(isSelected ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
+                .padding(.horizontal, DesignTokens.Spacing.md)
                 .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
                 .filterChipBackground(isSelected: isSelected)
         }

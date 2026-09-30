@@ -69,7 +69,7 @@ private struct GlassToolbarItemStyle: ButtonStyle {
                 .frame(minWidth: GlassToolbarMetrics.height, minHeight: GlassToolbarMetrics.height)
                 .background(
                     Capsule()
-                        .fill(Color.primary.opacity(fillOpacity))
+                        .fill(DesignTokens.Colors.textPrimary.opacity(fillOpacity))
                         .padding(DesignTokens.Spacing.xxs)
                 )
                 .contentShape(Capsule())
