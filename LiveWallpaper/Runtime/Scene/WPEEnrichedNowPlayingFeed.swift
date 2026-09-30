@@ -81,8 +81,8 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
     private func makeSourceDelivery() -> @MainActor @Sendable (MonitorNowPlayingState?) -> Void {
         let generation = sourceGeneration
         return { [weak self] state in
-            guard let self, self.sourceGeneration == generation else { return }
-            self.fanOut(state)
+            guard let self, sourceGeneration == generation else { return }
+            fanOut(state)
         }
     }
 
