@@ -10,6 +10,74 @@ import Testing
 
 @Suite("WPE scene camera motion")
 struct WPECameraMotionTests {
+    @Test("Camera origin consumes current bound script properties without losing the authored seed",
+          arguments: [SIMD2<Double>(0, 0), SIMD2<Double>(-0.25, 0.125)])
+    func scriptResolvedCameraOrigin(properties: SIMD2<Double>) throws {
+        let seed = SIMD3<Double>(2434.38477, 725.25116, 500)
+        let script = """
+        export var scriptProperties = createScriptProperties()
+            .addSlider({name: 'x', value: 0.5, min: -1, max: 1})
+            .addSlider({name: 'y', value: 0.5, min: -1, max: 1}).finish();
+        export function update(value) {
+            value.x = scriptProperties.x * engine.canvasSize.x;
+            value.y = scriptProperties.y * engine.canvasSize.y;
+            return value;
+        }
+        """
+        let data = try JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160]],
+            "objects": [["id": 1_297_271, "camera": "default", "zoom": 1,
+                         "origin": ["value": "2434.38477 725.25116 500", "script": script,
+                                    "scriptproperties": ["x": ["user": "cameraX", "value": 0.5],
+                                                         "y": ["user": "cameraY", "value": 0.5]]]]],
+        ])
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["cameraX": .number(properties.x), "cameraY": .number(properties.y)])
+        let expected = SIMD3<Double>(properties.x * 3840, properties.y * 2160, 500)
+        #expect(document.camera.eye == expected)
+        #expect(document.camera.center == expected + SIMD3(0, 0, -1))
+        let motion = try #require(document.cameraMotion)
+        #expect(motion.origin == expected)
+        #expect(motion.seed.origin == expected)
+        #expect(document.authoredCameraObjects.first?.origin == .value(seed))
+        #expect(document.authoredCameraObjects.first?.sourceJSON["origin"]?["script"] == .string(script))
+
+        // An image centred on that camera must still fill the scene. This catches
+        // the black rectangle even when compilation and frame production succeed.
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let layer = makeLayer(geometry: geometry(origin: SIMD3(1920 + expected.x, 1080 + expected.y, 0),
+                                                 size: CGSize(width: 3840, height: 2160)), passes: [])
+        let draw = WPERenderPass(id: "background", phase: .material, shader: "solidlayer", source: .asset("white"), target: .scene,
+                                 textures: [:], binds: [:], constants: [:], combos: [:], blending: "normal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [.init(pass: draw, shader: nil,
+                                                                                                  textureBindings: [:], comboValues: [:], uniformValues: ["g_Color": .vector([1, 0, 0, 1])])])])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection,
+                                            sceneCamera: document.camera, sceneMotion: motion.seed)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        descriptor.storageMode = .shared
+        let white = try #require(device.makeTexture(descriptor: descriptor))
+        let bytes: [UInt8] = [255, 255, 255, 255]
+        bytes.withUnsafeBytes { white.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 4) }
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 64, height: 36), textures: ["white": white], cameraUniforms: camera)
+        for point in [SIMD2(2, 2), SIMD2(61, 2), SIMD2(2, 33), SIMD2(61, 33)] {
+            #expect(try red(output, at: point, executor: executor) > 200)
+        }
+    }
+
+    @Test("A dynamic camera origin script keeps its authored seed during static parsing")
+    func dynamicCameraOriginRemainsUnresolved() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160]],
+            "objects": [["id": 2, "camera": "default", "origin": ["value": "12 34 500",
+                                                                  "script": "export function update(value) { value.x += engine.frametime; return value; }"]]],
+        ])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        #expect(document.camera.eye == SIMD3<Double>(12, 34, 500))
+        #expect(document.cameraMotion?.origin == SIMD3<Double>(12, 34, 500))
+    }
+
     @Test("Loading time does not consume the intro; the first draw retains the seed")
     func firstDrawClockAndSuspend() throws {
         let animated = try #require(WPEValueParser.animatedValue(["value": 4.5, "animation": ["c0": [["frame": 0, "value": 3], ["frame": 10, "value": 1]], "options": ["fps": 10, "length": 10, "mode": "single"]]]))
