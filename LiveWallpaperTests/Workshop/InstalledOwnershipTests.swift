@@ -11,17 +11,7 @@ struct InstalledOwnershipCharacterizationTests {
         let scene = entry(id: "100", type: .scene, location: .cache)
         let video = entry(id: "local-video", type: .video, location: .sourceFolder)
         let packagedVideo = entry(id: "300", type: .video, location: .sourceFolder)
-        let app = entry(id: "200", type: .application, location: .sourceFolder)
 
-        #expect(!WorkshopFilterMath.isNarrowing(Set<WPELibraryTypeKind>(), total: 4))
-        #expect(!WorkshopFilterMath.isNarrowing(Set(WPELibraryTypeKind.allCases), total: 4))
-        #expect(WorkshopFilterMath.isNarrowing(Set([WPELibraryTypeKind.scene]), total: 4))
-
-        #expect(WPELibraryTypeKind.scene.matches(scene))
-        #expect(WPELibraryTypeKind.video.matches(video))
-        #expect(WPELibraryTypeKind.unsupported.matches(app))
-        #expect(InstalledSource.steamWorkshop.matches(scene))
-        #expect(InstalledSource.local.matches(video))
         #expect(InstalledStorageKind.managed.matches(scene))
         #expect(InstalledStorageKind.linked.matches(video))
         #expect(InstalledStorageKind.linked.matches(packagedVideo))
@@ -139,49 +129,15 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(model.contains("@Observable"))
         #expect(model.contains("final class InstalledLibraryModel"))
         #expect(model.contains("let lifecycleOwner: InstalledPageLifecycleOwner"))
-        #expect(model.contains("lifecycleOwner.installDragEndMonitors"))
         #expect(model.contains("lifecycleOwner.replaceUpdate"))
         #expect(model.components(separatedBy: "lifecycleOwner.canContinue(ticket)").count - 1 == 2)
         #expect(model.contains("lifecycleOwner.commitUpdate(replacement)"))
     }
 
-    @Test("drag monitor replacement, teardown and deinit leave no dynamic monitor")
-    @MainActor
-    func dragMonitorLifecycleIsBounded() {
-        let probe = WorkshopDragMonitorProbe()
-        let hooks = InstalledPageLifecycleOwner.DragMonitorHooks(
-            installLocal: { _ in probe.install() },
-            installGlobal: { _ in probe.install() },
-            remove: { probe.remove($0) }
-        )
-        var owner: InstalledPageLifecycleOwner? = InstalledPageLifecycleOwner(
-            monitorHooks: hooks
-        )
-
-        owner?.installDragEndMonitors {}
-        #expect(owner?.activeDragMonitorCount == 2)
-        #expect(probe.activeCount == 2)
-
-        owner?.installDragEndMonitors {}
-        #expect(owner?.activeDragMonitorCount == 2)
-        #expect(probe.activeCount == 2)
-        #expect(probe.removeCount == 2)
-
-        owner?.tearDown()
-        #expect(owner?.activeDragMonitorCount == 0)
-        #expect(probe.activeCount == 0)
-
-        owner?.installDragEndMonitors {}
-        #expect(probe.activeCount == 2)
-        owner = nil
-        #expect(probe.activeCount == 0)
-        #expect(probe.removeCount == 6)
-    }
-
     @Test("replacement and cancellation reject late generation publication")
     @MainActor
     func updateLifecycleIsNewestWins() async {
-        let owner = InstalledPageLifecycleOwner(monitorHooks: .noOp)
+        let owner = InstalledPageLifecycleOwner()
         let gate = WorkshopInstalledUpdateGate()
         var publications: [String] = []
 
@@ -302,7 +258,7 @@ struct InstalledOwnershipCharacterizationTests {
         )
         let model = InstalledLibraryModel(
             dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+            lifecycleOwner: InstalledPageLifecycleOwner()
         )
 
         model.onAppear()
@@ -364,7 +320,7 @@ struct InstalledOwnershipCharacterizationTests {
         )
         let model = InstalledLibraryModel(
             dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+            lifecycleOwner: InstalledPageLifecycleOwner()
         )
 
         model.onAppear()
@@ -386,81 +342,6 @@ struct InstalledOwnershipCharacterizationTests {
         model.onDisappear()
     }
 
-    @Test("library model owns filtering and refreshes same-ID selection to the new import")
-    @MainActor
-    func libraryModelFilterAndSelectionIdentity() {
-        let old = entry(id: "100", title: "Beta", type: .scene, importedAt: 10)
-        let other = entry(id: "200", title: "Alpha", type: .video, importedAt: 20)
-        let store = WorkshopInstalledLibraryStoreProbe(
-            entries: [old, other],
-            remoteEpochs: ["100": 30]
-        )
-        let model = InstalledLibraryModel(
-            dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
-        )
-
-        model.onAppear()
-        model.sortOrder = .updateAvailable
-        #expect(model.visibleEntries.map(\.id) == ["100", "200"])
-        model.searchText = "alpha"
-        #expect(model.visibleEntries.map(\.id) == ["200"])
-        model.searchText = ""
-        model.isolateType(.scene)
-        #expect(model.visibleEntries.map(\.id) == ["100"])
-        model.resetFilters()
-
-        model.select(old)
-        let reimported = entry(id: "100", title: "Beta refreshed", type: .scene, importedAt: 40)
-        store.entries = [reimported, other]
-        model.historyDidChange()
-        #expect(model.selectedEntry == reimported)
-        #expect(model.selectedEntry != old)
-        model.onDisappear()
-    }
-
-    @Test("re-import and disappear reject cancellation-insensitive apply publication")
-    @MainActor
-    func applyPublicationUsesEntryAndAppearanceTickets() async {
-        let old = entry(id: "same-id", title: "Old", importedAt: 10)
-        let store = WorkshopInstalledLibraryStoreProbe(entries: [old])
-        let model = InstalledLibraryModel(
-            dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
-        )
-        let gate = WorkshopInstalledUpdateGate()
-        model.onAppear()
-        model.select(old)
-
-        model.startApply(entry: old) {
-            _ = await gate.suspend("reimport-apply")
-            return .wpeImportFailed("probe")
-        }
-        await gate.waitUntilSuspended("reimport-apply")
-        let reimported = entry(id: "same-id", title: "New", importedAt: 20)
-        store.entries = [reimported]
-        model.historyDidChange()
-        await gate.resume("reimport-apply", value: "failed")
-        await waitForCommandDrain(model)
-        #expect(model.errorMessage == nil)
-        #expect(model.selectedEntry == reimported)
-
-        model.startApply(entry: reimported) {
-            _ = await gate.suspend("disappear-apply")
-            return .wpeImportFailed("probe")
-        }
-        await gate.waitUntilSuspended("disappear-apply")
-        let dropTicket = model.makeDropTicket()
-        model.onDisappear()
-        await gate.resume("disappear-apply", value: "failed")
-        await Task.yield()
-        #expect(model.errorMessage == nil)
-        #expect(model.activeApplyCommandCount == 0)
-        #expect(model.consumeDrop(dropTicket, workshopID: reimported.id, loadFailed: false) == nil)
-    }
-
-
-
     @Test("a refused mutation gate leaves the library record and bookmark intact")
     @MainActor
     func deleteRefusedByMutationGateKeepsLocalRecords() async {
@@ -470,7 +351,7 @@ struct InstalledOwnershipCharacterizationTests {
         probe.repositoryThrows = true
         let model = InstalledLibraryModel(
             dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+            lifecycleOwner: InstalledPageLifecycleOwner()
         )
         model.onAppear()
 
@@ -483,7 +364,6 @@ struct InstalledOwnershipCharacterizationTests {
         // Not the post-removal "files couldn't be deleted" message, which names
         // the title: nothing was removed, so nothing was orphaned.
         #expect(model.errorMessage?.contains("Fixture") != true)
-        #expect(model.visibleEntries == [target])
         model.onDisappear()
     }
 
@@ -497,7 +377,7 @@ struct InstalledOwnershipCharacterizationTests {
         probe.gate = (gate, "delete-100")
         let model = InstalledLibraryModel(
             dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+            lifecycleOwner: InstalledPageLifecycleOwner()
         )
         model.onAppear()
 
@@ -505,8 +385,6 @@ struct InstalledOwnershipCharacterizationTests {
         await gate.waitUntilSuspended("delete-100")
         #expect(probe.log == ["repository:100"])
         #expect(store.entries == [target])
-        // Optimistic hide: the row is gone while the repository call runs.
-        #expect(model.visibleEntries.isEmpty)
 
         await gate.resume("delete-100", value: "deleted")
         await Self.waitUntil { probe.log.count >= 3 }
@@ -526,7 +404,7 @@ struct InstalledOwnershipCharacterizationTests {
         probe.isMutating = true
         let model = InstalledLibraryModel(
             dependencies: store.dependencies,
-            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+            lifecycleOwner: InstalledPageLifecycleOwner()
         )
         model.onAppear()
 
@@ -536,7 +414,6 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(probe.log.isEmpty)
         #expect(store.entries == [target])
         #expect(probe.bookmarks == ["100"])
-        #expect(model.visibleEntries == [target])
         model.onDisappear()
     }
 
@@ -546,14 +423,6 @@ struct InstalledOwnershipCharacterizationTests {
             await Task.yield()
         }
         #expect(condition())
-    }
-
-    @MainActor
-    private func waitForCommandDrain(_ model: InstalledLibraryModel) async {
-        for _ in 0..<100 where model.activeApplyCommandCount != 0 {
-            await Task.yield()
-        }
-        #expect(model.activeApplyCommandCount == 0)
     }
 
     private func installedModelSource() throws -> String {
@@ -818,38 +687,6 @@ private final class WorkshopMetadataResponseGate: @unchecked Sendable {
         releasedCount = .max
         condition.broadcast()
         condition.unlock()
-    }
-}
-
-@MainActor
-private final class WorkshopDragMonitorProbe {
-    private final class Token {}
-
-    private var activeTokens: Set<ObjectIdentifier> = []
-    private(set) var removeCount = 0
-
-    var activeCount: Int { activeTokens.count }
-
-    func install() -> Any {
-        let token = Token()
-        activeTokens.insert(ObjectIdentifier(token))
-        return token
-    }
-
-    func remove(_ token: Any) {
-        guard let token = token as? Token else {
-            Issue.record("Unexpected drag monitor token")
-            return
-        }
-        if activeTokens.remove(ObjectIdentifier(token)) != nil {
-            removeCount += 1
-        }
-    }
-}
-
-private extension InstalledPageLifecycleOwner.DragMonitorHooks {
-    static var noOp: Self {
-        Self(installLocal: { _ in nil }, installGlobal: { _ in nil }, remove: { _ in })
     }
 }
 

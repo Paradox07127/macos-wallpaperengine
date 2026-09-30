@@ -61,10 +61,6 @@ final class InstalledLibraryModel {
         let deleteSharedRepositoryItem: @MainActor (String) async throws -> SteamDeleteResult?
     }
 
-    struct DropTicket: Equatable, Sendable {
-        fileprivate let appearanceGeneration: UInt64
-    }
-
     private struct DeleteTicket: Equatable, Sendable {
         let token: UUID
         let appearanceGeneration: UInt64
@@ -79,27 +75,13 @@ final class InstalledLibraryModel {
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored let lifecycleOwner: InstalledPageLifecycleOwner
     @ObservationIgnored private var updateLaunchTask: Task<Void, Never>?
-    @ObservationIgnored private var applyTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var deleteHandles: [String: DeleteHandle] = [:]
     @ObservationIgnored private var appearanceGeneration: UInt64 = 0
     @ObservationIgnored private var isActive = false
 
     private(set) var entries: [WPEHistoryEntry] = []
-    var searchText = ""
-    private(set) var selectedTypes = Set(WPELibraryTypeKind.allCases)
-    private(set) var selectedSources = Set(InstalledSource.allCases)
-    private(set) var selectedStorage = Set(InstalledStorageKind.allCases)
-    var showFilters = false
-    var sortOrder: WPELibrarySortOrder = .recommended
     var errorMessage: String?
-    var pendingDelete: WPEHistoryEntry?
-    private(set) var selectedEntry: WPEHistoryEntry?
-    var inspectorHidden = false
-    private(set) var isDraggingEntry = false
     private(set) var updatedWorkshopIDs: Set<String> = []
-    /// Optimistic hide: rows whose repository delete is in flight, before the
-    /// history record has been removed.
-    private(set) var deletingWorkshopIDs: Set<String> = []
     private var cachedRemoteUpdateEpochs: [String: Double] = [:]
 
     static let remoteUpdateEpochsKey = "loomscreen.workshop.updateCheck.remoteEpochs.v1"
@@ -116,46 +98,8 @@ final class InstalledLibraryModel {
 
     deinit {
         updateLaunchTask?.cancel()
-        applyTasks.values.forEach { $0.cancel() }
         deleteHandles.values.forEach { $0.task.cancel() }
     }
-
-    var visibleEntries: [WPEHistoryEntry] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = entries.filter { entry in
-            !deletingWorkshopIDs.contains(entry.origin.workshopID)
-                && typeMatches(entry)
-                && sourceMatches(entry)
-                && storageMatches(entry)
-                && matchesSearch(entry, query: query)
-        }
-        return WPEInstalledLibrarySorter.sorted(
-            filtered,
-            by: sortOrder,
-            updatedWorkshopIDs: updatedWorkshopIDs
-        )
-    }
-
-    var activeFilterCount: Int {
-        var count = 0
-        if WorkshopFilterMath.isNarrowing(selectedTypes, total: WPELibraryTypeKind.allCases.count) {
-            count += 1
-        }
-        if WorkshopFilterMath.isNarrowing(selectedSources, total: InstalledSource.allCases.count) {
-            count += 1
-        }
-        if WorkshopFilterMath.isNarrowing(selectedStorage, total: InstalledStorageKind.allCases.count) {
-            count += 1
-        }
-        return count
-    }
-
-    #if DEBUG
-    /// Test-only introspection; no production reader.
-    var activeApplyCommandCount: Int {
-        applyTasks.count
-    }
-    #endif
 
     func onAppear() {
         if !isActive {
@@ -174,140 +118,24 @@ final class InstalledLibraryModel {
         updateLaunchTask?.cancel()
         updateLaunchTask = nil
         lifecycleOwner.tearDown()
-        applyTasks.values.forEach { $0.cancel() }
-        applyTasks.removeAll()
-        isDraggingEntry = false
     }
 
     func historyDidChange() {
         reload()
         reconcileUpdateFlags()
-        refreshSelectedEntry()
         scheduleUpdateCheck()
-    }
-
-    func select(_ entry: WPEHistoryEntry) {
-        if selectedEntry?.id == entry.id {
-            selectedEntry = nil
-        } else {
-            selectedEntry = entry
-            inspectorHidden = false
-        }
-    }
-
-    func clearSelection() {
-        selectedEntry = nil
-    }
-
-    func clearSelectionAndBrowse(tag: String, action: (String) -> Void) {
-        selectedEntry = nil
-        action(tag)
-    }
-
-    func requestDelete(_ entry: WPEHistoryEntry) {
-        pendingDelete = entry
-    }
-
-    func cancelDelete() {
-        pendingDelete = nil
-    }
-
-    /// Deselecting a category's last chip snaps back to all-selected: an empty set
-    /// already matched everything, but every chip would render struck through.
-    func toggleType(_ kind: WPELibraryTypeKind) {
-        if selectedTypes.contains(kind) {
-            selectedTypes.remove(kind)
-            if selectedTypes.isEmpty {
-                selectedTypes = Set(WPELibraryTypeKind.allCases)
-            }
-        } else {
-            selectedTypes.insert(kind)
-        }
-    }
-
-    func isolateType(_ kind: WPELibraryTypeKind) {
-        selectedTypes = [kind]
-    }
-
-    func toggleSource(_ source: InstalledSource) {
-        if selectedSources.contains(source) {
-            selectedSources.remove(source)
-            if selectedSources.isEmpty {
-                selectedSources = Set(InstalledSource.allCases)
-            }
-        } else {
-            selectedSources.insert(source)
-        }
-    }
-
-    func isolateSource(_ source: InstalledSource) {
-        selectedSources = [source]
-    }
-
-    func toggleStorage(_ storage: InstalledStorageKind) {
-        if selectedStorage.contains(storage) {
-            selectedStorage.remove(storage)
-            if selectedStorage.isEmpty {
-                selectedStorage = Set(InstalledStorageKind.allCases)
-            }
-        } else {
-            selectedStorage.insert(storage)
-        }
-    }
-
-    func isolateStorage(_ storage: InstalledStorageKind) {
-        selectedStorage = [storage]
-    }
-
-    func resetFilters() {
-        selectedTypes = Set(WPELibraryTypeKind.allCases)
-        selectedSources = Set(InstalledSource.allCases)
-        selectedStorage = Set(InstalledStorageKind.allCases)
     }
 
     func reload() {
         entries = dependencies.loadEntries()
         dependencies.prefetchPreviewURLs(entries)
-        invalidatePendingDeleteIfStale()
         invalidateDeletesForReimports()
-    }
-
-    /// `operation` returns the error that stopped the apply, or nil on success.
-    func startApply(
-        entry: WPEHistoryEntry,
-        operation: @escaping @MainActor () async -> AppError?
-    ) {
-        errorMessage = nil
-        let token = UUID()
-        let generation = appearanceGeneration
-        let identity = WorkshopInstalledEntryIdentity(entry)
-        let task = Task { @MainActor [weak self] in
-            let failure = await operation()
-            guard let self else { return }
-            defer { self.applyTasks.removeValue(forKey: token) }
-            guard canPublish(generation: generation, identity: identity) else { return }
-            if let failure {
-                errorMessage = failure.errorDescription.map {
-                    String(
-                        localized: "Couldn't apply \(entry.origin.title) — \($0)",
-                        bundle: .appLanguage, comment: "Workshop installed apply failure. Placeholders are the wallpaper title and why it failed."
-                    )
-                } ?? String(
-                    localized: "Couldn't apply \(entry.origin.title).",
-                    bundle: .appLanguage, comment: "Workshop installed apply failure. Placeholder is the wallpaper title."
-                )
-            }
-            reload()
-            refreshSelectedEntry()
-        }
-        applyTasks[token] = task
     }
 
     func performDelete(_ entry: WPEHistoryEntry, services: DeleteServices) {
         errorMessage = nil
         let identity = WorkshopInstalledEntryIdentity(entry)
         let workshopID = entry.origin.workshopID
-        pendingDelete = nil
 
         // A download or update of this id holds the repository mutation gate, so the
         // delete would only fail there — after the library record was already gone.
@@ -328,9 +156,7 @@ final class InstalledLibraryModel {
             appearanceGeneration: appearanceGeneration,
             identity: identity
         )
-        // The row hides now but the history/bookmark removal waits for the repository
-        // call, so a refused gate would leave a record pointing at files still there.
-        deletingWorkshopIDs.insert(workshopID)
+        // History/bookmark removal waits for the repository call, so a refused gate keeps the record of files still on disk.
         // Keep cleanup alive when the transient page disappears.
         let task = Task { @MainActor [self] in
             guard canContinueDeleteCleanup(ticket) else {
@@ -375,11 +201,7 @@ final class InstalledLibraryModel {
     ) -> Bool {
         guard services.removeImportIfMatching(identity) else {
             reload()
-            refreshSelectedEntry()
             return false
-        }
-        if selectedEntry.map(WorkshopInstalledEntryIdentity.init) == identity {
-            selectedEntry = nil
         }
         if services.containsBookmark(identity.workshopID) {
             services.removeBookmarks(identity.workshopID)
@@ -416,48 +238,6 @@ final class InstalledLibraryModel {
             }
         }
         NSWorkspace.shared.activateFileViewerSelecting([folder])
-    }
-
-    func canAddBookmark(_ entry: WPEHistoryEntry) -> Bool {
-        let origin = entry.origin
-        guard let entryFile = origin.entryFile, !entryFile.isEmpty else { return false }
-        switch origin.resourceLocation {
-        case .cache:
-            return origin.originalType == .video || origin.originalType == .web || origin.originalType == .scene
-        case .sourceFolder:
-            return origin.originalType == .video || origin.originalType == .web
-        default:
-            return false
-        }
-    }
-
-    func beginEntryDrag(_ entry: WPEHistoryEntry) -> String {
-        isDraggingEntry = true
-        lifecycleOwner.installDragEndMonitors { [weak self] in self?.endEntryDrag() }
-        return entry.origin.workshopID
-    }
-
-    func endEntryDrag() {
-        isDraggingEntry = false
-        lifecycleOwner.removeDragEndMonitors()
-    }
-
-    func makeDropTicket() -> DropTicket {
-        DropTicket(appearanceGeneration: appearanceGeneration)
-    }
-
-    func consumeDrop(
-        _ ticket: DropTicket,
-        workshopID: String?,
-        loadFailed: Bool
-    ) -> WPEHistoryEntry? {
-        endEntryDrag()
-        guard !loadFailed,
-              isActive,
-              ticket.appearanceGeneration == appearanceGeneration,
-              let workshopID
-        else { return nil }
-        return entries.first { $0.origin.workshopID == workshopID }
     }
 
     func checkForUpdatesIfNeeded() async {
@@ -526,18 +306,6 @@ final class InstalledLibraryModel {
         })
     }
 
-    private func refreshSelectedEntry() {
-        guard let current = selectedEntry else { return }
-        selectedEntry = entries.first { $0.origin.workshopID == current.origin.workshopID }
-    }
-
-    private func invalidatePendingDeleteIfStale() {
-        guard let pendingDelete else { return }
-        let identity = WorkshopInstalledEntryIdentity(pendingDelete)
-        guard !entries.contains(where: { WorkshopInstalledEntryIdentity($0) == identity }) else { return }
-        self.pendingDelete = nil
-    }
-
     private func invalidateDeletesForReimports() {
         let staleWorkshopIDs = deleteHandles.compactMap { workshopID, handle -> String? in
             guard let current = entries.first(where: { $0.origin.workshopID == workshopID }),
@@ -547,16 +315,7 @@ final class InstalledLibraryModel {
         }
         for workshopID in staleWorkshopIDs {
             deleteHandles.removeValue(forKey: workshopID)?.task.cancel()
-            deletingWorkshopIDs.remove(workshopID)
         }
-    }
-
-    private func canPublish(generation: UInt64, identity: WorkshopInstalledEntryIdentity) -> Bool {
-        guard isActive, generation == appearanceGeneration, !Task.isCancelled else { return false }
-        guard let current = entries.first(where: { $0.origin.workshopID == identity.workshopID }) else {
-            return false
-        }
-        return WorkshopInstalledEntryIdentity(current) == identity
     }
 
     private func canPublishDelete(_ ticket: DeleteTicket) -> Bool {
@@ -588,35 +347,6 @@ final class InstalledLibraryModel {
     private func finishDelete(_ ticket: DeleteTicket) {
         guard deleteHandles[ticket.identity.workshopID]?.ticket == ticket else { return }
         deleteHandles.removeValue(forKey: ticket.identity.workshopID)
-        deletingWorkshopIDs.remove(ticket.identity.workshopID)
-    }
-
-    private func matchesSearch(_ entry: WPEHistoryEntry, query: String) -> Bool {
-        guard !query.isEmpty else { return true }
-        return entry.origin.title.localizedCaseInsensitiveContains(query)
-            || entry.origin.workshopID.localizedCaseInsensitiveContains(query)
-            || entry.origin.localizedDisplayTypeName.localizedCaseInsensitiveContains(query)
-    }
-
-    private func typeMatches(_ entry: WPEHistoryEntry) -> Bool {
-        if selectedTypes.isEmpty || selectedTypes.count == WPELibraryTypeKind.allCases.count {
-            return true
-        }
-        return selectedTypes.contains { $0.matches(entry) }
-    }
-
-    private func sourceMatches(_ entry: WPEHistoryEntry) -> Bool {
-        if selectedSources.isEmpty || selectedSources.count == InstalledSource.allCases.count {
-            return true
-        }
-        return selectedSources.contains { $0.matches(entry) }
-    }
-
-    private func storageMatches(_ entry: WPEHistoryEntry) -> Bool {
-        if selectedStorage.isEmpty || selectedStorage.count == InstalledStorageKind.allCases.count {
-            return true
-        }
-        return selectedStorage.contains { $0.matches(entry) }
     }
 }
 #endif

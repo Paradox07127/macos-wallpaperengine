@@ -1,5 +1,4 @@
 #if !LITE_BUILD
-    import AppKit
     import Foundation
 
     @MainActor
@@ -14,72 +13,24 @@
             let value: Value
         }
 
-        struct DragMonitorHooks {
-            let installLocal: (@escaping @MainActor () -> Void) -> Any?
-            let installGlobal: (@escaping @MainActor () -> Void) -> Any?
-            let remove: (Any) -> Void
-
-            @MainActor static let appKit = DragMonitorHooks(
-                installLocal: { onEnd in
-                    NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .keyDown]) { event in
-                        if event.type == .leftMouseUp || (event.type == .keyDown && event.keyCode == 53) {
-                            Task { @MainActor in onEnd() }
-                        }
-                        return event
-                    }
-                },
-                installGlobal: { onEnd in
-                    NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { _ in
-                        Task { @MainActor in onEnd() }
-                    }
-                },
-                remove: { NSEvent.removeMonitor($0) }
-            )
-        }
-
         private struct UpdateHandle: Sendable {
             let ticket: UpdateTicket
             let cancel: @Sendable () -> Void
         }
 
-        /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit
-        /// (released on an arbitrary queue) must remove the monitors too, which
-        /// Swift 6 can't prove safe.
-        private nonisolated(unsafe) let monitorHooks: DragMonitorHooks
-        private nonisolated(unsafe) var localDragEndMonitor: Any?
-        private nonisolated(unsafe) var globalDragEndMonitor: Any?
         private var updateGeneration: UInt64 = 0
         private var updateHandle: UpdateHandle?
 
-        init(monitorHooks: DragMonitorHooks = .appKit) {
-            self.monitorHooks = monitorHooks
-        }
-
         deinit {
             updateHandle?.cancel()
-            removeDragEndMonitorsFromAnyIsolation()
         }
 
         #if DEBUG
         // Test-only introspection; no production reader.
-        var activeDragMonitorCount: Int {
-            (localDragEndMonitor == nil ? 0 : 1) + (globalDragEndMonitor == nil ? 0 : 1)
-        }
-
         var hasActiveUpdate: Bool {
             updateHandle != nil
         }
         #endif
-
-        func installDragEndMonitors(onEnd: @escaping @MainActor () -> Void) {
-            removeDragEndMonitors()
-            localDragEndMonitor = monitorHooks.installLocal(onEnd)
-            globalDragEndMonitor = monitorHooks.installGlobal(onEnd)
-        }
-
-        func removeDragEndMonitors() {
-            removeDragEndMonitorsFromAnyIsolation()
-        }
 
         /// Replaces any previous check. The returned result remains uncommitted and
         /// keeps its ticket live until `commitUpdate` validates it synchronously.
@@ -136,23 +87,11 @@
 
         func tearDown() {
             cancelUpdate()
-            removeDragEndMonitors()
         }
 
         private func finishUpdate(_ ticket: UpdateTicket) {
             guard updateHandle?.ticket == ticket else { return }
             updateHandle = nil
-        }
-
-        private nonisolated func removeDragEndMonitorsFromAnyIsolation() {
-            if let localDragEndMonitor {
-                monitorHooks.remove(localDragEndMonitor)
-                self.localDragEndMonitor = nil
-            }
-            if let globalDragEndMonitor {
-                monitorHooks.remove(globalDragEndMonitor)
-                self.globalDragEndMonitor = nil
-            }
         }
     }
 #endif
