@@ -121,7 +121,7 @@ struct PlaybackControls: View {
         if showsResetPlayback {
             Button(action: onResetPlayback) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
             }
             .buttonStyle(.borderless)
             .help(Text("Reset playback to display defaults"))

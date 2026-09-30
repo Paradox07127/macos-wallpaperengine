@@ -30,7 +30,7 @@ struct OverlayEffectPanel: View {
             }
         }
         .clipped()
-        .adaptiveGlassSurface(.roundedRectangle(14))
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.lg))
         .onAppear { draft = session.draft }
         .onChange(of: session.draft) { draft = session.draft }
     }

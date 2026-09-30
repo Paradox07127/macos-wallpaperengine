@@ -37,7 +37,7 @@ struct ObjectInspector: View {
     private var header: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Text(verbatim: title)
-                .font(DesignTokens.EditDesk.Typography.stageTitle)
+                .font(DesignTokens.Typography.sectionTitle)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -124,9 +124,10 @@ struct ObjectInspector: View {
     }
 
     private var emptyState: some View {
-        Text("No Selection")
-            .font(DesignTokens.EditDesk.Typography.body)
-            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        IllustratedEmptyState(
+            symbol: "cursorarrow",
+            title: "No Selection",
+            variant: .compact
+        )
     }
 }

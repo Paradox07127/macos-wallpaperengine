@@ -118,7 +118,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                 isMounted: !isEmpty, isVisible: inspectorVisible && !isEmpty,
                 animationTrigger: inspectorVisible, reduceMotion: reduceMotion,
                 storedWidth: $inspectorWidth, liveWidth: $liveInspectorWidth,
-                minWidth: 300, maxWidth: 520, mainFloor: 460,
+                mainFloor: 460,
                 onClose: { inspectorVisible = false },
                 main: { wallpaperPreview }, inspector: { width in
                     inspector(width)

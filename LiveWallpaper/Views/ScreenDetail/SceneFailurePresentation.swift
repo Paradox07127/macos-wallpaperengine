@@ -257,7 +257,7 @@ struct UnsupportedProjectNotice: View {
                 ForEach(ids, id: \.self) { id in
                     HStack(spacing: 8) {
                         Image(systemName: "link")
-                            .font(.caption)
+                            .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
                         Text(verbatim: id)
                             .font(DesignTokens.Typography.codeCaption)

@@ -17,23 +17,23 @@ struct WeatherStatusBadge: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: weatherIcon)
-                .font(.footnote)
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(statusColor)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 if let condition = weatherService.currentCondition {
                     Text(condition.titleKey)
-                        .font(.footnote.weight(.medium))
+                        .font(DesignTokens.Typography.captionEmphasized)
                 } else {
                     Text(weatherService.locationStatus.titleKey)
-                        .font(.footnote)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 if let label = weatherService.activeLocationLabel, weatherService.lastError == nil {
                     Text(verbatim: label)
-                        .font(.caption2)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -50,7 +50,7 @@ struct WeatherStatusBadge: View {
 
                 if let error = weatherService.lastError {
                     Text(verbatim: LogPrivacyRedactor.scrub(error))
-                        .font(.caption2)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(DesignTokens.Colors.Status.danger)
                         .lineLimit(1)
                         .help(Text(
@@ -66,7 +66,7 @@ struct WeatherStatusBadge: View {
 
             if weatherService.currentParticleEffect != .none {
                 Image(systemName: weatherService.currentParticleEffect.iconName)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
@@ -74,7 +74,7 @@ struct WeatherStatusBadge: View {
             if needsLocationAuthorizationAction {
                 Button { performLocationAuthorizationAction() } label: {
                     locationActionLabel
-                        .font(.caption.weight(.semibold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                 }
                 .buttonStyle(CapsuleButtonStyle(preset: .small))
                 .help(locationActionHelp)
@@ -83,7 +83,7 @@ struct WeatherStatusBadge: View {
 
             Button(action: refresh) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.caption.weight(.semibold))
+                    .font(DesignTokens.Typography.captionEmphasized)
             }
             .buttonStyle(.borderless)
             .help(Text(

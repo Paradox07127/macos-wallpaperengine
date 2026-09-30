@@ -54,18 +54,21 @@ struct DetailInspectorPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: DesignTokens.Spacing.md) {
                 if featureCatalog.isEnabled(.playlists) {
-                    Button(action: onOpenAutomation) {
-                        HStack {
-                            Label("Playlist & Schedule", systemImage: "list.bullet")
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
+                    GroupBox {
+                        Button(action: onOpenAutomation) {
+                            HStack {
+                                Label("Playlist & Schedule", systemImage: "list.bullet")
+                                Spacer()
+                                Image(systemName: "arrow.up.right.square")
+                            }
+                            .font(DesignTokens.Typography.bodyEmphasized)
+                            .contentShape(Rectangle())
                         }
-                        .padding(12)
-                        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .groupBoxStyle(ContainerGroupBoxStyle())
                 }
 
                 if draft.selectedWallpaperType == .video {
@@ -136,7 +139,7 @@ struct DetailInspectorPanel: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
-            .padding(.vertical, 12)
+            .padding(.vertical, DesignTokens.Spacing.md)
         }
         .frame(width: inspectorPanelWidth)
         .fixedSize(horizontal: true, vertical: false)

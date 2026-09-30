@@ -102,7 +102,7 @@ struct HTMLOptionsInspector: View {
     private var customCSSEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Custom CSS", systemImage: "paintbrush")
-                .font(.headline)
+                .font(DesignTokens.Typography.sectionTitle)
 
             TextEditor(text: $draftCustomCSS)
                 .font(DesignTokens.Typography.code)

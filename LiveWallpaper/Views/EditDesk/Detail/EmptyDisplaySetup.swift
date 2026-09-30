@@ -18,7 +18,7 @@ struct EmptyDisplaySetup: View {
                 if showsWebSetup {
                     HTMLEmptyState(screen: screen, config: .default, apply: applyWebSource)
                         .frame(width: min(540, proxy.size.width - 64), height: min(380, proxy.size.height - 100))
-                        .adaptiveGlassSurface(.roundedRectangle(24))
+                        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.sheet))
                         .overlay(alignment: .topLeading) {
                             GlassIconButton("chevron.left") { showsWebSetup = false }
                                 .help(Text("Set up this display"))
@@ -39,12 +39,12 @@ struct EmptyDisplaySetup: View {
     private var introduction: some View {
         VStack(spacing: 20) {
             Image(systemName: "display")
-                .font(.system(size: 36, weight: .light))
+                .font(.system(size: DesignTokens.EmptyState.iconSize, weight: .regular))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
                 Text("Set up this display")
-                    .font(DesignTokens.Typography.hero)
+                    .font(DesignTokens.Typography.pageTitle)
                 Text(verbatim: screen.name)
                     .font(DesignTokens.Typography.body).foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -61,7 +61,7 @@ struct EmptyDisplaySetup: View {
         }
         .padding(36)
         .frame(width: 440)
-        .adaptiveGlassSurface(.roundedRectangle(24))
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.sheet))
     }
 
     @ViewBuilder

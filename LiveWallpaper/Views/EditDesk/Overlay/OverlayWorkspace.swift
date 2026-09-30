@@ -68,7 +68,7 @@ struct OverlayWorkspace: View {
                 isMounted: true, isVisible: inspectorVisible,
                 animationTrigger: inspectorVisible, reduceMotion: reduceMotion,
                 storedWidth: $inspectorWidth, liveWidth: $liveInspectorWidth,
-                minWidth: 340, maxWidth: 440, mainFloor: 320,
+                mainFloor: 320,
                 onClose: { inspectorVisible = false },
                 main: { editor }, inspector: { width in
                     ObjectInspector(session: session, screen: screen, screenManager: screenManager,
@@ -277,7 +277,7 @@ struct OverlayWorkspace: View {
             }
         }
         .clipped()
-        .adaptiveGlassSurface(.roundedRectangle(14))
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.lg))
     }
 }
 

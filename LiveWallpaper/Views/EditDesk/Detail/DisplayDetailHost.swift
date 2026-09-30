@@ -35,7 +35,7 @@ struct DisplayDetailHost: View {
     @State private var section: DetailSection = .wallpaper
     /// The side the shown display's preview enters from, set as each switch is requested.
     @State private var switchEdge: HorizontalEdge = .trailing
-    @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = 372.0
+    @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
     @AppStorage("loomscreen.editDesk.inspectorVisible", store: .appScoped()) private var inspectorVisible = true
     /// The overlay inspector opens and closes with its selection, so it has its own value: sharing the one
     /// above would hide the wallpaper inspector on every display after one visit to the overlays.

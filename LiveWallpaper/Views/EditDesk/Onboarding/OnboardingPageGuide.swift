@@ -252,10 +252,17 @@ extension View {
 
 struct PageGuideButton: View {
     let context: PageGuideContext
+    var grouped = false
     @Environment(PageGuideSession.self) private var session: PageGuideSession?
 
     var body: some View {
-        GlassIconButton("questionmark", size: .regular) { session?.start(context) }
+        Group {
+            if grouped {
+                GlassToolbarItem("questionmark") { session?.start(context) }
+            } else {
+                GlassIconButton("questionmark", size: .regular) { session?.start(context) }
+            }
+        }
             .help(Text("Explain This Page"))
             .accessibilityLabel(Text("Explain This Page"))
             .accessibilityIdentifier("pageGuide.open")

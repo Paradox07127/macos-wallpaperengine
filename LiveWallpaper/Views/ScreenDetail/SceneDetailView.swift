@@ -77,13 +77,13 @@ struct DiagnosticLogSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "terminal")
-                .font(.title3)
+                .font(DesignTokens.Typography.sectionTitle)
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Diagnostic Log")
-                    .font(.headline)
+                    .font(DesignTokens.Typography.modalTitle)
                 Text(verbatim: title)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

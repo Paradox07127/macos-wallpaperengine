@@ -46,7 +46,7 @@ struct WPEProjectCustomSettingsCard: View {
         if hasOverrides(for: schema) {
             Button(action: { resetOverrides(for: schema) }) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DesignTokens.Typography.captionEmphasized)
                     .foregroundStyle(DesignTokens.Colors.Status.danger)
             }
             .buttonStyle(.borderless)

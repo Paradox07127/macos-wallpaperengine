@@ -323,7 +323,7 @@ struct SceneSettingsRows: View {
                     .accessibilityHidden(true)
             } else if showsSectionAffiliation {
                 Capsule()
-                    .fill(Color.blue.opacity(0.72))
+                    .fill(DesignTokens.Colors.accent.opacity(0.72))
                     .frame(width: 3)
                     .padding(.vertical, 8)
                     .accessibilityHidden(true)

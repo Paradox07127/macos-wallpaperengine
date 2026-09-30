@@ -51,7 +51,7 @@ struct DetailTopBar: View {
                     GlassToolbarGroup { displayActions }.pageGuideTarget(.detailActions)
                     GlassToolbarGroup { sharedActions }.pageGuideTarget(.detailShared)
                     GlassToolbarGroup {
-                        PageGuideButton(context: section == .wallpaper ? .configuration : .overlays)
+                        PageGuideButton(context: section == .wallpaper ? .configuration : .overlays, grouped: true)
                         icon("sidebar.right", "Settings") { inspectorVisible.toggle() }
                             .disabled(section == .wallpaper && !hasWallpaper)
                     }
@@ -170,25 +170,13 @@ struct DetailTopBar: View {
     }
 
     private var sectionPicker: some View {
-        HStack(spacing: 4) {
-            ForEach([DetailSection.wallpaper, .overlay], id: \.self) { item in
-                Button { section = item } label: {
-                    Image(systemName: item == .wallpaper ? "photo" : "square.3.layers.3d")
-                        .imageScale(.large)
-                        .frame(width: 40, height: 28)
-                        .background(Capsule().fill(section == item
-                                ? DesignTokens.EditDesk.Colors.fillSelectedChip : .clear))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
+        GlassSegmentedPicker(selection: $section, values: [DetailSection.wallpaper, .overlay], shell: .detail) { item, _ in
+            Image(systemName: item == .wallpaper ? "photo" : "square.3.layers.3d")
+                .imageScale(.large)
                 .help(Text(item == .wallpaper ? "Wallpaper" : "Overlays"))
                 .accessibilityLabel(Text(item == .wallpaper ? "Wallpaper" : "Overlays"))
                 .accessibilityIdentifier(item == .wallpaper ? "detail.wallpaper" : "detail.overlay")
-                .accessibilityAddTraits(section == item ? .isSelected : [])
-            }
         }
-        .padding(4)
-        .adaptiveGlassSurface(.capsule)
         .accessibilityElement(children: .contain)
         .fixedSize()
     }

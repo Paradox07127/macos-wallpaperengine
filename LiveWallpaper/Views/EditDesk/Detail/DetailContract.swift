@@ -10,7 +10,7 @@ import SwiftUI
 /// the preview on the left, a resident inspector column on the right.
 enum DetailGeometry {
     static let topBarHeight: CGFloat = 56
-    static let inspectorWidth: CGFloat = 372
+    static let inspectorWidth = DesignTokens.Inspector.defaultWidth
 }
 
 /// What the detail top bar shows for every display, current one included.

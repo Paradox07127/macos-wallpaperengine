@@ -8,6 +8,8 @@ public enum GlassSegmentedShell: Sendable, Equatable {
     /// Edit Desk nav pill / library segment control (SCREENS S1): native glass shell,
     /// selected fill `.16`, item height 26 with horizontal padding 14, outer padding 3, gap 2.
     case editDesk
+    /// Icon-only display detail tabs, aligned with the 36pt toolbar groups.
+    case detail
 }
 
 /// The app's toolbar tabs stay stock `.segmented` on purpose.
@@ -33,19 +35,19 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     }
 
     public var body: some View {
-        let row = HStack(spacing: shell == .editDesk ? 2 : 0) {
+        let row = HStack(spacing: shell == .detail ? DesignTokens.Spacing.xxs : (shell == .editDesk ? 2 : 0)) {
             ForEach(values, id: \.self) { value in
                 segment(value)
             }
         }
-        .padding(shell == .editDesk ? 3 : 2)
+        .padding(shell == .detail ? DesignTokens.Spacing.xxs : (shell == .editDesk ? 3 : 2))
 
         switch shell {
         case .glass:
             row.adaptiveGlassSurface(.capsule, interactive: true)
         case .flat:
             row.background(Capsule().fill(Color.gray.opacity(0.18)))
-        case .editDesk:
+        case .editDesk, .detail:
             row.adaptiveGlassSurface(.capsule, interactive: true)
         }
     }
@@ -58,10 +60,10 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
             }
         } label: {
             label(value, isSelected)
-                .frame(maxWidth: shell == .editDesk ? nil : .infinity)
-                .frame(height: shell == .editDesk ? 26 : nil)
+                .frame(maxWidth: shell == .editDesk || shell == .detail ? nil : .infinity)
+                .frame(width: shell == .detail ? 40 : nil, height: shell == .detail ? 28 : (shell == .editDesk ? 26 : nil))
                 .padding(.horizontal, shell == .editDesk ? 14 : 0)
-                .padding(.vertical, shell == .editDesk ? 0 : 3)
+                .padding(.vertical, shell == .editDesk || shell == .detail ? 0 : 3)
                 .background(selectionBacking(isSelected: isSelected))
                 .contentShape(Capsule())
         }
@@ -73,7 +75,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     /// cross-fading, which also keeps a single layer of glass over the stage behind it.
     @ViewBuilder
     private func selectionBacking(isSelected: Bool) -> some View {
-        if shell == .editDesk {
+        if shell == .editDesk || shell == .detail {
             if isSelected {
                 Capsule()
                     .fill(segmentFill(isSelected: true))
@@ -86,7 +88,11 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
 
     private func segmentFill(isSelected: Bool) -> Color {
         guard isSelected else { return .clear }
-        return shell == .editDesk ? DesignTokens.EditDesk.Colors.fillSelectedNavItem : Color.accentColor.opacity(0.35)
+        switch shell {
+        case .editDesk: return DesignTokens.EditDesk.Colors.fillSelectedNavItem
+        case .detail: return DesignTokens.EditDesk.Colors.fillSelectedChip
+        case .flat, .glass: return Color.accentColor.opacity(0.35)
+        }
     }
 }
 

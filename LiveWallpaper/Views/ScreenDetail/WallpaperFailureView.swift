@@ -154,7 +154,8 @@ struct WallpaperFailureDetails: View {
             SteamSheetHeader(
                 icon: "doc.text.magnifyingglass",
                 title: "Failure Details",
-                iconTint: failure.cause.failureClass.tint
+                iconTint: failure.cause.failureClass.tint,
+                titleFont: DesignTokens.Typography.modalTitle
             )
             Text(verbatim: failure.title).font(DesignTokens.Typography.sectionTitle)
             ScrollView {

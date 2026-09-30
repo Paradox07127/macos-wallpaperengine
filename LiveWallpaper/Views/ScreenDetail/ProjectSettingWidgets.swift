@@ -28,7 +28,7 @@ struct WPEProjectTextBlock: View {
 
     var body: some View {
         Text(verbatim: text)
-            .font(isHeader ? .subheadline.weight(.semibold) : .subheadline)
+            .font(isHeader ? DesignTokens.Typography.sectionTitle : DesignTokens.Typography.body)
             .foregroundStyle(isHeader ? .primary : .secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,7 +43,7 @@ struct WPEProjectNotice: View {
     var body: some View {
         Label {
             Text(text)
-                .font(.subheadline)
+                .font(DesignTokens.Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
