@@ -1,6 +1,25 @@
 import Foundation
+import LiveWallpaperCore
 
 enum PlaylistPolicy {
+    static func refreshLegacyBookmark(
+        at cursor: Int,
+        in configuration: inout ScreenConfiguration,
+        with bookmarkData: Data
+    ) {
+        guard configuration.savedVideoBookmarkData != nil else { return }
+        let count = configuration.combinedPlaylist.count
+        guard cursor >= 0, cursor < count else { return }
+        let primary = max(0, min(configuration.playlistPrimaryIndex ?? 0, count - 1))
+        if cursor == primary {
+            configuration.savedVideoBookmarkData = bookmarkData
+        } else if var additional = configuration.playlistBookmarks {
+            let index = cursor < primary ? cursor : cursor - 1
+            additional[index] = bookmarkData
+            configuration.playlistBookmarks = additional
+        }
+    }
+
     static func nextCursor(
         currentCursor: Int,
         playlistCount: Int,

@@ -904,6 +904,27 @@ private final class CapturingURLSchemeTask: NSObject, WKURLSchemeTask, @unchecke
 @Suite("WallpaperAutomationCoordinator")
 @MainActor
 struct WallpaperAutomationCoordinatorTests {
+    @Test("Legacy reorder safely recovers an invalid stored cursor", arguments: [-1, Int.min, Int.max])
+    func legacyReorderRecoversInvalidCursor(cursor: Int) throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let primary = Data([1]), other = Data([2])
+        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: primary, playlistBookmarks: [other])
+        configuration.playlistCursorIndex = cursor
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([configuration]))
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Reorder must not rebuild playback") },
+            restoreProposedConfiguration: { _, _ in Issue.record("Retained active bookmark must not reload") },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }
+        )
+        orchestrator.replacePlaylist(ordered: [other, primary], primary: primary, for: screen)
+        #expect(store.get(for: screen.id)?.playlistCursorIndex == 1)
+        #expect(store.get(for: screen.id)?.activeWallpaper == .video(bookmarkData: primary))
+        #expect(store.get(for: screen.id)?.combinedPlaylist == [other, primary])
+    }
+
     @Test("Universal queue navigation reaches the product restore path for every wallpaper type")
     func universalQueueRoutesAllTypes() throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
@@ -2229,6 +2250,23 @@ struct FullScreenDetectorAdaptivePollingTests {
 
 @Suite("PlaylistPolicy")
 struct PlaylistPolicyTests {
+
+    @Test("Refreshing a legacy bookmark keeps reordered primary and every other item", arguments: [0, 1, 2, 3], [0, 1, 2, 3])
+    func bookmarkRefreshHonorsPrimaryPosition(primary: Int, cursor: Int) {
+        var configuration = ScreenConfiguration(
+            screenID: 1, videoBookmarkData: Data([1]),
+            playlistBookmarks: [Data([2]), Data([3]), Data([4])]
+        )
+        configuration.playlistPrimaryIndex = primary
+        let original = configuration.combinedPlaylist
+        let refreshed = Data([99])
+        PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &configuration, with: refreshed)
+        var expected = original
+        expected[cursor] = refreshed
+        #expect(configuration.combinedPlaylist == expected)
+        #expect(configuration.playlistPrimaryIndex == primary)
+        #expect(configuration.savedVideoBookmarkData == (cursor == primary ? refreshed : Data([1])))
+    }
 
     @Test("Sequential cursor advances 0 → 1 → 2 → 0")
     func sequentialCursorAdvances() {

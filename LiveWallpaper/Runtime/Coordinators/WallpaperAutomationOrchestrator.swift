@@ -117,7 +117,7 @@ final class WallpaperAutomationOrchestrator {
 
         let oldCombined = config.combinedPlaylist
         let oldCursor = config.playlistCursorIndex ?? 0
-        let oldActive: Data? = oldCursor < oldCombined.count ? oldCombined[oldCursor] : config.videoBookmarkData
+        let oldActive: Data? = oldCombined.indices.contains(oldCursor) ? oldCombined[oldCursor] : config.videoBookmarkData
 
         let primaryChanged = config.savedVideoBookmarkData != primary
         // Deleted playing bookmark: reload so the player swaps to the new cursor.
@@ -578,13 +578,7 @@ final class WallpaperAutomationOrchestrator {
         cursor: Int,
         bookmarkData: Data
     ) {
-        if cursor == 0 {
-            config.savedVideoBookmarkData = bookmarkData
-        } else if var additional = config.playlistBookmarks,
-                  additional.indices.contains(cursor - 1) {
-            additional[cursor - 1] = bookmarkData
-            config.playlistBookmarks = additional
-        }
+        PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &config, with: bookmarkData)
     }
 
     private func replaceScheduledBookmark(
