@@ -186,7 +186,10 @@ extension WPEMetalRenderExecutor {
     func clearColor(for targetID: WPEMetalTargetID) -> MTLClearColor {
         switch targetID {
         case .scene:
-            return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            // Windows clears the scene to opaque black before any draw; local
+            // layer/effect targets keep transparent coverage. This also gives
+            // early scene-alias readers the same alpha as the final backdrop.
+            return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         case .named:
             return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         }
