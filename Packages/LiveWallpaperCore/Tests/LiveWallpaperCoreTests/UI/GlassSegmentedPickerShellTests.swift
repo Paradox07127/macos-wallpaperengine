@@ -22,12 +22,17 @@ struct GlassSegmentedPickerShellTests {
         try source("Sources/LiveWallpaperCore/UI/Components/GlassSegmentedPicker.swift")
     }
 
-    /// One `case .<name>:` body, cut at the next case or the switch's own closing brace —
+    /// One shell case body, including shared cases, cut at the next case or switch closing brace —
     /// reading to the end of the file would let an unrelated helper satisfy the assertions.
     private static func shellCase(_ name: String, in source: String) throws -> String {
         let lines = source.components(separatedBy: "\n")
         let header = try #require(
-            lines.firstIndex { $0.trimmingCharacters(in: .whitespaces) == "case .\(name):" },
+            lines.firstIndex { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix("case "), trimmed.hasSuffix(":") else { return false }
+                let patterns = trimmed.dropFirst("case ".count).dropLast().split(separator: ",")
+                return patterns.contains { $0.trimmingCharacters(in: .whitespaces) == ".\(name)" }
+            },
             Comment(rawValue: "no `case .\(name):` in the shell switch")
         )
         let body = lines[(header + 1)...].prefix {
@@ -38,12 +43,12 @@ struct GlassSegmentedPickerShellTests {
         return body.joined(separator: "\n")
     }
 
-    @Test("The editDesk shell is backed by native glass, not the hand-painted pill fill")
-    func editDeskShellIsGlass() throws {
+    @Test("The navigation and detail shells are backed by native glass", arguments: ["editDesk", "detail"])
+    func editDeskShellIsGlass(shell: String) throws {
         let source = try Self.pickerSource()
-        let editDesk = try Self.shellCase("editDesk", in: source)
-        #expect(editDesk.contains("adaptiveGlassSurface(.capsule, interactive: true)"))
-        #expect(!editDesk.contains("Capsule()"), "a hand-drawn capsule under the glass is a second backing")
+        let body = try Self.shellCase(shell, in: source)
+        #expect(body.contains("adaptiveGlassSurface(.capsule, interactive: true)"))
+        #expect(!body.contains("Capsule()"), "a hand-drawn capsule under the glass is a second backing")
         #expect(!source.contains("fillNavPill"), "the painted pill fill is what the glass replaces")
         #expect(
             !source.contains("strokeRegular"),
