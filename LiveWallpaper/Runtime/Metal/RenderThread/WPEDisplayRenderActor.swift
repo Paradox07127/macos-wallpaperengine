@@ -25,7 +25,6 @@ struct WPEDisplayLinkLifecycleState: Sendable {
 #endif
 
 actor WPEDisplayRenderActor {
-
     enum Backing {
         case main
         case renderThread
@@ -40,6 +39,7 @@ actor WPEDisplayRenderActor {
 
     #if !LITE_BUILD
     private var renderer: WPEMetalSceneRenderer?
+    private var spanPresenter: WPESceneSpanPresenter?
     /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
     private var displayLinkLifecycle = WPEDisplayLinkLifecycleState()
@@ -57,14 +57,14 @@ actor WPEDisplayRenderActor {
             let executor = WPERenderThreadExecutor(thread: thread)
             self.thread = thread
             self.executor = executor
-            self.unownedExecutor = executor.asUnownedSerialExecutor()
+            unownedExecutor = executor.asUnownedSerialExecutor()
         case .main:
-            self.thread = nil
-            self.executor = nil
-            self.unownedExecutor = MainActor.sharedUnownedExecutor
+            thread = nil
+            executor = nil
+            unownedExecutor = MainActor.sharedUnownedExecutor
         }
         #if !LITE_BUILD
-        (self.configStream, self.configContinuation) = AsyncStream.makeStream(
+        (configStream, configContinuation) = AsyncStream.makeStream(
             of: WPERendererConfigCommand.self
         )
         #endif
@@ -91,7 +91,9 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Introspection (non-crashing; usable from any thread)
 
-    nonisolated var isOnRenderThread: Bool { thread?.isCurrent ?? Thread.isMainThread }
+    nonisolated var isOnRenderThread: Bool {
+        thread?.isCurrent ?? Thread.isMainThread
+    }
 
     // MARK: - Render-loop Wiring
 
@@ -138,21 +140,22 @@ actor WPEDisplayRenderActor {
 
     private func applyConfigCommand(_ command: WPERendererConfigCommand) {
         switch command {
-        case .performanceProfile(let profile): applyPerformanceProfile(profile)
+        case let .performanceProfile(profile): applyPerformanceProfile(profile)
         case let .frameRateCeiling(fps): setFrameRateCeiling(fps)
-        case .adaptiveFrameRateThrottle(let active): setAdaptiveFrameRateThrottle(active)
-        case .audioMuted(let muted): setAudioMuted(muted)
-        case .audioVolume(let volume): setAudioVolume(volume)
-        case .mouseInteractionEnabled(let enabled): setMouseInteractionEnabled(enabled)
-        case .clickCaptureEnabled(let enabled): setClickCaptureEnabled(enabled)
-        case .presentFitMode(let mode): setPresentFitMode(mode)
-        case .surfaceGeometry(let size): updateSurfaceGeometry(drawableSize: size)
-        case .sceneScriptLanguage(let language): renderer?.setSceneScriptLanguage(language)
+        case let .adaptiveFrameRateThrottle(active): setAdaptiveFrameRateThrottle(active)
+        case let .audioMuted(muted): setAudioMuted(muted)
+        case let .audioVolume(volume): setAudioVolume(volume)
+        case let .mouseInteractionEnabled(enabled): setMouseInteractionEnabled(enabled)
+        case let .clickCaptureEnabled(enabled): setClickCaptureEnabled(enabled)
+        case let .presentFitMode(mode): setPresentFitMode(mode)
+        case let .surfaceGeometry(size): updateSurfaceGeometry(drawableSize: size)
+        case let .sceneScriptLanguage(language): renderer?.setSceneScriptLanguage(language)
         }
     }
     #endif
 
     #if !LITE_BUILD
+
     // MARK: - Renderer Ownership
 
     func adopt(_ renderer: sending WPEMetalSceneRenderer) {
@@ -160,16 +163,33 @@ actor WPEDisplayRenderActor {
         self.renderer = renderer
         renderer.displayActor = self
         renderer.installSceneScriptLanguageObservers(on: self)
+        startConfigConsumer()
+    }
+
+    private func startConfigConsumer() {
         guard configConsumerTask == nil else { return }
         configConsumerTask = Task { [weak self, configStream] in
             for await command in configStream {
                 guard let self else { break }
-                await self.applyConfigCommand(command)
+                await applyConfigCommand(command)
             }
         }
     }
 
+    func adoptSpanPresenter(_ handoff: WPESceneSpanPresenterHandoff) {
+        spanPresenter = handoff.presenter
+        startConfigConsumer()
+    }
+
+    func updateSpanPresentation(_ configuration: VideoSpanRenderConfiguration) {
+        spanPresenter?.configuration = configuration
+    }
+
     func renderFrame() {
+        if let spanPresenter {
+            spanPresenter.present()
+            return
+        }
         // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
         guard let thread else {
             renderer?.renderAndPresentFrame()
@@ -192,6 +212,7 @@ actor WPEDisplayRenderActor {
     }
 
     // MARK: - CADisplayLink Frame Driver
+
     // `isPaused` is the only knob Apple documents as thread-safe; `preferredFrameRateRange` is not, so neither is touched off the render thread.
 
     /// The live per-display link. Isolated state: only the render thread reads or
@@ -261,9 +282,17 @@ actor WPEDisplayRenderActor {
     }
 
     #if DEBUG
-    var linkPausedForTesting: Bool { linkPaused }
-    var linkPreferredFPSForTesting: Int { linkPreferredFPS }
-    var hasDisplayLinkForTesting: Bool { displayLink != nil }
+    var linkPausedForTesting: Bool {
+        linkPaused
+    }
+
+    var linkPreferredFPSForTesting: Int {
+        linkPreferredFPS
+    }
+
+    var hasDisplayLinkForTesting: Bool {
+        displayLink != nil
+    }
     #endif
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
@@ -349,10 +378,10 @@ actor WPEDisplayRenderActor {
     func recordPresentCompletion(_ result: WPEFrameReadinessResult) {
         guard let renderer,
               WPEFrameReadinessCoordinator.isCurrent(
-                result,
-                didLoad: renderer.didLoad,
-                currentGeneration: renderer.loadGeneration,
-                completedGeneration: renderer.completedPresentGeneration
+                  result,
+                  didLoad: renderer.didLoad,
+                  currentGeneration: renderer.loadGeneration,
+                  completedGeneration: renderer.completedPresentGeneration
               ) else {
             return
         }
@@ -369,6 +398,9 @@ actor WPEDisplayRenderActor {
 
     func load() async throws {
         try await renderer?.load(on: self)
+        if renderer?.spanFrames != nil {
+            renderer?.renderAndPresentFrame()
+        }
         // First frames can still miss PSO signatures after prewarming.
         thread?.boostRenderQoSWarmup()
     }
@@ -376,6 +408,9 @@ actor WPEDisplayRenderActor {
     func reload() async throws {
         scenePropertyRendererGeneration &+= 1
         try await renderer?.reload(on: self)
+        if renderer?.spanFrames != nil {
+            renderer?.renderAndPresentFrame()
+        }
         thread?.boostRenderQoSWarmup()
     }
 
@@ -389,15 +424,22 @@ actor WPEDisplayRenderActor {
         scenePropertyRendererGeneration &+= 1
         renderer?.cleanup()
         renderer = nil
+        spanPresenter = nil
     }
 
     // MARK: - Configuration Forwarders
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        if spanPresenter != nil {
+            setLinkPaused(profile == .suspended)
+        }
         renderer?.applyPerformanceProfile(profile)
     }
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
+        if spanPresenter != nil {
+            setLinkPreferredFPS(framesPerSecond)
+        }
         renderer?.setFrameRateCeiling(framesPerSecond)
     }
 
@@ -558,6 +600,7 @@ struct WPERendererStateSnapshot: Sendable {
         let shader: String
         let reason: String
     }
+
     let isLoaded: Bool
     let currentLoadGeneration: Int
     let completedPresentGeneration: Int?

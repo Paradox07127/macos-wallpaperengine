@@ -83,6 +83,7 @@ extension QAControlPlane {
                 "frameRateLimit": config.frameRateLimit.rawValue,
                 "sceneMouseInteractionEnabled": config.sceneMouseInteractionEnabled,
                 "sceneClickCaptureEnabled": config.sceneClickCaptureEnabled,
+                "sceneSpanGroupID": config.sceneSpanGroupID?.uuidString ?? NSNull(),
                 "setAsLockScreen": config.setAsLockScreen,
                 "wallpaperMode": config.wallpaperMode.rawValue,
                 "shufflePlaylist": config.shufflePlaylist,
@@ -113,7 +114,13 @@ extension QAControlPlane {
                 entry["userIntendsToPlay"] = playback.userIntendsToPlay
             }
             #if !LITE_BUILD
-            if let scene = session as? SceneWallpaperSession {
+            if let span = session as? SceneSpanWallpaperSession {
+                entry["sceneSpanGroupID"] = span.group.id.uuidString
+                entry["sharedRuntimeID"] = String(describing: ObjectIdentifier(span.group.owner))
+                entry["completedFrameSequence"] = span.group.frames.latest()?.sequence ?? 0
+                entry["hasPresentedFrame"] = span.hasPresentedFrame ?? false
+            }
+            if let scene = session as? any SceneWallpaperRuntime {
                 if let activity = scene.rendererRuntimeActivity {
                     entry["producesFrames"] = activity.producesFrames
                     entry["audible"] = activity.audible
@@ -136,7 +143,7 @@ extension QAControlPlane {
 
     static let screenWritableKeys: Set<String> = [
         "playbackSpeed", "muted", "videoVolume", "videoColorSpace", "videoDisplayMode",
-        "fitMode", "frameRateLimit", "sceneMouseInteractionEnabled", "sceneClickCaptureEnabled",
+        "fitMode", "frameRateLimit", "sceneMouseInteractionEnabled", "sceneClickCaptureEnabled", "sceneSpanEnabled",
     ]
 
     /// Parse every value before any setter runs so a bad field cannot leave a half-applied patch. Build enums from RawValue — tolerant decoders would silently accept a typo.
@@ -175,7 +182,13 @@ extension QAControlPlane {
                 pending.append((key, { manager.updateVideoDisplayMode(mode, for: screen) }))
             case "fitMode":
                 let fit: VideoFitMode = try Self.rawRepresentable(value, key)
-                pending.append((key, { manager.updateFitMode(fit, for: screen) }))
+                pending.append((key, {
+                    if manager.getConfiguration(for: screen)?.activeWallpaper.wallpaperType == .scene {
+                        manager.updateSceneFitMode(fit, for: screen)
+                    } else {
+                        manager.updateFitMode(fit, for: screen)
+                    }
+                }))
             case "frameRateLimit":
                 let requested = try Self.number(value, key)
                 let maximum = manager.getScreenRefreshRate(for: screen.id)
@@ -187,6 +200,23 @@ extension QAControlPlane {
                     )
                 }
                 pending.append((key, { manager.updateFrameRateLimit(limit, for: screen) }))
+            case "sceneSpanEnabled":
+                #if !LITE_BUILD
+                let enabled = try Self.boolean(value, key)
+                guard let configuration = manager.getConfiguration(for: screen),
+                      case let .scene(descriptor) = configuration.activeWallpaper else {
+                    throw QAError.message("Scene span requires a scene wallpaper")
+                }
+                pending.append((key, {
+                    if enabled {
+                        manager.setSceneSpanWallpaper(descriptor: descriptor, origin: configuration.wpeOrigin, fitMode: configuration.fitMode)
+                    } else {
+                        manager.leaveSceneSpan(for: screen)
+                    }
+                }))
+                #else
+                throw QAError.message("Scene span requires Loomscreen Pro")
+                #endif
             case "sceneMouseInteractionEnabled":
                 let enabled = try Self.boolean(value, key)
                 pending.append((key, { manager.updateSceneMouseInteraction(enabled, for: screen) }))

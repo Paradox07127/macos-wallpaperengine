@@ -22,6 +22,7 @@ extension WPEMetalRenderExecutor {
         layer: CAMetalLayer,
         fitMode: WPEPresentFitMode = .stretch,
         worldSourceSize: CGSize? = nil,
+        uniforms: WPEPresentUniforms? = nil,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil
     ) throws -> Bool {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -33,6 +34,7 @@ extension WPEMetalRenderExecutor {
             layer: layer,
             fitMode: fitMode,
             worldSourceSize: worldSourceSize,
+            uniforms: uniforms,
             presentCompletion: presentCompletion,
             into: commandBuffer
         ) else {
@@ -49,6 +51,7 @@ extension WPEMetalRenderExecutor {
         layer: CAMetalLayer,
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize? = nil,
+        uniforms: WPEPresentUniforms? = nil,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
         into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
@@ -80,7 +83,7 @@ extension WPEMetalRenderExecutor {
             width: CGFloat(drawable.texture.width), height: CGFloat(drawable.texture.height)
         )
         var encodedByUpscaler = false
-        if let upscaler = metalFXUpscaler {
+        if uniforms == nil, let upscaler = metalFXUpscaler {
             encodedByUpscaler = upscaler.encodeIfEligible(
                 source: source,
                 drawableTexture: drawable.texture,
@@ -109,6 +112,7 @@ extension WPEMetalRenderExecutor {
                 drawable: drawable,
                 fitMode: fitMode,
                 worldSourceSize: worldSourceSize,
+            uniforms: uniforms,
                 into: commandBuffer
             )
         }
@@ -147,6 +151,7 @@ extension WPEMetalRenderExecutor {
         drawable: CAMetalDrawable,
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize?,
+        uniforms: WPEPresentUniforms?,
         into commandBuffer: MTLCommandBuffer
     ) throws {
         let descriptor = MTLRenderPassDescriptor()
@@ -171,7 +176,7 @@ extension WPEMetalRenderExecutor {
         WPEFrameOccupancyMeter.count(.presentEncoder)
         encoder.setRenderPipelineState(copyState)
         encoder.setFragmentTexture(source, index: 0)
-        var presentUniforms = WPEPresentUniforms.make(
+        var presentUniforms = uniforms ?? WPEPresentUniforms.make(
             fitMode: fitMode,
             sourceWidth: worldSourceSize.map { Int($0.width) } ?? source.width,
             sourceHeight: worldSourceSize.map { Int($0.height) } ?? source.height,

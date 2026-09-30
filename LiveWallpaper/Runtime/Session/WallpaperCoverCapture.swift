@@ -56,7 +56,7 @@ enum WallpaperCoverCapture {
             return await ambient.captureLiveHTMLSnapshot(matching: source, config: config)
         }
         #if !LITE_BUILD
-        if let scene = screen.runtimeSession as? SceneWallpaperSession {
+        if let scene = screen.runtimeSession as? any SceneWallpaperRuntime {
             return await scene.captureLivePosterFromNextFrame()
         }
         #endif

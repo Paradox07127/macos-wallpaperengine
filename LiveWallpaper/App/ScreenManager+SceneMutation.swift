@@ -3,20 +3,20 @@ import Foundation
 import LiveWallpaperCore
 
 #if !LITE_BUILD
-    import LiveWallpaperProWPE
+import LiveWallpaperProWPE
 #endif
 
 @MainActor
 extension ScreenManager {
     func advanceScenePropertyMutationIntent(for screenID: CGDirectDisplayID) {
         #if !LITE_BUILD
-            guard let screen = screens.first(where: { $0.id == screenID }),
-                  let session = screen.runtimeSession as? SceneWallpaperSession else {
-                return
-            }
-            session.advanceScenePropertyMutationIntent()
+        guard let screen = screens.first(where: { $0.id == screenID }),
+              let session = screen.runtimeSession as? any SceneWallpaperRuntime else {
+            return
+        }
+        session.advanceScenePropertyMutationIntent()
         #else
-            _ = screenID
+        _ = screenID
         #endif
     }
 
@@ -40,15 +40,15 @@ extension ScreenManager {
                 return false
             }
             #if !LITE_BUILD
-                if let expectedSceneMutationToken,
-                   let sceneSession = current as? SceneWallpaperSession {
-                    return sceneSession.isCurrentScenePropertyMutationIntent(
-                        expectedSceneMutationToken
-                    )
-                }
-                return expectedSceneMutationToken == nil
+            if let expectedSceneMutationToken,
+               let sceneSession = current as? any SceneWallpaperRuntime {
+                return sceneSession.isCurrentScenePropertyMutationIntent(
+                    expectedSceneMutationToken
+                )
+            }
+            return expectedSceneMutationToken == nil
             #else
-                return expectedSceneMutationToken == nil
+            return expectedSceneMutationToken == nil
             #endif
         case (nil, nil):
             return true
@@ -113,74 +113,75 @@ extension ScreenManager {
         configuration = SchedulePolicy.writingBack(.scene(descriptor), into: configuration, now: Date(), calendar: .current)
 
         #if !LITE_BUILD
-            if let sceneSession = screen.runtimeSession as? SceneWallpaperSession {
-                let sceneMutationToken = sceneSession.currentScenePropertyMutationToken()
-                let bindings = await sceneSession.scenePropertyBindings()
-                guard isCurrentExplicitWallpaperSelection(
-                    generation,
-                    expectedConfigurationRevision: expectedConfigurationRevision,
-                    expectedSession: expectedSession,
-                    for: screen
-                ) else { return }
-                // Engine-level keys (`wec_*`, `volume`) are stripped by the property filter before the patch
-                // is built, so they can never reach `changedKeys`. An engine-only preset change therefore
-                // produced a *successful empty patch* — persisted and shown in the inspector, while the live
-                // frame kept grading and playing from the descriptor it was loaded with. The renderer holds
-                // that descriptor immutably, so a remount is what re-reads them.
-                let engineSettingsChanged =
-                    WPEEngineColorCorrection.parse(current.presetSnapshot)
-                        != WPEEngineColorCorrection.parse(descriptor.presetSnapshot)
+        if let sceneSession = screen.runtimeSession as? any SceneWallpaperRuntime {
+            let sceneMutationToken = sceneSession.currentScenePropertyMutationToken()
+            let bindings = await sceneSession.scenePropertyBindings()
+            guard isCurrentExplicitWallpaperSelection(
+                generation,
+                expectedConfigurationRevision: expectedConfigurationRevision,
+                expectedSession: expectedSession,
+                for: screen
+            ) else { return }
+            // Engine-level keys (`wec_*`, `volume`) are stripped by the property filter before the patch
+            // is built, so they can never reach `changedKeys`. An engine-only preset change therefore
+            // produced a *successful empty patch* — persisted and shown in the inspector, while the live
+            // frame kept grading and playing from the descriptor it was loaded with. The renderer holds
+            // that descriptor immutably, so a remount is what re-reads them.
+            let engineSettingsChanged =
+                WPEEngineColorCorrection.parse(current.presetSnapshot)
+                    != WPEEngineColorCorrection.parse(descriptor.presetSnapshot)
                     || WPEEngineAudioSettings.parse(current.presetSnapshot)
-                        != WPEEngineAudioSettings.parse(descriptor.presetSnapshot)
-                if !bindings.isEmpty, !engineSettingsChanged {
-                    let patch = WPEScenePropertyPatch(
-                        bindingsByProperty: bindings,
-                        oldValues: effectiveSceneValues(
-                            for: current,
-                            origin: configuration.wpeOrigin
-                        ),
-                        newValues: effectiveSceneValues(
-                            for: descriptor,
-                            origin: configuration.wpeOrigin
-                        )
+                    != WPEEngineAudioSettings.parse(descriptor.presetSnapshot)
+            if !bindings.isEmpty, !engineSettingsChanged {
+                let patch = WPEScenePropertyPatch(
+                    bindingsByProperty: bindings,
+                    oldValues: effectiveSceneValues(
+                        for: current,
+                        origin: configuration.wpeOrigin
+                    ),
+                    newValues: effectiveSceneValues(
+                        for: descriptor,
+                        origin: configuration.wpeOrigin
                     )
-                    if let preparedPatch = await sceneSession.prepareScenePropertyPatch(
-                        patch,
-                        expectedIntent: sceneMutationToken
-                    ) {
-                        guard isCurrentExplicitWallpaperSelection(
-                            generation,
-                            expectedConfigurationRevision: expectedConfigurationRevision,
+                )
+                if let preparedPatch = await sceneSession.prepareScenePropertyPatch(
+                    patch,
+                    expectedIntent: sceneMutationToken
+                ) {
+                    guard isCurrentExplicitWallpaperSelection(
+                        generation,
+                        expectedConfigurationRevision: expectedConfigurationRevision,
+                        expectedSession: expectedSession,
+                        expectedSceneMutationToken: sceneMutationToken,
+                        for: screen
+                    ) else { return }
+                    configuration.activeWallpaper = .scene(descriptor)
+                    configuration.savedSceneDescriptor = descriptor
+                    let posterCommit = sceneSession.stageScenePropertyPosterCommit(
+                        overrides: descriptor.layeredPropertyValues()
+                    )
+                    saveConfiguration(configuration)
+                    persistSceneSpanDescriptor(descriptor, groupID: configuration.sceneSpanGroupID, excluding: screen.id)
+                    notifyWallpaperSessionChanged()
+                    let committedRevision = configurationStore.revision(for: screen.id)
+                    let didCommit = await sceneSession.commitScenePropertyPatch(
+                        preparedPatch,
+                        posterCommit: posterCommit,
+                        updatedDescriptor: descriptor
+                    )
+                    if !didCommit {
+                        restorePersistedSceneAfterFailedPatchDelivery(
+                            descriptor,
+                            committedRevision: committedRevision,
+                            generation: generation,
                             expectedSession: expectedSession,
-                            expectedSceneMutationToken: sceneMutationToken,
                             for: screen
-                        ) else { return }
-                        configuration.activeWallpaper = .scene(descriptor)
-                        configuration.savedSceneDescriptor = descriptor
-                        let posterCommit = sceneSession.stageScenePropertyPosterCommit(
-                            overrides: descriptor.layeredPropertyValues()
                         )
-                        saveConfiguration(configuration)
-                        notifyWallpaperSessionChanged()
-                        let committedRevision = configurationStore.revision(for: screen.id)
-                        let didCommit = await sceneSession.commitScenePropertyPatch(
-                            preparedPatch,
-                            posterCommit: posterCommit,
-                            updatedDescriptor: descriptor
-                        )
-                        if !didCommit {
-                            restorePersistedSceneAfterFailedPatchDelivery(
-                                descriptor,
-                                committedRevision: committedRevision,
-                                generation: generation,
-                                expectedSession: expectedSession,
-                                for: screen
-                            )
-                        }
-                        return
                     }
+                    return
                 }
             }
+        }
         #endif
 
         guard isCurrentExplicitWallpaperSelection(
@@ -189,95 +190,109 @@ extension ScreenManager {
             expectedSession: expectedSession,
             for: screen
         ) else { return }
+        #if !LITE_BUILD
+        if let groupID = configuration.sceneSpanGroupID {
+            let members = screens.filter { getConfiguration(for: $0)?.sceneSpanGroupID == groupID }
+            await withCheckedContinuation { continuation in
+                setSceneSpanWallpaper(descriptor: descriptor, origin: configuration.wpeOrigin,
+                                      fitMode: configuration.fitMode, targets: members) { _ in
+                    continuation.resume()
+                }
+            }
+            return
+        }
+        #endif
         configuration.activeWallpaper = .scene(descriptor)
         configuration.savedSceneDescriptor = descriptor
         restoreProposedWallpaperSession(for: screen, configuration: configuration)
     }
 
     #if !LITE_BUILD
-        private func restorePersistedSceneAfterFailedPatchDelivery(
-            _ descriptor: SceneDescriptor,
-            committedRevision: UInt64,
-            generation: Int,
-            expectedSession: (any WallpaperRuntimeSession)?,
-            for screen: Screen
-        ) {
-            guard !isTerminating,
-                  screens.first(where: { $0.id == screen.id }) === screen,
-                  isCurrentTransition(generation, for: screen.id),
-                  configurationStore.revision(for: screen.id) == committedRevision,
-                  let currentSession = screen.runtimeSession,
-                  let expectedSession,
-                  ObjectIdentifier(currentSession) == ObjectIdentifier(expectedSession),
-                  let latest = configurationStore.get(
-                      for: screen.id,
-                      fingerprint: screen.displayFingerprint
-                  ),
-                  latest.activeWallpaper == .scene(descriptor) else {
-                return
-            }
-            restoreWallpaperSession(
-                for: screen,
-                configuration: latest,
-                preservingState: false
-            )
+    private func restorePersistedSceneAfterFailedPatchDelivery(
+        _ descriptor: SceneDescriptor,
+        committedRevision: UInt64,
+        generation: Int,
+        expectedSession: (any WallpaperRuntimeSession)?,
+        for screen: Screen
+    ) {
+        guard !isTerminating,
+              screens.first(where: { $0.id == screen.id }) === screen,
+              isCurrentTransition(generation, for: screen.id),
+              configurationStore.revision(for: screen.id) == committedRevision,
+              let currentSession = screen.runtimeSession,
+              let expectedSession,
+              ObjectIdentifier(currentSession) == ObjectIdentifier(expectedSession),
+              let latest = configurationStore.get(
+                  for: screen.id,
+                  fingerprint: screen.displayFingerprint
+              ),
+              latest.activeWallpaper == .scene(descriptor) else {
+            return
         }
+        if let groupID = latest.sceneSpanGroupID {
+            let members = screens.filter { getConfiguration(for: $0)?.sceneSpanGroupID == groupID }
+            setSceneSpanWallpaper(descriptor: descriptor, origin: latest.wpeOrigin,
+                                  fitMode: latest.fitMode, targets: members)
+        } else {
+            restoreWallpaperSession(for: screen, configuration: latest, preservingState: false)
+        }
+    }
 
-        private func effectiveSceneValues(
-            for descriptor: SceneDescriptor,
-            origin: WPEOrigin?
-        ) -> [String: WallpaperEngineProjectPropertyValue] {
-            switch descriptor.assetStorage {
-            case .cache:
-                guard WPEPathSafety.isSafeCacheRelativePath(descriptor.cacheRelativePath),
-                      let supportRoot = try? FileManager.default.url(
-                          for: .applicationSupportDirectory,
-                          in: .userDomainMask,
-                          appropriateFor: nil,
-                          create: false
-                      ).appendingPathComponent("LiveWallpaper", isDirectory: true) else {
-                    return descriptor.layeredPropertyValues()
-                }
-                let cacheRoot = supportRoot.appendingPathComponent(
-                    descriptor.cacheRelativePath,
-                    isDirectory: true
+    private func effectiveSceneValues(
+        for descriptor: SceneDescriptor,
+        origin: WPEOrigin?
+    ) -> [String: WallpaperEngineProjectPropertyValue] {
+        switch descriptor.assetStorage {
+        case .cache:
+            guard WPEPathSafety.isSafeCacheRelativePath(descriptor.cacheRelativePath),
+                  let supportRoot = try? FileManager.default.url(
+                      for: .applicationSupportDirectory,
+                      in: .userDomainMask,
+                      appropriateFor: nil,
+                      create: false
+                  ).appendingPathComponent("LiveWallpaper", isDirectory: true) else {
+                return descriptor.layeredPropertyValues()
+            }
+            let cacheRoot = supportRoot.appendingPathComponent(
+                descriptor.cacheRelativePath,
+                isDirectory: true
+            )
+            if FileManager.default.fileExists(atPath: cacheRoot.path) {
+                return WallpaperEngineProjectPropertySchema.effectiveSceneValues(
+                    descriptor: descriptor,
+                    cacheRootURL: cacheRoot
                 )
-                if FileManager.default.fileExists(atPath: cacheRoot.path) {
-                    return WallpaperEngineProjectPropertySchema.effectiveSceneValues(
-                        descriptor: descriptor,
-                        cacheRootURL: cacheRoot
-                    )
-                }
-                // Cache purged but the import source may still be resolvable — read
-                // project.json in place so diffing matches lazy render fallback.
-                guard let origin,
-                      case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-                          origin.sourceFolderBookmark,
-                          target: .transient
-                      ) else {
-                    return descriptor.layeredPropertyValues()
-                }
-                return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-                    WallpaperEngineProjectPropertySchema.effectiveSceneValues(
-                        descriptor: descriptor,
-                        cacheRootURL: resolved.url
-                    )
-                }
-            case .sourceDirectory, .packageSource:
-                guard let origin,
-                      case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-                          origin.sourceFolderBookmark,
-                          target: .transient
-                      ) else {
-                    return descriptor.layeredPropertyValues()
-                }
-                return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-                    WallpaperEngineProjectPropertySchema.effectiveSceneValues(
-                        descriptor: descriptor,
-                        cacheRootURL: resolved.url
-                    )
-                }
+            }
+            // Cache purged but the import source may still be resolvable — read
+            // project.json in place so diffing matches lazy render fallback.
+            guard let origin,
+                  case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
+                      origin.sourceFolderBookmark,
+                      target: .transient
+                  ) else {
+                return descriptor.layeredPropertyValues()
+            }
+            return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+                WallpaperEngineProjectPropertySchema.effectiveSceneValues(
+                    descriptor: descriptor,
+                    cacheRootURL: resolved.url
+                )
+            }
+        case .sourceDirectory, .packageSource:
+            guard let origin,
+                  case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
+                      origin.sourceFolderBookmark,
+                      target: .transient
+                  ) else {
+                return descriptor.layeredPropertyValues()
+            }
+            return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+                WallpaperEngineProjectPropertySchema.effectiveSceneValues(
+                    descriptor: descriptor,
+                    cacheRootURL: resolved.url
+                )
             }
         }
+    }
     #endif
 }

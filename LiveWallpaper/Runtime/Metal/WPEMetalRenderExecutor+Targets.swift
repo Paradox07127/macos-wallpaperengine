@@ -589,6 +589,9 @@ extension WPEMetalRenderExecutor {
             noteVendedOutputTexture(recycled)
             return recycled
         }
+        if let limit = spanOutputTextureLimit, outputTexturePool.count >= limit {
+            throw WPEMetalFrameInFlightBudgetExhausted()
+        }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat,
             width: width,
@@ -604,7 +607,7 @@ extension WPEMetalRenderExecutor {
         texture.label = "WPE Metal executor output"
         outputTexturePool.append(texture)
         // Steady state needs 3 (in-render + re-presented latest + history); the cap is 4 so a transient stall can exist until ARC reaps it.
-        if outputTexturePool.count > 4 {
+        if spanOutputTextureLimit == nil, outputTexturePool.count > 4 {
             outputTexturePool.removeFirst()
         }
         noteVendedOutputTexture(texture)

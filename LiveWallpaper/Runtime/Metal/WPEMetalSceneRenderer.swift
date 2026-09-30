@@ -38,6 +38,8 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Last click-capture value this renderer pushed. The mailbox copy is written on the main thread, so a profile change racing that delivery would recompute the pointer-monitor gate from a stale read.
     var lastPushedClickCaptureEnabled: Bool?
     let metalLayer: WPEPresentLayer
+    var spanFrames: WPESceneSpanFrames?
+    var spanFrameSequence: UInt64 = 0
     var surfaceDrawableSize: CGSize
     let executor: WPEMetalRenderExecutor
     let textureLoader: WPEMetalTextureLoader
@@ -463,6 +465,11 @@ final class WPEMetalSceneRenderer: NSObject {
 
     /// `isInitial` marks the load-time call, the only one allowed to establish the source-texture cap: those uploads happen during load and can't be redone, so every later refresh carries the original cap forward.
     func refreshUpscalePlan(reason: String, isInitial: Bool = false) {
+        guard spanFrames == nil else {
+            executor.upscalePlan = .inactive
+            hasPlannedUpscale = true
+            return
+        }
         guard isInitial || hasPlannedUpscale else { return }
         let drawableSize = surfaceDrawableSize
         let fresh = WPEMetalUpscalePlan.make(

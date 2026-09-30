@@ -10,23 +10,35 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     let mailbox: WPEPointerMailbox
     let metalLayer: CAMetalLayer
 
+    var pointerGeometryOverride: WPEPointerMailbox.Geometry?
     private let publisher: WPEPointerPublisher
     /// Written synchronously (caller order); main-thread deliveries apply this latest value, not their captured one.
     private let desiredPointerEventsEnabled = OSAllocatedUnfairLock<Bool?>(initialState: nil)
     private var client: WPERenderSurfaceClient?
 
     // MARK: - Display-link Frame Driver
+
+    private var spanClockScreen: NSScreen?
+
+    func setSpanClockScreen(_ screen: NSScreen?) {
+        guard let screen, spanClockScreen !== screen else { return }
+        spanClockScreen = screen
+        if displayLinkActor != nil {
+            buildDisplayLink()
+        }
+    }
+
     private weak var displayLinkActor: WPEDisplayRenderActor?
     private var displayLinkTarget: WPEDisplayLinkTarget?
     private var screenParamsObserver: NSObjectProtocol?
     private var displayLinkLifecycleTask: Task<Void, Never>?
     private var displayLinkGeneration: UInt64 = 0
 
-    init(frame: CGRect, device: MTLDevice, targetScreen: NSScreen? = nil) {
+    init(frame: CGRect, device: MTLDevice, targetScreen: NSScreen? = nil, allowsHDR: Bool = true) {
         let view = WPEInteractiveMTKView(frame: frame, device: device)
         view.wantsLayer = true
         let hdrOutput = WPEDisplayHDROutput.shouldRequestHDROutput(
-            settingEnabled: WPEDisplayHDROutput.isEnabled,
+            settingEnabled: allowsHDR && WPEDisplayHDROutput.isEnabled,
             targetMaximumPotentialEDR: targetScreen?.maximumPotentialExtendedDynamicRangeColorComponentValue
         )
         view.colorPixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: hdrOutput)
@@ -43,11 +55,14 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         metalLayer.framebufferOnly = !WPEMetalFXSpatialUpscaler.isExperimentEnabled
         WPEDisplayHDROutput.apply(to: metalLayer, hdrOutputEnabled: hdrOutput)
         let mailbox = WPEPointerMailbox()
-        self.mtkView = view
+        mtkView = view
         self.mailbox = mailbox
         self.metalLayer = metalLayer
-        self.publisher = WPEPointerPublisher(mailbox: mailbox, view: view)
+        publisher = WPEPointerPublisher(mailbox: mailbox, view: view)
         super.init()
+        publisher.geometryProvider = { [weak self] in
+            self?.pointerGeometryOverride ?? WPEPointerPublisher.geometry(of: self?.mtkView)
+        }
         view.delegate = self
         publisher.onPointerEnteredView = { [weak self] in
             self?.client?.renderAndPresentFrame()
@@ -60,17 +75,21 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     /// NOT `metalLayer.drawableSize`: a CAMetalLayer reports 0x0 until `nextDrawable()` (see `WPEMetalSurfaceGeometryTests`).
     var backingDrawableSize: CGSize {
         let viewSize = mtkView.drawableSize
-        if viewSize.width > 0, viewSize.height > 0 { return viewSize }
+        if viewSize.width > 0, viewSize.height > 0 {
+            return viewSize
+        }
         return mtkView.convertToBacking(mtkView.bounds).size
     }
 
-    func attach(client: WPERenderSurfaceClient) {
+    func attach(client: WPERenderSurfaceClient, monitorsPointer: Bool = true) {
         let size = backingDrawableSize
         if size.width > 0, size.height > 0, metalLayer.drawableSize != size {
             metalLayer.drawableSize = size
         }
         self.client = client
-        publisher.start()
+        if monitorsPointer {
+            publisher.start()
+        }
         client.updateSurfaceGeometry(drawableSize: size)
     }
 
@@ -92,7 +111,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     private func buildDisplayLink() {
         guard let renderActor = displayLinkActor,
               let target = displayLinkTarget,
-              let screen = mtkView.window?.screen ?? NSScreen.main else { return }
+              let screen = spanClockScreen ?? mtkView.window?.screen ?? NSScreen.main else { return }
         let link = screen.displayLink(target: target, selector: #selector(WPEDisplayLinkTarget.step(_:)))
         let handoff = WPEDisplayLinkHandoff(link: link, maximumFramesPerSecond: screen.configuredFramesPerSecond)
         displayLinkGeneration &+= 1
@@ -130,9 +149,15 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     // MARK: - Pacing (driven by the renderer, via `WPESurfaceControl`)
 
     private func applyPacingOnMain(_ update: WPERenderPacingUpdate) {
-        if let paused = update.isPaused { mtkView.isPaused = paused }
-        if let enable = update.enableSetNeedsDisplay { mtkView.enableSetNeedsDisplay = enable }
-        if let fps = update.preferredFramesPerSecond { mtkView.preferredFramesPerSecond = fps }
+        if let paused = update.isPaused {
+            mtkView.isPaused = paused
+        }
+        if let enable = update.enableSetNeedsDisplay {
+            mtkView.enableSetNeedsDisplay = enable
+        }
+        if let fps = update.preferredFramesPerSecond {
+            mtkView.preferredFramesPerSecond = fps
+        }
         if update.pointerEventsEnabled != nil,
            let latest = desiredPointerEventsEnabled.withLock({ $0 }) {
             // Latest-wins: `deliver`'s unstructured Tasks are not FIFO, so a rapid suspend→resume pair could apply gates inverted.
@@ -140,11 +165,17 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
-    private func setNeedsRedrawOnMain() { mtkView.setNeedsDisplay(mtkView.bounds) }
+    private func setNeedsRedrawOnMain() {
+        mtkView.setNeedsDisplay(mtkView.bounds)
+    }
 
-    private func drawImmediatelyOnMain() { mtkView.draw() }
+    private func drawImmediatelyOnMain() {
+        mtkView.draw()
+    }
 
-    private func releaseDrawablesOnMain() { mtkView.releaseDrawables() }
+    private func releaseDrawablesOnMain() {
+        mtkView.releaseDrawables()
+    }
 
     /// The per-screen Interaction toggle: the view gates event capture on it, the
     /// mailbox exposes it to the render path. Both must see the same value.
@@ -162,18 +193,18 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
 
     // MARK: - MTKViewDelegate
 
-    nonisolated func draw(in view: MTKView) {
+    nonisolated func draw(in _: MTKView) {
         MainActor.assumeIsolated { [weak self] in
             self?.client?.renderAndPresentFrame()
         }
     }
 
-    nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+    nonisolated func mtkView(_: MTKView, drawableSizeWillChange size: CGSize) {
         MainActor.assumeIsolated { [weak self] in
             guard let self else { return }
-            self.client?.updateSurfaceGeometry(drawableSize: size)
+            client?.updateSurfaceGeometry(drawableSize: size)
             // Refresh the mailbox so the first read after layout isn't `.none`.
-            self.mailbox.publishGeometry(WPEPointerPublisher.geometry(of: self.mtkView))
+            mailbox.publishGeometry(pointerGeometryOverride ?? WPEPointerPublisher.geometry(of: mtkView))
         }
     }
 }

@@ -269,7 +269,7 @@ extension WPEMetalSceneRenderer {
             completedGeneration: completedPresentGeneration,
             hasReadinessConsumer: displayActor != nil
         )
-        let frameProduction = readinessPlan.tracksReadiness
+        let frameProduction = (readinessPlan.tracksReadiness || spanFrames != nil)
             ? WPEMetalFrameProductionCompletion()
             : nil
         defer { frameProduction?.seal() }

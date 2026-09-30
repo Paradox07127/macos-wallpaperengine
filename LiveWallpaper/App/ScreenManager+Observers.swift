@@ -358,7 +358,7 @@ extension ScreenManager {
         (screen.runtimeSession as? AmbientWallpaperSession)?
             .setHibernationEligible(isAbsenceLikeSuspension)
         #if !LITE_BUILD
-        (screen.runtimeSession as? SceneWallpaperSession)?
+        (screen.runtimeSession as? any SceneWallpaperRuntime)?
             .setHibernationEligible(isAbsenceLikeSuspension)
         #endif
         // Read from the watcher's live level on every refresh, not only on a level change: a session installed while pressure is already critical would otherwise never hear about it.
@@ -376,7 +376,7 @@ extension ScreenManager {
         throttleReasons: Set<WallpaperSuspendReason> = []
     ) {
         #if !LITE_BUILD
-        guard let scene = screen.runtimeSession as? SceneWallpaperSession,
+        guard let scene = screen.runtimeSession as? any SceneWallpaperRuntime,
               let controller = scene.frameRateController else {
             adaptiveFrameRateOcclusionThrottled[screen.id] = nil
             return
@@ -453,7 +453,7 @@ extension ScreenManager {
                   (suspendReasonsByScreen[screen.id] ?? []).isEmpty,
                   screen.playbackController?.userIntendsToPlay ?? true else { return false }
             #if !LITE_BUILD
-            if let scene = screen.runtimeSession as? SceneWallpaperSession {
+            if let scene = screen.runtimeSession as? any SceneWallpaperRuntime {
                 return scene.mayPerformRuntimeWork
             }
             #endif

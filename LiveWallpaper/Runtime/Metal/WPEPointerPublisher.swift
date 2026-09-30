@@ -18,12 +18,13 @@ final class WPEPointerPublisher {
     /// Pointer-locked particle scenes drop frame demand while the cursor is off
     /// this display. Entering the view must produce one frame so spawn can resume.
     var onPointerEnteredView: (() -> Void)?
+    var geometryProvider: (() -> WPEPointerMailbox.Geometry)?
     /// Defaults ON so `attach` behaves exactly as before the renderer's first
     /// post-load demand evaluation arrives.
     private var mouseMonitoringEnabled = true
 
     private static let mouseMask: NSEvent.EventTypeMask = [
-        .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
+        .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
     ]
 
     /// `throttleFPS` bounds mailbox writes to display cadence. `throttleFPS <= 0` disables it. Safe because the mailbox is last-write-wins and the renderer re-reads every frame.
@@ -36,18 +37,22 @@ final class WPEPointerPublisher {
         self.mailbox = mailbox
         self.view = view
         self.now = now
-        self.throttleInterval = throttleFPS > 0 ? 1.0 / throttleFPS : 0
+        throttleInterval = throttleFPS > 0 ? 1.0 / throttleFPS : 0
     }
 
     /// True while the NSEvent mouse monitors are installed — not the start/stop lifecycle (`setMouseMonitoringEnabled(false)` reports false).
-    var isRunning: Bool { globalMonitor != nil || localMonitor != nil }
+    var isRunning: Bool {
+        globalMonitor != nil || localMonitor != nil
+    }
 
     func start() {
         guard !isStarted else { return }
         isStarted = true
         installGeometryObservers()
         publishGeometry() // seed current geometry so the first read isn't `.none`
-        if mouseMonitoringEnabled { installMouseMonitors() }
+        if mouseMonitoringEnabled {
+            installMouseMonitors()
+        }
     }
 
     /// Geometry observers stay installed; the `isStarted` guard is load-bearing: an enable queued before `detach()` can be delivered after it and must not resurrect monitors on a torn-down surface.
@@ -130,7 +135,7 @@ final class WPEPointerPublisher {
             NSWindow.didMoveNotification,
             NSWindow.didResizeNotification,
             NSWindow.didChangeScreenNotification,
-            NSApplication.didChangeScreenParametersNotification
+            NSApplication.didChangeScreenParametersNotification,
         ]
         for name in names {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -141,9 +146,11 @@ final class WPEPointerPublisher {
     }
 
     private func publishGeometry() {
-        mailbox.publishGeometry(Self.geometry(of: view))
+        mailbox.publishGeometry(geometryProvider?() ?? Self.geometry(of: view))
         // A display/window move can slide the view under a stationary pointer. Only resample while monitors are installed: gated off, `lastSampleWasInside` must stay the `false` that `removeMouseMonitors` left, or the re-enable seed would see no edge and skip its wake.
-        if isRunning { ingestPointerLocation(NSEvent.mouseLocation) }
+        if isRunning {
+            ingestPointerLocation(NSEvent.mouseLocation)
+        }
     }
 
     static func geometry(of view: NSView?) -> WPEPointerMailbox.Geometry {

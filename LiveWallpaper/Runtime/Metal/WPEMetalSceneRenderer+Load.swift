@@ -22,6 +22,7 @@ extension WPEMetalSceneRenderer {
         )
         #endif
         loadGeneration &+= 1
+        spanFrames?.reset(generation: loadGeneration)
         let generation = loadGeneration
         completedPresentGeneration = nil
         failedPresentGeneration = nil

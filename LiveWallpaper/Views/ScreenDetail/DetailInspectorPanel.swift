@@ -98,7 +98,6 @@ struct DetailInspectorPanel: View {
                         )
                     }
                     #endif
-
                 }
 
                 if draft.selectedWallpaperType == .video,
@@ -108,6 +107,7 @@ struct DetailInspectorPanel: View {
 
                 #if !LITE_BUILD
                 if draft.selectedWallpaperType == .scene, draft.sceneDescriptor != nil {
+                    displayGroup
                     if let schema = wpeSceneCustomSettingsSchema,
                        schema.properties.contains(where: WPESceneCustomSettingsCard.isSceneSettingCandidate) {
                         WPESceneCustomSettingsCard(
@@ -276,7 +276,7 @@ struct DetailInspectorPanel: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .disabled(screenManager.screens.count <= 1)
+                    .disabled(screenManager.screens.count <= 1 && !spanDisplaysBinding.wrappedValue)
                     .accessibilityLabel(Text("Span All Displays"))
             }
         }
@@ -285,8 +285,25 @@ struct DetailInspectorPanel: View {
 
     private var spanDisplaysBinding: Binding<Bool> {
         Binding(
-            get: { draft.selectedVideoDisplayMode == .spanAllDisplays },
+            get: {
+                #if !LITE_BUILD
+                if draft.selectedWallpaperType == .scene {
+                    return screenManager.getConfiguration(for: screen)?.sceneSpanGroupID != nil
+                }
+                #endif
+                return draft.selectedVideoDisplayMode == .spanAllDisplays
+            },
             set: { newValue in
+                #if !LITE_BUILD
+                if draft.selectedWallpaperType == .scene, let descriptor = draft.sceneDescriptor {
+                    if newValue {
+                        screenManager.setSceneSpanWallpaper(descriptor: descriptor, origin: draft.wpeOrigin, fitMode: draft.selectedFitMode)
+                    } else {
+                        screenManager.leaveSceneSpan(for: screen)
+                    }
+                    return
+                }
+                #endif
                 let target: VideoDisplayMode = newValue ? .spanAllDisplays : .perDisplay
                 guard draft.selectedVideoDisplayMode != target else { return }
                 draft.selectedVideoDisplayMode = target

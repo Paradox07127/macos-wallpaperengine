@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
@@ -154,12 +155,46 @@ struct DisplayConfigurationControllerTests {
         #expect(sessionNotifications == 0)
     }
 
-    private func makePlayback(store: WallpaperConfigurationStore, commands: any DisplayConfigurationCommitting) -> PlaybackCoordinator {
+    #if !LITE_BUILD
+    @Test("Scene span audio edits propagate to members while independent scenes retain their settings")
+    func sceneSpanAudioOwnership() throws {
+        let displays = (0 ..< 3).map { index -> Screen in
+            let screen = SpanAudioTestScreen()
+            screen.index = index
+            return Screen(nsScreen: screen)
+        }
+        let descriptor = SceneDescriptor(workshopID: "span-audio", cacheRelativePath: "wpe-cache/span-audio", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let groupID = UUID()
+        let persistence = ConfigurationMemory()
+        persistence.values = displays.enumerated().map { index, screen in
+            var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor))
+            configuration.displayFingerprint = screen.displayFingerprint
+            configuration.sceneSpanGroupID = index < 2 ? groupID : nil
+            configuration.muted = true
+            configuration.videoVolume = 0.25
+            return configuration
+        }
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        _ = store.loadAll()
+        let playback = makePlayback(store: store, commands: DisplayConfigurationTestSupport.commands(for: store), screens: displays)
+        playback.updateMuted(false, for: displays[1])
+        playback.updateVideoVolume(0.75, for: displays[1])
+        for screen in displays.prefix(2) {
+            let configuration = try #require(store.get(for: screen.id, fingerprint: screen.displayFingerprint))
+            #expect(!configuration.muted)
+            #expect(configuration.videoVolume == 0.75)
+        }
+        #expect(store.get(for: displays[2].id)?.muted == true)
+        #expect(store.get(for: displays[2].id)?.videoVolume == 0.25)
+    }
+    #endif
+
+    private func makePlayback(store: WallpaperConfigurationStore, commands: any DisplayConfigurationCommitting, screens: [Screen] = []) -> PlaybackCoordinator {
         PlaybackCoordinator(
             configurationStore: store, configurationCommands: commands,
             playableVideoLoader: FakePlayableVideoLoader(),
             applyPolicy: { _ in }, applyVideoEffects: { _, _ in },
-            refreshRateLookup: { _ in 60 }, screensProvider: { [] },
+            refreshRateLookup: { _ in 60 }, screensProvider: { screens },
             markSessionStateChanged: {}, releaseRuntimeSession: { _ in },
             notifyWallpaperSessionChanged: {}, originReconciler: PreservingOriginReconciler()
         )
@@ -210,5 +245,24 @@ private final class ConfigurationMemory: ScreenConfigurationPersisting {
 
     func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
         values = configurations
+    }
+}
+
+private final class SpanAudioTestScreen: NSScreen {
+    var index = 0
+    override var frame: NSRect {
+        NSRect(x: index * 800, y: 0, width: 800, height: 600)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [:]
+    }
+
+    override var localizedName: String {
+        "Span audio test \(index)"
+    }
+
+    override var debugDescription: String {
+        localizedName
     }
 }

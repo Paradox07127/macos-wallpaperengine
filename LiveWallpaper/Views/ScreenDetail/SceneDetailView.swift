@@ -179,7 +179,7 @@ enum SceneRenderState: Equatable {
 extension SceneRenderState {
     /// Reads only the session's cached fields; the session refreshes them when its renderer state is polled.
     @MainActor
-    static func derivedState(session targetSession: SceneWallpaperSession?) -> SceneRenderState {
+    static func derivedState(session targetSession: (any SceneWallpaperRuntime)?) -> SceneRenderState {
         guard let targetSession else { return .notRendering }
         if let error = targetSession.loadError {
             return .error(mapToFallbackReason(error))

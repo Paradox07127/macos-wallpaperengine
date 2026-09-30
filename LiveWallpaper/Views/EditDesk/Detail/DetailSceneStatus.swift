@@ -7,7 +7,7 @@ import SwiftUI
 struct DetailSceneStatus {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
-    let session: SceneWallpaperSession?
+    let session: (any SceneWallpaperRuntime)?
     let state: SceneRenderState
 
     init?(screen: Screen, configuration: ScreenConfiguration?) {
@@ -15,7 +15,7 @@ struct DetailSceneStatus {
               let origin = configuration?.wpeOrigin else { return nil }
         self.origin = origin
         self.descriptor = descriptor
-        session = screen.runtimeSession as? SceneWallpaperSession
+        session = screen.runtimeSession as? any SceneWallpaperRuntime
         state = SceneRenderState.derivedState(session: session)
     }
 

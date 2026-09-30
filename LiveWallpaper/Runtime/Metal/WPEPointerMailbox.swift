@@ -8,6 +8,7 @@ final class WPEPointerMailbox: Sendable {
     /// View frame in screen coordinates (bottom-left origin). A zero-size rect means no active surface and resolves samples to `.inactive`.
     struct Geometry: Equatable, Sendable {
         var viewFrameInScreen: CGRect
+        var interactiveFrames: [CGRect]?
         static let none = Geometry(viewFrameInScreen: .zero)
     }
 
@@ -93,7 +94,8 @@ final class WPEPointerMailbox: Sendable {
         geometry: Geometry
     ) -> WPEMetalPointerSample {
         let rect = geometry.viewFrameInScreen
-        guard rect.width > 0, rect.height > 0, rect.contains(location) else {
+        guard rect.width > 0, rect.height > 0, rect.contains(location),
+              geometry.interactiveFrames?.contains(where: { $0.contains(location) }) ?? true else {
             return .inactive
         }
         let x = Double((location.x - rect.minX) / rect.width)

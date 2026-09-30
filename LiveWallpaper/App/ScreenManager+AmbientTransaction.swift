@@ -135,7 +135,7 @@ extension ScreenManager {
                         cause = webCause
                     }
                     #if !LITE_BUILD
-                    if let scene = candidate as? SceneWallpaperSession {
+                    if let scene = candidate as? any SceneWallpaperRuntime {
                         cause = scene.loadFailureCause ?? scene.loadError.map(SceneFailureCause.make) ?? cause
                         if scene.loadError == nil, let gpuError = scene.rendererDiagnostics?.gpuErrors.last {
                             cause = WallpaperFailureCause(code: "scene.gpu_present", reason: gpuError)

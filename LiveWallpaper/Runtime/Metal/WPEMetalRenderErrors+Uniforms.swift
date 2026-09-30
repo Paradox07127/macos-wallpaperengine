@@ -26,14 +26,14 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     /// A pass this executor can never draw because its shader will not translate or compile. These are ordinary workshop content rather than renderer faults — the pass skips its own draw instead of taking the whole scene down.
     var untranslatableShaderReason: String? {
         switch self {
-        case .shaderTranslatorUnavailable(_, let reason): return reason
-        case .unsupportedShader(let name):
-            return String(
+        case let .shaderTranslatorUnavailable(_, reason): reason
+        case let .unsupportedShader(name):
+            String(
                 localized: "error.render.executor.unsupported_shader_reason",
                 defaultValue: "shader '\(name)' unsupported by Metal renderer",
                 bundle: .appLanguage, comment: "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name."
             )
-        default: return nil
+        default: nil
         }
     }
 
@@ -51,38 +51,38 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
                 defaultValue: "WPE Metal built-in shader library is unavailable.",
                 bundle: .appLanguage, comment: "Error shown when the built-in Metal shader library is unavailable."
             )
-        case .pipelineUnavailable(let name):
+        case let .pipelineUnavailable(name):
             return String(
                 localized: "error.render.executor.pipeline_unavailable",
                 defaultValue: "WPE Metal pipeline is unavailable for \(name).",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create a render pipeline."
             )
-        case .unsupportedShader(let name):
+        case let .unsupportedShader(name):
             return String(
                 localized: "error.render.executor.unsupported_shader",
                 defaultValue: "WPE Metal executor does not support shader \(name).",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer does not support a shader."
             )
-        case .shaderTranslatorUnavailable(let name, let reason):
+        case let .shaderTranslatorUnavailable(name, reason):
             return String(
                 localized: "error.render.executor.shader_translator_unavailable",
                 defaultValue: "WPE shader '\(name)' is unsupported by the Metal renderer: \(reason)",
                 bundle: .appLanguage, comment: "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer."
             )
-        case .pipelineStateBuildFailed(let name, let detail):
+        case let .pipelineStateBuildFailed(name, detail):
             return String(
                 localized: "error.render.executor.pipeline_state_build_failed",
                 defaultValue: "Metal pipeline build failed for '\(name)': \(detail)",
                 bundle: .appLanguage, comment: "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input)."
             )
-        case .missingTexture(let reference):
+        case let .missingTexture(reference):
             let referenceDescription = String(describing: reference)
             return String(
                 localized: "error.render.executor.missing_texture",
                 defaultValue: "WPE Metal executor is missing texture \(referenceDescription).",
                 bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot find a required texture."
             )
-        case .renderTargetDimensionsExceedDeviceLimit(let targetName, let width, let height, let limit):
+        case let .renderTargetDimensionsExceedDeviceLimit(targetName, width, height, limit):
             return String(
                 localized: "error.render.executor.render_target_dimensions_exceed_device_limit",
                 defaultValue: "WPE Metal render target '\(targetName)' is \(width)x\(height), exceeding this device's \(limit)x\(limit) 2D texture limit.",
@@ -109,7 +109,7 @@ enum WPEMetalTextureLimits {
     static func maximum2DTextureDimension(for device: MTLDevice) -> Int {
         // arm64-only distribution: every Mac GPU is Apple family with an
         // .apple7 (M1) floor at 16384; .apple10 raises the cap.
-        device.supportsFamily(.apple10) ? 32_768 : 16_384
+        device.supportsFamily(.apple10) ? 32768 : 16384
     }
 }
 
@@ -153,7 +153,7 @@ struct WPEPresentUniforms {
     var ndcScale: SIMD2<Float>
     var uvScale: SIMD2<Float>
     var uvOffset: SIMD2<Float>
-    var padding: SIMD2<Float> = SIMD2<Float>(0, 0)
+    var ndcOffset: SIMD2<Float> = .init(0, 0)
 
     /// Degenerate sizes fall back to identity (stretch).
     static func make(
@@ -205,6 +205,25 @@ struct WPEPresentUniforms {
         return u
     }
 
+    /// Fits the scene once to the desktop union, then projects that quad into a
+    /// display's local viewport. Desktop coordinates point up; texture UVs point down.
+    func sliced(to configuration: VideoSpanRenderConfiguration) -> WPEPresentUniforms? {
+        let canvas = configuration.canvasFrame
+        let screen = configuration.screenFrame
+        for rect in [canvas, screen] {
+            guard [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite),
+                  rect.width > 0, rect.height > 0 else { return nil }
+        }
+        guard canvas.contains(screen) else { return nil }
+        let scale = SIMD2<Float>(Float(canvas.width / screen.width), Float(canvas.height / screen.height))
+        let offset = SIMD2<Float>(Float(2 * (canvas.midX - screen.midX) / screen.width),
+                                  Float(2 * (canvas.midY - screen.midY) / screen.height))
+        var result = self
+        result.ndcScale *= scale
+        result.ndcOffset = ndcOffset * scale + offset
+        return result
+    }
+
     /// Maps a pointer normalised to the drawable into the scene's own normalised space.
     ///
     /// Present crops (`cover`) or insets (`contain`/`center`) the scene whenever the two
@@ -220,7 +239,8 @@ struct WPEPresentUniforms {
             guard ndc > 0 else { return nil }
             // Undo the quad placement first, then apply the source crop: the two are
             // applied in that order by the present shader.
-            let quad = (pointer[axis] - (1 - ndc) / 2) / ndc
+            let offset = Double(ndcOffset[axis]) * (axis == 0 ? 1 : -1)
+            let quad = (pointer[axis] - (1 - ndc + offset) / 2) / ndc
             scene[axis] = quad * Double(uvScale[axis]) + Double(uvOffset[axis])
         }
         guard (0 ... 1).contains(scene.x), (0 ... 1).contains(scene.y) else { return nil }
@@ -272,7 +292,7 @@ struct WPEWaterWavesUniforms {
     /// 1 when an opacity mask is bound in texture slot 1, else 0 (effect applies everywhere).
     var hasMask: Float
     /// WPE packs texture resolution as (textureWidth, textureHeight, imageWidth, imageHeight).
-    var texture1Resolution: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var texture1Resolution: SIMD4<Float> = .init(1, 1, 1, 1)
 }
 
 struct WPEShakeUniforms {
@@ -486,11 +506,11 @@ struct WPEShimmerUniforms {
 
 /// Layout MUST match `WPEParticleProjection` in WPEMetalBuiltins.metal.
 struct WPEParticleProjection {
-    var sceneSize: SIMD4<Float>   // x = width, y = height (pixels)
-    var padding: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+    var sceneSize: SIMD4<Float> // x = width, y = height (pixels)
+    var padding: SIMD4<Float> = .init(0, 0, 0, 0)
     /// WPE `g_RenderVar0` for TRAILRENDERER: x = speed→length multiplier,
     /// y = max length, z = min length, w > 0.5 = trail enabled.
-    var trail: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+    var trail: SIMD4<Float> = .init(0, 0, 0, 0)
     /// Signed model XY scale divided by the size's baked average; cos/sin of model Z rotation.
     var modelShape = SIMD4<Float>(1, 1, 1, 0)
     var viewProjection = matrix_identity_float4x4

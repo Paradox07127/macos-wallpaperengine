@@ -46,7 +46,7 @@ private enum WPEPathSafety {
 
     private static func normalizedPath(_ path: String) -> String {
         var normalized = path
-        while normalized.count > 1 && normalized.hasSuffix("/") {
+        while normalized.count > 1, normalized.hasSuffix("/") {
             normalized.removeLast()
         }
         return normalized
@@ -91,7 +91,7 @@ enum HTMLWallpaperCompatibilityPolicy {
         _ source: HTMLSource,
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared
     ) -> Bool {
-        guard case .folder(_, let indexFileName) = source else { return false }
+        guard case let .folder(_, indexFileName) = source else { return false }
         return withResolvedFolderURL(source, bookmarkResolver: bookmarkResolver) { folderURL in
             shouldAutoEnablePhysicalPixelLayout(folderURL: folderURL, indexFileName: indexFileName)
         } ?? false
@@ -108,14 +108,18 @@ enum HTMLWallpaperCompatibilityPolicy {
         bookmarkResolver: SecurityScopedBookmarkResolver,
         _ body: (URL) -> T
     ) -> T? {
-        guard case .folder(let bookmarkData, _) = source else { return nil }
-        guard case .success(let resolved) = bookmarkResolver.resolve(
+        guard case let .folder(bookmarkData, _) = source else { return nil }
+        guard case let .success(resolved) = bookmarkResolver.resolve(
             bookmarkData,
             target: .transient
         ) else { return nil }
         let folderURL = resolved.url
         let didStart = folderURL.startAccessingSecurityScopedResource()
-        defer { if didStart { folderURL.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart {
+                folderURL.stopAccessingSecurityScopedResource()
+            }
+        }
         return body(folderURL)
     }
 
@@ -179,7 +183,7 @@ final class AmbientWallpaperSessionBuilder {
             bookmarkResolver: bookmarkResolver
         )
         let effective = compatibility.config
-        if case .untrustedRemote(let origin) = compatibility.trust {
+        if case let .untrustedRemote(origin) = compatibility.trust {
             if config.allowJavaScript {
                 Logger.warning("HTML wallpaper: dropping JS for untrusted origin \(origin.rawValue)", category: .screenManager)
             }
@@ -219,14 +223,14 @@ final class AmbientWallpaperSessionBuilder {
         onBookmarkRefresh: BookmarkRefreshHandler = { _, _ in }
     ) -> HTMLSource {
         guard let original = source.localBookmarkData,
-              case .success(let resolved) = bookmarkResolver.resolve(
-                original,
-                target: .transient
+              case let .success(resolved) = bookmarkResolver.resolve(
+                  original,
+                  target: .transient
               ),
               resolved.didRefresh,
               let refreshedSource = source.replacingLocalBookmark(
-                matching: original,
-                with: resolved.bookmarkData
+                  matching: original,
+                  with: resolved.bookmarkData
               ) else { return source }
         onBookmarkRefresh(original, resolved.bookmarkData)
         return refreshedSource
@@ -237,10 +241,13 @@ final class AmbientWallpaperSessionBuilder {
         descriptor: SceneDescriptor,
         origin: WPEOrigin? = nil,
         frame: CGRect,
-        /// The screen's configured fit mode. Passed at construction rather than
-        /// submitted afterwards: the MetalFX plan reads it during `load()`, and
-        /// a later submit would race that.
+        // The screen's configured fit mode. Passed at construction rather than
+        // submitted afterwards: the MetalFX plan reads it during `load()`, and
+        // a later submit would race that.
         fitMode: VideoFitMode = .aspectFill,
+        spanFrames: WPESceneSpanFrames? = nil,
+        spanDensity: CGFloat = 1,
+        spanMemberCount: Int = 0,
         dependencyMounts: [WPEAssetMount] = [],
         engineAssetsRootURL: URL? = nil,
         applicationSupportRootURL: URL? = nil,
@@ -293,11 +300,10 @@ final class AmbientWallpaperSessionBuilder {
             }
         }
 
-        let entryAvailable: Bool
-        if let provider = assets.provider {
-            entryAvailable = provider.exists(atRelativePath: descriptor.entryFile)
+        let entryAvailable: Bool = if let provider = assets.provider {
+            provider.exists(atRelativePath: descriptor.entryFile)
         } else {
-            entryAvailable = (try? SceneResourceResolver(cacheRootURL: cacheURL)
+            (try? SceneResourceResolver(cacheRootURL: cacheURL)
                 .resolveExistingFileURL(relativePath: descriptor.entryFile)) != nil
         }
         guard entryAvailable else {
@@ -310,18 +316,17 @@ final class AmbientWallpaperSessionBuilder {
             Logger.warning("Metal scene renderer unavailable on this Mac", category: .screenManager)
             return nil
         }
-        let backing = WPEOffMainRenderFlag.backing
+        let backing: WPEDisplayRenderActor.Backing = spanFrames == nil ? WPEOffMainRenderFlag.backing : .renderThread
         // Resolve the destination before selecting a drawable format; another screen's HDR capability
         // must not widen an SDR wallpaper's surface. The window chooses its screen from its global frame.
         let window = VideoWallpaperWindow(frame: frame)
-        let surface = WPERenderSurface(frame: rendererFrame, device: device, targetScreen: window.screen)
+        let surface = WPERenderSurface(frame: rendererFrame, device: device, targetScreen: window.screen, allowsHDR: spanFrames == nil)
         let renderActor = WPEDisplayRenderActor(backing: backing)
-        let surfaceControl: any WPESurfaceControl
-        switch backing {
+        let surfaceControl: any WPESurfaceControl = switch backing {
         case .main:
-            surfaceControl = surface
+            surface
         case .renderThread:
-            surfaceControl = WPERenderThreadFramePacer(surface: surface, renderActor: renderActor)
+            WPERenderThreadFramePacer(surface: surface, renderActor: renderActor)
         }
         // Window BEFORE the renderer so the view has a window (and therefore a
         // backing scale) to convert against.
@@ -329,7 +334,7 @@ final class AmbientWallpaperSessionBuilder {
         // One source of truth (`WPERenderSurface.backingDrawableSize`). Reading
         // the layer here returns 0x0 — it stays zero until the first
         // `nextDrawable()`, whatever the window and layout have done.
-        let seededDrawableSize = surface.backingDrawableSize
+        let seededDrawableSize = spanFrames == nil ? surface.backingDrawableSize : CGSize(width: frame.width * spanDensity, height: frame.height * spanDensity)
         let renderer: WPEMetalSceneRenderer
         do {
             renderer = try WPEMetalSceneRenderer(
@@ -351,10 +356,18 @@ final class AmbientWallpaperSessionBuilder {
             return nil
         }
 
+        renderer.spanFrames = spanFrames
+        if spanFrames != nil {
+            renderer.executor.spanOutputTextureLimit = max(spanMemberCount, 1) + 8
+        }
         let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
         surface.attach(client: shim)
 
-        window.orderBack(nil)
+        if spanFrames == nil {
+            window.orderBack(nil)
+        } else {
+            window.orderOut(nil)
+        }
 
         if case .renderThread = backing {
             surface.startDisplayLinkDriver(renderActor: renderActor)
@@ -406,7 +419,7 @@ final class AmbientWallpaperSessionBuilder {
                 didStartAccessing: source.didStart
             )
             return (provider, source.url)
-        case .packageSource(let fileName):
+        case let .packageSource(fileName):
             guard let source = resolveSourceFolder(
                 origin: origin,
                 onOriginBookmarkRefresh: onOriginBookmarkRefresh
@@ -433,8 +446,8 @@ final class AmbientWallpaperSessionBuilder {
     ) -> (url: URL, didStart: Bool)? {
         guard let origin,
               let resolved = refreshingWPEOrigin(
-                origin,
-                onOriginBookmarkRefresh: onOriginBookmarkRefresh
+                  origin,
+                  onOriginBookmarkRefresh: onOriginBookmarkRefresh
               ) else { return nil }
         return (resolved.url, resolved.url.startAccessingSecurityScopedResource())
     }
@@ -443,7 +456,7 @@ final class AmbientWallpaperSessionBuilder {
         _ origin: WPEOrigin,
         onOriginBookmarkRefresh: WPEOriginRefreshHandler = { _, _ in }
     ) -> (origin: WPEOrigin, url: URL)? {
-        guard case .success(let resolved) = bookmarkResolver.resolve(
+        guard case let .success(resolved) = bookmarkResolver.resolve(
             origin.sourceFolderBookmark,
             target: .transient
         ) else {
@@ -451,8 +464,8 @@ final class AmbientWallpaperSessionBuilder {
         }
         guard resolved.didRefresh,
               let refreshedOrigin = origin.replacingSourceFolderBookmark(
-                matching: origin.sourceFolderBookmark,
-                with: resolved.bookmarkData
+                  matching: origin.sourceFolderBookmark,
+                  with: resolved.bookmarkData
               ) else {
             return (origin, resolved.url)
         }
@@ -465,10 +478,10 @@ final class AmbientWallpaperSessionBuilder {
     private func relocatingWPEOrigin(_ origin: WPEOrigin) -> (origin: WPEOrigin, url: URL)? {
         guard !origin.workshopID.isEmpty,
               let relocated = relocateWorkshopSource(origin.workshopID),
-              case .success(let resolved) = bookmarkResolver.resolve(relocated, target: .transient),
+              case let .success(resolved) = bookmarkResolver.resolve(relocated, target: .transient),
               let relocatedOrigin = origin.replacingSourceFolderBookmark(
-                matching: origin.sourceFolderBookmark,
-                with: resolved.bookmarkData
+                  matching: origin.sourceFolderBookmark,
+                  with: resolved.bookmarkData
               ) else { return nil }
         Logger.info(
             "Relocated workshop \(origin.workshopID) source for this session after its stored bookmark stopped resolving",
@@ -479,7 +492,7 @@ final class AmbientWallpaperSessionBuilder {
 
     private func cacheFallbackSourceProvider(
         origin: WPEOrigin?,
-        fileManager: FileManager,
+        fileManager _: FileManager,
         onOriginBookmarkRefresh: @escaping WPEOriginRefreshHandler
     ) -> (provider: (any WPESceneAssetProvider)?, projectRoot: URL)? {
         guard let source = resolveSourceFolder(
@@ -502,5 +515,4 @@ final class AmbientWallpaperSessionBuilder {
         return (provider, source.url)
     }
     #endif
-
 }

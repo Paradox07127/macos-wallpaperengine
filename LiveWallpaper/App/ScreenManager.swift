@@ -36,6 +36,10 @@ final class ScreenManager {
     @ObservationIgnored let originReconciler: any OriginReconciler
     @ObservationIgnored let configurationStore = WallpaperConfigurationStore()
     @ObservationIgnored let ambientSessionBuilder = AmbientWallpaperSessionBuilder()
+    #if !LITE_BUILD
+    @ObservationIgnored var sceneSpanGroups: [UUID: SceneSpanWallpaperGroup] = [:]
+    @ObservationIgnored var sceneSpanProposals: [UUID: [CGDirectDisplayID: ScreenConfiguration]] = [:]
+    #endif
     @ObservationIgnored private let automationCoordinator = WallpaperAutomationCoordinator()
     @ObservationIgnored let powerMonitor: any PowerMonitoring
     @ObservationIgnored let playbackStateSubject = CurrentValueSubject<Bool, Never>(false)

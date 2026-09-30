@@ -24,7 +24,7 @@ extension ScreenManager {
     nonisolated static let longPreparationTimeout: Duration = .seconds(12)
 
     #if !LITE_BUILD
-    func captureActiveSceneFailure(_ session: SceneWallpaperSession) {
+    func captureActiveSceneFailure(_ session: any SceneWallpaperRuntime) {
         guard let error = session.loadError,
               let screen = screens.first(where: { $0.runtimeSession === session }),
               wallpaperLoads.attempt(for: screen) == nil,

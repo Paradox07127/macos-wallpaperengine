@@ -1,15 +1,14 @@
 import AppKit
 @preconcurrency import AVFoundation
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import os
 import Testing
-@testable import LiveWallpaper
 
 @MainActor
 @Suite("Critical memory pressure fan-out", .serialized)
 struct CriticalMemoryPressureFanoutTests {
-
     // MARK: - Video session behaviour
 
     /// The player's own absence dwell is set to a value no test could wait out,
@@ -318,7 +317,7 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(!insideGate.contains("WallpaperCriticalMemoryPressureResponding"))
         // Control: the scene's own dwell call genuinely is inside that block, so
         // the assertion above cannot pass on a file that simply lost the gate.
-        #expect(insideGate.contains("as? SceneWallpaperSession"))
+        #expect(insideGate.contains("as? any SceneWallpaperRuntime"))
     }
 
     /// The video path reuses the manual-pause dwell's post-await revalidation; those
@@ -414,7 +413,9 @@ struct CriticalMemoryPressureFanoutTests {
         ) async throws {
             let deadline = ContinuousClock.now + timeout
             while ContinuousClock.now < deadline {
-                if condition() { return }
+                if condition() {
+                    return
+                }
                 try await Task.sleep(for: .milliseconds(20))
             }
             Issue.record("Timed out waiting for: \(description)")
@@ -476,7 +477,7 @@ private enum PressureVideoFixture {
             outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: width,
-                AVVideoHeightKey: height
+                AVVideoHeightKey: height,
             ]
         )
         input.expectsMediaDataInRealTime = false
@@ -485,7 +486,7 @@ private enum PressureVideoFixture {
             sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
-                kCVPixelBufferHeightKey as String: height
+                kCVPixelBufferHeightKey as String: height,
             ]
         )
         guard writer.canAdd(input) else { throw FixtureError.setupFailed("cannot add input") }
@@ -497,7 +498,9 @@ private enum PressureVideoFixture {
 
         let totalFrames = max(2, Int(Double(frameRate) * durationSeconds))
         for index in 0 ..< totalFrames {
-            while !input.isReadyForMoreMediaData { await Task.yield() }
+            while !input.isReadyForMoreMediaData {
+                await Task.yield()
+            }
             var pixelBuffer: CVPixelBuffer?
             let status = CVPixelBufferCreate(
                 kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &pixelBuffer

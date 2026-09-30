@@ -645,7 +645,7 @@ struct WPEPresentUniforms {
     float2 ndcScale;
     float2 uvScale;
     float2 uvOffset;
-    float2 padding;
+    float2 ndcOffset;
 };
 
 // Final on-screen blit with aspect handling, kept separate from the reused
@@ -670,7 +670,7 @@ struct WPEPresentUniforms {
         float2(1.0, 0.0)
     };
     WPEVertexOut out;
-    out.position = float4(positions[vertexID] * u.ndcScale, 0.0, 1.0);
+    out.position = float4(positions[vertexID] * u.ndcScale + u.ndcOffset, 0.0, 1.0);
     out.uv = uvs[vertexID] * u.uvScale + u.uvOffset;
     return out;
 }

@@ -141,11 +141,11 @@ extension ScreenManager {
                 origin: runtimeOrigin
             )
             let engineRoot = WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
-            guard let sceneSession = ambientSessionBuilder.makeSceneSession(
+            guard let sceneSession = makeSceneRuntimeSession(
                 descriptor: descriptor,
                 origin: runtimeOrigin,
-                frame: screen.frame,
-                fitMode: configuration.fitMode,
+                screen: screen,
+                configuration: configuration,
                 dependencyMounts: dependencyMounts,
                 engineAssetsRootURL: engineRoot,
                 onOriginBookmarkRefresh: { [weak self] origin, refreshed in

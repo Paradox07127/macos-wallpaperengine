@@ -33,6 +33,7 @@ extension WPEMetalSceneRenderer {
         didLoad = false
         let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
         loadGeneration &+= 1
+        spanFrames?.reset(generation: loadGeneration)
         await staticTextureReloadDrain.wait()
         finishAllPendingLivePosterCaptures(image: nil)
         deferredAudioStartupTask?.cancel()
@@ -729,6 +730,7 @@ extension WPEMetalSceneRenderer {
         didLoad = false
         Task { [owner = staticTextureReloadTaskOwner] in _ = await owner.quiesce() }
         loadGeneration &+= 1
+        spanFrames?.reset(generation: loadGeneration)
         finishAllPendingLivePosterCaptures(image: nil)
         deferredAudioStartupTask?.cancel()
         deferredAudioStartupTask = nil
@@ -794,6 +796,10 @@ extension WPEMetalSceneRenderer {
     // MARK: - Frame production (driven by the surface's `draw(in:)`)
 
     func renderAndPresentFrame() {
+        if let spanFrames {
+            renderAndPublishSpanFrame(to: spanFrames)
+            return
+        }
         guard didLoad else { return }
         do {
             let textureToPresent: MTLTexture?

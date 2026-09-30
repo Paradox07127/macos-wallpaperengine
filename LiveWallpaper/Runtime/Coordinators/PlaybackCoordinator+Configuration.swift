@@ -24,6 +24,7 @@ extension PlaybackCoordinator {
         save(configuration)
         syncVideoAudioLeadership()
         applySceneAudioState(configuration: configuration, screen: screen)
+        synchronizeSceneSpanAudio(configuration: configuration, screen: screen)
     }
 
     func updateVideoVolume(_ volume: Double, for screen: Screen) {
@@ -35,14 +36,31 @@ extension PlaybackCoordinator {
         save(configuration)
         syncVideoAudioLeadership()
         applySceneAudioState(configuration: configuration, screen: screen)
+        synchronizeSceneSpanAudio(configuration: configuration, screen: screen)
     }
 
     private func applySceneAudioState(configuration: ScreenConfiguration, screen: Screen) {
         #if !LITE_BUILD
-        guard let session = screen.runtimeSession as? SceneWallpaperSession,
+        guard let session = screen.runtimeSession as? any SceneWallpaperRuntime,
               let audio = session.audioController else { return }
         audio.setAudioMuted(configuration.muted)
         audio.setAudioVolume(configuration.videoVolume)
+        #endif
+    }
+
+    /// A spanning scene owns one audio graph. Any member edits the same track.
+    private func synchronizeSceneSpanAudio(configuration: ScreenConfiguration, screen: Screen) {
+        #if !LITE_BUILD
+        guard let groupID = configuration.sceneSpanGroupID,
+              configuration.activeWallpaper.wallpaperType == .scene else { return }
+        for member in screensProvider() where member.id != screen.id {
+            guard var peer = configurationStore.get(for: member.id, fingerprint: member.displayFingerprint),
+                  peer.sceneSpanGroupID == groupID, peer.activeWallpaper.wallpaperType == .scene else { continue }
+            peer.muted = configuration.muted
+            peer.videoVolume = configuration.videoVolume
+            save(peer)
+            applySceneAudioState(configuration: peer, screen: member)
+        }
         #endif
     }
 
@@ -52,7 +70,7 @@ extension PlaybackCoordinator {
         configuration.sceneMouseInteractionEnabled = enabled
         save(configuration)
         #if !LITE_BUILD
-        (screen.runtimeSession as? SceneWallpaperSession)?.setMouseInteractionEnabled(enabled)
+        (screen.runtimeSession as? any SceneWallpaperRuntime)?.setMouseInteractionEnabled(enabled)
         #endif
     }
 
@@ -63,7 +81,7 @@ extension PlaybackCoordinator {
         configuration.sceneClickCaptureEnabled = enabled
         save(configuration)
         #if !LITE_BUILD
-        (screen.runtimeSession as? SceneWallpaperSession)?.setClickCaptureEnabled(enabled)
+        (screen.runtimeSession as? any SceneWallpaperRuntime)?.setClickCaptureEnabled(enabled)
         #endif
     }
 
@@ -73,7 +91,15 @@ extension PlaybackCoordinator {
         configuration.fitMode = fitMode
         save(configuration)
         #if !LITE_BUILD
-        (screen.runtimeSession as? SceneWallpaperSession)?.setSceneFitMode(fitMode)
+        (screen.runtimeSession as? any SceneWallpaperRuntime)?.setSceneFitMode(fitMode)
+        if let groupID = configuration.sceneSpanGroupID {
+            for member in screensProvider() where member.id != screen.id {
+                guard var peer = configurationStore.get(for: member.id, fingerprint: member.displayFingerprint),
+                      peer.sceneSpanGroupID == groupID, peer.activeWallpaper.wallpaperType == .scene else { continue }
+                peer.fitMode = fitMode
+                save(peer)
+            }
+        }
         #endif
     }
 
@@ -142,7 +168,7 @@ extension PlaybackCoordinator {
         let ceiling = frameRateLimit.frameRate(forRefreshRate: Double(screenRefreshRate))
 
         #if !LITE_BUILD
-        if let session = screen.runtimeSession as? SceneWallpaperSession,
+        if let session = screen.runtimeSession as? any SceneWallpaperRuntime,
            let frameRateController = session.frameRateController {
             Logger.info(
                 "Applying scene frame rate ceiling \(ceiling) FPS to screen \(screen.id)",

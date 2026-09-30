@@ -458,6 +458,7 @@ final class WPEMetalRenderExecutor {
 
     /// Reused only when (a) no async present of it is still in flight and (b) it isn't among the most recently vended outputs (`maxFramesInFlight`, min 2).
     var outputTexturePool: [MTLTexture] = []
+    var spanOutputTextureLimit: Int?
     /// The most recently vended output textures (newest last); retained count is
     /// `max(2, maxFramesInFlight)` — see `noteVendedOutputTexture`.
     var recentOutputTextureIDs: [ObjectIdentifier] = []

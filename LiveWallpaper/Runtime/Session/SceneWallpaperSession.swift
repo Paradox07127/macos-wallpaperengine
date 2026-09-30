@@ -50,6 +50,21 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
 final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     let wallpaperType: WallpaperType = .scene
 
+    var spanRenderActor: WPEDisplayRenderActor {
+        renderActor
+    }
+
+    var spanSurface: WPERenderSurface {
+        surface
+    }
+
+    func updateSpanViewport(_ canvas: CGRect, density: CGFloat, interactiveFrames: [CGRect]) {
+        updateFrame(to: canvas)
+        surface.pointerGeometryOverride = .init(viewFrameInScreen: canvas, interactiveFrames: interactiveFrames)
+        surface.mailbox.publishGeometry(surface.pointerGeometryOverride!)
+        renderActor.submitConfig(.surfaceGeometry(CGSize(width: canvas.width * density, height: canvas.height * density)))
+    }
+
     private var window: NSWindow?
     private let renderActor: WPEDisplayRenderActor
     private let scenePropertyMutationAuthority = ScenePropertyMutationAuthority()
@@ -79,7 +94,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private(set) var rendererRuntimeActivity: WPESceneRuntimeActivity?
     var onRuntimeActivityChange: (@MainActor () -> Void)?
     var playbackMachine = WallpaperPlaybackStateMachine()
-    var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
+    var userIntendsToPlay: Bool {
+        playbackMachine.userIntendsToPlay
+    }
+
     private var didStartLoad = false
     private var loadTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
@@ -95,6 +113,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             }
         }
     }
+
     private(set) var loadProgress: String?
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
@@ -102,6 +121,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             onRuntimeErrorChange?()
         }
     }
+
     var onRuntimeErrorChange: (@MainActor () -> Void)?
 
     /// Cached present flag from `pollRendererState()`: nil/false/true → idle/loading/presented.
@@ -120,7 +140,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         self.window = window
         self.renderActor = renderActor
         self.surface = surface
-        self.rendererConfigAdapter = WPERendererConfigAdapter(renderActor: renderActor)
+        rendererConfigAdapter = WPERendererConfigAdapter(renderActor: renderActor)
         self.audioCaptureDemandController = audioCaptureDemandController
         self.hibernationDelay = hibernationDelay
         self.userPauseHibernationDelay = userPauseHibernationDelay
@@ -137,14 +157,13 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     var summary: WallpaperSessionSummary {
-        let activity: WallpaperSessionActivity
-        if loadError != nil {
-            activity = .error
+        let activity: WallpaperSessionActivity = if loadError != nil {
+            .error
         } else if effectivePerformanceProfile == .suspended {
             // Still intending to play means something else is holding it down.
-            activity = userIntendsToPlay ? .policySuspended : .paused
+            userIntendsToPlay ? .policySuspended : .paused
         } else {
-            activity = .active
+            .active
         }
         return WallpaperSessionSummary(
             wallpaperType: .scene,
@@ -168,8 +187,13 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         applyEffectivePerformanceProfile()
     }
 
-    var videoPlayer: WallpaperVideoPlayer? { nil }
-    var wallpaperWindow: NSWindow? { window }
+    var videoPlayer: WallpaperVideoPlayer? {
+        nil
+    }
+
+    var wallpaperWindow: NSWindow? {
+        window
+    }
 
     func pollRendererState() async {
         guard let snapshot = await renderActor.rendererStateSnapshot() else {
@@ -269,8 +293,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         return didCommit
     }
 
-    // Nil-when-no-renderer semantics preserved: consumers guard on this, and a
-    // torn-down session must report no controller.
+    /// Nil-when-no-renderer semantics preserved: consumers guard on this, and a
+    /// torn-down session must report no controller.
     var frameRateController: (any WallpaperFrameRateConfigurable)? {
         hasRenderer ? rendererConfigAdapter : nil
     }
@@ -329,11 +353,15 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
         // Giving up while still broken must restore isHibernated, or later play is a no-op.
         guard hasRenderer, effectivePerformanceProfile == .quality, loadError != nil else {
-            if hasRenderer, loadError != nil { isHibernated = true }
+            if hasRenderer, loadError != nil {
+                isHibernated = true
+            }
             return
         }
         await reload()
-        if loadError != nil { isHibernated = true }
+        if loadError != nil {
+            isHibernated = true
+        }
     }
 
     // MARK: - Deep hibernate (resource depth of the suspend path, not a profile)
@@ -439,8 +467,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         startupTask = Task { [weak self, renderActor] in
             await renderActor.adopt(handoff.renderer)
             // If cleanup raced the adopt hop, skip the load; cleanup still releases the adopted renderer.
-            guard let self, self.isCurrentLifecycle(generation) else { return }
-            await self.beginLoad()
+            guard let self, isCurrentLifecycle(generation) else { return }
+            await beginLoad()
         }
     }
 
@@ -493,8 +521,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let generation = loadGeneration
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.installProgressHandler()
-            await self.runLoadViaActor()
+            await installProgressHandler()
+            await runLoadViaActor()
         }
         loadTask = task
         await task.value
@@ -510,10 +538,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             pollInterval: .milliseconds(25)
         ) { [weak self] in
             guard let self else { return .cancelled }
-            if self.loadError != nil {
+            if loadError != nil {
                 return .failed
             }
-            guard let snapshot = await self.renderActor.rendererStateSnapshot() else {
+            guard let snapshot = await renderActor.rendererStateSnapshot() else {
                 return nil
             }
             cacheRendererState(snapshot)
@@ -555,12 +583,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let task = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.renderActor.reload()
-                guard self.loadGeneration == generation else { return }
-                await self.refreshSystemAudioCaptureRequirement()
+                try await renderActor.reload()
+                guard loadGeneration == generation else { return }
+                await refreshSystemAudioCaptureRequirement()
                 loadFailureCause = nil
-                self.loadError = nil
-                self.loadProgress = nil
+                loadError = nil
+                loadProgress = nil
             } catch is CancellationError {
                 return
             } catch let error as SceneRenderingError {
@@ -568,8 +596,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 self.loadFailureCause = SceneFailureCause.make(error)
                 self.loadError = error
             } catch {
-                guard self.loadGeneration == generation else { return }
-                self.loadError = await self.mapLoadFailure(error)
+                guard loadGeneration == generation else { return }
+                loadError = await mapLoadFailure(error)
             }
         }
         loadTask = task
@@ -688,13 +716,16 @@ struct SceneRendererDiagnostics: Sendable {
             let shader: String
             let reason: String
         }
+
         let count: Int
         let entries: [Entry]
     }
+
     struct GPUErrors: Sendable {
         let count: Int
         let last: String?
     }
+
     let loadDiagnostics: SceneLoadDiagnostic?
     let resolution: WPEResolutionDiagnosticsSnapshot
     let shaderErrors: ShaderErrors

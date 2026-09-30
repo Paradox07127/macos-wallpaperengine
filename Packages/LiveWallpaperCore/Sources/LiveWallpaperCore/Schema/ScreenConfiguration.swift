@@ -15,6 +15,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var savedSceneCustomizations: [SceneDescriptor] = []
     public var playbackSpeed: Double
     public var fitMode: VideoFitMode
+    /// Shared Scene runtime identity; absent in configurations written before span support.
+    public var sceneSpanGroupID: UUID?
     public var videoDisplayMode: VideoDisplayMode = .perDisplay
     public var frameRateLimit: FrameRateLimit
 
@@ -57,6 +59,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case playbackSpeed
         case fitMode
         case videoDisplayMode
+        case sceneSpanGroupID
         case frameRateLimit
         case particleEffect
         case effectConfig
@@ -100,12 +103,12 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         savedVideoPackageEntryName: String? = nil
     ) {
         self.screenID = screenID
-        self.activeWallpaper = wallpaper
+        activeWallpaper = wallpaper
         self.savedVideoBookmarkData = savedVideoBookmarkData ?? wallpaper.activeVideoBookmarkData
         self.savedVideoPackageEntryName = savedVideoPackageEntryName ?? wallpaper.packageVideoEntryName
-        if case .html(let source, let config) = wallpaper {
-            self.savedHTMLSource = source
-            self.savedHTMLConfig = config
+        if case let .html(source, config) = wallpaper {
+            savedHTMLSource = source
+            savedHTMLConfig = config
         }
         self.playbackSpeed = playbackSpeed
         self.fitMode = fitMode
@@ -169,9 +172,13 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         let extras = playlistBookmarks ?? []
         let total = extras.count + 1
         let target = max(0, min(playlistPrimaryIndex ?? 0, total - 1))
-        if target <= 0 { return [primary] + extras }
-        if target >= extras.count { return extras + [primary] }
-        return Array(extras[0..<target]) + [primary] + Array(extras[target...])
+        if target <= 0 {
+            return [primary] + extras
+        }
+        if target >= extras.count {
+            return extras + [primary]
+        }
+        return Array(extras[0 ..< target]) + [primary] + Array(extras[target...])
     }
 
     public var hasConfiguredVideoSource: Bool {
@@ -201,8 +208,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var htmlContent: String? {
         guard let source = activeWallpaper.htmlSource else { return nil }
         switch source {
-        case .url(let url): return url.absoluteString
-        case .inline(let raw): return raw
+        case let .url(url): return url.absoluteString
+        case let .inline(raw): return raw
         case .file, .folder: return nil
         }
     }
@@ -212,6 +219,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         screenID = try c.decode(UInt32.self, forKey: .screenID)
         playbackSpeed = try c.decodeIfPresent(Double.self, forKey: .playbackSpeed) ?? 1.0
         fitMode = try c.decodeIfPresent(VideoFitMode.self, forKey: .fitMode) ?? .aspectFill
+        sceneSpanGroupID = try c.decodeIfPresent(UUID.self, forKey: .sceneSpanGroupID)
         videoDisplayMode = try c.decodeIfPresent(VideoDisplayMode.self, forKey: .videoDisplayMode) ?? .perDisplay
         let decodedFrameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit)
         particleEffect = try c.decodeIfPresent(ParticleEffect.self, forKey: .particleEffect) ?? .none
@@ -227,8 +235,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playlistPrimaryIndex = try c.decodeIfPresent(Int.self, forKey: .playlistPrimaryIndex)
         setAsLockScreen = try c.decodeIfPresent(Bool.self, forKey: .setAsLockScreen) ?? false
         muted = try c.decodeIfPresent(Bool.self, forKey: .muted) ?? true
-        videoVolume = Self.clampedVideoVolume(
-            try c.decodeIfPresent(Double.self, forKey: .videoVolume) ?? 1.0
+        videoVolume = try Self.clampedVideoVolume(
+            c.decodeIfPresent(Double.self, forKey: .videoVolume) ?? 1.0
         )
         videoColorSpace = (try? c.decodeIfPresent(VideoColorSpace.self, forKey: .videoColorSpace)) ?? .auto
         sceneMouseInteractionEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneMouseInteractionEnabled) ?? true
@@ -257,11 +265,11 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         if savedVideoPackageEntryName == nil {
             savedVideoPackageEntryName = decodedWallpaper.packageVideoEntryName
         }
-        if savedHTMLSource == nil, case .html(let source, let config) = decodedWallpaper {
+        if savedHTMLSource == nil, case let .html(source, config) = decodedWallpaper {
             savedHTMLSource = source
             savedHTMLConfig = config
         }
-        if savedSceneDescriptor == nil, case .scene(let descriptor) = decodedWallpaper {
+        if savedSceneDescriptor == nil, case let .scene(descriptor) = decodedWallpaper {
             savedSceneDescriptor = descriptor
         }
     }
@@ -281,6 +289,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encode(playbackSpeed, forKey: .playbackSpeed)
         try c.encode(fitMode, forKey: .fitMode)
         try c.encode(videoDisplayMode, forKey: .videoDisplayMode)
+        try c.encodeIfPresent(sceneSpanGroupID, forKey: .sceneSpanGroupID)
         try c.encode(frameRateLimit, forKey: .frameRateLimit)
         try c.encode(particleEffect, forKey: .particleEffect)
         try c.encode(effectConfig, forKey: .effectConfig)
@@ -310,6 +319,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     }
 
     public mutating func setHTMLWallpaper(source: HTMLSource, config: HTMLConfig = .default) {
+        sceneSpanGroupID = nil
         preserveCurrentVideoBookmarkIfNeeded()
         savedHTMLSource = source
         savedHTMLConfig = config
@@ -320,7 +330,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     /// every screen still rendering the values it captured.
     public func refreshingScenePresets(in library: [String: ScenePreset]) -> ScreenConfiguration {
         var refreshed = self
-        if case .scene(let descriptor) = activeWallpaper {
+        if case let .scene(descriptor) = activeWallpaper {
             refreshed.activeWallpaper = .scene(descriptor.refreshingPresetSnapshot(in: library))
         }
         if let saved = savedSceneDescriptor {
@@ -338,6 +348,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     }
 
     public mutating func setSceneWallpaper(_ descriptor: SceneDescriptor, origin: WPEOrigin?) {
+        sceneSpanGroupID = nil
         rememberCurrentSceneCustomization()
         preserveCurrentVideoBookmarkIfNeeded()
         preserveCurrentHTMLIfNeeded()
@@ -404,6 +415,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 
     /// Packaged entry name when bookmark → `scene.pkg`; nil for a loose file.
     public mutating func replacePrimaryVideo(bookmarkData: Data, packageEntryName: String? = nil) {
+        sceneSpanGroupID = nil
         preserveCurrentHTMLIfNeeded()
         savedVideoBookmarkData = bookmarkData
         savedVideoPackageEntryName = packageEntryName
@@ -425,7 +437,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     }
 
     private mutating func preserveCurrentHTMLIfNeeded() {
-        if case .html(let source, let config) = activeWallpaper {
+        if case let .html(source, config) = activeWallpaper {
             savedHTMLSource = source
             savedHTMLConfig = config
         }
@@ -435,7 +447,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         var copy = self
         let oldActive = copy.activeWallpaper.activeVideoBookmarkData
 
-        if case .video(_, let packageEntryName) = copy.activeWallpaper {
+        if case let .video(_, packageEntryName) = copy.activeWallpaper {
             // Same logical video: keep package entry (avoid raw-pkg downgrade).
             copy.activeWallpaper = .video(bookmarkData: bookmarkData, packageEntryName: packageEntryName)
         }
@@ -483,16 +495,16 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 
         if let savedHTMLSource = copy.savedHTMLSource,
            let updated = savedHTMLSource.replacingLocalBookmark(
-            matching: original,
-            with: refreshed
+               matching: original,
+               with: refreshed
            ) {
             copy.savedHTMLSource = updated
             didReplace = true
         }
-        if case .html(let source, let config) = copy.activeWallpaper,
+        if case let .html(source, config) = copy.activeWallpaper,
            let updated = source.replacingLocalBookmark(
-            matching: original,
-            with: refreshed
+               matching: original,
+               with: refreshed
            ) {
             copy.activeWallpaper = .html(source: updated, config: config)
             didReplace = true
@@ -518,8 +530,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         guard let origin = wpeOrigin,
               origin.workshopID == workshopID,
               let updatedOrigin = origin.replacingSourceFolderBookmark(
-                matching: original,
-                with: refreshed
+                  matching: original,
+                  with: refreshed
               ) else { return nil }
 
         var copy = self

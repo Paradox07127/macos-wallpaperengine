@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import LiveWallpaperCore
+import SwiftUI
 
 #Preview("Custom frame rate") {
     @Previewable @State var rate = FrameRateLimit.fps24
@@ -59,8 +59,18 @@ struct PlaybackControls: View {
         }
     }
 
+    private var displayFrameRateCeiling: Int {
+        let refresh = screenManager.getScreenRefreshRate(for: screen.id)
+        #if !LITE_BUILD
+        if wallpaperType == .scene, screenManager.getConfiguration(for: screen)?.sceneSpanGroupID != nil {
+            return min(refresh, 60)
+        }
+        #endif
+        return refresh
+    }
+
     private func frameRateTitle(_ limit: FrameRateLimit) -> String {
-        limit.title(forRefreshRate: Double(screenManager.getScreenRefreshRate(for: screen.id)))
+        limit.title(forRefreshRate: Double(displayFrameRateCeiling))
     }
 
     @State private var lockScreenExtracted = false
@@ -334,7 +344,7 @@ struct PlaybackControls: View {
     private var frameRatePopover: some View {
         FrameRateControl(
             value: frameRateBinding,
-            displayFramesPerSecond: screenManager.getScreenRefreshRate(for: screen.id)
+            displayFramesPerSecond: displayFrameRateCeiling
         )
         .id(screen.id)
         .frame(width: 320)
@@ -550,7 +560,9 @@ struct PlaybackControls: View {
     private var unifiedAudioBinding: Binding<Double> {
         Binding(
             get: {
-                if audioMutedBinding.wrappedValue { return 0 }
+                if audioMutedBinding.wrappedValue {
+                    return 0
+                }
                 let deadZone = Self.audioDeadZone
                 return deadZone + Self.clampedVolume(currentVolume) * (1 - deadZone)
             },
@@ -757,11 +769,10 @@ struct HTMLRenderingDiagnostics {
 
     private static func scalePairText(x: CGFloat, y: CGFloat, suffix: Bool) -> String {
         let xText = scaleValueText(x)
-        let text: String
-        if abs(x - y) < 0.005 {
-            text = xText
+        let text: String = if abs(x - y) < 0.005 {
+            xText
         } else {
-            text = "\(xText) / \(scaleValueText(y))"
+            "\(xText) / \(scaleValueText(y))"
         }
         return suffix ? "\(text)×" : text
     }

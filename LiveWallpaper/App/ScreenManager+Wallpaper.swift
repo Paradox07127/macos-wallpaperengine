@@ -36,7 +36,8 @@ extension ScreenManager {
         ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
         if configuration.activeWallpaper == .scene(descriptor),
            configuration.wpeOrigin == origin,
-           screen.runtimeSession?.wallpaperType == .scene {
+           screen.runtimeSession?.wallpaperType == .scene,
+           configuration.sceneSpanGroupID == nil {
             Logger.info("Scene wallpaper already active for screen \(screen.id); keeping existing scene session", category: .screenManager)
             completion?(.ready, nil)
             return nil
@@ -196,7 +197,7 @@ extension ScreenManager {
             session.onRuntimeErrorChange = notify
         }
         #if !LITE_BUILD
-        if let session = session as? SceneWallpaperSession {
+        if let session = session as? any SceneWallpaperRuntime {
             session.onRuntimeErrorChange = { [weak self, weak session] in
                 notify()
                 guard let self, let session else { return }
