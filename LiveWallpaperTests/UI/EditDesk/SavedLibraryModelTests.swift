@@ -580,6 +580,61 @@ struct SavedLibraryModelTests {
         #expect(marks.ids == ["bookmark:kept"], "the carry-over ran a second time")
     }
 
+    @Test("The carry-over is not recorded as done when the marks archive cannot be read")
+    func foldedBookmarkMigrationWaitsForAReadableArchive() throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "SavedLibraryModelTests")
+        defer { suite.discard() }
+        suite.defaults.set(Data("not json".utf8), forKey: LibraryBookmarkStore.preferencesKey)
+        let marks = LibraryBookmarkStore(defaults: suite.defaults)
+        var folded = bookmark("Folded")
+        folded.wpeOrigin = origin("123")
+        folded.content = .scene(descriptor())
+
+        SavedLibraryModel.migrateFoldedBookmarks([folded], installed: ["123"], into: marks, defaults: suite.defaults)
+
+        #expect(!suite.defaults.bool(forKey: SavedLibraryModel.bookmarksMigratedKey), "a refused write was recorded as carried over")
+    }
+
+    @Test("A marked saved entry that folds into a newly installed project's row moves its mark to that row")
+    func markFollowsAnEntryIntoItsWorkshopRow() {
+        var saved = bookmark("Saved")
+        saved.wpeOrigin = origin("123")
+        saved.content = .scene(descriptor())
+        var history: [WPEHistoryEntry] = []
+        var marks: Set<LibraryItem.ID> = ["bookmark:\(saved.id)"]
+        var remapped: [(LibraryItem.ID, LibraryItem.ID)] = []
+        var source = inputs([saved])
+        source.history = { history }
+        source.libraryBookmarks = { marks }
+        source.remapLibraryBookmark = { old, new in
+            remapped.append((old, new))
+            marks.remove(old)
+            marks.insert(new)
+        }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.bookmarkedIDs == ["bookmark:\(saved.id)"])
+        #expect(remapped.isEmpty)
+
+        history = [WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)]
+        model.refresh()
+
+        #expect(model.bookmarkedIDs == ["workshop:123"])
+        #expect(remapped.map(\.0) == ["bookmark:\(saved.id)"] && remapped.map(\.1) == ["workshop:123"], Comment(rawValue: "\(remapped)"))
+        model.chip = .bookmarks
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"], "the entry's mark points at a row that is not listed")
+    }
+
+    @Test("A mark on a Workshop row not installed right now is kept as is")
+    func markOnAnAbsentWorkshopRowIsKept() {
+        var remapped: [(LibraryItem.ID, LibraryItem.ID)] = []
+        var source = inputs()
+        source.libraryBookmarks = { ["workshop:123"] }
+        source.remapLibraryBookmark = { remapped.append(($0, $1)) }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.bookmarkedIDs == ["workshop:123"])
+        #expect(remapped.isEmpty, Comment(rawValue: "\(remapped)"))
+    }
+
     @Test func unsupportedInstalledTypesRemainInTheLibrary() {
         let types: [WPEType] = [.video, .web, .scene, .application, .unknown]
         var source = inputs()

@@ -36,6 +36,8 @@ final class SavedLibraryModel {
         var aerials: @MainActor () -> AerialsState = { AerialsState() }
         /// The row IDs the user marked as bookmarks.
         var libraryBookmarks: @MainActor () -> Set<LibraryItem.ID> = { [] }
+        /// Moves a stored mark from the first row ID to the second.
+        var remapLibraryBookmark: @MainActor (LibraryItem.ID, LibraryItem.ID) -> Void = { _, _ in }
         #if !LITE_BUILD
         var history: @MainActor () -> [WPEHistoryEntry] = { [] }
         /// Content is nil for installed rows, which match by origin instead.
@@ -69,6 +71,10 @@ final class SavedLibraryModel {
             var inputs = Inputs()
             inputs.bookmarks = { BookmarkStore.shared.bookmarks }
             inputs.libraryBookmarks = { Set(LibraryBookmarkStore.shared.ids) }
+            inputs.remapLibraryBookmark = { old, new in
+                LibraryBookmarkStore.shared.merge([new])
+                LibraryBookmarkStore.shared.remove(old)
+            }
             inputs.aerials = {
                 let library = AppleAerialsLibrary.shared
                 return AerialsState(
@@ -211,7 +217,20 @@ final class SavedLibraryModel {
     ) {
         guard !defaults.bool(forKey: bookmarksMigratedKey) else { return }
         marks.merge(foldedBookmarkMarks(bookmarks, installed: installed))
+        guard !marks.hasStorageError else { return }
         defaults.set(true, forKey: bookmarksMigratedKey)
+    }
+
+    /// Each mark on a saved entry that is not listed because it folds into its project's listed row, paired with that row.
+    static func foldedMarkMoves(
+        _ marks: Set<LibraryItem.ID>, bookmarks: [WallpaperBookmark], rows: Set<LibraryItem.ID>
+    ) -> [(from: LibraryItem.ID, to: LibraryItem.ID)] {
+        bookmarks.compactMap { bookmark in
+            let id = "bookmark:\(bookmark.id)"
+            guard marks.contains(id), !rows.contains(id), let workshopID = bookmark.wpeOrigin?.workshopID,
+                  foldsIntoWorkshopRow(bookmark.content), rows.contains("workshop:\(workshopID)") else { return nil }
+            return (id, "workshop:\(workshopID)")
+        }
     }
     #endif
 
@@ -405,7 +424,8 @@ final class SavedLibraryModel {
             )
         }
         #endif
-        for bookmark in inputs.bookmarks() {
+        let bookmarks = inputs.bookmarks()
+        for bookmark in bookmarks {
             var parentID: String?
             #if !LITE_BUILD
             if let workshopID = bookmark.wpeOrigin?.workshopID,
@@ -435,6 +455,13 @@ final class SavedLibraryModel {
         }
         aerialsStatus = inputs.aerials()
         bookmarkedIDs = inputs.libraryBookmarks()
+        #if !LITE_BUILD
+        for move in Self.foldedMarkMoves(bookmarkedIDs, bookmarks: bookmarks, rows: Set(merged.map(\.id))) {
+            inputs.remapLibraryBookmark(move.from, move.to)
+            bookmarkedIDs.remove(move.from)
+            bookmarkedIDs.insert(move.to)
+        }
+        #endif
         let active = inputs.activeWallpapers()
         merged += aerialsStatus.assets.map { asset in
             let source = LibraryItem.Source.aerial(asset)
