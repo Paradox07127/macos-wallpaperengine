@@ -88,7 +88,7 @@ struct WorkshopPageSourceTests {
     func homePageGuideClosesTheItemModal() throws {
         let source = try RepositoryRoot.source(Self.home)
         let block = try Self.block(in: source, from: ".onChange(of: pageGuide?.context) {", to: "\n        }")
-        #expect(block.contains("if pageGuide?.context != nil { presentedItemID = nil }"))
+        #expect(block.contains("if pageGuide?.context != nil {\n                presentedItemID = nil"))
     }
 
     @Test("Showing a page guide closes the Workshop item modal")
