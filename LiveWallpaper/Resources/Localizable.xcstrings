@@ -14048,6 +14048,41 @@
         }
       }
     },
+    "Click the heart on a Workshop wallpaper to keep it here." : {
+      "comment" : "Empty Workshop Likes library guidance.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the heart on a Workshop wallpaper to keep it here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en el corazón de un fondo de Workshop para guardarlo aquí."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップの壁紙のハートをクリックすると、ここに保存できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击创意工坊壁纸上的爱心，即可将它收藏在这里。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點擊工作坊桌布上的愛心，即可將它收藏在這裡。"
+          }
+        }
+      }
+    },
     "Click to record a new keyboard shortcut" : {
       "localizations" : {
         "en" : {
@@ -14418,41 +14453,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
-          }
-        }
-      }
-    },
-    "Closing this window keeps wallpapers running. Reopen it from the menu bar; replay the tour in Settings › About › Welcome Tour." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Closing this window keeps wallpapers running. Reopen it from the menu bar; replay the tour in Settings › About › Welcome Tour."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los fondos siguen activos al cerrar la ventana. Ábrela desde la barra de menús; repite el recorrido en Ajustes › Acerca de › Recorrido de bienvenida."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ウインドウを閉じても壁紙は動作します。メニューバーから再度開けます。ガイドは「設定 › 情報 › ウェルカムガイド」で再表示できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭窗口后壁纸继续运行，可从菜单栏重新打开。重看导览：设置 › 关于 › 欢迎导览。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉視窗後桌布繼續執行，可從選單列重新開啟。重看導覽：設定 › 關於 › 歡迎導覽。"
           }
         }
       }
@@ -15048,41 +15048,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定層與疊加層"
-          }
-        }
-      }
-    },
-    "Configuration · Adjust this display" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuration · Adjust this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuración · Ajusta esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定レイヤー · このディスプレイを調整"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配置层 · 调整这台显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定層 · 調整這台顯示器"
           }
         }
       }
@@ -24364,41 +24329,6 @@
         }
       }
     },
-    "Everyday settings" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Everyday settings"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajustes cotidianos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日常の設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日常设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日常設定"
-          }
-        }
-      }
-    },
     "Everyone" : {
       "comment" : "Workshop maturity filter: everyone.",
       "localizations" : {
@@ -28183,78 +28113,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "閒置"
-          }
-        }
-      }
-    },
-    "Icon" : {
-      "comment" : "Type badge style option: icon only.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Icon"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Icono"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アイコン"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "图标"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "圖示"
-          }
-        }
-      }
-    },
-    "Icon and name" : {
-      "comment" : "Type badge style option: icon and name.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Icon and name"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Icono y nombre"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アイコンと名称"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "图标和名称"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "圖示與名稱"
           }
         }
       }
@@ -36271,42 +36129,6 @@
         }
       }
     },
-    "Needs Access" : {
-      "comment" : "Permission still required.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Needs Access"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requiere acceso"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アクセスが必要"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要访问权限"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要取用權限"
-          }
-        }
-      }
-    },
     "Needs Approval" : {
       "comment" : "Login item needs approval.",
       "extractionState" : "manual",
@@ -38183,41 +38005,6 @@
         }
       }
     },
-    "No schemes match your search" : {
-      "comment" : "Title of an empty state when no scheme matches the current search.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No schemes match your search"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ningún esquema coincide con tu búsqueda"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検索に一致する構成がありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有与搜索匹配的方案"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有符合搜尋的方案"
-          }
-        }
-      }
-    },
     "No schemes yet" : {
       "comment" : "Title of the empty state on the Schemes library page.",
       "localizations" : {
@@ -38357,40 +38144,6 @@
         }
       }
     },
-    "No videos match your search" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No videos match your search"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay vídeos coincidentes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一致するビデオはありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有匹配的视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有符合的影片"
-          }
-        }
-      }
-    },
     "No videos yet" : {
       "localizations" : {
         "en" : {
@@ -38490,41 +38243,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未能將桌布套用至此顯示器。"
-          }
-        }
-      }
-    },
-    "No wallpaper yet? You can continue the tour and import one later." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No wallpaper yet? You can continue the tour and import one later."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Puedes continuar el recorrido e importar un fondo más tarde."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙がなくてもガイドを続けられます。読み込みは後で行えます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未设置壁纸也可以继续导览，稍后再导入。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未設定桌布也可以繼續導覽，稍後再匯入。"
           }
         }
       }
@@ -54632,41 +54350,6 @@
         }
       }
     },
-    "Set startup, automatic pausing, shortcuts and permissions here. Display Defaults apply to a display's first wallpaper, not its current settings." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Set startup, automatic pausing, shortcuts and permissions here. Display Defaults apply to a display's first wallpaper, not its current settings."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configura inicio, pausa automática, atajos y permisos. Los valores predeterminados se aplican al primer fondo de una pantalla, no al actual."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起動・自動一時停止・ショートカット・権限を設定します。ディスプレイの既定値は最初の壁紙に適用され、現在の設定は変わりません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在这里设置启动、自动暂停、快捷键和权限。显示器默认值用于首次设置壁纸，不会覆盖当前配置。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在這裡設定啟動、自動暫停、快速鍵和權限。顯示器預設值用於首次設定桌布，不會覆蓋目前設定。"
-          }
-        }
-      }
-    },
     "Set up SteamCMD" : {
       "comment" : "Button and sheet title for choosing how to install SteamCMD.",
       "extractionState" : "manual",
@@ -54967,41 +54650,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取專案，因此設定暫不可用。"
-          }
-        }
-      }
-    },
-    "Settings · Make Loomscreen work for you" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Settings · Make Loomscreen work for you"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajustes · Adapta Loomscreen a tu uso"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 · Loomscreen を自分好みに"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设置 · 按你的习惯使用 Loomscreen"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 · 依你的習慣使用 Loomscreen"
           }
         }
       }
@@ -57655,42 +57303,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "排序條件"
-          }
-        }
-      }
-    },
-    "Sort the library" : {
-      "comment" : "Tooltip for library sort picker.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sort the library"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ordenar por"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "並べ替え"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "排序方式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "排序方式"
           }
         }
       }
@@ -63766,41 +63378,6 @@
         }
       }
     },
-    "The configuration layer changes the wallpaper. The overlay layer adds independent clocks, weather, music and widgets." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The configuration layer changes the wallpaper. The overlay layer adds independent clocks, weather, music and widgets."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La configuración modifica el fondo. La capa superpuesta añade relojes, tiempo, música y widgets independientes."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定レイヤーは壁紙自体を調整します。オーバーレイには独立した時計・天気・音楽・ウィジェットを追加します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配置层调整壁纸本身；叠加层添加独立的时钟、天气、音乐和小组件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定層調整桌布本身；疊加層加入獨立的時鐘、天氣、音樂和小工具。"
-          }
-        }
-      }
-    },
     "The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺)." : {
       "localizations" : {
         "en" : {
@@ -68863,41 +68440,6 @@
         }
       }
     },
-    "Turn on access to start system audio capture" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn on access to start system audio capture"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activa el acceso para empezar a capturar el audio del sistema"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アクセスをオンにしてシステムオーディオのキャプチャを開始してください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启访问权限以开始系统音频采集"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟取用權限以開始系統音訊擷取"
-          }
-        }
-      }
-    },
     "Turned Off" : {
       "comment" : "Stage chip and VoiceOver state of a display while the master switch keeps every wallpaper off.",
       "localizations" : {
@@ -68999,41 +68541,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸入以 CSS 像素為單位的數值。"
-          }
-        }
-      }
-    },
-    "Type badge style" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type badge style"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Estilo de insignia de tipo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "種類バッジの表示形式"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "类型标签样式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "類型標籤樣式"
           }
         }
       }
@@ -70573,41 +70080,6 @@
         }
       }
     },
-    "Use the playback controls for audio, scaling and frame rate. The right panel holds this wallpaper's properties; changes apply to this display." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use the playback controls for audio, scaling and frame rate. The right panel holds this wallpaper's properties; changes apply to this display."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajusta audio, escala y fotogramas con los controles de reproducción. El panel derecho configura el fondo de esta pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再生コントロールで音量・拡大縮小・フレームレートを調整します。右パネルの壁紙設定は、このディスプレイに適用されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放控件可调整声音、缩放和帧率。右侧面板显示壁纸属性，修改仅作用于这台显示器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放控制項可調整聲音、縮放和影格率。右側面板顯示桌布屬性，修改僅作用於這台顯示器。"
-          }
-        }
-      }
-    },
     "Use this web address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -71940,41 +71412,6 @@
         }
       }
     },
-    "Waiting for macOS to update audio permission" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for macOS to update audio permission"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esperando a que macOS actualice el permiso de audio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がオーディオ権限を更新するのを待っています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待 macOS 更新音频权限"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待 macOS 更新音訊權限"
-          }
-        }
-      }
-    },
     "Waiting for readings" : {
       "comment" : "Monitor data availability; never substitutes an unknown measurement with zero.",
       "extractionState" : "manual",
@@ -72671,42 +72108,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "換桌布動畫"
-          }
-        }
-      }
-    },
-    "Wallpaper type badge" : {
-      "comment" : "Accessibility label for the thumbnail type badge switch.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper type badge"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Insignia de tipo de fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙の種類バッジ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸类型标签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布類型標籤"
           }
         }
       }
@@ -79346,36 +78747,36 @@
       }
     },
     "window.title.settings" : {
-      "comment" : "Title of the settings window.",
+      "comment" : "Title of the management window.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen Settings"
+            "value" : "Loomscreen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ajustes de Loomscreen"
+            "value" : "Loomscreen"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 設定"
+            "value" : "Loomscreen"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 设置"
+            "value" : "Loomscreen"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 設定"
+            "value" : "Loomscreen"
           }
         }
       }

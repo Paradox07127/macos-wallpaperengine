@@ -16,11 +16,11 @@ struct BrowseFilterRibbon: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The grid under the ribbon opens with its own `formVerticalMargin`, which makes up the rest of the gap.
+            // The grid under the ribbon opens with its own `LibraryGrid.verticalPadding`, which makes up the rest of the gap.
             topRow
                 .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
                 .padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)
-                .padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.Settings.formVerticalMargin)
+                .padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.LibraryGrid.verticalPadding)
 
             if isFilterPanelExpanded {
                 filterPanel

@@ -42,10 +42,12 @@ enum L10n {
     }
 
     enum Window {
-        static var settingsTitle: String { String(
-            localized: "window.title.settings",
-            defaultValue: "Loomscreen Settings",
-            bundle: .appLanguage, comment: "Title of the settings window."
-        ) }
+        static var settingsTitle: String {
+            String(
+                localized: "window.title.settings",
+                defaultValue: "Loomscreen",
+                bundle: .appLanguage, comment: "Title of the management window."
+            )
+        }
     }
 }

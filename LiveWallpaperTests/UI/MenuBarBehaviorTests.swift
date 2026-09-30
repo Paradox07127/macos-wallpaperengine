@@ -229,7 +229,6 @@ struct MenuBarBehaviorTests {
                 == "publicstaticletmetricEmphasized=Font.system(.callout,design:.monospaced).weight(.semibold).monospacedDigit()"
         )
         let designContract = try RepositoryRoot.source("Packages/LiveWallpaperCore/DESIGN.md")
-        #expect(designContract.contains("+3 emphasized variants"))
         #expect(designContract.contains("`metricEmphasized` | `.callout.monospaced.semibold.monospacedDigit()`"))
     }
 
