@@ -17,7 +17,9 @@ enum DisplayKind: Equatable {
 enum ScreenPresentation {
     /// Verbatim glyphs, not translated — same rule as `VideoFormatBadge.displayLabel`.
     /// `systemName`: macOS's own name for a renamed display, standing in for EXTERNAL; nil when it was not renamed.
-    static func badgeText(kind: DisplayKind, systemName: String? = nil, diagonalInches: Double?, refreshRate: Int) -> String {
+    static func badgeText(
+        kind: DisplayKind, systemName: String? = nil, diagonalInches: Double?, refreshRate: Int, isHDR: Bool = false
+    ) -> String {
         var segments = [prefix(for: kind)]
         if kind == .external, let systemName, !systemName.isEmpty {
             let name = systemName.uppercased()
@@ -27,6 +29,9 @@ enum ScreenPresentation {
             segments.append("\(Int(diagonalInches.rounded()))″")
         }
         segments.append("\(refreshRate) Hz")
+        if isHDR {
+            segments.append("HDR")
+        }
         return segments.joined(separator: " · ")
     }
 
@@ -95,9 +100,15 @@ enum ScreenPresentation {
         )
         // An empty `localizedName` leaves `systemName` as a geometry string, which is no model name.
         let renamed = screen.name != screen.systemName && !localizedName.isEmpty
+        // Looked up by ID, not read off `screen.nsScreen`: an NSScreen no display backs traps on the EDR getter.
+        let live = NSScreen.screens.first {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == screen.id
+        }
         let badge = badgeText(
             kind: displayKind, systemName: renamed ? localizedName : nil,
-            diagonalInches: screen.diagonalInches, refreshRate: refreshRate
+            diagonalInches: screen.diagonalInches, refreshRate: refreshRate,
+            // The potential, not the current value: that one stays 1.0 until some app requests EDR.
+            isHDR: (live?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1
         )
         let status = statusText(pixelSize: screen.pixelSize, isMain: CGDisplayIsMain(screen.id) != 0)
         return (badge, status)

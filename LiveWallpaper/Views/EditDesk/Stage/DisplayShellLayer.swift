@@ -51,6 +51,18 @@ final class DisplayShellLayer {
         layer.frame
     }
 
+    static let nameFontSize: CGFloat = 15
+
+    /// In `layer`'s coordinates, like `nameRowFrame`.
+    var nameFrame: CGRect {
+        name.frame
+    }
+
+    /// The name and the status after it: what the rename field covers while it is open.
+    var nameRowFrame: CGRect {
+        name.frame.union(status.frame)
+    }
+
     var hasAnimation: Bool {
         coverFade != nil || highlight.opacity != dropTarget || abs(hoverMix - hoverTarget) > 0.001 || shakeElapsed != nil
     }
@@ -80,7 +92,7 @@ final class DisplayShellLayer {
         StageLayerStyle.text(badge, size: 12, mono: true)
         StageLayerStyle.text(title, size: 17, weight: .semibold)
         StageLayerStyle.text(meta, size: 12, mono: true)
-        StageLayerStyle.text(name, size: 15, weight: .semibold)
+        StageLayerStyle.text(name, size: Self.nameFontSize, weight: .semibold)
         StageLayerStyle.text(status, size: 13, mono: true)
         StageLayerStyle.text(stateLabel, size: 12, mono: true)
         StageLayerStyle.text(hint, size: 17, weight: .bold)
@@ -223,7 +235,7 @@ final class DisplayShellLayer {
             + StageGeometry.nameRowGap
         let nameRow = StageGeometry.nameRowLayout(
             shellWidth: layer.bounds.width, top: nameY,
-            nameWidth: StageLayerStyle.width(display?.name ?? "", size: 15, weight: .semibold),
+            nameWidth: StageLayerStyle.width(display?.name ?? "", size: Self.nameFontSize, weight: .semibold),
             statusWidth: StageLayerStyle.width(display?.statusText ?? "", size: 13, mono: true)
         )
         dot.path = CGPath(ellipseIn: nameRow.dot, transform: nil)

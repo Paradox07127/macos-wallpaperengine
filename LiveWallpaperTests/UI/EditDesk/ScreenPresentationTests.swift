@@ -48,6 +48,22 @@ struct ScreenPresentationTests {
         #expect(ScreenPresentation.badgeText(kind: .external, systemName: nil, diagonalInches: 27, refreshRate: 60) == "EXTERNAL · 27″ · 60 Hz")
     }
 
+    @Test("A display with HDR on ends its badge with HDR; with HDR off the badge has no HDR segment")
+    func hdrSegmentFollowsTheDisplay() {
+        #expect(
+            ScreenPresentation.badgeText(kind: .external, diagonalInches: 32, refreshRate: 240, isHDR: true)
+                == "EXTERNAL · 32″ · 240 Hz · HDR"
+        )
+        #expect(
+            ScreenPresentation.badgeText(kind: .external, diagonalInches: 32, refreshRate: 240, isHDR: false)
+                == "EXTERNAL · 32″ · 240 Hz"
+        )
+        #expect(
+            ScreenPresentation.badgeText(kind: .external, systemName: "Dell U2720Q", diagonalInches: nil, refreshRate: 60, isHDR: true)
+                == "DELL U2720Q · 60 Hz · HDR"
+        )
+    }
+
     @Test("Built-in classification reads the raw model-identifier prefix when that's all it's given")
     func builtinClassification() {
         #expect(ScreenPresentation.kind(isBuiltin: true, localizedName: "Built-in Retina Display", productName: "MacBookPro18,3") == .macBookPro)

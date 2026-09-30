@@ -77,6 +77,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var lastTimestamp: TimeInterval?
     private var tracking: NSTrackingArea?
     private var pressedCard: StageCard.ID?
+    /// The display whose name is being edited in place, and the field doing it.
+    private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
     private var dragging = false
     /// `draggingSequenceNumber` of the Finder drag that raised a hidden shelf, so its end lowers the
     /// shelf again; nil once the drop lands on the shelf, or a scroll, ↑↓ or a covering page takes over.
@@ -524,6 +526,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         cutRow = false
         syncPreviewPlayback()
+        placeRenameField()
     }
 
     /// The shelf is up, still and uncovered: the only state in which a card may play its preview.
@@ -1440,6 +1443,15 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         })
     }
 
+    /// Hit-tests the name text only, never the dot or the status after it.
+    func nameDisplayID(at point: CGPoint) -> StageDisplay.ID? {
+        guard arrangementLayer.opacity > 0, let root = layer else { return nil }
+        return ShelfGestureController.display(at: point, frames: displays.compactMap {
+            guard let shell = displayLayers[$0.id] else { return nil }
+            return ($0.id, shell.layer.convert(shell.nameFrame, to: root))
+        })
+    }
+
     /// `applies`: the click held ⌥, so a card asks to be applied instead of opening; displays ignore it.
     func tap(at point: CGPoint, applies: Bool = false) {
         guard !model.interactionBlocked else { return }
@@ -1456,6 +1468,54 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             model.emit(.cardTapped(cards[index].id))
         } else if let id = displayID(at: point) {
             model.emit(.displayTapped(id))
+        } else if let id = nameDisplayID(at: point) {
+            beginRename(id)
+        }
+    }
+
+    private func beginRename(_ id: StageDisplay.ID) {
+        guard let display = displays.first(where: { $0.id == id }) else { return }
+        let field = StageRenameField(string: display.name)
+        field.isBordered = false
+        field.drawsBackground = true
+        field.backgroundColor = NSColor(cgColor: palette.background)
+        field.textColor = NSColor(cgColor: palette.textPrimary)
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.delegate = self
+        field.onCancel = { [weak self] in self?.finishRename(commit: false) }
+        addSubview(field)
+        renaming = (id, field)
+        placeRenameField()
+        // A text field selects all of its text when it takes focus.
+        window?.makeFirstResponder(field)
+    }
+
+    /// Follows the name through every frame: the arrangement scales and slides as the shelf rises.
+    private func placeRenameField() {
+        guard let renaming, let root = layer else { return }
+        guard let shell = displayLayers[renaming.id], arrangementLayer.opacity > 0 else {
+            finishRename(commit: true)
+            return
+        }
+        let row = shell.layer.convert(shell.nameRowFrame, to: root)
+        guard renaming.field.frame != row else { return }
+        renaming.field.frame = row
+        let scale = row.height / shell.nameFrame.height
+        renaming.field.font = NSFont.systemFont(ofSize: DisplayShellLayer.nameFontSize * scale, weight: .semibold)
+    }
+
+    private func finishRename(commit: Bool) {
+        guard let renaming else { return }
+        self.renaming = nil
+        // Return and Esc leave the field focused, so the stage takes the keyboard back; a click elsewhere keeps its new focus.
+        let focused = window?.firstResponder
+        if focused === renaming.field || focused === renaming.field.currentEditor() {
+            window?.makeFirstResponder(self)
+        }
+        renaming.field.removeFromSuperview()
+        if commit {
+            model.emit(.displayRenamed(renaming.id, renaming.field.stringValue))
         }
     }
 
@@ -1518,7 +1578,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         // A SwiftUI page can cover this AppKit view while it remains mounted for the return animation.
         guard !model.interactionBlocked else { return false }
         guard clicking, !dragging else { return true }
-        return cardIndex(at: point) != nil || displayID(at: point) != nil
+        return cardIndex(at: point) != nil || displayID(at: point) != nil || nameDisplayID(at: point) != nil
+            || renaming?.field.frame.contains(point) == true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -2075,6 +2136,30 @@ private final class StageContextMenu: NSMenu {
 
     @objc private func runAction(_ item: NSMenuItem) {
         actions[item.tag]()
+    }
+}
+
+extension EditDeskStageView: NSTextFieldDelegate {
+    /// Return and a click elsewhere both end up here, and both keep the typed name.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let renaming, (obj.object as AnyObject?) === renaming.field else { return }
+        finishRename(commit: true)
+    }
+
+    func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard control === renaming?.field, commandSelector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        finishRename(commit: false)
+        return true
+    }
+}
+
+/// The home page's Esc button runs first once the shelf is up, and sends `cancelOperation:` up the
+/// responder chain rather than through the field editor's key handling the delegate sees.
+private final class StageRenameField: NSTextField {
+    var onCancel: () -> Void = {}
+
+    override func cancelOperation(_: Any?) {
+        onCancel()
     }
 }
 

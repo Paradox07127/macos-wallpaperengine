@@ -938,6 +938,45 @@ struct EditDeskStageViewTests {
         #expect(view.ownsPoint(onCard, clicking: false))
     }
 
+    @Test("A click on a display's name opens a rename field over it; the rest of the display still opens the display", .timeLimit(.minutes(1)))
+    func clickingTheNameRenamesTheDisplay() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let nameRect = shell.layer.convert(shell.nameFrame, to: root)
+        let onName = CGPoint(x: nameRect.midX, y: nameRect.midY)
+        let onShell = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
+        #expect(view.nameDisplayID(at: onName) == 1)
+        #expect(view.nameDisplayID(at: onShell) == nil, "the display itself is not its name")
+        #expect(view.ownsPoint(onName, clicking: true), "a click on the name must not fall through to the chrome below")
+
+        var events = model.events.makeAsyncIterator()
+        view.tap(at: onShell)
+        #expect(await events.next() == .displayTapped(1))
+        #expect(!view.subviews.contains { $0 is NSTextField }, "a click on the display must not start a rename")
+
+        view.tap(at: onName)
+        let field = try #require(view.subviews.compactMap { $0 as? NSTextField }.first)
+        #expect(field.stringValue == "External")
+        #expect(abs(field.frame.minX - nameRect.minX) < 0.5 && abs(field.frame.minY - nameRect.minY) < 0.5)
+        field.stringValue = "Desk"
+        view.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+        #expect(await events.next() == .displayRenamed(1, "Desk"))
+        #expect(field.superview == nil)
+
+        view.tap(at: onName)
+        let cancelled = try #require(view.subviews.compactMap { $0 as? NSTextField }.first)
+        cancelled.stringValue = "Nope"
+        #expect(view.control(cancelled, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        #expect(cancelled.superview == nil)
+        view.tap(at: onShell)
+        #expect(await events.next() == .displayTapped(1), "Esc must leave the name as it was")
+    }
+
     @Test("A covered stage passes clicks, hover and scroll through to the display editor")
     func blockedStageDoesNotSwallowEditorInput() {
         let model = makeModel()

@@ -245,6 +245,8 @@ enum StageEvent: Equatable, Sendable {
     case cardTapped(StageCard.ID)
     case cardApplyRequested(StageCard.ID)
     case displayTapped(StageDisplay.ID)
+    /// The name typed into the in-place field over the display's name, as entered; empty asks for the system name.
+    case displayRenamed(StageDisplay.ID, String)
     case emptyActionTapped(StageDisplay.ID, EmptyScreenAction)
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
     /// Files dragged in from Finder, in drop order; their type is judged only after the drop.

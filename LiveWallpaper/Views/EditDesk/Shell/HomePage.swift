@@ -242,7 +242,7 @@ struct HomePage: View {
                 .alert("Rename Display", isPresented: page.renamePresented, presenting: page.renameTarget) { id in
                     TextField("Display name", text: page.$renameDraft)
                     Button("Cancel", role: .cancel) {}
-                    Button("Rename") { page.rename(id) }
+                    Button("Rename") { page.rename(id, to: page.renameDraft) }
                 }
                 .confirmDestructive(page.$pendingDestructive)
         }
@@ -435,6 +435,8 @@ struct HomePage: View {
         }
         .onChange(of: router.pendingAddWallpaper, initial: true) { consumeAddWallpaperRequest() }
         .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in syncDisplays() }
+        // Switching HDR keeps the layout signature, so ScreenManager skips its refresh and never posts `.screensRefreshed`.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in syncDisplays() }
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
             refreshState(for: id)
@@ -529,9 +531,9 @@ struct HomePage: View {
     }
 
     /// Neither the stage's name row nor the shelf's now-playing capsules watch the name, so both are redrawn here.
-    private func rename(_ id: CGDirectDisplayID) {
+    private func rename(_ id: CGDirectDisplayID, to name: String) {
         guard let screen = screenManager.screens.first(where: { $0.id == id }) else { return }
-        screenManager.setCustomName(renameDraft, for: screen)
+        screenManager.setCustomName(name, for: screen)
         syncDisplays()
     }
 
@@ -1397,6 +1399,8 @@ struct HomePage: View {
             case let .displayTapped(id):
                 let screen = screenManager.screens.first { $0.id == id }
                 router.showDetail(id, failureID: screen.flatMap { screenManager.wallpaperLoads.attempt(for: $0)?.failure?.id })
+            case let .displayRenamed(id, name):
+                rename(id, to: name)
             case let .snapped(index):
                 if index < 2 {
                     // Here, not when the grid disappears: the nav pill unmounts it before the stage reads where the cards leave from.
