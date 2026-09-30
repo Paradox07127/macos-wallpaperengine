@@ -45,6 +45,8 @@ struct SettingsConfirmationSourceTests {
         let avoidsSecondDismiss = publishing.contains("if collected.isEmpty, !isClosed")
         #expect(retainsFailures, "failures must remain in the service after the sheet closes")
         #expect(avoidsSecondDismiss, "completion must not dismiss another presentation")
+        #expect(publishing.contains("clearGeneration"),
+                "a batch outliving the sheet keeps publishing after Remove All")
         #expect(chooseFilesLocks, "Choose Files must not start a second publishing operation")
         #expect(addStaysGated, "Add can start a second publish while one is running")
     }

@@ -578,6 +578,23 @@ struct WallpaperExportServiceTests {
         #expect(leftovers.isEmpty, "nor its files: \(leftovers)")
     }
 
+    @Test("Clearing the library stops a multi-file import from refilling it")
+    func clearLibraryStopsBatchPublish() async throws {
+        let hook = PublishHook()
+        let rig = try makeRig(duringThumbnail: hook)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        try await rig.service.publish(bookmark: rig.makeVideoBookmark())
+        let one = rig.sourceDirectory.appendingPathComponent("one.mp4")
+        let two = rig.sourceDirectory.appendingPathComponent("two.mp4")
+        for url in [one, two] { try Data("bytes".utf8).write(to: url) }
+
+        hook.run = { try? rig.service.clearLibrary() }
+        await rig.service.publish(fileURLs: [one, two])
+
+        #expect(rig.service.items.isEmpty, "items after the clear must not be published")
+        #expect(try rig.manifestOnDisk().items.isEmpty)
+    }
+
     @Test("A failure in the middle of a multi-file import is not erased by a later success")
     func batchPublishKeepsMidListFailure() async throws {
         let rig = try makeRig()

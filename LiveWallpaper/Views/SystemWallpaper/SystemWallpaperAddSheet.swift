@@ -116,7 +116,9 @@ struct SystemWallpaperAddSheet: View {
         failures = []
         Task { @MainActor in
             var collected: [String] = []
+            let generation = service.clearGeneration
             for candidate in chosen {
+                guard service.clearGeneration == generation else { break }
                 do {
                     try await candidate.publish(using: service)
                     selection.remove(candidate.id)

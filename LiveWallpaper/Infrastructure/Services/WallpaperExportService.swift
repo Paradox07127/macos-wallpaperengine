@@ -97,6 +97,8 @@ final class WallpaperExportService {
     @ObservationIgnored private var activePublishes: [UUID: String] = [:]
     @ObservationIgnored private var sharedRootWatch: DispatchSourceFileSystemObject?
     @ObservationIgnored private var stalenessTimer: DispatchSourceTimer?
+    /// Bumped by `clearLibrary`; a batch publish stops once it differs from the value it started with.
+    @ObservationIgnored private(set) var clearGeneration = 0
 
     /// Covers the two transitions no file write announces: the appex exiting, and a
     /// heartbeat ageing past `heartbeatFreshnessInterval`. Far below that 300s window.
@@ -295,7 +297,9 @@ final class WallpaperExportService {
     /// The summary is assembled here because a successful publish clears `lastError`: a plain per-file loop reported only the last file's outcome.
     func publish(fileURLs: [URL]) async {
         var failures: [String] = []
+        let generation = clearGeneration
         for url in fileURLs {
+            guard clearGeneration == generation else { break }
             do {
                 try await publish(fileURL: url)
             } catch {
@@ -543,6 +547,7 @@ final class WallpaperExportService {
     }
 
     func clearLibrary() throws {
+        clearGeneration += 1
         activePublishes.removeAll()
         nonisolated(unsafe) var survivors: [String] = []
         do {
