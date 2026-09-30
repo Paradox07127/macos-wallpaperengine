@@ -32,15 +32,17 @@ struct TopBar<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: Self.trafficLightReserve)
-            Spacer(minLength: 0)
-            trailingContent
-        }
-        .overlay(alignment: .center) {
+        // The pill sits under the cluster so the open status panel draws over it; the cluster's
+        // clear reserve and spacer take no hits, so clicks between them still reach the pill.
+        ZStack {
             NavPill(selection: $page, workshopAvailable: workshopAvailable)
                 .pageGuideTarget(.navigation)
                 .onGeometryChange(for: CGFloat.self, of: \.size.width) { pillWidth = $0 }
+            HStack(spacing: 0) {
+                Color.clear.frame(width: Self.trafficLightReserve)
+                Spacer(minLength: 0)
+                trailingContent
+            }
         }
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .frame(height: DesignTokens.EditDesk.Spacing.topBar)

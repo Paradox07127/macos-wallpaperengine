@@ -4,6 +4,114 @@
     "" : {
 
     },
+    "Show this app's CPU and memory usage" : {
+      "comment" : "Status panel scope toggle a11y label when scope is the LiveWallpaper app only.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show this app's CPU and memory usage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el uso de CPU y memoria de esta app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリの CPU とメモリ使用量を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示此应用的 CPU 和内存使用情况"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示此 App 的 CPU 與記憶體用量"
+          }
+        }
+      }
+    },
+    "Show whole-system CPU and memory usage" : {
+      "comment" : "Status panel scope toggle a11y label when scope is the whole system.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show whole-system CPU and memory usage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el uso de CPU y memoria de todo el sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム全体の CPU とメモリ使用量を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示整个系统的 CPU 和内存使用情况"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示整個系統的 CPU 與記憶體用量"
+          }
+        }
+      }
+    },
+    "Usage scope" : {
+      "comment" : "Status panel: a11y label of the System/App toggle that picks whose CPU and memory the dials show.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage scope"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ámbito del uso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用量の範囲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "统计范围"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "統計範圍"
+          }
+        }
+      }
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -50772,41 +50880,6 @@
         }
       }
     },
-    "RAM scope" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RAM scope"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ámbito de la RAM"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RAM の範囲"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内存统计范围"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RAM 範圍"
-          }
-        }
-      }
-    },
     "Random" : {
       "comment" : "Wallpaper transition option: picks one of the transitions at random each time.",
       "localizations" : {
@@ -62182,42 +62255,6 @@
         }
       }
     },
-    "Show this app's memory usage" : {
-      "comment" : "RAM scope toggle a11y label when scope is the LiveWallpaper app only.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show this app's memory usage"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el uso de memoria de esta app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアプリのメモリ使用量を表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示此应用的内存使用情况"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示此 App 的記憶體用量"
-          }
-        }
-      }
-    },
     "Show top processes" : {
       "comment" : "A toggle to show or hide the top processes.",
       "isCommentAutoGenerated" : true,
@@ -62310,42 +62347,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在截圖與共享中顯示桌布"
-          }
-        }
-      }
-    },
-    "Show whole-system memory usage" : {
-      "comment" : "RAM scope toggle a11y label when scope is the whole system.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show whole-system memory usage"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el uso de memoria de todo el sistema"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム全体のメモリ使用量を表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示整个系统的内存使用情况"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示整個系統的記憶體用量"
           }
         }
       }

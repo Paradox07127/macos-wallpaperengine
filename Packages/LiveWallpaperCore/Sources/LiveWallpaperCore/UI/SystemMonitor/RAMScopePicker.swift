@@ -38,15 +38,15 @@ public struct RAMScopePicker: View {
         ) { value, isSelected in
             // Explicit LocalizedStringKey: a bare string ternary would type as
             // String and render verbatim, silently skipping the catalog.
-            Text(value == "system" ? LocalizedStringKey("All") : LocalizedStringKey("App"))
+            Text(value == "system" ? LocalizedStringKey("System") : LocalizedStringKey("App"))
                 .font(isSelected
                     ? DesignTokens.Typography.captionEmphasized
                     : DesignTokens.Typography.caption)
                 .accessibilityLabel(value == "system"
-                    ? Text("Show whole-system memory usage", comment: "RAM scope toggle a11y label when scope is the whole system.")
-                    : Text("Show this app's memory usage", comment: "RAM scope toggle a11y label when scope is the LiveWallpaper app only."))
+                    ? Text("Show whole-system CPU and memory usage", comment: "Status panel scope toggle a11y label when scope is the whole system.")
+                    : Text("Show this app's CPU and memory usage", comment: "Status panel scope toggle a11y label when scope is the LiveWallpaper app only."))
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("RAM scope"))
+        .accessibilityLabel(Text("Usage scope"))
     }
 }

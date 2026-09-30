@@ -150,6 +150,15 @@ enum StatusCapsuleModel {
         return (systemFraction, "\(FormatUtils.formatBytes(used)) / \(total)")
     }
 
+    static func scopeLabelKey(for scope: String) -> String {
+        scope == "app" ? "App" : "System"
+    }
+
+    /// Only CPU and memory have a per-process reading; health is judged on the system's either way.
+    static func cpuReadout(scope: String, systemPercent: Double, appPercent: Double) -> Double {
+        scope == "app" ? appPercent : systemPercent
+    }
+
     /// nil on external power: the footer names the battery only while the Mac runs on it.
     static func batteryReadout(_ source: PowerMonitor.PowerSource) -> (symbol: String, text: String)? {
         guard case let .battery(level) = source else { return nil }
@@ -215,6 +224,10 @@ struct StatusCapsule: View {
             scope: ramScope, systemFraction: monitor.systemMemoryUsage,
             appBytes: monitor.memoryUsage, totalBytes: monitor.totalMemory
         )
+    }
+
+    private var cpuPercent: Double {
+        StatusCapsuleModel.cpuReadout(scope: ramScope, systemPercent: monitor.systemCpuUsage, appPercent: monitor.cpuUsage)
     }
 
     var body: some View {
@@ -296,19 +309,28 @@ struct StatusCapsule: View {
         Button {
             withAnimation(expansionAnimation) { isExpanded.toggle() }
         } label: {
-            headlineRow(showsChevron: true)
-                .padding(.horizontal, 10)
-                .frame(width: 118, height: 28)
-                .adaptiveGlassSurface(.capsule, interactive: true)
-                .contentShape(Capsule())
+            HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+                statusDot
+                Text(LocalizedStringKey(StatusCapsuleModel.scopeLabelKey(for: ramScope)))
+                    .font(DesignTokens.EditDesk.Typography.metaMono)
+                    .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
+            .frame(height: 28)
+            .adaptiveGlassSurface(.capsule, interactive: true)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help(noteText)
+        // The dot's colour is the only health cue on screen, so the label has to say it.
+        .accessibilityLabel(Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health))))
         .accessibilityValue(noteText)
     }
 
     private var expandedPanel: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
+            RAMScopePicker(selection: $ramScope)
             // The panel covers the trigger, so its own headline carries the way back: the chevron
             // is the only affordance still on screen once the dials are up.
             Button(action: collapse) {
@@ -320,8 +342,8 @@ struct StatusCapsule: View {
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
-                dial("CPU", fraction: monitor.systemCpuUsage / 100) {
-                    Text(verbatim: percentText(monitor.systemCpuUsage))
+                dial("CPU", fraction: cpuPercent / 100) {
+                    Text(verbatim: percentText(cpuPercent))
                 }
                 if let gpu = monitor.gpuUsage {
                     dial("GPU", fraction: gpu / 100) { Text(verbatim: percentText(gpu)) }
@@ -353,12 +375,16 @@ struct StatusCapsule: View {
         .contentShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.statusExpanded, style: .continuous))
     }
 
+    private var statusDot: some View {
+        Circle()
+            .fill(StatusCapsuleModel.dotColor(for: health))
+            .frame(width: 7, height: 7)
+            .shadow(color: StatusCapsuleModel.dotColor(for: health).opacity(0.8), radius: 3)
+    }
+
     private func headlineRow(showsChevron: Bool) -> some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-            Circle()
-                .fill(StatusCapsuleModel.dotColor(for: health))
-                .frame(width: 7, height: 7)
-                .shadow(color: StatusCapsuleModel.dotColor(for: health).opacity(0.8), radius: 3)
+            statusDot
             Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health)))
                 .font(DesignTokens.EditDesk.Typography.metaMono)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
@@ -366,7 +392,7 @@ struct StatusCapsule: View {
                 .truncationMode(.tail)
             if showsChevron {
                 Spacer(minLength: DesignTokens.EditDesk.Spacing.s8)
-                Text(verbatim: isExpanded ? "︿" : "⌄")
+                Text(verbatim: "︿")
                     .font(DesignTokens.EditDesk.Typography.metaMono)
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
                     .opacity(0.5)
@@ -407,9 +433,6 @@ struct StatusCapsule: View {
             Text(verbatim: memory.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            Spacer(minLength: DesignTokens.EditDesk.Spacing.s8)
-            RAMScopePicker(selection: $ramScope)
-                .fixedSize()
         }
         .font(DesignTokens.EditDesk.Typography.metaMono)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
