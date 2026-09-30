@@ -43,8 +43,9 @@ final class WorkshopPasteQueueModel {
         let invalid: Int
     }
 
-    private let metadataService: SteamWorkshopMetadataService
+    private let fetchMetadata: @MainActor ([UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>]
     private var inflightFetches: [UUID: Task<Void, Never>] = [:]
+    private var metadataRequestTokens: [UUID: UUID] = [:]
     private var batchFetchTasks: [UUID: Task<Void, Never>] = [:]
 
     /// GetPublishedFileDetails takes arbitrary `itemcount`; 50 per POST keeps
@@ -52,7 +53,11 @@ final class WorkshopPasteQueueModel {
     private static let metadataFetchBatchSize = 50
 
     init(metadataService: SteamWorkshopMetadataService = SteamWorkshopMetadataService()) {
-        self.metadataService = metadataService
+        fetchMetadata = { await metadataService.fetch(publishedFileIDs: $0) }
+    }
+
+    init(fetchMetadata: @escaping @MainActor ([UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>]) {
+        self.fetchMetadata = fetchMetadata
     }
 
     // No deinit cancellation: fetch tasks capture [weak self] and no-op once released; a nonisolated deinit cannot touch main-actor state.
@@ -121,6 +126,7 @@ final class WorkshopPasteQueueModel {
 
     func remove(rowID: UUID) {
         inflightFetches.removeValue(forKey: rowID)?.cancel()
+        metadataRequestTokens[rowID] = nil
         rows.removeAll { $0.id == rowID }
     }
 
@@ -129,6 +135,7 @@ final class WorkshopPasteQueueModel {
         inflightFetches.removeAll()
         for task in batchFetchTasks.values { task.cancel() }
         batchFetchTasks.removeAll()
+        metadataRequestTokens.removeAll()
         rows.removeAll()
     }
 
@@ -191,21 +198,27 @@ final class WorkshopPasteQueueModel {
 
     /// One task per ingestion: chunks of metadataFetchBatchSize ids run sequentially (200-link paste → 4 POSTs, not 200).
     private func scheduleBatchMetadataFetch(_ entries: [(rowID: UUID, publishedFileID: UInt64)]) {
+        let ownedEntries = entries.map { entry in
+            let token = UUID()
+            metadataRequestTokens[entry.rowID] = token
+            return (rowID: entry.rowID, publishedFileID: entry.publishedFileID, token: token)
+        }
         let batchTaskID = UUID()
         let task = Task { @MainActor [weak self] in
             var start = 0
-            while start < entries.count, !Task.isCancelled {
+            while start < ownedEntries.count, !Task.isCancelled {
                 guard let self else { return }
-                let end = min(start + Self.metadataFetchBatchSize, entries.count)
-                let chunk = Array(entries[start..<end])
+                let end = min(start + Self.metadataFetchBatchSize, ownedEntries.count)
+                let chunk = Array(ownedEntries[start ..< end])
                 start = end
-                let results = await self.metadataService.fetch(publishedFileIDs: chunk.map { $0.publishedFileID })
-                if Task.isCancelled { break }
+                let results = await fetchMetadata(chunk.map(\.publishedFileID))
+                if Task.isCancelled {
+                    break
+                }
                 for entry in chunk {
-                    // A retry() issued mid-flight owns the row now; don't
-                    // clobber its result with this batch's.
-                    guard self.inflightFetches[entry.rowID] == nil else { continue }
-                    self.applyFetchResult(
+                    // A completed retry still owns the row after its task leaves inflightFetches.
+                    guard metadataRequestTokens[entry.rowID] == entry.token else { continue }
+                    applyFetchResult(
                         rowID: entry.rowID,
                         result: results[entry.publishedFileID] ?? .failure(.responseParseFailure)
                     )
@@ -218,11 +231,15 @@ final class WorkshopPasteQueueModel {
 
     private func scheduleMetadataFetch(rowID: UUID, publishedFileID id: UInt64) {
         inflightFetches.removeValue(forKey: rowID)?.cancel()
+        let token = UUID()
+        metadataRequestTokens[rowID] = token
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let result = await self.metadataService.fetch(publishedFileID: id)
-            self.applyFetchResult(rowID: rowID, result: result)
-            self.inflightFetches.removeValue(forKey: rowID)
+            let results = await fetchMetadata([id])
+            let result = results[id] ?? .failure(.responseParseFailure)
+            guard !Task.isCancelled, metadataRequestTokens[rowID] == token else { return }
+            applyFetchResult(rowID: rowID, result: result)
+            inflightFetches.removeValue(forKey: rowID)
         }
         inflightFetches[rowID] = task
     }

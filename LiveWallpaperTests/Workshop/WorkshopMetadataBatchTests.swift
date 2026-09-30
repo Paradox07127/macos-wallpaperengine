@@ -279,6 +279,51 @@ struct WorkshopMetadataBatchTests {
         ])
     }
 
+    @Test("A completed retry owns the row when the older batch finishes", .timeLimit(.minutes(1)))
+    @MainActor
+    func lateBatchCannotOverwriteCompletedRetry() async throws {
+        let fetcher = ControlledMetadataFetch()
+        defer { fetcher.releaseAll() }
+        let model = WorkshopPasteQueueModel(fetchMetadata: fetcher.fetch)
+        model.updateRawInput("111")
+        model.ingestFromRawInput()
+        await fetcher.waitForRequests(1)
+        let rowID = try #require(model.rows.first?.id)
+        model.retry(rowID: rowID)
+        await fetcher.waitForRequests(2)
+        fetcher.complete(1, error: .itemPrivate)
+        await Self.waitUntilSettled(model)
+        #expect(model.rows.first?.error == .itemPrivate)
+        fetcher.complete(0, error: .itemNotFound)
+        await fetcher.waitForCompletion(0)
+        #expect(model.rows.first?.error == .itemPrivate)
+    }
+
+    @Test("A cancelled retry cannot publish or clear the replacement retry", .timeLimit(.minutes(1)))
+    @MainActor
+    func cancelledRetryCannotPublish() async throws {
+        let fetcher = ControlledMetadataFetch()
+        defer { fetcher.releaseAll() }
+        let model = WorkshopPasteQueueModel(fetchMetadata: fetcher.fetch)
+        model.updateRawInput("111")
+        model.ingestFromRawInput()
+        await fetcher.waitForRequests(1)
+        fetcher.complete(0, error: .http(status: 500))
+        await Self.waitUntilSettled(model)
+        let rowID = try #require(model.rows.first?.id)
+        model.retry(rowID: rowID)
+        await fetcher.waitForRequests(2)
+        model.retry(rowID: rowID)
+        await fetcher.waitForRequests(3)
+        fetcher.complete(1, error: .cancelled)
+        await fetcher.waitForCompletion(1)
+        #expect(model.rows.first?.state == .fetchingMetadata)
+        #expect(model.rows.first?.error == nil)
+        fetcher.complete(2, error: .itemPrivate)
+        await Self.waitUntilSettled(model)
+        #expect(model.rows.first?.error == .itemPrivate)
+    }
+
     // MARK: - Fixtures
 
     private enum FixtureItem {
@@ -326,6 +371,52 @@ struct WorkshopMetadataBatchTests {
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
         Issue.record("Paste queue rows never settled")
+    }
+}
+
+@MainActor
+private final class ControlledMetadataFetch {
+    private var continuations: [Int: CheckedContinuation<[UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>], Never>] = [:]
+    private var ids: [[UInt64]] = []
+    private var completed = Set<Int>()
+
+    func fetch(_ requested: [UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
+        let index = ids.count
+        ids.append(requested)
+        let result = await withCheckedContinuation { continuations[index] = $0 }
+        completed.insert(index)
+        return result
+    }
+
+    func complete(_ index: Int, error: SteamWorkshopMetadataError) {
+        continuations.removeValue(forKey: index)?.resume(returning: Dictionary(uniqueKeysWithValues: ids[index].map { ($0, .failure(error)) }))
+    }
+
+    func releaseAll() {
+        for index in Array(continuations.keys) {
+            complete(index, error: .cancelled)
+        }
+    }
+
+    func waitForRequests(_ count: Int) async {
+        for _ in 0 ..< 2000 {
+            if ids.count >= count {
+                return
+            }
+            await Task.yield()
+        }
+        Issue.record("Controlled metadata request did not start")
+    }
+
+    func waitForCompletion(_ index: Int) async {
+        for _ in 0 ..< 2000 {
+            if completed.contains(index) {
+                await Task.yield()
+                return
+            }
+            await Task.yield()
+        }
+        Issue.record("Controlled metadata request did not return")
     }
 }
 
