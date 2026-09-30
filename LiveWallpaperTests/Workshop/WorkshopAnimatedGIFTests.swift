@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 @testable import LiveWallpaper
@@ -12,6 +13,48 @@ import UniformTypeIdentifiers
 
 @Suite("WorkshopAnimatedGIF bounded decode")
 struct WorkshopAnimatedGIFDecodeTests {
+    @MainActor
+    @Test("Local author previews reject FIFOs and oversized files before decode", .timeLimit(.minutes(1)))
+    func localPreviewInputBudget() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("UI-preview-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bookmark = try root.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        func origin(_ name: String) -> WPEOrigin {
+            WPEOrigin(workshopID: "123", title: "Preview", originalType: .scene,
+                      sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: name)
+        }
+        let fifo = root.appendingPathComponent("blocked.gif")
+        #expect(mkfifo(fifo.path, 0o600) == 0)
+        try #require(fifo.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == false)
+        #expect(origin("blocked.gif").sourcePreviewURL == fifo)
+        try #require(!WPEPreviewImageDecodeBudget.acceptsFile(at: fifo))
+        #expect(WPEPreviewImageDecodeBudget.readData(from: fifo) == nil)
+        #expect(await ShelfPreviewFrames.load(origin("blocked.gif"), maxPixelSize: 32) == nil)
+        #expect(await ShelfThumbnailCache.Sources().scene(origin("blocked.gif"), CGSize(width: 32, height: 32)) == nil)
+
+        let large = root.appendingPathComponent("large.gif")
+        try Data().write(to: large)
+        let handle = try FileHandle(forWritingTo: large)
+        try handle.truncate(atOffset: UInt64(WPEPreviewImageDecodeBudget.maxEncodedBytes + 1))
+        try handle.close()
+        #expect(!WPEPreviewImageDecodeBudget.acceptsFile(at: large))
+        #expect(WPEPreviewImageDecodeBudget.readData(from: large) == nil)
+        #expect(await ShelfPreviewFrames.load(origin("large.gif"), maxPixelSize: 32) == nil)
+        #expect(await ShelfThumbnailCache.Sources().scene(origin("large.gif"), CGSize(width: 32, height: 32)) == nil)
+
+        let normal = root.appendingPathComponent("normal.gif")
+        let bytes = GIFTestFixtures.gif(width: 8, height: 8, frameCount: 2, delay: 0.1)
+        try bytes.write(to: normal)
+        #expect(WPEPreviewImageDecodeBudget.acceptsFile(at: normal))
+        #expect(WPEPreviewImageDecodeBudget.readData(from: normal) == bytes)
+        let frames = try #require(await ShelfPreviewFrames.load(origin("normal.gif"), maxPixelSize: 32))
+        #expect(frames.images.count == 2)
+        #expect(await ShelfThumbnailCache.Sources().scene(origin("normal.gif"), CGSize(width: 32, height: 32)) != nil)
+        #expect(WPEPreviewImageDecodeBudget.readData(from: root) == nil)
+        #expect(WPEPreviewImageDecodeBudget.readData(from: root.appendingPathComponent("missing.gif")) == nil)
+    }
+
     @Test("Single-frame PNG decodes to a static image")
     func staticPNGDecodesStatic() throws {
         let data = GIFTestFixtures.png(width: 8, height: 8)

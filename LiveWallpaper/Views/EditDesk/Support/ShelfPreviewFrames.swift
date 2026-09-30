@@ -21,7 +21,7 @@ struct ShelfPreviewFrames: Sendable {
                   let folder = try? SecurityScopedBookmarkResolver.shared
                   .resolve(origin.sourceFolderBookmark, target: .transient).get() else { return nil }
             return SecurityScopedBookmarkResolver.withScopedAccess(folder.url) { _ in
-                guard let data = try? Data(contentsOf: url) else { return nil }
+                guard let data = WPEPreviewImageDecodeBudget.readData(from: url) else { return nil }
                 return decode(data, maxPixelSize: maxPixelSize)
             }
         }

@@ -130,11 +130,38 @@ final class WPEPreviewDecodedImage: @unchecked Sendable {
 }
 
 enum WPEPreviewImageDecodeBudget {
+    static let maxEncodedBytes = WorkshopAnimatedGIF.maxBytes
     static let maxFrameCount = 120
     static let maxDecodedPixelBytes = 96 * 1024 * 1024
     static let minFrameDelay: TimeInterval = 0.033
     static let defaultMaxPixelSize = WPEPreviewSize.pane.maxPixelSize
     nonisolated(unsafe) static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+
+    static func acceptsFile(at url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, let size = values.fileSize,
+              size >= 0, size <= maxEncodedBytes else { return false }
+        return true
+    }
+
+    static func readData(from url: URL) -> Data? {
+        guard acceptsFile(at: url),
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var data = Data()
+        while data.count <= maxEncodedBytes {
+            guard !Task.isCancelled else { return nil }
+            let count = min(64 * 1024, maxEncodedBytes + 1 - data.count)
+            do {
+                guard let chunk = try handle.read(upToCount: count), !chunk.isEmpty else { return data }
+                data.append(chunk)
+            } catch {
+                return nil
+            }
+        }
+        return nil
+    }
+
     /// `ShouldCacheImmediately: true` is what moves the decode off the main thread:
     /// without it Image I/O produces the pixels later, on whichever thread draws.
     static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {

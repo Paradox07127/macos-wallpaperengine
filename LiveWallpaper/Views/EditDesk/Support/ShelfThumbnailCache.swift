@@ -105,7 +105,8 @@ final class ShelfThumbnailCache {
                       let resolved = try? SecurityScopedBookmarkResolver.shared
                       .resolve(origin.sourceFolderBookmark, target: .transient).get() else { return nil }
                 return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                    guard WPEPreviewImageDecodeBudget.acceptsFile(at: url),
+                          let source = CGImageSourceCreateWithURL(url as CFURL, WPEPreviewImageDecodeBudget.sourceOptions) else { return nil }
                     // Scene previews run to 4K and beyond; decoding one at full size to hand a
                     // 400pt card costs orders of magnitude more than the thumbnail it becomes.
                     return CGImageSourceCreateThumbnailAtIndex(source, 0, [
