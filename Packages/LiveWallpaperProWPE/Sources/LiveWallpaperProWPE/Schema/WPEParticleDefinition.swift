@@ -93,23 +93,18 @@ public struct WPEParticleChildReference: Equatable, Sendable {
     /// Spawn-time child-system transform, sibling of `origin`/`angles`, not a `sizerandom` multiplier. Per-axis vector; do not collapse Z or anisotropy.
     public let scale: SIMD3<Double>
 
-    /// `type: "eventfollow"` rides the parent's live particles. Legacy `flags & 2` only when `type` is absent; an authored type always wins.
+    public var eventKind: WPEParticleChildEventKind {
+        .init(authoredType: type, flags: flagsRaw)
+    }
+
+    /// The legacy flags fallback is used only when authored type is absent.
     public var isEventFollow: Bool {
-        effectiveType == "eventfollow"
+        eventKind == .follow
     }
 
-    /// Event-driven children re-roll `probability` on every event. `static`
-    /// children roll once, when the system is created.
+    /// Probability belongs to one child-system creation event, not to its particles.
     public var rollsProbabilityPerEvent: Bool {
-        switch effectiveType {
-        case "eventfollow", "eventspawn", "eventdeath": return true
-        default: return false
-        }
-    }
-
-    private var effectiveType: String? {
-        if let type { return type.lowercased() }
-        return flagsRaw.map { ($0 & 2) != 0 } == true ? "eventfollow" : nil
+        eventKind.isEventDriven
     }
 
     public init(

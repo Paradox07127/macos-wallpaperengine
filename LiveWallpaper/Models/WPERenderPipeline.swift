@@ -2,6 +2,7 @@
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import simd
 
 struct WPEPreparedRenderPipeline: Equatable, Sendable {
     let layers: [WPEPreparedRenderLayer]
@@ -13,15 +14,20 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
     let graphLayer: WPERenderLayer
     let puppetModel: WPEPuppetModel?
     let passes: [WPEPreparedRenderPass]
+    /// Full affine model transform, retained through mesh submission. A rotated
+    /// child under non-uniform parent scale cannot be represented by Euler sums.
+    let modelMatrixOverride: [Double]?
 
     init(
         graphLayer: WPERenderLayer,
         puppetModel: WPEPuppetModel? = nil,
-        passes: [WPEPreparedRenderPass]
+        passes: [WPEPreparedRenderPass],
+        modelMatrixOverride: [Double]? = nil
     ) {
         self.graphLayer = graphLayer
         self.puppetModel = puppetModel
         self.passes = passes
+        self.modelMatrixOverride = modelMatrixOverride
     }
 }
 
@@ -47,6 +53,8 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     let uniformValues: [String: WPESceneShaderConstantValue]
     /// Authored (material) name → shader uniform name. uniformValues is keyed by the SHADER name; scene JSON/SceneScript speak the authored name.
     let materialUniformNames: [String: String]
+    let stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding]
+    let stageUniformBindingKeys: Set<WPEShaderBindingKey>
     /// True when any value is .animated — the only case where resolved(at:) is not the identity.
     let hasAnimatedUniformValues: Bool
     /// Set when a script overrode tint of a pass whose g_Color is animated; writing the override into the value would freeze unclaimed components at frame 0.
@@ -59,6 +67,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         comboValues: [String: Int],
         uniformValues: [String: WPESceneShaderConstantValue],
         materialUniformNames: [String: String] = [:],
+        stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:],
         layerTintOverride: WPELayerTintOverride? = nil,
         reusingAccess: WPEPreparedPassAccess? = nil
     ) {
@@ -73,9 +82,16 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         self.comboValues = comboValues
         self.uniformValues = uniformValues
         self.materialUniformNames = materialUniformNames
+        self.stageUniformBindings = stageUniformBindings
+        stageUniformBindingKeys = Set(stageUniformBindings.keys)
         self.layerTintOverride = layerTintOverride
         hasAnimatedUniformValues = uniformValues.values.contains {
             if case .animated = $0 { return true }
+            return false
+        } || stageUniformBindings.values.contains {
+            if case .animated? = $0.value {
+                return true
+            }
             return false
         }
     }
@@ -163,6 +179,46 @@ struct WPEShaderProgram: Equatable, Sendable {
 }
 
 extension WPEPreparedRenderPipeline {
+    /// Resolve local transforms before the legacy 2D placement decomposition.
+    /// Only model meshes consume this override; 2D compositing keeps its existing
+    /// geometry contract. Resolve static ancestors as well as scripted hosts.
+    func resolvingSceneModelMatrices(
+        origins: [String: SIMD3<Double>], scales: [String: SIMD3<Double>], angles: [String: SIMD3<Double>],
+        parentByID: [String: String], hostTransforms: [String: WPERenderObjectTransform]
+    ) -> WPEPreparedRenderPipeline {
+        let models = layers.filter { $0.graphLayer.puppetPath != nil && ($0.graphLayer.imagePath as NSString).pathExtension.lowercased() == "mdl" }
+        guard !models.isEmpty else { return self }
+        let localByID = Dictionary(layers.map {
+            ($0.id, WPERenderObjectTransform($0.graphLayer.localGeometry ?? $0.graphLayer.geometry))
+        }, uniquingKeysWith: { first, _ in first })
+        let offsets = Dictionary(layers.map { ($0.id, $0.graphLayer.attachmentOriginOffset) }, uniquingKeysWith: { first, _ in first })
+        var memo: [String: simd_double4x4] = [:]
+        func resolve(_ id: String, stack: Set<String>) -> simd_double4x4? {
+            if let cached = memo[id] {
+                return cached
+            }
+            guard let authored = localByID[id] ?? hostTransforms[id] else { return nil }
+            let local = WPEMetalObjectUniforms.modelMatrix(
+                origin: (origins[id] ?? authored.origin) + (offsets[id] ?? .zero),
+                scale: scales[id] ?? authored.scale, angles: angles[id] ?? authored.angles
+            )
+            let world: simd_double4x4 = if let parent = parentByID[id], parent != id, !stack.contains(parent), stack.count < 100,
+                                           let parentMatrix = resolve(parent, stack: stack.union([id])) {
+                parentMatrix * local
+            } else {
+                local
+            }
+            memo[id] = world
+            return world
+        }
+        let modelIDs = Set(models.map(\.id))
+        return WPEPreparedRenderPipeline(layers: layers.map { layer in
+            guard modelIDs.contains(layer.id), let world = resolve(layer.id, stack: []) else { return layer }
+            return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
+                                          modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world))
+        })
+    }
+
     func applyingLayerTransforms(
         origins: [String: SIMD3<Double>],
         scales: [String: SIMD3<Double>],
@@ -349,11 +405,31 @@ extension WPEPreparedRenderPipeline {
             layer.graphLayer.isTimeVarying
                 || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants)
         }
-        let frameUniforms = WPEFrameUniformContext(
+        var frameUniforms = WPEFrameUniformContext(
             runtimeUniformValues: runtimeUniformValues,
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
+        if camera.sceneMotion != .identity {
+            let localCamera = camera.applyingSceneMotion(.identity).uniformValues
+            for layer in layers {
+                for pass in layer.passes {
+                    if case .scene = pass.pass.target {
+                        if layer.graphLayer.isUtilityModelLayer, layer.graphLayer.groupCompositeSource == nil {
+                            frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = localCamera
+                        } else if camera.usesObjectPerspective(objectID: layer.id) {
+                            var values = cameraUniformValues
+                            values["g_ViewProjectionMatrix"] = .vector(camera.objectViewProjectionMatrix(objectID: layer.id))
+                            frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = values
+                        }
+                    } else {
+                        // Camera zoom changes scene placement, never the local
+                        // image/text effect surface that will be composited later.
+                        frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = localCamera
+                    }
+                }
+            }
+        }
         // Nothing below can change a value. Hand back the load-time pipeline instead of copying the tree every frame.
         guard needsRebuild else { return (self, frameUniforms) }
         let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
@@ -412,10 +488,12 @@ extension WPEPreparedRenderPipeline {
                         comboValues: pass.comboValues,
                         uniformValues: values,
                         materialUniformNames: pass.materialUniformNames,
+                        stageUniformBindings: WPEUniformStageBinding.resolved(pass.stageUniformBindings, at: runtimeUniforms.time, authoredUpdates: scripted),
                         layerTintOverride: pass.layerTintOverride,
                         reusingAccess: pass.access
                     )
-                }
+                },
+                modelMatrixOverride: layer.modelMatrixOverride
             )
         }
         return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)
@@ -517,6 +595,7 @@ private extension WPEPreparedRenderLayer {
                 textureBindings: preparedPass.textureBindings.mapValues(reference),
                 comboValues: preparedPass.comboValues, uniformValues: preparedPass.uniformValues,
                 materialUniformNames: preparedPass.materialUniformNames,
+                stageUniformBindings: preparedPass.stageUniformBindings,
                 layerTintOverride: preparedPass.layerTintOverride,
                 // The initializer re-derives access when FBO names changed.
                 reusingAccess: preparedPass.access

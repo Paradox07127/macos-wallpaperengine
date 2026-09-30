@@ -5,8 +5,10 @@ enum WPEUniformValueSource: Equatable {
     case derived(WPEMetalRenderExecutor.DirectUniformPacking)
     case frameContext(String)
     case passValue(String)
+    case stagePassValue(WPEShaderBindingKey)
     case passConstant(String)
     case effectTextureProjection(inverse: Bool)
+    case fullscreenVertexMVP
     case authoredDefault
     case missing
 
@@ -23,6 +25,7 @@ enum WPEUniformValueSource: Equatable {
             }
         case let .frameContext(key): ["kind": "frame-context", "key": key, "scope": "frame/pass"]
         case let .passValue(key): ["kind": "pass-value", "key": key, "scope": "pass"]
+        case let .stagePassValue(key): ["kind": "stage-pass-value", "stage": key.stage.rawValue, "key": key.name, "scope": "pass/stage"]
         case let .passConstant(key): ["kind": "pass-constant", "key": key, "scope": "pass"]
         case let .effectTextureProjection(inverse):
             [
@@ -32,6 +35,7 @@ enum WPEUniformValueSource: Equatable {
                     : WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName,
                 "scope": "layer",
             ]
+        case .fullscreenVertexMVP: ["kind": "draw-derived", "key": "g_ModelViewProjectionMatrix", "scope": "fullscreen-clip-geometry"]
         case .authoredDefault: ["kind": "authored-default", "scope": "declaration"]
         case .missing: ["kind": "missing", "scope": "none"]
         }

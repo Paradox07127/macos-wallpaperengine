@@ -4,6 +4,30 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
+enum WPEVertexExecution: String, Codable, Hashable, Sendable {
+    case synthesized, authoredFullscreen
+}
+
+struct WPEShaderCompiledVertex: @unchecked Sendable {
+    let library: MTLLibrary
+    let mslSource: String
+    let uniformLayout: [WPEUniformSlot]
+    let samplerNames: [String]
+    let textureSlotCount: Int
+    /// Resolutions and TEXS metadata need resolved inputs even when no sampler is declared.
+    let requiredTextureSlotCount: Int
+
+    init(library: MTLLibrary, mslSource: String, uniformLayout: [WPEUniformSlot], samplerNames: [String], textureSlotCount: Int) {
+        self.library = library; self.mslSource = mslSource; self.uniformLayout = uniformLayout
+        self.samplerNames = samplerNames; self.textureSlotCount = textureSlotCount
+        requiredTextureSlotCount = max(textureSlotCount, uniformLayout.compactMap {
+            WPEMetalRenderExecutor.textureResolutionSlotIndex(for: $0.name)
+                ?? WPEMetalRenderExecutor.textureRotationSlotIndex(for: $0.name)
+                ?? WPEMetalRenderExecutor.textureTranslationSlotIndex(for: $0.name)
+        }.filter { (0 ..< WPEShaderTranspiler.customTextureSlotLimit).contains($0) }.max().map { $0 + 1 } ?? 0)
+    }
+}
+
 struct WPEShaderCompileRequest: Sendable, Hashable {
     let shaderName: String
     let processedVertexSource: String
@@ -18,6 +42,7 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
     let premultipliedInputSlots: Set<Int>
     /// Premultiply straight-alpha final color for a PMA render-target pipeline.
     let premultipliedOutput: Bool
+    let vertexExecution: WPEVertexExecution
 
     init(
         shaderName: String,
@@ -27,7 +52,8 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
         comboValues: [String: Int],
         textureBindings: [Int: String],
         premultipliedInputSlots: Set<Int> = [],
-        premultipliedOutput: Bool = false
+        premultipliedOutput: Bool = false,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) {
         self.shaderName = shaderName
         self.processedVertexSource = processedVertexSource
@@ -37,10 +63,14 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
         self.textureBindings = textureBindings
         self.premultipliedInputSlots = premultipliedInputSlots
         self.premultipliedOutput = premultipliedOutput
+        self.vertexExecution = vertexExecution
     }
 
     var translationCacheKey: String {
         var key = sourceHash
+        if vertexExecution != .synthesized {
+            key += "|vertex-execution:" + vertexExecution.rawValue
+        }
         if !WPEShaderTranspiler.waterOptimizationsEnabled {
             key += "|water-reference"
         }
@@ -52,6 +82,14 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
                 + premultipliedInputSlots.sorted().map(String.init).joined(separator: ",")
         }
         return key
+    }
+
+    func replacingVertexExecution(_ execution: WPEVertexExecution) -> Self {
+        Self(shaderName: shaderName, processedVertexSource: processedVertexSource,
+             processedFragmentSource: processedFragmentSource, sourceHash: sourceHash,
+             comboValues: comboValues, textureBindings: textureBindings,
+             premultipliedInputSlots: premultipliedInputSlots, premultipliedOutput: premultipliedOutput,
+             vertexExecution: execution)
     }
 
     func replacingPremultipliedAlphaSettings(
@@ -66,7 +104,7 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
             comboValues: comboValues,
             textureBindings: textureBindings,
             premultipliedInputSlots: inputSlots,
-            premultipliedOutput: output
+            premultipliedOutput: output, vertexExecution: vertexExecution
         )
     }
 }
@@ -81,6 +119,14 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let samplerNames: [String]
     /// Fragment texture/sampler arity; cached because a hit restores MSL without re-running the transpiler.
     let textureSlotCount: Int
+    /// Rebuilt from the request on cold and warm compilation; never inferred from generated MSL.
+    var shaderInterface: WPEShaderInterface?
+    /// Restored from the request, including warm cache hits.
+    var alphaContract: WPEShaderAlphaContract?
+    var vertexStage: WPEShaderCompiledVertex?
+    /// Recomputed from active GLSL on warm and cold assembly. Native fullscreen
+    /// clip geometry preserves XY only; non-position MVP use needs a WPE producer.
+    var fullscreenMVPPositionOnly: Bool = false
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {
@@ -92,7 +138,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 22
+    static let schemaVersion = 25
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -103,6 +149,10 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         var uniformLayout: [Slot]
         var samplerNames: [String]
         var textureSlotCount: Int
+        var vertexMSLSource: String?
+        var vertexUniformLayout: [Slot]?
+        var vertexSamplerNames: [String]?
+        var vertexTextureSlotCount: Int?
 
         struct Slot: Codable, Equatable, Sendable {
             var name: String
@@ -123,8 +173,21 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             }
         }
 
+        func vertexTranslation() -> WPEShaderTranslationResult? {
+            guard let vertexMSLSource, let vertexUniformLayout, let vertexSamplerNames,
+                  let vertexTextureSlotCount else { return nil }
+            let slots = Self.uniformSlots(vertexUniformLayout)
+            return WPEShaderTranslationResult(mslSource: vertexMSLSource, samplers: vertexSamplerNames,
+                                              uniformLayout: slots, totalSlots: slots.map { $0.slot + $0.slotCount }.max() ?? 0,
+                                              textureSlotCount: vertexTextureSlotCount)
+        }
+
         func uniformSlots() -> [WPEUniformSlot] {
-            uniformLayout.map { slot in
+            Self.uniformSlots(uniformLayout)
+        }
+
+        private static func uniformSlots(_ layout: [Slot]) -> [WPEUniformSlot] {
+            layout.map { slot in
                 WPEUniformSlot(
                     name: slot.name,
                     glslType: slot.glslType,
@@ -139,31 +202,38 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         }
 
         /// `nil` when an animated uniform default cannot round-trip; caching would silently drop it.
-        static func from(_ result: WPEShaderCompileResult) -> Payload? {
+        private static func encodedSlots(_ layout: [WPEUniformSlot]) -> [Slot]? {
             var slots: [Slot] = []
-            slots.reserveCapacity(result.uniformLayout.count)
-            for slot in result.uniformLayout {
-                if case .animated = slot.defaultValue { return nil }
-                slots.append(Slot(
-                    name: slot.name,
-                    glslType: slot.glslType,
-                    slot: slot.slot,
-                    slotCount: slot.slotCount,
-                    arrayLength: slot.arrayLength,
-                    materialName: slot.materialName,
-                    defaultValue: Slot.Constant(slot.defaultValue),
-                    requiredCombos: slot.requiredCombos
-                ))
+            for slot in layout {
+                if case .animated = slot.defaultValue {
+                    return nil
+                }
+                slots.append(Slot(name: slot.name, glslType: slot.glslType, slot: slot.slot,
+                                  slotCount: slot.slotCount, arrayLength: slot.arrayLength,
+                                  materialName: slot.materialName, defaultValue: Slot.Constant(slot.defaultValue),
+                                  requiredCombos: slot.requiredCombos))
             }
-            return Payload(
-                schemaVersion: WPEShaderTranslationCache.schemaVersion,
-                vertexFunctionName: result.vertexFunctionName,
-                fragmentFunctionName: result.fragmentFunctionName,
-                mslSource: result.mslSource,
-                uniformLayout: slots,
-                samplerNames: result.samplerNames,
-                textureSlotCount: result.textureSlotCount
-            )
+            return slots
+        }
+
+        static func from(_ result: WPEShaderCompileResult) -> Payload? {
+            guard let slots = encodedSlots(result.uniformLayout) else { return nil }
+            let vertexSlots: [Slot]?
+            if let vertex = result.vertexStage {
+                guard let encoded = encodedSlots(vertex.uniformLayout) else { return nil }
+                vertexSlots = encoded
+            } else {
+                vertexSlots = nil
+            }
+            return Payload(schemaVersion: WPEShaderTranslationCache.schemaVersion,
+                           vertexFunctionName: result.vertexFunctionName,
+                           fragmentFunctionName: result.fragmentFunctionName,
+                           mslSource: result.mslSource, uniformLayout: slots,
+                           samplerNames: result.samplerNames, textureSlotCount: result.textureSlotCount,
+                           vertexMSLSource: result.vertexStage?.mslSource,
+                           vertexUniformLayout: vertexSlots,
+                           vertexSamplerNames: result.vertexStage?.samplerNames,
+                           vertexTextureSlotCount: result.vertexStage?.textureSlotCount)
         }
     }
 

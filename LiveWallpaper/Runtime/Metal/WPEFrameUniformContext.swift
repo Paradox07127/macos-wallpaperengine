@@ -9,6 +9,7 @@ struct WPEFrameUniformContext: Sendable {
     /// Direct object/layer matrices per prepared-pass id. Camera-composed MVP
     /// counterparts are resolved from this map plus `cameraUniformValues`.
     let objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]]
+    var cameraUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
 
     static let empty = WPEFrameUniformContext(
         runtimeUniformValues: [:],
@@ -26,7 +27,7 @@ struct WPEFrameUniformContext: Sendable {
         if let value = objectUniformValuesByPassID[passID]?[name] { return value }
         if WPEMetalObjectUniforms.cameraComposedUniformNames.contains(name),
            let model = objectUniformValuesByPassID[passID]?["g_ModelMatrix"],
-           let viewProjection = cameraUniformValues["g_ViewProjectionMatrix"],
+           let viewProjection = cameraUniformValuesByPassID[passID]?["g_ViewProjectionMatrix"] ?? cameraUniformValues["g_ViewProjectionMatrix"],
            let value = WPEMetalObjectUniforms.cameraComposedValue(
                named: name,
                modelValue: model,
@@ -34,7 +35,7 @@ struct WPEFrameUniformContext: Sendable {
            ) {
             return value
         }
-        return frameValue(named: name)
+        return cameraUniformValuesByPassID[passID]?[name] ?? frameValue(named: name)
     }
 
     func value(lowercasedName: String, passID: String) -> WPESceneShaderConstantValue? {

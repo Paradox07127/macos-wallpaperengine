@@ -348,6 +348,9 @@ extension WPEMetalSceneRenderer {
                 )
             }
         }
+        baseCameraUniforms = cameraUniforms
+        cameraMotionPlayback = document.general.usesPerspectiveProjection ? nil
+            : document.cameraMotion.map { WPECameraMotionPlayback(definition: $0) }
         cameraParallaxSettings = document.general.cameraParallax
         // Rigid-subtree walk needs groups too: a clock text's chain runs through non-drawn hosts before the depth/origin ancestor.
         parallaxAuthoredDepthByObjectID = WPERenderGraphBuilder.authoredParallaxDepthByObjectID(document)
@@ -406,6 +409,9 @@ extension WPEMetalSceneRenderer {
             userProperties: currentSceneScriptUserProperties(),
             layers: Self.scriptLayerTable(for: document)
         )
+        sceneScriptSharedState?.setCursorWorldProjection(
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
+        )
         loadDynamicOriginScripts(from: document, scriptLoadToken: scriptLoadToken)
         loadEffectConstantScripts(from: pipeline, document: document, scriptLoadToken: scriptLoadToken)
         loadEffectVisibilityScripts(from: pipeline, scriptLoadToken: scriptLoadToken)
@@ -428,6 +434,7 @@ extension WPEMetalSceneRenderer {
         onProgress?(String(localized: "Loading particle systems", bundle: .appLanguage, comment: "Scene load progress: building particle systems."))
         await loadParticleSystems(from: document, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        publishParticlePlaybackSnapshots()
         // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU sim; registered systems exist only from this point, hence the late OR onto the shader/script scan above.
         if !sceneSupportsAudioProcessing {
             sceneSupportsAudioProcessing = particleSystems.contains(where: \.isAudioResponsive)
@@ -547,6 +554,7 @@ extension WPEMetalSceneRenderer {
         for object in document.imageObjects { nameByID[object.id] = object.name }
         for object in document.transformHostObjects { nameByID[object.id] = object.name }
         for object in document.textObjects { nameByID[object.id] = object.name }
+        for object in document.particleObjects { nameByID[object.id] = object.name }
         var layers: [WPESceneScriptLayerInfo] = []
         layers.reserveCapacity(nameByID.count)
         for object in document.imageObjects {
@@ -588,6 +596,15 @@ extension WPEMetalSceneRenderer {
                 angles: object.angles,
                 index: layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] }
+            ))
+        }
+        for object in document.particleObjects {
+            layers.append(WPESceneScriptLayerInfo(
+                id: object.id, name: object.name, size: .zero,
+                origin: SIMD2(object.origin.x, object.origin.y), originZ: object.origin.z,
+                scale: object.scale, angles: object.angles, index: layers.count,
+                parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                parallaxDepth: object.parallaxDepth, isParticleSystem: true
             ))
         }
         return layers

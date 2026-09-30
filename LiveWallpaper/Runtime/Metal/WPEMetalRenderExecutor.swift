@@ -137,6 +137,9 @@ final class WPEMetalRenderExecutor {
     var translatedShaderCache: [String: WPEShaderCompileResult] = [:]
 
     /// Keyed by `WPEPreparedRenderPass.id`, not by a hash of the preprocessed source — computing that hash means running the GLSL preprocessor every frame.
+    var authoredVertexExecutionEnabled = true
+    var authoredShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
+    var authoredVertexFailureByPassID: [String: String] = [:]
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
     var frameUniformContext: WPEFrameUniformContext = .empty
@@ -189,7 +192,7 @@ final class WPEMetalRenderExecutor {
         uniformKeyIndexBuildCount = 0
     }
 
-    var uniformPlansByPassID: [String: PassUniformPlans] = [:]
+    var uniformPlansByPassID: [StageUniformPlanKey: PassUniformPlans] = [:]
 
     /// Test seam: cache hit vs silent per-frame recompile.
     var uniformPlanCompileCount = 0
@@ -437,6 +440,8 @@ final class WPEMetalRenderExecutor {
     }
     private var translatedPipelineCache: [TranslatedPipelineKey: MTLRenderPipelineState] = [:]
     var previousFrameHistory: PreviousFrameHistory?
+    /// Detached from scratch targets so rejected frames cannot mutate published feedback.
+    var privateHistoryCandidates: [String: MTLTexture] = [:]
     /// Clip-composite role detection depends on the object's animation layers, so cache the resolved
     /// (source→target) part pairs per `objectID` (empty array = clip puppet with no eligible pair).
     var puppetClipPairsCache: [String: [PuppetClipPair]] = [:]
@@ -569,6 +574,7 @@ final class WPEMetalRenderExecutor {
 
     fileprivate struct TranslatedPipelineKey: Hashable {
         let libraryID: ObjectIdentifier
+        let vertexLibraryID: ObjectIdentifier?
         let vertexName: String
         let fragmentName: String
         let blendMode: String
@@ -730,6 +736,7 @@ final class WPEMetalRenderExecutor {
             objectUniformCache: objectUniformCache
         )
         frameUniformContext = frameUniforms
+        frameNeedsReflectionHistory = false
         defer { frameUniformContext = .empty }
         currentOutputPixelFormat = cameraUniforms.sceneHDR
             ? .rgba16Float
@@ -808,6 +815,9 @@ final class WPEMetalRenderExecutor {
             pipelineIdentity: fboAliasTopologyRebuildCount
         )
         targetPool.beginAliasFrame()
+        #if DEBUG
+        if let plan = cachedFBOAliasTopology?.attachmentPlan { WPECanonicalTraceRecorder.shared.recordAttachmentPlan(plan) }
+        #endif
         // The per-frame output texture is `.private` and NOT zeroed by Metal. A scene-alias read before any scene-target pass writes would sample this garbage. Clear to the scene clear color so any pre-write alias read sees black.
         var initialClearStats = initialSceneClearPlan(
             pipeline: preparedPipeline, textures: textures, output: output,
@@ -1162,6 +1172,22 @@ final class WPEMetalRenderExecutor {
             throw skippedShaderError ?? WPEMetalRenderExecutorError.noRenderablePasses
         }
 
+        // WPE resolves its mipmapped reflection AFTER the final scene draw and
+        // BEFORE bloom (2.8.0.42 capture: read event 152, resolve 608, mips 609,
+        // first bloom draw 626). Every reflecting model samples the same prior
+        // frame. Keep a separate candidate so a rejected speculative present
+        // cannot overwrite the published history.
+        let nextReflectionHistory: MTLTexture?
+        if frameNeedsReflectionHistory {
+            let candidate = try reflectionCaptureTexture(matching: output)
+            try copyTexture(output, to: candidate, commandBuffer: commandBuffer,
+                            traceLabel: "reflection-history-publication", generateMipmaps: true)
+            WPEFrameOccupancyMeter.count(.reflectionCapture)
+            nextReflectionHistory = candidate
+        } else { nextReflectionHistory = nil }
+
+        let nextPrivateHistory = try capturePrivateHistory(frameState: frameState, commandBuffer: commandBuffer)
+
         try encodeSceneBloomIfNeeded(
             cameraUniforms: cameraUniforms,
             output: output,
@@ -1172,9 +1198,10 @@ final class WPEMetalRenderExecutor {
             colorCorrection, output: output, commandBuffer: commandBuffer
         )
 
+        let presentationAccepted: Bool
         if asyncSubmission, let deferredPresent {
-            _ = try deferredPresent(graded, commandBuffer)
-        }
+            presentationAccepted = try deferredPresent(graded, commandBuffer)
+        } else { presentationAccepted = true }
 
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
         // Pin this frame's arena regions until the GPU is done reading them. Must be registered before `commit()` — the last moment Metal accepts a handler.
@@ -1221,15 +1248,21 @@ final class WPEMetalRenderExecutor {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
         }
-        previousFrameHistory = PreviousFrameHistory(
-            sceneSize: size,
-            sceneTexture: frameState.latestSceneTexture,
-            // `previous` is also an intra-effect source token: never infer history from it.
-            // Only explicitly named, unique read-before-write buffers survive a frame.
-            namedTextures: frameState.latestNamedTextures.filter {
-                cachedFBOAliasTopology?.historyFBONames.contains($0.key) == true
+        if presentationAccepted {
+            if let nextReflectionHistory {
+                reflectionCaptureCache = reflectionHistoryTexture
+                reflectionHistoryTexture = nextReflectionHistory
             }
-        )
+            for name in nextPrivateHistory.keys where frameState.writtenTargets.contains(.named(name)) {
+                // Recycle only the old detached publication, never a scratch FBO.
+                privateHistoryCandidates[name] = previousFrameHistory?.namedTextures[name]
+            }
+            previousFrameHistory = PreviousFrameHistory(
+                sceneSize: size,
+                sceneTexture: frameState.latestSceneTexture,
+                namedTextures: nextPrivateHistory
+            )
+        }
         return graded
     }
 
@@ -1251,14 +1284,18 @@ final class WPEMetalRenderExecutor {
     func bindTranslatedUniformSlots(
         _ slots: [SIMD4<Float>],
         to encoder: MTLRenderCommandEncoder,
-        index: Int = 0,
+        index: Int = 0, stage: WPEShaderStage = .fragment,
         allocate: ((UnsafeRawPointer, Int) -> MTLBuffer?)? = nil
     ) -> TranslatedUniformBinding {
         guard !slots.isEmpty else { return .empty }
         let byteCount = MemoryLayout<SIMD4<Float>>.stride * slots.count
         if byteCount <= 4096 {
             var inline = slots
-            encoder.setFragmentBytes(&inline, length: byteCount, index: index)
+            if stage == .vertex {
+                encoder.setVertexBytes(&inline, length: byteCount, index: index)
+            } else {
+                encoder.setFragmentBytes(&inline, length: byteCount, index: index)
+            }
             return .inline(byteCount: byteCount)
         }
         let buffer = slots.withUnsafeBytes { raw -> MTLBuffer? in
@@ -1279,7 +1316,11 @@ final class WPEMetalRenderExecutor {
             return .allocationFailed(byteCount: byteCount)
         }
         WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
-        encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+        if stage == .vertex {
+            encoder.setVertexBuffer(buffer, offset: 0, index: index)
+        } else {
+            encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+        }
         return .buffer(byteCount: byteCount)
     }
 
@@ -1314,7 +1355,9 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil,
-        effectTextureProjection: (() -> simd_double4x4?)? = nil
+        effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) throws -> PackedTranslatedUniforms {
         guard !layout.isEmpty else { return .empty }
         if let frameSlot = currentUniformArenaSlot,
@@ -1323,14 +1366,14 @@ final class WPEMetalRenderExecutor {
            ) {
             try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection, into: region.storage
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution, into: region.storage
             )
             return .arena(region)
         }
         return .array(
             try packTranslatedUniforms(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution
             )
         )
     }
@@ -1340,21 +1383,29 @@ final class WPEMetalRenderExecutor {
     func bindTranslatedUniformSlots(
         _ packed: PackedTranslatedUniforms,
         to encoder: MTLRenderCommandEncoder,
-        index: Int = 0
+        index: Int = 0, stage: WPEShaderStage = .fragment
     ) -> TranslatedUniformBinding {
         switch packed {
         case .empty:
             return .empty
         case .array(let slots):
-            return bindTranslatedUniformSlots(slots, to: encoder, index: index)
+            return bindTranslatedUniformSlots(slots, to: encoder, index: index, stage: stage)
         case .arena(let region):
             let byteCount = region.byteCount
             guard byteCount > 0, let base = region.storage.baseAddress else { return .empty }
             if byteCount <= 4096 {
-                encoder.setFragmentBytes(base, length: byteCount, index: index)
+                if stage == .vertex {
+                    encoder.setVertexBytes(base, length: byteCount, index: index)
+                } else {
+                    encoder.setFragmentBytes(base, length: byteCount, index: index)
+                }
                 return .inline(byteCount: byteCount)
             }
-            encoder.setFragmentBuffer(region.buffer, offset: region.offset, index: index)
+            if stage == .vertex {
+                encoder.setVertexBuffer(region.buffer, offset: region.offset, index: index)
+            } else {
+                encoder.setFragmentBuffer(region.buffer, offset: region.offset, index: index)
+            }
             return .buffer(byteCount: byteCount)
         }
     }
@@ -1375,28 +1426,13 @@ final class WPEMetalRenderExecutor {
         sharedSceneRun?.end()
     }
 
-    /// A ping-pong composite's physical texture is reused across passes, so a later source-over pass writing the SAME named target would otherwise blend over an earlier pass's stale result. Only load when genuinely needed.
-    private func shouldLoadExistingAttachment(
-        for pass: WPEPreparedRenderPass,
-        targetID: WPEMetalTargetID,
-        destinationTexture: MTLTexture,
-        readsCurrentTarget: Bool,
-        frameState: WPEMetalFrameState
-    ) -> Bool {
-        guard frameState.hasInitialized(destinationTexture) else {
-            return false
-        }
-        if readsCurrentTarget {
-            return true
-        }
-        if case .scene = targetID {
-            return true
-        }
-        if case .named(let name) = targetID,
-           WPERenderTargetNames.LayerGroup.matches(name) {
-            return true
-        }
-        return blendFacts(pass.pass.blending).requiresExistingDestination
+    func attachmentLoadContract(
+        for pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID, destinationTexture: MTLTexture,
+        readsCurrentTarget: Bool, frameState: WPEMetalFrameState
+    ) -> WPEAttachmentLoadContract {
+        WPEAttachmentLoadContract.color(target: targetID, initialized: frameState.hasInitialized(destinationTexture),
+                                        readsCurrentTarget: readsCurrentTarget,
+                                        blendNeedsDestination: blendFacts(pass.pass.blending).requiresExistingDestination)
     }
 
     static func blendModeRequiresExistingDestination(_ blendMode: String) -> Bool {
@@ -1506,6 +1542,7 @@ final class WPEMetalRenderExecutor {
                 sceneSize: textCanvasSize,
                 output: destination.texture,
                 clearsOutput: clearsDestination,
+                cameraClipTransform: targetID == .scene ? frameState.cameraUniforms.sceneClipTransform : SIMD4(1, 1, 0, 0),
                 commandBuffer: commandBuffer
             )
             if encoded || copiedSceneBackground {
@@ -1591,13 +1628,14 @@ final class WPEMetalRenderExecutor {
         let usesReversedZ = frameState.cameraUniforms.usesPerspectiveProjection
             || frameState.cameraUniforms.usesObjectPerspective(objectID: drawLayer.objectID)
 
-        let shouldLoadExistingAttachment = shouldLoadExistingAttachment(
+        let colorAttachmentContract = attachmentLoadContract(
             for: pass,
             targetID: targetID,
             destinationTexture: destination.texture,
             readsCurrentTarget: readsCurrentTarget,
             frameState: frameState
         )
+        let shouldLoadExistingAttachment = colorAttachmentContract.load == .load
 
         if try encodePuppetClipCompositePassIfNeeded(
             pass: pass,
@@ -1626,8 +1664,8 @@ final class WPEMetalRenderExecutor {
         } else {
             let descriptor = MTLRenderPassDescriptor()
             descriptor.colorAttachments[0].texture = destination.texture
-            descriptor.colorAttachments[0].loadAction = shouldLoadExistingAttachment ? .load : .clear
-            descriptor.colorAttachments[0].storeAction = .store
+            descriptor.colorAttachments[0].loadAction = colorAttachmentContract.load
+            descriptor.colorAttachments[0].storeAction = colorAttachmentContract.store
             descriptor.colorAttachments[0].clearColor = clearColor(for: targetID)
 
             if needsDepth {
@@ -1637,17 +1675,11 @@ final class WPEMetalRenderExecutor {
                     allowTransient: !persistentDepthTargetIDs.contains(targetID)
                 )
                 descriptor.depthAttachment.texture = depth
-                if depthCache.isTransientDepthAttachment(depth) {
-                    // Memoryless depth cannot load/store; it's per-pass transient regardless.
-                    descriptor.depthAttachment.loadAction = .clear
-                    descriptor.depthAttachment.storeAction = .dontCare
-                } else {
-                    // Depth is keyed independently of the color target and allocated fresh on first use per frame, so the color's `shouldLoadExistingAttachment` must NOT decide it. `.load` only once this exact depth texture was written this frame.
-                    let depthInitialized = frameState.hasInitialized(depth)
-                    descriptor.depthAttachment.loadAction = depthInitialized ? .load : .clear
-                    descriptor.depthAttachment.storeAction = .store
-                    frameState.markInitialized(depth)
-                }
+                let depthContract = WPEAttachmentLoadContract.depth(transient: depthCache.isTransientDepthAttachment(depth),
+                                                                     initialized: frameState.hasInitialized(depth))
+                descriptor.depthAttachment.loadAction = depthContract.load
+                descriptor.depthAttachment.storeAction = depthContract.store
+                if depthContract.store == .store { frameState.markInitialized(depth) }
                 descriptor.depthAttachment.clearDepth = WPEMetalDepthStateCache.clearDepth(
                     reversedZ: usesReversedZ
                 )
@@ -1658,6 +1690,11 @@ final class WPEMetalRenderExecutor {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
             encoder = createdEncoder
+            #if DEBUG
+            WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "render-attachment-begin", label: pass.pass.id,
+                                                                       destination: destination.texture, contract: colorAttachmentContract,
+                                                                       writesPixels: colorAttachmentContract.load == .clear)
+            #endif
             encoder.applyTraceLabel("pass|\(pass.pass.id)|\(pass.pass.shader)")
             WPEFrameOccupancyMeter.count(.renderPassEncoder)
 
@@ -1988,9 +2025,16 @@ final class WPEMetalRenderExecutor {
         encoder.applyTraceLabel("clear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "clear", label: "clear", destination: texture,
+                                                                   contract: .color(target: .scene, initialized: false,
+                                                                                    readsCurrentTarget: false, blendNeedsDestination: false))
+        #endif
     }
 
-    /// It must be a separate texture, not the live scene target — this pass draws into that target, and sampling it would be an undefined read-write.
+    /// This source is prior-frame history, not an intra-frame framebuffer copy.
+    /// A black first frame bootstraps it; late scene draws become visible to
+    /// reflections on the next frame, including the model's own HDR result.
     private func captureReflectionSourceIfNeeded(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -2002,15 +2046,21 @@ final class WPEMetalRenderExecutor {
               (pass.pass.combos["REFLECTION"] ?? 0) != 0,
               Self.sceneModelMaterialShader(for: pass.pass.shader) != nil,
               layer.puppetPath != nil,
-              (layer.imagePath as NSString).pathExtension.lowercased() == "mdl",
-              let source = frameState.currentFrameSceneTexture else {
-            return
+              (layer.imagePath as NSString).pathExtension.lowercased() == "mdl" else { return }
+        let source = frameState.output
+        if reflectionHistoryTexture?.width != source.width || reflectionHistoryTexture?.height != source.height
+            || reflectionHistoryTexture?.pixelFormat != source.pixelFormat {
+            reflectionHistoryTexture = nil
+            reflectionCaptureCache = nil
+            let history = try reflectionCaptureTexture(matching: source)
+            try clearTexture(history, color: MTLClearColorMake(0, 0, 0, 1), commandBuffer: commandBuffer)
+            try copyTexture(history, to: history, commandBuffer: commandBuffer,
+                            traceLabel: "reflection-history-bootstrap", generateMipmaps: true)
+            reflectionHistoryTexture = history
+            reflectionCaptureCache = nil
         }
-        let capture = try reflectionCaptureTexture(matching: source)
-        try copyTexture(source, to: capture, commandBuffer: commandBuffer,
-                        traceLabel: "reflection|\(pass.pass.id)", generateMipmaps: true)
-        WPEFrameOccupancyMeter.count(.reflectionCapture)
-        reflectionSourceTexture = capture
+        frameNeedsReflectionHistory = true
+        reflectionSourceTexture = reflectionHistoryTexture
     }
 
     private func reflectionCaptureTexture(matching source: MTLTexture) throws -> MTLTexture {
@@ -2048,8 +2098,12 @@ final class WPEMetalRenderExecutor {
         guard case .layerComposite = pass.pass.target else { return }
         let sourceTexture: MTLTexture?
         switch pass.pass.source {
-        case .fbo(let name):
-            sourceTexture = frameState.latestTexture(for: .named(name))
+        case .fbo:
+            // Use the same alias/bootstrap rules as an active shader read. A
+            // declared but unwritten FBO must overwrite the composite with zero.
+            sourceTexture = try? WPEMetalShaderInputs.resolve(reference: pass.pass.source, textures: textures,
+                                                             frameState: frameState,
+                                                             currentTargetID: WPEMetalTargetID(target: pass.pass.target))
         case .image(let name), .asset(let name):
             sourceTexture = textures[name]
         case .previous:
@@ -2132,8 +2186,8 @@ final class WPEMetalRenderExecutor {
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination.texture
         // Fullscreen quad, blending disabled, full write mask: every texel is overwritten, so neither previous contents nor a clear is ever observable. `.dontCare` drops the attachment read.
-        descriptor.colorAttachments[0].loadAction = .dontCare
-        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].loadAction = WPEAttachmentLoadContract.fullOverwrite.load
+        descriptor.colorAttachments[0].storeAction = WPEAttachmentLoadContract.fullOverwrite.store
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "copy|\(layer.objectName)")
         closeSharedSceneEncoderForHelperEncoder()
@@ -2293,7 +2347,8 @@ final class WPEMetalRenderExecutor {
         layer: WPERenderLayer,
         frameState: WPEMetalFrameState
     ) -> WPEMetalCameraUniforms {
-        isGroupRenderTarget(pass.target, layer: layer) ? .identity : frameState.cameraUniforms
+        if case .scene = pass.target { return frameState.cameraUniforms }
+        return .identity
     }
 
     /// The static half of the shift, `(nodePos - camPos) * depth * amount`, must be evaluated ONCE at the root — feeding each child its own origin turns the rigid translation into an anisotropic scale of the subtree about the scene centre by `(1 + depth * amount)`.
@@ -2386,7 +2441,8 @@ final class WPEMetalRenderExecutor {
                 sceneSize: sceneSize
             )
             let uniforms = WPEObjectQuadUniforms(
-                centerAndSize: SIMD4<Float>(parallax.x, parallax.y, sceneWidth, sceneHeight),
+                centerAndSize: SIMD4<Float>(cameraUniforms.transformScenePoint(parallax).x, cameraUniforms.transformScenePoint(parallax).y,
+                    sceneWidth * Float(cameraUniforms.sceneMotion.zoom), sceneHeight * Float(cameraUniforms.sceneMotion.zoom)),
                 sceneSizeAndRotation: SIMD4<Float>(sceneWidth, sceneHeight, 0, 0),
                 uvSignAndPadding: SIMD4<Float>(1, 1, 0, 0)
             )
@@ -2436,7 +2492,8 @@ final class WPEMetalRenderExecutor {
             sceneSize: sceneSize
         )
         let uniforms = WPEObjectQuadUniforms(
-            centerAndSize: SIMD4<Float>(center.x, center.y, width, height),
+            centerAndSize: SIMD4<Float>(cameraUniforms.transformScenePoint(center).x, cameraUniforms.transformScenePoint(center).y,
+                width * Float(cameraUniforms.sceneMotion.zoom), height * Float(cameraUniforms.sceneMotion.zoom)),
             sceneSizeAndRotation: SIMD4<Float>(
                 sceneWidth,
                 sceneHeight,
@@ -2520,7 +2577,8 @@ final class WPEMetalRenderExecutor {
     func shapeQuadUniforms(
         for layer: WPERenderLayer,
         sceneSize: CGSize,
-        cameraParallax: WPECameraParallaxFrame = .neutral
+        cameraParallax: WPECameraParallaxFrame = .neutral,
+        cameraUniforms: WPEMetalCameraUniforms = .identity
     ) -> WPEShapeQuadUniforms {
         let geometry = layer.geometry
         let sceneWidth = Float(max(sceneSize.width, 1))
@@ -2551,7 +2609,7 @@ final class WPEMetalRenderExecutor {
                 cosR * scaled.x - sinR * scaled.y,
                 sinR * scaled.x + cosR * scaled.y
             )
-            let scenePixels = center + rotated
+            let scenePixels = cameraUniforms.transformScenePoint(center + rotated)
             return SIMD4<Float>(scenePixels.x, scenePixels.y, Float(point.x), Float(point.y))
         }
 
@@ -2784,7 +2842,7 @@ final class WPEMetalRenderExecutor {
         hasComponentMap: Bool,
         materialShader: SceneModelMaterialShader = .genericImage4,
         hasReflectionSource: Bool = false,
-        reflectionTopMipLevel: Int = 0,
+        reflectionMipCount: Int = 0,
         noiseTexture: MTLTexture? = nil
     ) -> WPESceneModelGenericUniforms {
         func constantVector3(_ names: [String], default def: SIMD3<Float>) -> SIMD3<Float> {
@@ -2858,7 +2916,7 @@ final class WPEMetalRenderExecutor {
                 reflectionEnabled ? 1 : 0
             ),
             skylightColor: SIMD4<Float>(skylight.x, skylight.y, skylight.z, 0),
-            reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionTopMipLevel)),
+            reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionMipCount)),
             screen: SIMD4<Float>(Float(renderSize.width), Float(renderSize.height), aspect, 0),
             // chroma4's front/back tint defaults to white so an unauthored material is a
             // no-op multiply rather than a black mesh.
@@ -2886,12 +2944,11 @@ final class WPEMetalRenderExecutor {
         (UserDefaults.standard.object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
 
 
-    /// Set by `captureReflectionSourceIfNeeded` for the pass about to be encoded,
-    /// cleared for every other pass so a stale capture can never leak into one.
+    /// Bound only to a reflecting model; the contents are the published prior frame.
     var reflectionSourceTexture: MTLTexture?
-    /// Reused across frames; only the allocation persists, the content is
-    /// re-captured per reflecting pass.
-    private var reflectionCaptureCache: MTLTexture?
+    var reflectionHistoryTexture: MTLTexture?
+    var reflectionCaptureCache: MTLTexture?
+    private var frameNeedsReflectionHistory = false
 
     var bloomLevelTextures: [MTLTexture] = []
     var bloomLevelHeap: MTLHeap?
@@ -2916,9 +2973,22 @@ final class WPEMetalRenderExecutor {
     }
 
     func passReadsCurrentTarget(_ pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID) -> Bool {
+        if targetID == WPEMetalTargetID(target: pass.pass.target) { return pass.access.readsCurrentTarget }
         if pass.access.readsTargetHistory { return true }
         guard case .named(let name) = targetID else { return false }
         return pass.access.boundFBONames.contains(name)
+    }
+
+    func hasPrewarmedAuthoredPipeline(
+        for result: WPEShaderCompileResult, pass: WPEPreparedRenderPass,
+        destination: (id: WPEMetalTargetID, texture: MTLTexture), depthPixelFormat: MTLPixelFormat) -> Bool {
+        let key = TranslatedPipelineKey(libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
+            vertexName: result.vertexFunctionName, fragmentName: result.fragmentFunctionName,
+            blendMode: blendFacts(pass.pass.blending).lowercased,
+            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            colorPixelFormat: destination.texture.pixelFormat.rawValue, depthPixelFormat: depthPixelFormat.rawValue)
+        return translatedPipelineCache[key] != nil
     }
 
     func translatedPipelineState(
@@ -2935,6 +3005,7 @@ final class WPEMetalRenderExecutor {
         let loweredBlendMode = blendFacts(blendMode).lowercased
         let key = TranslatedPipelineKey(
             libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
             vertexName: resolvedVertexName,
             fragmentName: result.fragmentFunctionName,
             blendMode: loweredBlendMode,
@@ -2945,7 +3016,11 @@ final class WPEMetalRenderExecutor {
         if let cached = translatedPipelineCache[key] {
             return cached
         }
-        guard let vertex = result.library.makeFunction(name: resolvedVertexName)
+        guard result.vertexStage == nil || resolvedVertexName == result.vertexFunctionName else {
+            throw WPEMetalRenderExecutorError.pipelineUnavailable(resolvedVertexName)
+        }
+        guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
+            ?? result.library.makeFunction(name: resolvedVertexName)
             ?? defaultLibrary.makeFunction(name: resolvedVertexName),
               let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable(result.fragmentFunctionName)
@@ -3000,6 +3075,7 @@ final class WPEMetalRenderExecutor {
         let resolvedVertexName = prewarm.vertexName ?? result.vertexFunctionName
         let key = TranslatedPipelineKey(
             libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
             vertexName: resolvedVertexName,
             fragmentName: result.fragmentFunctionName,
             blendMode: prewarm.blendMode.lowercased(),
@@ -3007,7 +3083,9 @@ final class WPEMetalRenderExecutor {
             colorPixelFormat: prewarm.colorPixelFormat.rawValue,
             depthPixelFormat: prewarm.depthPixelFormat.rawValue
         )
-        guard let vertex = result.library.makeFunction(name: resolvedVertexName)
+        guard result.vertexStage == nil || resolvedVertexName == result.vertexFunctionName else { return nil }
+        guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
+            ?? result.library.makeFunction(name: resolvedVertexName)
             ?? prewarm.defaultLibrary.makeFunction(name: resolvedVertexName),
               let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
             return nil
@@ -3036,13 +3114,15 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil,
-        effectTextureProjection: (() -> simd_double4x4?)? = nil
+        effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) throws -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         try slots.withUnsafeMutableBufferPointer {
             try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection, into: $0
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution, into: $0
             )
         }
         return slots
@@ -3056,12 +3136,28 @@ final class WPEMetalRenderExecutor {
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable?,
         effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized,
         into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
     ) throws {
-        let plans = uniformPlans(for: pass, layout: layout)
+        let plans = uniformPlans(for: pass, layout: layout, stage: stage)
         let frame = frameUniformContext
         let useDirectPacking = derivedUniformPackingEnabled
         for (index, u) in layout.enumerated() {
+            if stage == .vertex, vertexExecution == .authoredFullscreen,
+               u.name == "g_ModelViewProjectionMatrix", u.materialName == nil, u.glslType == "mat4", u.arrayLength == nil {
+                // Fullscreen attributes are already in clip coordinates. This is
+                // a draw producer, never the layer owner's effect projection.
+                for column in 0..<4 {
+                    var value = SIMD4<Float>.zero
+                    value[column] = 1
+                    slots[u.slot + column] = value
+                }
+                #if DEBUG
+                recordUniformSource(.fullscreenVertexMVP)
+                #endif
+                continue
+            }
             if useDirectPacking,
                let packing = plans[index].directPacking,
                let vector = directUniformVector(packing, texturesBySlot: texturesBySlot) {

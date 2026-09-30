@@ -296,6 +296,7 @@ final class WPEParticleSystem {
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
+    var scriptParticleObjectID: String?
     /// 1 when the object has no such script — and it keeps its last ticked value if the script later fails.
     var instanceAlphaScale: Float = 1
     /// Scene object whose `instanceoverride.alpha` script drives `instanceAlphaScale`.
@@ -307,18 +308,19 @@ final class WPEParticleSystem {
     var isAudioResponsive: Bool { definition.emitterAudioState?.isEnabled == true }
 
     weak var followParent: WPEParticleSystem? {
-        didSet { followParent?.beginRecordingSpawnEvents() }
+        didSet { followParent?.beginRecordingParticleEvents() }
     }
     var followControlPointID: Int = 1
     var requiresFollowParent: Bool = false
     var injectedControlPoints: [Int: SIMD3<Float>] = [:]
     /// Event-driven children only: roll `probability` per parent event, not per scene.
     var spawnProbability: Double = 1
-    /// Birth positions this `advance`; an `eventfollow` child bursts once per entry.
-    /// Recorded only once a child attaches (`recordsSpawnEvents`) — nothing else reads it.
-    private(set) var spawnEventsThisTick: [SIMD3<Float>] = []
-    private var recordsSpawnEvents = false
-    private var spawnEventTimesThisTick: [Double] = []
+    private(set) var particleEventsThisTick: [WPEParticleEvent] = []
+    private(set) var droppedParticleEventsThisTick = 0
+    private var recordsParticleEvents = false
+    private var particleGenerations: [UInt64]
+    static let maximumRecordedParticleEvents = absoluteCap * 2
+
     private var followEventCursor = 0
     private var simulationNow: Double = 0
 
@@ -347,6 +349,9 @@ final class WPEParticleSystem {
     private var cachedPrimarySlot: Int = .max
     private var spawnAccumulator: Double = 0
     private var hasEmittedBurst = false
+    private enum Playback { case playing, paused, stopped }
+    private var playback: Playback = .playing
+    private var explicitlyRequestedParticles = 0
     private var lastTickTime: Double?
     private var firstTickTime: Double?
     private var rng: WPEParticleRNG
@@ -444,6 +449,7 @@ final class WPEParticleSystem {
             oscSizePhase: 0
         ), count: cap)
         self.liveSlots = WPEParticleSlotIndex(capacity: cap)
+        particleGenerations = .init(repeating: 0, count: cap)
         var instanceBuffers: [MTLBuffer] = []
         instanceBuffers.reserveCapacity(WPEMetalRenderExecutor.maxFramesInFlight)
         for slot in 0..<WPEMetalRenderExecutor.maxFramesInFlight {
@@ -738,7 +744,8 @@ final class WPEParticleSystem {
         firstTickTime = -virtualNow
         lastTickTime = 0
         // Drop prewarm births so the first live frame doesn't replay them (3413921910).
-        spawnEventsThisTick.removeAll()
+        particleEventsThisTick.removeAll(keepingCapacity: true)
+        droppedParticleEventsThisTick = 0
     }
 
     private func drawAttributes(
@@ -1088,7 +1095,38 @@ final class WPEParticleSystem {
     /// True once every spawn gate is permanently closed. False until the first tick so an untouched system always counts as live.
     private var emissionExhausted = false
 
-    var isPermanentlyIdle: Bool { aliveCount == 0 && emissionExhausted }
+    var isPermanentlyIdle: Bool {
+        aliveCount == 0 && explicitlyRequestedParticles == 0 && (playback != .playing || emissionExhausted)
+    }
+
+    var playbackSnapshot: WPEParticlePlaybackSnapshot {
+        .init(liveParticleCount: aliveCount + explicitlyRequestedParticles,
+              isEmitting: playback == .playing && !emissionExhausted)
+    }
+
+    func applyPlaybackCommand(_ command: WPEParticlePlaybackCommand) {
+        switch command {
+        case .play:
+            if playback == .stopped || emissionExhausted {
+                firstTickTime = nil
+                lastTickTime = nil
+                systemElapsed = 0
+                lastFrameInterval = 0
+                spawnAccumulator = 0
+                hasEmittedBurst = false
+                emissionExhausted = false
+            }
+            playback = .playing
+        case .pause: playback = .paused
+        case .stop:
+            playback = .stopped
+            explicitlyRequestedParticles = 0
+            clearLiveParticles()
+            ropeVertexCount = 0
+        case let .emit(count):
+            explicitlyRequestedParticles = min(capacity, explicitlyRequestedParticles + max(0, min(count, capacity)))
+        }
+    }
 
     var tracksPointer: Bool { emitterTracksPointer }
 
@@ -1103,6 +1141,8 @@ final class WPEParticleSystem {
             particles[index].age = .greatestFiniteMagnitude
         }
         liveSlots.removeAll()
+        particleEventsThisTick.removeAll(keepingCapacity: true)
+        droppedParticleEventsThisTick = 0
         resetPrimaryCache()
         aliveCount = 0
         spawnAccumulator = 0
@@ -1127,11 +1167,41 @@ final class WPEParticleSystem {
         }
     }
 
-    private func beginRecordingSpawnEvents() {
-        guard !recordsSpawnEvents else { return }
-        recordsSpawnEvents = true
-        spawnEventsThisTick.reserveCapacity(capacity)
-        spawnEventTimesThisTick.reserveCapacity(capacity)
+    func beginRecordingParticleEvents() {
+        guard !recordsParticleEvents else { return }
+        recordsParticleEvents = true
+        particleEventsThisTick.reserveCapacity(min(capacity * 2, Self.maximumRecordedParticleEvents))
+    }
+
+    var primaryLiveParticleIdentity: WPEParticleIdentity? {
+        guard cachedPrimarySlot < capacity, liveSlots.isLive(cachedPrimarySlot) else { return nil }
+        return .init(slot: cachedPrimarySlot, generation: particleGenerations[cachedPrimarySlot])
+    }
+
+    func snapshot(for identity: WPEParticleIdentity) -> WPEParticleSnapshot? {
+        guard identity.slot >= 0, identity.slot < capacity,
+              liveSlots.isLive(identity.slot), particleGenerations[identity.slot] == identity.generation else { return nil }
+        return particleSnapshot(at: identity.slot)
+    }
+
+    private func particleSnapshot(at slot: Int) -> WPEParticleSnapshot {
+        let p = particles[slot]
+        let current = drawAttributes(of: p)
+        return WPEParticleSnapshot(identity: .init(slot: slot, generation: particleGenerations[slot]),
+                                   position: p.position, displayPosition: current.position, velocity: p.velocity,
+                                   initialColor: p.color, currentColor: current.rgb,
+                                   initialAlpha: p.alphaBase, currentAlpha: current.alpha,
+                                   initialSize: p.size, currentSize: current.size, rotationZ: p.rotationZ,
+                                   age: min(p.age, p.lifetime), lifetime: p.lifetime)
+    }
+
+    private func recordParticleEvent(_ kind: WPEParticleEvent.Kind, slot: Int) {
+        guard recordsParticleEvents else { return }
+        guard particleEventsThisTick.count < Self.maximumRecordedParticleEvents else {
+            droppedParticleEventsThisTick += 1
+            return
+        }
+        particleEventsThisTick.append(.init(kind: kind, simulationTime: simulationNow, particle: particleSnapshot(at: slot)))
     }
 
     private var systemElapsed: Double = 0
@@ -1141,8 +1211,8 @@ final class WPEParticleSystem {
 
     private func advance(now: Double) {
         guard now.isFinite else { return }
-        spawnEventsThisTick.removeAll(keepingCapacity: true)
-        spawnEventTimesThisTick.removeAll(keepingCapacity: true)
+        particleEventsThisTick.removeAll(keepingCapacity: true)
+        droppedParticleEventsThisTick = 0
         followEventCursor = 0
         defer { lastTickTime = now }
         if firstTickTime == nil {
@@ -1195,7 +1265,15 @@ final class WPEParticleSystem {
             elapsed <= emissionStart + $0
         } ?? true
         let emitterCanSpawn = definition.emitterShape.isRuntimeSupported
-        if hasStartedEmitting, emitterCanSpawn {
+        if explicitlyRequestedParticles > 0 {
+            let count = explicitlyRequestedParticles
+            explicitlyRequestedParticles = 0
+            for _ in 0 ..< count {
+                guard let slot = nextFreeSlot() else { break }
+                spawn(into: slot)
+            }
+        }
+        if playback == .playing, hasStartedEmitting, emitterCanSpawn {
             if definition.instantaneousCount > 0 {
                 if requiresFollowParent {
                     // eventfollow: burst once per parent birth, not once per system.
@@ -1244,6 +1322,7 @@ final class WPEParticleSystem {
                 liveWord &= liveWord &- 1
                 particles[index].age += dt
                 if particles[index].age >= particles[index].lifetime {
+                    recordParticleEvent(.death, slot: index)
                     particles[index].age = .greatestFiniteMagnitude
                     liveSlots.markDead(index)
                     continue
@@ -1392,7 +1471,7 @@ final class WPEParticleSystem {
     }
 
     private func emitFollowBursts(upTo now: Double) {
-        guard let parent = followParent, !parent.spawnEventsThisTick.isEmpty else { return }
+        guard let parent = followParent, !parent.particleEventsThisTick.isEmpty else { return }
         let injected = injectedControlPoints[followControlPointID]
         defer {
             if let injected {
@@ -1403,15 +1482,16 @@ final class WPEParticleSystem {
         }
         // Parent events remain ordered across its substeps. Consume each only
         // when the child's simulation clock reaches that birth time.
-        while followEventCursor < parent.spawnEventsThisTick.count {
-            guard parent.spawnEventTimesThisTick[followEventCursor] <= now + 1e-7 else { break }
-            let event = parent.spawnEventsThisTick[followEventCursor]
+        while followEventCursor < parent.particleEventsThisTick.count {
+            let event = parent.particleEventsThisTick[followEventCursor]
+            guard event.simulationTime <= now + 1e-7 else { break }
             followEventCursor += 1
+            guard event.kind == .spawn else { continue }
             // One roll per event: 0.5 accompanies half the parent's particles, not half of sessions.
             if spawnProbability < 1, Double.random(in: 0..<1, using: &rng) >= spawnProbability {
                 continue
             }
-            injectedControlPoints[followControlPointID] = event
+            injectedControlPoints[followControlPointID] = event.particle.position
             for _ in 0 ..< definition.instantaneousCount {
                 guard let slot = nextFreeSlot() else { return }
                 if !spawn(into: slot) { return }
@@ -1585,15 +1665,13 @@ final class WPEParticleSystem {
             oscSizeFrequency: oscSizeFrequency,
             oscSizePhase: oscSizePhase
         )
+        particleGenerations[slot] &+= 1
         liveSlots.markLive(slot)
         notePrimaryCandidate(age: 0, slot: slot, position: position)
         if trailPointCount > 0 {
             resetTrailHistory(slot, to: position)
         }
-        if recordsSpawnEvents {
-            spawnEventsThisTick.append(position)
-            spawnEventTimesThisTick.append(simulationNow)
-        }
+        recordParticleEvent(.spawn, slot: slot)
         return true
     }
 

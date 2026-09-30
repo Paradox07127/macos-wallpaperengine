@@ -38,6 +38,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         return Int(name.dropFirst("g_Texture".count))
     }
 
+    static func samplerName(at slot: Int, in names: [String]) -> String? {
+        names.enumerated().first { (authoredTextureSlot($0.element) ?? $0.offset) == slot }?.element
+    }
+
     /// A non-sprite texture a particle draw bound (group mask, refract normal,
     /// refract background snapshot).
     struct ParticleTextureInput {
@@ -57,7 +61,11 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var scene: SceneContext?
     private var frameComplete = false
     private var passes: [[String: Any]] = []
+    private var attachmentOperations: [[String: Any]] = []
+    private var attachmentPlan: [String: Any]?
+    private var physicalAttachmentRevisions: [String: Int] = [:]
     private var resources: ResourceTables = ResourceTables()
+    private var semanticCoverage: [WPEShaderSemanticCoverage] = []
     private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
 
     private let artifacts: WPESceneDebugArtifacts
@@ -121,6 +129,60 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
     }
 
+    /// Helper transfers are separate events, never synthetic shader draws. Revisions
+    /// here identify encoded writes within this trace, not completed GPU contents.
+    func recordAttachmentOperation(kind: String, label: String, source: MTLTexture? = nil,
+                                   destination: MTLTexture, contract: WPEAttachmentLoadContract? = nil,
+                                   writesPixels: Bool = true) {
+        guard artifacts.isEnabled else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        let destinationID = textureResourceID(texture: destination, fallbackKey: "attachment")
+        if resources.textures[destinationID] == nil {
+            resources.textures[destinationID] = textureResource(id: destinationID, name: nil, reference: nil, texture: destination)
+        }
+        var sourceRecord: [String: Any]?
+        if let source {
+            let sourceID = textureResourceID(texture: source, fallbackKey: "attachment-source")
+            if resources.textures[sourceID] == nil {
+                resources.textures[sourceID] = textureResource(id: sourceID, name: nil, reference: nil, texture: source)
+            }
+            sourceRecord = ["resource": sourceID, "revision": physicalAttachmentRevisions[sourceID] ?? 0]
+        }
+        let before = physicalAttachmentRevisions[destinationID] ?? 0
+        let after = before + (writesPixels ? 1 : 0)
+        physicalAttachmentRevisions[destinationID] = after
+        attachmentOperations.append([
+            "ordinal": attachmentOperations.count, "recordedDrawsBefore": passes.count,
+            "kind": kind, "label": label, "source": sourceRecord ?? NSNull(),
+            "destination": ["resource": destinationID, "revisionBefore": before, "revisionAfter": after],
+            "load": contract.map { Self.loadName($0.load) } ?? NSNull(),
+            "store": contract.map { $0.store == .store ? "store" : "dontCare" } ?? NSNull(),
+            "reason": contract.map(\.reason.rawValue) ?? NSNull(),
+            "status": "encoded-not-gpu-completion", "revisionZero": "contents-unrecorded-or-external",
+        ])
+    }
+
+    func recordAttachmentPlan(_ plan: WPEAttachmentPlan) {
+        guard artifacts.isEnabled else { return }
+        guard isAccumulating else { return }
+        let record = plan.traceRecord()
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        attachmentPlan = record
+    }
+
+    private static func loadName(_ load: MTLLoadAction) -> String {
+        switch load {
+        case .load: "load"
+        case .clear: "clear"
+        case .dontCare: "dontCare"
+        @unknown default: "unknown"
+        }
+    }
+
     func beginScene(
         workshopID: String,
         projectJsonPath: String?,
@@ -132,6 +194,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         scene = SceneContext(workshopID: workshopID, projectJsonPath: projectJsonPath, descriptor: descriptor)
         frameComplete = false
         passes.removeAll(keepingCapacity: true)
+        attachmentOperations.removeAll(keepingCapacity: true)
+        attachmentPlan = nil
+        physicalAttachmentRevisions.removeAll(keepingCapacity: true)
+        semanticCoverage.removeAll(keepingCapacity: true)
         resources = ResourceTables()
         self.shaderImplementationInventory = shaderImplementationInventory
         lock.unlock()
@@ -158,19 +224,37 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         packedUniformSlots: [SIMD4<Float>],
         usesObjectQuad: Bool,
         nativeState: NativeRenderState,
-        uniformSources: [WPEUniformValueSource]? = nil
+        uniformSources: [WPEUniformValueSource]? = nil,
+        vertexPath: WPEPassVertexPath? = nil,
+        vertexUniformSlots: [SIMD4<Float>] = [],
+        vertexUniformSources: [WPEUniformValueSource]? = nil,
+        authoredVertexFallback: String? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
 
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(
+            passID: pass.id,
+            authoredEffectID: shaderImplementationInventory.first { $0.renderPassID == pass.id }?.stableEffectID,
+            shaderName: pass.pass.shader,
+            sourceClassification: pass.shader?.executionClassification.rawValue,
+            sourceFingerprint: pass.shader?.sourceFingerprint,
+            interface: result.shaderInterface, layout: result.uniformLayout, sources: uniformSources,
+            vertexLayout: result.vertexStage?.uniformLayout ?? [], vertexSources: vertexUniformSources,
+            authoredVertexExecuted: result.vertexStage != nil, authoredVertexFallback: authoredVertexFallback
+        )
+        semanticCoverage.append(coverage)
         let ordinal = passes.count
         let target = destination.id
         let targetTexture = destination.texture
         let targetResource = renderTargetResourceID(target)
         let fragmentShaderID = shaderID(stage: "fs", stableInput: result.mslSource)
-        let vertexShaderID = shaderID(stage: "vs", stableInput: result.vertexFunctionName)
+        let selectedVertexPath = vertexPath ?? (usesObjectQuad ? .objectQuad : .fullscreenQuad)
+        let selectedVertexFunction = selectedVertexPath.functionName(default: result.vertexFunctionName)
+        let vertexSource = result.vertexStage?.mslSource ?? selectedVertexFunction
+        let vertexShaderID = shaderID(stage: "vs", stableInput: vertexSource)
         let packedBytes = packedUniformBytes(packedUniformSlots)
         let bufferResource = "buf-mac-pass-\(ordinal)"
 
@@ -190,11 +274,11 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         )
         resources.shaders[vertexShaderID] = shaderResource(
             stage: "vertex",
-            entryPoint: result.vertexFunctionName,
-            source: result.vertexFunctionName,
-            path: nil,
-            layout: [],
-            samplers: []
+            entryPoint: selectedVertexFunction,
+            source: vertexSource,
+            path: result.vertexStage == nil ? nil : "msl-vs-\(pass.pass.id)-\(pass.pass.shader).metal",
+            layout: result.vertexStage?.uniformLayout ?? [],
+            samplers: result.vertexStage?.samplerNames ?? []
         )
 
         var textures: [[String: Any]] = []
@@ -203,11 +287,16 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             resources.textures[texID] = textureResource(
                 id: texID, name: binding.name, reference: binding.reference, texture: binding.texture
             )
-            textures.append([
-                "stage": "fragment",
-                // Authored register slot, matching the reflection and the Windows side. `binding.slot` is our dense Metal binding index.
-                "slot": Self.authoredTextureSlot(binding.name) ?? binding.slot,
-                "name": jsonOrNull(binding.name),
+            let stages = (binding.slot < result.textureSlotCount ? ["fragment"] : [])
+                + (binding.slot < (result.vertexStage?.textureSlotCount ?? 0) ? ["vertex"] : [])
+            for stage in stages {
+                let names = stage == "vertex" ? (result.vertexStage?.samplerNames ?? []) : result.samplerNames
+                let name = Self.samplerName(at: binding.slot, in: names)
+                textures.append([
+                    "stage": stage,
+                    // The executor binds numeric authored registers directly, including holes.
+                    "slot": binding.slot,
+                    "name": jsonOrNull(name),
                 "resource": texID,
                 "reference": jsonOrNull(Self.describe(reference: binding.reference)),
                 "fallback": binding.fallbackToPrimary,
@@ -215,6 +304,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 "height": jsonOrNull(binding.texture?.height),
                 "format": jsonOrNull(binding.texture.map { pixelFormatName($0.pixelFormat) })
             ])
+            }
         }
 
         let draw: [String: Any] = [
@@ -244,19 +334,36 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "packedSlots": WPECanonicalUniformTrace.floatSlots(packedUniformSlots),
             "rawSlotBits": WPECanonicalUniformTrace.bitSlots(packedUniformSlots),
         ]
-        // Keyed by authored slot so it lines up with the sampler entries below
-        // and with the Windows side's register numbering.
+        var constantBuffers = [constantBuffer]
+        if let vertex = result.vertexStage {
+            let bytes = packedUniformBytes(vertexUniformSlots)
+            let resource = "buf-mac-vertex-\(ordinal)"
+            resources.buffers[resource] = ["label": "Mac authored VS slots pass \(ordinal)", "byteLength": bytes.count, "sha256": sha256Hex(bytes)]
+            constantBuffers.append(["name": "mac_vertex_slots", "stage": "vertex", "slot": 0,
+                                    "resource": resource, "rawBytesSha256": sha256Hex(bytes),
+                                    "variables": WPECanonicalUniformTrace.variables(layout: vertex.uniformLayout, slots: vertexUniformSlots, sources: vertexUniformSources),
+                                    "packedSlots": WPECanonicalUniformTrace.floatSlots(vertexUniformSlots), "rawSlotBits": WPECanonicalUniformTrace.bitSlots(vertexUniformSlots)])
+        }
+        // Numeric binding identity is authoritative; labels never renumber textures.
         let samplerBySlot = Dictionary(
             textureBindings.compactMap { binding in
-                binding.sampler.map { (Self.authoredTextureSlot(binding.name) ?? binding.slot, $0) }
+                binding.sampler.map { (binding.slot, $0) }
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let samplers: [[String: Any]] = result.samplerNames.enumerated().map { index, name in
+        var samplers: [[String: Any]] = result.samplerNames.enumerated().map { index, name in
             let slot = Self.authoredTextureSlot(name) ?? index
             var entry: [String: Any] = ["stage": "fragment", "slot": slot, "name": name]
             if let descriptor = samplerBySlot[slot] { entry["descriptor"] = descriptor }
             return entry
+        }
+        for (index, name) in (result.vertexStage?.samplerNames ?? []).enumerated() {
+            let slot = Self.authoredTextureSlot(name) ?? index
+            var entry: [String: Any] = ["stage": "vertex", "slot": slot, "name": name]
+            if let descriptor = samplerBySlot[slot] {
+                entry["descriptor"] = descriptor
+            }
+            samplers.append(entry)
         }
         var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
         state["samplers"] = samplers
@@ -266,6 +373,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "sha256": NSNull(),
             "visualStats": ["note": "Per-pass RT hash filled from scenePassDumps when WPEDumpScenePasses captured this pass."]
         ]
+        var vertexContract = selectedVertexPath.traceRecord(defaultFunction: result.vertexFunctionName)
+        if let authoredVertexFallback {
+            vertexContract["fallbackReason"] = authoredVertexFallback
+        }
+        if let vertex = result.vertexStage {
+            vertexContract["bufferValues"] = "recorded-in-constantBuffers"
+            vertexContract["requiredVertexBufferIndices"] = vertex.uniformLayout.isEmpty ? [] : [0]
+        }
         let passRecord: [String: Any] = [
             "ordinal": ordinal,
             "eventId": NSNull(),
@@ -276,10 +391,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "targets": ["color": colorTargets, "depth": NSNull()] as [String: Any],
             "textures": textures,
             "shaders": ["vs": vertexShaderID, "fs": fragmentShaderID],
-            "constantBuffers": [constantBuffer],
+            "constantBuffers": constantBuffers,
             "state": state,
             "output": output,
-            "implementation": implementationRecord(for: pass.shader)
+            "implementation": implementationRecord(for: pass.shader),
+            "semanticCoverage": coverage.jsonObject(),
+            "vertexContract": vertexContract,
+            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: result.alphaContract,
+                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
         ]
         passes.append(passRecord)
     }
@@ -394,6 +513,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "state": state,
             "output": output,
             "builtin": ["kind": builtinKind],
+            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: nil,
+                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
             "implementation": implementationRecord(for: pass.shader)
         ]
         passes.append(passRecord)
@@ -417,7 +538,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         skinningEnabled: Bool,
         localSize: SIMD2<Float>,
         meshCenter: SIMD2<Float>,
-        objectCenterAndSize: SIMD4<Float>?
+        objectCenterAndSize: SIMD4<Float>?,
+        meshUniformsInFragment: Bool = false
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -494,6 +616,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "topology": "indexed-triangle-list",
             "vertexCount": puppetVertexCount(meshes),
             "indexCount": puppetIndexCount(meshes),
+            "encodedDrawCount": meshes.count,
             "instanceCount": 1,
             "viewport": [0, 0, Double(targetTexture.width), Double(targetTexture.height), 0, 1] as [Double],
             "scissor": [Double]()
@@ -503,9 +626,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "resource": targetResource,
             "load": NSNull(),
             "store": "store",
-            "target": describe(target: target)
+            "target": describe(target: target),
         ]]
-        let constantBuffers: [[String: Any]] = [
+        var constantBuffers: [[String: Any]] = [
             [
                 "name": "puppet_fragment_uniforms",
                 "stage": "fragment",
@@ -534,8 +657,15 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                     "arrayLength": bonePalette.count,
                     "rawBytesSha256": jsonOrNull(paletteHash)
                 ]]
-            ]
+            ],
         ]
+        if meshUniformsInFragment {
+            constantBuffers.append([
+                "name": "scene_model_mesh_uniforms", "stage": "fragment", "slot": 1,
+                "resource": vertexBufferResource, "rawBytesSha256": sha256Hex(vertexUniformBytes),
+                "variables": puppetUniformVariables(vertexUniforms),
+            ])
+        }
         var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
         state["samplers"] = textureBindings.sorted(by: { $0.slot < $1.slot }).map {
             ["stage": "fragment", "slot": $0.slot, "name": jsonOrNull($0.name)] as [String: Any]
@@ -737,6 +867,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         guard let scene, !frameComplete else { lock.unlock(); return nil }
         frameComplete = true
         let passSnapshot = passes
+        let attachmentOperationSnapshot = attachmentOperations
+        let attachmentPlanSnapshot = attachmentPlan
+        let semanticCoverageSnapshot = semanticCoverage
         let resourceSnapshot = resources
         let shaderImplementationInventorySnapshot = shaderImplementationInventory
         lock.unlock()
@@ -814,6 +947,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "capture": capture,
             "resources": resourceBlock,
             "passes": passSnapshot,
+            "attachmentOperations": ["schema": "wpe.attachment-operations.v1", "events": attachmentOperationSnapshot],
+            "attachmentPlan": attachmentPlanSnapshot ?? NSNull(),
+            "semanticCoverage": WPEShaderSemanticCoverage.jsonObject(WPEShaderSemanticCoverage.Summary(semanticCoverageSnapshot)),
             "shaderImplementationInventory": shaderImplementationInventorySnapshot.map(
                 Self.shaderImplementationInventoryRecord
             ),
@@ -821,8 +957,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         ]
         let passCount = passSnapshot.count
 
-        guard JSONSerialization.isValidJSONObject(trace),
-              let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]),
+        guard JSONSerialization.isValidJSONObject(trace) else {
+            let issues = Self.jsonValidationIssues(trace)
+            let detail = issues.joined(separator: "\n")
+            artifacts.recordNote(name: "trace-serialization-error.txt", contents: detail)
+            print("[canonical-trace] trace.json serialization failed: \(detail)")
+            return nil
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else {
             artifacts.appendLog("[canonical-trace] trace.json serialization failed", level: .error)
             return nil
@@ -976,6 +1118,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "width": jsonOrNull(texture?.width),
             "height": jsonOrNull(texture?.height),
             "format": jsonOrNull(texture.map { pixelFormatName($0.pixelFormat) }),
+            "colorView": jsonOrNull(texture.map { WPEPixelColorContract($0.pixelFormat).jsonObject() }),
             "mips": jsonOrNull(texture?.mipmapLevelCount),
             "sha256": NSNull(),
             "png": NSNull()
@@ -988,8 +1131,31 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "width": texture.width,
             "height": texture.height,
             "format": pixelFormatName(texture.pixelFormat),
+            "colorStorage": WPEPixelColorContract(texture.pixelFormat).jsonObject(),
             "lineage": ["pass-\(String(format: "%04d", ordinal))"]
         ]
+    }
+
+    /// Preserve invalid observations as diagnostics rather than silently replacing
+    /// them with zero or dropping a whole scene without naming the offending field.
+    static func jsonValidationIssues(_ value: Any, path: String = "$") -> [String] {
+        if value is NSNull || value is String {
+            return []
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue.isFinite ? [] : ["\(path): non-finite number \(number)"]
+        }
+        if let object = value as? [String: Any] {
+            return Array(object.keys.sorted().flatMap { key in
+                jsonValidationIssues(object[key]!, path: "\(path).\(key)")
+            }.prefix(32))
+        }
+        if let array = value as? [Any] {
+            return Array(array.enumerated().flatMap { index, entry in
+                jsonValidationIssues(entry, path: "\(path)[\(index)]")
+            }.prefix(32))
+        }
+        return ["\(path): unsupported JSON type \(String(reflecting: type(of: value)))"]
     }
 
     // MARK: - Texture metrics (best-effort, post-commit only)

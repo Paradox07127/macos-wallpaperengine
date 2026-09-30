@@ -12,6 +12,10 @@ import Testing
 struct WPEShaderTranslationCacheSchemaTests {
     static let translatorSources = [
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler.swift",
+        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Vertex.swift",
+        "LiveWallpaper/Runtime/Metal/WPEShaderStageLink.swift",
+        "LiveWallpaper/Runtime/Metal/WPEShaderInterfaceParser.swift",
+        "LiveWallpaper/Models/WPEShaderInterface.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Main.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Math.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Uniforms.swift",
@@ -32,8 +36,8 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 22
-    static let expectedFingerprint = "3ce831afb4fc2adaaf318f5c38f9bbde86823aad29c5d2384d3f7f9c713e7648"
+    static let expectedSchemaVersion = 25
+    static let expectedFingerprint = "82ad0c7a39f9dc1bebc14cdd06afe2a4beb37c8538f74c1757e6069305b67831"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

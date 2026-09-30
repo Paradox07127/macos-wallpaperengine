@@ -118,6 +118,11 @@ final class WPEMetalSceneRenderer: NSObject {
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )
     var pendingSceneScriptBatchJobs: [WPESceneScriptBatchDispatcher.Job] = []
+    #if DEBUG
+    var lastOracleSceneScriptBatchCompletion: WPESceneScriptBatchDispatcher.Completion?
+    var oracleSceneScriptBatchOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
+    var oracleVideoDecoderAdmission: WPEVideoDecoderAdmission?
+    #endif
     let sceneScriptLoadState = WPESceneScriptLoadState()
     /// `applied` is generation-local and makes live notifications changed-only while initial load remains a full delivery.
     var sceneScriptGeneralSettings = WPESceneScriptGeneralSettingsDeliveryState(
@@ -239,6 +244,8 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     var sceneRenderSize: CGSize = CGSize(width: 1, height: 1)
     var cameraUniforms: WPEMetalCameraUniforms = .identity
+    var baseCameraUniforms: WPEMetalCameraUniforms = .identity
+    var cameraMotionPlayback: WPECameraMotionPlayback?
     var frameClock: WPEMetalFrameClock
     /// Oracle-only frozen frame globals (read once at load). `nil` in production.
     let oracleFrameOverride = WPEOracleMode.loadFrameOverride()

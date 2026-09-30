@@ -261,13 +261,6 @@ public enum WPESceneDocumentParser {
         let authoredObjects: [[String: Any]] = WPEValueParser.objectArray((json as? [String: Any])?["objects"])
             ?? rawObjects
         let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
-        // The runtime camera is a scene OBJECT carrying a `camera` key; the top-level
-        // `camera` block is only the editor viewport bookmark.
-        let camera = runtimeCameraObjectOverride(
-            rawObjects,
-            base: authoredCamera,
-            diagnostics: &diagnostics
-        )
         // Must run before transform combination so each parent offset applies to the
         // fresh local origin; the baked `value` is stale once bound sliders move.
         let scriptResolvedOrigins = resolveScriptOrigins(
@@ -275,6 +268,14 @@ public enum WPESceneDocumentParser {
             canvasWidth: general.orthogonalProjection.width,
             canvasHeight: general.orthogonalProjection.height,
             makeResolver: makeTransformScriptResolver
+        )
+        // Camera objects consume the same freshly evaluated local origin as
+        // layers; their authored seed can predate the current bound properties.
+        let camera = runtimeCameraObjectOverride(
+            rawObjects,
+            scriptOrigins: scriptResolvedOrigins,
+            base: authoredCamera,
+            diagnostics: &diagnostics
         )
         // Later duplicate ids win, matching the paint-order map below, so a malformed
         // document resolves every field from one source object.
@@ -444,6 +445,7 @@ public enum WPESceneDocumentParser {
             camera: camera,
             authoredCamera: authoredCameraMetadata,
             authoredCameraObjects: authoredCameraObjects,
+            cameraMotion: parseCameraMotion(rawObjects, scriptOrigins: scriptResolvedOrigins),
             general: general,
             imageObjects: imageObjects,
             scriptHostObjects: scriptHostObjects,
@@ -1723,8 +1725,28 @@ public enum WPESceneDocumentParser {
         return WPESceneCamera(center: center, eye: eye, up: up, nearZ: nearZ, farZ: farZ, fov: fov)
     }
 
+    private static func parseCameraMotion(
+        _ objects: [[String: Any]],
+        scriptOrigins: [String: SIMD3<Double>]
+    ) -> WPESceneCameraMotion? {
+        guard let entry = objects.last(where: { $0["camera"] is String && (parseBool($0["visible"]) ?? true) }) else { return nil }
+        let animation = (entry["origin"] as? [String: Any])?["animation"] as? [String: Any]
+        let options = animation?["options"] as? [String: Any]
+        let parent = options?["parent"] as? [String: Any]
+        return WPESceneCameraMotion(
+            objectID: (entry["id"] as? String) ?? String(WPEValueParser.int(entry["id"]) ?? 0),
+            origin: localTransform(in: entry, scriptOrigins: scriptOrigins).origin,
+            zoom: entry["zoom"].flatMap(cameraDouble) ?? 1,
+            originAnimation: WPEValueParser.animatedValue(entry["origin"]),
+            zoomAnimation: WPEValueParser.animatedValue(entry["zoom"]),
+            originIsRelative: WPEValueParser.bool(animation?["relative"]) ?? false,
+            originFollowsZoom: parent?["key"] as? String == "zoom"
+        )
+    }
+
     private static func runtimeCameraObjectOverride(
         _ rawObjects: [[String: Any]],
+        scriptOrigins: [String: SIMD3<Double>],
         base: WPESceneCamera,
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPESceneCamera {
@@ -1733,7 +1755,7 @@ public enum WPESceneDocumentParser {
         guard let entry = rawObjects.last(where: {
             $0["camera"] is String && (parseBool($0["visible"]) ?? true)
         }) else { return base }
-        let origin = parseVector3(entry["origin"]) ?? .zero
+        let origin = localTransform(in: entry, scriptOrigins: scriptOrigins).origin
         var fov = base.fov
         if let raw = entry["fov"] {
             if let dict = raw as? [String: Any], let value = parseDouble(dict["value"]) {

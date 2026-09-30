@@ -2051,7 +2051,7 @@ struct WPEMetalRenderExecutorTests {
         #expect(center.r >= 240)
         #expect(center.a >= 240)
         #expect(corner.r <= 5)
-        #expect(corner.a <= 5)
+        #expect(corner.a >= 250)
     }
 
     @Test("Local composelayer captures matching scene area before object-quad composite")
@@ -2208,7 +2208,7 @@ struct WPEMetalRenderExecutorTests {
         #expect(center.r >= 240)
         #expect(center.a >= 240)
         #expect(corner.r <= 5)
-        #expect(corner.a <= 5)
+        #expect(corner.a >= 250)
     }
 
     @Test("Composelayer grouping container scene composite stays fullscreen")
@@ -3706,7 +3706,7 @@ struct WPEMetalRenderExecutorTests {
         #expect(visible.a >= 250)
     }
 
-    @Test("genericimage4 alpha mask drops alpha when mask is opaque-black")
+    @Test("genericimage4 opaque-black mask contributes no color over the opaque scene")
     func genericImage4AlphaMaskGatesOutput() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -3763,7 +3763,9 @@ struct WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        #expect(pixel.a <= 5)
+        #expect(pixel.a >= 250)
+        #expect(pixel.r <= 5)
+        #expect(pixel.b <= 5)
         #expect(pixel.g <= 5)
     }
 
@@ -4612,11 +4614,11 @@ private extension WPEMetalRenderExecutorTests {
         #expect(pixel.r <= 5)
         #expect(pixel.g <= 5)
         #expect(pixel.b <= 5)
-        #expect(pixel.a <= 5)
+        #expect(pixel.a >= 250)
     }
 
-    @Test("Scene clear is transparent so first transparent scene draw does not blend over black")
-    func sceneClearIsTransparentForFirstPremultipliedDraw() throws {
+    @Test("Windows scene clear is opaque before a first premultiplied draw")
+    func sceneClearIsOpaqueForFirstPremultipliedDraw() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
 
@@ -4639,8 +4641,8 @@ private extension WPEMetalRenderExecutorTests {
         #expect(pixel.r >= 250)
         #expect(pixel.g <= 5)
         #expect(pixel.b <= 5)
-        #expect(pixel.a >= 120)
-        #expect(pixel.a <= 140)
+        #expect(pixel.a >= 250)
+        #expect(executor.clearColor(for: .named("local")).alpha == 0)
     }
 
     @Test("Routes declared non-underscore FBO target into a later FBO source")
@@ -5298,7 +5300,7 @@ private extension WPEMetalRenderExecutorTests {
         #expect(pixel.r <= 5)
         #expect(pixel.g <= 5)
         #expect(pixel.b <= 5)
-        #expect(pixel.a <= 5)
+        #expect(pixel.a >= 250)
     }
 
     @Test("Aborted first previous clear is discarded before the next frame recovers")

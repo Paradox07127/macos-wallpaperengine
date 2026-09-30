@@ -77,6 +77,9 @@ extension WPEMetalSceneRenderer {
         let clickPointerIsLive = space.clickPointerIsLive
         // Oracle overrides are authored in scene space already.
         let pointer = oracleFrameOverride?.pointer ?? space.pointer
+        sceneScriptSharedState?.setCursorWorldProjection(
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
+        )
         if !followPointerIsLive && previousPointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()
@@ -94,6 +97,9 @@ extension WPEMetalSceneRenderer {
                 brightness: uniforms.brightness,
                 pointerPosition: uniforms.pointerPosition
             )
+        }
+        if let motion = cameraMotionPlayback?.sample(sceneTime: uniforms.time) {
+            cameraUniforms = baseCameraUniforms.applyingSceneMotion(motion)
         }
         // Compute once per frame (advances smoothing state); assigned below
         // after the audio path may have rebuilt `uniforms`.

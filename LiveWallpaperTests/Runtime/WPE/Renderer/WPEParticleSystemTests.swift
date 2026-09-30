@@ -3441,7 +3441,7 @@ struct WPEParticleSystemTests {
         child.requiresFollowParent = true
 
         parent.prewarm(simulatedSeconds: 1)
-        #expect(parent.spawnEventsThisTick.isEmpty, "prewarm births must not reach the first frame")
+        #expect(parent.particleEventsThisTick.isEmpty, "prewarm births must not reach the first frame")
         child.prewarm(simulatedSeconds: 1)
 
         for step in 0...2 {

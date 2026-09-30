@@ -1735,6 +1735,7 @@ extension WPERenderGraphBuilder {
                     textureBindings: prepared.textureBindings.mapValues(swap),
                     comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
                     materialUniformNames: prepared.materialUniformNames,
+                    stageUniformBindings: prepared.stageUniformBindings,
                     layerTintOverride: prepared.layerTintOverride
                 )
             }
@@ -1936,6 +1937,7 @@ extension WPERenderGraphBuilder {
                     textureBindings: prepared.textureBindings.mapValues(swap),
                     comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
                     materialUniformNames: prepared.materialUniformNames,
+                    stageUniformBindings: prepared.stageUniformBindings,
                     layerTintOverride: prepared.layerTintOverride
                 )
             }

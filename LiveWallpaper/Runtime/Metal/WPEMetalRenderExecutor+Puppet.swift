@@ -612,6 +612,10 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
+        var materialUniforms: WPESceneModelGenericUniforms?
+        var imageUniforms: WPEGenericImageUniforms?
+        var boundComponentMap: MTLTexture?
+        var boundNoise: MTLTexture?
         if materialShader == .generic2 {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
@@ -627,6 +631,7 @@ extension WPEMetalRenderExecutor {
                 hasComponentMap: false,
                 materialShader: .generic2
             )
+            materialUniforms = uniforms
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else if materialShader == .genericImage4 {
             // generic4 MODEL differs from the image-layer path: slot 1 is unused normal, slot 2 PBR component map (alpha = emissive mask); tint/emissive come from material constants ("color"/"emissivecolor").
@@ -658,6 +663,7 @@ extension WPEMetalRenderExecutor {
                     }
                 }
             }
+            boundComponentMap = componentMap
             encoder.setFragmentTexture(componentMap ?? primary, index: 1)
             // `g_Texture3` = `_rt_MipMappedFrameBuffer`. Fallback to `primary` only to keep the slot bound; REFLECTION is gated on the capture existing so the fallback is never read.
             let reflectionSource = reflectionSourceTexture
@@ -668,8 +674,9 @@ extension WPEMetalRenderExecutor {
                 hasComponentMap: componentMap != nil,
                 materialShader: .genericImage4,
                 hasReflectionSource: reflectionSource != nil,
-                reflectionTopMipLevel: (reflectionSource?.mipmapLevelCount ?? 1) - 1
+                reflectionMipCount: reflectionSource?.mipmapLevelCount ?? 0
             )
+            materialUniforms = uniforms
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else if materialShader == .chroma4 {
             // Same material vocabulary as generic4; additions are the view-dependent front/back tint and the slot-8 pigment noise.
@@ -691,6 +698,7 @@ extension WPEMetalRenderExecutor {
                     currentTargetID: destination.id
                 )
             }
+            boundComponentMap = componentMap
             encoder.setFragmentTexture(componentMap ?? primary, index: 1)
             let reflectionSource = reflectionSourceTexture
             encoder.setFragmentTexture(reflectionSource ?? primary, index: 3)
@@ -705,6 +713,7 @@ extension WPEMetalRenderExecutor {
                     currentTargetID: destination.id
                 )
             }
+            boundNoise = noise
             encoder.setFragmentTexture(noise ?? primary, index: 8)
 
             var uniforms = sceneModelGenericUniforms(
@@ -713,9 +722,10 @@ extension WPEMetalRenderExecutor {
                 hasComponentMap: componentMap != nil,
                 materialShader: .chroma4,
                 hasReflectionSource: reflectionSource != nil,
-                reflectionTopMipLevel: (reflectionSource?.mipmapLevelCount ?? 1) - 1,
+                reflectionMipCount: reflectionSource?.mipmapLevelCount ?? 0,
                 noiseTexture: noise
             )
+            materialUniforms = uniforms
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else {
             encoder.setRenderPipelineState(try renderPipeline(
@@ -734,11 +744,12 @@ extension WPEMetalRenderExecutor {
                 sourceTexture: primary,
                 maskTexture: nil
             )
+            imageUniforms = uniforms
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         }
 
         let paletteState = puppetBonePalette(for: skinningState)
-        var meshUniforms = sceneModelMeshUniforms(for: layer, frameState: frameState, paletteState: paletteState)
+        var meshUniforms = sceneModelMeshUniforms(for: layer, passID: pass.id, frameState: frameState, paletteState: paletteState)
         // Front-facing and cull overrides are scoped to this draw: the mesh vertex can mirror via view-projection/model; `normal` here only means back-face culling (`sceneModelCullMode`).
         encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(
             objectID: layer.objectID,
@@ -758,6 +769,83 @@ extension WPEMetalRenderExecutor {
             length: MemoryLayout<WPESceneModelMeshUniforms>.stride,
             index: 1
         )
+
+        #if DEBUG
+        if WPECanonicalTraceRecorder.shared.isAccumulating {
+            let uniformRows: [WPECanonicalTraceRecorder.PuppetUniformInput]
+            if let u = materialUniforms {
+                uniformRows = [
+                    .init(name: "tintColorAlpha", type: "vec4", value: u.tintColorAlpha),
+                    .init(name: "emissive", type: "vec4", value: u.emissive),
+                    .init(name: "ambientLighting", type: "vec4", value: u.ambientLighting),
+                    .init(name: "brightnessFlags", type: "vec4", value: u.brightnessFlags),
+                    .init(name: "skylightColor", type: "vec4", value: u.skylightColor),
+                    .init(name: "reflection", type: "vec4", value: u.reflection),
+                    .init(name: "screen", type: "vec4", value: u.screen),
+                    .init(name: "chromaTintFront", type: "vec4", value: u.chromaTintFront),
+                    .init(name: "chromaTintBack", type: "vec4", value: u.chromaTintBack),
+                    .init(name: "chromaNoise", type: "vec4", value: u.chromaNoise),
+                ]
+            } else if let u = imageUniforms {
+                uniformRows = [
+                    .init(name: "color", type: "vec4", value: u.color),
+                    .init(name: "alphaMaskUV", type: "vec4", value: u.alphaMaskUV),
+                    .init(name: "textureUVScale", type: "vec4", value: u.textureUVScale),
+                ]
+            } else { uniformRows = [] }
+            var bindings = [WPECanonicalTraceRecorder.TextureBindingInput(
+                slot: 0, name: "g_Texture0", reference: primaryRef, texture: primary, fallbackToPrimary: false
+            )]
+            if materialShader == .genericImage4 || materialShader == .chroma4 {
+                bindings.append(.init(slot: 1, name: "g_Texture2", reference: pass.textureBindings[2] ?? pass.pass.textures[2],
+                                      texture: boundComponentMap ?? primary, fallbackToPrimary: boundComponentMap == nil))
+                bindings.append(.init(slot: 3, name: "g_Texture3", reference: nil, texture: reflectionSourceTexture ?? primary,
+                                      fallbackToPrimary: reflectionSourceTexture == nil))
+            } else if materialShader == .genericImage2 {
+                bindings.append(.init(slot: 1, name: "g_Texture1", reference: primaryRef, texture: primary, fallbackToPrimary: true))
+            }
+            if materialShader == .chroma4 {
+                bindings.append(.init(slot: 8, name: "g_Texture8", reference: pass.textureBindings[8] ?? pass.pass.textures[8],
+                                      texture: boundNoise ?? primary, fallbackToPrimary: boundNoise == nil))
+            }
+            func columns(_ name: String, _ matrix: simd_float4x4) -> [WPECanonicalTraceRecorder.PuppetUniformInput] {
+                (0..<4).map { .init(name: "\(name)[\($0)]", type: "vec4", value: matrix[$0]) }
+            }
+            var vertexRows = columns("modelViewProjectionMatrix", meshUniforms.modelViewProjectionMatrix)
+                + columns("modelMatrix", meshUniforms.modelMatrix)
+                + columns("viewProjectionMatrix", meshUniforms.viewProjectionMatrix)
+            vertexRows += (0..<3).map {
+                .init(name: "normalMatrix[\($0)]", type: "vec3", value: SIMD4(meshUniforms.normalMatrix[$0], 0))
+            }
+            vertexRows.append(.init(name: "modeAndPadding", type: "vec4", value: meshUniforms.modeAndPadding))
+            vertexRows.append(.init(name: "eyeAndPadding", type: "vec4", value: meshUniforms.eyeAndPadding))
+            let baseState = WPECanonicalTraceRecorder.NativeRenderState.scenePass(
+                blendMode: pass.pass.blending, alphaWritePolicy: .all, cullMode: pass.pass.cullMode,
+                depthAttached: depthPixelFormat != .invalid, depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite, reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            )
+            let nativeState = WPECanonicalTraceRecorder.NativeRenderState(
+                attachment: baseState.attachment, cullMode: WPEMetalPipelineCache.sceneModelCullMode(for: pass.pass.cullMode),
+                frontCCW: frameState.cameraUniforms.frontFacingWinding(objectID: layer.objectID, modelMatrix: meshUniforms.modelMatrix) == .counterClockwise,
+                depthAttached: baseState.depthAttached, depthCompare: baseState.depthCompare, depthWrite: baseState.depthWrite
+            )
+            let fragmentName: String
+            switch materialShader {
+            case .generic2: fragmentName = "wpe_scene_model_generic2_fragment"
+            case .genericImage4: fragmentName = "wpe_scene_model_generic4_fragment"
+            case .chroma4: fragmentName = "wpe_scene_model_chroma4_fragment"
+            case .genericImage2: fragmentName = "wpe_scene_model_image_fragment"
+            }
+            WPECanonicalTraceRecorder.shared.recordPuppetPass(
+                pass: pass, nativeState: nativeState, stage: "scene-model-material-mesh", layer: layer,
+                modelPath: layer.puppetPath, meshes: meshes, bones: model.bones, destination: destination,
+                textureBindings: bindings, vertexShaderName: "wpe_scene_model_mesh_vertex", fragmentShaderName: fragmentName,
+                fragmentUniforms: uniformRows, vertexUniforms: vertexRows, bonePalette: paletteState.bonePalette,
+                skinningEnabled: paletteState.skinningEnabled != 0, localSize: .zero, meshCenter: .zero,
+                objectCenterAndSize: nil, meshUniformsInFragment: true
+            )
+        }
+        #endif
 
         try drawPuppetMeshes(
             meshes,
@@ -1170,11 +1258,12 @@ extension WPEMetalRenderExecutor {
 
     private func sceneModelMeshUniforms(
         for layer: WPERenderLayer,
+        passID: String,
         frameState: WPEMetalFrameState,
         paletteState: (bonePalette: [simd_float4x4], skinningEnabled: Float)
     ) -> WPESceneModelMeshUniforms {
         let geometry = layer.geometry
-        let modelMatrix = Self.modelMatrix(
+        let fallbackModelMatrix = Self.modelMatrix(
             translation: SIMD3<Float>(
                 Float(geometry.origin.x),
                 Float(geometry.origin.y),
@@ -1191,6 +1280,10 @@ extension WPEMetalRenderExecutor {
                 Float(geometry.scale.z)
             )
         )
+        let modelMatrix = frameUniformContext.value(named: "g_ModelMatrix", passID: passID)?.vectorValue
+            .flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:))
+            .map { simd_float4x4(SIMD4<Float>($0.columns.0), SIMD4<Float>($0.columns.1), SIMD4<Float>($0.columns.2), SIMD4<Float>($0.columns.3)) }
+            ?? fallbackModelMatrix
         // `perspective: true` projects through the scene's perspective camera even when the scene is orthographic; the authored `camera.eye` is not what WPE feeds these draws.
         let camera = frameState.cameraUniforms
         let usesObjectPerspective = camera.usesObjectPerspective(objectID: layer.objectID)

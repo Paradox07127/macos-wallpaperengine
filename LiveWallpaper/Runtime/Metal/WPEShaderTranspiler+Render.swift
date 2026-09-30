@@ -20,7 +20,9 @@ extension WPEShaderTranspiler {
         comboValues: [String: Int] = [:],
         premultipliedInputSlots: Set<Int> = [],
         premultipliedOutput: Bool = false,
-        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
+        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled,
+        stageLink: WPEShaderStageLink? = nil,
+        matrixInverseRequired: Bool = false
     ) -> String {
         // Stock Pulse blends authored colour values; the host's colour targets are linear.
         // Its mask/noise inputs remain data, and alpha stays outside the transfer function.
@@ -49,10 +51,14 @@ extension WPEShaderTranspiler {
             out.append("    return pow(magnitude, exponent);")
             out.append("}")
         }
-        out.append("struct WPEStageIn {")
-        out.append("    float4 position [[position]];")
-        out.append("    float2 uv;")
-        out.append("};")
+        if let stageLink {
+            out.append(stageLink.stageInDeclaration)
+        } else {
+            out.append("struct WPEStageIn {")
+            out.append("    float4 position [[position]];")
+            out.append("    float2 uv;")
+            out.append("};")
+        }
         out.append("")
 
         if !uniforms.isEmpty {
@@ -77,6 +83,9 @@ extension WPEShaderTranspiler {
         out.append("inline float clamp(int value, float lower, int upper) { return metal::clamp(float(value), lower, float(upper)); }")
         out.append("inline float clamp(float value, int lower, int upper) { return metal::clamp(value, float(lower), float(upper)); }")
         out.append(Self.glslMathPrelude)
+        if matrixInverseRequired || maskComments(helpers + mainBody).contains("wpe_glsl_inverse") {
+            out.append(Self.glslMatrixInversePrelude)
+        }
         if !premultipliedInputSlots.isEmpty {
             out.append("inline float4 wpe_unpremultiply_sample(float4 color) {")
             out.append("    float a = color.a;")
@@ -137,8 +146,9 @@ extension WPEShaderTranspiler {
         }
         out.append(contentsOf: Self.uniformDeclarationLines(uniforms))
 
+        if let stageLink { out.append(contentsOf: stageLink.fragmentDeclarations) }
         let uniformNames = Set(uniforms.map(\.name))
-        let varyingReconstruction = autoSwayVaryingReconstructionLines(
+        let varyingReconstruction = stageLink == nil ? (autoSwayVaryingReconstructionLines(
             varyings: varyings,
             availableUniforms: uniformNames,
             comboValues: comboValues
@@ -150,14 +160,14 @@ extension WPEShaderTranspiler {
             varyings: varyings,
             availableUniforms: uniformNames,
             comboValues: comboValues
-        )
+        )) : []
         // A non-`v_TexCoord` varying that falls back to a 0→1 UV ramp renders wrong; emit a diagnostic marker instead of staying silent.
         let uvFallbackInitializers: Set<String> = [
             "in.uv", "in.uv.x", "float4(in.uv, in.uv)", "float3(in.uv, 0.0)",
         ]
         // Audio varyings fall back to constant 0, not a UV ramp, so a missing spectrum uniform stops the effect rather than rendering wrong.
         let flatFallbackVaryings: Set<String> = ["v_AudioPulse", "v_AudioShift"]
-        for varying in varyings {
+        for varying in stageLink == nil ? varyings : [] {
             if varying.name == "uv" { continue }
             let initializer = varyingInitializer(
                 for: varying,

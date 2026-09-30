@@ -1,14 +1,17 @@
 #if !LITE_BUILD
 import CoreGraphics
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import Testing
-@testable import LiveWallpaper
 
 @Suite("Oracle corpus capture")
 struct OracleCorpusCaptureTests {
+    private enum VideoMode: String, Codable {
+        case liveWallClock, firstFrameStill
+    }
 
     private struct Config: Codable {
         let corpusRoot: String
@@ -26,10 +29,15 @@ struct OracleCorpusCaptureTests {
         var replayFrame: [String: Double]?
         var resolution: [Int]?
         var captureGPU: Bool = false
+        var videoMode: VideoMode = .liveWallClock
+        var authoredVertexExecution: Bool = true
+        var propertyOverridesByScene: [String: [String: WallpaperEngineProjectPropertyValue]] = [:]
+        var pixelProbeCoordinates: [[Int]]?
+        var scriptOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
-            case jobId, replayFrame, resolution, captureGPU
+            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates
         }
 
         init(from decoder: Decoder) throws {
@@ -46,6 +54,11 @@ struct OracleCorpusCaptureTests {
             replayFrame = try container.decodeIfPresent([String: Double].self, forKey: .replayFrame)
             resolution = try container.decodeIfPresent([Int].self, forKey: .resolution)
             captureGPU = try container.decodeIfPresent(Bool.self, forKey: .captureGPU) ?? false
+            videoMode = try container.decodeIfPresent(VideoMode.self, forKey: .videoMode) ?? .liveWallClock
+            scriptOrder = try container.decodeIfPresent(WPESceneScriptBatchDispatcher.SubmissionOrder.self, forKey: .scriptOrder) ?? .parallelWorkers
+            authoredVertexExecution = try container.decodeIfPresent(Bool.self, forKey: .authoredVertexExecution) ?? true
+            propertyOverridesByScene = try container.decodeIfPresent([String: [String: WallpaperEngineProjectPropertyValue]].self, forKey: .propertyOverridesByScene) ?? [:]
+            pixelProbeCoordinates = try container.decodeIfPresent([[Int]].self, forKey: .pixelProbeCoordinates)
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -103,7 +116,7 @@ struct OracleCorpusCaptureTests {
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         let filter = config.scenes.map(Set.init)
         print("[oracle-capture] config: corpusRoot=\(config.corpusRoot) label=\(config.label) "
-              + "scenes=\(config.scenes ?? ["<all>"]) frames=\(config.frames) step=\(config.frameStepSeconds)")
+            + "scenes=\(config.scenes ?? ["<all>"]) frames=\(config.frames) step=\(config.frameStepSeconds)")
 
         WPEOracleMode.testingOverride = true
         WPESceneDebugArtifacts.shared.setEnabledForTesting(true)
@@ -119,7 +132,8 @@ struct OracleCorpusCaptureTests {
         print("[oracle-capture] engineAssetsRoot=\(engineAssetsRoot?.path ?? "<nil>")")
 
         let folders = ((try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            at: root, includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? [])
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
@@ -129,7 +143,9 @@ struct OracleCorpusCaptureTests {
         var graphPasses = 0, authoredJSONPasses = 0, malformedAuthoredPassLinks = 0
         for folder in folders {
             let id = folder.lastPathComponent
-            if let filter, !filter.contains(id) { continue }
+            if let filter, !filter.contains(id) {
+                continue
+            }
             guard let project = try? WallpaperEngineProject.read(from: folder), project.type == .scene else {
                 skipped += 1
                 continue
@@ -172,7 +188,8 @@ struct OracleCorpusCaptureTests {
                 workshopID: id,
                 cacheRelativePath: "wpe-oracle-cache/\(id)",
                 entryFile: project.entryFile.isEmpty ? "scene.json" : project.entryFile,
-                capabilityTier: .degraded
+                capabilityTier: .degraded,
+                propertyOverrides: config.propertyOverridesByScene[id] ?? [:]
             )
             do {
                 let renderer = try WPEMetalSceneRenderer(
@@ -186,6 +203,17 @@ struct OracleCorpusCaptureTests {
                     // shifts every mouse-driven parallax/effect uniform.
                     pointerSampler: .fixed(Self.replayPointer())
                 )
+                // Config resolution is expressed in pixels. The convenience initializer
+                // receives AppKit points, whose backing scale can otherwise double HDR
+                // captures while SDR scenes hide the mistake behind their canvas cap.
+                renderer.updateSurfaceGeometry(drawableSize: CGSize(width: size[0], height: size[1]))
+                renderer.oracleSceneScriptBatchOrder = config.scriptOrder
+                renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
+                if config.videoMode == .firstFrameStill {
+                    // A zero-ticket local admission uses the existing deterministic
+                    // still extraction path; it does not change the process budget.
+                    renderer.oracleVideoDecoderAdmission = WPEVideoDecoderAdmission(limit: 0)
+                }
                 let renderActor = WPEDisplayRenderActor(backing: .main)
                 await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
                 let captureManager = MTLCaptureManager.shared()
@@ -203,6 +231,7 @@ struct OracleCorpusCaptureTests {
                     }
                 }
                 try await renderActor.load()
+                try Self.awaitSceneScriptBatch(renderer)
                 let authoredSummary = Self.authoredJSONSummary(renderer.renderGraph)
                 graphLayers += authoredSummary.layers
                 authoredJSONLayers += authoredSummary.authoredLayers
@@ -213,7 +242,7 @@ struct OracleCorpusCaptureTests {
                 authoredJSONPasses += authoredSummary.authoredPasses
                 malformedAuthoredPassLinks += authoredSummary.malformedPassLinks
                 Self.printTextEvidence(renderer: renderer, sceneID: id)
-                try Self.advanceToTracedFrame(
+                let advancedFrame = try Self.advanceToTracedFrame(
                     renderer: renderer,
                     id: id,
                     entryFile: descriptor.entryFile,
@@ -225,13 +254,41 @@ struct OracleCorpusCaptureTests {
                 if config.captureGPU {
                     captureManager.stopCapture()
                 }
-                if let trace = Self.awaitLatestTrace(forID: id, after: captureStarted) {
+                let frameTrace: URL?
+                if config.frames > 1 {
+                    // Use the exact last frame returned by the recorder. Shader dumps
+                    // from load can update an older session directory after this one,
+                    // making directory modification time an unreliable frame selector.
+                    let data = try #require(advancedFrame?.trace, "Final-frame canonical trace serialization failed")
+                    let url = outDir.appendingPathComponent("\(id)-raw-frame.json")
+                    try data.write(to: url, options: .atomic)
+                    frameTrace = url
+                } else {
+                    frameTrace = Self.awaitLatestTrace(forID: id, after: captureStarted)
+                }
+                if let trace = frameTrace {
                     let builtinSummary = try Self.validateBuiltinPasses(in: trace, sceneID: id)
                     builtinPassesCaptured += builtinSummary.count
                     let dest = outDir.appendingPathComponent("\(id).json")
                     try #require(!FileManager.default.fileExists(atPath: dest.path), "Refusing to overwrite an oracle trace")
                     var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: trace)) as? [String: Any])
                     var capture = document["capture"] as? [String: Any] ?? [:]
+                    var determinism = capture["determinism"] as? [String: Any] ?? [:]
+                    determinism["scriptScheduling"] = "bounded-batch-completion-between-capture-frames"
+                    determinism["scriptOrder"] = config.scriptOrder.rawValue
+                    determinism["liveScriptSchedulingValidated"] = false
+                    determinism["authoredVertexExecution"] = config.authoredVertexExecution
+                    determinism["metalValidationConfiguration"] = Self.metalValidationConfiguration()
+                    determinism["videoMode"] = config.videoMode.rawValue
+                    determinism["videoPlaybackValidated"] = false
+                    capture["determinism"] = determinism
+                    if let points = config.pixelProbeCoordinates {
+                        let texture = try #require(advancedFrame?.texture ?? renderer.outputTexture)
+                        capture["pixelProbe"] = try WPEOraclePixelProbe.sample(texture: texture, coordinates: points,
+                                                                               commandQueue: renderer.executor.commandQueue)
+                    }
+                    capture["propertyOverrides"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(descriptor.propertyOverrides))
+                    capture["propertyOverridesSource"] = config.propertyOverridesByScene[id] == nil ? "project-defaults" : "explicit-capture-config"
                     let solidStats = renderer.executor.lastSolidSceneBatchStats
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
                     let diagnostics = renderer.executor.lastDiagnosticFrameStats
@@ -274,6 +331,7 @@ struct OracleCorpusCaptureTests {
                         "decisions": renderer.lastFullFramePassthroughElision.decisions,
                     ] as [String: Any]
                     let clearStats = renderer.executor.lastInitialSceneClearStats
+                    renderWork["layerInputSnapshots"] = Self.layerInputSnapshots(renderer)
                     renderWork["initialSceneClear"] = [
                         "passID": clearStats.passID ?? "", "skipped": clearStats.skipped,
                         "fallback": clearStats.fallback, "rejectReason": clearStats.rejectReason ?? "",
@@ -312,9 +370,9 @@ struct OracleCorpusCaptureTests {
         }
         print("=== oracle-capture: captured=\(captured) skipped=\(skipped) failed=\(failed) → \(outDir.path) ===")
         print("=== authored-json: graphLayers=\(graphLayers) authoredLayers=\(authoredJSONLayers) "
-              + "sceneObjectNodes=\(authoredSceneObjectNodes) imageDescriptors=\(authoredImageDescriptors) "
-              + "malformedLayerLinks=\(malformedAuthoredLayerLinks) graphPasses=\(graphPasses) "
-              + "authoredPasses=\(authoredJSONPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
+            + "sceneObjectNodes=\(authoredSceneObjectNodes) imageDescriptors=\(authoredImageDescriptors) "
+            + "malformedLayerLinks=\(malformedAuthoredLayerLinks) graphPasses=\(graphPasses) "
+            + "authoredPasses=\(authoredJSONPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
         #expect(captured > 0, "no scene produced a trace — check corpus root / engine assets")
         #expect(failed == 0, "one or more requested scenes failed")
         if let filter {
@@ -378,6 +436,8 @@ struct OracleCorpusCaptureTests {
         #expect(config.memoryAuditLog == false)
         #expect(config.frames == 1)
         #expect(config.frameStepSeconds == 1.0 / 60.0)
+        #expect(config.authoredVertexExecution)
+        #expect(config.propertyOverridesByScene.isEmpty)
     }
 
     @Test("Config decode accepts an explicit multi-frame capture")
@@ -386,6 +446,57 @@ struct OracleCorpusCaptureTests {
         let config = try JSONDecoder().decode(Config.self, from: json)
         #expect(config.frames == 4)
         #expect(config.frameStepSeconds == 0.5)
+    }
+
+    @Test("Capture properties preserve scalar types per scene and reject unsupported values")
+    func configPropertyOverrides() throws {
+        let data = Data(#"{"corpusRoot":"/tmp","propertyOverridesByScene":{"2370927443":{"musicnotes":true,"gain":0.5,"label":"night"},"3554161528":{"intro":false}}}"#.utf8)
+        let config = try JSONDecoder().decode(Config.self, from: data)
+        #expect(config.propertyOverridesByScene["2370927443"] == ["musicnotes": .bool(true), "gain": .number(0.5), "label": .string("night")])
+        #expect(config.propertyOverridesByScene["3554161528"] == ["intro": .bool(false)])
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","propertyOverridesByScene":{"1":{"gain":[1,2]}}}"#.utf8))
+        }
+    }
+
+    @Test("Video capture modes are explicit and unknown modes fail")
+    func configVideoModes() throws {
+        let ordinary = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp"}"#.utf8))
+        #expect(ordinary.videoMode == .liveWallClock)
+        #expect(ordinary.scriptOrder == .parallelWorkers)
+        let pinned = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","videoMode":"firstFrameStill"}"#.utf8))
+        #expect(pinned.videoMode == .firstFrameStill)
+        let ordered = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","scriptOrder":"submissionOrder"}"#.utf8))
+        #expect(ordered.scriptOrder == .submissionOrder)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","scriptOrder":"unknown"}"#.utf8))
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","videoMode":"unknown"}"#.utf8))
+        }
+    }
+
+    @Test("Authored vertex isolation mode is explicit and typed")
+    func configAuthoredVertexIsolationMode() throws {
+        let disabled = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","authoredVertexExecution":false}"#.utf8))
+        #expect(!disabled.authoredVertexExecution)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","authoredVertexExecution":"false"}"#.utf8))
+        }
+    }
+
+    private static func metalValidationConfiguration(environment: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        ["api": environment["MTL_DEBUG_LAYER"] ?? "unspecified",
+         "shader": environment["MTL_SHADER_VALIDATION"] ?? "unspecified",
+         "proof": "environment-request; verify runtime startup log separately"]
+    }
+
+    @Test("Capture records validation requests without assuming a missing flag is disabled")
+    func validationRequestsAreExplicit() {
+        #expect(Self.metalValidationConfiguration(environment: [:])["api"] == "unspecified")
+        let configured = Self.metalValidationConfiguration(environment: ["MTL_DEBUG_LAYER": "1", "MTL_SHADER_VALIDATION": "1"])
+        #expect(configured["api"] == "1" && configured["shader"] == "1")
+        #expect(Self.metalValidationConfiguration(environment: ["MTL_SHADER_VALIDATION": "0"])["shader"] == "0")
     }
 
     @Test("Frozen clock advances with frameAdvanceSeconds, and is inert at 0")
@@ -418,6 +529,11 @@ struct OracleCorpusCaptureTests {
         }
     }
 
+    private struct TracedFrame {
+        let trace: Data?
+        let texture: MTLTexture
+    }
+
     @MainActor
     private static func advanceToTracedFrame(
         renderer: WPEMetalSceneRenderer,
@@ -427,10 +543,11 @@ struct OracleCorpusCaptureTests {
         frames: Int,
         stepSeconds: Double,
         perPass: Bool
-    ) throws {
-        guard frames > 1 else { return }
+    ) throws -> TracedFrame? {
+        guard frames > 1 else { return nil }
+        var finalFrame: TracedFrame?
         let summary = "\(id) oracle-capture frames=\(frames) step=\(stepSeconds)"
-        for index in 1..<frames {
+        for index in 1 ..< frames {
             WPEOracleMode.frameAdvanceSeconds = Double(index) * stepSeconds
             let isLast = index == frames - 1
             if isLast {
@@ -446,30 +563,54 @@ struct OracleCorpusCaptureTests {
             let texture = try autoreleasepool {
                 try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
             }
+            try Self.awaitSceneScriptBatch(renderer)
             guard isLast else { continue }
             if perPass {
                 renderer.dumpScenePassesIfRequested(suffix: "-f\(index)")
             }
-            WPECanonicalTraceRecorder.shared.finishFrame(
+            let finalTrace = WPECanonicalTraceRecorder.shared.finishFrame(
                 outputTexture: texture,
                 runtimeUniforms: renderer.lastRuntimeUniforms,
                 firstFrameStats: WPEMetalTextureVisualStats.analyze(texture: texture),
                 resolutionDiagnostics: renderer.resolutionTracer.snapshot(),
                 frameOrdinal: index
             )
+            finalFrame = TracedFrame(trace: finalTrace, texture: texture)
             if let image = WPEMetalTextureSnapshotter.shared.snapshot(from: texture) {
                 WPESceneDebugArtifacts.shared.recordFirstFrame(image: image)
             }
             WPESceneDebugArtifacts.shared.endSession()
             print("[oracle-capture] [\(id)] advanced to frame \(index) "
-                  + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")
+                + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")
         }
+        return finalFrame
+    }
+
+    private static func layerInputSnapshots(_ renderer: WPEMetalSceneRenderer) -> [[String: Any]] {
+        (renderer.lastFramePipeline ?? renderer.renderPipeline)?.layers.map { layer in
+            let geometry = layer.graphLayer.geometry
+            return ["objectID": layer.graphLayer.objectID, "visible": layer.graphLayer.visible,
+                    "alpha": geometry.alpha, "brightness": geometry.brightness,
+                    "color": [geometry.color.x, geometry.color.y, geometry.color.z],
+                    "origin": [geometry.origin.x, geometry.origin.y, geometry.origin.z],
+                    "scale": [geometry.scale.x, geometry.scale.y, geometry.scale.z],
+                    "angles": [geometry.angles.x, geometry.angles.y, geometry.angles.z],
+                    "scope": "prepared-layer-parameters-not-gpu-uniform-reflection"] as [String: Any]
+        } ?? []
+    }
+
+    private static func awaitSceneScriptBatch(_ renderer: WPEMetalSceneRenderer) throws {
+        // This preserves the product's previous-frame publication semantics while
+        // removing queue timing from the next capture frame's input selection.
+        let complete = renderer.lastOracleSceneScriptBatchCompletion?.wait(timeout: .now() + 2) ?? true
+        try #require(complete, "Oracle SceneScript batch did not finish within the capture deadline")
     }
 
     private static func latestTrace(forID id: String) -> URL? {
         guard let root = WPESceneDebugArtifacts.rootURL else { return nil }
         let sessions = ((try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? [])
             .filter { $0.lastPathComponent.hasSuffix("-\(id)") }
         let newest = sessions.max { a, b in
             let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -491,7 +632,7 @@ struct OracleCorpusCaptureTests {
                modified >= after {
                 return trace
             }
-            usleep(20_000)
+            usleep(20000)
         } while Date() < deadline
         return nil
     }
@@ -526,7 +667,7 @@ struct OracleCorpusCaptureTests {
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: ",")
         print("[oracle-capture] [\(sceneID)] trace-summary passes=\(passes.count) "
-              + "builtin=\(kinds.count) kinds={\(histogram)}")
+            + "builtin=\(kinds.count) kinds={\(histogram)}")
         return (kinds.count, kinds)
     }
 
@@ -552,15 +693,23 @@ struct OracleCorpusCaptureTests {
         var malformedPassLinks = 0
         for layer in graph.layers {
             let authored = layer.authoredJSON
-            if authored != .empty { authoredLayers += 1 }
+            if authored != .empty {
+                authoredLayers += 1
+            }
             sceneObjectNodes += authored.sceneObjects.count
-            if authored.imageDescriptor != nil { imageDescriptors += 1 }
-            if authored.sceneObjects.isEmpty { malformedLayerLinks += 1 }
+            if authored.imageDescriptor != nil {
+                imageDescriptors += 1
+            }
+            if authored.sceneObjects.isEmpty {
+                malformedLayerLinks += 1
+            }
         }
         for pass in graph.layers.flatMap(\.passes) {
             passes += 1
             let authored = pass.authoredJSON
-            if authored != .empty { authoredPasses += 1 }
+            if authored != .empty {
+                authoredPasses += 1
+            }
             if authored.materialPass != nil, authored.materialDocument == nil {
                 malformedPassLinks += 1
             }
@@ -590,8 +739,8 @@ struct OracleCorpusCaptureTests {
         let effect = pairs.filter { object, _ in
             object.effects.contains { $0.visible || $0.visibleScript != nil }
         }
-        let copy = pairs.filter { $0.0.copyBackground }
-        let opaque = pairs.filter { $0.0.opaqueBackground }
+        let copy = pairs.filter(\.0.copyBackground)
+        let opaque = pairs.filter(\.0.opaqueBackground)
         let parented = pairs.filter { $0.0.parentObjectID != nil }
         func example(_ values: [(WPESceneTextObject, WPETextRenderPlan)]) -> String {
             guard let object = values.first?.0 else { return "-" }
@@ -656,14 +805,18 @@ struct OracleTextCorpusEvidenceTests {
             parsedScenes += 1
             for object in document.textObjects {
                 let identity = "\(folder.lastPathComponent)/\(object.id):\(object.name)"
-                if object.copyBackground { copyExamples.append(identity) }
-                if object.opaqueBackground { opaqueExamples.append(identity) }
+                if object.copyBackground {
+                    copyExamples.append(identity)
+                }
+                if object.opaqueBackground {
+                    opaqueExamples.append(identity)
+                }
             }
         }
 
         print("[text-corpus-evidence] parsedScenes=\(parsedScenes) "
-              + "copy=\(copyExamples.count){\(copyExamples.joined(separator: ","))} "
-              + "opaque=\(opaqueExamples.count){\(opaqueExamples.joined(separator: ","))}")
+            + "copy=\(copyExamples.count){\(copyExamples.joined(separator: ","))} "
+            + "opaque=\(opaqueExamples.count){\(opaqueExamples.joined(separator: ","))}")
         #expect(parsedScenes > 0)
     }
 }

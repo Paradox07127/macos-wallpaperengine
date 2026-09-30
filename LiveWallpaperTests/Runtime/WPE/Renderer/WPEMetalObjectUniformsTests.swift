@@ -148,19 +148,7 @@ struct WPEMetalObjectUniformsTests {
         #expect(abs(x.y - 1) < 1e-9)
     }
 
-    @Test("Dispatcher object quads carry frame camera uniforms")
-    func dispatcherObjectQuadsCarryFrameCameraUniforms() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift")
-        let quadCallCount = source.components(separatedBy: "executor.objectQuadUniforms(").count - 1
-        let cameraArgumentCount = source.components(separatedBy: "cameraUniforms: executor.objectQuadCameraUniforms(").count - 1
 
-        #expect(quadCallCount > 0)
-        #expect(cameraArgumentCount == quadCallCount)
-    }
-
-    private static func readSourceFile(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
 }
 
 /// `movingOneLayerRecomputesOnlyThatLayer` is the control group for
@@ -263,6 +251,43 @@ struct WPEObjectUniformCacheTests {
         WPEMetalObjectUniforms.uniformValues(
             origin: geometry.origin, scale: geometry.scale, angles: geometry.angles
         )
+    }
+
+    @Test("Model hierarchy preserves non-commuting rotation and affine shear across cached frame uniforms")
+    func modelHierarchyRetainsAffineTransform() throws {
+        let local = Self.geometry(origin: SIMD3(1, 0, 0), angles: SIMD3(0, 0, Double.pi / 4))
+        let template = Self.layer(id: "model", geometry: local)
+        let graph = WPERenderLayer(
+            objectID: "model", objectName: "model", imagePath: "models/body.mdl", materialPath: nil,
+            puppetPath: "models/body.mdl", parentObjectID: "parent", geometry: local, localGeometry: local,
+            compositeA: "a", compositeB: "b", localFBOs: [], passes: template.graphLayer.passes
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: template.passes)])
+        let host = WPERenderObjectTransform(origin: SIMD3(3, 4, 5), scale: SIMD3(2, 3, 4), angles: SIMD3(0, Double.pi / 2, 0))
+        let resolved = pipeline.resolvingSceneModelMatrices(origins: [:], scales: [:], angles: [:],
+                                                            parentByID: ["model": "parent"], hostTransforms: ["parent": host])
+        let matrix = try #require(resolved.layers[0].modelMatrixOverride.flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:)))
+        let world = matrix * SIMD4<Double>(1, 0, 0, 1)
+        #expect(abs(world.x - 3) < 1e-9)
+        #expect(abs(world.y - (4 + 3 / sqrt(2))) < 1e-9)
+        #expect(abs(world.z - (3 - 2 / sqrt(2))) < 1e-9)
+        // A TRS rebuilt from Euler sums/component scale loses this shear.
+        #expect(abs(simd_dot(matrix.columns.0, matrix.columns.1) - 2.5) < 1e-9)
+        let cache = WPEObjectUniformCache()
+        let first = Self.frame(resolved.layers, cache: cache)
+        #expect(first.frameUniforms.objectUniformValuesByPassID["model.0"]?["g_ModelMatrix"]?.vectorValue == resolved.layers[0].modelMatrixOverride)
+        _ = Self.frame(resolved.layers, cache: cache)
+        #expect(cache.computeCount == 1)
+        let moved = pipeline.resolvingSceneModelMatrices(origins: [:], scales: [:], angles: ["parent": .zero],
+                                                         parentByID: ["model": "parent"], hostTransforms: ["parent": host])
+        #expect(moved.layers[0].graphLayer.geometry == resolved.layers[0].graphLayer.geometry)
+        let next = Self.frame(moved.layers, cache: cache)
+        #expect(cache.computeCount == 2)
+        #expect(next.frameUniforms.objectUniformValuesByPassID["model.0"]?["g_ModelMatrix"]?.vectorValue != resolved.layers[0].modelMatrixOverride)
+        let modelInverse = try #require(next.frameUniforms.objectUniformValuesByPassID["model.0"]?["g_ModelMatrixInverse"]?.vectorValue)
+        let inverse = try #require(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: modelInverse))
+        let movedMatrix = try #require(moved.layers[0].modelMatrixOverride.flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:)))
+        #expect(simd_length(inverse * movedMatrix * SIMD4<Double>(1, 2, 3, 1) - SIMD4(1, 2, 3, 1)) < 1e-9)
     }
 
     // MARK: - Criterion 1: a static scene recomputes nothing

@@ -90,6 +90,8 @@ extension WPEMetalSceneRenderer {
         hasPlannedUpscale = false
         sceneRenderSize = CGSize(width: 1, height: 1)
         cameraUniforms = .identity
+        baseCameraUniforms = .identity
+        cameraMotionPlayback = nil
         lastRuntimeUniforms = nil
         lastFramePipeline = nil
         cachedSnapshot = nil
@@ -542,7 +544,7 @@ extension WPEMetalSceneRenderer {
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
         if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
-        if !dynamicOriginAnimations.isEmpty { demand.insert(.animations) }
+        if !dynamicOriginAnimations.isEmpty || cameraMotionPlayback?.needsFrames == true { demand.insert(.animations) }
         if sceneSupportsAudioProcessing { demand.insert(.audioReactive) }
         if !dynamicTextureSources.isEmpty { demand.insert(.dynamicTextures) }
         if particleSystems.contains(where: { !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer }) {
@@ -703,6 +705,7 @@ extension WPEMetalSceneRenderer {
             ))
             soundRuntime?.resume()
         case .suspended:
+            cameraMotionPlayback?.suspend()
             // Nil, not false: the next `.quality` transition must re-apply the
             // pause state unconditionally.
             lastAppliedContinuousFrames = nil
@@ -727,6 +730,8 @@ extension WPEMetalSceneRenderer {
     // MARK: - Teardown
 
     func cleanup() {
+        cameraMotionPlayback = nil
+        baseCameraUniforms = .identity
         didLoad = false
         Task { [owner = staticTextureReloadTaskOwner] in _ = await owner.quiesce() }
         loadGeneration &+= 1

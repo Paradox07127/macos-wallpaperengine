@@ -13,6 +13,8 @@ extension WPEMetalRenderExecutor {
         case frameGlobal(String)
         /// Not terminal: a scripted key can vanish within a cache generation.
         case passValue(String)
+        case stageValue(WPEShaderBindingKey)
+        case authoredStageDefault
         case passConstant(String)
     }
 
@@ -46,10 +48,16 @@ extension WPEMetalRenderExecutor {
         let defaultValue: WPESceneShaderConstantValue?
     }
 
+    struct StageUniformPlanKey: Hashable {
+        let passID: String
+        let stage: WPEShaderStage
+    }
+
     struct PassUniformPlans {
         /// Key set is the cache identity (see `UniformKeyIndex`). A count compare would keep a plan alive across a same-count scripted key substitution.
         let uniformKeySet: ShaderConstantKeys
         let constantKeySet: ShaderConstantKeys
+        let stageBindingKeys: Set<WPEShaderBindingKey>
         /// `Array ==` short-circuits on shared storage (the hot-path case).
         let layout: [WPEUniformSlot]
         let plans: [UniformResolutionPlan]
@@ -57,20 +65,24 @@ extension WPEMetalRenderExecutor {
 
     func uniformPlans(
         for pass: WPEPreparedRenderPass,
-        layout: [WPEUniformSlot]
+        layout: [WPEUniformSlot],
+        stage: WPEShaderStage = .fragment
     ) -> [UniformResolutionPlan] {
-        if let cached = uniformPlansByPassID[pass.id],
+        let key = StageUniformPlanKey(passID: pass.id, stage: stage)
+        if let cached = uniformPlansByPassID[key],
            cached.uniformKeySet == pass.uniformValues.keys,
            cached.constantKeySet == pass.pass.constants.keys,
+           cached.stageBindingKeys == pass.stageUniformBindingKeys,
            cached.layout == layout {
             return cached.plans
         }
         let keyIndex = uniformKeyIndex(for: pass)
-        let plans = layout.map { compileUniformPlan(for: $0, pass: pass, keyIndex: keyIndex) }
+        let plans = layout.map { compileUniformPlan(for: $0, pass: pass, keyIndex: keyIndex, stage: stage) }
         uniformPlanCompileCount += 1
-        uniformPlansByPassID[pass.id] = PassUniformPlans(
+        uniformPlansByPassID[key] = PassUniformPlans(
             uniformKeySet: pass.uniformValues.keys,
             constantKeySet: pass.pass.constants.keys,
+            stageBindingKeys: pass.stageUniformBindingKeys,
             layout: layout,
             plans: plans
         )
@@ -81,7 +93,8 @@ extension WPEMetalRenderExecutor {
     private func compileUniformPlan(
         for uniform: WPEUniformSlot,
         pass: WPEPreparedRenderPass,
-        keyIndex: UniformKeyIndex
+        keyIndex: UniformKeyIndex,
+        stage: WPEShaderStage
     ) -> UniformResolutionPlan {
         // `require` does NOT gate runtime binding, so `uniform.requiredCombos` is not consulted. `require` decides only whether the editor exposes the field.
         let candidates = memoizedUniformNameCandidates(for: uniform)
@@ -89,6 +102,31 @@ extension WPEMetalRenderExecutor {
         func append(_ step: UniformResolutionStep) {
             guard !steps.contains(step) else { return }
             steps.append(step)
+        }
+
+        let stageKey = WPEShaderBindingKey(stage: stage, name: uniform.name)
+        if pass.stageUniformBindings[stageKey] != nil {
+            if uniform.materialName != nil {
+                append(.stageValue(stageKey))
+                if uniform.defaultValue != nil {
+                    append(.authoredStageDefault)
+                }
+            }
+            if WPEFrameUniformContext.canonicalNames.contains(uniform.name) {
+                append(.frameGlobal(uniform.name))
+            }
+            if uniform.materialName == nil {
+                append(.stageValue(stageKey))
+            }
+            return UniformResolutionPlan(directPacking: Self.directUniformPacking(for: uniform),
+                                         isTexelSize: uniform.name == Self.texelSizeUniformName,
+                                         isTexelSizeHalf: uniform.name == Self.texelSizeHalfUniformName,
+                                         isScreen: uniform.name == Self.screenUniformName,
+                                         textureResolutionSlot: Self.textureResolutionSlotIndex(for: uniform.name),
+                                         textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
+                                         textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
+                                         effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
+                                         steps: steps, defaultValue: uniform.defaultValue)
         }
 
         // Where a material-annotated uniform collides with a frame global, the authored value has to win; the frame global would shadow it (`g_Brightness` is both the pause dimmer and generic2/4 brightness).
@@ -319,6 +357,20 @@ extension WPEMetalRenderExecutor {
                 if let value = pass.uniformValues[key] {
                     #if DEBUG
                     recordUniformSource(.passValue(key))
+                    #endif
+                    return value
+                }
+            case let .stageValue(key):
+                if let value = pass.stageUniformBindings[key]?.value {
+                    #if DEBUG
+                    recordUniformSource(.stagePassValue(key))
+                    #endif
+                    return value
+                }
+            case .authoredStageDefault:
+                if let value = plan.defaultValue {
+                    #if DEBUG
+                    recordUniformSource(.authoredDefault)
                     #endif
                     return value
                 }

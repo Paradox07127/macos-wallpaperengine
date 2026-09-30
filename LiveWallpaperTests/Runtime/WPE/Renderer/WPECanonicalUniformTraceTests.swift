@@ -37,6 +37,14 @@ struct WPECanonicalUniformTraceTests {
         }
     }
 
+    @Test func failedTraceSerializationReportsTheObservedField() {
+        let observed: [String: Any] = ["passes": [["depth": Double.infinity, "valid": 1.0]]]
+        #expect(!JSONSerialization.isValidJSONObject(observed))
+        #expect(WPECanonicalTraceRecorder.jsonValidationIssues(observed) == ["$.passes[0].depth: non-finite number inf"])
+        #expect((observed["passes"] as? [[String: Double]])?.first?["depth"] == .infinity)
+        #expect(WPECanonicalTraceRecorder.jsonValidationIssues(["passes": [["depth": NSNull(), "valid": 1.0]]]).isEmpty)
+    }
+
     @Test func integerExtremesAndNonfiniteFloatBitsSurviveJSON() throws {
         let layout = [
             WPEUniformSlot(name: "i", glslType: "ivec4", slot: 0, slotCount: 1),
@@ -57,6 +65,42 @@ struct WPECanonicalUniformTraceTests {
         let floats = try #require(json[2]["value"] as? [Any])
         #expect(Array(floats.prefix(3)) as? [String] == ["NaN", "+Infinity", "-Infinity"])
         #expect((json[2]["rawSlotBits"] as? [NSNumber])?.map(\.uint32Value) == [0x7FC0_1234, 0x7F80_0000, 0xFF80_0000, 0x8000_0000])
+    }
+
+    @Test func attachmentCopiesAndBootstrapRemainOutsideShaderDrawCounts() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        descriptor.storageMode = .shared
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let destination = try #require(device.makeTexture(descriptor: descriptor))
+        for texture in [source, destination] {
+            [UInt8](repeating: 0, count: 4).withUnsafeBytes {
+                texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 4)
+            }
+        }
+        let artifacts = WPESceneDebugArtifacts()
+        artifacts.setEnabledForTesting(true)
+        let recorder = WPECanonicalTraceRecorder(artifacts: artifacts)
+        recorder.beginScene(workshopID: "attachments", projectJsonPath: nil, descriptor: "regression")
+        recorder.recordAttachmentPlan(.init(layers: []))
+        recorder.recordAttachmentOperation(kind: "bootstrap-clear", label: "bootstrap", destination: source,
+                                           contract: .color(target: .named("history"), initialized: false,
+                                                            readsCurrentTarget: true, blendNeedsDestination: true))
+        recorder.recordAttachmentOperation(kind: "blit-copy", label: "snapshot", source: source, destination: destination)
+        recorder.recordAttachmentOperation(kind: "publication", label: "alias", destination: destination, writesPixels: false)
+        let data = try #require(recorder.finishFrame(outputTexture: destination, runtimeUniforms: nil, firstFrameStats: nil,
+                                                     resolutionDiagnostics: .init(events: [])))
+        let trace = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect((trace["passes"] as? [[String: Any]])?.isEmpty == true)
+        let block = try #require(trace["attachmentOperations"] as? [String: Any])
+        let events = try #require(block["events"] as? [[String: Any]])
+        #expect(events.count == 3)
+        #expect(events[0]["load"] as? String == "clear")
+        #expect(events[1]["kind"] as? String == "blit-copy")
+        #expect((events[1]["source"] as? [String: Any])?["revision"] as? Int == 1)
+        #expect((events[2]["destination"] as? [String: Any])?["revisionAfter"] as? Int == 1)
+        #expect(events.allSatisfy { $0["status"] as? String == "encoded-not-gpu-completion" })
+        #expect((trace["attachmentPlan"] as? [String: Any])?["execution"] as? String == "potential-dependencies-not-observed-writes")
     }
 
     @Test func customPassFinishesWithNegativeIntegerUniform() throws {
@@ -90,21 +134,45 @@ struct WPECanonicalUniformTraceTests {
             textureBindings: [], packedUniformSlots: slots, usesObjectQuad: false,
             nativeState: .scenePass(blendMode: "normal", alphaWritePolicy: .all, cullMode: "nocull",
                                     depthAttached: false, depthTest: "disabled", depthWrite: "disabled", reversedZ: false),
-            uniformSources: [.passConstant("counter")]
+            uniformSources: [.passConstant("counter")], vertexPath: .skewObjectQuad
         )
         let data = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
         let trace = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let passes = try #require(trace["passes"] as? [[String: Any]])
         #expect(passes.count == 1)
+        let vertex = try #require(passes[0]["vertexContract"] as? [String: Any])
+        #expect(vertex["function"] as? String == "wpe_skew_object_quad_vertex")
+        #expect(vertex["authoredVertexExecuted"] as? Bool == false)
+        let ids = try #require(passes[0]["shaders"] as? [String: String])
+        let resources = try #require(trace["resources"] as? [String: Any])
+        let shaders = try #require(resources["shaders"] as? [String: [String: Any]])
+        let vs = try #require(ids["vs"])
+        #expect(shaders[vs]?["entryPoint"] as? String == "wpe_skew_object_quad_vertex")
         let buffers = try #require(passes[0]["constantBuffers"] as? [[String: Any]])
         let variables = try #require(buffers[0]["variables"] as? [[String: Any]])
         #expect((variables[0]["value"] as? NSNumber)?.intValue == -1)
         #expect((variables[0]["bindingSource"] as? [String: String])?["key"] == "counter")
         #expect((variables[0]["bindingSource"] as? [String: String])?["kind"] == "pass-constant")
+        let coverage = try #require(passes[0]["semanticCoverage"] as? [String: Any])
+        #expect(coverage["passID"] as? String == "layer.0")
+        let color = try #require(passes[0]["colorContract"] as? [String: Any])
+        #expect(color["schema"] as? String == "wpe.pass-color-contract.v1")
+        #expect(color["shaderOutputAlphaOperation"] as? String == "unverified")
+        #expect((color["attachment"] as? [String: Any])?["hardwareRGBTransfer"] as? String == "identity")
+        #expect(color["finalDisplayTransfer"] as? String == "outside-pass-contract")
+        let summary = try #require(trace["semanticCoverage"] as? [String: Any])
+        #expect(summary["scope"] as? String == "observed-custom-draws-only")
+        #expect(summary["observedDraws"] as? Int == 1)
+        #expect(summary["uniquePasses"] as? Int == 1)
         #expect(!recorder.isAccumulating)
         #expect(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])) == nil)
+        recorder.beginScene(workshopID: "second-scene", projectJsonPath: nil, descriptor: "reset")
+        let reset = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
+                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
+        let resetTrace = try #require(JSONSerialization.jsonObject(with: reset) as? [String: Any])
+        #expect((resetTrace["semanticCoverage"] as? [String: Any])?["observedDraws"] as? Int == 0)
     }
 }
 #endif

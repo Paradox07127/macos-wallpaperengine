@@ -83,6 +83,7 @@ extension WPEMetalRenderExecutor {
                 0, 0
             )
         )
+        projection.cameraClipTransform = frameState.cameraUniforms.sceneClipTransform
         let transform = system.sceneTransform
         let averageScale = transform.worldSizeMultiplier()
         if averageScale > 0 {

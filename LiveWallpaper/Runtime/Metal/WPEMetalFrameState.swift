@@ -5,7 +5,7 @@ import LiveWallpaperProWPE
 import Metal
 
 /// Logical identity for a render target during one `render(...)` call. `.scene` is the persistent output texture; `.named(_)` covers FBOs and layer composites resolved through the pool.
-enum WPEMetalTargetID: Hashable {
+enum WPEMetalTargetID: Hashable, Sendable {
     case scene
     case named(String)
 
@@ -22,6 +22,9 @@ enum WPEMetalTargetID: Hashable {
 /// Attachment alpha writes are surface semantics, not a side effect of the authored blend mode. The render-graph `.scene` target must retain alpha like named FBOs; the terminal present pass makes opaque-alpha explicit in the fragment result, never via color write masks.
 enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     case all
+    /// Postprocessing bloom adds RGB while preserving the scene's coverage.
+    /// Authored scene/FBO draws continue to use `all` via `resolve`.
+    case rgbOnly
 
     /// `blendMode` is taken and deliberately ignored — not a leftover: keying the write mask off it produced RGB>0/A=0 texels wherever a transparent clear met a blended draw. (see `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`)
     static func resolve(targetID: WPEMetalTargetID, blendMode _: String) -> Self {
@@ -32,7 +35,10 @@ enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     }
 
     var writeMask: MTLColorWriteMask {
-        .all
+        switch self {
+        case .all: .all
+        case .rgbOnly: [.red, .green, .blue]
+        }
     }
 }
 
@@ -96,6 +102,10 @@ struct WPEMetalFrameState {
         let textureID = ObjectIdentifier(texture)
         writtenTargets.insert(targetID)
         initializedTextures.insert(textureID)
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "target-write-publication", label: String(describing: targetID),
+                                                                   destination: texture)
+        #endif
         if freshRefractionSnapshotOutputID == textureID {
             freshRefractionSnapshotOutputID = nil
         }

@@ -23,12 +23,14 @@ struct WPETextMeshVertex {
 [[vertex]] WPEVertexOut wpe_text_glyph_vertex(
     uint vid [[vertex_id]],
     constant WPETextMeshVertex* verts [[buffer(0)]],
-    constant float2& sceneSize [[buffer(1)]]
+    constant float2& sceneSize [[buffer(1)]],
+    constant float4& cameraClipTransform [[buffer(2)]]
 ) {
     WPETextMeshVertex v = verts[vid];
     float2 halfSize = max(sceneSize * 0.5, float2(0.5));
     WPEVertexOut out;
     out.position = float4(v.position.x / halfSize.x - 1.0, 1.0 - v.position.y / halfSize.y, 0.0, 1.0);
+    out.position.xy = out.position.xy * cameraClipTransform.xy + cameraClipTransform.zw;
     out.uv = v.uv;
     return out;
 }
@@ -1073,10 +1075,11 @@ static inline half4 wpe_genericimage2_shade(
 // prefilter g_BloomBlendParams = (threshold, knee, 2(threshold−knee),
 // 0.25/(threshold−knee)) with knee = threshold×(1−feather) — a continuous
 // soft-knee (both branches meet at brightness = knee + 2(threshold−knee));
-// g_BloomStrength = authored strength/17; every stage is a 4-tap box at
-// ±source-texel offsets; upsample is additive SRC_ALPHA/ONE weighted by scatter.
+// Strength normalization depends on scatter and pyramid depth (see host).
+// Prefilter/downsample use a four-tap box; upsample uses cubic reconstruction
+// and weights RGB by scatter while preserving destination alpha.
 struct WPEBloomUniforms {
-    float4 texelAndWeight; // xy = source texel size, z = strength (prefilter) / src alpha (upsample)
+    float4 texelAndWeight; // xy = source texel size, z = strength (prefilter) / RGB scatter (upsample)
     float4 blendParams;    // prefilter knee curve; unused elsewhere
     float4 tint;           // rgb = bloom tint (prefilter)
 };
@@ -1100,11 +1103,11 @@ static inline float3 wpe_bloom_box4(
     texture2d<float, access::sample> texture0 [[texture(0)]],
     constant WPEBloomUniforms& u [[buffer(0)]]
 ) {
-    float3 color = wpe_bloom_box4(texture0, in.uv, u.texelAndWeight.xy);
+    float3 color = max(float3(0), wpe_bloom_box4(texture0, in.uv, u.texelAndWeight.xy));
     float brightness = max(color.r, max(color.g, color.b));
     float soft = clamp(brightness - u.blendParams.y, 0.0, u.blendParams.z);
     soft = soft * soft * u.blendParams.w;
-    float contribution = max(soft, brightness - u.blendParams.x) / max(brightness, 0.0001);
+    float contribution = max(soft, brightness - u.blendParams.x) / max(brightness, 0.00001);
     return half4(float4(color * contribution * u.texelAndWeight.z * u.tint.rgb, 1.0));
 }
 
@@ -1116,14 +1119,51 @@ static inline float3 wpe_bloom_box4(
     return half4(float4(wpe_bloom_box4(texture0, in.uv, u.texelAndWeight.xy), 1.0));
 }
 
-// Draws with the "additive" pipeline (SRC_ALPHA/ONE): alpha carries the
-// scatter weight so each level accumulates into the next-larger one.
+// Cubic B-spline reconstruction. Pair adjacent positive basis weights into
+// bilinear fetches, reducing a separable 4×4 kernel to four texture samples.
+// `sourceTexel` is WPE's logical sampling grid, which can differ from the
+// rounded attachment size at odd pyramid heights.
+static inline float4 wpe_bloom_cubic_weights(float t) {
+    float q = 1.0 - t;
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return float4(q * q * q, 3.0 * t3 - 6.0 * t2 + 4.0,
+                  -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0;
+}
+
+static inline float3 wpe_bloom_cubic_sample(texture2d<float, access::sample> source,
+                                           float2 uv, float2 sourceTexel) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float2 pixel = uv / sourceTexel - 0.5;
+    float2 base = floor(pixel);
+    float2 fraction = pixel - base;
+    float4 wx = wpe_bloom_cubic_weights(fraction.x);
+    float4 wy = wpe_bloom_cubic_weights(fraction.y);
+    float2 gx = float2(wx.x + wx.y, wx.z + wx.w);
+    float2 gy = float2(wy.x + wy.y, wy.z + wy.w);
+    float2 px = (base.x + 0.5 + float2(-1.0 + wx.y / gx.x, 1.0 + wx.w / gx.y)) * sourceTexel.x;
+    float2 py = (base.y + 0.5 + float2(-1.0 + wy.y / gy.x, 1.0 + wy.w / gy.y)) * sourceTexel.y;
+    float3 row0 = source.sample(linearSampler, float2(px.x, py.x)).rgb * gx.x
+        + source.sample(linearSampler, float2(px.y, py.x)).rgb * gx.y;
+    float3 row1 = source.sample(linearSampler, float2(px.x, py.y)).rgb * gx.x
+        + source.sample(linearSampler, float2(px.y, py.y)).rgb * gx.y;
+    return row0 * gy.x + row1 * gy.y;
+}
+
+// The shader weights RGB by scatter. Alpha stays one; the additive PSO must
+// not apply another quarter-weight or overwrite the destination's coverage.
 [[fragment]] half4 wpe_bloom_upsample_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> texture0 [[texture(0)]],
     constant WPEBloomUniforms& u [[buffer(0)]]
 ) {
-    return half4(float4(wpe_bloom_box4(texture0, in.uv, u.texelAndWeight.xy), u.texelAndWeight.z));
+    float2 t = u.texelAndWeight.xy;
+    float2 sourceTexel = t * 2.0;
+    float3 sum = wpe_bloom_cubic_sample(texture0, in.uv + t, sourceTexel)
+        + wpe_bloom_cubic_sample(texture0, in.uv - t, sourceTexel)
+        + wpe_bloom_cubic_sample(texture0, in.uv + float2(t.x, -t.y), sourceTexel)
+        + wpe_bloom_cubic_sample(texture0, in.uv + float2(-t.x, t.y), sourceTexel);
+    return half4(float4(sum * (0.25 * u.texelAndWeight.z), 1.0));
 }
 
 // WPE generic4 MODEL material (scene 3D models — suns/planets/skybox shells).
@@ -1141,7 +1181,7 @@ struct WPESceneModelGenericUniforms {
     float4 ambientLighting;  // rgb = g_LightAmbientColor, w = LIGHTING combo
     float4 brightnessFlags;  // x = g_Brightness × layer brightness, y = emissive map bound, z = scene HDR, w = REFLECTION combo
     float4 skylightColor;    // rgb = g_LightSkylightColor, w unused
-    /// x = g_Reflectivity, y = g_Roughness, z = g_Metallic, w = g_Texture3MipMapInfo (top mip index).
+    /// x = g_Reflectivity, y = g_Roughness, z = g_Metallic, w = g_Texture3MipMapInfo (mip count).
     float4 reflection;
     /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
     float4 screen;
@@ -1155,7 +1195,7 @@ struct WPESceneModelGenericUniforms {
 };
 
 /// Port of generic4.frag's `#if REFLECTION` block. `reflectionSource` is WPE's
-/// `g_Texture3` (`_rt_MipMappedFrameBuffer`): the scene rendered SO FAR, with a
+/// `g_Texture3` (`_rt_MipMappedFrameBuffer`): the previous completed scene before bloom, with a
 /// mip chain, so `roughness × mipInfo` blurs the mirror. The term is ADDITIVE and
 /// is not modulated by albedo — that is why 3470948192's droplet (albedo
 /// `util/black`, tint 0,0,0, metallic 1) is made ENTIRELY of this reflection.
@@ -1485,6 +1525,7 @@ struct WPEParticleProjection {
     float4x4 modelToWorld;
     float4x4 worldToModel;
     float4 eyeAndSizeScale;
+    float4 cameraClipTransform;
 };
 
 // Sprite-sheet slice + format hint. `grid.w == 1` means the atlas is an
@@ -1619,7 +1660,7 @@ struct WPEParticleSpriteParams {
 
     WPEParticleVertexOut out;
     float2 screenNDC = centerNDC + cornerNDC;
-    out.position = float4(screenNDC, 0.0, 1.0);
+    out.position = float4(screenNDC * projection.cameraClipTransform.xy + projection.cameraClipTransform.zw, 0.0, 1.0);
     if (projection.sceneSize.z > 0.5) {
         float3 center = float3(instance.positionAndSize.xy, instance.velocity.w);
         float3 offset = float3(cornerNDC * projection.sceneSize.xy * 0.5, 0.0);
@@ -1641,9 +1682,9 @@ struct WPEParticleSpriteParams {
         float3 world = center + offset;
         world.xy += projection.sceneSize.xy * 0.5 + parallaxPixels;
         out.position = projection.viewProjection * float4(world, 1.0);
-        screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
     }
 
+    screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
     // NDC (y up, -1..1) → full-frame UV (y down, 0..1) for the group opacity mask.
     out.maskUV = float2(screenNDC.x * 0.5 + 0.5, 0.5 - screenNDC.y * 0.5);
     if (useFrameRects) {
@@ -1788,6 +1829,7 @@ struct WPEParticleRopeVertex {
         (v.positionUV.y + parallaxPixels.y) / halfHeight
     );
     WPEParticleVertexOut out;
+    ndc = ndc * projection.cameraClipTransform.xy + projection.cameraClipTransform.zw;
     out.position = float4(ndc, 0.0, 1.0);
     out.uvCurrent = v.positionUV.zw;
     out.uvNext = v.positionUV.zw;

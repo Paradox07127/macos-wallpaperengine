@@ -7,6 +7,7 @@ public struct WPESceneDocument: Equatable, Sendable {
     public let camera: WPESceneCamera
     public let authoredCamera: WPESceneAuthoredCamera
     public let authoredCameraObjects: [WPESceneAuthoredCameraObject]
+    public let cameraMotion: WPESceneCameraMotion?
     public let general: WPESceneGeneral
     /// `var` so the renderer can append synthetic image layers from `textObjects` before the graph is built; nothing else mutates a parsed document.
     public var imageObjects: [WPESceneImageObject]
@@ -31,6 +32,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         camera: WPESceneCamera,
         authoredCamera: WPESceneAuthoredCamera = .empty,
         authoredCameraObjects: [WPESceneAuthoredCameraObject] = [],
+        cameraMotion: WPESceneCameraMotion? = nil,
         general: WPESceneGeneral,
         imageObjects: [WPESceneImageObject],
         scriptHostObjects: [WPESceneScriptHostObject] = [],
@@ -49,6 +51,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         self.camera = camera
         self.authoredCamera = authoredCamera
         self.authoredCameraObjects = authoredCameraObjects
+        self.cameraMotion = cameraMotion
         self.general = general
         self.imageObjects = imageObjects
         self.scriptHostObjects = scriptHostObjects
@@ -873,7 +876,8 @@ public struct WPESceneCamera: Equatable, Sendable {
     )
 }
 
-/// Raw scene.json bloom numbers. Executor derives cbuffer forms: `g_BloomStrength = strength/17`, knee from threshold/feather.
+/// Raw scene.json bloom numbers. Executor derives strength from scatter/depth
+/// and the soft knee from threshold/feather.
 public struct WPESceneBloomSettings: Equatable, Sendable {
     public let strength: Double
     public let threshold: Double
@@ -1430,13 +1434,16 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
 
     public func values(at time: Double, fallbacks: [Double]) -> [Double] {
         guard !tracks.isEmpty else { return fallbacks }
-        let frame = effectiveFrame(at: time)
-        return tracks.enumerated().map { index, track in
+        return values(atFrame: frame(at: time), fallbacks: fallbacks)
+    }
+
+    public func values(atFrame frame: Double, fallbacks: [Double]) -> [Double] {
+        tracks.enumerated().map { index, track in
             value(in: track, atFrame: frame, fallback: fallbacks[safe: index] ?? fallbacks.first ?? 0)
         }
     }
 
-    private func effectiveFrame(at time: Double) -> Double {
+    public func frame(at time: Double) -> Double {
         let rawFrame = max(0, time) * fps
         // Mirror is one full forward traversal then an equally long reverse, repeating. Keep both turn-around endpoints: at `length` sample the last frame; at `2 * length` sample the first before the next forward leg. Zero-length/single-frame bypasses the remainder and uses the clamped sampler.
         if mode == "mirror", length > 0 {
@@ -1451,7 +1458,7 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
         let lastTrackFrame = tracks
             .compactMap(\.last?.frame)
             .max() ?? 0
-        let clampFrame = length > 0 ? max(length, lastTrackFrame) : lastTrackFrame
+        let clampFrame = length > 0 ? length : lastTrackFrame
         return min(max(rawFrame, 0), clampFrame)
     }
 
@@ -1473,9 +1480,42 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
             let start = track[index]
             let end = track[index + 1]
             guard frame >= start.frame && frame <= end.frame else { continue }
+            if frame == end.frame {
+                return end.value
+            }
             let span = max(end.frame - start.frame, 0.0001)
             let t = min(max((frame - start.frame) / span, 0), 1)
-            return start.value + (end.value - start.value) * t
+            func handle(_ field: WPESceneAuthoredJSONField<WPESceneAnimationTangent>?, endpoint: Double) -> (Double, Double)? {
+                guard case let .value(tangent) = field, tangent.enabled == .value(true),
+                      case let .value(x) = tangent.x, case let .value(y) = tangent.y,
+                      x.isFinite, y.isFinite else { return nil }
+                return (endpoint + x * 0.5, y)
+            }
+            // Windows WPE 2.8 controls establish the two-enabled-handle case:
+            // x is normalized to HALF the key span, y is an absolute value delta.
+            // `magic` is editor metadata in these controls. One-sided/absent
+            // handles retain the prior linear fallback until independently measured.
+            let front = handle(start.front, endpoint: 0)
+            let back = handle(end.back, endpoint: 1)
+            guard let front, let back else { return start.value + (end.value - start.value) * t }
+            let x1 = min(max(front.0, 0), 1)
+            let x2 = min(max(back.0, 0), 1)
+            let y1 = start.value + front.1
+            let y2 = end.value + back.1
+            func cubic(_ u: Double, _ a: Double, _ b: Double, _ c: Double, _ d: Double) -> Double {
+                let v = 1 - u
+                return v * v * v * a + 3 * v * v * u * b + 3 * v * u * u * c + u * u * u * d
+            }
+            var lower = 0.0, upper = 1.0
+            for _ in 0 ..< 40 {
+                let u = (lower + upper) / 2
+                if cubic(u, 0, x1, x2, 1) < t {
+                    lower = u
+                } else {
+                    upper = u
+                }
+            }
+            return cubic((lower + upper) / 2, start.value, y1, y2, end.value)
         }
         return last.value
     }

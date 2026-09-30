@@ -372,6 +372,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     let lightSkylightColor: SIMD3<Double>
     let sceneHDR: Bool
     let bloom: WPESceneBloomSettings?
+    let sceneMotion: WPESceneCameraMotionSample
 
     static let identity = WPEMetalCameraUniforms(
         renderSize: CGSize(width: 1, height: 1),
@@ -394,7 +395,8 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         lightAmbientColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         lightSkylightColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         sceneHDR: Bool = false,
-        bloom: WPESceneBloomSettings? = nil
+        bloom: WPESceneBloomSettings? = nil,
+        sceneMotion: WPESceneCameraMotionSample = .identity
     ) {
         let width = max(orthogonalProjection.width, 1)
         let height = max(orthogonalProjection.height, 1)
@@ -407,7 +409,9 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.lightSkylightColor = lightSkylightColor
         self.sceneHDR = sceneHDR
         self.bloom = bloom
-        let sceneMatrix = usesPerspectiveProjection
+        self.sceneMotion = usesPerspectiveProjection ? .identity : sceneMotion
+        let motion = self.sceneMotion
+        var sceneMatrix = usesPerspectiveProjection
             ? Self.perspectiveViewProjectionMatrix(
                 sceneCamera: sceneCamera,
                 aspect: Double(width) / Double(height)
@@ -418,16 +422,23 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
                 nearZ: sceneCamera.nearZ,
                 farZ: sceneCamera.farZ
             )
+        if motion != .identity {
+            let clip = simd_double4x4(SIMD4(motion.zoom, 0, 0, 0), SIMD4(0, motion.zoom, 0, 0),
+                                      SIMD4(0, 0, 1, 0), SIMD4(-2 * motion.zoom * motion.origin.x / Double(width),
+                                                               -2 * motion.zoom * motion.origin.y / Double(height), 0, 1))
+            let base = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: sceneMatrix)!
+            sceneMatrix = WPEMetalObjectUniforms.flattenedColumnMajor(clip * base)
+        }
         viewProjectionMatrix = sceneMatrix
         objectPerspectiveViewProjectionMatrix = perspectiveOverrideFOVDegrees > 0
             ? Self.objectPerspectiveViewProjectionMatrix(
-                width: width, height: height, fovDegrees: perspectiveOverrideFOVDegrees
+                width: width, height: height, fovDegrees: perspectiveOverrideFOVDegrees, sceneMotion: motion
             )
             : sceneMatrix
         let particleFOV = perspectiveOverrideFOVDegrees > 0 ? perspectiveOverrideFOVDegrees : sceneCamera.fov
         particlePerspectiveViewProjectionMatrix = usesPerspectiveProjection || particleFOV <= 0
             ? nil
-            : Self.objectPerspectiveViewProjectionMatrix(width: width, height: height, fovDegrees: particleFOV)
+            : Self.objectPerspectiveViewProjectionMatrix(width: width, height: height, fovDegrees: particleFOV, sceneMotion: motion)
     }
 
     func usesObjectPerspective(objectID: String) -> Bool {
@@ -472,25 +483,27 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     static func objectPerspectiveViewProjectionMatrix(
         width: CGFloat,
         height: CGFloat,
-        fovDegrees: Double
+        fovDegrees: Double,
+        sceneMotion: WPESceneCameraMotionSample = .identity
     ) -> [Double] {
         let halfWidth = Double(max(width, 1)) * 0.5
         let halfHeight = Double(max(height, 1)) * 0.5
         let fov = max(min(fovDegrees, 179), 1) * .pi / 180
         let focal = 1.0 / tan(fov * 0.5)
-        let distance = focal * halfHeight
+        let distance = focal * halfHeight / sceneMotion.zoom
         let near = objectPerspectiveNearZ
         let far = objectPerspectiveFarZ
         let depthScale = near / (far - near)
         return [
-            // A·halfWidth == focal·halfHeight == distance, so both translations are -distance.
-            distance / halfWidth, 0, 0, 0,
+            // Focal terms stay fixed; zoom dollies the view distance. Origin pans the view.
+            focal * halfHeight / halfWidth, 0, 0, 0,
             0, focal, 0, 0,
             0, 0, depthScale, -1,
             // The depth translation is the projection's own bias MINUS `depthScale`
             // times the eye distance: this is P·V, and the view moves the eye to the
             // origin in z as well as x/y.
-            -distance, -distance, near * far / (far - near) - depthScale * distance, distance,
+            -focal * halfHeight * (1 + sceneMotion.origin.x / halfWidth),
+            -focal * (halfHeight + sceneMotion.origin.y), near * far / (far - near) - depthScale * distance, distance,
         ]
     }
 
@@ -516,6 +529,26 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.lightSkylightColor = lightSkylightColor
         self.sceneHDR = sceneHDR
         self.bloom = bloom
+        sceneMotion = .identity
+    }
+
+    func applyingSceneMotion(_ motion: WPESceneCameraMotionSample) -> Self {
+        Self(orthogonalProjection: .init(width: renderSize.width, height: renderSize.height, auto: false),
+             sceneCamera: sceneCamera, usesPerspectiveProjection: usesPerspectiveProjection,
+             perspectiveOverrideFOVDegrees: perspectiveOverrideFOVDegrees, perspectiveObjectIDs: perspectiveObjectIDs,
+             lightAmbientColor: lightAmbientColor, lightSkylightColor: lightSkylightColor,
+             sceneHDR: sceneHDR, bloom: bloom, sceneMotion: motion)
+    }
+
+    /// Native canvas vertices are already in centered Y-up clip space.
+    var sceneClipTransform: SIMD4<Float> {
+        SIMD4(Float(sceneMotion.zoom), Float(sceneMotion.zoom),
+              Float(-2 * sceneMotion.zoom * sceneMotion.origin.x / max(renderSize.width, 1)),
+              Float(-2 * sceneMotion.zoom * sceneMotion.origin.y / max(renderSize.height, 1)))
+    }
+
+    func transformScenePoint(_ point: SIMD2<Float>) -> SIMD2<Float> {
+        (point - SIMD2(Float(sceneMotion.origin.x), Float(sceneMotion.origin.y))) * Float(sceneMotion.zoom)
     }
 
     var uniformValues: [String: WPESceneShaderConstantValue] {

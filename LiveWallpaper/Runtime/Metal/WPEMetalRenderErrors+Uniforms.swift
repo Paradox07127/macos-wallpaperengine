@@ -323,7 +323,7 @@ struct WPEObjectQuadUniforms {
 
 /// Layout MUST match `WPEBloomUniforms` in `WPEMetalBuiltins.metal`.
 struct WPEBloomUniforms {
-    /// xy = source texel size, z = strength (prefilter) / source alpha (upsample), w pad.
+    /// xy = source texel size, z = strength (prefilter) / RGB scatter (upsample), w pad.
     var texelAndWeight: SIMD4<Float>
     /// Prefilter soft-knee: (threshold, knee, 2(threshold−knee), 0.25/(threshold−knee)).
     var blendParams: SIMD4<Float>
@@ -517,6 +517,7 @@ struct WPEParticleProjection {
     var modelToWorld = matrix_identity_float4x4
     var worldToModel = matrix_identity_float4x4
     var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
+    var cameraClipTransform = SIMD4<Float>(1, 1, 0, 0)
 }
 
 /// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized `effects/skew` MODE=1 vertex-displacement params (fractions of the quad extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.

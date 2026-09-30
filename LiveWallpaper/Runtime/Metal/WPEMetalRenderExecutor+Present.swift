@@ -191,33 +191,43 @@ extension WPEMetalRenderExecutor {
     func clearColor(for targetID: WPEMetalTargetID) -> MTLClearColor {
         switch targetID {
         case .scene:
-            return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            // Windows clears the scene to opaque black before any draw; local
+            // layer/effect targets keep transparent coverage. This also gives
+            // early scene-alias readers the same alpha as the final backdrop.
+            return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         case .named:
             return MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         }
     }
 
-    /// WPE HDR bloom pyramid: prefilter (soft-knee threshold + strength/17 + tint) into a half-res chain, 4-tap box downsamples, scatter-weighted SRC_ALPHA/ONE upsamples, additive composite. HDR scenes render to rgba16Float so the prefilter sees real >1 overbright; `hdr:false` scenes clamp at 8-bit.
+    /// WPE HDR bloom: soft-knee prefilter with scatter/depth normalization,
+    /// four-tap box downsamples, cubic RGB-weighted upsamples and additive
+    /// composite preserving alpha. HDR targets retain overbright values.
     func encodeSceneBloomIfNeeded(
         cameraUniforms: WPEMetalCameraUniforms,
         output: MTLTexture,
         commandBuffer: MTLCommandBuffer
     ) throws {
         guard Self.isSceneBloomEnabled, let bloom = cameraUniforms.bloom else { return }
-        ensureBloomLevels(for: output, levelCount: min(max(bloom.iterations, 1), 6))
+        ensureBloomLevels(for: output, levelCount: min(max(bloom.iterations, 1), 8))
         let levels = bloomLevelTextures.count
         guard levels >= 1 else { return }
 
         let threshold = Float(bloom.threshold)
         let knee = threshold * Float(1 - min(max(bloom.feather, 0), 1))
-        let kneeSpan = max(threshold - knee, 0.0001)
-        let blendParams = SIMD4<Float>(threshold, knee, 2 * kneeSpan, 0.25 / kneeSpan)
-        let strength = Float(bloom.strength) / 17
-        let scatterAlpha = min(max(Float(bloom.scatter) * 0.25, 0), 1)
+        let kneeSpan = max(threshold - knee, 0)
+        let blendParams = SIMD4<Float>(threshold, knee, 2 * kneeSpan, 0.25 / (kneeSpan + 0.00001))
+        // Captured controls: (strength=1, scatter=2, levels=4) → .2;
+        // droplet (.3,2,8) → .0046153846; Earth (.5,1,8) → .25.
+        let scatter = max(Float(bloom.scatter), 0)
+        let strength = Float(bloom.strength) / (1 + pow(scatter, Float(max(levels - 2, 0))))
         let tint = SIMD4<Float>(Float(bloom.tint.x), Float(bloom.tint.y), Float(bloom.tint.z), 1)
 
-        func texel(of texture: MTLTexture) -> SIMD2<Float> {
-            SIMD2<Float>(1 / Float(max(texture.width, 1)), 1 / Float(max(texture.height, 1)))
+        func texel(at level: Int) -> SIMD2<Float> {
+            // WPE keeps fractional logical heights (135→67.5→33.75) in
+            // shader sampling constants even though attachments use floor sizes.
+            let factor = pow(Float(2), Float(level + 1))
+            return SIMD2(factor / Float(output.width), factor / Float(output.height))
         }
 
         func draw(
@@ -243,6 +253,7 @@ extension WPEMetalRenderExecutor {
                 vertexName: "wpe_fullscreen_vertex",
                 fragmentName: fragment,
                 blendMode: blendMode,
+                alphaWritePolicy: blendMode == "additive" ? .rgbOnly : .all,
                 colorPixelFormat: destination.pixelFormat,
                 depthPixelFormat: .invalid
             ))
@@ -252,7 +263,7 @@ extension WPEMetalRenderExecutor {
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
 
-        let sceneTexel = texel(of: output)
+        let sceneTexel = texel(at: -1)
         try draw(
             into: bloomLevelTextures[0],
             source: output,
@@ -266,7 +277,7 @@ extension WPEMetalRenderExecutor {
         )
         for level in 1..<levels {
             let source = bloomLevelTextures[level - 1]
-            let t = texel(of: source)
+            let t = texel(at: level - 1)
             try draw(
                 into: bloomLevelTextures[level],
                 source: source,
@@ -282,25 +293,25 @@ extension WPEMetalRenderExecutor {
         var level = levels - 1
         while level >= 1 {
             let destination = bloomLevelTextures[level - 1]
-            let t = texel(of: destination)
+            let t = texel(at: level - 1)
             try draw(
                 into: destination,
                 source: bloomLevelTextures[level],
                 fragment: "wpe_bloom_upsample_fragment",
                 blendMode: "additive",
                 uniforms: WPEBloomUniforms(
-                    texelAndWeight: SIMD4<Float>(t.x, t.y, scatterAlpha, 0),
+                    texelAndWeight: SIMD4<Float>(t.x, t.y, scatter, 0),
                     blendParams: .zero,
                     tint: tint
                 )
             )
             level -= 1
         }
-        let compositeTexel = texel(of: bloomLevelTextures[0])
+        let compositeTexel = sceneTexel
         try draw(
             into: output,
             source: bloomLevelTextures[0],
-            fragment: "wpe_bloom_upsample_fragment",
+            fragment: "wpe_bloom_downsample_fragment",
             blendMode: "additive",
             uniforms: WPEBloomUniforms(
                 texelAndWeight: SIMD4<Float>(compositeTexel.x, compositeTexel.y, 1, 0),
@@ -324,10 +335,9 @@ extension WPEMetalRenderExecutor {
         bloomLevelRequestedCount = levelCount
 
         var descriptors: [MTLTextureDescriptor] = []
-        var width = output.width / 2
-        var height = output.height / 2
+        var width = max(output.width / 2, 1)
+        var height = max(output.height / 2, 1)
         for _ in 0..<levelCount {
-            guard width >= 8, height >= 8 else { break }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: output.pixelFormat,
                 width: width,
@@ -337,8 +347,8 @@ extension WPEMetalRenderExecutor {
             descriptor.usage = [.renderTarget, .shaderRead]
             descriptor.storageMode = .private
             descriptors.append(descriptor)
-            width /= 2
-            height /= 2
+            width = max(width / 2, 1)
+            height = max(height / 2, 1)
         }
         guard !descriptors.isEmpty else { return }
 

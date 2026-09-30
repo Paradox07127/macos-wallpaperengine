@@ -603,7 +603,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             hasComponentMap: false,
             materialShader: .genericImage4,
             hasReflectionSource: true,
-            reflectionTopMipLevel: 9
+            reflectionMipCount: 9
         )
         #expect(bound.brightnessFlags.w == 1)
         #expect(bound.reflection == SIMD4<Float>(0.5, 0.25, 1, 9))

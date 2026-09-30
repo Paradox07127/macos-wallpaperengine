@@ -38,11 +38,14 @@ PARALLEL_SUITES=(
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
-  SceneFailureFlowTests
   SceneFailurePresentationTests
   WPESceneSectionStateTests
   WPEUniqueEffectGraphTests
   WPEPreparedPassAccessTests
+  WPEShaderInterfaceTests
+  WPEPassColorContractTests
+  WPEPassVertexPathTests
+  WPESceneScriptParticlePlaybackTests
   # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
   # code into a severity tier and a set of recovery buttons has to be gated, or
   # a newly minted code lands in the wrong tier without anything going red.
@@ -63,7 +66,6 @@ PARALLEL_SUITES=(
   # The cache pane's latest-wins arbitration lives in private SwiftUI state, so
   # this pins the ordering in source; deleting the guard left everything green.
   CacheInventoryArbitrationTests
-  OverlayVisibilityLifecycleCharacterizationTests
   BoardPointerScopeTests
   MusicLayerPointerGateTests
   RuntimeLeaseChurnCharacterizationTests
@@ -100,7 +102,6 @@ PARALLEL_SUITES=(
   WPEMdlParserTests
   WPESceneModelMaterialShaderTests
   WPESceneScriptB2bResourceLimitTests
-  WPESceneScriptContainmentCharacterizationTests
   WPEUploadCancellationOracleTests
   InstalledOwnershipCharacterizationTests
   # Persistence/config/storage correctness. Deterministic, hardware-free, and
@@ -179,7 +180,6 @@ PARALLEL_SUITES=(
   CodexAgentSourceTests
   SchedulePolicyTests
   WallpaperAutomationCoordinatorTests
-  EditDeskStageViewTests
   ShelfGridFlightTests
   ApplyRouterTests
   LibraryImporterTests
@@ -242,6 +242,18 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated
+  # parallel suites can exhaust the dispatch pool before their workers start.
+  # Keep the oracles' own concurrent operations and assertions unchanged.
+  WPESceneScriptContainmentCharacterizationTests
+  WPESceneScriptBatchCompletionTests
+  # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
+  # with other UI probes; the isolated 119-test suite passes without contention.
+  EditDeskStageViewTests
+  # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
+  OverlayVisibilityLifecycleCharacterizationTests
+  # Error snapshots compare app-language text across calls; locale probes change it process-wide.
+  SceneFailureFlowTests
   # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   RuntimeTests

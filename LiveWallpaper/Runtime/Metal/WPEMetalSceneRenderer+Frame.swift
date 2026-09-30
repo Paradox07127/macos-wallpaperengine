@@ -47,7 +47,15 @@ extension WPEMetalSceneRenderer {
         // The defer runs on the throw paths too, so an aborted frame otherwise records a
         // complete — and shorter — "frame" interval, which reads as a speed-up in a trace.
         var frameRendered = false
-        defer { signposter.endInterval("frame", frameState, "rendered:\(frameRendered, privacy: .public)") }
+        let previousCameraPlayback = cameraMotionPlayback
+        let previousCameraUniforms = cameraUniforms
+        defer {
+            if !frameRendered {
+                cameraMotionPlayback = previousCameraPlayback
+                cameraUniforms = previousCameraUniforms
+            }
+            signposter.endInterval("frame", frameState, "rendered:\(frameRendered, privacy: .public)")
+        }
 
         guard let pipeline = renderPipeline else {
             throw WPEMetalRenderExecutorError.noRenderablePasses
@@ -66,7 +74,14 @@ extension WPEMetalSceneRenderer {
             if !didFinishSceneScriptVideoCommands {
                 discardSceneScriptVideoCommands()
             }
+            #if DEBUG
+            lastOracleSceneScriptBatchCompletion = sceneScriptBatchDispatcher.submit(
+                pendingSceneScriptBatchJobs, trackingCompletion: WPEOracleMode.isEnabled,
+                order: WPEOracleMode.isEnabled ? oracleSceneScriptBatchOrder : .parallelWorkers
+            )
+            #else
             sceneScriptBatchDispatcher.submit(pendingSceneScriptBatchJobs)
+            #endif
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
         var frameOverlay = tickLayerPresentationScripts(
@@ -252,6 +267,7 @@ extension WPEMetalSceneRenderer {
             deferredPresent: deferredPresent
         )
         frameRendered = true
+        if cameraMotionPlayback != nil { synchronizeFrameDemand(); publishRuntimeActivity() }
         return rendered
     }
 
@@ -294,7 +310,10 @@ extension WPEMetalSceneRenderer {
                 frameSlot: frameSubmission.slot
             )
             return try executor.render(
-                pipeline: textFrame.pipeline,
+                pipeline: textFrame.pipeline.resolvingSceneModelMatrices(
+                    origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
+                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID
+                ),
                 size: sceneRenderSize,
                 textures: currentTextures,
                 textureSamplingDescriptors: loadedTextureSamplingDescriptors,
@@ -550,6 +569,7 @@ extension WPEMetalSceneRenderer {
             Self.injectFollowControlPoint(into: system)
             system.tick(now: time, frameSlot: frameSlot)
         }
+        publishParticlePlaybackSnapshots()
     }
 
     nonisolated static func injectFollowControlPoint(into system: WPEParticleSystem) {
