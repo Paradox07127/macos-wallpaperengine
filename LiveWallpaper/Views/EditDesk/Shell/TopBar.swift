@@ -25,7 +25,7 @@ struct TopBar<Trailing: View>: View {
 
     private var budget: TopBarBudget.Layout {
         TopBarBudget.layout(
-            windowWidth: windowWidth - 36, pillWidth: pillWidth,
+            windowWidth: windowWidth, pillWidth: pillWidth,
             capsuleWidth: OnboardingCapsuleFit.width(progress: progress),
             statusWidth: statusWidth
         )

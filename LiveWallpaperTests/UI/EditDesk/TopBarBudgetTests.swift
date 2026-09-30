@@ -16,7 +16,7 @@ struct TopBarBudgetTests {
     /// Pro on macOS 26 carries six pages; Pro before 26 and Lite on 26 five; Lite before 26 four.
     /// `pages` is how many dots the onboarding capsule draws: Lite has no Workshop step.
     private static let configurations: [(name: String, workshop: Bool, systemWallpaper: Bool, pages: Int)] = [
-        ("Pro", true, true, 4), ("Pro 14/15", true, false, 4), ("Lite", false, true, 3), ("Lite 14/15", false, false, 3),
+        ("Pro", true, true, 6), ("Pro 14/15", true, false, 6), ("Lite", false, true, 5), ("Lite 14/15", false, false, 5),
     ]
 
     private static func bundle(_ language: String) throws -> Bundle {
@@ -196,14 +196,14 @@ struct TopBarBudgetTests {
     /// The cluster clears above only because it may drop the capsule; with six pages these are the
     /// corners where it has to.
     @MainActor
-    @Test("1040 English and Spanish are the corners that have to spend the capsule")
+    @Test("English at 1040 and 1280 and Spanish at 1040 are the corners that have to spend the capsule")
     func capsuleIsSpentOnlyWhereThePillLeavesNoRoom() throws {
         for (windowWidth, language, keepsCapsule) in [
-            (CGFloat(1280), "en", true), (1280, "zh-Hans", true),
+            (CGFloat(1280), "en", false), (1280, "zh-Hans", true),
             (1040, "en", false), (1040, "zh-Hans", true), (1040, "es", false),
         ] {
             let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: language)
-            let capsuleWidth = try Self.capsule(pages: 4, language: language)
+            let capsuleWidth = try Self.capsule(pages: 6, language: language)
             let layout = TopBarBudget.layout(
                 windowWidth: windowWidth, pillWidth: pillWidth, capsuleWidth: capsuleWidth, statusWidth: Self.status
             )
@@ -221,7 +221,7 @@ struct TopBarBudgetTests {
     @Test("Dropping the capsule does not make it fit again")
     func capsuleDropIsAFixedPoint() throws {
         let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: "en")
-        let asked = try Self.capsule(pages: 4)
+        let asked = try Self.capsule(pages: 6)
         let dropped = TopBarBudget.layout(windowWidth: 1040, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
         #expect(!dropped.showsCapsule)
         // What the bar feeds back next frame: the same asked-for width, because it is derived from
@@ -240,7 +240,7 @@ struct TopBarBudgetTests {
     @MainActor
     @Test("Until the pill is measured the capsule is not drawn")
     func unmeasuredPillDrawsNoCapsule() throws {
-        let asked = try Self.capsule(pages: 4, language: "zh-Hans")
+        let asked = try Self.capsule(pages: 6, language: "zh-Hans")
         let unmeasured = TopBarBudget.layout(windowWidth: 1040, pillWidth: 0, capsuleWidth: asked, statusWidth: Self.status)
         #expect(!unmeasured.showsCapsule)
         // Control: the same bar with its pill measured keeps the capsule.
@@ -254,8 +254,8 @@ struct TopBarBudgetTests {
     func capsuleWidthMatchesItsBox() throws {
         for language in Self.languages {
             let text = try NSLocalizedString("Get Started", bundle: Self.bundle(language), comment: "")
-            let expected = try Self.capsule(pages: 4, language: language)
-            let actual = OnboardingCapsuleFit.width(pages: 4, label: text)
+            let expected = try Self.capsule(pages: 6, language: language)
+            let actual = OnboardingCapsuleFit.width(pages: 6, label: text)
             print("TOPBAR capsule \(language) = \(actual)")
             #expect(actual == expected, Comment(rawValue: "\(language): \(actual) vs \(expected)"))
         }
@@ -266,5 +266,23 @@ struct TopBarBudgetTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
         #expect(source.contains("TopBarBudget.layout("))
         #expect(source.contains("if budget.showsCapsule {"))
+        #expect(!source.contains("windowWidth - 36"), "the bar shrinks the window to make room the budget already counts")
+    }
+
+    /// The page guide button sits in the cluster on every page, so it takes its diameter and a gap of the room.
+    @Test("The page guide button is counted in the trailing cluster")
+    func pageGuideButtonIsCounted() {
+        let windowWidth: CGFloat = 1280, pillWidth: CGFloat = 300, capsuleWidth: CGFloat = 100
+        let gap = DesignTokens.EditDesk.Spacing.s12
+        let guide = DesignTokens.iconButtonDiameter(.regular)
+        let room = windowWidth / 2 - pillWidth / 2 - DesignTokens.Spacing.lg
+        // Capsule and status alone leave 20pt spare, less than the guide and its gap take.
+        let status = room - capsuleWidth - gap - 20
+        let crowded = TopBarBudget.layout(
+            windowWidth: windowWidth, pillWidth: pillWidth, capsuleWidth: capsuleWidth, statusWidth: status
+        )
+        #expect(!crowded.showsCapsule)
+        let bare = TopBarBudget.layout(windowWidth: windowWidth, pillWidth: pillWidth, capsuleWidth: 0, statusWidth: status)
+        #expect(bare.clusterX == windowWidth - DesignTokens.Spacing.lg - (guide + gap + status))
     }
 }
