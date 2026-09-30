@@ -579,9 +579,9 @@ struct ModalActionsTests {
     }
 
     #if !LITE_BUILD
-    private func workshop(_ id: String, importedAt: Date = .distantPast) -> LiveWallpaper.LibraryItem {
+    private func workshop(_ id: String, importedAt: Date = .distantPast, sourceFolderBookmark: Data = Data([3])) -> LiveWallpaper.LibraryItem {
         let entry = WPEHistoryEntry(origin: WPEOrigin(
-            workshopID: id, title: "Installed", originalType: .scene, sourceFolderBookmark: Data([3]),
+            workshopID: id, title: "Installed", originalType: .scene, sourceFolderBookmark: sourceFolderBookmark,
             cacheRelativePath: id, previewFileName: nil, requiresWindowsPlugin: true
         ), importedAt: importedAt, sizeBytes: 5_000_000)
         return LiveWallpaper.LibraryItem(
@@ -741,7 +741,12 @@ struct ModalActionsTests {
     func installedContentKeepsLocalMetadataAndUpdateProgress() async throws {
         let fixture = Fixture()
         fixture.displays = displays()
-        var item = workshop("123", importedAt: Date(timeIntervalSince1970: 1_000_000))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent("123")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let bookmark = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        var item = workshop("123", importedAt: Date(timeIntervalSince1970: 1_000_000), sourceFolderBookmark: bookmark)
         item.onDisplays = [2]
         guard case let .workshop(entry) = item.source else { return }
         var inputs = fixture.inputs()

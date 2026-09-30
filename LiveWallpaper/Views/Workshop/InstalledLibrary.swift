@@ -58,7 +58,7 @@ final class InstalledLibraryModel {
         /// Real removal from the shared Steam repository, performed by the connector —
         /// the app holds no write access. Throws when the mutation gate refuses, which
         /// must abort the delete instead of being folded into "nothing was freed".
-        let deleteSharedRepositoryItem: @MainActor (String) async throws -> SteamDeleteResult?
+        let deleteSharedRepositoryItem: @MainActor (WPEOrigin) async throws -> SteamDeleteResult?
     }
 
     private struct DeleteTicket: Equatable, Sendable {
@@ -144,7 +144,7 @@ final class InstalledLibraryModel {
             return
         }
 
-        guard !workshopID.isEmpty else {
+        guard deletesFiles(entry) else {
             removeLocalRecords(identity, services: services)
             return
         }
@@ -165,7 +165,7 @@ final class InstalledLibraryModel {
             }
             let repositoryDeleted: Bool
             do {
-                repositoryDeleted = try await services.deleteSharedRepositoryItem(workshopID)?.outcome == .deleted
+                repositoryDeleted = try await services.deleteSharedRepositoryItem(entry.origin)?.outcome == .deleted
             } catch {
                 let shouldPublish = canPublishDelete(ticket)
                 finishDelete(ticket)
@@ -220,11 +220,26 @@ final class InstalledLibraryModel {
     /// True when deleting will actually reclaim disk: a Workshop item's files live in
     /// the shared repository and the connector removes them for real.
     func deletesFiles(_ entry: WPEHistoryEntry) -> Bool {
-        let id = entry.origin.workshopID
-        guard WPEPathSafety.isSafeProjectID(id) else { return false }
-        // A numeric id is a Steam Workshop item, whose files live in the shared
-        // repository; folder imports point at the user's own directory, never deleted.
-        return id.allSatisfy(\.isNumber)
+        Self.repositorySourceItemID(for: entry.origin) != nil
+    }
+
+    private static func repositorySourceItemID(for origin: WPEOrigin) -> String? {
+        guard let itemID = origin.steamFolderItemID,
+              itemID == origin.workshopID,
+              SteamLibraryPaths.isSafeWorkshopID(itemID) else { return nil }
+        return itemID
+    }
+
+    /// A numeric manifest ID alone grants no ownership of a same-ID item in another library.
+    static func repositoryDeletionItemID(for origin: WPEOrigin, steamRoot: URL) -> String? {
+        guard let itemID = repositorySourceItemID(for: origin),
+              let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: origin.sourceFolderBookmark)?.path
+        else { return nil }
+        let source = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        let expected = SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot)
+            .appendingPathComponent(itemID, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        guard source == expected else { return nil }
+        return itemID
     }
 
     func showInFinder(_ entry: WPEHistoryEntry) {

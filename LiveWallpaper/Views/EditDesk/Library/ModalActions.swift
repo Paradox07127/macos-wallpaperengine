@@ -120,8 +120,10 @@ final class ModalActions {
                     screenManager.removeWPEImport(workshopID: $0.workshopID, matchingImportedAt: $0.importedAt)
                 },
                 isMutating: { UInt64($0).map { coordinator.isBusy($0) } ?? false },
-                deleteSharedRepositoryItem: { workshopID in
-                    guard let steamRoot = try? doctor.resolveWorkdirURL() else { return nil }
+                deleteSharedRepositoryItem: { origin in
+                    guard let steamRoot = try? doctor.resolveWorkdirURL(),
+                          let workshopID = InstalledLibraryModel.repositoryDeletionItemID(for: origin, steamRoot: steamRoot)
+                    else { return nil }
                     return try await WorkshopRepositoryCoordinator.shared.withExclusiveMutation(workshopID: workshopID) {
                         await SteamConnectorClient.deleteWorkshopItem(
                             workshopID: workshopID, libraryPath: steamRoot.path(percentEncoded: false)

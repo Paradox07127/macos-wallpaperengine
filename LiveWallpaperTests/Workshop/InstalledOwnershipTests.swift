@@ -344,8 +344,9 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("a refused mutation gate leaves the library record and bookmark intact")
     @MainActor
-    func deleteRefusedByMutationGateKeepsLocalRecords() async {
-        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+    func deleteRefusedByMutationGateKeepsLocalRecords() async throws {
+        let (root, target) = try deletionFixture(id: "100")
+        defer { try? FileManager.default.removeItem(at: root) }
         let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
         let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
         probe.repositoryThrows = true
@@ -369,8 +370,9 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("the repository delete runs before the history and bookmark removal")
     @MainActor
-    func deleteRemovesRepositoryItemBeforeLocalRecords() async {
-        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+    func deleteRemovesRepositoryItemBeforeLocalRecords() async throws {
+        let (root, target) = try deletionFixture(id: "100")
+        defer { try? FileManager.default.removeItem(at: root) }
         let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
         let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
         let gate = WorkshopInstalledUpdateGate()
@@ -397,8 +399,9 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("delete refuses outright while the same item is downloading")
     @MainActor
-    func deleteRefusesWhileItemIsMutating() async {
-        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+    func deleteRefusesWhileItemIsMutating() async throws {
+        let (root, target) = try deletionFixture(id: "100")
+        defer { try? FileManager.default.removeItem(at: root) }
         let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
         let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
         probe.isMutating = true
@@ -415,6 +418,78 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(store.entries == [target])
         #expect(probe.bookmarks == ["100"])
         model.onDisappear()
+    }
+
+    @Test("A local folder declaring a numeric Workshop ID never deletes a Steam repository item", .timeLimit(.minutes(1)))
+    @MainActor
+    func localNumericIDCannotDeleteRepository() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let bookmark = try root.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let target = entry(id: "100", location: .sourceFolder, sourceFolderBookmark: bookmark)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
+        let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
+        let model = InstalledLibraryModel(dependencies: store.dependencies)
+        #expect(!model.deletesFiles(target))
+        model.performDelete(target, services: probe.services)
+        await Self.waitUntil { store.entries.isEmpty }
+        #expect(probe.log == ["removeImport:100", "removeBookmark:100"])
+        #expect(FileManager.default.fileExists(atPath: root.path))
+    }
+
+    @Test("Repository deletion belongs to the bookmarked library, even when IDs match")
+    @MainActor
+    func deletionCannotCrossLibraryRoots() throws {
+        let (root, target) = try deletionFixture(id: "100")
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(InstalledLibraryModel.repositoryDeletionItemID(for: target.origin, steamRoot: root) == "100")
+        let other = root.appendingPathComponent("other-library")
+        #expect(InstalledLibraryModel.repositoryDeletionItemID(for: target.origin, steamRoot: other) == nil)
+        #expect(InstalledLibraryModel.repositoryDeletionItemID(for: target.origin, steamRoot: root.appendingPathComponent("../sibling").standardizedFileURL) == nil)
+    }
+
+    @Test("A mismatched manifest and Steam folder identity removes only local records", .timeLimit(.minutes(1)))
+    @MainActor
+    func mismatchedIdentityNeverDeletesSourceFiles() async throws {
+        let (root, target) = try deletionFixture(id: "100")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sentinel = SteamLibraryPaths.workshopContentRoot(steamRoot: root)
+            .appendingPathComponent("100/source.txt")
+        try Data("source stays".utf8).write(to: sentinel)
+        let origin = WPEOrigin(
+            workshopID: "200", title: "Reupload", originalType: .scene,
+            sourceFolderBookmark: target.origin.sourceFolderBookmark,
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        let entry = WPEHistoryEntry(origin: origin, importedAt: target.importedAt)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [entry])
+        let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["200"])
+        let model = InstalledLibraryModel(dependencies: store.dependencies)
+        #expect(!model.deletesFiles(entry))
+        #expect(InstalledLibraryModel.repositoryDeletionItemID(for: origin, steamRoot: root) == nil)
+        model.performDelete(entry, services: probe.services)
+        await Self.waitUntil { store.entries.isEmpty }
+        #expect(probe.log == ["removeImport:200", "removeBookmark:200"])
+        #expect(try Data(contentsOf: sentinel) == Data("source stays".utf8))
+    }
+
+    @Test("The live deletion closure validates the source library before opening the mutation gate")
+    func liveDeletionChecksSourceRoot() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/ModalActions.swift")
+        let start = try #require(source.range(of: "deleteSharedRepositoryItem: { origin in"))
+        let body = source[start.upperBound...]
+        let identity = try #require(body.range(of: "repositoryDeletionItemID(for: origin, steamRoot: steamRoot)"))
+        let gate = try #require(body.range(of: "withExclusiveMutation(workshopID: workshopID)"))
+        #expect(identity.lowerBound < gate.lowerBound)
+    }
+
+    private func deletionFixture(id: String) throws -> (URL, WPEHistoryEntry) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(id)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let bookmark = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        return (root, entry(id: id, sourceFolderBookmark: bookmark))
     }
 
     @MainActor
@@ -477,14 +552,15 @@ struct InstalledOwnershipCharacterizationTests {
         title: String = "Fixture",
         type: WPEType = .scene,
         location: WPEResourceLocation = .cache,
-        importedAt: TimeInterval = 10
+        importedAt: TimeInterval = 10,
+        sourceFolderBookmark: Data? = nil
     ) -> WPEHistoryEntry {
         WPEHistoryEntry(
             origin: WPEOrigin(
                 workshopID: id,
                 title: title,
                 originalType: type,
-                sourceFolderBookmark: Data("bookmark-\(id)".utf8),
+                sourceFolderBookmark: sourceFolderBookmark ?? Data("bookmark-\(id)".utf8),
                 cacheRelativePath: location == .cache ? "wpe-cache/\(id)" : nil,
                 previewFileName: "preview.jpg",
                 entryFile: "entry",
@@ -721,7 +797,8 @@ private final class WorkshopInstalledDeleteProbe {
                 return true
             },
             isMutating: { [self] _ in isMutating },
-            deleteSharedRepositoryItem: { [self] id in
+            deleteSharedRepositoryItem: { [self] origin in
+                let id = origin.steamFolderItemID ?? origin.workshopID
                 log.append("repository:\(id)")
                 if let gate {
                     _ = await gate.gate.suspend(gate.key)
