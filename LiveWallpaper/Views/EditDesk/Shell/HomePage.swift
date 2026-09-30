@@ -392,10 +392,10 @@ struct HomePage: View {
                 )
             }
         }
-        // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
-        .ignoresSafeArea()
         // Here, over both: a grid tile's drag is hit-tested against a strip `LibraryModalHost` draws.
         .coordinateSpace(name: EditDeskCoordinateSpace.name)
+        // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
+        .ignoresSafeArea()
         .onAppear {
             if modalActions == nil, let library {
                 modalActions = makeModalActions(library: library)

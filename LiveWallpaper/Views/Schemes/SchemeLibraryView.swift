@@ -15,17 +15,22 @@ struct SchemeLibraryView: View {
     private var sortOrder: SavedLibrarySortOrder = .recent
     /// Drives the host page's display strip; a tile's drop ends in `requestApply`.
     private let drag: LibraryDragController
+    /// The host page's detail modal: a tile's click opens it, and its apply buttons end in `requestApply`.
+    private let details: SchemeDetailPresenter
     /// The Edit Desk's apply path, which records the change for undo; nil applies the scheme straight away.
     private let apply: ((ScreenScheme, Screen) -> Void)?
 
-    init(drag: LibraryDragController, apply: ((ScreenScheme, Screen) -> Void)? = nil) {
+    init(drag: LibraryDragController, details: SchemeDetailPresenter, apply: ((ScreenScheme, Screen) -> Void)? = nil) {
         self.drag = drag
+        self.details = details
         self.apply = apply
     }
 
     var body: some View {
         DetailPageScaffold { content }
             .confirmDestructive($pendingDestructive)
+            .onAppear { details.requestApply = { requestApply($0, to: $1) } }
+            .onChange(of: filteredSchemes, initial: true) { details.run = $1 }
     }
 
     // MARK: - Content
@@ -99,6 +104,7 @@ struct SchemeLibraryView: View {
                             isRenaming: renamingID == scheme.id,
                             renameDraft: $renameDraft,
                             onApply: { screen in requestApply(scheme, to: screen) },
+                            onOpen: { details.presentedID = scheme.id },
                             onStartRename: {
                                 renamingID = scheme.id
                                 renameDraft = scheme.name
@@ -203,7 +209,9 @@ private struct SchemeTile: View {
     let drag: LibraryDragController
     let isRenaming: Bool
     @Binding var renameDraft: String
+    /// Only the drag applies from the tile; a click opens the details.
     let onApply: (Screen) -> Void
+    let onOpen: () -> Void
     let onStartRename: () -> Void
     let onCommitRename: () -> Void
     let onCancelRename: () -> Void
@@ -213,7 +221,6 @@ private struct SchemeTile: View {
     @State private var isHovering = false
     @State private var thumbnail: NSImage?
     @State private var location = LibraryContentLocation.unknown
-    @State private var showingTargets = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -222,14 +229,7 @@ private struct SchemeTile: View {
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
             .libraryDragSource(drag, enabled: location.isAvailable && !isRenaming) { dragPayload }
-            .appLanguagePopover(isPresented: $showingTargets, arrowEdge: .bottom) {
-                LibraryApplyTargetList(
-                    screens: screens,
-                    onApply: onApply,
-                    dismiss: { showingTargets = false }
-                )
-            }
-            .help(applyHelp)
+            .help(openHelp)
             .contextMenu { contextMenu }
             // Keyed on cover and capture time: the cover is written after capture, and replace-in-place keeps the id — without `updatedAt` an overwrite with no cover would keep the previous artwork.
             .tileTask(id: TileContentKey(
@@ -241,20 +241,25 @@ private struct SchemeTile: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(Text("Show details"))
+            .accessibilityAction(.default, openDetails)
             .accessibilityActions {
-                // Same gate as the tap.
-                if location.isAvailable, screens.count == 1, let only = screens.first {
-                    Button("Apply") { onApply(only) }
-                }
                 Button("Rename", action: onStartRename)
             }
             .accessibilityAction(.delete, onDelete)
     }
 
-    private var applyHelp: Text {
+    private var openHelp: Text {
         location.isAvailable
-            ? Text("Apply")
+            ? Text("Show details")
             : Text("This wallpaper's file is missing")
+    }
+
+    /// A tile being renamed keeps its clicks for the name field.
+    private func openDetails() {
+        guard !isRenaming else { return }
+        onOpen()
     }
 
     /// A scheme overwrites one whole display, so its drag offers no All Displays drop.
@@ -269,15 +274,6 @@ private struct SchemeTile: View {
             },
             applyToAllDisplays: nil
         )
-    }
-
-    private func applyFromCard() {
-        guard !isRenaming, location.isAvailable else { return }
-        if screens.count == 1, let only = screens.first {
-            onApply(only)
-        } else if screens.count > 1 {
-            showingTargets = true
-        }
     }
 
     private var accessibilityLabel: Text {
@@ -302,7 +298,7 @@ private struct SchemeTile: View {
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
             .contentShape(Rectangle())
-            .onTapGesture { applyFromCard() }
+            .onTapGesture(perform: openDetails)
             .overlay {
                 if !location.isAvailable {
                     LibraryTileUnavailableVeil()
@@ -461,61 +457,68 @@ private struct SchemeTile: View {
     @MainActor
     private func loadTileContent() async {
         thumbnail = nil
-        let resolvedLocation = await LibraryContentLocator.locate(
+        let resolvedLocation = await SchemeArtwork.location(for: scheme)
+        guard !Task.isCancelled else { return }
+        location = resolvedLocation
+        let image = await SchemeArtwork.image(for: scheme)
+        guard !Task.isCancelled else { return }
+        thumbnail = image
+    }
+}
+
+// MARK: - Artwork
+
+/// A scheme's still and whether its content is still there; the tile and the detail modal show the same.
+@MainActor
+enum SchemeArtwork {
+    static func location(for scheme: ScreenScheme) async -> LibraryContentLocation {
+        await LibraryContentLocator.locate(
             content: scheme.configuration.activeWallpaper,
             wpeOrigin: scheme.configuration.wpeOrigin
         )
-        guard !Task.isCancelled else { return }
-        location = resolvedLocation
+    }
+
+    static func image(for scheme: ScreenScheme) async -> NSImage? {
         // A scheme's cover also carries its overlay layers, which no recomputed
         // thumbnail can show — so it wins outright when one exists.
         if let coverFileName = scheme.coverFileName,
-           let cover = await WallpaperCoverStore.shared.cover(named: coverFileName),
-           !Task.isCancelled {
-            thumbnail = cover
-            return
+           let cover = await WallpaperCoverStore.shared.cover(named: coverFileName) {
+            return cover
         }
-        guard !Task.isCancelled else { return }
-        await loadThumbnail()
+        guard !Task.isCancelled else { return nil }
+        return await thumbnail(for: scheme)
     }
 
-    @MainActor
-    private func loadThumbnail() async {
-        thumbnail = nil
-
+    private static func thumbnail(for scheme: ScreenScheme) async -> NSImage? {
+        let cacheKey = cacheKey(for: scheme)
         if let cached = WallpaperThumbnailService.shared.cachedThumbnail(forKey: cacheKey) {
-            thumbnail = cached
-            return
+            return cached
         }
 
         switch scheme.configuration.activeWallpaper {
         case let .video(bookmarkData, packageEntryName):
             // A packaged video resolves to a scene.pkg, which has no plain
             // poster frame; skip rather than mis-decode the package.
-            guard packageEntryName == nil else { return }
-            guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmarkData) else { return }
-            guard !Task.isCancelled else { return }
-            if let image = await WallpaperThumbnailService.shared.videoPosterImage(
+            guard packageEntryName == nil else { return nil }
+            guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmarkData) else { return nil }
+            guard !Task.isCancelled else { return nil }
+            return await WallpaperThumbnailService.shared.videoPosterImage(
                 for: resolved.url,
                 cacheKey: cacheKey
-            ), !Task.isCancelled {
-                thumbnail = image
-            }
+            )
         case let .html(source, config):
-            if let image = await HTMLPreviewKey.fetchSnapshot(
+            return await HTMLPreviewKey.fetchSnapshot(
                 for: source,
                 config: config,
                 cacheKey: cacheKey
-            ), !Task.isCancelled {
-                thumbnail = image
-            }
+            )
         case .scene:
-            return
+            return nil
         }
     }
 
     /// Includes the content type and the capture time: the id survives replace-in-place, so keying on it alone would serve the overwritten video's poster.
-    private var cacheKey: String {
+    private static func cacheKey(for scheme: ScreenScheme) -> String {
         let typeTag = switch scheme.configuration.activeWallpaper {
         case .video: "video"
         case let .html(source, config):

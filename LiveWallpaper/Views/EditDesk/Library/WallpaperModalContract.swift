@@ -58,8 +58,8 @@ struct WallpaperModalContent: Equatable {
 struct WallpaperFact: Equatable, Identifiable {
     /// Declaration order is the order the rows are drawn in, whichever source supplied them.
     enum Kind: Int, CaseIterable, Comparable {
-        case type, author, rating, size, resolution, duration, ageRating, stats, posted, updated, source, imported, lastUsed
-        case location, webAddress
+        case type, author, rating, size, resolution, duration, ageRating, stats, posted, capturedFrom, saved, updated, source, imported
+        case lastUsed, location, webAddress
 
         static func < (lhs: Self, rhs: Self) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -76,6 +76,8 @@ struct WallpaperFact: Equatable, Identifiable {
             case .ageRating: String(localized: "Age Rating", bundle: .appLanguage, comment: "Workshop tag group: Everyone / Questionable / Mature.")
             case .stats: String(localized: "Stats", bundle: .appLanguage, comment: "Wallpaper detail row: Workshop subscribers, favorites and views.")
             case .posted: String(localized: "Posted", bundle: .appLanguage, comment: "Wallpaper detail row: the date the Workshop item was first published.")
+            case .capturedFrom: String(localized: "Captured From", bundle: .appLanguage, comment: "Scheme detail row: the display the scheme was saved from.")
+            case .saved: String(localized: "Saved", bundle: .appLanguage, comment: "Scheme detail row: the date the scheme was first saved.")
             case .updated: String(localized: "Updated", bundle: .appLanguage, comment: "Wallpaper detail row: the date the Workshop item last changed.")
             case .source: String(localized: "Source", bundle: .appLanguage)
             case .imported: String(localized: "Imported", bundle: .appLanguage)

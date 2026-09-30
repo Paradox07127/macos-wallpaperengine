@@ -12,13 +12,15 @@ struct SchemesPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var applies = HomePage.ApplyQueue()
     @State private var drag = LibraryDragController()
+    @State private var details = SchemeDetailPresenter()
     /// The window's own content size, which the top bar's budget is measured against.
     @State private var stageSize: CGSize = .zero
 
     var body: some View {
         ZStack(alignment: .top) {
-            SchemeLibraryView(drag: drag, apply: { apply($0, to: $1) })
+            SchemeLibraryView(drag: drag, details: details, apply: { apply($0, to: $1) })
                 .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
+                .allowsHitTesting(details.presented == nil)
             TopBar(
                 page: Binding(get: { router.page }, set: { router.select($0) }),
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport),
@@ -27,27 +29,53 @@ struct SchemesPage: View {
             )
             .allowsHitTesting(!interactionLock)
             ZStack(alignment: .top) {
+                if let scheme = details.presented {
+                    detailModal(scheme)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: details.presented != nil)
+            ZStack(alignment: .top) {
                 LibraryDragOverlay(drag: drag, targets: dragTargets, windowWidth: stageSize.width)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
         .ignoresSafeArea()
-        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { stageSize = $0 }
         .onChange(of: reduceMotion, initial: true) { drag.reduceMotion = reduceMotion }
     }
 
-    /// The top bar ignores clicks while a scheme drag runs.
+    /// The top bar ignores clicks while a scheme drag runs or the detail modal is open.
     private var interactionLock: Bool {
-        drag.payload != nil
+        drag.payload != nil || details.presented != nil
+    }
+
+    private var displayTargets: [ModalDisplayTarget] {
+        ModalActions.targets(
+            displays: screenManager.screens.map { ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame) },
+            activeOn: [], covers: [:]
+        )
     }
 
     private var dragTargets: [ModalDisplayTarget] {
-        guard drag.payload != nil else { return [] }
-        return ModalActions.targets(
-            displays: screenManager.screens.map { ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame) },
-            activeOn: [], covers: [:]
+        drag.payload == nil ? [] : displayTargets
+    }
+
+    private func detailModal(_ scheme: ScreenScheme) -> SchemeDetailModal {
+        SchemeDetailModal(
+            scheme: scheme,
+            targets: displayTargets,
+            windowSize: stageSize,
+            onPrevious: details.neighbour(-1),
+            onNext: details.neighbour(1),
+            applyTo: { id in
+                if let screen = screenManager.screens.first(where: { $0.id == id }) {
+                    details.requestApply(scheme, screen)
+                }
+            },
+            onDismiss: { details.presentedID = nil }
         )
     }
 
