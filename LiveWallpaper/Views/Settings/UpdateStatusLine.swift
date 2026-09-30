@@ -16,7 +16,7 @@ struct UpdateStatusLine: View {
             }
             trailingAction
         }
-        .font(.caption)
+        .font(DesignTokens.Typography.caption)
         .foregroundStyle(.secondary)
     }
 

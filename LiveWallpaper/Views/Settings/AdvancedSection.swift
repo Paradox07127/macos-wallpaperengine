@@ -8,7 +8,7 @@ extension GeneralSettingsView {
         Section {
             SettingRow(
                 icon: "doc.on.doc",
-                iconColor: .blue,
+                iconColor: DesignTokens.Colors.accent,
                 title: "Copy Diagnostic Summary",
                 info: "Copy a sanitized system and runtime summary."
             ) {
@@ -17,7 +17,7 @@ extension GeneralSettingsView {
 
             SettingRow(
                 icon: "square.and.arrow.up",
-                iconColor: .blue,
+                iconColor: DesignTokens.Colors.accent,
                 title: "Export Diagnostics",
                 info: "Save a sanitized diagnostic report as a text file."
             ) {
@@ -28,7 +28,7 @@ extension GeneralSettingsView {
 
             SettingRow(
                 icon: "ladybug",
-                iconColor: .red,
+                iconColor: DesignTokens.Colors.Status.danger,
                 title: "Report a Bug"
             ) {
                 Button("Open") { presentBugReport() }
@@ -48,7 +48,7 @@ extension GeneralSettingsView {
 
             SettingRow(
                 icon: "arrow.counterclockwise",
-                iconColor: .red,
+                iconColor: DesignTokens.Colors.Status.danger,
                 title: "Reset All Settings",
                 subtitle: "Restore global preferences, per-display setup, bookmarks, and schemes to their defaults."
             ) {
@@ -58,6 +58,7 @@ extension GeneralSettingsView {
             }
         } header: {
             Text("Advanced", comment: "Section header for diagnostics and developer settings.")
+                .font(DesignTokens.Typography.sectionTitle)
         }
     }
 

@@ -47,7 +47,7 @@ struct WorkshopEngineAssetsSection: View {
 
             if let status = engineAssetsStatusLine {
                 Text(verbatim: status.message)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(status.tint)
                     .fixedSize(horizontal: false, vertical: true)
             }

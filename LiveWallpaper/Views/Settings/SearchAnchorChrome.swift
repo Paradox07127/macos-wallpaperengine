@@ -27,7 +27,7 @@ extension View {
 
     func settingsSearchAnchorTarget(
         _ anchor: SettingsSearchAnchor,
-        cornerRadius: CGFloat = 8
+        cornerRadius: CGFloat = DesignTokens.Corner.sm
     ) -> some View {
         modifier(SettingsSearchAnchorTargetModifier(anchor: anchor, cornerRadius: cornerRadius))
     }
@@ -46,11 +46,12 @@ struct SettingsSearchSectionHeader: View {
 
     var body: some View {
         Text(LocalizedStringKey(titleKey))
+            .font(DesignTokens.Typography.sectionTitle)
             .id(anchor)
             .background {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                        .fill(DesignTokens.Colors.accent.opacity(0.14))
+                        .fill(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.selectedFill))
                         .padding(.horizontal, -6)
                         .padding(.vertical, -3)
                 }
@@ -58,7 +59,7 @@ struct SettingsSearchSectionHeader: View {
             .overlay {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                        .stroke(DesignTokens.Colors.accent.opacity(0.28), lineWidth: 0.5)
+                        .stroke(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.quietStroke), lineWidth: 0.5)
                         .padding(.horizontal, -6)
                         .padding(.vertical, -3)
                 }
@@ -178,13 +179,13 @@ private struct SettingsSearchAnchorTargetModifier: ViewModifier {
             .background {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(DesignTokens.Colors.accent.opacity(0.08))
+                        .fill(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.dragFill))
                 }
             }
             .overlay {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(DesignTokens.Colors.accent.opacity(0.32), lineWidth: 1)
+                        .stroke(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.quietStroke), lineWidth: 1)
                 }
             }
             .animation(.easeInOut(duration: 0.16), value: isHighlighted)

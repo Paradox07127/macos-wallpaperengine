@@ -70,16 +70,16 @@ struct ManualLocationPicker: View {
                     }
                 }
                 .background(Color(NSColor.textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
                 )
             }
 
             if let error = resolutionError {
                 Text(verbatim: error)
-                    .font(.caption)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(DesignTokens.Colors.Status.danger)
             }
         }

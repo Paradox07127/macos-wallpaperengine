@@ -8,7 +8,7 @@ extension GeneralSettingsView {
         Section {
             SettingRow(
                 icon: "square.and.arrow.up",
-                iconColor: .blue,
+                iconColor: DesignTokens.Colors.accent,
                 title: "Export Configuration",
                 subtitle: "Saves settings and bookmarks, without wallpaper files."
             ) {
@@ -19,7 +19,7 @@ extension GeneralSettingsView {
 
             SettingRow(
                 icon: "square.and.arrow.down",
-                iconColor: .blue,
+                iconColor: DesignTokens.Colors.accent,
                 title: "Import Configuration",
                 subtitle: "Replaces current settings and merges bookmarks.",
                 info: "Existing bookmarks with the same source are kept."
@@ -30,6 +30,7 @@ extension GeneralSettingsView {
             }
         } header: {
             Text("Backup & Restore")
+                .font(DesignTokens.Typography.sectionTitle)
         }
     }
 

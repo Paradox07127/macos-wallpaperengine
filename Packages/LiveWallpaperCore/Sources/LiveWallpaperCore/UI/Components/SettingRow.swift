@@ -117,25 +117,25 @@ public struct SettingRow<Content: View>: View {
     }
 
     public var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
             ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                     .fill(iconColor.opacity(0.15))
                     .frame(width: 24, height: 24)
                 Image(systemName: icon)
-                    .font(.subheadline.weight(.medium))
+                    .font(DesignTokens.Typography.subheadline.weight(.medium))
                     .foregroundStyle(iconColor)
             }
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
+                HStack(spacing: DesignTokens.Spacing.xs) {
                     title
-                        .font(.body.weight(.medium))
+                        .font(DesignTokens.Typography.body.weight(.medium))
                         .fixedSize(horizontal: false, vertical: true)
                     if let titleBadge {
                         Image(systemName: titleBadge.systemImage)
-                            .font(.caption)
+                            .font(DesignTokens.Typography.caption)
                             .foregroundStyle(titleBadge.tint)
                             .accessibilityLabel(titleBadge.accessibilityLabel)
                     }
@@ -146,13 +146,13 @@ public struct SettingRow<Content: View>: View {
                 if let subtitle = subtitle {
                     if subtitleIsValue {
                         subtitle
-                            .font(.subheadline)
+                            .font(DesignTokens.Typography.subheadline)
                             .foregroundStyle(.secondary)
                             .marqueeOnHover()
                             .help(Text(verbatim: subtitleHelp ?? ""))
                     } else {
                         subtitle
-                            .font(.subheadline)
+                            .font(DesignTokens.Typography.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -184,7 +184,7 @@ public struct InfoTooltipButton: View {
             isPresentingPopover.toggle()
         } label: {
             Image(systemName: "info.circle")
-                .font(.caption)
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.tertiary)
         }
         .buttonStyle(.borderless)
@@ -194,11 +194,11 @@ public struct InfoTooltipButton: View {
         .popover(isPresented: $isPresentingPopover, arrowEdge: .top) {
             AppLanguageScope(defaults: .standard) {
                 Text(verbatim: localizedText)
-                    .font(.callout)
+                    .font(DesignTokens.Typography.callout)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: 280, alignment: .leading)
-                    .padding(12)
+                    .padding(DesignTokens.Spacing.md)
             }
         }
     }

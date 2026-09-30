@@ -128,12 +128,12 @@ private struct SettingsSidebarSearchField: View {
         .padding(.vertical, DesignTokens.Spacing.sm)
         .frame(maxWidth: .infinity, minHeight: SettingsSidebarMetrics.searchMinHeight)
         .background {
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+            Capsule()
                 .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 1)
+            Capsule()
+                .stroke(DesignTokens.Colors.separator.opacity(DesignTokens.Opacity.strongStroke), lineWidth: 1)
         }
     }
 
@@ -209,9 +209,9 @@ private struct SettingsSidebarRow: View {
 }
 
 private enum SettingsSidebarMetrics {
-    static let searchContentSpacing: CGFloat = 7
+    static let searchContentSpacing = DesignTokens.Spacing.sm
     static let searchMinHeight: CGFloat = 30
-    static let rowContentSpacing: CGFloat = 7
+    static let rowContentSpacing = DesignTokens.Spacing.sm
     static let rowIconWidth: CGFloat = 18
 }
 
@@ -220,8 +220,7 @@ struct SidebarSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.caption)
-            .bold()
+            .font(DesignTokens.Typography.captionEmphasized)
             .foregroundStyle(.secondary)
             .padding(.top, DesignTokens.Sidebar.sectionHeaderTopPadding)
             .padding(.bottom, DesignTokens.Sidebar.sectionHeaderBottomPadding)

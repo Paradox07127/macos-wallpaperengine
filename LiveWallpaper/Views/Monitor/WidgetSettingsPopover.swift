@@ -54,7 +54,7 @@ struct WidgetSettingsPopover: View {
                         .fill(.quaternary.opacity(0.6))
                 )
             Text(verbatim: WidgetFactory.displayName(placement.kind))
-                .font(.headline)
+                .font(DesignTokens.Typography.sectionTitle)
             Spacer(minLength: 0)
         }
     }
@@ -439,12 +439,12 @@ struct WidgetSettingsPopover: View {
         } else {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: DesignTokens.Spacing.sm) {
-                    Text(title).font(.subheadline)
+                    Text(title).font(DesignTokens.Typography.subheadline)
                     Spacer(minLength: DesignTokens.Spacing.sm)
                     control.fixedSize()
                 }
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                    Text(title).font(.subheadline)
+                    Text(title).font(DesignTokens.Typography.subheadline)
                     control.frame(maxWidth: .infinity)
                 }
             }
@@ -472,7 +472,7 @@ struct WidgetSettingsPopover: View {
             }
         } else {
             HStack(spacing: DesignTokens.Spacing.sm) {
-                Text(title).font(.subheadline)
+                Text(title).font(DesignTokens.Typography.subheadline)
                 Spacer(minLength: 8)
                 Toggle("", isOn: isOn)
                     .labelsHidden()

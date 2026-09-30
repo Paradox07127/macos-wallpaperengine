@@ -82,7 +82,7 @@ struct MusicOverlaySection: View {
                 // idle while music is paused.
                 if !SettingsManager.shared.loadGlobalSettings().audioResponseEnabled {
                     Text("Audio-reactive visuals need Audio Response turned on in Settings.")
-                        .font(.caption)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -659,7 +659,7 @@ private struct MusicPlaybackPermissionCaption: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { _ in
             caption
-                .font(.caption)
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

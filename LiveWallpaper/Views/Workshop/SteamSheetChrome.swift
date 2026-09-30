@@ -11,6 +11,7 @@ struct SteamSheetHeader: View {
     var iconTint: Color = DesignTokens.Colors.Status.active
     var subtitle: LocalizedStringKey?
     var info: String.LocalizationValue?
+    var titleFont: Font = DesignTokens.Typography.sheetTitle
 
     var body: some View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
@@ -24,7 +25,7 @@ struct SteamSheetHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
                     Text(title)
-                        .font(.headline)
+                        .font(titleFont)
                         .accessibilityAddTraits(.isHeader)
                     if let info {
                         InfoTooltipButton(text: info)

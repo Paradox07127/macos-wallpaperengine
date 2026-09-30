@@ -43,9 +43,9 @@ struct SteamWizard: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                 HStack(alignment: .top) {
                     Text("Download Workshop wallpapers with your own Steam account")
-                    .font(DesignTokens.EditDesk.Typography.wizardTitle)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                        .font(DesignTokens.Typography.modalTitle)
+                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     GlassIconButton("xmark", action: onDismiss)
                         .help(Text("Close"))

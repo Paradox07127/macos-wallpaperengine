@@ -13,7 +13,7 @@ extension WPECacheManagementView {
                         Text(byteFormatter.string(fromByteCount: Int64(testArtifacts.totalBytes)))
                             .font(DesignTokens.Typography.pageTitle)
                         Text("\(testArtifacts.itemCount) temporary items left in the container by test runs.")
-                            .font(.caption)
+                            .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -32,10 +32,11 @@ extension WPECacheManagementView {
                 }
             } header: {
                 Text("Test Artifacts (Debug)")
+                    .font(DesignTokens.Typography.sectionTitle)
             } footer: {
                 if let last = lastTestArtifactFreedBytes, last > 0 {
                     Text("Freed \(Int64(last), format: .byteCount(style: .file)).", comment: "Test-artifact cleanup footer after freeing space. Placeholder is the freed byte total.")
-                        .font(.caption)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }

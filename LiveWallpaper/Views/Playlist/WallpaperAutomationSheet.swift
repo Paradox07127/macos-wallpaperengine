@@ -190,8 +190,8 @@ struct WallpaperAutomationSheet: View {
                 Image(systemName: mode == .playlist ? "list.bullet" : "clock")
                     .font(.title2).foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Playlist & Schedule").font(.headline)
-                    Text(verbatim: screen.name).font(.caption).foregroundStyle(.secondary)
+                    Text("Playlist & Schedule").font(DesignTokens.Typography.sheetTitle)
+                    Text(verbatim: screen.name).font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Picker("Playback Mode", selection: $mode) {
@@ -212,7 +212,7 @@ struct WallpaperAutomationSheet: View {
             .animation(.easeInOut(duration: reduceMotion ? 0 : 0.18), value: mode)
             HStack {
                 if let error {
-                    Text(verbatim: error).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    Text(verbatim: error).font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.danger).lineLimit(2)
                 }
                 Spacer()
                 Button("Cancel") {
@@ -255,7 +255,7 @@ struct WallpaperAutomationSheet: View {
         VStack(spacing: 16) {
             HStack {
                 Label("Plays in order, then repeats", systemImage: "repeat")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Toggle("Shuffle", isOn: $shuffle).toggleStyle(.switch).controlSize(.small)
                 Picker("Rotate", selection: $rotation) {
@@ -308,7 +308,7 @@ struct WallpaperAutomationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Label("Repeats every day", systemImage: "arrow.clockwise")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 addButton("Add schedule slot") { presetsPresented = true }
                     .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
@@ -324,7 +324,7 @@ struct WallpaperAutomationSheet: View {
                         Label("Time slots \(rangeText(for: first)) and \(rangeText(for: second)) overlap.", systemImage: "exclamationmark.triangle")
                     }
                 }
-                .font(.caption).foregroundStyle(.orange)
+                .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
             } else if let id = slotWithoutWallpaper {
                 Label(
                     String(
@@ -333,7 +333,7 @@ struct WallpaperAutomationSheet: View {
                     ),
                     systemImage: "exclamationmark.triangle"
                 )
-                .font(.caption).foregroundStyle(.orange)
+                .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
             }
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -483,7 +483,7 @@ struct WallpaperAutomationSheet: View {
 
     private func entryLabel(_ entry: WallpaperQueueEntry) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: entry.symbol).font(.title3)
+            Image(systemName: entry.symbol).font(DesignTokens.Typography.sectionTitle)
                 .frame(width: 42, height: 36)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
             Text(verbatim: entry.displayTitle).lineLimit(2).multilineTextAlignment(.leading)
@@ -656,7 +656,7 @@ private struct QueueEntryLabel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: entry.displayTitle).lineLimit(2).multilineTextAlignment(.leading)
                 if !subtitle.isEmpty {
-                    Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(verbatim: subtitle).font(DesignTokens.Typography.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -672,7 +672,7 @@ private struct QueueEntryLabel: View {
         if let image {
             Image(decorative: image, scale: 1).resizable().scaledToFill()
         } else {
-            Image(systemName: entry.symbol).font(.title3)
+            Image(systemName: entry.symbol).font(DesignTokens.Typography.sectionTitle)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.quaternary)
         }

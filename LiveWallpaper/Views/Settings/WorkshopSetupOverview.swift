@@ -22,31 +22,25 @@ struct WorkshopSetupOverview: View {
     let onSelect: (SettingsSearchAnchor) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-                Text("Workshop setup")
-                    .font(DesignTokens.Typography.bodyEmphasized)
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
+                    Text("Workshop setup")
+                        .font(DesignTokens.Typography.sectionTitle)
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
 
-                Text(verbatim: summary)
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
+                    Text(verbatim: summary)
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                track
+                legend
             }
-
-            track
-            legend
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DesignTokens.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
-        )
+        .groupBoxStyle(ContainerGroupBoxStyle())
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
         .accessibilityElement(children: .contain)
     }

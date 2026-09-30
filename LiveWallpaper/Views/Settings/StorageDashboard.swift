@@ -16,69 +16,63 @@ struct StorageOverviewPanel: View {
     let segments: [StorageOverviewSegment]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("Storage Footprint", systemImage: "chart.bar.xaxis")
-                    .font(DesignTokens.Typography.bodyEmphasized)
-                    .foregroundStyle(.primary)
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Storage Footprint", systemImage: "chart.bar.xaxis")
+                        .font(DesignTokens.Typography.sectionTitle)
+                        .foregroundStyle(.primary)
 
-                Spacer(minLength: DesignTokens.Spacing.md)
+                    Spacer(minLength: DesignTokens.Spacing.md)
 
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel(Text("Calculating storage footprint…"))
-                } else {
-                    Text(verbatim: totalText)
-                        .font(DesignTokens.Typography.pageTitle)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(Text("Calculating storage footprint…"))
+                    } else {
+                        Text(verbatim: totalText)
+                            .font(DesignTokens.Typography.pageTitle)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
                 }
-            }
 
-            StorageSegmentedBar(segments: segments)
+                StorageSegmentedBar(segments: segments)
 
-            if segments.isEmpty {
-                Text("No downloaded content or cache files yet.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 118), spacing: DesignTokens.Spacing.md)],
-                    alignment: .leading,
-                    spacing: DesignTokens.Spacing.xs
-                ) {
-                    ForEach(segments) { segment in
-                        HStack(spacing: DesignTokens.Spacing.xs) {
-                            Circle()
-                                .fill(segment.color)
-                                .frame(width: 7, height: 7)
-                                .accessibilityHidden(true)
+                if segments.isEmpty {
+                    Text("No downloaded content or cache files yet.")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 118), spacing: DesignTokens.Spacing.md)],
+                        alignment: .leading,
+                        spacing: DesignTokens.Spacing.xs
+                    ) {
+                        ForEach(segments) { segment in
+                            HStack(spacing: DesignTokens.Spacing.xs) {
+                                Circle()
+                                    .fill(segment.color)
+                                    .frame(width: 7, height: 7)
+                                    .accessibilityHidden(true)
 
-                            Text(segment.title)
-                                .font(DesignTokens.Typography.caption)
-                                .foregroundStyle(.secondary)
+                                Text(segment.title)
+                                    .font(DesignTokens.Typography.caption)
+                                    .foregroundStyle(.secondary)
 
-                            Text(verbatim: segment.valueText)
-                                .font(DesignTokens.Typography.metric)
-                                .foregroundStyle(.primary)
+                                Text(verbatim: segment.valueText)
+                                    .font(DesignTokens.Typography.metric)
+                                    .foregroundStyle(.primary)
+                            }
+                            .fixedSize()
                         }
-                        .fixedSize()
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DesignTokens.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
-        )
+        .groupBoxStyle(ContainerGroupBoxStyle())
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }
 }
@@ -142,53 +136,47 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                        .fill(accent.opacity(0.16))
-                        .frame(width: 30, height: 30)
-                    Image(systemName: systemImage)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(accent)
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                            .fill(accent.opacity(0.16))
+                            .frame(width: 30, height: 30)
+                        Image(systemName: systemImage)
+                            .font(DesignTokens.Typography.bodyEmphasized)
+                            .foregroundStyle(accent)
+                    }
+                    .accessibilityHidden(true)
+
+                    Spacer(minLength: DesignTokens.Spacing.sm)
+
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        actions()
+                    }
                 }
-                .accessibilityHidden(true)
 
-                Spacer(minLength: DesignTokens.Spacing.sm)
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                    value()
+                        .frame(minHeight: 30, alignment: .leading)
 
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    actions()
-                }
-            }
-
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                value()
-                    .frame(minHeight: 30, alignment: .leading)
-
-                Text(title)
-                    .font(DesignTokens.Typography.bodyEmphasized)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let subtitle {
-                    subtitle
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
+                    Text(title)
+                        .font(DesignTokens.Typography.bodyEmphasized)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let subtitle {
+                        subtitle
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .padding(DesignTokens.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
-        )
+        .groupBoxStyle(ContainerGroupBoxStyle())
         .settingsSearchRow(title)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }

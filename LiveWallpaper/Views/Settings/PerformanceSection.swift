@@ -144,7 +144,7 @@ extension GeneralSettingsView {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                         Text("Off")
-                            .font(.caption2)
+                            .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
 
                         CoalescedSlider(
@@ -161,7 +161,7 @@ extension GeneralSettingsView {
                             },
                             readout: { _ in
                                 Text("1 GB")
-                                    .font(.caption2)
+                                    .font(DesignTokens.Typography.caption)
                                     .foregroundStyle(.secondary)
                             }
                         )
@@ -169,7 +169,7 @@ extension GeneralSettingsView {
                     .frame(width: DesignTokens.Settings.sliderWidth)
 
                     Text(videoCacheValueLabel)
-                        .font(.caption2.monospacedDigit())
+                        .font(DesignTokens.Typography.metric)
                         .foregroundStyle(.secondary)
                 }
             }

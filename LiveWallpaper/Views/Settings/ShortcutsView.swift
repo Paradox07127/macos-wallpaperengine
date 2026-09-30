@@ -32,7 +32,7 @@ struct ShortcutsView: View {
                 }
                 if let rejectionMessage {
                     Text(verbatim: rejectionMessage)
-                        .font(.caption)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(DesignTokens.Colors.Status.danger)
                         .accessibilityLabel(Text("Shortcut rejected: \(rejectionMessage)"))
                 }

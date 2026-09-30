@@ -83,7 +83,7 @@ struct MenuBarContent: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text(verbatim: BundleIdentity.productDisplayName)
-                    .font(.title2.weight(.semibold))
+                    .font(DesignTokens.Typography.pageTitle)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -120,7 +120,7 @@ struct MenuBarContent: View {
                 dismiss()
             } label: {
                 Label("Update", systemImage: "arrow.down.circle.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(DesignTokens.Typography.captionEmphasized)
             }
             .adaptiveGlassButton(.regular, size: .small)
             .fixedSize()

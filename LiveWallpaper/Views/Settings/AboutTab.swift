@@ -49,7 +49,7 @@ extension GeneralSettingsView {
 
                 HStack(spacing: 6) {
                     Text(verbatim: versionString)
-                        .font(.callout)
+                        .font(DesignTokens.Typography.callout)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .textSelection(.enabled)
@@ -114,11 +114,11 @@ extension GeneralSettingsView {
     private var aboutFooter: some View {
         VStack(spacing: 4) {
             Text("Made by Paradox07127")
-                .font(.caption)
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
 
             Text(verbatim: "© 2026 Loomscreen contributors · MIT License")
-                .font(.caption2)
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.tertiary)
         }
         .multilineTextAlignment(.center)
@@ -145,7 +145,7 @@ private struct CopyVersionButton: View {
             AccessibilityNotification.Announcement(String(localized: "Copied", bundle: .appLanguage)).post()
         } label: {
             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                .font(.caption)
+                .font(DesignTokens.Typography.caption)
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
@@ -184,28 +184,22 @@ private struct AboutActionTile: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            VStack(spacing: layout.tileSpacing) {
-                Image(systemName: action.systemImage)
-                    .font(.system(size: layout.tileIcon, weight: .regular))
-                    .foregroundStyle(action.accent)
-                    .frame(height: layout.tileIcon + 4)
+            GroupBox {
+                VStack(spacing: layout.tileSpacing) {
+                    Image(systemName: action.systemImage)
+                        .font(.system(size: layout.tileIcon, weight: .regular))
+                        .foregroundStyle(action.accent)
+                        .frame(height: layout.tileIcon + 4)
 
-                Text(action.title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .marqueeOnHover(truncationMode: .tail)
+                    Text(action.title)
+                        .font(DesignTokens.Typography.bodyEmphasized)
+                        .foregroundStyle(.primary)
+                        .marqueeOnHover(truncationMode: .tail)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, max(0, layout.tilePadding - DesignTokens.GroupBox.inset))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, layout.tilePadding)
-            .padding(.horizontal, 10)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
-            )
+            .groupBoxStyle(ContainerGroupBoxStyle())
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -252,7 +246,7 @@ struct AboutLayout {
         heroHalo: 100,
         heroIcon: 64,
         heroSpacing: 10,
-        titleFont: .title,
+        titleFont: DesignTokens.Typography.modalTitle,
         tileColumns: 2,
         gridWidth: 360,
         tileIcon: 20,
@@ -267,7 +261,7 @@ struct AboutLayout {
         heroHalo: 84,
         heroIcon: 54,
         heroSpacing: 8,
-        titleFont: .title2,
+        titleFont: DesignTokens.Typography.pageTitle,
         tileColumns: 2,
         gridWidth: 360,
         tileIcon: 18,
@@ -282,7 +276,7 @@ struct AboutLayout {
         heroHalo: 64,
         heroIcon: 40,
         heroSpacing: 6,
-        titleFont: .title3,
+        titleFont: DesignTokens.Typography.sectionTitle,
         tileColumns: 4,
         gridWidth: 560,
         tileIcon: 16,

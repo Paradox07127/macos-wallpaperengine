@@ -67,7 +67,7 @@ struct WPECacheManagementView: View {
     @ViewBuilder
     func infoNote(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .font(.caption)
+            .font(DesignTokens.Typography.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: 300, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)

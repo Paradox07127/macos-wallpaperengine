@@ -51,11 +51,11 @@ struct ReportBugSheet: View {
     private var diagnosticPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Diagnostic snapshot")
-                .font(.subheadline.weight(.medium))
+                .font(DesignTokens.Typography.bodyEmphasized)
 
             ScrollView {
                 Text(verbatim: report.diagnosticMarkdown)
-                    .font(.callout.monospaced())
+                    .font(DesignTokens.Typography.code)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
@@ -76,7 +76,7 @@ struct ReportBugSheet: View {
             if let logURL = sanitizedLogURL {
                 Label {
                     Text("Attach the sanitized log from Finder to the GitHub issue.")
-                        .font(.caption)
+                        .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "doc.text")
