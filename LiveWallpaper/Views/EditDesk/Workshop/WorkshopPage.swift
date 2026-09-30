@@ -14,6 +14,7 @@ struct WorkshopPage: View {
     @Environment(SteamCMDDoctorService.self) private var doctor
     @Environment(WorkshopSetupController.self) private var setupController
     @Environment(\.featureCatalog) private var featureCatalog
+    @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
 
     /// Kept under its original key so a dismissal recorded by earlier builds still counts.
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped())
@@ -72,6 +73,12 @@ struct WorkshopPage: View {
             router.pendingOnboardingStep = nil
             presentedItemID = nil
         }
+        .onChange(of: pageGuide?.context != nil) { _, shown in
+            if shown { presentedItemID = nil }
+        }
+        // Before the sheets modifier, so the wizard overlay itself stays enabled.
+        .disabled(isShowingWizard)
+        .accessibilityHidden(isShowingWizard)
         .modifier(WorkshopPageSheets(page: self))
     }
 

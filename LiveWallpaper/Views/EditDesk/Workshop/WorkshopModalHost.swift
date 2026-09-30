@@ -157,8 +157,9 @@ struct WorkshopModalHost: View {
             return
         }
         refreshInstalledEntry()
-        detachedItem = nil
         let fallback = items.first { $0.id == presentedItemID }
+        // Likes: hold the opening snapshot so an unlike mid-request can't drop the modal and leave presentedItemID set.
+        detachedItem = refreshDetailsOnOpen ? fallback : nil
         if let fallback {
             WorkshopBookmarkActions.refreshDetails(fallback)
         }

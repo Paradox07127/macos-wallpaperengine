@@ -426,6 +426,7 @@ struct HomePage: View {
         .modifier(DisplayCommands(page: self))
         .modifier(LibraryItemCommands(page: self))
         .onChange(of: pageGuide?.context) {
+            if pageGuide?.context != nil { presentedItemID = nil }
             if router.page == .home, pageGuide?.context == .overview {
                 stage.setProgress(0, animated: !reduceMotion)
             }

@@ -84,6 +84,46 @@ struct WorkshopPageSourceTests {
         ))
     }
 
+    @Test("Showing a page guide closes the Home item modal so its shortcuts stop firing underneath")
+    func homePageGuideClosesTheItemModal() throws {
+        let source = try RepositoryRoot.source(Self.home)
+        let block = try Self.block(in: source, from: ".onChange(of: pageGuide?.context) {", to: "\n        }")
+        #expect(block.contains("if pageGuide?.context != nil { presentedItemID = nil }"))
+    }
+
+    @Test("Showing a page guide closes the Workshop item modal")
+    func workshopPageGuideClosesTheItemModal() throws {
+        let source = try RepositoryRoot.source(Self.page)
+        let block = try Self.block(in: source, from: ".onChange(of: pageGuide?.context != nil)", to: "\n        }")
+        #expect(block.contains("presentedItemID = nil"))
+    }
+
+    @Test("The Steam wizard disables the page under it but not itself")
+    func wizardDisablesThePageBehindIt() throws {
+        let source = try RepositoryRoot.source(Self.page)
+        let sheets = try #require(source.range(of: ".modifier(WorkshopPageSheets(page: self))"))
+        for fragment in [".disabled(isShowingWizard)", ".accessibilityHidden(isShowingWizard)"] {
+            let found = try #require(source.range(of: fragment), Comment(rawValue: "WorkshopPage lacks \(fragment)"))
+            #expect(
+                found.lowerBound < sheets.lowerBound,
+                Comment(rawValue: "\(fragment) wraps the wizard overlay too, so the wizard itself is disabled")
+            )
+        }
+    }
+
+    @Test("A Likes modal keeps its opening snapshot while details load, so an unlike cannot orphan it")
+    func likesModalKeepsItsSnapshot() throws {
+        let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift")
+        let body = try Self.block(in: host, from: "private func open() async {", to: "\n    }\n")
+        #expect(body.contains("detachedItem = refreshDetailsOnOpen ? fallback : nil"))
+    }
+
+    private static func block(in source: String, from start: String, to end: String) throws -> Substring {
+        let head = try #require(source.range(of: start), Comment(rawValue: "missing \(start)"))
+        let tail = try #require(source.range(of: end, range: head.upperBound ..< source.endIndex))
+        return source[head.upperBound ..< tail.lowerBound]
+    }
+
     @Test("The Steam menu offers SteamCMD setup only until SteamCMD is ready")
     func steamMenuOffersSetupOnlyUntilReady() throws {
         let menu = try RepositoryRoot.source(Self.steamMenu)
