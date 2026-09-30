@@ -104,7 +104,7 @@ struct EditDeskChromeSourceTests {
         #expect(row.contains(".adaptiveGlassButton(.regular, shape: .capsule, size: .large)"))
         #expect(row.contains(".appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {"))
         #expect(row.contains(".id(stage.snappedIndex)"), "the popover outlives a swipe")
-        #expect(row.contains(".settingsPopoverChrome(width: 200)"))
+        #expect(row.contains(".popupMenuOptions(width: 200)"))
         #expect(!row.contains("Menu {"), "a Menu cannot take glass")
         #expect(!row.contains("\"+ Import\""))
 

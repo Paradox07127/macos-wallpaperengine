@@ -17,16 +17,14 @@ struct LibraryApplyTargetList: View {
                 }
             }
             if let onApplyToAll {
-                Divider()
                 Button("Apply to All Displays") {
                     dismiss()
                     onApplyToAll()
                 }
             }
         }
-        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 220)
+        .popupMenuOptions(width: 220)
     }
 }
 
@@ -54,9 +52,8 @@ struct LibraryTileOverflowButton<Content: View>: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 content { showingActions = false }
             }
-            .buttonStyle(.borderless)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .settingsPopoverChrome(width: width)
+            .popupMenuOptions(width: width)
         }
     }
 }

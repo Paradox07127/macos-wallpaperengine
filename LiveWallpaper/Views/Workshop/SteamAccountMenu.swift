@@ -11,23 +11,25 @@ func steamAccountMenuItems(
     onRescan: @escaping () -> Void,
     onRemoveSession: (() -> Void)? = nil
 ) -> some View {
-    ForEach(accounts) { account in
-        Button {
-            onSelect(account)
-        } label: {
-            if account.accountName == current {
-                Label(account.accountName, systemImage: "checkmark")
-            } else {
-                Text(account.accountName)
+    Section {
+        ForEach(accounts) { account in
+            Button {
+                onSelect(account)
+            } label: {
+                if account.accountName == current {
+                    Label(account.accountName, systemImage: "checkmark")
+                } else {
+                    Text(account.accountName)
+                }
             }
         }
     }
-    Divider()
-    Button("Sign in to another account", action: onSignIn)
-    Button("Rescan", action: onRescan)
-    if current != nil, let onRemoveSession {
-        Divider()
-        Button("Remove saved session", role: .destructive, action: onRemoveSession)
+    Section {
+        Button("Sign in to another account", action: onSignIn)
+        Button("Rescan", action: onRescan)
+        if current != nil, let onRemoveSession {
+            Button("Remove saved session", role: .destructive, action: onRemoveSession)
+        }
     }
 }
 

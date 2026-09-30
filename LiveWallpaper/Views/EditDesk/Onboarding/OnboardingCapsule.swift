@@ -98,7 +98,6 @@ struct OnboardingCapsule: View {
                     )
                 }
             }
-            Divider()
             Button {
                 menuPresented = false
                 progress.dismissRemaining()
@@ -109,9 +108,8 @@ struct OnboardingCapsule: View {
                 )
             }
         }
-        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 240)
+        .popupMenuOptions(width: 240)
     }
 
     private static func pageTitle(_ page: OnboardingProgress.Page) -> LocalizedStringKey {

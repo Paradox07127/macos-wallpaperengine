@@ -260,7 +260,7 @@ struct PageGuideButton: View {
             if grouped {
                 GlassToolbarItem("questionmark") { session?.start(context) }
             } else {
-                GlassIconButton("questionmark", size: .regular) { session?.start(context) }
+                GlassIconButton("questionmark", size: .large) { session?.start(context) }
             }
         }
             .help(Text("Explain This Page"))

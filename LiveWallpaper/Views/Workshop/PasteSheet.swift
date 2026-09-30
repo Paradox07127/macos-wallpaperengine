@@ -82,7 +82,6 @@ struct PasteSheet: View {
 
                 Menu {
                     Button("Open all in Steam") { model.openAllInSteam() }
-                    Divider()
                     Button("Clear queue", role: .destructive) { model.removeAll() }
                 } label: {
                     Image(systemName: "ellipsis")

@@ -99,26 +99,25 @@ struct ScenePresetBar: View {
             }
             .pickerStyle(.inline)
 
-            Divider()
+            Section {
+                Button("Save as New Preset") {
+                    beginEditing(.saveAsNew)
+                }
 
-            Button("Save as New Preset") {
-                beginEditing(.saveAsNew)
-            }
-
-            if let activePreset {
-                Divider()
-                // Only for a local preset with changes: `onSave` reuses the id of a same-named
-                // local preset, so this call overwrites rather than adds.
-                if activePreset.source == .local, changedCount > 0 {
-                    Button("Update “\(activePreset.name)”") {
-                        onSave(activePreset.name)
+                if let activePreset {
+                    // Only for a local preset with changes: `onSave` reuses the id of a same-named
+                    // local preset, so this call overwrites rather than adds.
+                    if activePreset.source == .local, changedCount > 0 {
+                        Button("Update “\(activePreset.name)”") {
+                            onSave(activePreset.name)
+                        }
                     }
-                }
-                Button("Rename") {
-                    beginEditing(.rename(activePreset))
-                }
-                Button("Delete preset", role: .destructive) {
-                    pendingDeletion = activePreset
+                    Button("Rename") {
+                        beginEditing(.rename(activePreset))
+                    }
+                    Button("Delete preset", role: .destructive) {
+                        pendingDeletion = activePreset
+                    }
                 }
             }
         } label: {
@@ -304,7 +303,7 @@ struct ScenePresetBar: View {
         switch mode {
         case .saveAsNew:
             draftName = ""
-        case .rename(let preset):
+        case let .rename(preset):
             draftName = preset.name
         }
         editing = mode
@@ -327,7 +326,7 @@ struct ScenePresetBar: View {
         switch editing {
         case .saveAsNew:
             onSave(name)
-        case .rename(let preset):
+        case let .rename(preset):
             onRename(preset, name)
         }
     }

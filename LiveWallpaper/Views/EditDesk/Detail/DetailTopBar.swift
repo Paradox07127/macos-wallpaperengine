@@ -220,15 +220,13 @@ struct DetailTopBar: View {
                     Text(verbatim: scheme.name).lineLimit(1)
                 }
             }
-            Divider()
             Button("Manage Schemes") {
                 schemeMenuPresented = false
                 actions.manageSchemes()
             }
         }
-        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 240)
+        .popupMenuOptions(width: 240)
     }
 
     private var changeMenu: some View {
@@ -247,9 +245,6 @@ struct DetailTopBar: View {
                 changeMenuPresented = false
                 actions.enterWebAddress()
             }
-            if actions.switchBackToVideo != nil || actions.switchBackToWebPage != nil {
-                Divider()
-            }
             if let switchBack = actions.switchBackToVideo {
                 Button("Switch Back to Previous Video") {
                     changeMenuPresented = false
@@ -263,9 +258,8 @@ struct DetailTopBar: View {
                 }
             }
         }
-        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 260)
+        .popupMenuOptions(width: 260)
     }
 
     /// `help` replaces the label as the tooltip, for a control that has to say why it is dimmed.

@@ -31,6 +31,7 @@ PARALLEL_SUITES=(
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
+  WorkshopCardPreviewLayoutTests
   InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests

@@ -414,7 +414,6 @@ struct WallpaperAutomationSheet: View {
                 }
                 .disabled(slot == nil)
             }
-            Divider()
             Button {
                 presetsPresented = false
                 addSlot()
@@ -422,9 +421,8 @@ struct WallpaperAutomationSheet: View {
                 Label("Custom", systemImage: "slider.horizontal.below.rectangle")
             }
         }
-        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 240)
+        .popupMenuOptions(width: 240)
     }
 
     private var wallpaperPicker: some View {

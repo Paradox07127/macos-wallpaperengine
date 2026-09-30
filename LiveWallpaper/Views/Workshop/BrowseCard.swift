@@ -157,13 +157,15 @@ struct BrowseCard: View, Equatable {
     /// Every badge is an `overlay`, never a ZStack sibling: a badge ending in `fixedSize()`
     /// would set an intrinsic width that `aspectRatio(1, .fit)` cannot shrink, and the tile would stretch out of square.
     private var thumbnailArea: some View {
-        AnimatedGIFThumbnail(
-            url: item.previewImageURL,
-            playbackMode: .hoverToPlay,
-            showsPlayingBadge: false,
-            isBlurred: shouldBlur,
-            isHovered: $isHovered
-        )
+        WorkshopCardPreview {
+            AnimatedGIFThumbnail(
+                url: item.previewImageURL,
+                playbackMode: .hoverToPlay,
+                showsPlayingBadge: false,
+                isBlurred: shouldBlur,
+                isHovered: $isHovered
+            )
+        }
         .overlay(alignment: .topLeading) {
             if showsEditDeskTopRow {
                 EditDeskTopRow(
@@ -178,7 +180,7 @@ struct BrowseCard: View, Equatable {
                 editDeskInfoBand
             }
         }
-        .aspectRatio(1, contentMode: .fit)
+        .thumbnailBadgeSurface(.opaque)
     }
 
     // MARK: - Footer
@@ -261,7 +263,6 @@ struct BrowseCard: View, Equatable {
             }
             .disabled(item.isBanned && !isBookmarked)
 
-            Divider()
         }
 
         Button(action: onDownload) {
@@ -269,7 +270,6 @@ struct BrowseCard: View, Equatable {
         }
         .disabled(!canDownload || item.isBanned)
 
-        Divider()
 
         Button {
             openURL(item.steamCommunityURL)
@@ -399,6 +399,24 @@ struct BrowseCard: View, Equatable {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+}
+
+/// The grid chooses a square before proposing any size to the image. A tall
+/// source or a wide GIF frame cannot enlarge the card's layout bounds.
+struct WorkshopCardPreview<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                GeometryReader { geometry in
+                    content
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                }
+            }
     }
 }
 

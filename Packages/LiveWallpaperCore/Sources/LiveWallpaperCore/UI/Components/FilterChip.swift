@@ -36,7 +36,7 @@ public struct FilterChip: View {
     public var body: some View {
         Button(action: action) {
             title
-                .font(DesignTokens.Typography.caption)
+                .font(DesignTokens.EditDesk.Typography.body)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
                 .padding(.horizontal, DesignTokens.Spacing.md)

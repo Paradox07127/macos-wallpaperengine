@@ -158,6 +158,8 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
+    @Environment(\.thumbnailBadgeSurface) private var surface
+
     private var glassOpacity: Double {
         guard let opacity else { return hovered ? 0.32 : 0.18 }
         return (hovered ? min(opacity * 1.3, 1) : opacity) * 0.6
@@ -170,7 +172,7 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         switch FloatingGlyphBacking.resolve(
-            glassAvailable: AdaptiveGlass.isAvailable,
+            glassAvailable: AdaptiveGlass.isAvailable && surface == .glass,
             reduceTransparency: reduceTransparency,
             increasedContrast: contrast == .increased
         ) {

@@ -469,7 +469,6 @@ private struct SchemeTile: View {
             }
         }
         replaceActions(dismiss: {})
-        Divider()
         Button("Delete", role: .destructive, action: onDelete)
     }
 

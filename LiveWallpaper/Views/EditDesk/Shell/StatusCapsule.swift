@@ -322,7 +322,7 @@ struct StatusCapsule: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
-            .frame(height: 28)
+            .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
             .adaptiveGlassSurface(.capsule, interactive: true)
             .contentShape(Capsule())
         }

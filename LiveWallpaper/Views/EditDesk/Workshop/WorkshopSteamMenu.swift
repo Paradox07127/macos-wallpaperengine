@@ -48,17 +48,19 @@ struct WorkshopSteamMenu: View {
                     onRemoveSession: onRemoveSession
                 )
             }
-            Divider()
-            Button("Sync subscribed wallpapers", action: onSyncSubscriptions)
-            Button("Add from Workshop URL or ID", action: onDownloadByLink)
-            Button("Import a Local Folder", action: onImportLocalFolder)
-            Button("Steam Web API key (optional)", action: onEnterAPIKey)
+            Section {
+                Button("Sync subscribed wallpapers", action: onSyncSubscriptions)
+                Button("Add from Workshop URL or ID", action: onDownloadByLink)
+                Button("Import a Local Folder", action: onImportLocalFolder)
+                Button("Steam Web API key (optional)", action: onEnterAPIKey)
+            }
             if !steamCMDReady {
-                Divider()
-                Button("Set up SteamCMD", action: onInstallSteamCMD)
-                    .disabled(steamCMDBusy)
-                Button("Locate automatically", action: onLocateSteamCMD)
-                    .disabled(steamCMDBusy)
+                Section {
+                    Button("Set up SteamCMD", action: onInstallSteamCMD)
+                        .disabled(steamCMDBusy)
+                    Button("Locate automatically", action: onLocateSteamCMD)
+                        .disabled(steamCMDBusy)
+                }
             }
         } label: {
             capsuleLabel
@@ -67,6 +69,8 @@ struct WorkshopSteamMenu: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .controlSize(.small)
+        .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
         .fixedSize()
         .accessibilityLabel(Text("Steam account"))
     }
@@ -85,7 +89,7 @@ struct WorkshopSteamMenu: View {
         .font(DesignTokens.EditDesk.Typography.chip)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
         .padding(.horizontal, 10)
-        .frame(height: 28)
+        .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
         .adaptiveGlassSurface(.capsule, interactive: true)
         .contentShape(Capsule())
     }

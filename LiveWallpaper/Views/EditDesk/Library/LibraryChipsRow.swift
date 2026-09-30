@@ -169,9 +169,8 @@ struct LibrarySortControl<Content: View>: View {
         .accessibilityValue(label)
         .appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {
             content { isPresented = false }
-                .buttonStyle(.borderless)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .settingsPopoverChrome(width: 200)
+                .popupMenuOptions(width: 200)
         }
     }
 }

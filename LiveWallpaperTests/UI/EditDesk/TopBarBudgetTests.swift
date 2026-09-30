@@ -274,7 +274,7 @@ struct TopBarBudgetTests {
     func pageGuideButtonIsCounted() {
         let windowWidth: CGFloat = 1280, pillWidth: CGFloat = 300, capsuleWidth: CGFloat = 100
         let gap = DesignTokens.EditDesk.Spacing.s12
-        let guide = DesignTokens.iconButtonDiameter(.regular)
+        let guide = DesignTokens.iconButtonDiameter(.large)
         let room = windowWidth / 2 - pillWidth / 2 - DesignTokens.Spacing.lg
         // Capsule and status alone leave 20pt spare, less than the guide and its gap take.
         let status = room - capsuleWidth - gap - 20

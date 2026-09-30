@@ -144,12 +144,10 @@ struct Row: View {
             .disabled(entry.isPrimary)
         Button("Play Now", systemImage: "play.fill", action: onPlayNow)
             .disabled(entry.isPlaying)
-        Divider()
         Button("Move Up", systemImage: "arrow.up", action: onMoveUp)
             .disabled(!canMoveUp)
         Button("Move Down", systemImage: "arrow.down", action: onMoveDown)
             .disabled(!canMoveDown)
-        Divider()
         Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
     }
 

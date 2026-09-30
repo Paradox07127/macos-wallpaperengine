@@ -39,7 +39,7 @@ enum TopBarBudget {
         let capsule: CGFloat? = capsuleWidth > 0 && pillWidth > 0 ? capsuleWidth : nil
         let status: CGFloat? = statusWidth > 0 ? statusWidth : nil
         // The page guide button is drawn on every page, so it is always in the cluster.
-        let guide = DesignTokens.iconButtonDiameter(.regular)
+        let guide = DesignTokens.iconButtonDiameter(.large)
         var width = clusterWidth([capsule, guide, status])
         var showsCapsule = capsule != nil
         // The capsule opens the welcome tour, which is also available from Settings › About,
