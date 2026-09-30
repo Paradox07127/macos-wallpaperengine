@@ -170,7 +170,7 @@ struct WPERenderPipelineBuilder: Sendable {
             textureBindings: shader.textureBindings,
             comboValues: shader.comboValues,
                 uniformValues: shader.uniformValues,
-                materialUniformNames: shader.materialUniformNames
+            materialUniformNames: shader.materialUniformNames, stageUniformBindings: shader.stageUniformBindings
         )
     }
 
@@ -200,6 +200,7 @@ private struct WPEShaderLoadResult: Equatable, Sendable {
     let comboValues: [String: Int]
     let uniformValues: [String: WPESceneShaderConstantValue]
     let materialUniformNames: [String: String]
+    var stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:]
 }
 
 enum WPEShaderStage: String, Codable, Hashable, Sendable {
@@ -270,6 +271,7 @@ private struct WPEShaderMetadata: Equatable, Sendable {
     let comboValues: [String: Int]
     let uniformValues: [String: WPESceneShaderConstantValue]
     let materialUniformNames: [String: String]
+    var stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:]
 }
 
 private struct WPEShaderUniformAnnotation {
@@ -395,7 +397,10 @@ private struct WPEShaderSourceLoader: Sendable {
             textureBindings: textureBindings,
             comboValues: comboValues,
                 uniformValues: metadata.uniformValues,
-                materialUniformNames: metadata.materialUniformNames
+            materialUniformNames: metadata.materialUniformNames,
+            stageUniformBindings: shaderMetadata(from: [program.vertexSource, program.fragmentSource].map {
+                WPEShaderTranspiler.stripInactivePreprocessorBranches(in: $0)
+            }, pass: pass).stageUniformBindings
         )
     }
 
@@ -1207,8 +1212,10 @@ private struct WPEShaderSourceLoader: Sendable {
         var uniformDefaults: [String: WPESceneShaderConstantValue] = [:]
         var materialUniformNames: [String: String] = [:]
         var samplerUniforms: [WPEShaderUniformAnnotation] = []
+        var declarations: [WPEShaderBindingKey: WPEShaderUniformAnnotation] = [:]
 
-        for source in sources {
+        for (sourceIndex, source) in sources.enumerated() {
+            let stage: WPEShaderStage = sourceIndex == 0 ? .vertex : .fragment
             for line in source.components(separatedBy: .newlines) {
                 if let payload = comboPayload(from: line),
                    let data = payload.data(using: .utf8),
@@ -1226,6 +1233,7 @@ private struct WPEShaderSourceLoader: Sendable {
                 if uniform.type == "sampler2D" || uniform.type == "sampler2DComparison" {
                     samplerUniforms.append(uniform)
                     } else {
+                    declarations[.init(stage: stage, name: uniform.name)] = uniform
                         if let value = parseShaderConstant(uniform.metadata["default"], type: uniform.type) {
                             uniformDefaults[uniform.name] = value
                         }
@@ -1258,11 +1266,26 @@ private struct WPEShaderSourceLoader: Sendable {
             uniformValues[uniformName] = value
         }
 
+        var stageBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:]
+        for (key, declaration) in declarations where key.stage == .vertex {
+            guard let other = declarations[.init(stage: .fragment, name: key.name)] else { continue }
+            let material = declaration.metadata["material"] as? String
+            let otherMaterial = other.metadata["material"] as? String
+            let value = parseShaderConstant(declaration.metadata["default"], type: declaration.type)
+            let otherValue = parseShaderConstant(other.metadata["default"], type: other.type)
+            guard declaration.type != other.type || material != otherMaterial || value != otherValue else { continue }
+            for (stage, item) in [(WPEShaderStage.vertex, declaration), (.fragment, other)] {
+                let alias = (item.metadata["material"] as? String).map(wpeNativized)
+                let override = alias.flatMap { pass.constants[$0] } ?? pass.constants[key.name]
+                stageBindings[.init(stage: stage, name: key.name)] = .init(materialName: alias, value: override)
+            }
+        }
+
         return WPEShaderMetadata(
             defaultTextures: defaultTextures,
             comboValues: comboValues,
                 uniformValues: uniformValues,
-                materialUniformNames: materialUniformNames
+            materialUniformNames: materialUniformNames, stageUniformBindings: stageBindings
         )
     }
 

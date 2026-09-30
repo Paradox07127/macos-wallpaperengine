@@ -31,14 +31,16 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
     static func fragmentOnly(
         passID: String, authoredEffectID: String? = nil, shaderName: String,
         sourceClassification: String?, sourceFingerprint: String?,
-        interface: WPEShaderInterface?, layout: [WPEUniformSlot], sources: [WPEUniformValueSource]?
+        interface: WPEShaderInterface?, layout: [WPEUniformSlot], sources: [WPEUniformValueSource]?,
+        vertexLayout: [WPEUniformSlot] = [], vertexSources: [WPEUniformValueSource]? = nil,
+        authoredVertexExecuted: Bool = false, authoredVertexFallback: String? = nil
     ) -> Self {
         var entries: [Entry] = [
             .init(feature: .fragmentCompilation, stage: .fragment, name: nil, status: .supported,
                   reason: "metal-library-compiled"),
             .init(feature: .authoredVertexExecution, stage: .vertex, name: nil,
-                  status: interface?.hasVertexSource == true ? .missing : .unverified,
-                  reason: interface?.hasVertexSource == true ? "builtin-vertex-with-fragment-reconstruction" : "authored-vertex-source-unavailable"),
+                  status: authoredVertexExecuted ? .limited : (interface?.hasVertexSource == true ? .missing : .unverified),
+                  reason: authoredVertexExecuted ? "authored-fullscreen-stage-executed" : (authoredVertexFallback ?? (interface?.hasVertexSource == true ? "builtin-vertex-with-fragment-reconstruction" : "authored-vertex-source-unavailable"))),
             .init(feature: .visualFidelity, stage: nil, name: nil, status: .unverified,
                   reason: "compilation-and-source-selection-do-not-prove-image-equivalence"),
         ]
@@ -50,8 +52,9 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
                 switch variable.kind {
                 case .varyingInput:
                     entries.append(.init(feature: .varyingExecution, stage: .fragment, name: variable.key.name,
-                                         status: .approximate, reason: "fragment-reconstruction-not-authored-vertex-interpolation"))
-                case .uniform where variable.key.stage == .vertex:
+                                         status: authoredVertexExecuted ? .supported : .approximate,
+                                         reason: authoredVertexExecuted ? "authored-vertex-raster-interpolation" : "fragment-reconstruction-not-authored-vertex-interpolation"))
+                case .uniform where variable.key.stage == .vertex && !authoredVertexExecuted:
                     entries.append(.init(feature: .uniformSupply, stage: .vertex, name: variable.key.name,
                                          status: .unverified, reason: "authored-stage-not-executed-declaration-is-not-a-read"))
                 case .texture:
@@ -64,29 +67,36 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
             entries.append(.init(feature: .stageLinkDefinition, stage: nil, name: nil,
                                  status: .unverified, reason: "authored-interface-unavailable"))
         }
-        for (index, uniform) in layout.enumerated() {
-            let status: Status
-            let reason: String
-            if let sources, sources.count == layout.count {
-                switch sources[index] {
-                case .missing:
-                    // Only known engine inputs require a host producer. An unknown material field
-                    // without an authored default remains unspecified, rather than a claimed defect.
-                    let required = uniform.materialName == nil && requiresHostProducer(uniform.name)
-                    status = required ? .missing : .unverified
-                    reason = required ? "required-host-producer-missing" : "no-authored-default-or-recorded-value"
-                case .authoredDefault:
-                    status = .supported
-                    reason = "authored-default-supplied"
-                default:
-                    status = .supported
-                    reason = "runtime-source-recorded"
+        let stages: [(WPEShaderStage, [WPEUniformSlot], [WPEUniformValueSource]?)] = [(.fragment, layout, sources)]
+            + (authoredVertexExecuted ? [(.vertex, vertexLayout, vertexSources)] : [])
+        for (stage, stageLayout, stageSources) in stages {
+            for (index, uniform) in stageLayout.enumerated() {
+                let status: Status
+                let reason: String
+                if let sources = stageSources, sources.count == stageLayout.count {
+                    switch sources[index] {
+                    case .missing:
+                        // Only known engine inputs require a host producer. An unknown material field
+                        // without an authored default remains unspecified, rather than a claimed defect.
+                        let required = uniform.materialName == nil && requiresHostProducer(uniform.name)
+                        status = required ? .missing : .unverified
+                        reason = required ? "required-host-producer-missing" : "no-authored-default-or-recorded-value"
+                    case .fullscreenVertexMVP:
+                        status = .limited
+                        reason = "native-fullscreen-XY-position-only-depth-disabled"
+                    case .authoredDefault:
+                        status = .supported
+                        reason = "authored-default-supplied"
+                    default:
+                        status = .supported
+                        reason = "runtime-source-recorded"
+                    }
+                } else {
+                    status = .unverified
+                    reason = "uniform-provenance-unrecorded"
                 }
-            } else {
-                status = .unverified
-                reason = "uniform-provenance-unrecorded"
+                entries.append(.init(feature: .uniformSupply, stage: stage, name: uniform.name, status: status, reason: reason))
             }
-            entries.append(.init(feature: .uniformSupply, stage: .fragment, name: uniform.name, status: status, reason: reason))
         }
         return Self(passID: passID, authoredEffectID: authoredEffectID, shaderName: shaderName,
                     sourceClassification: sourceClassification, sourceFingerprint: sourceFingerprint,

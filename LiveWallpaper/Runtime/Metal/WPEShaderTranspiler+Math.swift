@@ -13,6 +13,7 @@ extension WPEShaderTranspiler {
             "    return t * t * (3.0 - 2.0 * t);",
             "}",
         ]
+
         // Equal edges retain the historical hard threshold; reverse edges are
         // an explicit WPE extension. Neither policy replaces a nonzero width.
         for width in 2 ... 4 {
@@ -60,6 +61,58 @@ extension WPEShaderTranspiler {
             }
         }
         lines.append(glslMatrixConstructorPrelude)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Generated only for a stage containing a rewritten inverse call. Keeping
+    /// unused helpers out preserves the established MSL/compiler identity.
+    static var glslMatrixInversePrelude: String {
+        var lines: [String] = []
+        // Column-major GLSL inverse. Row pivoting handles zero diagonal entries;
+        // no epsilon threshold silently replaces a valid small-scale transform.
+        // Singular matrices have undefined GLSL results: propagate NaNs, never identity.
+        for width in 2 ... 4 {
+            let type = "float\(width)x\(width)"
+            let nanColumns = Array(repeating: "float\(width)(as_type<float>(0x7fc00000u))", count: width).joined(separator: ", ")
+            lines.append("""
+            inline \(type) wpe_glsl_inverse(\(type) matrix) {
+                float augmented[\(width)][\(width * 2)];
+                for (int row = 0; row < \(width); ++row) {
+                    for (int column = 0; column < \(width); ++column) {
+                        augmented[row][column] = matrix[column][row];
+                        augmented[row][column + \(width)] = row == column ? 1.0 : 0.0;
+                    }
+                }
+                for (int column = 0; column < \(width); ++column) {
+                    int pivot = column;
+                    for (int row = column + 1; row < \(width); ++row) {
+                        if (abs(augmented[row][column]) > abs(augmented[pivot][column])) { pivot = row; }
+                    }
+                    if (augmented[pivot][column] == 0.0) { return \(type)(\(nanColumns)); }
+                    for (int entry = 0; entry < \(width * 2); ++entry) {
+                        float held = augmented[column][entry];
+                        augmented[column][entry] = augmented[pivot][entry];
+                        augmented[pivot][entry] = held;
+                    }
+                    float reciprocal = 1.0 / augmented[column][column];
+                    for (int entry = 0; entry < \(width * 2); ++entry) { augmented[column][entry] *= reciprocal; }
+                    for (int row = 0; row < \(width); ++row) {
+                        if (row == column) { continue; }
+                        float factor = augmented[row][column];
+                        for (int entry = 0; entry < \(width * 2); ++entry) {
+                            augmented[row][entry] -= factor * augmented[column][entry];
+                        }
+                    }
+                }
+                \(type) result;
+                for (int column = 0; column < \(width); ++column) {
+                    for (int row = 0; row < \(width); ++row) { result[column][row] = augmented[row][column + \(width)]; }
+                }
+                return result;
+            }
+            """)
+        }
+
         return lines.joined(separator: "\n")
     }
 

@@ -47,6 +47,8 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     let uniformValues: [String: WPESceneShaderConstantValue]
     /// Authored (material) name → shader uniform name. uniformValues is keyed by the SHADER name; scene JSON/SceneScript speak the authored name.
     let materialUniformNames: [String: String]
+    let stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding]
+    let stageUniformBindingKeys: Set<WPEShaderBindingKey>
     /// True when any value is .animated — the only case where resolved(at:) is not the identity.
     let hasAnimatedUniformValues: Bool
     /// Set when a script overrode tint of a pass whose g_Color is animated; writing the override into the value would freeze unclaimed components at frame 0.
@@ -59,6 +61,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         comboValues: [String: Int],
         uniformValues: [String: WPESceneShaderConstantValue],
         materialUniformNames: [String: String] = [:],
+        stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:],
         layerTintOverride: WPELayerTintOverride? = nil,
         reusingAccess: WPEPreparedPassAccess? = nil
     ) {
@@ -73,9 +76,16 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         self.comboValues = comboValues
         self.uniformValues = uniformValues
         self.materialUniformNames = materialUniformNames
+        self.stageUniformBindings = stageUniformBindings
+        stageUniformBindingKeys = Set(stageUniformBindings.keys)
         self.layerTintOverride = layerTintOverride
         hasAnimatedUniformValues = uniformValues.values.contains {
             if case .animated = $0 { return true }
+            return false
+        } || stageUniformBindings.values.contains {
+            if case .animated? = $0.value {
+                return true
+            }
             return false
         }
     }
@@ -412,6 +422,7 @@ extension WPEPreparedRenderPipeline {
                         comboValues: pass.comboValues,
                         uniformValues: values,
                         materialUniformNames: pass.materialUniformNames,
+                        stageUniformBindings: WPEUniformStageBinding.resolved(pass.stageUniformBindings, at: runtimeUniforms.time, authoredUpdates: scripted),
                         layerTintOverride: pass.layerTintOverride,
                         reusingAccess: pass.access
                     )
@@ -517,6 +528,7 @@ private extension WPEPreparedRenderLayer {
                 textureBindings: preparedPass.textureBindings.mapValues(reference),
                 comboValues: preparedPass.comboValues, uniformValues: preparedPass.uniformValues,
                 materialUniformNames: preparedPass.materialUniformNames,
+                stageUniformBindings: preparedPass.stageUniformBindings,
                 layerTintOverride: preparedPass.layerTintOverride,
                 // The initializer re-derives access when FBO names changed.
                 reusingAccess: preparedPass.access

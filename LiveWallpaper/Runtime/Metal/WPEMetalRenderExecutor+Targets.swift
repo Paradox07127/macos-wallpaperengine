@@ -130,6 +130,8 @@ extension WPEMetalRenderExecutor {
         puppetMeshBufferCache.removeAll()
         // Pass-id keyed; a reload can reuse an id for a different shader. The
         // content-keyed translatedShaderCache is safe to persist and is not cleared.
+        authoredShaderResultByPassID.removeAll()
+        authoredVertexFailureByPassID.removeAll()
         compiledShaderResultByPassID.removeAll()
         untranslatableShaderReasonByPassID.removeAll()
         invalidateUniformKeyIndexes()

@@ -32,7 +32,9 @@ extension WPEShaderTranspiler {
         uniforms: [WPEUniformDecl] = [],
         // `main`'s body is substituted separately from the helper block it calls into, so the
         // helper sources come along to keep the function-signature table complete.
-        functionDeclarations: String = ""
+        functionDeclarations: String = "",
+        stage: WPEShaderStage = .fragment,
+        fragmentUVFallbacks: Bool = true
     ) -> String {
         var s = source
 
@@ -51,9 +53,17 @@ extension WPEShaderTranspiler {
         s = wordReplace(s, find: "lerp", replace: "mix")
         // GLSL derivative builtins → MSL spelling (no sign change: WPE's ddx/ddy
         // map straight to dfdx/dfdy; the GL-only ddy(-x) negation is not wanted).
-        s = wordReplace(s, find: "dFdx", replace: "dfdx")
-        s = wordReplace(s, find: "dFdy", replace: "dfdy")
+        if stage == .fragment {
+            s = wordReplace(s, find: "dFdx", replace: "dfdx")
+            s = wordReplace(s, find: "dFdy", replace: "dfdy")
+        }
         s = rewriteSmoothstepCalls(s)
+        let inverseDefinitions = source + "\n" + functionDeclarations
+        let authoredInverse = parseHelperFunctions(in: maskComments(inverseDefinitions)).contains { $0.name == "inverse" }
+            || maskComments(inverseDefinitions).range(of: #"(?m)^\s*#\s*define\s+inverse\b"#, options: .regularExpression) != nil
+        if !authoredInverse {
+            s = s.replacingOccurrences(of: #"(?<![:A-Za-z0-9_])inverse\s*\("#, with: "wpe_glsl_inverse(", options: .regularExpression)
+        }
 
         if rewriteProgramScopeConsts {
             s = rewriteProgramScopeConstDeclarations(s)
@@ -61,8 +71,8 @@ extension WPEShaderTranspiler {
         s = rewriteReservedIdentifiers(s)
         s = canonicalizeTextureSampleAliases(s)
         s = rewriteTextureLodCalls(s, premultipliedInputSlots: premultipliedInputSlots)
-        s = rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots)
-        s = rewriteTexCoordTextureSampleUVFallback(s)
+        s = rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots, vertexStage: stage == .vertex)
+        if stage == .fragment, fragmentUVFallbacks { s = rewriteTexCoordTextureSampleUVFallback(s) }
         s = rewriteTextureSampleNarrowing(s)
         s = rewriteVector4TextureSampleLocalsInSampleCoordinates(s)
         s = rewriteSwizzledMixAssignments(s)
@@ -71,12 +81,14 @@ extension WPEShaderTranspiler {
         s = rewritePointerPositionFloatAssignments(s)
         s = rewriteTextureResolutionVector2Assignments(s)
         s = rewriteVectorConstructorNarrowing(s)
-        s = rewriteTexCoordVector2Arithmetic(s, varyingTypesByName: varyingTypesByName)
-        s = rewriteTexCoordMaskUVFallback(
-            s,
-            varyingTypesByName: varyingTypesByName,
-            preserveTexCoordZW: preserveTexCoordZW
-        )
+        if stage == .fragment {
+            s = rewriteTexCoordVector2Arithmetic(s, varyingTypesByName: varyingTypesByName)
+            if fragmentUVFallbacks {
+                s = rewriteTexCoordMaskUVFallback(
+                    s, varyingTypesByName: varyingTypesByName, preserveTexCoordZW: preserveTexCoordZW
+                )
+            }
+        }
         s = rewriteGLSLArrayConstructors(s)
         s = rewriteArrayCopyInitialization(s)
         s = rewriteFloatArraySubscripts(s)
@@ -1287,7 +1299,8 @@ extension WPEShaderTranspiler {
 
     private static func rewriteTextureCalls(
         _ source: String,
-        premultipliedInputSlots: Set<Int> = []
+        premultipliedInputSlots: Set<Int> = [],
+        vertexStage: Bool = false
     ) -> String {
         var result = ""
         result.reserveCapacity(source.count)
@@ -1323,9 +1336,10 @@ extension WPEShaderTranspiler {
                         // Recurse on the uv arg so a nested `texture(…)` is rewritten; the sampler arg cannot nest.
                         let uv = rewriteTextureCalls(
                             String(source[source.index(after: comma)..<cursor]),
-                            premultipliedInputSlots: premultipliedInputSlots
+                            premultipliedInputSlots: premultipliedInputSlots, vertexStage: vertexStage
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
-                        var sample = "\(sampler).sample(linearSampler, \(uv))"
+                        let lod = vertexStage ? ", level(0.0)" : ""
+                        var sample = "\(sampler).sample(linearSampler, \(uv)\(lod))"
                         if shouldUnpremultiplySample(sampler: sampler, premultipliedInputSlots: premultipliedInputSlots) {
                             sample = "wpe_unpremultiply_sample(\(sample))"
                         }

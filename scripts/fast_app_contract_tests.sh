@@ -37,7 +37,6 @@ PARALLEL_SUITES=(
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
-  SceneFailureFlowTests
   SceneFailurePresentationTests
   WPESceneSectionStateTests
   WPEUniqueEffectGraphTests
@@ -45,6 +44,9 @@ PARALLEL_SUITES=(
   WPEShaderInterfaceTests
   WPEPassColorContractTests
   WPEPassVertexPathTests
+  WPELinkedShaderStageTests
+  WPEAuthoredVertexExecutorTests
+  WPEUniformStageBindingTests
   WPEAttachmentPlanTests
   WPESceneScriptBatchCompletionTests
   # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
@@ -243,6 +245,8 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # Error snapshots compare app-language text across calls; locale probes change it process-wide.
+  SceneFailureFlowTests
   # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   RuntimeTests

@@ -31,11 +31,12 @@ struct OracleCorpusCaptureTests {
         var resolution: [Int]?
         var captureGPU: Bool = false
         var videoMode: VideoMode = .liveWallClock
+        var authoredVertexExecution: Bool = true
         var scriptOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
-            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder
+            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution
         }
 
         init(from decoder: Decoder) throws {
@@ -54,6 +55,7 @@ struct OracleCorpusCaptureTests {
             captureGPU = try container.decodeIfPresent(Bool.self, forKey: .captureGPU) ?? false
             videoMode = try container.decodeIfPresent(VideoMode.self, forKey: .videoMode) ?? .liveWallClock
             scriptOrder = try container.decodeIfPresent(WPESceneScriptBatchDispatcher.SubmissionOrder.self, forKey: .scriptOrder) ?? .parallelWorkers
+            authoredVertexExecution = try container.decodeIfPresent(Bool.self, forKey: .authoredVertexExecution) ?? true
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -195,6 +197,7 @@ struct OracleCorpusCaptureTests {
                     pointerSampler: .fixed(Self.replayPointer())
                 )
                 renderer.oracleSceneScriptBatchOrder = config.scriptOrder
+                renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
                 if config.videoMode == .firstFrameStill {
                     // A zero-ticket local admission uses the existing deterministic
                     // still extraction path; it does not change the process budget.
@@ -251,6 +254,8 @@ struct OracleCorpusCaptureTests {
                     determinism["scriptScheduling"] = "bounded-batch-completion-between-capture-frames"
                     determinism["scriptOrder"] = config.scriptOrder.rawValue
                     determinism["liveScriptSchedulingValidated"] = false
+                    determinism["authoredVertexExecution"] = config.authoredVertexExecution
+                    determinism["metalValidationConfiguration"] = Self.metalValidationConfiguration()
                     determinism["videoMode"] = config.videoMode.rawValue
                     determinism["videoPlaybackValidated"] = false
                     capture["determinism"] = determinism
@@ -401,6 +406,7 @@ struct OracleCorpusCaptureTests {
         #expect(config.memoryAuditLog == false)
         #expect(config.frames == 1)
         #expect(config.frameStepSeconds == 1.0 / 60.0)
+        #expect(config.authoredVertexExecution)
     }
 
     @Test("Config decode accepts an explicit multi-frame capture")
@@ -426,6 +432,29 @@ struct OracleCorpusCaptureTests {
         #expect(throws: (any Error).self) {
             _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","videoMode":"unknown"}"#.utf8))
         }
+    }
+
+    @Test("Authored vertex isolation mode is explicit and typed")
+    func configAuthoredVertexIsolationMode() throws {
+        let disabled = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","authoredVertexExecution":false}"#.utf8))
+        #expect(!disabled.authoredVertexExecution)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","authoredVertexExecution":"false"}"#.utf8))
+        }
+    }
+
+    private static func metalValidationConfiguration(environment: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        ["api": environment["MTL_DEBUG_LAYER"] ?? "unspecified",
+         "shader": environment["MTL_SHADER_VALIDATION"] ?? "unspecified",
+         "proof": "environment-request; verify runtime startup log separately"]
+    }
+
+    @Test("Capture records validation requests without assuming a missing flag is disabled")
+    func validationRequestsAreExplicit() {
+        #expect(Self.metalValidationConfiguration(environment: [:])["api"] == "unspecified")
+        let configured = Self.metalValidationConfiguration(environment: ["MTL_DEBUG_LAYER": "1", "MTL_SHADER_VALIDATION": "1"])
+        #expect(configured["api"] == "1" && configured["shader"] == "1")
+        #expect(Self.metalValidationConfiguration(environment: ["MTL_SHADER_VALIDATION": "0"])["shader"] == "0")
     }
 
     @Test("Frozen clock advances with frameAdvanceSeconds, and is inert at 0")

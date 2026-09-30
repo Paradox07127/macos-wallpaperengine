@@ -137,6 +137,9 @@ final class WPEMetalRenderExecutor {
     var translatedShaderCache: [String: WPEShaderCompileResult] = [:]
 
     /// Keyed by `WPEPreparedRenderPass.id`, not by a hash of the preprocessed source — computing that hash means running the GLSL preprocessor every frame.
+    var authoredVertexExecutionEnabled = true
+    var authoredShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
+    var authoredVertexFailureByPassID: [String: String] = [:]
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
     var frameUniformContext: WPEFrameUniformContext = .empty
@@ -189,7 +192,7 @@ final class WPEMetalRenderExecutor {
         uniformKeyIndexBuildCount = 0
     }
 
-    var uniformPlansByPassID: [String: PassUniformPlans] = [:]
+    var uniformPlansByPassID: [StageUniformPlanKey: PassUniformPlans] = [:]
 
     /// Test seam: cache hit vs silent per-frame recompile.
     var uniformPlanCompileCount = 0
@@ -568,6 +571,7 @@ final class WPEMetalRenderExecutor {
 
     fileprivate struct TranslatedPipelineKey: Hashable {
         let libraryID: ObjectIdentifier
+        let vertexLibraryID: ObjectIdentifier?
         let vertexName: String
         let fragmentName: String
         let blendMode: String
@@ -1253,14 +1257,18 @@ final class WPEMetalRenderExecutor {
     func bindTranslatedUniformSlots(
         _ slots: [SIMD4<Float>],
         to encoder: MTLRenderCommandEncoder,
-        index: Int = 0,
+        index: Int = 0, stage: WPEShaderStage = .fragment,
         allocate: ((UnsafeRawPointer, Int) -> MTLBuffer?)? = nil
     ) -> TranslatedUniformBinding {
         guard !slots.isEmpty else { return .empty }
         let byteCount = MemoryLayout<SIMD4<Float>>.stride * slots.count
         if byteCount <= 4096 {
             var inline = slots
-            encoder.setFragmentBytes(&inline, length: byteCount, index: index)
+            if stage == .vertex {
+                encoder.setVertexBytes(&inline, length: byteCount, index: index)
+            } else {
+                encoder.setFragmentBytes(&inline, length: byteCount, index: index)
+            }
             return .inline(byteCount: byteCount)
         }
         let buffer = slots.withUnsafeBytes { raw -> MTLBuffer? in
@@ -1281,7 +1289,11 @@ final class WPEMetalRenderExecutor {
             return .allocationFailed(byteCount: byteCount)
         }
         WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
-        encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+        if stage == .vertex {
+            encoder.setVertexBuffer(buffer, offset: 0, index: index)
+        } else {
+            encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+        }
         return .buffer(byteCount: byteCount)
     }
 
@@ -1316,7 +1328,9 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil,
-        effectTextureProjection: (() -> simd_double4x4?)? = nil
+        effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) throws -> PackedTranslatedUniforms {
         guard !layout.isEmpty else { return .empty }
         if let frameSlot = currentUniformArenaSlot,
@@ -1325,14 +1339,14 @@ final class WPEMetalRenderExecutor {
            ) {
             try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection, into: region.storage
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution, into: region.storage
             )
             return .arena(region)
         }
         return .array(
             try packTranslatedUniforms(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution
             )
         )
     }
@@ -1342,21 +1356,29 @@ final class WPEMetalRenderExecutor {
     func bindTranslatedUniformSlots(
         _ packed: PackedTranslatedUniforms,
         to encoder: MTLRenderCommandEncoder,
-        index: Int = 0
+        index: Int = 0, stage: WPEShaderStage = .fragment
     ) -> TranslatedUniformBinding {
         switch packed {
         case .empty:
             return .empty
         case .array(let slots):
-            return bindTranslatedUniformSlots(slots, to: encoder, index: index)
+            return bindTranslatedUniformSlots(slots, to: encoder, index: index, stage: stage)
         case .arena(let region):
             let byteCount = region.byteCount
             guard byteCount > 0, let base = region.storage.baseAddress else { return .empty }
             if byteCount <= 4096 {
-                encoder.setFragmentBytes(base, length: byteCount, index: index)
+                if stage == .vertex {
+                    encoder.setVertexBytes(base, length: byteCount, index: index)
+                } else {
+                    encoder.setFragmentBytes(base, length: byteCount, index: index)
+                }
                 return .inline(byteCount: byteCount)
             }
-            encoder.setFragmentBuffer(region.buffer, offset: region.offset, index: index)
+            if stage == .vertex {
+                encoder.setVertexBuffer(region.buffer, offset: region.offset, index: index)
+            } else {
+                encoder.setFragmentBuffer(region.buffer, offset: region.offset, index: index)
+            }
             return .buffer(byteCount: byteCount)
         }
     }
@@ -2918,6 +2940,18 @@ final class WPEMetalRenderExecutor {
         return pass.access.boundFBONames.contains(name)
     }
 
+    func hasPrewarmedAuthoredPipeline(
+        for result: WPEShaderCompileResult, pass: WPEPreparedRenderPass,
+        destination: (id: WPEMetalTargetID, texture: MTLTexture), depthPixelFormat: MTLPixelFormat) -> Bool {
+        let key = TranslatedPipelineKey(libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
+            vertexName: result.vertexFunctionName, fragmentName: result.fragmentFunctionName,
+            blendMode: blendFacts(pass.pass.blending).lowercased,
+            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            colorPixelFormat: destination.texture.pixelFormat.rawValue, depthPixelFormat: depthPixelFormat.rawValue)
+        return translatedPipelineCache[key] != nil
+    }
+
     func translatedPipelineState(
         for result: WPEShaderCompileResult,
         vertexName: String? = nil,
@@ -2932,6 +2966,7 @@ final class WPEMetalRenderExecutor {
         let loweredBlendMode = blendFacts(blendMode).lowercased
         let key = TranslatedPipelineKey(
             libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
             vertexName: resolvedVertexName,
             fragmentName: result.fragmentFunctionName,
             blendMode: loweredBlendMode,
@@ -2942,7 +2977,11 @@ final class WPEMetalRenderExecutor {
         if let cached = translatedPipelineCache[key] {
             return cached
         }
-        guard let vertex = result.library.makeFunction(name: resolvedVertexName)
+        guard result.vertexStage == nil || resolvedVertexName == result.vertexFunctionName else {
+            throw WPEMetalRenderExecutorError.pipelineUnavailable(resolvedVertexName)
+        }
+        guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
+            ?? result.library.makeFunction(name: resolvedVertexName)
             ?? defaultLibrary.makeFunction(name: resolvedVertexName),
               let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable(result.fragmentFunctionName)
@@ -2997,6 +3036,7 @@ final class WPEMetalRenderExecutor {
         let resolvedVertexName = prewarm.vertexName ?? result.vertexFunctionName
         let key = TranslatedPipelineKey(
             libraryID: ObjectIdentifier(result.library),
+            vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
             vertexName: resolvedVertexName,
             fragmentName: result.fragmentFunctionName,
             blendMode: prewarm.blendMode.lowercased(),
@@ -3004,7 +3044,9 @@ final class WPEMetalRenderExecutor {
             colorPixelFormat: prewarm.colorPixelFormat.rawValue,
             depthPixelFormat: prewarm.depthPixelFormat.rawValue
         )
-        guard let vertex = result.library.makeFunction(name: resolvedVertexName)
+        guard result.vertexStage == nil || resolvedVertexName == result.vertexFunctionName else { return nil }
+        guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
+            ?? result.library.makeFunction(name: resolvedVertexName)
             ?? prewarm.defaultLibrary.makeFunction(name: resolvedVertexName),
               let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
             return nil
@@ -3033,13 +3075,15 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil,
-        effectTextureProjection: (() -> simd_double4x4?)? = nil
+        effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized
     ) throws -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         try slots.withUnsafeMutableBufferPointer {
             try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot,
-                effectTextureProjection: effectTextureProjection, into: $0
+                effectTextureProjection: effectTextureProjection, stage: stage, vertexExecution: vertexExecution, into: $0
             )
         }
         return slots
@@ -3053,12 +3097,28 @@ final class WPEMetalRenderExecutor {
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable?,
         effectTextureProjection: (() -> simd_double4x4?)? = nil,
+        stage: WPEShaderStage = .fragment,
+        vertexExecution: WPEVertexExecution = .synthesized,
         into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
     ) throws {
-        let plans = uniformPlans(for: pass, layout: layout)
+        let plans = uniformPlans(for: pass, layout: layout, stage: stage)
         let frame = frameUniformContext
         let useDirectPacking = derivedUniformPackingEnabled
         for (index, u) in layout.enumerated() {
+            if stage == .vertex, vertexExecution == .authoredFullscreen,
+               u.name == "g_ModelViewProjectionMatrix", u.materialName == nil, u.glslType == "mat4", u.arrayLength == nil {
+                // Fullscreen attributes are already in clip coordinates. This is
+                // a draw producer, never the layer owner's effect projection.
+                for column in 0..<4 {
+                    var value = SIMD4<Float>.zero
+                    value[column] = 1
+                    slots[u.slot + column] = value
+                }
+                #if DEBUG
+                recordUniformSource(.fullscreenVertexMVP)
+                #endif
+                continue
+            }
             if useDirectPacking,
                let packing = plans[index].directPacking,
                let vector = directUniformVector(packing, texturesBySlot: texturesBySlot) {

@@ -4,7 +4,7 @@ import Foundation
 /// One selection feeds both the PSO and its diagnostic record. These are generated builtin inputs,
 /// separate from the original GLSL attribute declarations and the effect owner's transform.
 enum WPEPassVertexPath: String, Codable, Sendable {
-    case fullscreenQuad, objectQuad, shapeQuad, skewObjectQuad
+    case fullscreenQuad, objectQuad, shapeQuad, skewObjectQuad, authoredFullscreen
 
     static func select(shape: Bool, object: Bool, skew: Bool) -> Self {
         if shape {
@@ -18,7 +18,7 @@ enum WPEPassVertexPath: String, Codable, Sendable {
 
     var functionOverride: String? {
         switch self {
-        case .fullscreenQuad: nil
+        case .fullscreenQuad, .authoredFullscreen: nil
         case .objectQuad: "wpe_object_quad_vertex"
         case .shapeQuad: "wpe_shape_quad_vertex"
         case .skewObjectQuad: "wpe_skew_object_quad_vertex"
@@ -32,6 +32,7 @@ enum WPEPassVertexPath: String, Codable, Sendable {
     var requiredVertexBufferIndices: [Int] {
         switch self {
         case .fullscreenQuad: []
+        case .authoredFullscreen: [0]
         case .objectQuad, .shapeQuad: [1]
         case .skewObjectQuad: [1, 2]
         }
@@ -41,10 +42,13 @@ enum WPEPassVertexPath: String, Codable, Sendable {
         [
             "path": rawValue,
             "function": functionName(default: name),
-            "inputSupply": "generated-builtin-geometry",
-            "authoredVertexExecuted": false,
+            "inputSupply": self == .authoredFullscreen ? "generated-fullscreen-clip-attributes" : "generated-builtin-geometry",
+            "authoredVertexExecuted": self == .authoredFullscreen,
             "requiredVertexBufferIndices": requiredVertexBufferIndices,
             "bufferValues": "unrecorded",
+            "projectionContract": self == .authoredFullscreen
+                ? "native-fullscreen-XY; WPE-depth-unverified; MVP-position-only; depth-disabled"
+                : "builtin-geometry",
         ]
     }
 }

@@ -71,7 +71,8 @@ extension WPEShaderTranspiler {
         premultipliedInputSlots: Set<Int> = [],
         premultiplyOutput: Bool = false,
         uniforms: [WPEUniformDecl] = [],
-        functionDeclarations: String = ""
+        functionDeclarations: String = "",
+        fragmentUVFallbacks: Bool = true
     ) -> String {
         guard let openBrace = source.range(of: "{") else { return "" }
         guard let closeBrace = source.range(of: "}", options: .backwards) else { return "" }
@@ -83,7 +84,7 @@ extension WPEShaderTranspiler {
             preserveTexCoordZW: preserveTexCoordZW,
             premultipliedInputSlots: premultipliedInputSlots,
             uniforms: uniforms,
-            functionDeclarations: functionDeclarations
+            functionDeclarations: functionDeclarations, fragmentUVFallbacks: fragmentUVFallbacks
         )
         inner = markLocalVariableDeclarationsMaybeUnused(inner)
 

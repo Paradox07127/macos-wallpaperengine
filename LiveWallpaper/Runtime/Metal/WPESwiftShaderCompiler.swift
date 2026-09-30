@@ -7,7 +7,7 @@ struct WPESwiftShaderCompiler: Sendable {
     let device: MTLDevice
     let translationCache: WPEShaderTranslationCache
     let libraryRegistry: WPEMetalLibraryRegistry
-    /// Fragment-only: vertex execution stays on the built-in fullscreen quad; model/vertex-domain shaders are never compiled here.
+    /// Synthesized fallback; explicit authored requests carry independent VS/FS artifacts.
     static let fixedVertexFunctionName = "wpe_fullscreen_vertex"
 
     init(
@@ -24,6 +24,10 @@ struct WPESwiftShaderCompiler: Sendable {
         let cacheKey = request.translationCacheKey
         if let payload = translationCache.lookup(cacheKey) {
             do {
+                let vertex = payload.vertexTranslation()
+                guard (vertex != nil) == (request.vertexExecution == .authoredFullscreen) else {
+                    throw WPEShaderCompilerError.translationFailed("cached stage execution ABI mismatch")
+                }
                 return try assemble(
                     mslSource: payload.mslSource,
                     vertexFunctionName: payload.vertexFunctionName,
@@ -35,11 +39,38 @@ struct WPESwiftShaderCompiler: Sendable {
                     processedVertex: request.processedVertexSource,
                     processedFragment: request.processedFragmentSource,
                     recordFailure: recordFailure,
-                    alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots, premultipliedOutput: request.premultipliedOutput)
+                    alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots, premultipliedOutput: request.premultipliedOutput),
+                    vertexTranslation: vertex
                 )
             } catch {
                 translationCache.remove(cacheKey)
             }
+        }
+
+        if request.vertexExecution == .authoredFullscreen {
+            let link = try WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource)
+            let vertex = try WPEShaderTranspiler.translateFullscreenVertex(
+                shaderName: request.shaderName, preprocessedSource: request.processedVertexSource,
+                link: link, comboValues: request.comboValues, premultipliedInputSlots: request.premultipliedInputSlots
+            )
+            let fragment = try WPEShaderTranspiler.translateFragment(
+                shaderName: request.shaderName, preprocessedSource: request.processedFragmentSource,
+                comboValues: request.comboValues, premultipliedInputSlots: request.premultipliedInputSlots,
+                premultipliedOutput: request.premultipliedOutput, stageLink: link
+            )
+            let result = try assemble(
+                mslSource: fragment.mslSource, vertexFunctionName: "wpe_authored_fullscreen_vertex",
+                fragmentFunctionName: "wpe_translated_fragment", uniformLayout: fragment.uniformLayout,
+                samplerNames: fragment.samplers, textureSlotCount: fragment.textureSlotCount,
+                shaderName: request.shaderName, processedVertex: request.processedVertexSource,
+                processedFragment: request.processedFragmentSource, recordFailure: recordFailure,
+                alphaContract: .init(unpremultipliedInputSlots: request.premultipliedInputSlots,
+                                     premultipliedOutput: request.premultipliedOutput), vertexTranslation: vertex
+            )
+            if let payload = WPEShaderTranslationCache.Payload.from(result) {
+                translationCache.store(payload, for: cacheKey)
+            }
+            return result
         }
 
         let translation: WPEShaderTranslationResult
@@ -115,7 +146,8 @@ struct WPESwiftShaderCompiler: Sendable {
         processedVertex: String,
         processedFragment: String,
         recordFailure: Bool,
-        alphaContract: WPEShaderAlphaContract
+        alphaContract: WPEShaderAlphaContract,
+        vertexTranslation: WPEShaderTranslationResult? = nil
     ) throws -> WPEShaderCompileResult {
         let library: MTLLibrary
         do {
@@ -137,6 +169,21 @@ struct WPESwiftShaderCompiler: Sendable {
                 "Metal rejected translated MSL for '\(shaderName)': \(error.localizedDescription)"
             )
         }
+        let vertexStage: WPEShaderCompiledVertex?
+        if let vertexTranslation {
+            let vertexLibrary: MTLLibrary
+            do {
+                vertexLibrary = try libraryRegistry.library(device: device, source: vertexTranslation.mslSource)
+            } catch {
+                throw WPEShaderCompilerError.mslLibraryFailed("Metal rejected authored vertex for '\(shaderName)': \(error.localizedDescription)")
+            }
+            vertexStage = WPEShaderCompiledVertex(library: vertexLibrary, mslSource: vertexTranslation.mslSource,
+                                                  uniformLayout: vertexTranslation.uniformLayout,
+                                                  samplerNames: vertexTranslation.samplers,
+                                                  textureSlotCount: vertexTranslation.textureSlotCount)
+        } else {
+            vertexStage = nil
+        }
         return WPEShaderCompileResult(
             library: library,
             vertexFunctionName: vertexFunctionName,
@@ -146,7 +193,8 @@ struct WPESwiftShaderCompiler: Sendable {
             samplerNames: samplerNames,
             textureSlotCount: textureSlotCount,
             shaderInterface: WPEShaderInterfaceParser.parse(vertex: processedVertex, fragment: processedFragment),
-            alphaContract: alphaContract
+            alphaContract: alphaContract, vertexStage: vertexStage,
+            fullscreenMVPPositionOnly: WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(processedVertex)
         )
     }
 

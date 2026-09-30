@@ -3,6 +3,7 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
+import simd
 /// Puppet/model/text never reach here (executor encodes them). Absent compose slot 1 / image-4 mask / effect mask rebinds slot 0 (clears has-mask); godrays_combine slot 2 absent rebinds albedo and clears copy-background.
 /// Buffers: fragment uniforms=0, object/shape-quad vertex uniforms=1, skew params=2.
 struct WPEMetalShaderDispatcher {
@@ -573,29 +574,34 @@ struct WPEMetalShaderDispatcher {
             return
         }
 
-        let result = try executor.compileCustomShader(for: pass)
-        if WPESceneDebugArtifacts.shared.isEnabled {
-            WPESceneDebugArtifacts.shared.recordNoteOnce(
-                name: "msl-\(pass.pass.id)-\(pass.pass.shader).metal",
-                contents: result.mslSource
-            )
-            var iface = "shader=\(pass.pass.shader) pass=\(pass.pass.id)\n"
-            iface += "vertexFunction=\(result.vertexFunctionName)\n"
-            iface += "fragmentFunction=\(result.fragmentFunctionName)\n"
-            iface += "samplerNames=\(result.samplerNames)\n"
-            iface += "uniformLayout (name | glslType | slot | slotCount | arrayLength | material):\n"
-            for slot in result.uniformLayout {
-                iface += "  \(slot.name) | \(slot.glslType) | \(slot.slot) | \(slot.slotCount)"
-                    + " | \(slot.arrayLength.map(String.init) ?? "-") | \(slot.materialName ?? "-")\n"
-            }
-            WPESceneDebugArtifacts.shared.recordNoteOnce(
-                name: "iface-\(pass.pass.id)-\(pass.pass.shader).txt",
-                contents: iface
-            )
-        }
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
         let usesObjectQuad = !usesShapeQuad
             && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
+        var cachedProjection: simd_double4x4?
+        var projectionResolved = false
+        let effectTextureProjection: () -> simd_double4x4? = {
+            if !projectionResolved {
+                cachedProjection = executor.effectTextureProjectionMatrix(for: layer, frameState: frameState, sourceTexture: destination.texture)
+                projectionResolved = true
+            }
+            return cachedProjection
+        }
+        let authored = executor.authoredShaderResultByPassID[pass.id]
+        var rejection: WPEAuthoredVertexRejection?
+        if !executor.authoredVertexExecutionEnabled {
+            rejection = .disabledForIsolation
+        } else if usesShapeQuad || usesObjectQuad {
+            rejection = .geometryUnavailable
+        } else if let authored {
+            if !executor.hasPrewarmedAuthoredPipeline(for: authored, pass: pass, destination: destination, depthPixelFormat: depthPixelFormat) {
+                rejection = .pipelineNotPrewarmed
+            } else {
+                rejection = executor.authoredVertexRejection(for: pass, result: authored, layer: layer,
+                    frameState: frameState, effectTextureProjection: effectTextureProjection)
+            }
+        } else { rejection = .stageUnavailable(executor.authoredVertexFailureByPassID[pass.id] ?? "authored-stage-not-prepared") }
+        var result = try rejection == nil ? authored! : executor.compileCustomShader(for: pass)
+
         if WPESceneDebugArtifacts.shared.isEnabled, Self.isWaveLikePass(pass) {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(
@@ -616,7 +622,8 @@ struct WPEMetalShaderDispatcher {
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
         // Bind exactly `result.textureSlotCount` (shader signature): fewer would sample an unbound texture.
-        for slot in 0..<result.textureSlotCount {
+        let textureSlotCount = max(result.textureSlotCount, result.vertexStage?.requiredTextureSlotCount ?? 0)
+        for slot in 0..<textureSlotCount {
             // Prefer `textureBindings` (normalized; rewrites effect-bind `previous` to the pass source). Raw `binds` still has literal `.previous`, which would resolve to the black bootstrap previous on a target with no history.
             let reference = pass.textureBindings[slot]
                 ?? pass.pass.binds[slot]
@@ -704,10 +711,36 @@ struct WPEMetalShaderDispatcher {
             #endif
         }
 
-        resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
-        let effectTextureProjection = {
-            executor.effectTextureProjectionMatrix(for: layer, frameState: frameState, sourceTexture: destination.texture)
+        if result.vertexStage != nil,
+           let missing = executor.authoredVertexResolvedInputRejection(for: pass, result: result, textures: resolvedTexturesBySlot) {
+            rejection = missing
+            result = try executor.compileCustomShader(for: pass)
         }
+        if WPESceneDebugArtifacts.shared.isEnabled {
+            WPESceneDebugArtifacts.shared.recordNoteOnce(
+                name: "msl-\(pass.pass.id)-\(pass.pass.shader).metal",
+                contents: result.mslSource
+            )
+            if let vertex = result.vertexStage {
+                WPESceneDebugArtifacts.shared.recordNoteOnce(name: "msl-vs-\(pass.pass.id)-\(pass.pass.shader).metal", contents: vertex.mslSource)
+            }
+            var iface = "shader=\(pass.pass.shader) pass=\(pass.pass.id)\n"
+            iface += "vertexFunction=\(result.vertexFunctionName)\n"
+            iface += "fragmentFunction=\(result.fragmentFunctionName)\n"
+            iface += "samplerNames=\(result.samplerNames)\n"
+            iface += "uniformLayout (name | glslType | slot | slotCount | arrayLength | material):\n"
+            for slot in result.uniformLayout {
+                iface += "  \(slot.name) | \(slot.glslType) | \(slot.slot) | \(slot.slotCount)"
+                    + " | \(slot.arrayLength.map(String.init) ?? "-") | \(slot.materialName ?? "-")\n"
+            }
+            WPESceneDebugArtifacts.shared.recordNoteOnce(
+                name: "iface-\(pass.pass.id)-\(pass.pass.shader).txt",
+                contents: iface
+            )
+        }
+
+        resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
+        if let vertex = result.vertexStage { resolvedTexturesBySlot.bindVertexResources(to: encoder, count: vertex.textureSlotCount) }
         #if DEBUG
         let (packedUniforms, uniformSources) = try executor.withUniformSourceTracing(
             enabled: WPECanonicalTraceRecorder.shared.isAccumulating
@@ -727,9 +760,24 @@ struct WPEMetalShaderDispatcher {
         )
         #endif
 
+        #if DEBUG
+        let (packedVertexUniforms, vertexUniformSources) = try executor.withUniformSourceTracing(
+            enabled: WPECanonicalTraceRecorder.shared.isAccumulating
+        ) {
+            try executor.packTranslatedUniformsForBinding(for: pass, layout: result.vertexStage?.uniformLayout ?? [],
+                texturesBySlot: resolvedTexturesBySlot, effectTextureProjection: effectTextureProjection,
+                stage: .vertex, vertexExecution: .authoredFullscreen)
+        }
+        #else
+        let packedVertexUniforms = try executor.packTranslatedUniformsForBinding(for: pass,
+            layout: result.vertexStage?.uniformLayout ?? [], texturesBySlot: resolvedTexturesBySlot,
+            effectTextureProjection: effectTextureProjection, stage: .vertex, vertexExecution: .authoredFullscreen)
+        #endif
+
         // The selected geometry must name the same VS in the pipeline and trace.
         let usesSkewVertex = usesObjectQuad && executor.isVertexSkewPass(pass)
-        let vertexPath = WPEPassVertexPath.select(shape: usesShapeQuad, object: usesObjectQuad, skew: usesSkewVertex)
+        let vertexPath: WPEPassVertexPath = result.vertexStage != nil ? .authoredFullscreen
+            : .select(shape: usesShapeQuad, object: usesObjectQuad, skew: usesSkewVertex)
         let pipelineState = try executor.translatedPipelineState(
             for: result,
             vertexName: vertexPath.functionOverride,
@@ -756,7 +804,9 @@ struct WPEMetalShaderDispatcher {
                 reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
             ),
             uniformSources: uniformSources,
-            vertexPath: vertexPath
+            vertexPath: vertexPath,
+            vertexUniformSlots: packedVertexUniforms.slotsForTracing(), vertexUniformSources: vertexUniformSources,
+            authoredVertexFallback: result.vertexStage == nil ? rejection?.reason : nil
         )
         #endif
         encoder.setRenderPipelineState(pipelineState)
@@ -764,6 +814,7 @@ struct WPEMetalShaderDispatcher {
         if !packedUniforms.isEmpty {
             executor.bindTranslatedUniformSlots(packedUniforms, to: encoder)
         }
+        if !packedVertexUniforms.isEmpty { executor.bindTranslatedUniformSlots(packedVertexUniforms, to: encoder, stage: .vertex) }
         if usesShapeQuad {
             var shapeUniforms = executor.shapeQuadUniforms(
                 for: layer,

@@ -99,6 +99,7 @@ extension WPEPreparedRenderPipeline {
                     comboValues: pass.comboValues,
                     uniformValues: pass.uniformValues,
                     materialUniformNames: pass.materialUniformNames,
+                    stageUniformBindings: pass.stageUniformBindings,
                     layerTintOverride: claim,
                     reusingAccess: pass.access
                 )
@@ -129,6 +130,7 @@ extension WPEPreparedRenderPipeline {
                 comboValues: pass.comboValues,
                 uniformValues: values,
                 materialUniformNames: pass.materialUniformNames,
+                stageUniformBindings: WPEUniformStageBinding.updating(pass.stageUniformBindings, shaderName: "g_Color", value: values["g_Color"]),
                 layerTintOverride: pass.layerTintOverride,
                 reusingAccess: pass.access
             )

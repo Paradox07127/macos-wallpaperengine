@@ -31,15 +31,20 @@ struct WPEShaderTranspiler {
         comboValues: [String: Int] = [:],
         premultipliedInputSlots: Set<Int> = [],
         premultipliedOutput: Bool = false,
-        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
+        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled,
+        stageLink: WPEShaderStageLink? = nil
     ) throws -> WPEShaderTranslationResult {
         // fluidsimulation fragments read neighbour-offset varyings without declaring `g_Texture0Resolution`; inject it so reconstruction has a slot to read.
         var parseSource = preprocessedSource
-        if preprocessedSource.contains("v_TexCoordLeftTop"),
+        if stageLink == nil, preprocessedSource.contains("v_TexCoordLeftTop"),
            !preprocessedSource.contains("g_Texture0Resolution") {
             parseSource = "uniform vec4 g_Texture0Resolution;\n" + preprocessedSource
         }
-        parseSource = Self.declaringVertexOnlyUniforms(in: parseSource, shaderName: shaderName)
+        if let stageLink {
+            parseSource = stageLink.removingStageDeclarations(from: parseSource, stage: .fragment)
+        } else {
+            parseSource = Self.declaringVertexOnlyUniforms(in: parseSource, shaderName: shaderName)
+        }
         let scrubbedSource = Self.scrubFragmentOutDeclarations(parseSource)
         let activeSource = Self.stripInactivePreprocessorBranches(in: scrubbedSource)
         let lines = activeSource.components(separatedBy: "\n")
@@ -80,6 +85,15 @@ struct WPEShaderTranspiler {
             bodyLines.append(raw)
         }
 
+        if let stageLink {
+            let inputs = Set(stageLink.interface.variables(stage: .fragment, kind: .varyingInput).map { $0.key.name })
+            varyings = stageLink.varyings.filter { inputs.contains($0.name) }.map {
+                WPEVaryingDecl(type: $0.variable.glslType, name: $0.name, metalType: $0.metalType,
+                               arrayLength: $0.isArray ? $0.elementCount : nil,
+                               arrayDimension: $0.isArray ? String($0.elementCount) : nil)
+            }
+        }
+
         // Validate before substitutions or MSL generation can expand an authored
         // array. The same checked layout sizes both the host buffer and MSL.
         let layout = try validatedUniformLayout(uniforms, shaderName: shaderName)
@@ -115,13 +129,13 @@ struct WPEShaderTranspiler {
             varyings.map { ($0.name, $0.metalType) },
             uniquingKeysWith: { _, last in last }
         )
-        let preserveTexCoordZW = shouldPreserveTexCoordZW(shaderName: shaderName, comboValues: comboValues)
+        let preserveTexCoordZW = stageLink != nil || shouldPreserveTexCoordZW(shaderName: shaderName, comboValues: comboValues)
         let translatedHelpers = applySubstitutions(
             preMain + "\n" + postMain,
             varyingTypesByName: varyingTypesByName,
             preserveTexCoordZW: preserveTexCoordZW,
             premultipliedInputSlots: premultipliedInputSlots,
-            uniforms: uniforms
+            uniforms: uniforms, fragmentUVFallbacks: stageLink == nil
         )
         let translatedMain = translateMain(
             mainBody,
@@ -130,7 +144,8 @@ struct WPEShaderTranspiler {
             premultipliedInputSlots: premultipliedInputSlots,
             premultiplyOutput: premultipliedOutput,
             uniforms: uniforms,
-            functionDeclarations: preMain + "\n" + postMain
+            functionDeclarations: preMain + "\n" + postMain,
+            fragmentUVFallbacks: stageLink == nil
         )
         // Rewrite to `wpeSamplerN` in helper and main BEFORE resource threading, and after `linearSampler`-keyed narrowing/LOD so those still match the literal name.
         let perSlotHelpers = Self.rewriteSamplersToPerSlot(translatedHelpers)
@@ -157,7 +172,7 @@ struct WPEShaderTranspiler {
             comboValues: comboValues,
             premultipliedInputSlots: premultipliedInputSlots,
             premultipliedOutput: premultipliedOutput,
-            waterOptimizationsEnabled: waterOptimizationsEnabled
+            waterOptimizationsEnabled: waterOptimizationsEnabled, stageLink: stageLink
         )
 
         return WPEShaderTranslationResult(
@@ -169,7 +184,7 @@ struct WPEShaderTranspiler {
         )
     }
 
-    private static func validatedUniformLayout(
+    static func validatedUniformLayout(
         _ uniforms: [WPEUniformDecl],
         shaderName: String
     ) throws -> (slots: [WPEUniformSlot], totalSlots: Int) {

@@ -221,7 +221,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         usesObjectQuad: Bool,
         nativeState: NativeRenderState,
         uniformSources: [WPEUniformValueSource]? = nil,
-        vertexPath: WPEPassVertexPath? = nil
+        vertexPath: WPEPassVertexPath? = nil,
+        vertexUniformSlots: [SIMD4<Float>] = [],
+        vertexUniformSources: [WPEUniformValueSource]? = nil,
+        authoredVertexFallback: String? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -234,7 +237,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             shaderName: pass.pass.shader,
             sourceClassification: pass.shader?.executionClassification.rawValue,
             sourceFingerprint: pass.shader?.sourceFingerprint,
-            interface: result.shaderInterface, layout: result.uniformLayout, sources: uniformSources
+            interface: result.shaderInterface, layout: result.uniformLayout, sources: uniformSources,
+            vertexLayout: result.vertexStage?.uniformLayout ?? [], vertexSources: vertexUniformSources,
+            authoredVertexExecuted: result.vertexStage != nil, authoredVertexFallback: authoredVertexFallback
         )
         semanticCoverage.append(coverage)
         let ordinal = passes.count
@@ -244,7 +249,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         let fragmentShaderID = shaderID(stage: "fs", stableInput: result.mslSource)
         let selectedVertexPath = vertexPath ?? (usesObjectQuad ? .objectQuad : .fullscreenQuad)
         let selectedVertexFunction = selectedVertexPath.functionName(default: result.vertexFunctionName)
-        let vertexShaderID = shaderID(stage: "vs", stableInput: selectedVertexFunction)
+        let vertexSource = result.vertexStage?.mslSource ?? selectedVertexFunction
+        let vertexShaderID = shaderID(stage: "vs", stableInput: vertexSource)
         let packedBytes = packedUniformBytes(packedUniformSlots)
         let bufferResource = "buf-mac-pass-\(ordinal)"
 
@@ -265,10 +271,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         resources.shaders[vertexShaderID] = shaderResource(
             stage: "vertex",
             entryPoint: selectedVertexFunction,
-            source: selectedVertexFunction,
-            path: nil,
-            layout: [],
-            samplers: []
+            source: vertexSource,
+            path: result.vertexStage == nil ? nil : "msl-vs-\(pass.pass.id)-\(pass.pass.shader).metal",
+            layout: result.vertexStage?.uniformLayout ?? [],
+            samplers: result.vertexStage?.samplerNames ?? []
         )
 
         var textures: [[String: Any]] = []
@@ -277,11 +283,16 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             resources.textures[texID] = textureResource(
                 id: texID, name: binding.name, reference: binding.reference, texture: binding.texture
             )
-            textures.append([
-                "stage": "fragment",
+            let stages = (binding.slot < result.textureSlotCount ? ["fragment"] : [])
+                + (binding.slot < (result.vertexStage?.textureSlotCount ?? 0) ? ["vertex"] : [])
+            for stage in stages {
+                let names = stage == "vertex" ? (result.vertexStage?.samplerNames ?? []) : result.samplerNames
+                let name = names.enumerated().first { (Self.authoredTextureSlot($0.element) ?? $0.offset) == binding.slot }?.element
+                textures.append([
+                    "stage": stage,
                 // Authored register slot, matching the reflection and the Windows side. `binding.slot` is our dense Metal binding index.
                 "slot": Self.authoredTextureSlot(binding.name) ?? binding.slot,
-                "name": jsonOrNull(binding.name),
+                    "name": jsonOrNull(name),
                 "resource": texID,
                 "reference": jsonOrNull(Self.describe(reference: binding.reference)),
                 "fallback": binding.fallbackToPrimary,
@@ -289,6 +300,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 "height": jsonOrNull(binding.texture?.height),
                 "format": jsonOrNull(binding.texture.map { pixelFormatName($0.pixelFormat) })
             ])
+            }
         }
 
         let draw: [String: Any] = [
@@ -318,6 +330,16 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "packedSlots": WPECanonicalUniformTrace.floatSlots(packedUniformSlots),
             "rawSlotBits": WPECanonicalUniformTrace.bitSlots(packedUniformSlots),
         ]
+        var constantBuffers = [constantBuffer]
+        if let vertex = result.vertexStage {
+            let bytes = packedUniformBytes(vertexUniformSlots)
+            let resource = "buf-mac-vertex-\(ordinal)"
+            resources.buffers[resource] = ["label": "Mac authored VS slots pass \(ordinal)", "byteLength": bytes.count, "sha256": sha256Hex(bytes)]
+            constantBuffers.append(["name": "mac_vertex_slots", "stage": "vertex", "slot": 0,
+                                    "resource": resource, "rawBytesSha256": sha256Hex(bytes),
+                                    "variables": WPECanonicalUniformTrace.variables(layout: vertex.uniformLayout, slots: vertexUniformSlots, sources: vertexUniformSources),
+                                    "packedSlots": WPECanonicalUniformTrace.floatSlots(vertexUniformSlots), "rawSlotBits": WPECanonicalUniformTrace.bitSlots(vertexUniformSlots)])
+        }
         // Keyed by authored slot so it lines up with the sampler entries below
         // and with the Windows side's register numbering.
         let samplerBySlot = Dictionary(
@@ -326,11 +348,19 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let samplers: [[String: Any]] = result.samplerNames.enumerated().map { index, name in
+        var samplers: [[String: Any]] = result.samplerNames.enumerated().map { index, name in
             let slot = Self.authoredTextureSlot(name) ?? index
             var entry: [String: Any] = ["stage": "fragment", "slot": slot, "name": name]
             if let descriptor = samplerBySlot[slot] { entry["descriptor"] = descriptor }
             return entry
+        }
+        for (index, name) in (result.vertexStage?.samplerNames ?? []).enumerated() {
+            let slot = Self.authoredTextureSlot(name) ?? index
+            var entry: [String: Any] = ["stage": "vertex", "slot": slot, "name": name]
+            if let descriptor = samplerBySlot[slot] {
+                entry["descriptor"] = descriptor
+            }
+            samplers.append(entry)
         }
         var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
         state["samplers"] = samplers
@@ -340,6 +370,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "sha256": NSNull(),
             "visualStats": ["note": "Per-pass RT hash filled from scenePassDumps when WPEDumpScenePasses captured this pass."]
         ]
+        var vertexContract = selectedVertexPath.traceRecord(defaultFunction: result.vertexFunctionName)
+        if let authoredVertexFallback {
+            vertexContract["fallbackReason"] = authoredVertexFallback
+        }
+        if let vertex = result.vertexStage {
+            vertexContract["bufferValues"] = "recorded-in-constantBuffers"
+            vertexContract["requiredVertexBufferIndices"] = vertex.uniformLayout.isEmpty ? [] : [0]
+        }
         let passRecord: [String: Any] = [
             "ordinal": ordinal,
             "eventId": NSNull(),
@@ -350,12 +388,12 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "targets": ["color": colorTargets, "depth": NSNull()] as [String: Any],
             "textures": textures,
             "shaders": ["vs": vertexShaderID, "fs": fragmentShaderID],
-            "constantBuffers": [constantBuffer],
+            "constantBuffers": constantBuffers,
             "state": state,
             "output": output,
             "implementation": implementationRecord(for: pass.shader),
             "semanticCoverage": coverage.jsonObject(),
-            "vertexContract": selectedVertexPath.traceRecord(defaultFunction: result.vertexFunctionName),
+            "vertexContract": vertexContract,
             "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: result.alphaContract,
                                                   target: targetTexture, nativeState: nativeState).jsonObject(),
         ]

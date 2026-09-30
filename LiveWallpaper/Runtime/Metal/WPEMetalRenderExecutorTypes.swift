@@ -211,6 +211,14 @@ final class WPEMetalTextureSlotTable {
         }
     }
 
+    func bindVertexResources(to encoder: MTLRenderCommandEncoder, count: Int) {
+        precondition(count >= 0 && count <= slotCount)
+        guard count > 0 else { return }
+        let range = NSRange(location: 0, length: count)
+        textures.withUnsafeBufferPointer { encoder.__setVertexTextures($0.baseAddress!, with: range) }
+        samplers.withUnsafeBufferPointer { encoder.__setVertexSamplerStates($0.baseAddress!, with: range) }
+    }
+
     func reset() {
         for index in textures.indices {
             textures[index] = nil
