@@ -1,7 +1,7 @@
-import LiveWallpaperCore
-import SwiftUI
 import AppKit
+import LiveWallpaperCore
 import os
+import SwiftUI
 
 struct MenuBarContent: View {
     private static let signposter = OSSignposter(
@@ -56,7 +56,6 @@ struct MenuBarContent: View {
         .modifier(MenuBarOuterShell())
         .onAppear(perform: acquireSystemMonitorLeaseIfNeeded)
         .onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)
-
     }
 
     private func acquireSystemMonitorLeaseIfNeeded() {
@@ -141,13 +140,17 @@ struct MenuBarContent: View {
                 let screens = screenManager.screens
                 ForEach(screens, id: \.id) { screen in
                     let summary = screenManager.wallpaperSummary(for: screen)
-                    let visualState = displayVisualState(for: summary.activity)
+                    let attempt = screenManager.wallpaperLoads.attempt(for: screen)
+                    let visualState = attempt.map { $0.phase == .failed ? DisplayVisualState.error : .loading }
+                        ?? displayVisualState(for: summary.activity)
+                    let spanned = isSpanned(screen)
 
                     MenuBarDisplayRow(
                         title: screen.name,
                         subtitle: displaySubtitleAttributed(for: screen, summary: summary),
                         subtitleAccessibilityText: displaySubtitleText(for: screen, summary: summary),
-                        iconName: WallpaperType.displaySymbolName(for: summary.wallpaperType),
+                        iconName: spanned ? "display.2" : WallpaperType.displaySymbolName(for: summary.wallpaperType),
+                        isSpanned: spanned,
                         visualState: visualState,
                         intendsToPlay: screen.playbackController?.userIntendsToPlay == true,
                         supportsPlayback: summary.supportsPlaybackControl,
@@ -178,37 +181,48 @@ struct MenuBarContent: View {
         let ramPercent = monitor.systemMemoryUsage * 100
         let thermalState = monitor.thermalState
 
-        return HStack(spacing: 2) {
-            performanceItem(
-                tint: usageColor(for: cpuPercent),
-                label: "CPU",
-                value: FormatUtils.formatPercent(cpuPercent.rounded())
-            )
-            performanceItem(
-                tint: gpuPercent.map { usageColor(for: $0) } ?? DesignTokens.Colors.textTertiary,
-                label: "GPU",
-                value: gpuPercent.map { FormatUtils.formatPercent($0.rounded()) } ?? "-"
-            )
-            performanceItem(
-                tint: usageColor(for: ramPercent),
-                label: "RAM",
-                value: FormatUtils.formatPercent(ramPercent.rounded())
-            )
-            performanceItem(
-                tint: thermalColor(for: thermalState),
-                label: "THERM",
-                value: thermalShortLabel(for: thermalState)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
+        let items: [(label: String, icon: String, value: String, tint: Color)] = [
+            ("CPU", "cpu", FormatUtils.formatPercent(cpuPercent.rounded()), usageColor(for: cpuPercent)),
+            ("GPU", "square.3.layers.3d", gpuPercent.map { FormatUtils.formatPercent($0.rounded()) } ?? "-",
+             gpuPercent.map { usageColor(for: $0) } ?? DesignTokens.Colors.textTertiary),
+            ("RAM", "memorychip", FormatUtils.formatPercent(ramPercent.rounded()), usageColor(for: ramPercent)),
+            ("THERM", "thermometer", thermalShortLabel(for: thermalState), thermalColor(for: thermalState)),
+        ]
+
+        return performanceStrip(items)
     }
 
-    /// Thermal pressure has no percent — short word; over-wide localized values truncate.
+    fileprivate func performanceStrip(_ items: [(label: String, icon: String, value: String, tint: Color)]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
+                    performanceItem(tint: item.tint, systemImage: item.icon, label: item.label, value: item.value, showsLabel: index != 3)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            Grid(horizontalSpacing: DesignTokens.Spacing.md, verticalSpacing: DesignTokens.Spacing.xs) {
+                ForEach(0 ..< 2) { row in
+                    GridRow {
+                        ForEach(0 ..< 2) { column in
+                            let index = row * 2 + column
+                            let item = items[index]
+                            performanceItem(tint: item.tint, systemImage: item.icon, label: item.label, value: item.value, showsLabel: index != 3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Thermal pressure has no percentage; its word stays readable at compact widths.
     private func thermalShortLabel(for state: ProcessInfo.ThermalState) -> String {
         switch state {
-        case .nominal:  return String(localized: "Normal", bundle: .appLanguage)
-        case .fair:     return String(localized: "Warm", bundle: .appLanguage)
-        case .serious:  return String(localized: "Hot", bundle: .appLanguage)
+        case .nominal: return String(localized: "Normal", bundle: .appLanguage)
+        case .fair: return String(localized: "Warm", bundle: .appLanguage)
+        case .serious: return String(localized: "Hot", bundle: .appLanguage)
         case .critical: return String(localized: "Crit", bundle: .appLanguage)
         @unknown default: return "—"
         }
@@ -216,9 +230,9 @@ struct MenuBarContent: View {
 
     private func thermalColor(for state: ProcessInfo.ThermalState) -> Color {
         switch state {
-        case .nominal:  return DesignTokens.Colors.Status.active
-        case .fair:     return DesignTokens.Colors.Status.caution
-        case .serious:  return DesignTokens.Colors.Status.warning
+        case .nominal: return DesignTokens.Colors.Status.active
+        case .fair: return DesignTokens.Colors.Status.caution
+        case .serious: return DesignTokens.Colors.Status.warning
         case .critical: return DesignTokens.Colors.Status.danger
         @unknown default: return DesignTokens.Colors.textTertiary
         }
@@ -226,30 +240,35 @@ struct MenuBarContent: View {
 
     /// Activity Monitor–style thresholds (50 / 80).
     private func usageColor(for percent: Double) -> Color {
-        if percent >= 80 { return DesignTokens.Colors.Status.danger }
-        if percent >= 50 { return DesignTokens.Colors.Status.warning }
+        if percent >= 80 {
+            return DesignTokens.Colors.Status.danger
+        }
+        if percent >= 50 {
+            return DesignTokens.Colors.Status.warning
+        }
         return DesignTokens.Colors.Status.active
     }
 
-    private func performanceItem(tint: Color, label: String, value: String) -> some View {
+    private func performanceItem(tint: Color, systemImage: String, label: String, value: String, showsLabel: Bool) -> some View {
         HStack(spacing: 5) {
-            Circle()
-                .fill(tint)
-                .frame(width: 6, height: 6)
-                .animation(.easeInOut(duration: 0.25), value: tint)
+            Image(systemName: systemImage)
+                .font(DesignTokens.Typography.callout)
+                .foregroundStyle(tint)
                 .accessibilityHidden(true)
 
-            Text(verbatim: label)
-                .font(DesignTokens.Typography.captionEmphasized)
-                .foregroundStyle(.secondary)
+            if showsLabel {
+                Text(verbatim: label)
+                    .font(DesignTokens.Typography.captionEmphasized)
+                    .foregroundStyle(.secondary)
+            }
 
             Text(verbatim: value)
                 .font(DesignTokens.Typography.metricEmphasized)
                 .foregroundStyle(.primary)
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.8)
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: true, vertical: false)
+        .help(Text("\(label) \(value)"))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(label) \(value)"))
     }
@@ -276,6 +295,7 @@ struct MenuBarContent: View {
                 .accessibilityLabel(Text("Open General Settings"))
 
             GlassIconButton("arrow.clockwise") { screenManager.reloadAllScreens() }
+                .disabled(isWallpaperSwitchDisabled)
                 .help(Text("Reload all wallpapers"))
                 .accessibilityLabel(Text("Reload all wallpapers"))
 
@@ -335,8 +355,14 @@ struct MenuBarContent: View {
     }
 
     private func displaySource(for screen: Screen, summary: WallpaperSessionSummary) -> String {
+        if let attempt = screenManager.wallpaperLoads.attempt(for: screen), attempt.phase != .failed {
+            return String(localized: "Loading…", bundle: .appLanguage)
+        }
         if let failure = screenManager.wallpaperLoads.attempt(for: screen)?.failure {
             return String(localized: "Last wallpaper application failed", bundle: .appLanguage) + " · " + failure.title
+        }
+        if summary.activity == .restoring {
+            return String(localized: "Restoring", bundle: .appLanguage)
         }
         // Show the suspension reason before wallpaper identity.
         if summary.activity == .policySuspended,
@@ -371,33 +397,44 @@ struct MenuBarContent: View {
     private func wallpaperTypeText(for type: WallpaperType?) -> String? {
         switch type {
         case .video:
-            return String(localized: "Video", bundle: .appLanguage)
+            String(localized: "Video", bundle: .appLanguage)
         case .html:
-            return String(localized: "Web", bundle: .appLanguage)
+            String(localized: "Web", bundle: .appLanguage)
         case .scene:
-            return String(localized: "Scene", bundle: .appLanguage)
+            String(localized: "Scene", bundle: .appLanguage)
         case nil:
-            return nil
+            nil
         }
     }
 
     private func displayVisualState(for activity: WallpaperSessionActivity) -> DisplayVisualState {
         switch activity {
         case .active:
-            return .active
+            .active
         case .paused:
-            return .paused
+            .paused
         case .policySuspended:
-            return .policySuspended
+            .policySuspended
         case .restoring:
-            return .restoring
+            .restoring
         case .off:
-            return .off
+            .off
         case .error:
-            return .error
+            .error
         case .inactive:
-            return .inactive
+            .inactive
         }
+    }
+
+    private func isSpanned(_ screen: Screen) -> Bool {
+        guard let config = screenManager.getConfiguration(for: screen) else { return false }
+        if config.activeWallpaper.wallpaperType == .scene, let group = config.sceneSpanGroupID {
+            return screenManager.screens.filter {
+                screenManager.getConfiguration(for: $0)?.sceneSpanGroupID == group
+            }.count > 1
+        }
+        return config.activeWallpaper.wallpaperType == .video
+            && config.videoDisplayMode == .spanAllDisplays && screenManager.screens.count > 1
     }
 
     private func canStepPlaylist(for screen: Screen) -> Bool {
@@ -488,7 +525,72 @@ struct MenuBarContent: View {
         dismiss()
         openSettingsAndAddWallpaper(screenID)
     }
+}
 
+enum MenuBarWallpaperStatus: Equatable {
+    case notConfigured, playing, visible, mixed, paused, policySuspended, restoring, loading, off, error
+
+    static func resolve(
+        summaries: [WallpaperSessionSummary], globallyEnabled: Bool,
+        hasFailedLoad: Bool = false, hasPendingLoad: Bool = false
+    ) -> Self {
+        let configured = summaries.filter(\.isConfigured)
+        if !globallyEnabled, !configured.isEmpty {
+            return .off
+        }
+        if hasFailedLoad || configured.contains(where: { $0.activity == .error }) {
+            return .error
+        }
+        if hasPendingLoad {
+            return .loading
+        }
+        guard !configured.isEmpty else { return .notConfigured }
+        if configured.contains(where: { $0.activity == .active }) {
+            if configured.contains(where: { $0.activity != .active }) {
+                return .mixed
+            }
+            return configured.contains(where: \.supportsPlaybackControl) ? .playing : .visible
+        }
+        if configured.contains(where: { $0.activity == .restoring }) {
+            return .restoring
+        }
+        if configured.allSatisfy({ $0.activity == .off }) {
+            return .off
+        }
+        if configured.allSatisfy({ $0.activity == .policySuspended }) {
+            return .policySuspended
+        }
+        return .paused
+    }
+
+    var symbol: String {
+        switch self {
+        case .notConfigured: "photo.on.rectangle"
+        case .playing: "play.rectangle.fill"
+        case .visible: "display.2"
+        case .mixed: "playpause"
+        case .paused: "pause.rectangle.fill"
+        case .policySuspended: "pause.circle"
+        case .restoring, .loading: "arrow.triangle.2.circlepath"
+        case .off: "rectangle.slash"
+        case .error: "exclamationmark.triangle.fill"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .notConfigured: String(localized: "Not configured", bundle: .appLanguage)
+        case .playing: String(localized: "Playing", bundle: .appLanguage)
+        case .visible: String(localized: "active", bundle: .appLanguage)
+        case .mixed: String(localized: "Mixed playback", bundle: .appLanguage)
+        case .paused: String(localized: "Paused", bundle: .appLanguage)
+        case .policySuspended: String(localized: "Paused by system", bundle: .appLanguage)
+        case .restoring: String(localized: "Restoring", bundle: .appLanguage)
+        case .loading: String(localized: "Loading…", bundle: .appLanguage)
+        case .off: String(localized: "Off", bundle: .appLanguage)
+        case .error: String(localized: "Error", bundle: .appLanguage)
+        }
+    }
 }
 
 private enum MenuBarMetrics {
@@ -510,40 +612,53 @@ private enum DisplayVisualState: Equatable {
     case policySuspended
     /// Rebuilding after a deep hibernate.
     case restoring
+    case loading
 
     var tint: Color {
         switch self {
-        case .active:   return DesignTokens.Colors.Status.active
-        case .paused, .policySuspended: return DesignTokens.Colors.Status.warning
-        case .restoring: return DesignTokens.Colors.Status.active
-        case .off:      return .secondary
-        case .error:    return DesignTokens.Colors.Status.danger
-        case .inactive: return .secondary
+        case .active: DesignTokens.Colors.Status.active
+        case .paused, .policySuspended: DesignTokens.Colors.Status.warning
+        case .restoring, .loading: DesignTokens.Colors.Status.info
+        case .off: .secondary
+        case .error: DesignTokens.Colors.Status.danger
+        case .inactive: .secondary
+        }
+    }
+
+    var symbol: String? {
+        switch self {
+        case .active, .inactive: nil
+        case .paused: "pause.fill"
+        case .policySuspended: "pause.circle.fill"
+        case .restoring, .loading: "arrow.triangle.2.circlepath"
+        case .off: "stop.fill"
+        case .error: "exclamationmark.triangle.fill"
         }
     }
 
     var accessibilityLabel: String {
         switch self {
         case .active:
-            return String(localized: "active", bundle: .appLanguage)
+            String(localized: "active", bundle: .appLanguage)
         case .paused:
-            return String(localized: "paused", bundle: .appLanguage)
+            String(localized: "paused", bundle: .appLanguage)
         case .policySuspended:
-            return String(localized: "Paused by system", bundle: .appLanguage)
+            String(localized: "Paused by system", bundle: .appLanguage)
         case .restoring:
-            return String(localized: "Restoring", bundle: .appLanguage)
+            String(localized: "Restoring", bundle: .appLanguage)
+        case .loading:
+            String(localized: "Loading…", bundle: .appLanguage)
         case .off:
-            return String(localized: "off", bundle: .appLanguage)
+            String(localized: "off", bundle: .appLanguage)
         case .error:
-            return String(localized: "error", bundle: .appLanguage)
+            String(localized: "error", bundle: .appLanguage)
         case .inactive:
-            return String(localized: "idle", bundle: .appLanguage)
+            String(localized: "idle", bundle: .appLanguage)
         }
     }
 }
 
 private struct MenuBarOuterShell: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content
@@ -560,6 +675,7 @@ private struct MenuBarDisplayRow: View {
     let subtitle: AttributedString
     let subtitleAccessibilityText: String
     let iconName: String
+    var isSpanned = false
     let visualState: DisplayVisualState
     let intendsToPlay: Bool
     let supportsPlayback: Bool
@@ -600,6 +716,7 @@ private struct MenuBarDisplayRow: View {
                 .help(Text("Open display settings"))
                 .accessibilityLabel(Text("\(title), \(subtitleAccessibilityText), \(visualState.accessibilityLabel)"))
                 .accessibilityElement(children: .combine)
+                .accessibilityHint(isSpanned ? Text("Spans multiple displays") : Text("Open display settings"))
 
                 // All four at `.regular`, all on plain glass: mixing sizes or tinting the two main ones `.prominent` would make a transport cluster read as three unrelated controls.
                 if let addAction {
@@ -653,6 +770,15 @@ private struct DisplayIconTile: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.quaternary.opacity(0.6))
             )
+            .overlay(alignment: .bottomTrailing) {
+                if let symbol = state.symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(state.tint)
+                        .frame(width: 12, height: 12)
+                        .background(DesignTokens.Colors.surfaceRaised, in: Circle())
+                }
+            }
             .accessibilityHidden(true)
     }
 }
@@ -698,11 +824,11 @@ private struct VolumeControlRow: View {
     private func volumeIcon(for value: Double) -> String {
         switch value {
         case ..<0.01:
-            return "speaker.slash.fill"
+            "speaker.slash.fill"
         case ..<0.5:
-            return "speaker.wave.1.fill"
+            "speaker.wave.1.fill"
         default:
-            return "speaker.wave.2.fill"
+            "speaker.wave.2.fill"
         }
     }
 }
@@ -718,13 +844,13 @@ private struct MenuBarPressFeedbackStyle: ButtonStyle {
 }
 
 private struct MenuBarWindowChromeClearer: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async { Self.stripChrome(anchoredAt: view) }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: NSView, context _: Context) {
         DispatchQueue.main.async { Self.stripChrome(anchoredAt: nsView) }
     }
 
@@ -742,4 +868,34 @@ private struct MenuBarWindowChromeClearer: NSViewRepresentable {
             sibling.isHidden = true
         }
     }
+}
+
+#Preview("Menu bar · metrics and display states") {
+    let menu = MenuBarContent(openSettings: {}, openSettingsForScreen: { _ in }, openHome: {}, openSettingsAndAddWallpaper: { _ in })
+    VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+        menu.performanceStrip([
+            ("CPU", "cpu", "100%", DesignTokens.Colors.Status.danger),
+            ("GPU", "square.3.layers.3d", "25%", DesignTokens.Colors.Status.active),
+            ("RAM", "memorychip", "58%", DesignTokens.Colors.Status.warning),
+            ("THERM", "thermometer", "Normal", DesignTokens.Colors.Status.active),
+        ])
+        MenuBarDisplayRow(
+            title: "BenQ PD3205U", subtitle: AttributedString("Not configured"), subtitleAccessibilityText: "Not configured",
+            iconName: "display", visualState: .inactive, intendsToPlay: false, supportsPlayback: false, canStepPlaylist: false,
+            screenID: 1, audioVolume: nil, addAction: {}, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
+        )
+        MenuBarDisplayRow(
+            title: "MPG321CX OLED", subtitle: AttributedString("Scene · Paused by system"), subtitleAccessibilityText: "Paused by system",
+            iconName: "display.2", isSpanned: true, visualState: .policySuspended, intendsToPlay: true, supportsPlayback: true, canStepPlaylist: true,
+            screenID: 2, audioVolume: .constant(0.5), addAction: nil, openAction: {}, previousAction: {}, playbackAction: {}, nextAction: {}
+        )
+        HStack(spacing: DesignTokens.Spacing.md) {
+            ForEach(Array([MenuBarWallpaperStatus.mixed, .loading, .restoring, .policySuspended, .error, .off].enumerated()), id: \.offset) { _, state in
+                Image(systemName: state.symbol).help(state.title)
+            }
+        }
+    }
+    .padding(MenuBarMetrics.outerPadding)
+    .frame(width: MenuBarMetrics.popoverWidth)
+    .background(DesignTokens.Colors.surfaceRaised)
 }

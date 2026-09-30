@@ -1,11 +1,47 @@
+import AppKit
 import Foundation
-import Testing
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Testing
 
 @Suite("MenuBar shortcut + recents behavior", .serialized)
 @MainActor
 struct MenuBarBehaviorTests {
+
+    @Test("Menu-bar status distinguishes playback intent, system holds and restoration", arguments: [
+        (WallpaperSessionActivity.active, MenuBarWallpaperStatus.playing),
+        (.paused, .paused), (.policySuspended, .policySuspended),
+        (.restoring, .restoring), (.off, .off), (.error, .error), (.inactive, .notConfigured),
+    ])
+    func menuBarStatus(activity: WallpaperSessionActivity, expected: MenuBarWallpaperStatus) {
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [Self.summary(activity)], globallyEnabled: true) == expected)
+    }
+
+    @Test("Mixed playback and a failure on another display remain visible in the menu bar")
+    func mixedPlaybackAndFailureAreVisible() {
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [Self.summary(.active), Self.summary(.paused)], globallyEnabled: true) == .mixed)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [Self.summary(.active), Self.summary(.error)], globallyEnabled: true) == .error)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [Self.summary(.active)], globallyEnabled: true, hasFailedLoad: true) == .error)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [], globallyEnabled: true, hasFailedLoad: true) == .error)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [], globallyEnabled: true, hasPendingLoad: true) == .loading)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [Self.summary(.active)], globallyEnabled: false) == .off)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [], globallyEnabled: true) == .notConfigured)
+        let web = WallpaperSessionSummary(wallpaperType: .html, activity: .active, supportsPlaybackControl: false, subtitle: nil)
+        #expect(MenuBarWallpaperStatus.resolve(summaries: [web], globallyEnabled: true) == .visible)
+    }
+
+    private static func summary(_ activity: WallpaperSessionActivity) -> WallpaperSessionSummary {
+        WallpaperSessionSummary(wallpaperType: .video, activity: activity, supportsPlaybackControl: true, subtitle: nil)
+    }
+
+    @Test("Status, metric and shortcut glyphs exist in the system symbol library")
+    func symbolsExist() {
+        let states: [MenuBarWallpaperStatus] = [.notConfigured, .playing, .visible, .mixed, .paused, .policySuspended, .restoring, .loading, .off, .error]
+        let glyphs = states.map(\.symbol) + ["cpu", "square.3.layers.3d", "memorychip", "thermometer", "control", "option", "shift", "command", "space", "return"]
+        for glyph in glyphs {
+            #expect(NSImage(systemSymbolName: glyph, accessibilityDescription: nil) != nil, Comment(rawValue: glyph))
+        }
+    }
 
     @Test("Removing a known WPE import drops it from the recents list")
     func removingKnownImportDropsIt() throws {
@@ -181,7 +217,7 @@ struct MenuBarBehaviorTests {
         #expect(performanceItem.contains(".accessibilityLabel(Text(\"\\(label) \\(value)\"))"))
         #expect(
             Self.performanceItemAccessibilityContractHolds(performanceItem),
-            "Only the Circle status dot may be hidden; the HStack must expose its combined label"
+            "Only the metric icon may be hidden; the HStack must expose its combined label"
         )
 
         let containerHiddenProbe = performanceItem
@@ -248,9 +284,9 @@ struct MenuBarBehaviorTests {
         let contentStart = normalized.index(after: openBrace)
         let content = String(normalized[contentStart..<closeBrace])
         let containerModifiers = String(normalized[normalized.index(after: closeBrace)...])
-        let statusDot = "Circle().fill(tint).frame(width:6,height:6).animation(.easeInOut(duration:0.25),value:tint)\(hidden)"
+        let statusGlyph = "Image(systemName:systemImage).font(DesignTokens.Typography.callout).foregroundStyle(tint)\(hidden)"
 
-        return content.contains(statusDot)
+        return content.contains(statusGlyph)
             && !containerModifiers.contains(".accessibilityHidden(")
             && containerModifiers.contains(".accessibilityElement(children:.ignore)")
             && containerModifiers.contains(".accessibilityLabel(Text(\"\\(label)\\(value)\"))")

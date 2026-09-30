@@ -160,6 +160,7 @@ enum PageGuideContext: CaseIterable {
         switch self {
         case .overview:
             [
+                .init(.navigation, "Loomscreen stays in the menu bar", "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
                 .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."),
                 .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper.", footnote: Self.importHint),
                 .init(.shelfHandle, "Open the wallpaper shelf", "Click Wallpaper Library at the bottom, or scroll upward, to reveal the shelf. Continue upward for the full library. You can also use the top navigation."),
@@ -263,9 +264,9 @@ struct PageGuideButton: View {
                 GlassIconButton("questionmark", size: .large) { session?.start(context) }
             }
         }
-            .help(Text("Explain This Page"))
-            .accessibilityLabel(Text("Explain This Page"))
-            .accessibilityIdentifier("pageGuide.open")
+        .help(Text("Explain This Page"))
+        .accessibilityLabel(Text("Explain This Page"))
+        .accessibilityIdentifier("pageGuide.open")
     }
 }
 

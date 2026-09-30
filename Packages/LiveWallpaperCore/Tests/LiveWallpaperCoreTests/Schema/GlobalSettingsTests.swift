@@ -5,6 +5,17 @@ import Testing
 @Suite("GlobalSettings")
 struct GlobalSettingsTests {
 
+    @Test("New installs show in the Dock; legacy settings keep their existing menu-bar-only default")
+    func dockDefaultPreservesExistingInstalls() throws {
+        #expect(GlobalSettings().showInDock)
+        let legacy = try JSONDecoder().decode(GlobalSettings.self, from: Data("{}".utf8))
+        #expect(!legacy.showInDock)
+        for stored in [false, true] {
+            let data = Data("{\"showInDock\":\(stored)}".utf8)
+            #expect(try JSONDecoder().decode(GlobalSettings.self, from: data).showInDock == stored)
+        }
+    }
+
     @Test("Legacy JSON without globalShortcutsEnabled decodes to true")
     func legacyDecodeDefaultsToTrue() throws {
         let legacyJSON = """

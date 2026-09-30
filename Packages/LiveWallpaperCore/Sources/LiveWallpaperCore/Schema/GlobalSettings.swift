@@ -81,7 +81,7 @@ public struct GlobalSettings: Codable, Sendable {
         pauseOnFullScreen: Bool = true,
         pauseOnWindowOcclusion: Bool = true,
         pauseInLowPowerMode: Bool = true,
-        showInDock: Bool = false,
+        showInDock: Bool = true,
         weatherLocation: WeatherLocationPreference = .default,
         globalShortcutsEnabled: Bool = true,
         globalShortcuts: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?] = [:],
@@ -142,6 +142,7 @@ public struct GlobalSettings: Codable, Sendable {
         } else {
             pauseInLowPowerMode = true
         }
+        // Existing installs keep their menu-bar-only behavior when the key predates this setting.
         showInDock = try c.decodeIfPresent(Bool.self, forKey: .showInDock) ?? false
         weatherLocation = (try? c.decodeIfPresent(WeatherLocationPreference.self, forKey: .weatherLocation)) ?? .default
         globalShortcutsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .globalShortcutsEnabled)) ?? true

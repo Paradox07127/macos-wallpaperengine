@@ -32055,6 +32055,40 @@
         }
       }
     },
+    "Loading…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込み中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在载入…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入…"
+          }
+        }
+      }
+    },
     "Local" : {
       "comment" : "Segment label in the HTML source picker covering both .html files and folders.",
       "extractionState" : "manual",
@@ -32680,6 +32714,40 @@
         }
       }
     },
+    "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen es una app de la barra de menús. Al cerrar esta ventana, los fondos siguen funcionando. Haz clic en su icono de la barra de menús y elige Gestionar para volver. La opción Mostrar en el Dock, en los ajustes generales, también permite encontrar la app en el Dock y con Comando-Tab."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen はメニューバーに常駐するアプリです。このウインドウを閉じても壁紙は動作し続けます。メニューバーのアイコンをクリックし、「管理」を選ぶと戻れます。一般設定の「Dock に表示」をオンにすると、Dock と Command-Tab からもアプリを開けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 是一款菜单栏应用。关闭此窗口后，壁纸仍会继续运行。点击菜单栏中的图标并选择“管理”即可重新打开窗口。在通用设置中开启“在 Dock 中显示”，也可通过 Dock 和 Command-Tab 找到应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 是一款選單列應用程式。關閉此視窗後，桌布仍會繼續執行。點擊選單列中的圖示並選擇「管理」即可重新開啟視窗。在一般設定中開啟「在 Dock 中顯示」，也可透過 Dock 和 Command-Tab 找到應用程式。"
+          }
+        }
+      }
+    },
     "Loomscreen is quitting." : {
       "comment" : "Scene import refused because the app is shutting down.",
       "extractionState" : "manual",
@@ -32777,6 +32845,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 絕不會讀取你的 Steam 密碼——只讀取此金鑰，並且只儲存在這台 Mac 上。"
+          }
+        }
+      }
+    },
+    "Loomscreen stays in the menu bar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen stays in the menu bar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen permanece en la barra de menús"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen はメニューバーに常駐します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 常驻菜单栏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 常駐選單列"
           }
         }
       }
@@ -35136,6 +35238,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "混合實體用量與 RSS（程序群組）"
+          }
+        }
+      }
+    },
+    "Mixed playback" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mixed playback"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducción mixta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイごとに再生状態が異なります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分显示器正在播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分顯示器正在播放"
           }
         }
       }
@@ -57444,6 +57580,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跨所有顯示器"
+          }
+        }
+      }
+    },
+    "Spans multiple displays" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spans multiple displays"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abarca varias pantallas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複数のディスプレイにまたがって表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "横跨多个显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "橫跨多個顯示器"
           }
         }
       }

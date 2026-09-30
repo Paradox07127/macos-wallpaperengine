@@ -21,6 +21,8 @@ Skipping onboarding is fine — everything below works from the Settings window.
 - **Menu bar icon** — day-to-day control: add a wallpaper, global on/off, per-display play/pause and prev/next, volume, live CPU/GPU/RAM/thermal strip, reload, quit.
 - **Management window** (menu bar → **Manage**) — the top navigation opens **Overview**, **Wallpaper Library**, **Schemes**, **System Wallpaper**, **Workshop** (Pro), and **Settings**. Overview shows your displays; click one to edit it. Settings has its own sidebar for General, Display Defaults, Performance, Integrations, Shortcuts, Backup and the other settings pages.
 
+Closing the management window keeps Loomscreen and its wallpapers running. Use the menu bar icon → **Manage** to return. New installations also show the app in the Dock and Command-Tab by default; **Settings → General → Show in Dock** controls this. Existing saved preferences are preserved. Choose **Quit** in the menu bar to stop the app.
+
 ## 3) Configure one display end-to-end
 
 1. Open **Overview** and click the display you want to change.

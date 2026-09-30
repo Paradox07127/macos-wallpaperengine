@@ -616,7 +616,10 @@ struct LiveWallpaperApp: App {
         MenuBarExtra {
             menuBarBody
         } label: {
-            Image(systemName: menuBarIconName)
+            let status = menuBarStatus
+            Image(systemName: status.symbol)
+                .accessibilityLabel(Text(verbatim: "\(BundleIdentity.productDisplayName), \(status.title)"))
+                .help(Text(verbatim: status.title))
         }
         .menuBarExtraStyle(.window)
         .commands {
@@ -666,23 +669,14 @@ struct LiveWallpaperApp: App {
         }
     }
 
-    private var menuBarIconName: String {
-        guard let manager = appDelegate.screenManager else {
-            return "photo.on.rectangle"
-        }
-        switch manager.wallpaperOverviewStatus {
-        case .notConfigured:
-            return "photo.on.rectangle"
-        case .active:
-            return manager.hasControllableWallpaperSessions
-                ? "play.rectangle.fill"
-                : "display.2"
-        case .paused:
-            return "pause.rectangle.fill"
-        case .off:
-            return "rectangle.slash"
-        case .error:
-            return "exclamationmark.triangle.fill"
-        }
+    private var menuBarStatus: MenuBarWallpaperStatus {
+        guard let manager = appDelegate.screenManager else { return .notConfigured }
+        let attempts = manager.screens.compactMap { manager.wallpaperLoads.attempt(for: $0) }
+        return MenuBarWallpaperStatus.resolve(
+            summaries: manager.wallpaperSessionSummaries,
+            globallyEnabled: manager.wallpapersGloballyEnabled,
+            hasFailedLoad: attempts.contains { $0.phase == .failed },
+            hasPendingLoad: attempts.contains { $0.phase != .failed }
+        )
     }
 }

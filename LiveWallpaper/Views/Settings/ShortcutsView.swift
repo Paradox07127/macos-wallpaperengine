@@ -189,7 +189,7 @@ private struct ShortcutRow: View {
                     isCapturing: $isCapturing,
                     onCapture: onCapture
                 )
-                .frame(width: 140)
+                .fixedSize()
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : DesignTokens.Opacity.disabledContent)
                 .onChange(of: isEnabled) { _, enabled in
@@ -236,32 +236,30 @@ private struct ShortcutCaptureField: View {
 
     var body: some View {
         Button(action: { isCapturing.toggle() }) {
-            HStack {
+            HStack(spacing: DesignTokens.Spacing.xxs) {
                 if isCapturing {
                     Text("Press keys… Esc to cancel")
                         .foregroundStyle(.secondary)
                         .italic()
                 } else if let binding {
-                    Text(verbatim: binding.displayString)
-                        .font(DesignTokens.Typography.code)
+                    ShortcutKeyLabel(binding: binding)
                 } else {
                     Text("None")
                         .foregroundStyle(.tertiary)
                 }
-                Spacer()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
+            .font(DesignTokens.Typography.body)
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .frame(minWidth: 56, minHeight: DesignTokens.LibraryFilterBar.controlHeight)
             .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                    .fill(isCapturing ? Color.accentColor.opacity(0.18) : Color(NSColor.controlBackgroundColor))
+                Capsule()
+                    .fill(isCapturing ? Color.accentColor.opacity(DesignTokens.Opacity.activeFill) : DesignTokens.Colors.textPrimary.opacity(DesignTokens.Opacity.hoverFill))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                Capsule()
                     .strokeBorder(
-                        isCapturing ? Color.accentColor : Color.primary.opacity(DesignTokens.Opacity.activeFill),
-                        lineWidth: isCapturing ? 1.5 : 0.5
+                        isCapturing ? Color.accentColor : .clear,
+                        lineWidth: 1.5
                     )
             )
         }
@@ -283,6 +281,68 @@ private struct ShortcutCaptureField: View {
         }
         return Text("No shortcut set")
     }
+}
+
+private struct ShortcutKeyLabel: View {
+    let binding: GlobalShortcutBinding
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.xxs) {
+            ForEach(modifierSymbols, id: \.self) { symbol in
+                Image(systemName: symbol)
+            }
+            if let keySymbol {
+                Image(systemName: keySymbol)
+            } else {
+                Text(verbatim: GlobalShortcutBinding.keyName(for: binding.keyCode))
+            }
+        }
+        .font(DesignTokens.Typography.body)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: binding.displayString))
+    }
+
+    private var modifierSymbols: [String] {
+        [
+            (GlobalShortcutBinding.ModifierSet.control, "control"),
+            (.option, "option"),
+            (.shift, "shift"),
+            (.command, "command"),
+        ].compactMap { binding.modifiers.contains($0.0) ? $0.1 : nil }
+    }
+
+    private var keySymbol: String? {
+        switch binding.keyCode {
+        case 36, 76: "return"
+        case 48: "arrow.right.to.line"
+        case 49: "space"
+        case 51: "delete.left"
+        case 53: "escape"
+        case 115: "arrow.up.to.line"
+        case 116: "arrow.up.doc"
+        case 117: "delete.right"
+        case 119: "arrow.down.to.line"
+        case 121: "arrow.down.doc"
+        case 123: "arrow.left"
+        case 124: "arrow.right"
+        case 125: "arrow.down"
+        case 126: "arrow.up"
+        default: nil
+        }
+    }
+}
+
+#Preview("macOS shortcut capsules") {
+    HStack(spacing: DesignTokens.Spacing.md) {
+        ForEach([UInt32(45), 49, 36], id: \.self) { key in
+            ShortcutCaptureField(
+                binding: GlobalShortcutBinding(keyCode: key, modifiers: [.option, .command]),
+                isCapturing: .constant(false), onCapture: { _ in }
+            )
+        }
+    }
+    .padding(DesignTokens.Spacing.xl)
+    .background(DesignTokens.Colors.surfaceRaised)
 }
 
 private struct KeyCaptureMonitor: NSViewRepresentable {
