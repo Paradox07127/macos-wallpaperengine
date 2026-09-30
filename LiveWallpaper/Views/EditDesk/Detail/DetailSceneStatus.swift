@@ -2,7 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The applied scene and its renderer's state, read the way the old scene page reads them.
+/// The applied scene and its renderer's state, read from the session's cached fields.
 @MainActor
 struct DetailSceneStatus {
     let origin: WPEOrigin
@@ -16,7 +16,7 @@ struct DetailSceneStatus {
         self.origin = origin
         self.descriptor = descriptor
         session = screen.runtimeSession as? SceneWallpaperSession
-        state = SceneDetailView.derivedState(session: session)
+        state = SceneRenderState.derivedState(session: session)
     }
 
     var renderFailure: FallbackReason? {

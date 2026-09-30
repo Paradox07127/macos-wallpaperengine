@@ -1848,9 +1848,9 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         #expect(source.contains("preventsDisplaySleepDuringVideoPlayback = false"))
     }
 
-    @Test("Scene preview does not synchronously render a live poster on MainActor")
+    @Test("Scene cover capture does not synchronously render a live poster on MainActor")
     func scenePreviewUsesNextFramePosterCapture() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Session/WallpaperCoverCapture.swift")
 
         #expect(source.contains("captureLivePosterFromNextFrame"))
         #expect(!source.contains("renderer.captureLivePoster()"))
@@ -1878,13 +1878,11 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         #expect(!executor.contains("private var puppetBoundScanDetailByObjectID: [String: String?]"))
     }
 
-    @Test("Scene detail fallback preview is a bounded static poster and releases ImageIO state")
+    @Test("Scene preview has a bounded static poster mode and releases ImageIO state")
     func sceneDetailPreviewFallbackDoesNotRetainAnimatedPreviewState() throws {
-        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
         let preview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
 
         #expect(preview.contains("case staticPoster"))
-        #expect(detail.contains("playbackMode: .staticPoster"))
         #expect(preview.contains("static func dismantleNSView"))
         #expect(preview.contains("context.coordinator.cancelInflight()"))
         #expect(preview.contains("nsView.clearImage()"))
@@ -1892,36 +1890,10 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         #expect(preview.contains("kCGImageSourceShouldCache"))
     }
 
-    @Test("Scene preview keeps abnormal poster ratios inside the screen frame")
-    func scenePreviewFitsAbnormalPosterRatiosInsideScreenFrame() throws {
-        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
-        let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
-
-        #expect(detail.contains("WallpaperPreviewStage {"))
-        #expect(stage.contains(".aspectRatio(WallpaperPreviewMetrics.aspectRatio, contentMode: .fit)"))
-        #expect(detail.contains(".aspectRatio(contentMode: .fit)"))
-        #expect(!detail.contains(".aspectRatio(contentMode: .fill)"))
-    }
-
-    @Test("Scene preview polling is lifecycle-owned and stops at terminal state")
-    func scenePreviewDoesNotOwnPermanentTimer() throws {
-        let detail = try Self.readSourceFile(
-            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
-        )
-
-        #expect(detail.contains(".task(id: previewTaskIdentity)"))
-        #expect(detail.contains("await pollPreviewUntilSettled("))
-        #expect(detail.contains("next.needsPreviewPolling"))
-        #expect(detail.contains("Task.sleep(for: .milliseconds(400))"))
-        #expect(detail.contains("previewLifecycle.invalidate()"))
-        #expect(!detail.contains("Timer.publish"))
-        #expect(!detail.contains(".onReceive("))
-    }
-
     @Test("Scene diagnostic inventory is not owned by the SwiftUI view")
     func sceneDiagnosticsAreSeparatedFromPreviewLifecycle() throws {
         let detail = try Self.readSourceFile(
-            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
+            "LiveWallpaper/Views/EditDesk/Detail/DetailSceneStatus.swift"
         )
         let report = try Self.readSourceFile(
             "LiveWallpaper/Runtime/Diagnostics/WPERenderDiagnosticReport.swift"
@@ -3564,9 +3536,6 @@ struct ScreenRuntimeOwnershipTests {
         let renderActorSource = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"
         )
-        let scenePreviewSource = try RepositoryRoot.source(
-            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
-        )
         let wallpaperSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Wallpaper.swift"
         )
@@ -3603,7 +3572,6 @@ struct ScreenRuntimeOwnershipTests {
         #expect(sceneMutationSource.contains(
             "posterCommit: posterCommit"
         ))
-        #expect(!scenePreviewSource.contains("Timer.publish"))
         #expect(wallpaperSource.contains(
             "advanceScenePropertyMutationIntent(for: screenID)"
         ))
@@ -3627,18 +3595,10 @@ struct ScreenRuntimeOwnershipTests {
             of: "await sceneSession.commitScenePropertyPatch(",
             range: persistence.upperBound..<sceneMutationSource.endIndex
         ))
-        let posterWait = try #require(scenePreviewSource.range(
-            of: "await targetSession.waitForScenePropertyPosterCommit("
-        ))
-        let posterCapture = try #require(scenePreviewSource.range(
-            of: "await targetSession.captureLivePosterFromNextFrame()",
-            range: posterWait.upperBound..<scenePreviewSource.endIndex
-        ))
         #expect(preflight.lowerBound < finalCAS.lowerBound)
         #expect(finalCAS.lowerBound < posterStage.lowerBound)
         #expect(posterStage.lowerBound < persistence.lowerBound)
         #expect(persistence.lowerBound < rendererCommit.lowerBound)
-        #expect(posterWait.lowerBound < posterCapture.lowerBound)
     }
 
     @Test("Ambient and video candidate errors reuse the install-current predicate")

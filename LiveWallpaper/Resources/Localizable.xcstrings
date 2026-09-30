@@ -1987,41 +1987,6 @@
         }
       }
     },
-    "%@. Scene wallpaper. %@" : {
-      "comment" : "A11y label for a Wallpaper Engine scene detail card. Placeholders are scene title and state.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@. Scene wallpaper. %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@. Fondo de escena. %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。シーン壁紙。%2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。场景壁纸。%2$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。場景桌布。%2$@"
-          }
-        }
-      }
-    },
     "%@/s" : {
       "comment" : "Download speed. Placeholder is a formatted byte amount such as 12 MB.",
       "localizations" : {
@@ -31705,41 +31670,6 @@
         }
       }
     },
-    "How the scene fills the display" : {
-      "comment" : "Tooltip for the scale control on the scene preview overlay.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "How the scene fills the display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cómo llena la escena la pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンがディスプレイをどう埋めるか"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景如何填充显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景如何填滿顯示器"
-          }
-        }
-      }
-    },
     "How to install" : {
       "comment" : "Label for the SteamCMD install-route picker.",
       "extractionState" : "manual",
@@ -32009,41 +31939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "inactivo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アイドル"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空闲"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "閒置"
-          }
-        }
-      }
-    },
-    "Idle" : {
-      "comment" : "Scene renderer accessibility state.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Idle"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inactivo"
           }
         },
         "ja" : {
@@ -36044,41 +35939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在載入預設"
-          }
-        }
-      }
-    },
-    "Loading scene assets" : {
-      "comment" : "Scene renderer accessibility state.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading scene assets"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando recursos de la escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンアセットを読み込み中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载场景资源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入場景資源"
           }
         }
       }
@@ -53805,40 +53665,6 @@
         }
       }
     },
-    "Renderer Diagnostics" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renderer Diagnostics"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnóstico del renderizador"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダラー診断"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染器诊断"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染器診斷"
-          }
-        }
-      }
-    },
     "Rendering" : {
       "comment" : "Settings section header for scene rendering quality options.",
       "extractionState" : "manual",
@@ -58114,41 +57940,6 @@
         }
       }
     },
-    "Scene cannot be played" : {
-      "comment" : "Scene renderer accessibility state.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scene cannot be played"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se puede reproducir la escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンを再生できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景无法播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法播放場景"
-          }
-        }
-      }
-    },
     "Scene contains no renderable passes." : {
       "comment" : "Scene load diagnostic shown in the scene detail error banner.",
       "extractionState" : "manual",
@@ -58217,35 +58008,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景自訂設定"
-          }
-        }
-      }
-    },
-    "Scene preview" : {
-      "comment" : "Scene renderer accessibility state.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vista previa de la escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンプレビュー"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景預覽"
           }
         }
       }
@@ -78439,41 +78201,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已重新命名桌布"
-          }
-        }
-      }
-    },
-    "Wallpaper rendering is off" : {
-      "comment" : "Scene renderer accessibility state shown when the menu-bar master switch is off.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper rendering is off"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El renderizado del fondo de pantalla está desactivado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙の描画がオフです"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸渲染已关闭"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布渲染已關閉"
           }
         }
       }

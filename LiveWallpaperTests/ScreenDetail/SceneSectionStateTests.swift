@@ -14,8 +14,6 @@ struct WPESceneSectionStateTests {
         let labelled = SceneRenderState.loading(progress: "Decoding 3/12 textures…")
         #expect(plain != labelled)
         #expect(plain == SceneRenderState.loading)
-        #expect(plain.isLoading)
-        #expect(labelled.isLoading)
     }
 
     @MainActor
@@ -33,9 +31,9 @@ struct WPESceneSectionStateTests {
             layer: "fg",
             error: .truncatedBlock(block: "TEXB", offset: 42)
         )
-        #expect(SceneDetailView.fallbackReason(for: unsupportedFormat) == .texUnsupportedFormat(code: 8))
-        #expect(SceneDetailView.fallbackReason(for: unsupportedContainer) == .texContainerUnsupported(magic: "TEXV9999"))
-        if case .texDecodeFailed = SceneDetailView.fallbackReason(for: truncated) {
+        #expect(SceneRenderState.fallbackReason(for: unsupportedFormat) == .texUnsupportedFormat(code: 8))
+        #expect(SceneRenderState.fallbackReason(for: unsupportedContainer) == .texContainerUnsupported(magic: "TEXV9999"))
+        if case .texDecodeFailed = SceneRenderState.fallbackReason(for: truncated) {
         } else {
             Issue.record("Truncated tex should map to .texDecodeFailed")
         }
@@ -44,13 +42,13 @@ struct WPESceneSectionStateTests {
     @MainActor
     @Test("A Metal renderer gap reads as an effect Loomscreen can't render, not a damaged project file")
     func metalRendererGapMapping() {
-        #expect(SceneDetailView.mapToFallbackReason(.metalRendererUnsupported(reason: "target format")) == .sceneShaderUnsupported)
+        #expect(SceneRenderState.mapToFallbackReason(.metalRendererUnsupported(reason: "target format")) == .sceneShaderUnsupported)
     }
 
     @MainActor
     @Test("A capability gap never offers Retry, and damage keeps its re-download advice")
     func diagnosticAdviceMatchesCause() {
-        #expect(SceneDetailView.fallbackReason(for: .materialUnresolved(layer: "scene", reason: "no passes")) == .sceneShaderUnsupported)
+        #expect(SceneRenderState.fallbackReason(for: .materialUnresolved(layer: "scene", reason: "no passes")) == .sceneShaderUnsupported)
         let capabilityGaps: [SceneLoadDiagnostic] = [
             .texture(layer: "bg", error: .unsupportedFormat(code: 8)),
             .texture(layer: "bg", error: .metalUnavailable(format: .bc7)),
@@ -58,7 +56,7 @@ struct WPESceneSectionStateTests {
             .legacyUnsupportedTexture(layer: "bg"),
         ]
         for diagnostic in capabilityGaps {
-            let reason = SceneDetailView.fallbackReason(for: diagnostic)
+            let reason = SceneRenderState.fallbackReason(for: diagnostic)
             #expect(reason.failureClass == .fatal, "\(diagnostic)")
             #expect(!reason.recovery(workshopID: "1234").contains(.retry), "\(diagnostic)")
         }
@@ -68,7 +66,7 @@ struct WPESceneSectionStateTests {
         )
 
         // Control: a truncated file is damage, not a capability gap.
-        let damaged = SceneDetailView.fallbackReason(for: .texture(layer: "bg", error: .truncatedBlock(block: "TEXB", offset: 42)))
+        let damaged = SceneRenderState.fallbackReason(for: .texture(layer: "bg", error: .truncatedBlock(block: "TEXB", offset: 42)))
         #expect(damaged.failureClass == .blocked)
         #expect(damaged.recovery(workshopID: "1234").contains(.retry))
     }
@@ -76,7 +74,7 @@ struct WPESceneSectionStateTests {
     @MainActor
     @Test("An unclassified load failure is not reported as an unreadable image")
     func unclassifiedFailureIsNotAnImageDecodeFailure() {
-        let reason = SceneDetailView.fallbackReason(for: .other(layer: "scene", message: "WPE graph asset is not valid JSON: x"))
+        let reason = SceneRenderState.fallbackReason(for: .other(layer: "scene", message: "WPE graph asset is not valid JSON: x"))
         if case .texDecodeFailed = reason {
             Issue.record("An unclassified load failure still reads as an unreadable image: \(reason)")
         }
