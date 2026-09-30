@@ -160,7 +160,7 @@ enum PageGuideContext: CaseIterable {
         switch self {
         case .overview:
             [
-                .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; Saved holds bookmarks and display schemes. Settings contains app-wide preferences."),
+                .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."),
                 .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper.", footnote: Self.importHint),
                 .init(.shelfHandle, "Open the wallpaper shelf", "Click Wallpaper Library at the bottom, or scroll upward, to reveal the shelf. Continue upward for the full library. You can also use the top navigation."),
                 .init(.status, "Understand playback", "The status capsule describes system load. If a wallpaper stops, check its display status and Settings › Performance for automatic pause rules. Closing this window keeps wallpapers running; the menu bar opens it again."),
@@ -173,7 +173,7 @@ enum PageGuideContext: CaseIterable {
             ]
         case .saved:
             [
-                .init(.page, "Bookmarks and schemes", "A bookmark recalls a wallpaper source. A scheme recalls one display's wallpaper, playback settings and overlays. Choose a tab, inspect an item, then choose the display to apply it to."),
+                .init(.page, "Display setups you saved", "A scheme recalls one display's wallpaper, playback settings and overlays. Choose a display on a scheme's card to apply it there. Bookmarked wallpapers are in Wallpaper Library under the Bookmarks filter."),
                 .init(.navigation, "Return to your displays", "Return to Overview to adjust the result. Use the display's Scheme button to save its current configuration for later."),
             ]
         case .systemWallpaper:
@@ -202,8 +202,8 @@ enum PageGuideContext: CaseIterable {
         case .configuration:
             [
                 .init(.detailLayers, "Configuration and overlay layers", "The wallpaper button opens this display's configuration layer. The stacked-layers button opens its overlay editor. Display tabs switch the target; the back arrow returns to Overview."),
-                .init(.playback, "Audio, scaling and frame rate", "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Available controls depend on the wallpaper type."),
-                .init(.inspector, "Wallpaper properties", "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display. Follow Cursor tracks movement; Interaction sends desktop clicks to the wallpaper, so turn it off to use desktop icons again."),
+                .init(.playback, "Audio, scaling and frame rate", "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Interaction sends desktop clicks to the wallpaper; turn it off to use desktop icons again. Available controls depend on the wallpaper type."),
+                .init(.inspector, "Wallpaper properties", "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display."),
                 .init(.detailActions, "Change, reload or clear", "Change Wallpaper selects another source. Reload restarts this display's content. Clear removes its wallpaper configuration without deleting the source file."),
                 .init(.detailShared, "Save, automate or share", "Playlist & Schedule controls automatic changes. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."),
             ]

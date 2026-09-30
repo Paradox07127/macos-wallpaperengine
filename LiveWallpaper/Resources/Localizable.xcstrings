@@ -4182,41 +4182,6 @@
         }
       }
     },
-    "A bookmark recalls a wallpaper source. A scheme recalls one display's wallpaper, playback settings and overlays. Choose a tab, inspect an item, then choose the display to apply it to." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A bookmark recalls a wallpaper source. A scheme recalls one display's wallpaper, playback settings and overlays. Choose a tab, inspect an item, then choose the display to apply it to."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un marcador recupera una fuente; un esquema recupera el fondo, reproducción y superposiciones de una pantalla. Elige pestaña, elemento y pantalla de destino."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマークは壁紙素材、構成は一台の壁紙・再生設定・オーバーレイを呼び出します。タブと項目を選び、適用先のディスプレイを指定します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "书签恢复壁纸来源；方案恢复单台显示器的壁纸、播放设置和叠加层。选择标签页，查看项目，再选择要应用的显示器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "書籤還原桌布來源；方案還原單台顯示器的桌布、播放設定和疊加層。選擇標籤頁，查看項目，再選擇要套用的顯示器。"
-          }
-        }
-      }
-    },
     "A card's GIF preview plays when the pointer rests on it, but not while Reduce Motion is on." : {
       "comment" : "Settings › General, under Autoplay preview on hover: what the switch controls. Covers shelf cards and library grid cards; Reduce Motion is the macOS accessibility setting.",
       "extractionState" : "manual",
@@ -4531,6 +4496,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景套件項目指向專案外部：%@"
+          }
+        }
+      }
+    },
+    "A scheme recalls one display's wallpaper, playback settings and overlays. Choose a display on a scheme's card to apply it there. Bookmarked wallpapers are in Wallpaper Library under the Bookmarks filter." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A scheme recalls one display's wallpaper, playback settings and overlays. Choose a display on a scheme's card to apply it there. Bookmarked wallpapers are in Wallpaper Library under the Bookmarks filter."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un esquema recupera el fondo, la reproducción y las superposiciones de una pantalla. Elige una pantalla en la tarjeta del esquema para aplicarlo allí. Los fondos marcados están en Biblioteca de fondos, con el filtro Marcadores."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成は一台のディスプレイの壁紙・再生設定・オーバーレイを呼び出します。構成のカードでディスプレイを選ぶと、そのディスプレイに適用します。ブックマークした壁紙は、壁紙ライブラリの「ブックマーク」フィルタにあります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案可恢复单台显示器的壁纸、播放设置和叠加层。在方案卡片上选择一台显示器，即可将方案应用到该显示器。已添加书签的壁纸位于壁纸库的“书签”筛选中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案可還原單台顯示器的桌布、播放設定和疊加層。在方案卡片上選擇一台顯示器，即可將方案套用到該顯示器。已加入書籤的桌布位於桌布庫的「書籤」篩選中。"
           }
         }
       }
@@ -11134,41 +11134,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "書籤"
-          }
-        }
-      }
-    },
-    "Bookmarks and schemes" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bookmarks and schemes"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Marcadores y esquemas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマークと構成"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "书签与方案"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "書籤與方案"
           }
         }
       }
@@ -40052,37 +40017,37 @@
         }
       }
     },
-    "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Available controls depend on the wallpaper type." : {
+    "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Interaction sends desktop clicks to the wallpaper; turn it off to use desktop icons again. Available controls depend on the wallpaper type." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Available controls depend on the wallpaper type."
+            "value" : "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Interaction sends desktop clicks to the wallpaper; turn it off to use desktop icons again. Available controls depend on the wallpaper type."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pasa el puntero por la vista previa para mostrar controles. Audio cambia silencio y volumen; escala rellena, ajusta o estira; fotogramas limita la animación. Los controles dependen del tipo de fondo."
+            "value" : "Pasa el puntero por la vista previa para mostrar controles. Audio cambia silencio y volumen; Escala rellena, ajusta o estira; Frecuencia de fotogramas limita la animación. Interacción envía los clics del escritorio al fondo; desactívala para volver a usar los iconos. Los controles dependen del tipo de fondo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレビューにポインタを合わせると操作を表示します。音声で消音と音量、拡大縮小で表示方法、フレームレートで更新上限を調整します。種類により操作は異なります。"
+            "value" : "プレビューにポインタを合わせると操作を表示します。オーディオで消音と音量、スケーリングで表示方法、フレームレートで更新上限を調整します。インタラクションはデスクトップのクリックを壁紙に渡します。アイコンを使うにはオフにします。種類により操作は異なります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将指针移到壁纸预览上可显示控件。声音调节静音与音量；缩放选择填充、适应或拉伸；帧率限制动画刷新。可用控件随壁纸类型变化。"
+            "value" : "将指针移到壁纸预览上可显示控件。音频调节静音与音量；缩放选择填充、适应或拉伸；帧率限制动画刷新。交互会将桌面点击传递给壁纸，关闭交互即可恢复使用桌面图标。可用控件随壁纸类型变化。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將指標移到桌布預覽上可顯示控制項。聲音調節靜音與音量；縮放選擇填滿、符合或拉伸；影格率限制動畫更新。可用控制項隨桌布類型變化。"
+            "value" : "將指標移到桌布預覽上可顯示控制項。音訊調節靜音與音量；縮放選擇填滿、符合或拉伸；影格率限制動畫更新。互動會將桌面點按傳給桌布，關閉互動即可恢復使用桌面圖示。可用控制項隨桌布類型變化。"
           }
         }
       }
@@ -46386,37 +46351,37 @@
         }
       }
     },
-    "Overview shows your displays. Wallpaper Library holds your sources; Saved holds bookmarks and display schemes. Settings contains app-wide preferences." : {
+    "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Overview shows your displays. Wallpaper Library holds your sources; Saved holds bookmarks and display schemes. Settings contains app-wide preferences."
+            "value" : "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vista general muestra las pantallas; Biblioteca reúne las fuentes; Guardado contiene marcadores y esquemas. Ajustes controla las preferencias de la app."
+            "value" : "Vista general muestra las pantallas. Biblioteca de fondos reúne las fuentes; su filtro Marcadores muestra las que marcaste. Esquemas guarda configuraciones de pantalla. Ajustes controla las preferencias de la app."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全景にはディスプレイ、壁紙ライブラリには素材、保存済みにはブックマークと構成を表示します。設定ではアプリ全体の環境設定を変更できます。"
+            "value" : "概要にはディスプレイ、壁紙ライブラリには素材を表示します。「ブックマーク」フィルタでは印を付けた素材だけを表示します。構成には保存したディスプレイ設定が並びます。設定ではアプリ全体の環境設定を変更できます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全景显示所有显示器；壁纸库管理素材；已保存管理书签与显示器方案；设置管理应用的全局偏好。"
+            "value" : "全景显示所有显示器。壁纸库管理素材，其中的“书签”筛选显示你标记过的素材。方案存放已保存的显示器配置。设置管理应用的全局偏好。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全景顯示所有顯示器；桌布庫管理素材；已儲存管理書籤與顯示器方案；設定管理應用程式的全域偏好。"
+            "value" : "全景顯示所有顯示器。桌布庫管理素材，其中的「書籤」篩選顯示你標記過的素材。方案存放已儲存的顯示器配置。設定管理應用程式的全域偏好。"
           }
         }
       }
@@ -71239,37 +71204,37 @@
         }
       }
     },
-    "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display. Follow Cursor tracks movement; Interaction sends desktop clicks to the wallpaper, so turn it off to use desktop icons again." : {
+    "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display. Follow Cursor tracks movement; Interaction sends desktop clicks to the wallpaper, so turn it off to use desktop icons again."
+            "value" : "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ajustes abre las propiedades a la derecha para la pantalla seleccionada. Seguir cursor responde al movimiento; Interacción envía clics al fondo. Desactívala para volver a usar los iconos del escritorio."
+            "value" : "El botón Ajustes abre a la derecha las propiedades de este fondo. Los cambios afectan a la pantalla seleccionada."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定ボタンは右のプロパティを開き、変更は選択したディスプレイに適用します。カーソル追従は移動を検知し、操作を有効にするとクリックが壁紙に渡ります。アイコンを使うには操作をオフにします。"
+            "value" : "設定ボタンで右側にこの壁紙のプロパティを開きます。変更は選択したディスプレイに適用されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "设置按钮打开右侧壁纸属性面板，修改作用于所选显示器。跟随光标只响应移动；交互会把桌面点击交给壁纸，关闭交互即可恢复桌面图标操作。"
+            "value" : "设置按钮会打开右侧的壁纸属性面板，修改作用于所选显示器。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定按鈕開啟右側桌布屬性面板，修改作用於所選顯示器。跟隨游標只回應移動；互動會把桌面點按交給桌布，關閉互動即可恢復桌面圖示操作。"
+            "value" : "設定按鈕會開啟右側的桌布屬性面板，修改作用於所選顯示器。"
           }
         }
       }

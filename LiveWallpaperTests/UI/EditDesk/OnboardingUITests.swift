@@ -37,6 +37,27 @@ struct OnboardingUITests {
         }
     }
 
+    @Test("Guides describe the current navigation and controls")
+    func guidesMatchCurrentNavigation() {
+        for context in [PageGuideContext.overview, .saved] {
+            let text = context.steps.flatMap { [$0.title.probeKey, $0.message.probeKey] }.joined(separator: " ")
+            for stale in ["Saved holds", "Choose a tab"] {
+                #expect(!text.contains(stale), Comment(rawValue: "\(context): \(stale)"))
+            }
+        }
+        let inspector = PageGuideContext.configuration.steps.filter { $0.target == .inspector }
+        #expect(!inspector.isEmpty)
+        for step in inspector {
+            for control in ["Follow Cursor", "Interaction"] {
+                #expect(!step.message.probeKey.contains(control), Comment(rawValue: control))
+            }
+        }
+        for context in PageGuideContext.allCases where context != .workshop {
+            let text = context.steps.map(\.message.probeKey).joined(separator: " ")
+            #expect(!text.contains("Follow Cursor"), Comment(rawValue: "\(context)"))
+        }
+    }
+
     @Test("Guide panels stay in the window and avoid controls on all four edges")
     func floatingPanelPlacement() {
         for size in [CGSize(width: 1040, height: 640), CGSize(width: 1280, height: 800), CGSize(width: 1600, height: 1000)] {
