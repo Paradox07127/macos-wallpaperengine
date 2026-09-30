@@ -386,7 +386,7 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// Authored depths for every object, groups included. Absent-key is zero,
+    /// Authored depths for every object, groups included. Absent-key is one,
     /// and Windows ignores an authored child value when an ancestor exists.
     static func authoredParallaxDepthByObjectID(
         _ document: WPESceneDocument
@@ -399,23 +399,19 @@ struct WPERenderGraphBuilder: Sendable {
         return depths
     }
 
-    /// Walk to the last non-zero ancestor, not the topmost: a key-less root parses to zero, and treating that as the anchor would regress objects under those roots.
+    /// The topmost resolvable ancestor: WPE applies only the root's depth, so a 0 root freezes nonzero descendants.
     static func parallaxAnchorNodeID(
         of id: String,
         parentByID: [String: String],
         depthByID: [String: SIMD2<Double>]
     ) -> String {
         var current = id
-        var anchor = id
         var seen: Set<String> = []
         while seen.insert(current).inserted {
-            if let depth = depthByID[current], depth != SIMD2<Double>(0, 0) {
-                anchor = current
-            }
             guard let parent = parentByID[current], depthByID[parent] != nil else { break }
             current = parent
         }
-        return anchor
+        return current
     }
 
     static func propagatingParallaxDepthThroughParents(

@@ -2521,8 +2521,9 @@ public enum WPESceneDocumentParser {
 
     /// Per-axis depth string ("1 0" = horizontal-only, "0 1" = vertical-only), not a
     /// scalar. A bare scalar maps to both axes, a `{user,value}` wrapper is unwrapped,
-    /// absent -> `.zero` (pinned).
+    /// absent -> `(1, 1)`: WPE omits the key at its default and always writes an explicit 0.
     static func parseParallaxDepth(_ raw: Any?) -> SIMD2<Double> {
+        guard let raw else { return SIMD2<Double>(1, 1) }
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return parseParallaxDepth(value)
         }

@@ -265,14 +265,33 @@ struct WPECameraParallaxTests {
         #expect(try parsedImageDepth(["user": "p0", "value": "0.5 0.5"]) == SIMD2<Double>(0.5, 0.5))
     }
 
-    @Test("parallaxDepth still accepts a bare scalar and defaults to 0 when absent")
+    @Test("parallaxDepth still accepts a bare scalar and defaults to 1 when absent")
     func parsesScalarAndAbsentDepth() throws {
         #expect(try parsedImageDepth(2.0) == SIMD2<Double>(2, 2))
         #expect(try parsedImageDepth("3") == SIMD2<Double>(3, 3))
         let doc = try parse(minimalScene(general: [
             "orthogonalprojection": ["width": 100, "height": 100, "auto": true]
         ]))
-        #expect(try #require(doc.imageObjects.first).parallaxDepth == SIMD2<Double>(0, 0))
+        #expect(try #require(doc.imageObjects.first).parallaxDepth == SIMD2<Double>(1, 1))
+    }
+
+    @Test("Absent parallaxDepth is 1 for text, particle and group objects too")
+    func absentDepthDefaultsToOneForEveryKind() throws {
+        let doc = try parse([
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                ["id": "10", "name": "group", "visible": true, "origin": "1920 1080 0"],
+                ["id": "11", "name": "Clock", "type": "text", "visible": true, "text": "12:34", "origin": "900 300 0"],
+                ["id": "12", "name": "Dust", "particle": "particles/dust.json", "visible": true, "origin": "1920 1080 0"],
+                ["id": "13", "name": "Zero", "type": "text", "visible": true, "text": "x", "parallaxDepth": "0.00000 0.00000"],
+            ],
+        ])
+        let one = SIMD2<Double>(1, 1)
+        #expect(try #require(doc.transformHostObjects.first { $0.id == "10" }).parallaxDepth == one)
+        #expect(try #require(doc.textObjects.first { $0.id == "11" }).parallaxDepth == one)
+        #expect(try #require(doc.particleObjects.first { $0.id == "12" }).parallaxDepth == one)
+        #expect(try #require(doc.textObjects.first { $0.id == "13" }).parallaxDepth == .zero)
     }
 
     // MARK: - Depth inheritance
@@ -491,17 +510,26 @@ struct WPECameraParallaxTests {
         #expect(centers["dayText"] == SIMD2<Float>(0, 0))
     }
 
-    @Test("A key-less group root does not zero its children's authored depth")
-    func keylessGroupRootKeepsChildDepth() {
+    @Test("Only the root's depth applies: a 0 root freezes a nonzero child, a 1 root carries a 0 child")
+    func rootDepthOverridesEveryDescendant() {
         let out = WPERenderGraphBuilder.propagatingParallaxDepthThroughParents(
-            [layer("fpsTriangle", depth: SIMD2<Double>(-0.7, -0.7), parent: "fpsGroup")],
-            objectParentByID: ["fpsTriangle": "fpsGroup", "fpsGroup": "panel"],
+            [
+                layer("E", depth: SIMD2<Double>(0, 0)),
+                layer("F", depth: SIMD2<Double>(2, 2), parent: "E"),
+                layer("G", depth: SIMD2<Double>(1, 1)),
+                layer("H", depth: SIMD2<Double>(0, 0), parent: "G"),
+                layer("fpsTriangle", depth: SIMD2<Double>(-0.7, -0.7), parent: "fpsGroup"),
+            ],
+            objectParentByID: ["F": "E", "H": "G", "fpsTriangle": "fpsGroup", "fpsGroup": "panel"],
             hostDepthByObjectID: [
-                "fpsGroup": SIMD2<Double>(0, 0),
+                "fpsGroup": SIMD2<Double>(0.3, 0.3),
                 "panel": SIMD2<Double>(0, 0)
             ]
         )
-        #expect(out.first?.parallaxDepth == SIMD2<Double>(-0.7, -0.7))
+        let byID = Dictionary(uniqueKeysWithValues: out.map { ($0.objectID, $0.parallaxDepth) })
+        #expect(byID["F"] == SIMD2<Double>(0, 0))
+        #expect(byID["H"] == SIMD2<Double>(1, 1))
+        #expect(byID["fpsTriangle"] == SIMD2<Double>(0, 0))
     }
 
     @Test("A group host parses its authored parallaxDepth, envelope included")
