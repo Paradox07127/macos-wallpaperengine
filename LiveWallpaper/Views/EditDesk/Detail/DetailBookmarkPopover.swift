@@ -27,7 +27,10 @@ enum DetailBookmark {
             update: { existing, label in
                 if label != existing.label {
                     store.rename(existing.id, to: label)
-                    undo?.recordRename(of: existing)
+                    // The store refuses a blank name; an undo for it would restore nothing.
+                    if store.bookmarks.first(where: { $0.id == existing.id })?.label != existing.label {
+                        undo?.recordRename(of: existing)
+                    }
                 }
                 captureCover(existing.id)
             },
@@ -142,7 +145,8 @@ struct DetailBookmarkPopover: View {
                 }
             }
         }
-        .onAppear { nameDraft = renamed?.label ?? "" }
+        // The display can switch wallpaper while the popover is open; a stale draft would rename the new entry.
+        .onChange(of: [target.itemID, target.defaultLabel], initial: true) { nameDraft = renamed?.label ?? "" }
     }
 
     private func header(_ systemImage: String, _ title: Text) -> some View {

@@ -96,8 +96,10 @@ struct DetailTopBar: View {
                 .disabled(!hasWallpaper || attemptShown)
         }
         let bookmarked = actions.bookmark?.isBookmarked == true
+        // Only a saved entry can be renamed; the popover offers Workshop and aerial rows removal alone.
+        let markedHelp = actions.bookmark?.saved == nil ? Text("Bookmarked") : Text("Bookmarked — click to rename or remove")
         icon(bookmarked ? "bookmark.fill" : "bookmark", bookmarked ? "Bookmarked" : "Bookmark",
-             help: bookmarked ? Text("Bookmarked — click to rename or remove") : Text("Bookmark this wallpaper")) {
+             help: bookmarked ? markedHelp : Text("Bookmark this wallpaper")) {
             bookmarkPresented.toggle()
         }
         .disabled(attemptShown)

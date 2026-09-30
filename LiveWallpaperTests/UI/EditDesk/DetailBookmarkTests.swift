@@ -39,6 +39,29 @@ struct DetailBookmarkTests {
         #expect(host.contains("screenManager.captureCover(forBookmark: $0, from: screen)"))
     }
 
+    @Test("The popover's name follows the target, the rename tooltip needs a saved entry, and a refused rename records no undo")
+    func draftTooltipAndUndoFollowTheStore() throws {
+        let popover = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailBookmarkPopover.swift")
+        #expect(!popover.contains(".onAppear { nameDraft"), "a draft taken only on appear carries A's name into B's Update")
+        #expect(popover.contains(
+            ".onChange(of: [target.itemID, target.defaultLabel], initial: true) { nameDraft = renamed?.label ?? \"\" }"
+        ))
+
+        let topBar = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift")
+        #expect(
+            topBar.contains(#"actions.bookmark?.saved == nil ? Text("Bookmarked") : Text("Bookmarked — click to rename or remove")"#),
+            "a Workshop or aerial row promises a rename its popover does not offer"
+        )
+
+        let update = try #require(popover.range(of: "update: { existing, label in"))
+        let record = try #require(popover.range(of: "undo?.recordRename(of: existing)"))
+        let guarded = popover[update.upperBound ..< record.lowerBound]
+        #expect(
+            guarded.contains("store.bookmarks.first(where: { $0.id == existing.id })?.label != existing.label"),
+            "a blank name the store refuses still records a rename"
+        )
+    }
+
     @Test("A video is saved under its file's name and is then the bookmarked one; another file is not")
     func videoRoundTrip() {
         let configuration = Self.configuration(.video(bookmarkData: Data([1, 2]), packageEntryName: nil))
