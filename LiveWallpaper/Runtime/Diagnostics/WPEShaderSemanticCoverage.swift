@@ -28,7 +28,7 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
     let shaderInterface: WPEShaderInterface?
     let entries: [Entry]
 
-    static func fragmentOnly(
+    static func observedCustomDraw(
         passID: String, authoredEffectID: String? = nil, shaderName: String,
         sourceClassification: String?, sourceFingerprint: String?,
         interface: WPEShaderInterface?, layout: [WPEUniformSlot], sources: [WPEUniformValueSource]?,

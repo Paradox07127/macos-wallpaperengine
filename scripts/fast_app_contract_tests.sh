@@ -44,15 +44,7 @@ PARALLEL_SUITES=(
   WPEShaderInterfaceTests
   WPEPassColorContractTests
   WPEPassVertexPathTests
-  WPELinkedShaderStageTests
-  WPEAuthoredVertexExecutorTests
-  WPESparseTextureTraceTests
-  WPEParticleEventTests
-  WPEParticlePlaybackTests
   WPESceneScriptParticlePlaybackTests
-  WPEUniformStageBindingTests
-  WPEAttachmentPlanTests
-  WPESceneScriptBatchCompletionTests
   # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
   # code into a severity tier and a set of recovery buttons has to be gated, or
   # a newly minted code lands in the wrong tier without anything going red.
@@ -184,7 +176,6 @@ PARALLEL_SUITES=(
   CodexAgentSourceTests
   SchedulePolicyTests
   WallpaperAutomationCoordinatorTests
-  EditDeskStageViewTests
   ShelfGridFlightTests
   ApplyRouterTests
   LibraryImporterTests
@@ -251,6 +242,10 @@ SERIAL_SUITES=(
   # parallel suites can exhaust the dispatch pool before their workers start.
   # Keep the oracles' own concurrent operations and assertions unchanged.
   WPESceneScriptContainmentCharacterizationTests
+  WPESceneScriptBatchCompletionTests
+  # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
+  # with other UI probes; the isolated 119-test suite passes without contention.
+  EditDeskStageViewTests
   # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
   OverlayVisibilityLifecycleCharacterizationTests
   # Error snapshots compare app-language text across calls; locale probes change it process-wide.

@@ -79,7 +79,7 @@ struct WPEShaderInterfaceTests {
             slot("g_EffectTextureProjectionMatrixInverse", "mat4", 0, 4),
             slot("u_Amount", "float", 4, 1), slot("mystery", "float", 5, 1),
         ]
-        let coverage = WPEShaderSemanticCoverage.fragmentOnly(
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(
             passID: "layer.effect.0", shaderName: "fixture", sourceClassification: "official-source",
             sourceFingerprint: "pin", interface: interface, layout: layout,
             sources: [.missing, .authoredDefault, .missing]
@@ -97,7 +97,7 @@ struct WPEShaderInterfaceTests {
     }
 
     @Test func provenanceCountMismatchCannotReportBindingsAsSupported() {
-        let coverage = WPEShaderSemanticCoverage.fragmentOnly(
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(
             passID: "fixture", shaderName: "fixture", sourceClassification: nil, sourceFingerprint: nil,
             interface: nil, layout: [slot("g_Time", "float", 0, 1)], sources: []
         )

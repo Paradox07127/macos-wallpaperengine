@@ -321,11 +321,6 @@ final class WPEParticleSystem {
     private var particleGenerations: [UInt64]
     static let maximumRecordedParticleEvents = absoluteCap * 2
 
-    /// Compatibility observation only. The runtime consumes typed events directly.
-    var spawnEventsThisTick: [SIMD3<Float>] {
-        particleEventsThisTick.filter { $0.kind == .spawn }.map(\.particle.position)
-    }
-
     private var followEventCursor = 0
     private var simulationNow: Double = 0
 

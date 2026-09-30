@@ -104,6 +104,7 @@ extension WPEMetalRenderExecutor {
         targetPool.releaseAll()
         releaseBloomLevels()
         previousFrameHistory = nil
+        privateHistoryCandidates.removeAll()
         reflectionSourceTexture = nil
         reflectionHistoryTexture = nil
         reflectionCaptureCache = nil
@@ -630,6 +631,45 @@ extension WPEMetalRenderExecutor {
         if recentOutputTextureIDs.count > retain {
             recentOutputTextureIDs.removeFirst(recentOutputTextureIDs.count - retain)
         }
+    }
+
+    /// Snapshot only explicitly named private feedback. `previous` within an
+    /// effect chain is not temporal history. Keep two detached allocations per
+    /// written name; publication swaps them only after the frame is accepted.
+    func capturePrivateHistory(frameState: WPEMetalFrameState, commandBuffer: MTLCommandBuffer) throws -> [String: MTLTexture] {
+        let names = cachedFBOAliasTopology?.historyFBONames ?? []
+        privateHistoryCandidates = privateHistoryCandidates.filter { names.contains($0.key) }
+        var snapshots: [String: MTLTexture] = [:]
+        for name in names.sorted() {
+            guard let source = frameState.latestNamedTextures[name] else { continue }
+            guard frameState.writtenTargets.contains(.named(name)) else {
+                snapshots[name] = source
+                continue
+            }
+            let destination: MTLTexture
+            if let cached = privateHistoryCandidates[name], cached.width == source.width,
+               cached.height == source.height, cached.pixelFormat == source.pixelFormat,
+               cached.mipmapLevelCount == source.mipmapLevelCount {
+                destination = cached
+            } else {
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                    pixelFormat: source.pixelFormat, width: source.width, height: source.height,
+                    mipmapped: source.mipmapLevelCount > 1
+                )
+                descriptor.storageMode = .private
+                descriptor.usage = [.shaderRead, .renderTarget]
+                guard let allocated = device.makeTexture(descriptor: descriptor) else {
+                    throw WPEMetalTextureLoaderError.textureAllocationFailed
+                }
+                allocated.label = "WPE private history: \(name)"
+                privateHistoryCandidates[name] = allocated
+                destination = allocated
+            }
+            try copyTexture(source, to: destination, commandBuffer: commandBuffer,
+                            traceLabel: "private-history-publication|\(name)", generateMipmaps: source.mipmapLevelCount > 1)
+            snapshots[name] = destination
+        }
+        return snapshots
     }
 
     func targetTexture(

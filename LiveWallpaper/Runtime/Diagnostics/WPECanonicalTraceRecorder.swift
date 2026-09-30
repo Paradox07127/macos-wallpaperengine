@@ -235,7 +235,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
 
-        let coverage = WPEShaderSemanticCoverage.fragmentOnly(
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(
             passID: pass.id,
             authoredEffectID: shaderImplementationInventory.first { $0.renderPassID == pass.id }?.stableEffectID,
             shaderName: pass.pass.shader,

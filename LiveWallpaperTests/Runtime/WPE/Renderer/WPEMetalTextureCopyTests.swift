@@ -217,6 +217,32 @@ struct WPEMetalTextureCopyTests {
             #expect(Array(readBytes(staging, bytesPerPixel: 4).prefix(4)) == pixel)
             #expect(executor.previousFrameHistory?.namedTextures["private"] != nil)
         }
+        let published = try #require(executor.previousFrameHistory?.namedTextures["private"])
+        let publishedScene = try #require(executor.previousFrameHistory?.sceneTexture)
+        let blue = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        upload(Array(repeating: [UInt8(0), 0, 255, 255], count: 4).flatMap(\.self), to: blue, bytesPerPixel: 4)
+        executor.synchronizeFrameCompletion = false
+        // Several writes catch both mistaken publication and reuse of a pinned
+        // history texture by the scratch target pool.
+        for _ in 0 ..< 4 {
+            _ = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": blue],
+                                    passVisibility: [gate.id: true], deferredPresent: { _, _ in false })
+            let fence = try #require(executor.commandQueue.makeCommandBuffer())
+            fence.commit(); fence.waitUntilCompleted()
+            #expect(executor.previousFrameHistory?.sceneTexture === publishedScene)
+            #expect(executor.previousFrameHistory?.namedTextures["private"] === published)
+            let staging = try texture(device, published.pixelFormat, 4, 4)
+            try copy(executor, published, staging)
+            #expect(Array(readBytes(staging, bytesPerPixel: 4).prefix(4)) == pixel)
+        }
+        executor.synchronizeFrameCompletion = true
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": blue],
+                                         passVisibility: [gate.id: false])
+        let staging = try texture(device, output.pixelFormat, 4, 4)
+        try copy(executor, output, staging)
+        #expect(Array(readBytes(staging, bytesPerPixel: 4).prefix(4)) == pixel)
+        executor.releaseRenderScaleDependentResources()
+        #expect(executor.previousFrameHistory == nil)
     }
 
     @Test("Closed effect gate resizes and converts an external image into its composite")

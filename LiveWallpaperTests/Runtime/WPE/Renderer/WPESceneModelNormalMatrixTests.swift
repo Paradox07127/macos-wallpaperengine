@@ -135,10 +135,12 @@ struct WPESceneModelNormalMatrixTests {
         let first = try executor.render(pipeline: .init(layers: [model, late]), size: size, textures: ["white": white], cameraUniforms: camera)
         #expect(try hdrCenter(first).z > 0.9)
         let published = try #require(executor.reflectionHistoryTexture)
+        let publishedScene = try #require(executor.previousFrameHistory?.sceneTexture)
         executor.synchronizeFrameCompletion = false
         _ = try executor.render(pipeline: .init(layers: [model]), size: size, textures: ["white": white], cameraUniforms: camera,
                                 deferredPresent: { _, _ in false })
         #expect(executor.reflectionHistoryTexture === published, "a rejected speculative frame must not publish its candidate")
+        #expect(executor.previousFrameHistory?.sceneTexture === publishedScene, "a rejected speculative frame must retain ordinary scene history too")
         executor.synchronizeFrameCompletion = true
         // The next frame has no blue draw. The model can only get blue from the
         // previous frame's late layer, which the old current-half-scene copy lost.

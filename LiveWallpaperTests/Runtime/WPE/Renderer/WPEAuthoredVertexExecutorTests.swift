@@ -93,9 +93,9 @@ struct WPEAuthoredVertexExecutorTests {
     @Test func recordedNativeClipMVPDoesNotClaimFullProjectionCoverage() {
         let uniform = WPEUniformSlot(name: "g_ModelViewProjectionMatrix", glslType: "mat4", slot: 0, slotCount: 4,
                                      arrayLength: nil, materialName: nil, defaultValue: nil)
-        let coverage = WPEShaderSemanticCoverage.fragmentOnly(passID: "draw", shaderName: "test", sourceClassification: nil,
-                                                              sourceFingerprint: nil, interface: nil, layout: [], sources: [],
-                                                              vertexLayout: [uniform], vertexSources: [.fullscreenVertexMVP], authoredVertexExecuted: true)
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(passID: "draw", shaderName: "test", sourceClassification: nil,
+                                                                    sourceFingerprint: nil, interface: nil, layout: [], sources: [],
+                                                                    vertexLayout: [uniform], vertexSources: [.fullscreenVertexMVP], authoredVertexExecuted: true)
         #expect(coverage.entries.first { $0.feature == .uniformSupply && $0.stage == .vertex }?.status == .limited)
     }
 

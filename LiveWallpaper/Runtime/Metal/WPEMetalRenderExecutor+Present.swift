@@ -195,7 +195,9 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// WPE HDR bloom pyramid: prefilter (soft-knee threshold + strength/17 + tint) into a half-res chain, 4-tap box downsamples, scatter-weighted SRC_ALPHA/ONE upsamples, additive composite. HDR scenes render to rgba16Float so the prefilter sees real >1 overbright; `hdr:false` scenes clamp at 8-bit.
+    /// WPE HDR bloom: soft-knee prefilter with scatter/depth normalization,
+    /// four-tap box downsamples, cubic RGB-weighted upsamples and additive
+    /// composite preserving alpha. HDR targets retain overbright values.
     func encodeSceneBloomIfNeeded(
         cameraUniforms: WPEMetalCameraUniforms,
         output: MTLTexture,

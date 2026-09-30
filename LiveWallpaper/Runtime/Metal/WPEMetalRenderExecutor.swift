@@ -440,6 +440,8 @@ final class WPEMetalRenderExecutor {
     }
     private var translatedPipelineCache: [TranslatedPipelineKey: MTLRenderPipelineState] = [:]
     var previousFrameHistory: PreviousFrameHistory?
+    /// Detached from scratch targets so rejected frames cannot mutate published feedback.
+    var privateHistoryCandidates: [String: MTLTexture] = [:]
     /// Clip-composite role detection depends on the object's animation layers, so cache the resolved
     /// (source→target) part pairs per `objectID` (empty array = clip puppet with no eligible pair).
     var puppetClipPairsCache: [String: [PuppetClipPair]] = [:]
@@ -1183,6 +1185,8 @@ final class WPEMetalRenderExecutor {
             nextReflectionHistory = candidate
         } else { nextReflectionHistory = nil }
 
+        let nextPrivateHistory = try capturePrivateHistory(frameState: frameState, commandBuffer: commandBuffer)
+
         try encodeSceneBloomIfNeeded(
             cameraUniforms: cameraUniforms,
             output: output,
@@ -1243,19 +1247,21 @@ final class WPEMetalRenderExecutor {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
         }
-        if presentationAccepted, let nextReflectionHistory {
-            reflectionCaptureCache = reflectionHistoryTexture
-            reflectionHistoryTexture = nextReflectionHistory
-        }
-        previousFrameHistory = PreviousFrameHistory(
-            sceneSize: size,
-            sceneTexture: frameState.latestSceneTexture,
-            // `previous` is also an intra-effect source token: never infer history from it.
-            // Only explicitly named, unique read-before-write buffers survive a frame.
-            namedTextures: frameState.latestNamedTextures.filter {
-                cachedFBOAliasTopology?.historyFBONames.contains($0.key) == true
+        if presentationAccepted {
+            if let nextReflectionHistory {
+                reflectionCaptureCache = reflectionHistoryTexture
+                reflectionHistoryTexture = nextReflectionHistory
             }
-        )
+            for name in nextPrivateHistory.keys where frameState.writtenTargets.contains(.named(name)) {
+                // Recycle only the old detached publication, never a scratch FBO.
+                privateHistoryCandidates[name] = previousFrameHistory?.namedTextures[name]
+            }
+            previousFrameHistory = PreviousFrameHistory(
+                sceneSize: size,
+                sceneTexture: frameState.latestSceneTexture,
+                namedTextures: nextPrivateHistory
+            )
+        }
         return graded
     }
 

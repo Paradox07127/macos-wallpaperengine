@@ -876,7 +876,8 @@ public struct WPESceneCamera: Equatable, Sendable {
     )
 }
 
-/// Raw scene.json bloom numbers. Executor derives cbuffer forms: `g_BloomStrength = strength/17`, knee from threshold/feather.
+/// Raw scene.json bloom numbers. Executor derives strength from scatter/depth
+/// and the soft knee from threshold/feather.
 public struct WPESceneBloomSettings: Equatable, Sendable {
     public let strength: Double
     public let threshold: Double
@@ -1496,11 +1497,11 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
             // handles retain the prior linear fallback until independently measured.
             let front = handle(start.front, endpoint: 0)
             let back = handle(end.back, endpoint: 1)
-            guard front != nil, back != nil else { return start.value + (end.value - start.value) * t }
-            let x1 = min(max(front?.0 ?? 1.0 / 3, 0), 1)
-            let x2 = min(max(back?.0 ?? 2.0 / 3, 0), 1)
-            let y1 = start.value + (front?.1 ?? (end.value - start.value) / 3)
-            let y2 = end.value + (back?.1 ?? (start.value - end.value) / 3)
+            guard let front, let back else { return start.value + (end.value - start.value) * t }
+            let x1 = min(max(front.0, 0), 1)
+            let x2 = min(max(back.0, 0), 1)
+            let y1 = start.value + front.1
+            let y2 = end.value + back.1
             func cubic(_ u: Double, _ a: Double, _ b: Double, _ c: Double, _ d: Double) -> Double {
                 let v = 1 - u
                 return v * v * v * a + 3 * v * v * u * b + 3 * v * u * u * c + u * u * u * d

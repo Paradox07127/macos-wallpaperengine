@@ -1075,8 +1075,9 @@ static inline half4 wpe_genericimage2_shade(
 // prefilter g_BloomBlendParams = (threshold, knee, 2(threshold−knee),
 // 0.25/(threshold−knee)) with knee = threshold×(1−feather) — a continuous
 // soft-knee (both branches meet at brightness = knee + 2(threshold−knee));
-// g_BloomStrength = authored strength/17; every stage is a 4-tap box at
-// ±source-texel offsets; upsample is additive SRC_ALPHA/ONE weighted by scatter.
+// Strength normalization depends on scatter and pyramid depth (see host).
+// Prefilter/downsample use a four-tap box; upsample uses cubic reconstruction
+// and weights RGB by scatter while preserving destination alpha.
 struct WPEBloomUniforms {
     float4 texelAndWeight; // xy = source texel size, z = strength (prefilter) / RGB scatter (upsample)
     float4 blendParams;    // prefilter knee curve; unused elsewhere
@@ -1681,7 +1682,6 @@ struct WPEParticleSpriteParams {
         float3 world = center + offset;
         world.xy += projection.sceneSize.xy * 0.5 + parallaxPixels;
         out.position = projection.viewProjection * float4(world, 1.0);
-        screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
     }
 
     screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);

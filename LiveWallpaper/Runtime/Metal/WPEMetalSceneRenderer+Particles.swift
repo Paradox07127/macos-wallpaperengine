@@ -374,8 +374,9 @@ extension WPEMetalSceneRenderer {
                 groupEffect: groupEffect,
                 on: actor
             )
-            // Event-driven children re-roll per parent event; only the system sees those events.
-            if let registered, let childReference, childReference.rollsProbabilityPerEvent {
+            // Only eventfollow currently consumes parent births in the pooled simulator.
+            // Spawn/death types are preserved but still lack per-parent child instances.
+            if let registered, let childReference, childReference.isEventFollow {
                 registered.spawnProbability = childReference.probability
             }
         } else {

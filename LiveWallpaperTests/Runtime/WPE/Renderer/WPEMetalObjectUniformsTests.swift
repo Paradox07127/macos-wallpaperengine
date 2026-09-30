@@ -148,19 +148,7 @@ struct WPEMetalObjectUniformsTests {
         #expect(abs(x.y - 1) < 1e-9)
     }
 
-    @Test("Dispatcher object quads carry frame camera uniforms")
-    func dispatcherObjectQuadsCarryFrameCameraUniforms() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift")
-        let quadCallCount = source.components(separatedBy: "executor.objectQuadUniforms(").count - 1
-        let cameraArgumentCount = source.components(separatedBy: "cameraUniforms: executor.objectQuadCameraUniforms(").count - 1
 
-        #expect(quadCallCount > 0)
-        #expect(cameraArgumentCount == quadCallCount)
-    }
-
-    private static func readSourceFile(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
 }
 
 /// `movingOneLayerRecomputesOnlyThatLayer` is the control group for

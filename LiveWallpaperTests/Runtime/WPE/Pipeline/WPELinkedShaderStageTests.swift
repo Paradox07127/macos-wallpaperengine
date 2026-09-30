@@ -1,4 +1,5 @@
 #if !LITE_BUILD && DEBUG
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
@@ -9,7 +10,9 @@ import Testing
 struct WPELinkedShaderStageTests {
     @Test func inversePreludeIsEmittedOnlyInConsumingStages() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let compiler = WPESwiftShaderCompiler(device: device, translationCache: WPEShaderTranslationCache(rootURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let compiler = WPESwiftShaderCompiler(device: device, translationCache: WPEShaderTranslationCache(rootURL: root))
         let vertex = "attribute vec3 a_Position; void main(){ gl_Position = inverse(mat4(1.0)) * vec4(a_Position,1.0); }"
         let request = WPEShaderCompileRequest(shaderName: "inverse-prelude-admission", processedVertexSource: vertex,
                                               processedFragmentSource: "void main(){gl_FragColor=vec4(1.0);}",
@@ -18,6 +21,44 @@ struct WPELinkedShaderStageTests {
         #expect(linked.vertexStage?.mslSource.contains("inline float4x4 wpe_glsl_inverse") == true)
         #expect(!linked.mslSource.contains("wpe_glsl_inverse"))
         #expect(try !compiler.compile(request).mslSource.contains("wpe_glsl_inverse"))
+    }
+
+    @Test func depthParallaxBasisUsesVertexMatrixAndIndependentFragmentBinding() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        uniform mat4 shared;
+        uniform vec2 u_Pointer;
+        varying vec2 v_Parallax;
+        void main() {
+            gl_Position = vec4(a_Position, 1.0);
+            vec2 dirX = normalize(shared[0].xy);
+            vec2 dirY = normalize(shared[1].xy);
+            vec2 pointer = u_Pointer * 2.0 - 1.0;
+            v_Parallax = 0.5 + 0.5 * (pointer.x * dirX + pointer.y * dirY);
+        }
+        """
+        let fragment = """
+        varying vec2 v_Parallax;
+        uniform float shared;
+        void main() { gl_FragColor = vec4(v_Parallax, shared, 1.0); }
+        """
+        let fixtures: [([Double], SIMD2<Float>)] = [
+            // Actual captured positive axes: normalization cancels the non-unit scale.
+            ([0.914285660, 0, 0, 0, 0, 0.863999963, 0, 0, 0, 0, 3999.999756, 0, -0.000359072, -0.045459863, -1499.999878, 1], .init(0.75, 0.25)),
+            ([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], .init(0.75, 0.25)),
+            ([0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], .init(0.75, 0.75)),
+            ([-2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], .init(0.25, 0.25)),
+        ]
+        for (matrix, expected) in fixtures {
+            let pixels = try replay(vertex: vertex, fragment: fragment,
+                                    vertexValues: ["shared": .vector(matrix), "u_Pointer": .vector([0.75, 0.25])],
+                                    fragmentValues: ["shared": .number(0.375)])
+            for pixel in pixels {
+                #expect(abs(pixel.x - expected.x) < 0.00001)
+                #expect(abs(pixel.y - expected.y) < 0.00001)
+                #expect(pixel.z == 0.375 && pixel.w == 1)
+            }
+        }
     }
 
     @Test func actualVertexValuesAreInterpolatedAndZWIsPreserved() throws {
@@ -184,7 +225,7 @@ struct WPELinkedShaderStageTests {
                                               varying vec4 v_TexCoord;
                                               uniform float shared;
                                               void main() { gl_FragColor = v_TexCoord * shared; }
-                                              """, sourceHash: "stage-cache-fixture", comboValues: [:], textureBindings: [:], vertexExecution: .authoredFullscreen)
+                                              """, sourceHash: "stage-cache-fixture", comboValues: [:], textureBindings: [:], premultipliedInputSlots: [7], premultipliedOutput: true, vertexExecution: .authoredFullscreen)
         #expect(request.translationCacheKey != request.replacingVertexExecution(.synthesized).translationCacheKey)
         let cold = try compiler.compile(request)
         cache.dropMemoryForTesting()
@@ -197,8 +238,62 @@ struct WPELinkedShaderStageTests {
             #expect(vertex.library.makeFunction(name: result.vertexFunctionName) != nil)
             #expect(vertex.mslSource == cold.vertexStage?.mslSource)
             #expect(result.mslSource == cold.mslSource)
+            #expect(result.shaderInterface == cold.shaderInterface)
+            #expect(result.alphaContract == .init(unpremultipliedInputSlots: [7], premultipliedOutput: true))
         }
         #expect(cache.diskHitCountForTesting == 1 && cache.memoryHitCountForTesting == 1)
+    }
+
+    @Test(.enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_DEPTHPARALLAX_VERTEX_PATH") != nil,
+                   "opt-in: provide the locally owned depthparallax vertex source"))
+    func actualDepthParallaxVertexFeedsResolutionAndProjectionVaryings() throws {
+        let path = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_DEPTHPARALLAX_VERTEX_PATH"))
+        let data = try Data(contentsOf: path)
+        let source = try #require(String(data: data, encoding: .utf8))
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        print("[authored-vertex-probe] sourceSHA256=\(hash) bytes=\(data.count)")
+        let identity: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        let matrices: [([Double], SIMD2<Float>)] = [
+            ([0.914285660, 0, 0, 0, 0, 0.863999963, 0, 0, 0, 0, 3999.999756, 0, -0.000359072, -0.045459863, -1499.999878, 1], .init(0.75, 0.25)),
+            ([0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], .init(0.75, 0.75)),
+        ]
+        for mask in [0, 1] {
+            let vertex = "#define MASK \(mask)\n" + source
+            let fragment = """
+            varying vec4 v_TexCoord;
+            varying vec2 v_ParallaxOffset;
+            void main() { gl_FragColor = vec4(v_ParallaxOffset, v_TexCoord.zw); }
+            """
+            for (inverse, expected) in matrices {
+                let uniforms: [String: WPESceneShaderConstantValue] = [
+                    "g_ModelViewProjectionMatrix": .vector(identity),
+                    "g_EffectTextureProjectionMatrix": .vector(identity),
+                    "g_EffectTextureProjectionMatrixInverse": .vector(inverse),
+                    "g_Texture1Resolution": .vector([512, 256, 320, 160]),
+                    "g_Texture2Resolution": .vector([1024, 512, 256, 128]),
+                    "g_ParallaxPosition": .vector([0.75, 0.25]), "g_Screen": .vector([4, 4, 1]),
+                ]
+                let pixels = try replay(vertex: vertex, fragment: fragment, vertexValues: uniforms)
+                for y in 0 ..< 4 {
+                    for x in 0 ..< 4 {
+                        let pixel = pixels[y * 4 + x]
+                        #expect(abs(pixel.x - expected.x) < 0.00001 && abs(pixel.y - expected.y) < 0.00001)
+                        #expect(abs(pixel.z - (Float(x) + 0.5) / 4 * 0.625) < 0.00001)
+                        #expect(abs(pixel.w - (Float(y) + 0.5) / 4 * 0.625) < 0.00001)
+                    }
+                }
+                if mask == 1 {
+                    let maskFragment = "varying vec2 v_TexCoordMask; void main() { gl_FragColor = vec4(v_TexCoordMask, 0.0, 1.0); }"
+                    let maskPixels = try replay(vertex: vertex, fragment: maskFragment, vertexValues: uniforms)
+                    for y in 0 ..< 4 {
+                        for x in 0 ..< 4 {
+                            #expect(abs(maskPixels[y * 4 + x].x - (Float(x) + 0.5) / 4 * 0.25) < 0.00001)
+                            #expect(abs(maskPixels[y * 4 + x].y - (Float(y) + 0.5) / 4 * 0.25) < 0.00001)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func replay(vertex: String, fragment: String,
@@ -209,9 +304,22 @@ struct WPELinkedShaderStageTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let compiler = WPESwiftShaderCompiler(device: device, translationCache: WPEShaderTranslationCache(rootURL: root))
-        let fs = try compiler.compile(.init(shaderName: "linked-stage-test", processedVertexSource: vertex,
-                                            processedFragmentSource: fragment, sourceHash: UUID().uuidString,
-                                            comboValues: [:], textureBindings: [:], premultipliedInputSlots: premultipliedInputSlots, vertexExecution: .authoredFullscreen))
+        // Exercise the production loader as well as preprocessing: real WPE
+        // bodies rely on its engine macro prelude and newline normalization.
+        let shaderRoot = root.appendingPathComponent("shaders")
+        try FileManager.default.createDirectory(at: shaderRoot, withIntermediateDirectories: true)
+        try vertex.write(to: shaderRoot.appendingPathComponent("linked_stage.vert"), atomically: true, encoding: .utf8)
+        try fragment.write(to: shaderRoot.appendingPathComponent("linked_stage.frag"), atomically: true, encoding: .utf8)
+        let draw = WPERenderPass(id: "probe", phase: .material, shader: "linked_stage", source: .asset("unused"), target: .scene,
+                                 textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: "nocull",
+                                 depthTest: "disabled", depthWrite: "disabled")
+        let graph = WPERenderGraph(layers: [.init(objectID: "probe", objectName: "probe", imagePath: "unused", materialPath: nil,
+                                                  geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [], passes: [draw])])
+        let prepared = try #require(WPERenderPipelineBuilder(cacheRootURL: root).build(graph: graph).layers.first?.passes.first)
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: prepared, recordFailure: false))
+            .replacingPremultipliedAlphaSettings(inputSlots: premultipliedInputSlots, output: false)
+            .replacingVertexExecution(.authoredFullscreen)
+        let fs = try compiler.compile(request)
         let vs = try #require(fs.vertexStage)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vs.library.makeFunction(name: fs.vertexFunctionName)

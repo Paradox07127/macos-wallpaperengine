@@ -2,7 +2,7 @@
 #
 # Before this file the gates lived in ~20 separate scripts, and whether a change
 # had been fully checked depended on remembering which ones applied. CI now runs
-# the same targets, so local green and CI green mean the same thing.
+# the hardware-free targets; local verify additionally runs the Metal contracts.
 #
 #   make verify        everything below, cheapest gate first
 #   make fast          seconds; structure/boundaries/i18n
@@ -10,6 +10,7 @@
 #   make lint          changed lines only (never the whole repo — see below)
 #   make test-packages SwiftPM package suites
 #   make test-app      hardware-free app contract shard (Pro + Lite hosts)
+#   make test-wpe-metal local WPE GPU semantic contracts (requires Metal)
 #   make test-app-hosted  same, minus the Lite host — for machines with no cert
 #   make hooks         local agent-gate self-test (skipped where .claude is absent)
 #   make unregister-build-appex  drop LaunchServices records for throwaway build dirs
@@ -30,14 +31,14 @@ SWIFTPM_SCRATCH ?= /tmp/LiveWallpaperVerify-SwiftPM
 PACKAGES := LiveWallpaperCore LiveWallpaperProWPE
 
 .DEFAULT_GOAL := help
-.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted \
+.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted test-wpe-metal \
         unregister-build-appex
 
 help:
 	@sed -n '/^#   make/s/^#   //p' $(MAKEFILE_LIST)
 
 # Ordered cheapest-first so a structural break fails in seconds, not minutes.
-verify: fast contracts lint test-packages test-app
+verify: fast contracts lint test-packages test-app test-wpe-metal
 	@echo "== make verify: all gates passed =="
 
 fast:
@@ -73,6 +74,21 @@ test-packages:
 test-app:
 	@echo "== Fast app architecture/security contracts =="
 	DERIVED_DATA="$(DERIVED_DATA)" bash scripts/fast_app_contract_tests.sh
+
+# GPU execution and temporal feedback cannot be certified by a headless shard.
+# Keep the local gate explicit and require every listed suite to execute.
+WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
+    WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
+    WPEUniformStageBindingTests WPEAttachmentPlanTests WPECameraMotionTests \
+    WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests \
+    WPEColorDomainProbeTests WPEOraclePixelProbeTests WPECanonicalUniformTraceTests \
+    WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests
+
+test-wpe-metal:
+	DERIVED_DATA="$(DERIVED_DATA)" \
+	RESULT_BUNDLE="$(DERIVED_DATA)/WPEMetalContracts-$$(date +%Y%m%d-%H%M%S)-$$$$.xcresult" \
+	TEST_RUNNER_MTL_DEBUG_LAYER=1 TEST_RUNNER_MTL_SHADER_VALIDATION=1 \
+	bash scripts/app_tests.sh suites $(WPE_METAL_SUITES)
 
 # CI's variant. The Lite host asserts on runtime entitlements, so it needs a real
 # signing certificate that hosted runners do not have; Lite's grants stay gated
