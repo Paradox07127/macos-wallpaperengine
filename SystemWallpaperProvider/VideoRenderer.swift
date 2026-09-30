@@ -50,6 +50,7 @@ final class VideoRenderer: @unchecked Sendable {
     /// resuming must not feed the absolute clock back in as a file position.
     private var deepPauseResumePosition: CMTime = .zero
     private var decoderLossObserver: (any NSObjectProtocol)?
+    private var decodeFailureObserver: (any NSObjectProtocol)?
 
     var layer: CALayer { displayLayer }
 
@@ -76,11 +77,33 @@ final class VideoRenderer: @unchecked Sendable {
         if let decoderLossObserver {
             NotificationCenter.default.removeObserver(decoderLossObserver)
         }
+        if let decodeFailureObserver {
+            NotificationCenter.default.removeObserver(decodeFailureObserver)
+        }
+    }
+
+    private func observeDecodeFailures(generation: UInt64) {
+        if let decodeFailureObserver {
+            NotificationCenter.default.removeObserver(decodeFailureObserver)
+        }
+        decodeFailureObserver = NotificationCenter.default.addObserver(
+            forName: AVSampleBufferVideoRenderer.didFailToDecodeNotification,
+            object: renderer,
+            queue: nil
+        ) { [weak self] _ in
+            self?.queue.async { [weak self] in
+                guard let self, requestGeneration == generation,
+                      sourceURL != nil, !isDeepPaused,
+                      !renderer.requiresFlushToResumeDecoding else { return }
+                reportFailure("video.decoderFailed")
+            }
+        }
     }
 
     private func handleDecoderLoss() {
         queue.async { [weak self] in
-            guard let self, renderer.requiresFlushToResumeDecoding else { return }
+            guard let self, sourceURL != nil, !failureReported,
+                  renderer.requiresFlushToResumeDecoding else { return }
             renderer.flush()
             // A flush resets decoder state, so the next buffer has to be a sync
             // sample (AVSampleBufferVideoRenderer.h:140). Reopening the reader
@@ -212,7 +235,7 @@ final class VideoRenderer: @unchecked Sendable {
             // frame stays) and wind the clock back before the new pump starts.
             // The first start after the poster seed must NOT flush — the seed
             // may not have displayed yet and flushing would un-seed the surface.
-            if sourceURL != nil {
+            if sourceURL != nil || didSignalFirstFrame {
                 renderer.flush()
                 if let timebase {
                     CMTimebaseSetRate(timebase, rate: 0)
@@ -226,6 +249,7 @@ final class VideoRenderer: @unchecked Sendable {
             failureHandler = onFailure
             failureReported = false
             requestGeneration &+= 1
+            observeDecodeFailures(generation: requestGeneration)
             let generation = requestGeneration
             desiredRate = initialRate
             didSignalFirstFrame = false
@@ -508,6 +532,10 @@ final class VideoRenderer: @unchecked Sendable {
 
     private func stopOnQueue() {
         requestGeneration &+= 1
+        if let decodeFailureObserver {
+            NotificationCenter.default.removeObserver(decodeFailureObserver)
+            self.decodeFailureObserver = nil
+        }
         failureHandler = nil
         firstFrameHandler = nil
         cancelRamp()
@@ -516,5 +544,7 @@ final class VideoRenderer: @unchecked Sendable {
         reader?.cancelReading()
         reader = nil
         output = nil
+        asset = nil
+        sourceURL = nil
     }
 }
