@@ -37,19 +37,20 @@ struct LibrarySearchFieldTests {
         let ceiling = DesignTokens.LibraryFilterBar.searchMaxWidth
         print("SEARCHPROMPT widths es long \(Self.width(Self.spanishLong)), en long \(Self.width("Search by name or tag")), en \(Self.width("Search by name"))")
         #expect(!LibrarySearchField.promptFits(Self.spanishLong, width: floor, font: Self.font))
-        // 180pt of text plus 46pt of chrome needs 226pt, past the 216pt ceiling.
+        // The measured 180pt text plus the shared 8pt gap needs just over 227pt,
+        // past the 216pt ceiling. The next whole-point width holds it.
         #expect(!LibrarySearchField.promptFits(Self.spanishLong, width: ceiling, font: Self.font))
-        #expect(LibrarySearchField.promptFits(Self.spanishLong, width: 227, font: Self.font))
-        // 136.3pt needs 182.3pt: past the 168pt ideal, inside the ceiling.
+        #expect(LibrarySearchField.promptFits(Self.spanishLong, width: 228, font: Self.font))
+        // 136.3pt needs 183.3pt: past the 168pt ideal, inside the ceiling.
         #expect(LibrarySearchField.promptFits("Search by name or tag", width: ceiling, font: Self.font))
         #expect(!LibrarySearchField.promptFits("Search by name or tag", width: DesignTokens.LibraryFilterBar.searchIdealWidth, font: Self.font))
-        // 97.1pt needs 143.1pt, so the floor cuts even the shorter English prompt.
+        // 97.1pt needs 144.1pt, so the floor cuts even the shorter English prompt.
         #expect(!LibrarySearchField.promptFits("Search by name", width: floor, font: Self.font))
     }
 
     @Test("A prompt fits exactly when the drawn text field holds its placeholder, which is drawn in the measured font")
     func promptFitsMatchesTheDrawnField() throws {
-        for width in [CGFloat(132), 168, 182, 183, 216] {
+        for width in [CGFloat(132), 168, 182, 183, 184, 216] {
             for prompt in [Self.spanishLong, "Search by name or tag", "Search by name"] {
                 let field = try Self.hosted(prompt, shortPrompt: nil, width: width)
                 #expect(
