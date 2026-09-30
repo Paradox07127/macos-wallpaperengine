@@ -10,8 +10,8 @@ public final class LibraryBookmarkStore {
     /// `bookmark:<UUID>`, `workshop:<Workshop ID>` or `aerial:<file path>`, each once.
     public private(set) var ids: [String] = []
     public private(set) var hasStorageError = false
-    /// The stored archive exists but can't be decoded; every write is refused so it is not overwritten.
-    @ObservationIgnored private var isArchiveUnreadable = false
+    /// The stored archive exists but can't be decoded; saving stays refused until `resetUnreadableArchive()`.
+    public private(set) var isArchiveUnreadable = false
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults) {
@@ -58,6 +58,18 @@ public final class LibraryBookmarkStore {
         }
         guard merged != ids else { return }
         save(merged)
+    }
+
+    public func dismissStorageError() {
+        hasStorageError = false
+    }
+
+    /// Discards the unreadable archive under this store's key alone.
+    public func resetUnreadableArchive() {
+        defaults.removeObject(forKey: Self.preferencesKey)
+        ids = []
+        isArchiveUnreadable = false
+        hasStorageError = false
     }
 
     public func resetAfterSettingsCleared() {

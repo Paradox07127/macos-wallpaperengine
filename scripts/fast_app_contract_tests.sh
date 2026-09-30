@@ -145,6 +145,8 @@ PARALLEL_SUITES=(
   OverlayObjectRemoveWindowTests
   SavedPageTests
   DetailBookmarkTests
+  BookmarkStorageErrorToastTests
+  LibraryBookmarkStorageErrorToastTests
   OverlayRemoveAllTests
   OverlayHiddenWidgetTests
   EditDeskModalChromeTests

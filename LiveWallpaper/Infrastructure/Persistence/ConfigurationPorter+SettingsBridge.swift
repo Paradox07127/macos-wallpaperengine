@@ -42,7 +42,6 @@ extension ConfigurationPorter {
     @discardableResult
     static func apply(_ bundle: ConfigurationBundle) -> ApplySummary {
         let manager = SettingsManager.shared
-        let summary = importSummary(for: bundle)
 
         if let configurations = bundle.screenConfigurations {
             manager.replaceAllConfigurations(configurations)
@@ -91,6 +90,13 @@ extension ConfigurationPorter {
         }
         bundle.mergeWorkshopBookmarks(into: .shared)
         #endif
+
+        // An unreadable archive refused every imported mark.
+        var counted = bundle
+        if LibraryBookmarkStore.shared.isArchiveUnreadable {
+            counted.libraryBookmarks = nil
+        }
+        let summary = importSummary(for: counted)
 
         Logger.info(
             "Configuration import applied (displays=\(summary.displayCount ?? 0), global=\(summary.didRestoreGlobalSettings), bookmarks=\(summary.bookmarkCount ?? 0), schemes=\(bundle.screenSchemes?.count ?? 0))",

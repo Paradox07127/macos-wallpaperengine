@@ -29,6 +29,7 @@ struct EditDeskRoot: View {
     @State private var historicalFailureDetails: WallpaperFailureSnapshot?
     @State private var bookmarkErrorToast: EditDeskToastCenter.Toast.ID?
     #endif
+    @State private var libraryBookmarkErrorToast: EditDeskToastCenter.Toast.ID?
     private let initialNavigation: Navigation?
     private let initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?
     private let initialOnboardingRequested: Bool
@@ -162,6 +163,8 @@ struct EditDeskRoot: View {
             WallpaperFailureDetails(failure: failure, onDismiss: dismiss)
         }
         #endif
+        .onChange(of: LibraryBookmarkStore.shared.hasStorageError, initial: true) { syncLibraryBookmarkErrorToast() }
+        .onChange(of: toasts.toasts.map(\.id)) { syncLibraryBookmarkErrorToast() }
         .environment(pageGuide)
         .overlayPreferenceValue(PageGuideAnchorKey.self) { anchors in
             PageGuideHost(session: pageGuide, anchors: anchors, onOpenWorkshopSettings: openGuideSettings)
@@ -240,6 +243,10 @@ struct EditDeskRoot: View {
     /// Off `body`: the first `HomePage(…)` in this file pays for building HomePage's memberwise initializer.
     private func homePage(_ router: EditDeskRouter) -> some View {
         HomePage(router: router, toasts: toasts, library: library)
+    }
+
+    private func syncLibraryBookmarkErrorToast() {
+        libraryBookmarkErrorToast = LibraryBookmarkStorageErrorToast.sync(.shared, shown: libraryBookmarkErrorToast, in: toasts)
     }
 
     static func consumeOnboardingRequest(router: EditDeskRouter, progress: OnboardingProgress, pageGuide: PageGuideSession) {

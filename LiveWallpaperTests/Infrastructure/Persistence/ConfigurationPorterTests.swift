@@ -385,6 +385,20 @@ struct ConfigurationPorterBookmarkMergeTests {
         #expect(!body.contains("merged.contains"), "every imported mark rescans every merged mark: O(existing × imported)")
     }
 
+    @Test("apply counts library marks only after merging them, and not when the unreadable archive refused them")
+    func applySummaryLeavesOutRefusedLibraryMarks() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Persistence/ConfigurationPorter+SettingsBridge.swift")
+        let start = try #require(source.range(of: "static func apply(_ bundle: ConfigurationBundle) -> ApplySummary {"))
+        let end = try #require(source.range(of: "static func mergingWallpaperBookmarks(", range: start.upperBound ..< source.endIndex))
+        let body = source[start.upperBound ..< end.lowerBound]
+        let merge = try #require(body.range(of: "bundle.mergeLibraryBookmarks(into: .shared"))
+        let summary = try #require(body.range(of: "let summary"))
+        #expect(summary.lowerBound > merge.upperBound, "the summary is computed before the merge, so refused marks are counted")
+        let tail = body[merge.upperBound...]
+        #expect(tail.contains("LibraryBookmarkStore.shared.isArchiveUnreadable"), "the summary counts marks the unreadable archive refused")
+        #expect(tail.contains("libraryBookmarks = nil"))
+    }
+
     @Test("apply merges backup bookmarks into the current library instead of replacing it")
     func applyMergesBookmarksIntoLibrary() {
         let manager = SettingsManager.shared

@@ -18901,6 +18901,42 @@
         }
       }
     },
+    "Couldn't read your bookmarks. Reset discards them so new bookmarks can be saved." : {
+      "comment" : "Wallpaper Library bookmarks alert when the saved marks can't be decoded; the Reset button discards them.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read your bookmarks. Reset discards them so new bookmarks can be saved."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron leer tus marcadores. «Restablecer» los descarta para poder guardar nuevos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークを読み込めませんでした。「リセット」するとこれらのブックマークは破棄され、新しいブックマークを保存できるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取书签。“重置”会丢弃这些书签，之后即可保存新的书签。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取書籤。「重設」會捨棄這些書籤，之後即可儲存新的書籤。"
+          }
+        }
+      }
+    },
     "Couldn't read your likes. Reset discards them so new likes can be saved." : {
       "comment" : "Workshop likes alert when the saved likes can't be decoded; the Reset button discards them.",
       "extractionState" : "manual",
@@ -19147,6 +19183,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法恢復此項目的存取權限：%@"
+          }
+        }
+      }
+    },
+    "Couldn't save your bookmarks. Your existing bookmarks have been kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save your bookmarks. Your existing bookmarks have been kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar tus marcadores. Se han conservado los existentes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークを保存できませんでした。既存のブックマークは保持されています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存书签，原有的书签已保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存書籤，原有的書籤已保留。"
           }
         }
       }
