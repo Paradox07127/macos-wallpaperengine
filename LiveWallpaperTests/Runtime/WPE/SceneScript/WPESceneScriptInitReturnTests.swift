@@ -300,6 +300,34 @@ struct WPESceneScriptInitReturnTests {
         #expect(abs(instance.initialOutput.own.alpha - 0.25) < 0.0001)
     }
 
+    @Test("A failed init restores authored visibility and alpha")
+    func throwingInitRestoresAuthoredState() throws {
+        let instance = try WPELayerScriptInstance(
+            script: "export function init() { thisLayer.visible = true; thisLayer.alpha = 1; throw new Error('failed'); }",
+            initialVisible: false,
+            initialAlpha: 0.3,
+            governor: isolatedGovernor
+        )
+        #expect(instance.initialOutput.own.visible == false)
+        #expect(instance.initialOutput.own.alpha == 0.3)
+        #expect(instance.initialOutput.others.isEmpty)
+        let reapplied = try #require(instance.applyUserProperties(["enabled": .bool(true)]))
+        #expect(reapplied.own.visible == false)
+        #expect(reapplied.own.alpha == 0.3)
+    }
+
+    @Test("A failed alpha init preserves the bound alpha seed")
+    func throwingAlphaInitRestoresBoundSeed() throws {
+        let instance = try WPELayerScriptInstance(
+            script: "export function init() { thisLayer.alpha = 1; throw new Error('failed'); }",
+            outputMode: .returnedAlpha(initialValue: 0.4),
+            initialAlpha: 0.8,
+            governor: isolatedGovernor
+        )
+        #expect(instance.initialOutput.own.alpha == 0.4)
+        #expect(try #require(instance.applyUserProperties(["enabled": .bool(true)])).own.alpha == 0.4)
+    }
+
     @Test("A layer init returning nothing leaves the authored state intact")
     func layerInitReturningUndefinedLeavesStateIntact() throws {
         let instance = try WPELayerScriptInstance(

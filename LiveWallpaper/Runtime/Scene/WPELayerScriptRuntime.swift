@@ -1002,15 +1002,21 @@ final class WPELayerScriptInstance {
                     if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
                 }
             }
-            // A script that throws in init() must not half-apply — degrade to shown-as-authored so a broken script can't hide its layer.
+            // A failed init preserves authored visibility and alpha.
             let media = WPESceneMediaHandlerSet(in: context)
             if didThrow {
+                let authoredAlpha = switch outputMode {
+                case .layerState: initialOwnAlpha
+                case let .returnedAlpha(seed): seed.isFinite ? seed : initialOwnAlpha
+                }
+                assignedVisible[Self.ownKey] = initialOwnVisible
+                assignedAlpha[Self.ownKey] = authoredAlpha
                 return .ready(
                     hasUpdate: false,
                     handlesUserProperties: handlesUserProperties,
                     media: media,
                     output: WPELayerScriptOutput(
-                        own: WPELayerScriptState(visible: true, alpha: 1, videoCommands: []),
+                        own: WPELayerScriptState(visible: initialOwnVisible, alpha: authoredAlpha, videoCommands: []),
                         others: [:]
                     )
                 )
