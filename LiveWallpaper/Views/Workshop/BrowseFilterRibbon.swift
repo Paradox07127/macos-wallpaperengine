@@ -3,33 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-enum WorkshopRequestCounter {
-    private static let countKey = "loomscreen.workshop.requestsToday.count"
-    private static let dateKey = "loomscreen.workshop.requestsToday.date"
-
-    static func todayString() -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
-    }
-
-    static func countForToday(defaults: UserDefaults = .appScoped()) -> Int {
-        guard defaults.string(forKey: dateKey) == todayString() else { return 0 }
-        return defaults.integer(forKey: countKey)
-    }
-
-    static func increment(defaults: UserDefaults = .appScoped()) {
-        let today = todayString()
-        if defaults.string(forKey: dateKey) == today {
-            defaults.set(defaults.integer(forKey: countKey) + 1, forKey: countKey)
-        } else {
-            defaults.set(today, forKey: dateKey)
-            defaults.set(1, forKey: countKey)
-        }
-    }
-}
-
 struct BrowseFilterRibbon: View {
     let viewModel: BrowseViewModel
     let hasWebAPIKey: Bool

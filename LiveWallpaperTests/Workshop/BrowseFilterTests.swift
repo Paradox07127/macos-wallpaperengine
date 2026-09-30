@@ -1531,15 +1531,6 @@ struct BrowseFirstPaintWiringTests {
         #expect(pane.contains("viewModel.hasLoadedPage"))
     }
 
-    @Test("The request counter counts HTTP requests, not loading flags")
-    func counterCountsNetworkRequests() throws {
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        let service = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Workshop/WorkshopQueryService.swift")
-
-        #expect(!pane.contains("WorkshopRequestCounter.increment"))
-        #expect(service.contains("WorkshopRequestCounter.increment("))
-    }
-
     @Test("Toggling “Show presets as wallpapers” reaches Browse through a notification")
     func presetVisibilityNotificationIsWired() throws {
         let names = try RepositoryRoot.source(

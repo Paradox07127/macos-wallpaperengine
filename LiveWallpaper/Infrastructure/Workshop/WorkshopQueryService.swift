@@ -486,7 +486,7 @@ actor WorkshopQueryService {
     private let session: URLSession
     private let cache: WorkshopQueryCache
     private let retryPolicy: WorkshopRetryPolicy
-    /// Closure rather than `UserDefaults`: that type is not `Sendable` and cannot cross into the actor.
+    /// Called before every HTTP attempt, retries included; cache and in-flight hits never reach it.
     private let countIssuedRequest: @Sendable () -> Void
     private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
     private var tokenBucket = tokenCapacity
@@ -500,7 +500,7 @@ actor WorkshopQueryService {
         cache: WorkshopQueryCache = WorkshopQueryCache(),
         session: URLSession = .workshopQuerySession(timeout: 20),
         retryPolicy: WorkshopRetryPolicy = WorkshopRetryPolicy(),
-        countIssuedRequest: @escaping @Sendable () -> Void = { WorkshopRequestCounter.increment() }
+        countIssuedRequest: @escaping @Sendable () -> Void = {}
     ) {
         self.keychain = keychain
         self.session = session

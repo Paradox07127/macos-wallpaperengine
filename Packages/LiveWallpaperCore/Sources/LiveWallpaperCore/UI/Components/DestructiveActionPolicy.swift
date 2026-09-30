@@ -3,8 +3,6 @@ import SwiftUI
 /// Attach with `.confirmDestructive($action)`.
 public enum DestructiveAction: Identifiable, Equatable {
     case removePlaylistItem(isLast: Bool, displayName: String)
-    case removeSceneHistory(sceneName: String)
-    case deleteBookmark(bookmarkName: String)
     case deleteScheme(schemeName: String)
     case applyScheme(schemeName: String, displayName: String)
     case replaceScheme(schemeName: String, displayName: String)
@@ -31,9 +29,7 @@ public enum DestructiveAction: Identifiable, Equatable {
     public var id: String {
         switch self {
         case .removePlaylistItem(let isLast, let name): return "removePlaylistItem-\(isLast)-\(name)"
-        case .removeSceneHistory(let s): return "removeSceneHistory-\(s)"
         case .removeSystemWallpaper(let t, let u): return "removeSystemWallpaper-\(t)-\(u)"
-        case .deleteBookmark(let n): return "deleteBookmark-\(n)"
         case let .deleteScheme(n): return "deleteScheme-\(n)"
         case let .applyScheme(n, d): return "applyScheme-\(n)-\(d)"
         case let .replaceScheme(n, d): return "replaceScheme-\(n)-\(d)"
@@ -60,8 +56,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         switch self {
         case .removePlaylistItem(let isLast, _):
             return isLast ? "Remove the last playlist item?" : "Remove this playlist item?"
-        case .removeSceneHistory:        return "Remove this scene from history?"
-        case .deleteBookmark:            return "Delete this bookmark?"
         case .deleteScheme: return "Delete this scheme?"
         case .applyScheme: return "Replace this display's entire setup?"
         case .replaceScheme: return "Overwrite this saved scheme?"
@@ -107,16 +101,6 @@ public enum DestructiveAction: Identifiable, Equatable {
                     localized: "“\(title)” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched.",
                     bundle: .appLanguage, comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title."
                 )
-        case .removeSceneHistory(let sceneName):
-            return String(
-                localized: "\(sceneName) won't appear in your recent history anymore. The local cache is kept.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the scene name."
-            )
-        case .deleteBookmark(let name):
-            return String(
-                localized: "'\(name)' will be removed from your library. Displays using this bookmark fall back to their saved wallpaper.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the bookmark name."
-            )
         case let .deleteScheme(name):
             return String(
                 localized: "'\(name)' will be removed from your saved schemes. Displays it was applied to keep what is on screen.",
@@ -221,8 +205,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         switch self {
         case .removePlaylistItem(let isLast, _):
             return isLast ? "Remove & Clear" : "Remove"
-        case .removeSceneHistory:        return "Remove"
-        case .deleteBookmark:            return "Delete"
         case .deleteScheme: return "Delete"
         case .applyScheme: return "Replace Setup"
         case .replaceScheme: return "Overwrite Scheme"

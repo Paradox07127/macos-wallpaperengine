@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreImage
 import LiveWallpaperCore
 import SwiftUI
 
@@ -203,61 +202,5 @@ struct DetailHero<HUD: View>: View {
             .frame(height: detailHeroHUDHeight)
             .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
             .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
-    }
-}
-
-/// SCREENS.md S6's "封面 blur 80 saturate 1.2 opacity .25 scale 1.2" behind the whole page.
-/// Core Image renders it once into a small bitmap; at this radius the cover carries no detail
-/// worth a full-size blur every frame.
-struct DetailBackdrop: View {
-    let cover: CGImage?
-
-    static let bitmapSize = CGSize(width: 160, height: 100)
-    private nonisolated static let designWindowWidth: CGFloat = 1280
-    private nonisolated static let designBlurRadius: CGFloat = 80
-
-    /// The design's 80 is against a 1280pt window, so the radius is a fraction of the width, not a
-    /// constant: on the 160px bitmap the same wash needs 10.
-    nonisolated static func blurRadius(forWidth width: CGFloat) -> CGFloat {
-        width * designBlurRadius / designWindowWidth
-    }
-
-    @State private var bitmap: CGImage?
-
-    var body: some View {
-        Color.clear
-            .overlay {
-                if let bitmap {
-                    Image(decorative: bitmap, scale: 1)
-                        .resizable()
-                        .scaledToFill()
-                        .scaleEffect(1.2)
-                }
-            }
-            .clipped()
-            .opacity(0.25)
-            .allowsHitTesting(false)
-            .task(id: cover.map(ObjectIdentifier.init)) {
-                bitmap = Self.blurredBitmap(cover)
-            }
-    }
-
-    static func blurredBitmap(_ source: CGImage?) -> CGImage? {
-        guard let source, source.width > 0, source.height > 0 else { return nil }
-        let extent = CGRect(origin: .zero, size: bitmapSize)
-        let output = CIImage(cgImage: source)
-            .transformed(by: CGAffineTransform(
-                scaleX: bitmapSize.width / CGFloat(source.width),
-                y: bitmapSize.height / CGFloat(source.height)
-            ))
-            // Without this the blur samples transparent black past the edges and the wash fades
-            // out at the window's border instead of filling it.
-            .clampedToExtent()
-            .applyingFilter(
-                "CIGaussianBlur",
-                parameters: [kCIInputRadiusKey: blurRadius(forWidth: bitmapSize.width)]
-            )
-            .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.2])
-        return CIContext().createCGImage(output, from: extent)
     }
 }

@@ -79,20 +79,6 @@ final class SceneSettingsOwner {
         return screen
     }
 
-    func loadSchema() async {
-        guard schema == nil, let screen = currentScreen else { return }
-        let inspected = attemptID == nil ? nil : screenManager.inspectedWallpaperAttempt(for: screen)?.configuration
-        let outcome = await WPESceneProjectSchemaLoader.load(
-            descriptor: descriptor,
-            wpeOrigin: (inspected ?? screenManager.getConfiguration(for: screen))?.wpeOrigin
-        )
-        guard !Task.isCancelled else { return }
-        schema = outcome.schema
-        synchronizeEditor(force: false)
-        expandInitialSections()
-        refreshPresetDerivedState()
-    }
-
     private func expandInitialSections() {
         guard expandsSectionsOnLoad, let presentation = editor.presentation else { return }
         for section in presentation.sections where !editor.expandedSections.contains(section.id) {

@@ -500,41 +500,6 @@
         }
       }
     },
-    "'%@' will be removed from your library. Displays using this bookmark fall back to their saved wallpaper." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'%@' will be removed from your library. Displays using this bookmark fall back to their saved wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'%@' se eliminará de la biblioteca de fondos. Las pantallas que usen este marcador pasarán a su fondo de pantalla guardado."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」は壁紙ライブラリから削除されます。このブックマークを使うディスプレイは保存済みの壁紙に戻ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”将从壁纸库中移除。使用该书签的显示器会回退到各自已保存的壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」將從桌布庫中移除。使用該書籤的顯示器會回到各自已儲存的桌布。"
-          }
-        }
-      }
-    },
     "'%@' will be removed from your saved schemes. Displays it was applied to keep what is on screen." : {
       "comment" : "Destructive confirm message. Placeholder is the scheme name.",
       "extractionState" : "manual",
@@ -1545,41 +1510,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 之後已被播放列表切換，已略過。"
-          }
-        }
-      }
-    },
-    "%@ won't appear in your recent history anymore. The local cache is kept." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ won't appear in your recent history anymore. The local cache is kept."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ya no aparecerá en tu historial reciente. La caché local se conserva."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ は最近の履歴に表示されなくなります。ローカルキャッシュは保持されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 将不再出现在最近历史中。本地缓存会保留。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 將不再出現在最近歷程中。本機快取會保留。"
           }
         }
       }
@@ -20800,41 +20730,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除已下載的 Wallpaper Engine 資源並取消關聯"
-          }
-        }
-      }
-    },
-    "Delete this bookmark?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete this bookmark?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Eliminar este marcador?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このブックマークを削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除此书签吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要刪除此書籤嗎？"
           }
         }
       }
@@ -52939,41 +52834,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要移除此播放列表項目嗎？"
-          }
-        }
-      }
-    },
-    "Remove this scene from history?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove this scene from history?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Eliminar esta escena del historial?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このシーンを履歴から削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从历史记录中移除此场景吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要從記錄中移除此場景嗎？"
           }
         }
       }
