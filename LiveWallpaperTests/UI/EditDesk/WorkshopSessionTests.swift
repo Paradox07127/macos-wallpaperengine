@@ -159,6 +159,14 @@ struct BrowseCardEqualityTests {
         #expect(Self.card(inUseBadge: nil) != Self.card(inUseBadge: Self.studio))
     }
 
+    @Test("A content-type change refreshes a same-title card's accessible identity")
+    func contentTypeEntersEquality() {
+        let scene = Self.card(tags: ["Scene"])
+        let video = Self.card(tags: ["Video"])
+        #expect(scene != video)
+        #expect(scene.accessibilityLabelText != video.accessibilityLabelText)
+    }
+
     @Test("A browse card reads out only the marks it draws")
     func editDeskCardReadsOnlyDrawnMarks() {
         let inLibrary = String(localized: "In Library", bundle: .appLanguage)
@@ -182,7 +190,7 @@ struct BrowseCardEqualityTests {
         #expect(![inLibrary, inUse, update].contains { blurred.contains($0) }, "a blurred card draws no marks but reads: \(blurred)")
     }
 
-    @Test("A browse card reads only the metadata its info band draws, and a blurred card only its title")
+    @Test("A browse card reads its semantic type plus visible metadata; blur hides the metadata")
     func editDeskCardReadsOnlyDrawnMetadata() throws {
         let tags = ["Scene", "3840 x 2160"]
         let rating = WorkshopRating.score(0.9, votesUp: 9, votesDown: 1)
@@ -194,9 +202,9 @@ struct BrowseCardEqualityTests {
         let switchedOff = Self.card(preferences: off, tags: tags, rating: rating).accessibilityLabelText
         #expect(!switchedOff.contains(stars), "the rating is read with its switch off: \(switchedOff)")
         #expect(!switchedOff.contains(resolution), "the resolution is read with its switch off: \(switchedOff)")
-        #expect(!switchedOff.contains(type), "the card draws no type but reads it: \(switchedOff)")
+        #expect(switchedOff == "\(Self.item().title), \(type)", "the card must retain its type without reading hidden metadata: \(switchedOff)")
         let blurred = Self.card(tags: tags + ["Mature"], rating: rating).accessibilityLabelText
-        #expect(blurred == Self.item().title, "a blurred card draws no info band but reads: \(blurred)")
+        #expect(blurred == "\(Self.item().title), \(type)", "a blurred card must retain its type without reading hidden metadata: \(blurred)")
 
         // Control: switched on, the card reads what it draws.
         let switchedOn = Self.card(tags: tags, rating: rating).accessibilityLabelText
