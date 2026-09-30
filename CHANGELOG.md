@@ -13,7 +13,7 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
-## [0.8.1] — 2026-09-29
+## [0.8.1] — 2026-09-30
 
 ### Added
 
