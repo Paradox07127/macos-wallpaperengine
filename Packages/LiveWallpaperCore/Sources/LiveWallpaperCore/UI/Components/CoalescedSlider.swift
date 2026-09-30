@@ -11,9 +11,14 @@ public struct SliderValueGrid {
     }
 
     public func normalized(_ value: Double) -> Double {
-        let clamped = min(max(value, range.lowerBound), range.upperBound)
+        let clamped = min(max(value.isNaN ? range.lowerBound : value, range.lowerBound), range.upperBound)
+        guard clamped.isFinite else { return range.lowerBound.isFinite ? range.lowerBound : 0 }
         guard step.isFinite, step > 0 else { return clamped }
-        let snapped = ((clamped - range.lowerBound) / step).rounded() * step + range.lowerBound
+        let index = (clamped - range.lowerBound) / step
+        // An unrepresentable index cannot improve on the already representable input.
+        guard index.isFinite else { return clamped }
+        let snapped = index.rounded() * step + range.lowerBound
+        guard snapped.isFinite else { return clamped }
         return min(max(snapped, range.lowerBound), range.upperBound)
     }
 }

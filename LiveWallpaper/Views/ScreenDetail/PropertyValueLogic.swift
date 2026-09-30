@@ -126,7 +126,7 @@ enum PropertyValueLogic {
         if let hex = decodeHexColor(trimmed) { return hex }
         let parts = trimmed.split(whereSeparator: { $0 == " " || $0 == "," })
         let parsed = parts.compactMap { Double($0) }
-        guard parsed.count >= 3 else { return [] }
+        guard parsed.count >= 3, parsed.prefix(4).allSatisfy(\.isFinite) else { return [] }
         return parsed.prefix(4).map { min(max($0, 0), 1) }
     }
 

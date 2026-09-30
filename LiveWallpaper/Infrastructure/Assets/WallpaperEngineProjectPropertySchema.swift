@@ -445,11 +445,17 @@ private struct Localization: Equatable {
 
     private static func localeCandidates(for language: String) -> [String] {
         var candidates = [language]
+        if language.hasPrefix("zh") {
+            let components = language.split(separator: "-").map(String.init)
+            let traditional = components.contains("hant") || components.contains("cht") ||
+                (!components.contains("hans") && !components.contains("chs") &&
+                    components.contains(where: { ["tw", "hk", "mo"].contains($0) }))
+            candidates.append(contentsOf: traditional
+                ? ["zh-cht", "zh-hant", "zh-tw", "zh-hk", "zh-mo"]
+                : ["zh-chs", "zh-hans", "zh-cn", "zh-sg"])
+        }
         if let prefix = language.split(separator: "-").first {
             candidates.append(String(prefix))
-        }
-        if language.hasPrefix("zh") {
-            candidates.append(contentsOf: ["zh-chs", "zh-cn", "zh-hans"])
         }
         if language.hasPrefix("en") {
             candidates.append("en-us")

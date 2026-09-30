@@ -35,7 +35,39 @@ struct WPEProjectPropertyInputSafetyTests {
         #expect(WPEPropertyLabelText.clean("A<img src='https://example.com/a.png'>B<br/>C") == "A B C")
     }
 
+    @Test("Chinese author translations respect script and region aliases")
+    func chineseLocaleAliases() throws {
+        let manifest = #"{"general":{"localization":{"zh-cht":{"title":"繁體"},"zh-chs":{"title":"简体"},"zh":{"title":"Generic"},"en-us":{"title":"English"}},"properties":{"caption":{"type":"text","text":"title"}}}}"#
+        for language in ["zh-Hant", "zh-TW", "zh-HK", "zh-MO", "zh-Hant-CN"] {
+            let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8), preferredLanguages: [language])
+            #expect(schema.properties.first?.displayText == "繁體")
+        }
+        for language in ["zh-Hans", "zh-CN", "zh-SG", "zh-Hans-TW"] {
+            let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8), preferredLanguages: [language])
+            #expect(schema.properties.first?.displayText == "简体")
+        }
+        let exact = manifest.replacingOccurrences(of: #""zh-cht":{"title":"繁體"}"#, with: #""zh-hant":{"title":"Exact"},"zh-cht":{"title":"繁體"}"#)
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(exact.utf8), preferredLanguages: ["zh-Hant"])
+        #expect(schema.properties.first?.displayText == "Exact")
+        let generic = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8), preferredLanguages: ["zh"])
+        #expect(generic.properties.first?.displayText == "Generic")
+        let fallback = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8), preferredLanguages: ["ko"])
+        #expect(fallback.properties.first?.displayText == "English")
+    }
+
     #if !LITE_BUILD
+    @Test("Nonfinite author colors never reach the native color picker")
+    func nonfiniteColorComponents() {
+        for raw in ["nan 0 0", "0 inf 0", "0 0 -inf", "0 0 0 nan", "1e999 0 0"] {
+            #expect(PropertyValueLogic.colorComponents(from: raw).isEmpty)
+            let components = PropertyValueLogic.cgColor(from: raw).components ?? []
+            #expect(components == [1, 1, 1, 1])
+        }
+        #expect(PropertyValueLogic.colorComponents(from: "0.25 0.5 1") == [0.25, 0.5, 1])
+        #expect(PropertyValueLogic.colorComponents(from: "#ff0000") == [1, 0, 0])
+        #expect(PropertyValueLogic.colorComponents(from: "-1 2 0.5") == [0, 1, 0.5])
+    }
+
     @Test("Nonfinite slider metadata cannot construct an invalid range", arguments: ["NaN", "nan", "Infinity", "-Infinity", "1e999"])
     func nonfiniteSliderMetadata(raw: String) throws {
         let property = try slider(["min": raw, "max": raw, "step": raw, "order": raw])
