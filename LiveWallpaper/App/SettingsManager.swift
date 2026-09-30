@@ -640,7 +640,7 @@ final class SettingsManager {
         defaults.removeObject(forKey: Keys.blobSchemaVersion)
         // WPELibrary.RootBookmark.v1 has no owner: delete it and sharedManagerIsIsolatedFromStandardDefaults passes for the wrong reason.
         defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")
-        defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // no reader left; stale value only
+        defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1") // no reader left; stale value only
         defaults.removeObject(forKey: WallpaperTransitionChoice.defaultsKey)
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
