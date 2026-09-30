@@ -1,3 +1,4 @@
+import Foundation
 import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
@@ -85,6 +86,22 @@ struct GalleryCardPreferencesTests {
     }
 
     #if !LITE_BUILD
+    @MainActor
+    @Test("Same-title Workshop cards announce their authored content type")
+    func workshopCardAnnouncesContentType() throws {
+        let url = try #require(URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=123"))
+        for type in ["Scene", "Video", "Web", "Preset"] {
+            let item = WorkshopQueryItem(
+                id: 123, rawTitle: "Same Title", shortDescription: "", creatorID: nil,
+                previewImageURL: nil, fileSizeBytes: nil, timeUpdated: nil, subscriptionCount: nil,
+                rating: nil, tags: [type], visibility: .public, isBanned: false,
+                steamCommunityURL: url
+            )
+            let card = BrowseCard(item: item, cardPreferences: GalleryCardPreferences(), reduceMotion: true)
+            #expect(card.accessibilityLabelText == "Same Title, \(WorkshopTagLocalization.displayName(type))")
+        }
+    }
+
     @Test("The S8 card's title-row rating and resolution badge obey their switches")
     func editDeskMarksObeySwitches() {
         func marks(_ preferences: GalleryCardPreferences) -> (rating: String?, resolution: String?) {

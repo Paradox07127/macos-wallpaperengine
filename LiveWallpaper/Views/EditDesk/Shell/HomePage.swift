@@ -942,7 +942,7 @@ struct HomePage: View {
                                     .buttonStyle(.plain)
                                     .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
                                     .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
-                                    .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title)))
+                                    .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title, kind: item.kind)))
                                     .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
                                     .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
                                     .task(id: item.id) { await library.probeMetadata(for: [item.id]) }

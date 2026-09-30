@@ -752,6 +752,10 @@ struct SavedLibraryModelTests {
         let playing = String(localized: "Playing on \("Studio")", bundle: .appLanguage)
         let reading = LibraryCardBadges(nowPlaying: on).accessibilityLabel(title: "Variant")
         #expect(reading == "Variant, \(playing)", Comment(rawValue: reading))
+        for kind: LibraryItem.Kind in [.video, .web, .scene, .aerial] {
+            let typed = LibraryCardBadges(nowPlaying: on).accessibilityLabel(title: "Variant", kind: kind)
+            #expect(typed == "Variant, \(kind.localizedName), \(playing)")
+        }
     }
 
     @Test("Needs Update puts the projects with an update first, then sorts by name")

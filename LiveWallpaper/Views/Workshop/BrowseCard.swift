@@ -363,6 +363,9 @@ struct BrowseCard: View, Equatable {
 
     var accessibilityLabelText: String {
         var parts: [String] = [item.title]
+        if let type = item.tags.first(where: { ["scene", "video", "web", "preset"].contains($0.lowercased()) }) {
+            parts.append(WorkshopTagLocalization.displayName(type))
+        }
         // The card reads what its band and top row draw, and a blurred card draws neither.
         let showsMeta = !shouldBlur
         if let rating = ratingValue, showsMeta, cardPreferences.showsRating {

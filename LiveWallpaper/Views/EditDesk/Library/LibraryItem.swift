@@ -75,8 +75,11 @@ struct LibraryCardBadges: Equatable {
     var needsUpdate = false
 
     /// VoiceOver's reading of a tile titled `title` that carries these badges.
-    func accessibilityLabel(title: String) -> String {
+    func accessibilityLabel(title: String, kind: LibraryItem.Kind? = nil) -> String {
         var parts = [title]
+        if let kind {
+            parts.append(kind.localizedName)
+        }
         if let nowPlaying {
             parts.append(nowPlaying.accessibilityText)
         }

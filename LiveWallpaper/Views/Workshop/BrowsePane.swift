@@ -659,17 +659,18 @@ private struct WorkshopSkeletonCard: View {
 
 private struct WorkshopShimmer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulsed = false
+    @State private var isVisible = false
+
+    private var pulsed: Bool {
+        isVisible && !reduceMotion
+    }
 
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(opacity))
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    pulsed = true
-                }
-            }
+            .animation(pulsed ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: pulsed)
+            .onAppear { isVisible = true }
+            .onDisappear { isVisible = false }
     }
 
     private var opacity: Double {

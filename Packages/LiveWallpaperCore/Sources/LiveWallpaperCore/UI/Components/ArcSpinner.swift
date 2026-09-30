@@ -6,7 +6,12 @@ public struct ArcSpinner: View {
     public var tint: Color = DesignTokens.Colors.overlayForeground
     public var progressText: String?
 
-    @State private var animate = false
+    @State private var isVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var animate: Bool {
+        isVisible && !reduceMotion
+    }
 
     public init(
         size: CGFloat = 44,
@@ -34,7 +39,7 @@ public struct ArcSpinner: View {
                     )
                     .rotationEffect(.degrees(animate ? 360 : 0))
                     .blendMode(.plusLighter)
-                    .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: animate)
+                    .animation(animate ? .linear(duration: 1.1).repeatForever(autoreverses: false) : nil, value: animate)
 
                 Circle()
                     .trim(from: 0, to: 0.18)
@@ -44,7 +49,7 @@ public struct ArcSpinner: View {
                     )
                     .rotationEffect(.degrees(animate ? -360 : 0))
                     .blendMode(.plusLighter)
-                    .animation(.linear(duration: 1.7).repeatForever(autoreverses: false), value: animate)
+                    .animation(animate ? .linear(duration: 1.7).repeatForever(autoreverses: false) : nil, value: animate)
             }
             .frame(width: size, height: size)
 
@@ -59,7 +64,8 @@ public struct ArcSpinner: View {
                     .accessibilityLabel(Text(verbatim: progressText))
             }
         }
-        .onAppear { animate = true }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
         .accessibilityElement(children: progressText == nil ? .ignore : .contain)
     }
 }
