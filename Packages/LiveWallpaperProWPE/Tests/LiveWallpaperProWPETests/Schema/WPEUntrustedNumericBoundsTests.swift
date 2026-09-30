@@ -145,4 +145,31 @@ struct WPEVectorZeroDictionaryTests {
         #expect(WPEValueParser.vector3(json(#"{"foo":1}"#)) == nil)
         #expect(WPEValueParser.vector3(json(#"{}"#)) == nil)
     }
+
+    @Test("Numeric vectors reject nonfinite components without clamping finite HDR values")
+    func vectorsRejectNonfiniteComponents() {
+        for value in ["nan 0 0", "0 inf 0", "0 0 -infinity"] {
+            #expect(WPEValueParser.numberVector(value) == nil)
+        }
+        #expect(WPEValueParser.numberVector([Double.nan, 0, 0]) == nil)
+        #expect(WPEValueParser.numberVector([0, Double.infinity, 0]) == nil)
+        #expect(WPEValueParser.numberVector("-2 4 1e100") == [-2, 4, 1e100])
+        #expect(WPEValueParser.numberVector([-2, 4, 1e100]) == [-2, 4, 1e100])
+    }
+
+    @Test("Scalar values and animation frames reject nonfinite data")
+    func scalarAndAnimationFramesRejectNonfiniteData() throws {
+        for value: Any in [Double.nan, Double.infinity, -Double.infinity, "nan", "inf", "-infinity"] {
+            #expect(WPEValueParser.double(value) == nil)
+        }
+        #expect(WPEValueParser.double(-2) == -2)
+        #expect(WPEValueParser.double("1e100") == 1e100)
+        #expect(WPEValueParser.double(true, boolAsNumber: true) == 1)
+        let raw = try JSONSerialization.jsonObject(with: Data(#"{"value":0,"animation":{"c0":[{"frame":"nan","value":1},{"frame":0,"value":"inf"},{"frame":1,"value":2}],"options":{"fps":30,"length":1}}}"#.utf8))
+        let animation = try #require(WPEValueParser.animatedValue(raw))
+        let track = try #require(animation.animation.tracks.first)
+        #expect(track.count == 1)
+        #expect(track.first?.frame == 1)
+        #expect(track.first?.value == 2)
+    }
 }

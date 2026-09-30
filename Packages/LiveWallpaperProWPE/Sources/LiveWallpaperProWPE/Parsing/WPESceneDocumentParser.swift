@@ -1458,7 +1458,7 @@ public enum WPESceneDocumentParser {
         case .bool(let value):
             return (value ? 1 : 0, nil)
         case .string(let value):
-            return (Double(value) ?? fallback, nil)
+            return (parseDouble(value) ?? fallback, nil)
         case .animated(let value):
             return (value.scalarFallback ?? value.scalar(at: 0) ?? fallback, value)
         }

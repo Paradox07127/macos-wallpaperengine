@@ -168,4 +168,29 @@ struct WPESceneMalformedArrayElementTests {
         #expect(definition.controlPoints.count == 1)
         #expect(definition.controlPoints.first?.pointerLocked == true)
     }
+
+    @Test("A nonfinite user color envelope falls back before scene geometry publication")
+    func nonfiniteUserColorUsesSafeFallback() throws {
+        let data = Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":1920,"height":1080}},"objects":[{"id":1,"name":"layer","image":"models/layer.json","color":{"user":"accent","value":"1 1 1"}}]}"#.utf8)
+        let document = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: ["accent": .string("nan 0 0")],
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.color == SIMD3<Double>(repeating: 1))
+    }
+
+    @Test("Scalar and XYZ user envelopes use finite field defaults")
+    func nonfiniteScalarAndXYZEnvelopesUseFiniteDefaults() throws {
+        let data = Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":1920,"height":1080}},"objects":[{"id":1,"name":"layer","image":"models/layer.json","alpha":{"user":"opacity","value":0.5},"color":{"x":{"user":"accentx","value":0.2},"y":0.5,"z":0.75}}]}"#.utf8)
+        let document = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: ["opacity": .string("inf"), "accentx": .string("nan")],
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.alpha == 1)
+        #expect(layer.color == SIMD3<Double>(0, 0.5, 0.75))
+    }
 }

@@ -196,12 +196,14 @@ public enum WPEValueParser {
     ) -> [Double]? {
         if let array = raw as? [Any] {
             let values = array.compactMap { double($0, boolAsNumber: boolAsNumber) }
-            return values.count == array.count && values.count >= minimumCount ? values : nil
+            return values.count == array.count && values.count >= minimumCount
+                && values.allSatisfy(\.isFinite) ? values : nil
         }
         if let string = raw as? String {
             let pieces = string.split(whereSeparator: { $0.isWhitespace || $0 == "," })
             let values = pieces.compactMap { Double($0) }
-            return values.count == pieces.count && values.count >= minimumCount ? values : nil
+            return values.count == pieces.count && values.count >= minimumCount
+                && values.allSatisfy(\.isFinite) ? values : nil
         }
         return nil
     }
@@ -232,16 +234,18 @@ public enum WPEValueParser {
             return boolAsNumber ? (bool ? 1 : 0) : nil
         }
         if let number = raw as? NSNumber {
-            return number.doubleValue
+            let value = number.doubleValue
+            return value.isFinite ? value : nil
         }
         if let double = raw as? Double {
-            return double
+            return double.isFinite ? double : nil
         }
         if let int = raw as? Int {
             return Double(int)
         }
         if let string = raw as? String {
-            return Double(string)
+            guard let value = Double(string), value.isFinite else { return nil }
+            return value
         }
         return nil
     }
