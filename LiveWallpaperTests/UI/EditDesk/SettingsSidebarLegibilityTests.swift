@@ -77,7 +77,7 @@ struct SettingsSidebarLegibilityTests {
         HStack(spacing: 0) {
             SettingsSidebar(
                 selection: Binding(get: { selection.value }, set: { selection.value = $0 }),
-                searchText: .constant(""), pendingSearchAnchor: .constant(nil), onBack: {}, showsBackButton: false
+                searchText: .constant(""), pendingSearchAnchor: .constant(nil)
             )
             .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
             Divider()

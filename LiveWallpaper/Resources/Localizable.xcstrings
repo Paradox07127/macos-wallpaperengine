@@ -10372,40 +10372,6 @@
         }
       }
     },
-    "Back to App" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to App"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a la app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリに戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回应用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回 App"
-          }
-        }
-      }
-    },
     "Back to Browse" : {
       "localizations" : {
         "es" : {
@@ -56031,40 +55997,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回全景調整套用結果。使用顯示器詳細資訊中的「方案」按鈕儲存目前設定，方便日後使用。"
-          }
-        }
-      }
-    },
-    "Return to the wallpaper browser sidebar" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Return to the wallpaper browser sidebar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a la barra lateral del explorador de fondos de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙ブラウザのサイドバーに戻る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回壁纸浏览侧边栏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回桌布瀏覽側邊欄"
           }
         }
       }

@@ -9,10 +9,6 @@ final class EditDeskRouter {
         case home, library, schemes, systemWallpaper, workshop, settings
     }
 
-    enum LibraryFocus: Equatable {
-        case aerials
-    }
-
     /// What to import and which display it lands on, in one value: as two notifications the target
     /// could arrive after the prompt had already picked a display.
     struct AddWallpaperRequest: Hashable {
@@ -23,8 +19,6 @@ final class EditDeskRouter {
     var page: Page = .home
     var detailDisplayID: CGDirectDisplayID?
     var overlayEditorDisplayID: CGDirectDisplayID?
-    /// A request the library page applies once, through `takeLibraryFocus()`; nil when none is pending.
-    var libraryFocus: LibraryFocus?
     /// The display the library page is choosing a wallpaper for; nil when none is preselected.
     var libraryTarget: CGDirectDisplayID?
     var settingsSelection: SettingsNavigation?
@@ -36,7 +30,6 @@ final class EditDeskRouter {
     var pendingDetailSection: DetailSection?
     var pendingOnboardingStep: OnboardingProgress.Page?
     var onboardingRequested = false
-    private(set) var previousPage: Page?
     private let isWorkshopAvailable: () -> Bool
     private let systemWallpaperAvailable: Bool
 
@@ -66,13 +59,6 @@ final class EditDeskRouter {
             settingsSelection = .general
         case let .screen(id):
             detailDisplayID = id
-        case .appleAerials:
-            page = .library
-            libraryFocus = .aerials
-        case .systemWallpaper:
-            page = systemWallpaperAvailable ? .systemWallpaper : .library
-        case .workshop:
-            page = isWorkshopAvailable() ? .workshop : .home
         case nil:
             break
         }
@@ -90,9 +76,6 @@ final class EditDeskRouter {
             openSettings(destination, anchor: anchor)
         case .openWorkshopPane:
             select(.workshop)
-        case .openAppleAerials:
-            select(.library)
-            libraryFocus = .aerials
         case .promptAddWallpaper:
             guard let kind = notification.userInfo?["kind"] as? String else { return }
             pendingAddWallpaper = AddWallpaperRequest(
@@ -134,7 +117,6 @@ final class EditDeskRouter {
             libraryTarget = nil
         }
         guard destination != self.page else { return }
-        previousPage = self.page
         self.page = destination
     }
 
@@ -143,10 +125,6 @@ final class EditDeskRouter {
         settingsSelection = destination
         settingsSearchText = ""
         pendingSettingsSearchAnchor = anchor
-    }
-
-    func backFromSettings() {
-        select(previousPage ?? .home)
     }
 
     /// `failureID` names the failed load attempt the detail should open on; nil opens the display as it is.
@@ -183,11 +161,5 @@ final class EditDeskRouter {
             openSettings(.general)
         }
         pendingOnboardingStep = step
-    }
-
-    func takeLibraryFocus() -> LibraryFocus? {
-        let focus = libraryFocus
-        libraryFocus = nil
-        return focus
     }
 }

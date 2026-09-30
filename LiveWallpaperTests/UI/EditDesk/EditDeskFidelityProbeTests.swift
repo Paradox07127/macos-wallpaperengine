@@ -1820,7 +1820,7 @@ struct SettingsBackgroundFidelityTests {
         ) {
             HStack(spacing: 0) {
                 SettingsSidebar(selection: .constant(.general), searchText: .constant(""),
-                                pendingSearchAnchor: .constant(nil), onBack: {})
+                                pendingSearchAnchor: .constant(nil))
                     .frame(width: 220)
                 Form {
                     Section("General") {

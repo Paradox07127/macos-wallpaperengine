@@ -49,8 +49,6 @@ public extension Notification.Name {
 
     static let openWorkshopPane = Notification.Name("OpenWorkshopPane")
 
-    static let openAppleAerials = Notification.Name("OpenAppleAerials")
-
     /// `SMAppService.register/unregister` produced an outcome needing user-visible
     /// follow-up. `userInfo["reason"]: LoginItemFailure`.
     static let loginItemRegistrationDidFail = Notification.Name("LoginItemRegistrationDidFail")

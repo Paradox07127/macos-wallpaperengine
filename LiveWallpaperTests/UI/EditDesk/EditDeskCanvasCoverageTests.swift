@@ -173,7 +173,7 @@ struct EditDeskCanvasCoverageTests {
                     HStack(spacing: 0) {
                         SettingsSidebar(
                             selection: .constant(.general), searchText: .constant(""),
-                            pendingSearchAnchor: .constant(nil), onBack: {}, showsBackButton: false
+                            pendingSearchAnchor: .constant(nil)
                         )
                         .frame(width: sidebarWidth)
                         Divider()

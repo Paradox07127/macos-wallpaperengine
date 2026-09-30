@@ -7,8 +7,6 @@ struct SettingsSidebar: View {
     @Binding var pendingSearchAnchor: SettingsSearchAnchor?
     /// Bumped on every pick of a search result, including one that changes neither the page nor the anchor.
     var searchRequest: Binding<Int> = .constant(0)
-    let onBack: () -> Void
-    var showsBackButton = true
 
     @Environment(\.featureCatalog) private var featureCatalog
 
@@ -39,12 +37,7 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                if showsBackButton {
-                    backButton
-                }
-                SettingsSidebarSearchField(text: $searchText)
-            }
+            SettingsSidebarSearchField(text: $searchText)
             .padding(.horizontal, DesignTokens.Spacing.md)
             .padding(.bottom, DesignTokens.Spacing.sm)
 
@@ -87,18 +80,6 @@ struct SettingsSidebar: View {
                 selection = results.first?.destination ?? .general
             }
         }
-    }
-
-    private var backButton: some View {
-        Button(action: onBack) {
-            Label("Back to App", systemImage: "chevron.left")
-                .font(DesignTokens.Typography.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .controlSize(.regular)
-        .accessibilityHint(Text("Return to the wallpaper browser sidebar"))
     }
 
     private func rows(for results: [SettingsNavigationSearchResult]) -> some View {

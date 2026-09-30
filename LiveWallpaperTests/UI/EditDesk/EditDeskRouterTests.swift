@@ -9,7 +9,7 @@ import Testing
 struct EditDeskRouterTests {
     @Test("General settings notification opens general and clears the search")
     func openGeneralSettings() {
-        let router = makeRouter(.workshop)
+        let router = makeRouter(on: .workshop)
         router.settingsSearchText = "volume"
         router.pendingSettingsSearchAnchor = .displayDefaultsVideo
         router.handle(Notification(name: .openGeneralSettings))
@@ -43,27 +43,9 @@ struct EditDeskRouterTests {
         #expect(router.page == .workshop)
     }
 
-    @Test("Apple Aerials notification selects the library aerials segment")
-    func openAppleAerials() {
-        let router = makeRouter(.general)
-        router.handle(Notification(name: .openAppleAerials))
-        #expect(router.page == .library)
-        #expect(router.libraryFocus == .aerials)
-    }
-
-    @Test("A library focus request is taken once, and a repeated request is taken again")
-    func libraryFocusIsConsumedOnce() {
-        let router = makeRouter()
-        router.handle(Notification(name: .openAppleAerials))
-        #expect(router.takeLibraryFocus() == .aerials)
-        #expect(router.takeLibraryFocus() == nil)
-        router.handle(Notification(name: .openAppleAerials))
-        #expect(router.takeLibraryFocus() == .aerials)
-    }
-
     @Test("Add wallpaper notification carries the display it targets and is consumed once")
     func promptAddWallpaper() {
-        let router = makeRouter(.workshop)
+        let router = makeRouter(on: .workshop)
         router.handle(Notification(name: .promptAddWallpaper, userInfo: [
             "kind": "html-folder", "screenID": CGDirectDisplayID(42),
         ]))
@@ -79,7 +61,7 @@ struct EditDeskRouterTests {
         #expect(router.pendingAddWallpaper == .init(kind: "any", targetDisplayID: nil))
 
         // HomePage is mounted on the overview and the library only, so the request must bring it back.
-        let away = makeRouter(.workshop)
+        let away = makeRouter(on: .workshop)
         away.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any", "screenID": CGDirectDisplayID(7)]))
         #expect(away.page == .home)
         #expect(away.pendingAddWallpaper == .init(kind: "any", targetDisplayID: 7))
@@ -114,7 +96,7 @@ struct EditDeskRouterTests {
 
     @Test("Onboarding notification stores the request without navigating")
     func showOnboarding() {
-        let router = makeRouter(.workshop)
+        let router = makeRouter(on: .workshop)
         #expect(!router.onboardingRequested)
         router.handle(Notification(name: .showOnboarding))
         #expect(router.onboardingRequested)
@@ -131,13 +113,11 @@ struct EditDeskRouterTests {
         #expect(router.page == .home)
         #expect(router.detailDisplayID == nil)
         #expect(router.overlayEditorDisplayID == nil)
-        #expect(router.libraryFocus == nil)
         #expect(router.settingsSelection == nil)
         #expect(router.settingsSearchText.isEmpty)
         #expect(router.pendingSettingsSearchAnchor == nil)
         #expect(router.pendingAddWallpaper == .init(kind: "any", targetDisplayID: 42))
         #expect(router.pendingFailureID == nil)
-        #expect(router.previousPage == nil)
     }
 
     @Test("Initial general navigation opens general settings")
@@ -154,23 +134,6 @@ struct EditDeskRouterTests {
         #expect(router.detailDisplayID == 42)
     }
 
-    @Test("Initial aerials navigation opens library aerials")
-    func initialAppleAerials() {
-        let router = makeRouter(.appleAerials)
-        #expect(router.page == .library)
-        #expect(router.libraryFocus == .aerials)
-    }
-
-    @Test("Initial system wallpaper navigation opens its own page, and the wallpaper library before macOS 26")
-    func initialSystemWallpaper() {
-        let router = makeRouter(.systemWallpaper)
-        #expect(router.page == .systemWallpaper)
-        #expect(router.libraryFocus == nil)
-        let older = makeRouter(.systemWallpaper, systemWallpaperAvailable: false)
-        #expect(older.page == .library)
-        #expect(older.libraryFocus == nil, "the library would open on a focus it has nothing to show for")
-    }
-
     @Test("Schemes and System Wallpaper are pages of their own, and before macOS 26 System Wallpaper falls back to the library")
     func schemesAndSystemWallpaperArePages() {
         let router = makeRouter()
@@ -178,36 +141,23 @@ struct EditDeskRouterTests {
         #expect(router.page == .schemes)
         router.select(.systemWallpaper)
         #expect(router.page == .systemWallpaper)
-        #expect(router.previousPage == .schemes)
 
         let older = makeRouter(systemWallpaperAvailable: false)
         older.select(.systemWallpaper)
         #expect(older.page == .library)
     }
 
-    @Test("The library focus only picks a chip, and Manage Schemes opens the Schemes page")
-    func libraryFocusNoLongerNamesPages() throws {
-        let router = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRouter.swift")
-        let start = try #require(router.range(of: "enum LibraryFocus"))
-        let focus = try #require(router[start.upperBound...].components(separatedBy: "}").first)
-        #expect(!focus.contains("schemes"), "Schemes is still a focus of the library page")
-        #expect(!focus.contains("systemWallpaper"), "System Wallpaper is still a focus of the library page")
+    @Test("Manage Schemes opens the Schemes page")
+    func manageSchemesOpensSchemesPage() throws {
         let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
         #expect(host.contains("router.select(.schemes)"), "Manage Schemes does not open the Schemes page")
     }
 
-    @Test("Initial workshop navigation opens the available workshop")
-    func initialWorkshop() {
-        let router = makeRouter(.workshop)
-        #expect(router.page == .workshop)
-    }
-
-    @Test("Unavailable workshop lands on home for initial navigation, notifications and selection")
+    @Test("Unavailable workshop lands on home for notifications and selection")
     func unavailableWorkshop() {
         let router = EditDeskRouter(
-            initialNavigation: .workshop, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
+            initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
         )
-        #expect(router.page == .home)
         router.select(.library)
         router.handle(Notification(name: .openWorkshopPane))
         #expect(router.page == .home)
@@ -232,25 +182,9 @@ struct EditDeskRouterTests {
         #expect(router.overlayEditorDisplayID == nil)
     }
 
-    @Test("Settings back preserves the origin across settings destinations and defaults to home")
-    func backFromSettings() {
-        let router = makeRouter(.workshop)
-        router.openSettings(.general)
-        #expect(router.previousPage == .workshop)
-        router.openSettings(.displayDefaults, anchor: .displayDefaultsVideo)
-        #expect(router.previousPage == .workshop)
-        #expect(router.pendingSettingsSearchAnchor == .displayDefaultsVideo)
-        router.backFromSettings()
-        #expect(router.page == .workshop)
-
-        let initialSettings = makeRouter(.general)
-        initialSettings.backFromSettings()
-        #expect(initialSettings.page == .home)
-    }
-
     @Test("Detail commands return home and close the display detail")
     func detailCommands() {
-        let router = makeRouter(.workshop)
+        let router = makeRouter(on: .workshop)
         router.showDetail(42)
         #expect(router.page == .home)
         #expect(router.detailDisplayID == 42)
@@ -305,18 +239,23 @@ struct EditDeskRouterTests {
 
     @Test("Unknown notifications leave navigation unchanged")
     func unknownNotification() {
-        let router = makeRouter(.workshop)
+        let router = makeRouter(on: .workshop)
         router.handle(Notification(name: Notification.Name("EditDeskRouterTests.unknown")))
         #expect(router.page == .workshop)
-        #expect(router.previousPage == nil)
         #expect(router.pendingAddWallpaper == nil)
         #expect(!router.onboardingRequested)
     }
 
-    private func makeRouter(_ navigation: Navigation? = nil, systemWallpaperAvailable: Bool = true) -> EditDeskRouter {
-        EditDeskRouter(
+    private func makeRouter(
+        _ navigation: Navigation? = nil, on page: EditDeskRouter.Page? = nil, systemWallpaperAvailable: Bool = true
+    ) -> EditDeskRouter {
+        let router = EditDeskRouter(
             initialNavigation: navigation, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true },
             systemWallpaperAvailable: systemWallpaperAvailable
         )
+        if let page {
+            router.select(page)
+        }
+        return router
     }
 }

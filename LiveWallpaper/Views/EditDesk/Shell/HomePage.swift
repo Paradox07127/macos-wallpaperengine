@@ -170,7 +170,6 @@ struct HomePage: View {
                 }
                 .onChange(of: page.screenManager.wallpaperSessionStateVersion) { page.refreshAllStates() }
                 .onChange(of: page.router.page) { page.syncProgress(to: page.router.page, animated: true) }
-                .onChange(of: page.router.libraryFocus, initial: true) { page.consumeLibraryFocus() }
         }
     }
 
@@ -189,7 +188,17 @@ struct HomePage: View {
                 .onChange(of: page.installedLibrary.updatedWorkshopIDs, initial: true) {
                     page.library?.updatedWorkshopIDs = page.installedLibrary.updatedWorkshopIDs
                 }
+                .onChange(of: page.installedLibrary.errorMessage, initial: true) {
+                    HomePage.postInstalledLibraryError(page.installedLibrary, to: page.toasts)
+                }
         }
+    }
+
+    /// Takes the model's error as it posts it, so the same failure never toasts twice.
+    static func postInstalledLibraryError(_ model: InstalledLibraryModel, to toasts: EditDeskToastCenter) {
+        guard let message = model.errorMessage else { return }
+        toasts.post(message, style: .failure)
+        model.errorMessage = nil
     }
     #endif
 
@@ -1020,19 +1029,6 @@ struct HomePage: View {
             stage.setProgress(0, animated: animated)
         default:
             break
-        }
-    }
-
-    private func consumeLibraryFocus() {
-        if let focus = router.takeLibraryFocus() {
-            applyLibraryFocus(focus)
-        }
-    }
-
-    private func applyLibraryFocus(_ focus: EditDeskRouter.LibraryFocus) {
-        switch focus {
-        case .aerials:
-            library?.chip = .aerials
         }
     }
 

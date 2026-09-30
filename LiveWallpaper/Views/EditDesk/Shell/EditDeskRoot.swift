@@ -91,9 +91,7 @@ struct EditDeskRoot: View {
                                         selection: $router.settingsSelection,
                                         searchText: $router.settingsSearchText,
                                         pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
-                                        searchRequest: $router.settingsSearchRequest,
-                                        onBack: router.backFromSettings,
-                                        showsBackButton: false
+                                        searchRequest: $router.settingsSearchRequest
                                     )
                                     .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
                                     .pageGuideTarget(.settingsSidebar)
@@ -375,7 +373,6 @@ private struct RouterNotifications: ViewModifier {
                 workshopSession?.consumePendingDeepLink()
                 #endif
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openAppleAerials)) { router?.handle($0) }
             .onReceive(NotificationCenter.default.publisher(for: .promptAddWallpaper)) { router?.handle($0) }
             .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { router?.handle($0) }
             .onReceive(NotificationCenter.default.publisher(for: EditDeskRoot.restartOnboardingNotification)) { router?.handle($0) }
