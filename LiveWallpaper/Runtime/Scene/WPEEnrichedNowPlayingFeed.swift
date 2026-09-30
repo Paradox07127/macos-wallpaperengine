@@ -9,6 +9,7 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
     private var source: NowPlayingSource?
     /// `source` is nil both before the first subscriber and while a test is running without a real source.
     private var sourceIsRunning = false
+    private var sourceGeneration: UInt64 = 0
     private var ordinal: UInt64 = 0
     private var latest: MonitorNowPlayingState?
 
@@ -21,6 +22,9 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
 
     func deliverForTesting(_ state: MonitorNowPlayingState?) {
         fanOut(state)
+    }
+    func sourceDeliveryForTesting() -> @MainActor @Sendable (MonitorNowPlayingState?) -> Void {
+        makeSourceDelivery()
     }
     #endif
 
@@ -59,6 +63,7 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
     private func startSourceIfNeeded() {
         guard !sourceIsRunning else { return }
         sourceIsRunning = true
+        sourceGeneration &+= 1
         #if DEBUG
         guard startsRealSourceForTesting else { return }
         #endif
@@ -69,10 +74,16 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
             audioDemand: { _ in }
         )
         self.source = source
-        let sink = Sink { [weak self] state in
-            self?.fanOut(state)
-        }
+        let sink = Sink(deliver: makeSourceDelivery())
         Task { await source.start(sink: sink) }
+    }
+
+    private func makeSourceDelivery() -> @MainActor @Sendable (MonitorNowPlayingState?) -> Void {
+        let generation = sourceGeneration
+        return { [weak self] state in
+            guard let self, self.sourceGeneration == generation else { return }
+            self.fanOut(state)
+        }
     }
 
     private func stopSource() {

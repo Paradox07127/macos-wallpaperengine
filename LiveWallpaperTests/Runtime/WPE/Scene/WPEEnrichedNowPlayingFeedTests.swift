@@ -114,6 +114,27 @@ struct WPEEnrichedNowPlayingFeedTests {
         #expect(replayed.titles.isEmpty, "a track from before the quiet period was replayed as current")
     }
 
+    @Test("A stopped source cannot publish into a restarted feed")
+    func lateSourceDeliveryCannotCrossRestart() {
+        let feed = Self.makeFeed()
+        let first = UUID()
+        feed.subscribe(id: first) { _, _ in }
+        let oldDelivery = feed.sourceDeliveryForTesting()
+        feed.unsubscribe(id: first)
+
+        let received = Recorder()
+        feed.subscribe(id: UUID()) { received.record($0, $1) }
+        let currentDelivery = feed.sourceDeliveryForTesting()
+        currentDelivery(Self.track("current"))
+        oldDelivery(Self.track("stale"))
+
+        let replayed = Recorder()
+        feed.subscribe(id: UUID()) { replayed.record($0, $1) }
+        #expect(received.titles == ["current"])
+        #expect(received.ordinals == [1])
+        #expect(replayed.titles == ["current"])
+    }
+
     @Test("Pushes that arrive with no demand are dropped")
     func pushesWithoutDemandAreDropped() {
         let feed = Self.makeFeed()
