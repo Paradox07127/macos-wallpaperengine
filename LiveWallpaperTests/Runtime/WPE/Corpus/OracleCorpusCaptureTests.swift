@@ -10,6 +10,10 @@ import Testing
 @Suite("Oracle corpus capture")
 struct OracleCorpusCaptureTests {
 
+    private enum VideoMode: String, Codable {
+        case liveWallClock, firstFrameStill
+    }
+
     private struct Config: Codable {
         let corpusRoot: String
         /// A test process gets its own empty `ConfigurationDirectory`, so without an explicit path every scene pulling a builtin model dies on `fileMissing`.
@@ -26,10 +30,12 @@ struct OracleCorpusCaptureTests {
         var replayFrame: [String: Double]?
         var resolution: [Int]?
         var captureGPU: Bool = false
+        var videoMode: VideoMode = .liveWallClock
+        var scriptOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
-            case jobId, replayFrame, resolution, captureGPU
+            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder
         }
 
         init(from decoder: Decoder) throws {
@@ -46,6 +52,8 @@ struct OracleCorpusCaptureTests {
             replayFrame = try container.decodeIfPresent([String: Double].self, forKey: .replayFrame)
             resolution = try container.decodeIfPresent([Int].self, forKey: .resolution)
             captureGPU = try container.decodeIfPresent(Bool.self, forKey: .captureGPU) ?? false
+            videoMode = try container.decodeIfPresent(VideoMode.self, forKey: .videoMode) ?? .liveWallClock
+            scriptOrder = try container.decodeIfPresent(WPESceneScriptBatchDispatcher.SubmissionOrder.self, forKey: .scriptOrder) ?? .parallelWorkers
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -186,6 +194,12 @@ struct OracleCorpusCaptureTests {
                     // shifts every mouse-driven parallax/effect uniform.
                     pointerSampler: .fixed(Self.replayPointer())
                 )
+                renderer.oracleSceneScriptBatchOrder = config.scriptOrder
+                if config.videoMode == .firstFrameStill {
+                    // A zero-ticket local admission uses the existing deterministic
+                    // still extraction path; it does not change the process budget.
+                    renderer.oracleVideoDecoderAdmission = WPEVideoDecoderAdmission(limit: 0)
+                }
                 let renderActor = WPEDisplayRenderActor(backing: .main)
                 await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
                 let captureManager = MTLCaptureManager.shared()
@@ -203,6 +217,7 @@ struct OracleCorpusCaptureTests {
                     }
                 }
                 try await renderActor.load()
+                try Self.awaitSceneScriptBatch(renderer)
                 let authoredSummary = Self.authoredJSONSummary(renderer.renderGraph)
                 graphLayers += authoredSummary.layers
                 authoredJSONLayers += authoredSummary.authoredLayers
@@ -232,6 +247,13 @@ struct OracleCorpusCaptureTests {
                     try #require(!FileManager.default.fileExists(atPath: dest.path), "Refusing to overwrite an oracle trace")
                     var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: trace)) as? [String: Any])
                     var capture = document["capture"] as? [String: Any] ?? [:]
+                    var determinism = capture["determinism"] as? [String: Any] ?? [:]
+                    determinism["scriptScheduling"] = "bounded-batch-completion-between-capture-frames"
+                    determinism["scriptOrder"] = config.scriptOrder.rawValue
+                    determinism["liveScriptSchedulingValidated"] = false
+                    determinism["videoMode"] = config.videoMode.rawValue
+                    determinism["videoPlaybackValidated"] = false
+                    capture["determinism"] = determinism
                     let solidStats = renderer.executor.lastSolidSceneBatchStats
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
                     let diagnostics = renderer.executor.lastDiagnosticFrameStats
@@ -274,6 +296,7 @@ struct OracleCorpusCaptureTests {
                         "decisions": renderer.lastFullFramePassthroughElision.decisions,
                     ] as [String: Any]
                     let clearStats = renderer.executor.lastInitialSceneClearStats
+                    renderWork["layerInputSnapshots"] = Self.layerInputSnapshots(renderer)
                     renderWork["initialSceneClear"] = [
                         "passID": clearStats.passID ?? "", "skipped": clearStats.skipped,
                         "fallback": clearStats.fallback, "rejectReason": clearStats.rejectReason ?? "",
@@ -388,6 +411,23 @@ struct OracleCorpusCaptureTests {
         #expect(config.frameStepSeconds == 0.5)
     }
 
+    @Test("Video capture modes are explicit and unknown modes fail")
+    func configVideoModes() throws {
+        let ordinary = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp"}"#.utf8))
+        #expect(ordinary.videoMode == .liveWallClock)
+        #expect(ordinary.scriptOrder == .parallelWorkers)
+        let pinned = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","videoMode":"firstFrameStill"}"#.utf8))
+        #expect(pinned.videoMode == .firstFrameStill)
+        let ordered = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","scriptOrder":"submissionOrder"}"#.utf8))
+        #expect(ordered.scriptOrder == .submissionOrder)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","scriptOrder":"unknown"}"#.utf8))
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","videoMode":"unknown"}"#.utf8))
+        }
+    }
+
     @Test("Frozen clock advances with frameAdvanceSeconds, and is inert at 0")
     func frozenClockAdvancesWithFrameAdvance() throws {
         WPEOracleMode.testingOverride = true
@@ -446,6 +486,7 @@ struct OracleCorpusCaptureTests {
             let texture = try autoreleasepool {
                 try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
             }
+            try Self.awaitSceneScriptBatch(renderer)
             guard isLast else { continue }
             if perPass {
                 renderer.dumpScenePassesIfRequested(suffix: "-f\(index)")
@@ -464,6 +505,26 @@ struct OracleCorpusCaptureTests {
             print("[oracle-capture] [\(id)] advanced to frame \(index) "
                   + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")
         }
+    }
+
+    private static func layerInputSnapshots(_ renderer: WPEMetalSceneRenderer) -> [[String: Any]] {
+        (renderer.lastFramePipeline ?? renderer.renderPipeline)?.layers.map { layer in
+            let geometry = layer.graphLayer.geometry
+            return ["objectID": layer.graphLayer.objectID, "visible": layer.graphLayer.visible,
+                    "alpha": geometry.alpha, "brightness": geometry.brightness,
+                    "color": [geometry.color.x, geometry.color.y, geometry.color.z],
+                    "origin": [geometry.origin.x, geometry.origin.y, geometry.origin.z],
+                    "scale": [geometry.scale.x, geometry.scale.y, geometry.scale.z],
+                    "angles": [geometry.angles.x, geometry.angles.y, geometry.angles.z],
+                    "scope": "prepared-layer-parameters-not-gpu-uniform-reflection"] as [String: Any]
+        } ?? []
+    }
+
+    private static func awaitSceneScriptBatch(_ renderer: WPEMetalSceneRenderer) throws {
+        // This preserves the product's previous-frame publication semantics while
+        // removing queue timing from the next capture frame's input selection.
+        let complete = renderer.lastOracleSceneScriptBatchCompletion?.wait(timeout: .now() + 2) ?? true
+        try #require(complete, "Oracle SceneScript batch did not finish within the capture deadline")
     }
 
     private static func latestTrace(forID id: String) -> URL? {

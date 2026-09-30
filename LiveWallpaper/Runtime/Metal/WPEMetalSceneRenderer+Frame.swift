@@ -66,7 +66,14 @@ extension WPEMetalSceneRenderer {
             if !didFinishSceneScriptVideoCommands {
                 discardSceneScriptVideoCommands()
             }
+            #if DEBUG
+            lastOracleSceneScriptBatchCompletion = sceneScriptBatchDispatcher.submit(
+                pendingSceneScriptBatchJobs, trackingCompletion: WPEOracleMode.isEnabled,
+                order: WPEOracleMode.isEnabled ? oracleSceneScriptBatchOrder : .parallelWorkers
+            )
+            #else
             sceneScriptBatchDispatcher.submit(pendingSceneScriptBatchJobs)
+            #endif
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
         var frameOverlay = tickLayerPresentationScripts(

@@ -838,6 +838,11 @@ extension WPEMetalSceneRenderer {
                 drawableSize: surfaceDrawableSize,
                 latchedTextureCap: latchedTextureCap
             )
+            #if DEBUG
+            let videoAdmission = oracleVideoDecoderAdmission ?? .shared
+            #else
+            let videoAdmission = WPEVideoDecoderAdmission.shared
+            #endif
             let source = try WPEVideoTextureSource(
                 device: executor.textureSourceDevice,
                 videoURL: url,
@@ -849,7 +854,7 @@ extension WPEMetalSceneRenderer {
                     }
                 },
                 outputPixelSize: outputPixelSize,
-                decoderAdmission: .shared
+                decoderAdmission: videoAdmission
             )
             return source
         } catch {

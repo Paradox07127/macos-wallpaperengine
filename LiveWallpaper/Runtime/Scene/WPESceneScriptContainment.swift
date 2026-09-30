@@ -23,7 +23,7 @@ final class WPESceneScriptBatchDispatcher: Sendable {
     )
 
     /// Frame work unit carries the engine's own queue (never a slot index).
-    struct Job {
+    struct Job: Sendable {
         let queue: DispatchQueue
         let work: @Sendable () -> Void
     }
@@ -205,20 +205,56 @@ final class WPESceneScriptBatchDispatcher: Sendable {
         )
     }
 
-    func submit(_ jobs: [Job]) {
-        guard !jobs.isEmpty else { return }
+    /// Optional observation of work actually completed on the owning VM queues.
+    /// A timed-out wait does not cancel the jobs or release their execution ownership.
+    final class Completion: Sendable {
+        fileprivate let group = DispatchGroup()
+
+        func wait(timeout: DispatchTime) -> Bool {
+            group.wait(timeout: timeout) == .success
+        }
+    }
+
+    enum SubmissionOrder: String, Codable, Sendable {
+        case parallelWorkers, submissionOrder
+    }
+
+    /// Ordered captures retain VM ownership: each unit still executes on its
+    /// engine queue. No synchronous wait blocks a worker or render thread.
+    private static func submitOrdered(_ jobs: [Job], index: Int, completion: Completion?) {
+        guard index < jobs.count else { completion?.group.leave(); return }
+        let job = jobs[index]
+        job.queue.async {
+            job.work()
+            submitOrdered(jobs, index: index + 1, completion: completion)
+        }
+    }
+
+    @discardableResult
+    func submit(_ jobs: [Job], trackingCompletion: Bool = false,
+                order: SubmissionOrder = .parallelWorkers) -> Completion? {
+        let completion = trackingCompletion ? Completion() : nil
+        guard !jobs.isEmpty else { return completion }
+        if order == .submissionOrder {
+            completion?.group.enter()
+            Self.submitOrdered(jobs, index: 0, completion: completion)
+            return completion
+        }
         var buckets: [ObjectIdentifier: (queue: DispatchQueue, work: [@Sendable () -> Void])] = [:]
         buckets.reserveCapacity(width)
         for job in jobs {
             buckets[ObjectIdentifier(job.queue), default: (job.queue, [])].work.append(job.work)
         }
         for (queue, work) in buckets.values {
+            completion?.group.enter()
             queue.async {
+                defer { completion?.group.leave() }
                 for unit in work {
                     unit()
                 }
             }
         }
+        return completion
     }
 }
 
