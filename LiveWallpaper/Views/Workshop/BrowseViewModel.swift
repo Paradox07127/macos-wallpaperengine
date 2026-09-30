@@ -300,6 +300,11 @@ final class BrowseViewModel {
 
     var canGoNextPage: Bool {
         guard !isRateLimited, !isLoading, !isPaging else { return false }
+        return hasNextPage
+    }
+
+    /// Pagination geometry stays visible while navigation is temporarily disabled.
+    var hasNextPage: Bool {
         if let totalPages {
             return pageIndex < totalPages
         }

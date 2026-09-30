@@ -262,6 +262,10 @@ SERIAL_SUITES=(
   WorkshopModalHostTests
   DisplayStateResolverTests
   LibraryDragControllerTests
+  SchemeDragSourceTests
+  VideoSpanContainerLayoutTests
+  SchemeDetailRowsTests
+  EditDeskCoordinateSpaceOrderTests
   DisplayDetailHostTests
   SceneSettingsOwnerTests
   ConfigurationPorterBookmarkMergeTests

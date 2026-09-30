@@ -23,7 +23,6 @@ struct BrowsePane: View {
     /// Read here, once, and handed to every tile: the cards are `EquatableView`s
     /// and cannot observe the environment from inside their own `body`.
     @Environment(\.galleryCardPreferences) private var cardPreferences
-    @State private var pageJumpText: String = "1"
     @State private var installedWorkshopIDs: Set<String> = []
     @State private var importedAtByWorkshopID: [String: Date] = [:]
     /// Workshop ID → the displays that project is set on.
@@ -318,82 +317,28 @@ struct BrowsePane: View {
 
     @ViewBuilder
     private var paginationBar: some View {
-        if viewModel.pageIndex > 1 || viewModel.canGoNextPage {
+        if viewModel.pageIndex > 1 || viewModel.hasNextPage {
             VStack(spacing: DesignTokens.Spacing.md) {
                 pagingErrorBar
                 pagerControls
             }
             .padding(.vertical, DesignTokens.Spacing.lg)
             .frame(maxWidth: .infinity)
-            .onAppear { pageJumpText = String(viewModel.pageIndex) }
-            .onChange(of: viewModel.pageIndex) { _, page in pageJumpText = String(page) }
         }
     }
 
     private var pagerControls: some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
-            Button {
-                Task { await viewModel.goToPrevPage() }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                    Text("Previous Page")
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!viewModel.canGoPrevPage)
-
-            HStack(spacing: 4) {
-                if viewModel.isPaging {
-                    ProgressView().controlSize(.small)
-                }
-                Text("Page")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(.secondary)
-                TextField("", text: $pageJumpText)
-                    .frame(width: 46)
-                    .multilineTextAlignment(.center)
-                    .textFieldStyle(.plain)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.primary.opacity(0.04)))
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-                    .contentShape(Capsule())
-                    .monospacedDigit()
-                    .disabled(viewModel.isPaging || viewModel.isLoading)
-                    .onSubmit { jumpToTypedPage() }
-                if let total = viewModel.totalPages {
-                    Text("of \(total)")
-                        .font(DesignTokens.Typography.metric)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Button {
-                Task { await viewModel.goToNextPage() }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("Next Page")
-                    Image(systemName: "chevron.right")
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(!viewModel.canGoNextPage)
-        }
-    }
-
-    private func jumpToTypedPage() {
-        guard let page = Int(pageJumpText.trimmingCharacters(in: .whitespaces)) else {
-            pageJumpText = String(viewModel.pageIndex)
-            return
-        }
-        Task {
+        BrowsePagination(
+            currentPage: viewModel.pageIndex,
+            totalPages: viewModel.totalPages,
+            hasNextPage: viewModel.hasNextPage,
+            isBusy: viewModel.isPaging || viewModel.isLoading,
+            isRateLimited: viewModel.isRateLimited
+        ) { page in
             await viewModel.goToPage(page)
-            // A clamped or same-page target leaves pageIndex unchanged, so
-            // .onChange never fires — reset the field unconditionally.
-            pageJumpText = String(viewModel.pageIndex)
+            return viewModel.pageIndex
         }
+        .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
     }
 
     private var loadingSkeleton: some View {
