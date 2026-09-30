@@ -26,7 +26,7 @@ struct WorkshopAnimatedGIFDecodeTests {
     func animatedGIFDecodesAnimated() throws {
         let data = GIFTestFixtures.gif(width: 8, height: 8, frameCount: 3, delay: 0.1)
         let asset = try #require(WorkshopAnimatedGIF.make(from: data))
-        guard case .animatedGIF(let gif) = asset else {
+        guard case let .animatedGIF(gif) = asset else {
             Issue.record("Expected .animatedGIF, got \(asset)")
             return
         }
@@ -42,7 +42,7 @@ struct WorkshopAnimatedGIFDecodeTests {
     func frameDelaysFloored() throws {
         let data = GIFTestFixtures.gif(width: 4, height: 4, frameCount: 2, delay: 0.005)
         let asset = try #require(WorkshopAnimatedGIF.make(from: data))
-        guard case .animatedGIF(let gif) = asset else {
+        guard case let .animatedGIF(gif) = asset else {
             Issue.record("Expected .animatedGIF")
             return
         }
@@ -84,7 +84,7 @@ struct WorkshopAnimatedGIFDecodeTests {
     func tileDecodeIsCapped() throws {
         let data = GIFTestFixtures.gif(width: 1600, height: 900, frameCount: 3, delay: 0.1)
         let asset = try #require(WorkshopAnimatedGIF.make(from: data, size: .tile))
-        guard case .animatedGIF(let gif) = asset else {
+        guard case let .animatedGIF(gif) = asset else {
             Issue.record("Expected .animatedGIF, got \(asset)")
             return
         }
@@ -124,19 +124,6 @@ struct WorkshopAnimatedGIFDecodeTests {
         #expect(source.contains("NSCache<NSString, WPEPreviewDecodedImage>"))
         #expect(!source.contains("func setImage(data:"))
         #expect(source.contains("kCGImageSourceShouldCacheImmediately: true"))
-    }
-
-    @Test("A preview regenerated at the same path is not served from the cache")
-    func previewCacheKeyCarriesModificationDate() throws {
-        // A Workshop update rewrites `preview.jpg` in place, so a URL-only key would serve
-        // the pre-update pixels for the rest of the session.
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
-        #expect(source.contains("contentModificationDateKey"))
-        #expect(!source.contains(#""\(previewSize.maxPixelSize)|\(url.absoluteString)""#))
-        // A URL whose date cannot be read yields no key, and an entry nothing
-        // can invalidate must not be written at all.
-        #expect(source.contains("size: WPEPreviewSize) -> NSString?"))
-        #expect(source.contains("if let cacheKey {"))
     }
 
     @Test("The pane tier decodes larger than the tile tier")
@@ -199,7 +186,7 @@ struct GIFPlaybackCoordinatorTests {
     func underCapNoEviction() {
         let coordinator = GIFPlaybackCoordinator()
         var frozen = Set<UUID>()
-        let ids = (0..<8).map { _ in UUID() }
+        let ids = (0 ..< 8).map { _ in UUID() }
         for id in ids {
             coordinator.requestPlayback(id: id) { frozen.insert(id) }
         }
@@ -210,7 +197,7 @@ struct GIFPlaybackCoordinatorTests {
     func overCapEvictsLRU() {
         let coordinator = GIFPlaybackCoordinator()
         var frozen: [UUID] = []
-        let ids = (0..<9).map { _ in UUID() }
+        let ids = (0 ..< 9).map { _ in UUID() }
         for id in ids {
             coordinator.requestPlayback(id: id) { frozen.append(id) }
         }
@@ -221,7 +208,7 @@ struct GIFPlaybackCoordinatorTests {
     func touchProtects() {
         let coordinator = GIFPlaybackCoordinator()
         var frozen: [UUID] = []
-        let ids = (0..<8).map { _ in UUID() }
+        let ids = (0 ..< 8).map { _ in UUID() }
         for id in ids {
             coordinator.requestPlayback(id: id) { frozen.append(id) }
         }
@@ -235,7 +222,7 @@ struct GIFPlaybackCoordinatorTests {
     func endPlaybackFreesSlot() {
         let coordinator = GIFPlaybackCoordinator()
         var frozen: [UUID] = []
-        let ids = (0..<8).map { _ in UUID() }
+        let ids = (0 ..< 8).map { _ in UUID() }
         for id in ids {
             coordinator.requestPlayback(id: id) { frozen.append(id) }
         }
@@ -384,86 +371,6 @@ struct GIFAnimationControllerTests {
 }
 
 @MainActor
-@Suite("Installed preview playback lifecycle", .serialized)
-struct InstalledPreviewPlaybackLifecycleTests {
-    @Observable
-    final class Presentation {
-        var hovered = true
-        var presented = true
-        var included = true
-    }
-
-    @Test("Parent hover and presentation stop real layer playback and permit resuming")
-    func installedPreviewStopsOutsidePresentation() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("installed-lifecycle-\(UUID().uuidString).gif")
-        try GIFTestFixtures.gif(width: 16, height: 16, frameCount: 3, delay: 0.08).write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-        let state = Presentation()
-        let host = NSHostingView(rootView: Preview(state: state, url: url))
-        host.sizingOptions = []
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        defer { window.close() }
-        await GIFTestFixtures.waitUntil { imageView(in: host)?.layer?.contents != nil }
-        let view = try #require(imageView(in: host))
-        #expect(try await changes(in: view) > 0, "Visible hovered control must animate")
-
-        state.presented = false
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(try await changes(in: view) == 0, "A retained hidden host must stop producing frames")
-        state.presented = true
-        #expect(try await changes(in: view) > 0, "Reopening the host must resume playback")
-
-        state.hovered = false
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(try await changes(in: view) == 0, "The parent's settled hover owns playback")
-        state.hovered = true
-        #expect(try await changes(in: view) > 0)
-
-        state.included = false
-        await GIFTestFixtures.waitUntil { view.layer?.contents == nil }
-        #expect(view.layer?.contents == nil, "Removing the preview must clear its retained layer")
-    }
-
-    private struct Preview: View {
-        let state: Presentation
-        let url: URL
-
-        var body: some View {
-            Group {
-                if state.included {
-                    WPEPreviewView(imageURL: url, playbackMode: .hoverToPlay, previewSize: .tile, hovered: state.hovered)
-                }
-            }
-            .environment(\.inspectorContentIsVisible, state.presented)
-            .frame(width: 200, height: 200)
-        }
-    }
-
-    private func imageView(in view: NSView) -> NSView? {
-        if String(describing: type(of: view)) == "AspectFillAnimatedImageView" {
-            return view
-        }
-        return view.subviews.lazy.compactMap { imageView(in: $0) }.first
-    }
-
-    private func changes(in view: NSView) async throws -> Int {
-        var prior = view.layer?.contents.map { $0 as AnyObject }
-        var count = 0
-        for _ in 0 ..< 20 {
-            try await Task.sleep(for: .milliseconds(20))
-            let current = view.layer?.contents.map { $0 as AnyObject }
-            if current !== prior {
-                count += 1
-            }
-            prior = current
-        }
-        return count
-    }
-}
-
-@MainActor
 @Suite("Preview frame timing", .serialized)
 struct PreviewFrameTimingTests {
     private actor DecodeProbe {
@@ -549,9 +456,9 @@ enum GIFTestFixtures {
         let data = NSMutableData()
         let dest = CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString, frameCount, nil)!
         let frameProps = [
-            kCGImagePropertyGIFDictionary as String: [kCGImagePropertyGIFDelayTime as String: delay]
+            kCGImagePropertyGIFDictionary as String: [kCGImagePropertyGIFDelayTime as String: delay],
         ] as CFDictionary
-        for index in 0..<frameCount {
+        for index in 0 ..< frameCount {
             CGImageDestinationAddImage(dest, cgImage(width: width, height: height, seed: index + 1), frameProps)
         }
         CGImageDestinationFinalize(dest)

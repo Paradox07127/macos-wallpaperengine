@@ -342,7 +342,7 @@ final class WorkshopDownloadCoordinator {
                 comment: "Workshop download card headline: the item reached the library but this Mac cannot run it."
             ),
             title: title,
-            message: FallbackCard.cannotRunSummary(for: entry.origin),
+            message: FallbackReason.cannotRunSummary(for: entry.origin),
             isSuccess: false
         )
     }

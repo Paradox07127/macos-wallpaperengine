@@ -106,7 +106,7 @@ struct TopBarBudgetTests {
     func filterRowFitsAt1040() throws {
         let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
         let search = try #require(row.range(of: "LibrarySearchField("), "the filter row carries no search field")
-        let sort = try #require(row.range(of: "\n            sortControl\n"))
+        let sort = try #require(row.range(of: "LibrarySortControl(label: sortLabel)"))
         #expect(search.upperBound <= sort.lowerBound, "the row measured below carries the field ahead of sort and add")
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
         // Laid out at its ideal width, the field can still give back everything above its floor.

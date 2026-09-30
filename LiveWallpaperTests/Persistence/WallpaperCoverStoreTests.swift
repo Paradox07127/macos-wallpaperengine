@@ -302,7 +302,7 @@ struct WallpaperCoverStoreTests {
 }
 
 @Suite("Saved library sort order")
-struct SavedLibrarySortOrderTests {
+struct LibrarySortOrderTests {
     private struct Entry {
         let name: String
         let date: Date
@@ -315,13 +315,13 @@ struct SavedLibrarySortOrderTests {
         Entry(name: "gamma", date: Date(timeIntervalSince1970: 200), type: .video),
     ]
 
-    private func sorted(_ order: SavedLibrarySortOrder) -> [String] {
+    private func sorted(_ order: SavedLibraryModel.Sort) -> [String] {
         order.sorted(Self.entries, name: \.name, date: \.date, type: \.type).map(\.name)
     }
 
     @Test("Recent is newest first")
     func recentIsNewestFirst() {
-        #expect(sorted(.recent) == ["beta", "gamma", "Alpha"])
+        #expect(sorted(.recentlyUsed) == ["beta", "gamma", "Alpha"])
     }
 
     @Test("Name collates case-insensitively, the way Finder lists files")

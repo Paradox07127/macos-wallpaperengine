@@ -28,39 +28,22 @@ struct LibraryChipsRow: View {
     @Binding var filter: SavedLibraryModel.Filter?
     let onImport: () -> Void
 
-    @State private var sortPresented = false
-
     var body: some View {
-        HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+        LibraryToolbarRow {
             ForEach(chips) { chip in
                 FilterChip(title: Text(chip.title), isSelected: selection == chip.id) {
                     selection = chip.id
                 }
             }
-            Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
+        } search: {
             LibrarySearchField(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt)
                 .modifier(LibrarySearchReveal(stage: stage))
-            sortControl
+        } sort: {
+            LibrarySortControl(label: sortLabel) { dismiss in sortMenu(dismiss: dismiss) }
+                .id(stage.snappedIndex)
+        } actions: {
             importButton
         }
-    }
-
-    private var sortControl: some View {
-        Button { sortPresented.toggle() } label: {
-            HStack(spacing: 2) {
-                sortLabel
-                Text(verbatim: "▾")
-            }
-            // `.large` glass is `LibraryFilterBar.controlHeight` tall around a 13pt label, not a 12pt one.
-            .font(DesignTokens.EditDesk.Typography.body)
-            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-        }
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
-        .fixedSize()
-        .accessibilityLabel(Text("Sort"))
-        .accessibilityValue(sortLabel)
-        .appLanguagePopover(isPresented: $sortPresented, arrowEdge: .bottom) { sortMenu }
-        .onChange(of: stage.snappedIndex) { sortPresented = false }
     }
 
     private var sortLabel: Text {
@@ -68,12 +51,12 @@ struct LibraryChipsRow: View {
         return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
     }
 
-    private var sortMenu: some View {
+    private func sortMenu(dismiss: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             ForEach(SavedLibraryModel.Sort.allCases, id: \.self) { order in
                 Button(Self.sortTitle(order)) {
                     sort = order
-                    sortPresented = false
+                    dismiss()
                 }
             }
             #if !LITE_BUILD
@@ -84,7 +67,7 @@ struct LibraryChipsRow: View {
             ForEach([SavedLibraryModel.Filter.unsupported] + InstalledStorageKind.allCases.map { .storage($0) }, id: \.self) { option in
                 Button {
                     filter = filter == option ? nil : option
-                    sortPresented = false
+                    dismiss()
                 } label: {
                     HStack {
                         Self.filterTitle(option)
@@ -98,9 +81,6 @@ struct LibraryChipsRow: View {
             }
             #endif
         }
-        .buttonStyle(.borderless)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsPopoverChrome(width: 200)
     }
 
     private var importButton: some View {
@@ -109,7 +89,7 @@ struct LibraryChipsRow: View {
             .accessibilityLabel(Text("Add to Library"))
     }
 
-    private static func sortTitle(_ sort: SavedLibraryModel.Sort) -> LocalizedStringKey {
+    static func sortTitle(_ sort: SavedLibraryModel.Sort) -> LocalizedStringKey {
         switch sort {
         case .recentlyUsed: "Recently Used"
         case .name: "Name"
@@ -148,5 +128,50 @@ struct LibrarySearchReveal: ViewModifier {
             // Still mounted on the shelf: a field left focused there would take the keys typed over the
             // shelf, and disabling it ends the edit.
             .disabled(opacity <= ShelfChromeRide.interactiveOpacity)
+    }
+}
+
+struct LibraryToolbarRow<Filters: View, Search: View, Sort: View, Actions: View>: View {
+    @ViewBuilder let filters: Filters
+    @ViewBuilder let search: Search
+    @ViewBuilder let sort: Sort
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            filters
+            Spacer(minLength: DesignTokens.Spacing.md)
+            search
+            sort
+            actions
+        }
+    }
+}
+
+struct LibrarySortControl<Content: View>: View {
+    let label: Text
+    @ViewBuilder let content: (@escaping () -> Void) -> Content
+    @State private var isPresented = false
+
+    var body: some View {
+        Button { isPresented.toggle() } label: {
+            HStack(spacing: DesignTokens.Spacing.xxs) {
+                label
+                Image(systemName: "chevron.down")
+                    .imageScale(.small)
+            }
+            .font(DesignTokens.EditDesk.Typography.body)
+            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+        }
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
+        .fixedSize()
+        .accessibilityLabel(Text("Sort"))
+        .accessibilityValue(label)
+        .appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {
+            content { isPresented = false }
+                .buttonStyle(.borderless)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsPopoverChrome(width: 200)
+        }
     }
 }

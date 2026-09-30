@@ -60,10 +60,6 @@ Update English and Simplified Chinese documentation together.
 - Rendering changes need targeted tests plus relevant capture/trace evidence;
   tests alone do not prove Windows parity. Pixel equality is not an acceptance
   criterion for RNG, fonts or floating-point output.
-- The window has two live roots: `ContentView` and `EditDeskRoot` (behind
-  `loomscreen.ui.editDesk.v1`). A page reachable from both, or anything put in
-  the environment, has to be wired for both — a non-optional `@Environment`
-  lookup traps on whichever shell was missed.
 - One store per concept. A second persisted store beside an existing one
   (bookmarks, schemes, history) is a design decision to agree on first, because
   every read site then reconciles the two by hand. New persisted user data is

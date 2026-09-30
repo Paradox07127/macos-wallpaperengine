@@ -11,23 +11,24 @@ struct SchemeLibraryView: View {
     @State private var searchText: String = ""
     @State private var typeFilter: SchemeTypeFilter = .all
     @State private var pendingDestructive: PendingDestructive?
-    @AppStorage(SavedLibrarySortOrder.preferencesKey, store: .appScoped())
-    private var sortOrder: SavedLibrarySortOrder = .recent
+    @AppStorage("loomscreen.savedLibrary.sortOrder.v1", store: .appScoped())
+    private var sortRaw = "recent"
     /// Drives the host page's display strip; a tile's drop ends in `requestApply`.
     private let drag: LibraryDragController
     /// The host page's detail modal: a tile's click opens it, and its apply buttons end in `requestApply`.
     private let details: SchemeDetailPresenter
-    /// The Edit Desk's apply path, which records the change for undo; nil applies the scheme straight away.
-    private let apply: ((ScreenScheme, Screen) -> Void)?
+    /// The Edit Desk apply path records the change for undo.
+    private let apply: (ScreenScheme, Screen) -> Void
 
-    init(drag: LibraryDragController, details: SchemeDetailPresenter, apply: ((ScreenScheme, Screen) -> Void)? = nil) {
+    init(drag: LibraryDragController, details: SchemeDetailPresenter, apply: @escaping (ScreenScheme, Screen) -> Void) {
         self.drag = drag
         self.details = details
         self.apply = apply
     }
 
     var body: some View {
-        DetailPageScaffold { content }
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .confirmDestructive($pendingDestructive)
             .onAppear { details.requestApply = { requestApply($0, to: $1) } }
             .onChange(of: filteredSchemes, initial: true) { details.run = $1 }
@@ -51,15 +52,45 @@ struct SchemeLibraryView: View {
     }
 
     private var filterBar: some View {
-        LibraryFilterBar(searchText: $searchText, searchPrompt: "Search schemes") {
-            HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-                if showsTypeChips {
-                    typeChipRow
-                }
-                Spacer(minLength: 0)
-                SavedLibrarySortPicker(selection: $sortOrder)
+        LibraryToolbarRow {
+            if showsTypeChips {
+                typeChipRow
             }
-            .frame(maxWidth: .infinity)
+        } search: {
+            LibrarySearchField(text: $searchText, prompt: "Search schemes")
+        } sort: {
+            LibrarySortControl(label: Text(LibraryChipsRow.sortTitle(sortOrder))) { dismiss in
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    ForEach([SavedLibraryModel.Sort.recentlyUsed, .name, .type], id: \.self) { order in
+                        Button(LibraryChipsRow.sortTitle(order)) {
+                            sortOrder = order
+                            dismiss()
+                        }
+                        .accessibilityAddTraits(sortOrder == order ? .isSelected : [])
+                    }
+                }
+            }
+        } actions: {
+            EmptyView()
+        }
+        .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+        .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+    }
+
+    private var sortOrder: SavedLibraryModel.Sort {
+        get {
+            switch sortRaw {
+            case "name": .name
+            case "type": .type
+            default: .recentlyUsed
+            }
+        }
+        nonmutating set {
+            switch newValue {
+            case .name: sortRaw = "name"
+            case .type: sortRaw = "type"
+            default: sortRaw = "recent"
+            }
         }
     }
 
@@ -71,7 +102,7 @@ struct SchemeLibraryView: View {
     }
 
     private var typeChipRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             FilterChip(title: Text("All"),
                        isSelected: typeFilter == .all,
                        action: { typeFilter = .all })
@@ -176,11 +207,7 @@ struct SchemeLibraryView: View {
         pendingDestructive = PendingDestructive(
             .applyScheme(schemeName: scheme.name, displayName: screen.name)
         ) {
-            if let apply {
-                apply(scheme, screen)
-            } else {
-                screenManager.applyScheme(scheme, to: screen)
-            }
+            apply(scheme, screen)
         }
     }
 
@@ -526,5 +553,34 @@ enum SchemeArtwork {
         case .scene: "scene"
         }
         return "scheme::\(typeTag)::\(scheme.id.uuidString)::\(scheme.updatedAt.timeIntervalSinceReferenceDate)"
+    }
+}
+
+extension SavedLibraryModel.Sort {
+    /// `date` is whatever "recent" means for the entry kind — creation for a bookmark, last capture for a scheme.
+    func sorted<Element>(
+        _ elements: [Element],
+        name: (Element) -> String,
+        date: (Element) -> Date,
+        type: (Element) -> WallpaperType
+    ) -> [Element] {
+        switch self {
+        case .recentlyUsed:
+            elements.sorted { date($0) > date($1) }
+        case .name:
+            elements.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+        case .type:
+            elements.sorted { lhs, rhs in
+                let lhsType = type(lhs), rhsType = type(rhs)
+                if lhsType != rhsType {
+                    return lhsType.rawValue < rhsType.rawValue
+                }
+                return name(lhs).localizedStandardCompare(name(rhs)) == .orderedAscending
+            }
+        #if !LITE_BUILD
+        case .needsUpdate:
+            elements.sorted { date($0) > date($1) }
+        #endif
+        }
     }
 }

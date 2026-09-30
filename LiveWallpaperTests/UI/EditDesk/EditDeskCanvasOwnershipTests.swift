@@ -26,7 +26,8 @@ struct EditDeskCanvasOwnershipTests {
 
     /// Pages the Edit Desk embeds, which leave the canvas showing.
     private static let pages = [
-        "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/DetailPageScaffold.swift",
+        "LiveWallpaper/Views/Schemes/SchemeLibraryView.swift",
+        "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperLibraryView.swift",
         "LiveWallpaper/Views/Settings/Sidebar.swift",
         "LiveWallpaper/Views/Workshop/BrowsePane.swift",
         "LiveWallpaper/Views/ScreenDetail/WallpaperFailureView.swift",

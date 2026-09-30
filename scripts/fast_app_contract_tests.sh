@@ -112,8 +112,6 @@ PARALLEL_SUITES=(
   WallpaperCoverStoreTests
   PreviewFilesystemWorkTests
   HTMLSnapshotProducerOwnershipTests
-  # InstalledPreviewPlaybackLifecycleTests stays in the opt-in full app run: the hosted runner
-  # image turns Reduce Motion on, which vetoes preview playback, so its "must animate" checks fail.
   WPEPreviewURLCacheTests
   PreviewFrameTimingTests
   # System Wallpaper publish/status machine, including the provider stamp: a

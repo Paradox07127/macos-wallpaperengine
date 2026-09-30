@@ -71,7 +71,7 @@ enum DeferredApplyToasts {
                 screenID: screenID
             )]
         case let .downloadOnly(.unsupported(entry)):
-            let reason = FallbackCard.cannotRunSummary(for: entry.origin)
+            let reason = FallbackReason.cannotRunSummary(for: entry.origin)
             return [Message(
                 text: String(
                     localized: "Downloaded, but it can't run on this Mac (\(reason)). Not applied to \(screenName).",

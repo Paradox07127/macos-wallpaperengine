@@ -11,7 +11,7 @@ struct SystemWallpaperPage: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            SystemWallpaperLibraryView(isEmbedded: true)
+            SystemWallpaperLibraryView()
                 .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
             TopBar(
                 page: Binding(get: { router.page }, set: { router.select($0) }),

@@ -7,54 +7,39 @@ import SwiftUI
 /// system-side state it can't observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
-    var isEmbedded = false
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(WallpaperExportService.self) private var service
     @State private var pendingDestructive: PendingDestructive?
     @State private var searchText = ""
 
     var body: some View {
-        DetailPageScaffold {
-            VStack(spacing: 0) {
-                if isEmbedded, isFunctional {
-                    HStack(spacing: DesignTokens.Spacing.sm) {
-                        Label("System Wallpaper", systemImage: "macwindow.on.rectangle")
-                            .font(DesignTokens.Typography.sectionTitle)
-                        Spacer()
-                        SystemWallpaperAddMenu()
-                        Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
-                    }
-                    .buttonStyle(.bordered)
-                    .padding(DesignTokens.Spacing.lg)
-                }
-                content
+        VStack(spacing: 0) {
+            if isFunctional {
+                toolbar
             }
+            content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmDestructive($pendingDestructive)
-        .toolbar {
-            if !isEmbedded {
-                LibraryIdentityToolbarItem(
-                    systemImage: "macwindow.on.rectangle",
-                    title: Text("System Wallpaper")
-                )
-                if isFunctional {
-                    ToolbarItem(placement: .primaryAction) {
-                        SystemWallpaperAddMenu()
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            service.openWallpaperSettings()
-                        } label: {
-                            Image(systemName: "arrow.up.forward.app")
-                        }
-                        .help(Text("Open Wallpaper settings in System Settings"))
-                        .accessibilityLabel(Text("Open Wallpaper Settings"))
-                    }
-                }
-            }
-        }
         .onAppear { service.refresh() }
         .task { service.startObservingSharedRoot() }
+    }
+
+    private var toolbar: some View {
+        LibraryToolbarRow {
+            EmptyView()
+        } search: {
+            LibrarySearchField(text: $searchText, prompt: "Search videos")
+        } sort: {
+            EmptyView()
+        } actions: {
+            SystemWallpaperAddMenu()
+            GlassIconButton("arrow.up.forward.app", size: .large) { service.openWallpaperSettings() }
+                .help(Text("Open Wallpaper settings in System Settings"))
+                .accessibilityLabel(Text("Open Wallpaper Settings"))
+        }
+        .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+        .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
     }
 
     // MARK: - Content
@@ -81,7 +66,6 @@ struct SystemWallpaperLibraryView: View {
 
     private var gallery: some View {
         VStack(spacing: 0) {
-            LibraryFilterBar(searchText: $searchText, searchPrompt: "Search videos")
             galleryScroll
             LibraryStatusBar(summary: statusSummary) {
                 if service.diskUsageBytes > 0 {
@@ -208,16 +192,14 @@ struct SystemWallpaperAddMenu: View {
     @State private var showingAddSheet = false
 
     var body: some View {
-        Button {
-            showingAddSheet = true
-        } label: {
-            Label("Add Video", systemImage: "plus")
-        }
-        .sheet(isPresented: $showingAddSheet) {
-            AppLanguageScope(defaults: .appScoped()) {
-                SystemWallpaperAddSheet()
+        GlassIconButton("plus", size: .large) { showingAddSheet = true }
+            .help(Text("Add Video"))
+            .accessibilityLabel(Text("Add Video"))
+            .sheet(isPresented: $showingAddSheet) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    SystemWallpaperAddSheet()
+                }
             }
-        }
     }
 }
 

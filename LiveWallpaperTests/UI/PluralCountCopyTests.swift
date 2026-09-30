@@ -11,7 +11,6 @@ struct PluralCountCopyTests {
         "%@ stars": "one decimal place, and 1.0 is CLDR `other` in English and Spanish",
         "%@ favorites": "compact count from 1,000 up; below that the %lld key is used",
         "%@ views": "compact count from 1,000 up; below that the %lld key is used",
-        "%@ subscribers": "compact count from 1,000 up; below that the %lld key is used",
         "%@ subs": "no call site",
         "All %@ time-based wallpaper rules will be cleared. The current wallpaper stays applied.": "no call site",
         "Deletes %@ scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them.": "no call site",
