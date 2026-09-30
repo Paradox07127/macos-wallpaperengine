@@ -41,6 +41,22 @@ what shipped at that time; current behavior is documented in `docs/`.
   declare the same history buffer twice load.
 - Redacting private details from very long log lines no longer slows down
   bug reports.
+- Pro: scene layers without an authored parallax depth move with the pointer
+  as they do on Windows, a group moves by its outermost parent's depth, and
+  parallax follows parents that scripts move.
+- Pro: cursor-following iris and depth-parallax effects line up with their
+  layer again.
+- Pro: shaders that build a matrix from one of another size compile, and
+  vertical Gaussian blurs no longer blur sideways.
+- Pro: layers attached to a puppet bone inside a group follow the bone.
+- A welcome tour finished in 0.8.0 stays finished after the update.
+- Opening a page guide or Steam setup closes an item detail left open
+  underneath, so shortcuts no longer act on the hidden item.
+- The bookmark popover's name field follows the display's current wallpaper.
+- Clearing the System Wallpaper library during a multi-file add stops the
+  remaining files from being added.
+- Unreadable saved bookmarks are reported, with a Reset that discards only
+  that file.
 
 ## [0.8.0] — 2026-09-28
 
