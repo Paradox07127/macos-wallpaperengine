@@ -1270,23 +1270,25 @@ final class WPELayerScriptInstance {
             guard let pointerFrame else { return }
             let x = clampFinite(pointerFrame.position.x, lower: 0, upper: 1)
             let y = clampFinite(pointerFrame.position.y, lower: 0, upper: 1)
+            let world = shared?.cursorWorldPosition(pointer: SIMD2(x, y), canvasSize: canvasSize)
+                ?? SIMD3(x * canvasSize.x, (1 - y) * canvasSize.y, 0)
             // Rewritten every tick even when the pointer has not moved: a script that assigns into input.cursorScreenPosition must see the host value restored.
             if let cursorHelper {
                 WPEFrameOccupancyMeter.count(.jscCall)
                 cursorHelper.call(withArguments: [
                     x * canvasSize.x,
                     y * canvasSize.y,
-                    x * canvasSize.x,
-                    (1.0 - y) * canvasSize.y,
-                    0.0,
+                    world.x,
+                    world.y,
+                    world.z,
                 ])
             } else {
                 WPEFrameOccupancyMeter.count(.jscSetObject, by: 5)
                 cursorScreenPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
                 cursorScreenPosition?.setObject(y * canvasSize.y, forKeyedSubscript: "y" as NSString)
-                cursorWorldPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
-                cursorWorldPosition?.setObject((1.0 - y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
-                cursorWorldPosition?.setObject(0.0, forKeyedSubscript: "z" as NSString)
+                cursorWorldPosition?.setObject(world.x, forKeyedSubscript: "x" as NSString)
+                cursorWorldPosition?.setObject(world.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(world.z, forKeyedSubscript: "z" as NSString)
             }
         }
 

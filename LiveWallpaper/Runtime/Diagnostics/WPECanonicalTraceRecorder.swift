@@ -538,7 +538,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         skinningEnabled: Bool,
         localSize: SIMD2<Float>,
         meshCenter: SIMD2<Float>,
-        objectCenterAndSize: SIMD4<Float>?
+        objectCenterAndSize: SIMD4<Float>?,
+        meshUniformsInFragment: Bool = false
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -615,6 +616,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "topology": "indexed-triangle-list",
             "vertexCount": puppetVertexCount(meshes),
             "indexCount": puppetIndexCount(meshes),
+            "encodedDrawCount": meshes.count,
             "instanceCount": 1,
             "viewport": [0, 0, Double(targetTexture.width), Double(targetTexture.height), 0, 1] as [Double],
             "scissor": [Double]()
@@ -624,9 +626,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "resource": targetResource,
             "load": NSNull(),
             "store": "store",
-            "target": describe(target: target)
+            "target": describe(target: target),
         ]]
-        let constantBuffers: [[String: Any]] = [
+        var constantBuffers: [[String: Any]] = [
             [
                 "name": "puppet_fragment_uniforms",
                 "stage": "fragment",
@@ -655,8 +657,15 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                     "arrayLength": bonePalette.count,
                     "rawBytesSha256": jsonOrNull(paletteHash)
                 ]]
-            ]
+            ],
         ]
+        if meshUniformsInFragment {
+            constantBuffers.append([
+                "name": "scene_model_mesh_uniforms", "stage": "fragment", "slot": 1,
+                "resource": vertexBufferResource, "rawBytesSha256": sha256Hex(vertexUniformBytes),
+                "variables": puppetUniformVariables(vertexUniforms),
+            ])
+        }
         var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
         state["samplers"] = textureBindings.sorted(by: { $0.slot < $1.slot }).map {
             ["stage": "fragment", "slot": $0.slot, "name": jsonOrNull($0.name)] as [String: Any]

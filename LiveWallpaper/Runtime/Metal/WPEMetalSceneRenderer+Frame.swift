@@ -300,7 +300,10 @@ extension WPEMetalSceneRenderer {
                 frameSlot: frameSubmission.slot
             )
             return try executor.render(
-                pipeline: textFrame.pipeline,
+                pipeline: textFrame.pipeline.resolvingSceneModelMatrices(
+                    origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
+                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID
+                ),
                 size: sceneRenderSize,
                 textures: currentTextures,
                 textureSamplingDescriptors: loadedTextureSamplingDescriptors,

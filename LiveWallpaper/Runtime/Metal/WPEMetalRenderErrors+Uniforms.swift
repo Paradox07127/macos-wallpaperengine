@@ -303,7 +303,7 @@ struct WPEObjectQuadUniforms {
 
 /// Layout MUST match `WPEBloomUniforms` in `WPEMetalBuiltins.metal`.
 struct WPEBloomUniforms {
-    /// xy = source texel size, z = strength (prefilter) / source alpha (upsample), w pad.
+    /// xy = source texel size, z = strength (prefilter) / RGB scatter (upsample), w pad.
     var texelAndWeight: SIMD4<Float>
     /// Prefilter soft-knee: (threshold, knee, 2(threshold−knee), 0.25/(threshold−knee)).
     var blendParams: SIMD4<Float>

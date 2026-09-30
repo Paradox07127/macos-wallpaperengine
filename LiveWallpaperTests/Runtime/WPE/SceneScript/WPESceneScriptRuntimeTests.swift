@@ -1943,6 +1943,58 @@ export function init(value) {
         #expect(origin == SIMD3<Double>(960, 540, 9))
     }
 
+    @Test("3D cursor coordinates match the captured WPE far-plane points in both script engines")
+    func perspectiveCursorMatchesWindowsProbe() throws {
+        // WPE 2.8.0.42, droplet 3470948192. Three independently captured
+        // g_Color4 alpha probes encode 0.5 + cursorWorldPosition / 50000.
+        let store = WPESharedScriptState()
+        store.setCursorWorldProjection([
+            1.1039685010910034, 0, 0, 0,
+            0, 1.9626107215881348, 0, 0,
+            0, 0, 1.0000099791795947e-05, -1,
+            0, 0, 0.099993996322155, 0.699999988079071,
+        ])
+        let transform = try WPEDynamicTransformScriptInstance(
+            script: "export function update(v) { return input.cursorWorldPosition; }",
+            seed: .zero, canvasSize: SIMD2(1920, 1080), shared: store
+        )
+        let layer = try WPELayerScriptInstance(script: """
+        export function update() {
+            shared.wx = input.cursorWorldPosition.x;
+            shared.wy = input.cursorWorldPosition.y;
+            shared.wz = input.cursorWorldPosition.z;
+            shared.sx = input.cursorScreenPosition.x;
+            input.cursorWorldPosition.x = 42;
+        }
+        """, shared: store, canvasSize: SIMD2(1920, 1080))
+        let samples: [(Double, Double)] = [(0.5, 0), (768.0 / 3840, -5434.937775), (3071.0 / 3840, 5430.221558)]
+        for (index, sample) in samples.enumerated() {
+            let pointer = SIMD2(sample.0, 0.5)
+            let result = try #require(transform.tick(pointerPosition: pointer, runtimeSeconds: Double(index)))
+            #expect(abs(result.x - sample.1) < 0.01)
+            #expect(abs(result.y) < 0.01)
+            #expect(abs(result.z + 9999.30054) < 0.01)
+            let frame = WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
+            _ = layer.tick(runtimeSeconds: Double(index), pointerFrame: frame)
+            #expect(abs((store.get("wx") as? Double ?? .infinity) - result.x) < 0.001)
+            #expect(abs((store.get("wz") as? Double ?? .infinity) - result.z) < 0.001)
+            #expect(store.get("sx") as? Double == sample.0 * 1920)
+        }
+        // Retiring a 3D scene must restore the existing 2D canvas contract.
+        store.setCursorWorldProjection(nil)
+        let canvas = try #require(transform.tick(pointerPosition: SIMD2(0.25, 0.75), runtimeSeconds: 4))
+        #expect(canvas == SIMD3(480, 270, 0))
+    }
+
+    @Test("Invalid camera projection cannot inject non-finite cursor values into scripts")
+    func invalidCursorProjectionFallsBackToCanvas() {
+        let store = WPESharedScriptState()
+        for matrix in [[Double](repeating: 0, count: 16), [Double](repeating: .infinity, count: 16), [1]] {
+            store.setCursorWorldProjection(matrix)
+            #expect(store.cursorWorldPosition(pointer: SIMD2(0.25, 0.75), canvasSize: SIMD2(200, 100), fallbackZ: 9) == SIMD3(50, 25, 9))
+        }
+    }
+
     @Test("Dynamic origin script reads the scene shared state")
     func dynamicOriginScriptReadsSceneSharedState() throws {
         let store = WPESharedScriptState()

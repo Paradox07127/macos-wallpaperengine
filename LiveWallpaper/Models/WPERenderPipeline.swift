@@ -2,6 +2,7 @@
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import simd
 
 struct WPEPreparedRenderPipeline: Equatable, Sendable {
     let layers: [WPEPreparedRenderLayer]
@@ -13,15 +14,20 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
     let graphLayer: WPERenderLayer
     let puppetModel: WPEPuppetModel?
     let passes: [WPEPreparedRenderPass]
+    /// Full affine model transform, retained through mesh submission. A rotated
+    /// child under non-uniform parent scale cannot be represented by Euler sums.
+    let modelMatrixOverride: [Double]?
 
     init(
         graphLayer: WPERenderLayer,
         puppetModel: WPEPuppetModel? = nil,
-        passes: [WPEPreparedRenderPass]
+        passes: [WPEPreparedRenderPass],
+        modelMatrixOverride: [Double]? = nil
     ) {
         self.graphLayer = graphLayer
         self.puppetModel = puppetModel
         self.passes = passes
+        self.modelMatrixOverride = modelMatrixOverride
     }
 }
 
@@ -173,6 +179,46 @@ struct WPEShaderProgram: Equatable, Sendable {
 }
 
 extension WPEPreparedRenderPipeline {
+    /// Resolve local transforms before the legacy 2D placement decomposition.
+    /// Only model meshes consume this override; 2D compositing keeps its existing
+    /// geometry contract. Resolve static ancestors as well as scripted hosts.
+    func resolvingSceneModelMatrices(
+        origins: [String: SIMD3<Double>], scales: [String: SIMD3<Double>], angles: [String: SIMD3<Double>],
+        parentByID: [String: String], hostTransforms: [String: WPERenderObjectTransform]
+    ) -> WPEPreparedRenderPipeline {
+        let models = layers.filter { $0.graphLayer.puppetPath != nil && ($0.graphLayer.imagePath as NSString).pathExtension.lowercased() == "mdl" }
+        guard !models.isEmpty else { return self }
+        let localByID = Dictionary(layers.map {
+            ($0.id, WPERenderObjectTransform($0.graphLayer.localGeometry ?? $0.graphLayer.geometry))
+        }, uniquingKeysWith: { first, _ in first })
+        let offsets = Dictionary(layers.map { ($0.id, $0.graphLayer.attachmentOriginOffset) }, uniquingKeysWith: { first, _ in first })
+        var memo: [String: simd_double4x4] = [:]
+        func resolve(_ id: String, stack: Set<String>) -> simd_double4x4? {
+            if let cached = memo[id] {
+                return cached
+            }
+            guard let authored = localByID[id] ?? hostTransforms[id] else { return nil }
+            let local = WPEMetalObjectUniforms.modelMatrix(
+                origin: (origins[id] ?? authored.origin) + (offsets[id] ?? .zero),
+                scale: scales[id] ?? authored.scale, angles: angles[id] ?? authored.angles
+            )
+            let world: simd_double4x4 = if let parent = parentByID[id], parent != id, !stack.contains(parent), stack.count < 100,
+                                           let parentMatrix = resolve(parent, stack: stack.union([id])) {
+                parentMatrix * local
+            } else {
+                local
+            }
+            memo[id] = world
+            return world
+        }
+        let modelIDs = Set(models.map(\.id))
+        return WPEPreparedRenderPipeline(layers: layers.map { layer in
+            guard modelIDs.contains(layer.id), let world = resolve(layer.id, stack: []) else { return layer }
+            return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
+                                          modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world))
+        })
+    }
+
     func applyingLayerTransforms(
         origins: [String: SIMD3<Double>],
         scales: [String: SIMD3<Double>],
@@ -426,7 +472,8 @@ extension WPEPreparedRenderPipeline {
                         layerTintOverride: pass.layerTintOverride,
                         reusingAccess: pass.access
                     )
-                }
+                },
+                modelMatrixOverride: layer.modelMatrixOverride
             )
         }
         return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)

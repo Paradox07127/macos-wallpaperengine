@@ -42,7 +42,10 @@ enum WPEMetalObjectUniforms {
         scale: SIMD3<Double>,
         angles: SIMD3<Double>
     ) -> [String: WPESceneShaderConstantValue] {
-        let model = modelMatrix(origin: origin, scale: scale, angles: angles)
+        uniformValues(model: modelMatrix(origin: origin, scale: scale, angles: angles))
+    }
+
+    static func uniformValues(model: simd_double4x4) -> [String: WPESceneShaderConstantValue] {
         let modelInverse = safeInverse(model)
         let normal = normalMatrix(from: model)
         return [
@@ -187,6 +190,7 @@ final class WPEObjectUniformCache {
         let origin: SIMD3<Double>
         let scale: SIMD3<Double>
         let angles: SIMD3<Double>
+        let modelMatrixOverride: [Double]?
     }
 
     /// Ordered mirror of the layer array the map was built from.
@@ -220,16 +224,20 @@ final class WPEObjectUniformCache {
         for layer in layers {
             let geometry = layer.graphLayer.geometry
             let key = TransformKey(
-                origin: geometry.origin, scale: geometry.scale, angles: geometry.angles
+                origin: geometry.origin, scale: geometry.scale, angles: geometry.angles,
+                modelMatrixOverride: layer.modelMatrixOverride
             )
             let values: [String: WPESceneShaderConstantValue]
             if let memo = memoByLayerID[layer.id], memo.transform == key {
                 values = memo.values
             } else {
                 computeCount += 1
-                values = WPEMetalObjectUniforms.uniformValues(
-                    origin: key.origin, scale: key.scale, angles: key.angles
-                )
+                if let override = key.modelMatrixOverride,
+                   let model = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: override) {
+                    values = WPEMetalObjectUniforms.uniformValues(model: model)
+                } else {
+                    values = WPEMetalObjectUniforms.uniformValues(origin: key.origin, scale: key.scale, angles: key.angles)
+                }
             }
             var passIDs: [String] = []
             passIDs.reserveCapacity(layer.passes.count)
@@ -262,7 +270,8 @@ final class WPEObjectUniformCache {
             let geometry = layer.graphLayer.geometry
             guard entry.transform.origin == geometry.origin,
                   entry.transform.scale == geometry.scale,
-                  entry.transform.angles == geometry.angles else { return false }
+                  entry.transform.angles == geometry.angles,
+                  entry.transform.modelMatrixOverride == layer.modelMatrixOverride else { return false }
             guard entry.passIDs.count == layer.passes.count else { return false }
             for (cachedID, pass) in zip(entry.passIDs, layer.passes) where cachedID != pass.pass.id {
                 return false

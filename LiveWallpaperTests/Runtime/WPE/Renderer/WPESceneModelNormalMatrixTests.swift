@@ -98,6 +98,69 @@ struct WPESceneModelNormalMatrixTests {
         )
     }
 
+    @Test("Model reflection reads the prior complete scene including late draws, and resets on reload")
+    func reflectionUsesPriorSceneBeforeBloom() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let white = try whiteTexture(device: device)
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 16, height: 16, auto: true),
+            sceneCamera: .defaultCamera, sceneHDR: true
+        )
+        let control = Case(name: "reflection", scale: SIMD3(repeating: 1), angleZ: 0,
+                           localNormal: SIMD3(0, 0, 1), isControl: true)
+        let template = pipeline(control).layers[0]
+        let reflecting = WPERenderPass(
+            id: "normal.reflection", phase: .material, shader: "generic4", source: .asset("white"), target: .scene,
+            textures: [0: .asset("white")], binds: [:], constants: ["color": .vector([0, 0, 0]), "brightness": .number(4), "roughness": .number(0)],
+            combos: ["REFLECTION": 1, "LIGHTING": 0], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let model = WPEPreparedRenderLayer(graphLayer: template.graphLayer, puppetModel: template.puppetModel, passes: [
+            .init(pass: reflecting, shader: .init(name: "generic4", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                  textureBindings: reflecting.textures, comboValues: reflecting.combos, uniformValues: [:]),
+        ])
+        let latePass = WPERenderPass(
+            id: "late.blue", phase: .material, shader: WPEBuiltinShaderKind.solidLayer.rawValue, source: .asset("white"), target: .scene,
+            textures: [:], binds: [:], constants: ["g_Color": .vector([0, 0, 1, 1])], combos: [:],
+            blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let lateLayer = WPERenderLayer(objectID: "late", objectName: "late", imagePath: "late", materialPath: nil,
+                                       geometry: .init(origin: SIMD3(8, 8, 0), scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                                                       size: size, alpha: 1, color: SIMD3(repeating: 1), brightness: 1),
+                                       compositeA: "late.a", compositeB: "late.b", localFBOs: [], passes: [latePass])
+        let late = WPEPreparedRenderLayer(graphLayer: lateLayer, passes: [
+            .init(pass: latePass, shader: .init(name: WPEBuiltinShaderKind.solidLayer.rawValue, vertexSource: "", fragmentSource: "", isBuiltin: true),
+                  textureBindings: [:], comboValues: [:], uniformValues: latePass.constants),
+        ])
+        let first = try executor.render(pipeline: .init(layers: [model, late]), size: size, textures: ["white": white], cameraUniforms: camera)
+        #expect(try hdrCenter(first).z > 0.9)
+        let published = try #require(executor.reflectionHistoryTexture)
+        executor.synchronizeFrameCompletion = false
+        _ = try executor.render(pipeline: .init(layers: [model]), size: size, textures: ["white": white], cameraUniforms: camera,
+                                deferredPresent: { _, _ in false })
+        #expect(executor.reflectionHistoryTexture === published, "a rejected speculative frame must not publish its candidate")
+        executor.synchronizeFrameCompletion = true
+        // The next frame has no blue draw. The model can only get blue from the
+        // previous frame's late layer, which the old current-half-scene copy lost.
+        let next = try executor.render(pipeline: .init(layers: [model]), size: size, textures: ["white": white], cameraUniforms: camera)
+        #expect(try hdrCenter(next).z > 1)
+        executor.releaseRenderScaleDependentResources()
+        #expect(executor.reflectionHistoryTexture == nil)
+        let fresh = try executor.render(pipeline: .init(layers: [model]), size: size, textures: ["white": white], cameraUniforms: camera)
+        #expect(try hdrCenter(fresh).z < 0.05)
+    }
+
+    private func hdrCenter(_ texture: MTLTexture) throws -> SIMD4<Float> {
+        #expect(texture.pixelFormat == .rgba16Float)
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))
+        var pixel = [UInt16](repeating: 0, count: 4)
+        pixel.withUnsafeMutableBytes {
+            staged.getBytes($0.baseAddress!, bytesPerRow: 8, from: MTLRegionMake2D(texture.width / 2, texture.height / 2, 1, 1), mipmapLevel: 0)
+        }
+        return SIMD4(Float(Float16(bitPattern: pixel[0])), Float(Float16(bitPattern: pixel[1])),
+                     Float(Float16(bitPattern: pixel[2])), Float(Float16(bitPattern: pixel[3])))
+    }
+
     private func pipeline(_ testCase: Case) -> WPEPreparedRenderPipeline {
         let pass = WPERenderPass(
             id: "normal.material", phase: .material, shader: "generic4", source: .asset("white"),

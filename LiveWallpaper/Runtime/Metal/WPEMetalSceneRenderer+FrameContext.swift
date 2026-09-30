@@ -77,6 +77,9 @@ extension WPEMetalSceneRenderer {
         let clickPointerIsLive = space.clickPointerIsLive
         // Oracle overrides are authored in scene space already.
         let pointer = oracleFrameOverride?.pointer ?? space.pointer
+        sceneScriptSharedState?.setCursorWorldProjection(
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
+        )
         if !followPointerIsLive && previousPointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()

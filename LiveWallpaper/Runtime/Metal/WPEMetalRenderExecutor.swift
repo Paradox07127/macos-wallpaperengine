@@ -733,6 +733,7 @@ final class WPEMetalRenderExecutor {
             objectUniformCache: objectUniformCache
         )
         frameUniformContext = frameUniforms
+        frameNeedsReflectionHistory = false
         defer { frameUniformContext = .empty }
         currentOutputPixelFormat = cameraUniforms.sceneHDR
             ? .rgba16Float
@@ -1168,6 +1169,20 @@ final class WPEMetalRenderExecutor {
             throw skippedShaderError ?? WPEMetalRenderExecutorError.noRenderablePasses
         }
 
+        // WPE resolves its mipmapped reflection AFTER the final scene draw and
+        // BEFORE bloom (2.8.0.42 capture: read event 152, resolve 608, mips 609,
+        // first bloom draw 626). Every reflecting model samples the same prior
+        // frame. Keep a separate candidate so a rejected speculative present
+        // cannot overwrite the published history.
+        let nextReflectionHistory: MTLTexture?
+        if frameNeedsReflectionHistory {
+            let candidate = try reflectionCaptureTexture(matching: output)
+            try copyTexture(output, to: candidate, commandBuffer: commandBuffer,
+                            traceLabel: "reflection-history-publication", generateMipmaps: true)
+            WPEFrameOccupancyMeter.count(.reflectionCapture)
+            nextReflectionHistory = candidate
+        } else { nextReflectionHistory = nil }
+
         try encodeSceneBloomIfNeeded(
             cameraUniforms: cameraUniforms,
             output: output,
@@ -1178,9 +1193,10 @@ final class WPEMetalRenderExecutor {
             colorCorrection, output: output, commandBuffer: commandBuffer
         )
 
+        let presentationAccepted: Bool
         if asyncSubmission, let deferredPresent {
-            _ = try deferredPresent(graded, commandBuffer)
-        }
+            presentationAccepted = try deferredPresent(graded, commandBuffer)
+        } else { presentationAccepted = true }
 
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
         // Pin this frame's arena regions until the GPU is done reading them. Must be registered before `commit()` — the last moment Metal accepts a handler.
@@ -1226,6 +1242,10 @@ final class WPEMetalRenderExecutor {
                 gpuErrorSink.record("frame: \(commandBuffer.error?.localizedDescription ?? "unknown")")
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
+        }
+        if presentationAccepted, let nextReflectionHistory {
+            reflectionCaptureCache = reflectionHistoryTexture
+            reflectionHistoryTexture = nextReflectionHistory
         }
         previousFrameHistory = PreviousFrameHistory(
             sceneSize: size,
@@ -2004,7 +2024,9 @@ final class WPEMetalRenderExecutor {
         #endif
     }
 
-    /// It must be a separate texture, not the live scene target — this pass draws into that target, and sampling it would be an undefined read-write.
+    /// This source is prior-frame history, not an intra-frame framebuffer copy.
+    /// A black first frame bootstraps it; late scene draws become visible to
+    /// reflections on the next frame, including the model's own HDR result.
     private func captureReflectionSourceIfNeeded(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -2016,15 +2038,21 @@ final class WPEMetalRenderExecutor {
               (pass.pass.combos["REFLECTION"] ?? 0) != 0,
               Self.sceneModelMaterialShader(for: pass.pass.shader) != nil,
               layer.puppetPath != nil,
-              (layer.imagePath as NSString).pathExtension.lowercased() == "mdl",
-              let source = frameState.currentFrameSceneTexture else {
-            return
+              (layer.imagePath as NSString).pathExtension.lowercased() == "mdl" else { return }
+        let source = frameState.output
+        if reflectionHistoryTexture?.width != source.width || reflectionHistoryTexture?.height != source.height
+            || reflectionHistoryTexture?.pixelFormat != source.pixelFormat {
+            reflectionHistoryTexture = nil
+            reflectionCaptureCache = nil
+            let history = try reflectionCaptureTexture(matching: source)
+            try clearTexture(history, color: MTLClearColorMake(0, 0, 0, 1), commandBuffer: commandBuffer)
+            try copyTexture(history, to: history, commandBuffer: commandBuffer,
+                            traceLabel: "reflection-history-bootstrap", generateMipmaps: true)
+            reflectionHistoryTexture = history
+            reflectionCaptureCache = nil
         }
-        let capture = try reflectionCaptureTexture(matching: source)
-        try copyTexture(source, to: capture, commandBuffer: commandBuffer,
-                        traceLabel: "reflection|\(pass.pass.id)", generateMipmaps: true)
-        WPEFrameOccupancyMeter.count(.reflectionCapture)
-        reflectionSourceTexture = capture
+        frameNeedsReflectionHistory = true
+        reflectionSourceTexture = reflectionHistoryTexture
     }
 
     private func reflectionCaptureTexture(matching source: MTLTexture) throws -> MTLTexture {
@@ -2802,7 +2830,7 @@ final class WPEMetalRenderExecutor {
         hasComponentMap: Bool,
         materialShader: SceneModelMaterialShader = .genericImage4,
         hasReflectionSource: Bool = false,
-        reflectionTopMipLevel: Int = 0,
+        reflectionMipCount: Int = 0,
         noiseTexture: MTLTexture? = nil
     ) -> WPESceneModelGenericUniforms {
         func constantVector3(_ names: [String], default def: SIMD3<Float>) -> SIMD3<Float> {
@@ -2876,7 +2904,7 @@ final class WPEMetalRenderExecutor {
                 reflectionEnabled ? 1 : 0
             ),
             skylightColor: SIMD4<Float>(skylight.x, skylight.y, skylight.z, 0),
-            reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionTopMipLevel)),
+            reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionMipCount)),
             screen: SIMD4<Float>(Float(renderSize.width), Float(renderSize.height), aspect, 0),
             // chroma4's front/back tint defaults to white so an unauthored material is a
             // no-op multiply rather than a black mesh.
@@ -2904,12 +2932,11 @@ final class WPEMetalRenderExecutor {
         (UserDefaults.standard.object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
 
 
-    /// Set by `captureReflectionSourceIfNeeded` for the pass about to be encoded,
-    /// cleared for every other pass so a stale capture can never leak into one.
+    /// Bound only to a reflecting model; the contents are the published prior frame.
     var reflectionSourceTexture: MTLTexture?
-    /// Reused across frames; only the allocation persists, the content is
-    /// re-captured per reflecting pass.
-    private var reflectionCaptureCache: MTLTexture?
+    var reflectionHistoryTexture: MTLTexture?
+    var reflectionCaptureCache: MTLTexture?
+    private var frameNeedsReflectionHistory = false
 
     var bloomLevelTextures: [MTLTexture] = []
     var bloomLevelHeap: MTLHeap?

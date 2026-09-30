@@ -104,6 +104,9 @@ extension WPEMetalRenderExecutor {
         targetPool.releaseAll()
         releaseBloomLevels()
         previousFrameHistory = nil
+        reflectionSourceTexture = nil
+        reflectionHistoryTexture = nil
+        reflectionCaptureCache = nil
         invalidateStaticLayerCache()
         // NOT `refractionBackground`: it re-allocates itself whenever the output size changes, and it is on the reload-persistent list.
         outputTexturePool.removeAll()

@@ -4,6 +4,7 @@ import JavaScriptCore
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import os
+import simd
 
 struct WPESceneScriptGeneralSettingsDeliveryState: Sendable {
     private(set) var language: String
@@ -1679,6 +1680,45 @@ final class WPESharedScriptState: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Any] = [:]
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
+    private var cursorProjectionMatrix: [Double]?
+    private var inverseCursorProjection: simd_double4x4?
+
+    /// Observed WPE 2.8 3D compatibility behavior: cursorWorldPosition is a
+    /// point on the camera's far plane, not a ray hit or a canvas pixel. The
+    /// public API documents only the 2D case. Use the rendered reversed-Z
+    /// matrix so camera pose, FOV, aspect and clip distances stay consistent.
+    func setCursorWorldProjection(_ matrix: [Double]?) {
+        lock.lock(); defer { lock.unlock() }
+        guard matrix != cursorProjectionMatrix else { return }
+        cursorProjectionMatrix = matrix
+        inverseCursorProjection = nil
+        guard let matrix, matrix.count == 16, matrix.allSatisfy(\.isFinite) else { return }
+        let projection = simd_double4x4(
+            SIMD4(matrix[0], matrix[1], matrix[2], matrix[3]),
+            SIMD4(matrix[4], matrix[5], matrix[6], matrix[7]),
+            SIMD4(matrix[8], matrix[9], matrix[10], matrix[11]),
+            SIMD4(matrix[12], matrix[13], matrix[14], matrix[15])
+        )
+        guard abs(simd_determinant(projection)) > Double.leastNormalMagnitude else { return }
+        inverseCursorProjection = simd_inverse(projection)
+    }
+
+    func cursorWorldPosition(pointer: SIMD2<Double>, canvasSize: SIMD2<Double>, fallbackZ: Double = 0) -> SIMD3<Double> {
+        projectedCursorWorldPosition(pointer: pointer)
+            ?? SIMD3(pointer.x * canvasSize.x, (1 - pointer.y) * canvasSize.y, fallbackZ)
+    }
+
+    func projectedCursorWorldPosition(pointer: SIMD2<Double>) -> SIMD3<Double>? {
+        lock.lock()
+        let inverse = inverseCursorProjection
+        lock.unlock()
+        guard let inverse else { return nil }
+        let point = inverse * SIMD4(pointer.x * 2 - 1, 1 - pointer.y * 2, 0, 1)
+        guard point.w.isFinite, abs(point.w) > Double.leastNormalMagnitude else { return nil }
+        let world = SIMD3(point.x, point.y, point.z) / point.w
+        return world.x.isFinite && world.y.isFinite && world.z.isFinite ? world : nil
+    }
+
     // Separate from shared-value storage: shared.set checks the token while
     // holding its own lock; particle commits hold the token before this lock.
     private let particleLock = NSLock()
@@ -3017,19 +3057,21 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let updateFunction else { return nil }
-            // Renderer pointer UV is top-left; WPE cursorWorldPosition is Y-up canvas space. Rewrite every tick so a script assignment cannot stick.
+            // Restore host input every tick, including after a script mutates it.
+            let world = shared?.cursorWorldPosition(pointer: pointerPosition, canvasSize: canvasSize, fallbackZ: seed.z)
+                ?? SIMD3(pointerPosition.x * canvasSize.x, (1 - pointerPosition.y) * canvasSize.y, seed.z)
             if let cursorHelper {
                 WPEFrameOccupancyMeter.count(.jscCall)
                 cursorHelper.call(withArguments: [
-                    pointerPosition.x * canvasSize.x,
-                    (1.0 - pointerPosition.y) * canvasSize.y,
-                    seed.z,
+                    world.x,
+                    world.y,
+                    world.z,
                 ])
             } else {
                 WPEFrameOccupancyMeter.count(.jscSetObject, by: 3)
-                cursorWorldPosition?.setObject(pointerPosition.x * canvasSize.x, forKeyedSubscript: "x" as NSString)
-                cursorWorldPosition?.setObject((1.0 - pointerPosition.y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
-                cursorWorldPosition?.setObject(seed.z, forKeyedSubscript: "z" as NSString)
+                cursorWorldPosition?.setObject(world.x, forKeyedSubscript: "x" as NSString)
+                cursorWorldPosition?.setObject(world.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(world.z, forKeyedSubscript: "z" as NSString)
             }
 
             didThrow = false
@@ -3179,9 +3221,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private func installInput(in context: JSContext) {
             let input = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let cursor = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            cursor.setObject(seed.x, forKeyedSubscript: "x" as NSString)
-            cursor.setObject(seed.y, forKeyedSubscript: "y" as NSString)
-            cursor.setObject(seed.z, forKeyedSubscript: "z" as NSString)
+            let world = shared?.projectedCursorWorldPosition(pointer: SIMD2(0.5, 0.5)) ?? seed
+            cursor.setObject(world.x, forKeyedSubscript: "x" as NSString)
+            cursor.setObject(world.y, forKeyedSubscript: "y" as NSString)
+            cursor.setObject(world.z, forKeyedSubscript: "z" as NSString)
             input.setObject(cursor, forKeyedSubscript: "cursorWorldPosition" as NSString)
             context.setObject(input, forKeyedSubscript: "input" as NSString)
             cursorWorldPosition = cursor

@@ -405,6 +405,9 @@ extension WPEMetalSceneRenderer {
             userProperties: currentSceneScriptUserProperties(),
             layers: Self.scriptLayerTable(for: document)
         )
+        sceneScriptSharedState?.setCursorWorldProjection(
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
+        )
         loadDynamicOriginScripts(from: document, scriptLoadToken: scriptLoadToken)
         loadEffectConstantScripts(from: pipeline, document: document, scriptLoadToken: scriptLoadToken)
         loadEffectVisibilityScripts(from: pipeline, scriptLoadToken: scriptLoadToken)
