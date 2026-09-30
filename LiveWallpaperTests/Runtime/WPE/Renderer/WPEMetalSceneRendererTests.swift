@@ -1065,6 +1065,33 @@ struct WPEMetalSceneRendererTests {
         #expect(abs(origin.y - 32) < 0.0001)
     }
 
+    @Test("A non-drawn parallax root's static term follows its live origin, not the load-time one", arguments: [true, false])
+    func nonDrawnParallaxRootCenterFollowsLiveOrigin(hostMoves: Bool) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.groupHostParallaxScene(hostOriginScript: hostMoves
+            ? "'use strict';\\nexport function update(value) {\\n  value.x = input.cursorWorldPosition.x + 100;\\n  return value;\\n}"
+            : nil)
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device,
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        try await renderer.load()
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+
+        // The child sits at the host's local origin, so its live geometry origin is the host's live origin.
+        let liveOrigin = try #require(renderer.lastFramePipeline?.layers.first { $0.graphLayer.objectID == "child" }?.graphLayer.geometry.origin)
+        #expect((liveOrigin.x > 32) == hostMoves)
+        let center = try #require(renderer.executor.parallaxRootCenterByObjectID["child"])
+        #expect(center == SIMD2<Float>(Float(liveOrigin.x) - 32, Float(liveOrigin.y) - 32))
+        #expect(center.y == 0)
+        renderer.cleanup()
+    }
+
     @Test("Click capture remains active when Follow Cursor is disabled")
     func clickCaptureRemainsActiveWhenFollowCursorIsDisabled() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2162,6 +2189,46 @@ struct MetalSceneFixture {
               "value": "10 10 0",
               "script": "'use strict';\\nexport function update(value) {\\n  value.x = input.cursorWorldPosition.x;\\n  value.y = input.cursorWorldPosition.y;\\n  return value;\\n}"
             }
+          }]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(
+            root: root,
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString,
+                cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json",
+                capabilityTier: .imageOnly
+            ),
+            dependencyRoot: nil
+        )
+    }
+
+    static func groupHostParallaxScene(hostOriginScript: String?) throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let hostOrigin = hostOriginScript.map { #"{ "value": "32 32 0", "script": "\#($0)" }"# } ?? #""32 32 0""#
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [{
+            "id": "host",
+            "name": "Host",
+            "type": "group",
+            "origin": \(hostOrigin)
+          }, {
+            "id": "child",
+            "name": "Child",
+            "type": "image",
+            "image": "models/util/solidlayer.json",
+            "parent": "host",
+            "color": "1 0 0",
+            "alpha": 1,
+            "origin": "0 0 0",
+            "size": "8 8 0"
           }]
         }
         """

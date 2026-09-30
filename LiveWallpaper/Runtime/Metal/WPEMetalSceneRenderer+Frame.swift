@@ -286,6 +286,7 @@ extension WPEMetalSceneRenderer {
         if !textFrame.obsoleteTargetNames.isEmpty {
             executor.targetPool.discardTextures(named: textFrame.obsoleteTargetNames)
         }
+        refreshParallaxRootOrigins(from: transforms)
         let frame = try withFrameSignpost("encode") { () throws -> MTLTexture in
             let currentTextures = try texturesForCurrentFrame(
                 time: uniforms.time,
@@ -394,6 +395,24 @@ extension WPEMetalSceneRenderer {
             visibility: liveLayerVisibilityIncludingText,
             alpha: liveLayerAlphaIncludingText
         )
+    }
+
+    /// WPE evaluates the parallax static term at the root's CURRENT position. Only parentless ids are overlaid:
+    /// a parented id's live origin is parent-local, while the authored table is scene space.
+    func refreshParallaxRootOrigins(from transforms: LiveScriptTransforms) {
+        var origins = parallaxAuthoredOriginByObjectID
+        for (id, origin) in transforms.origins where objectParentByID[id] == nil {
+            origins[id] = SIMD2<Double>(origin.x, origin.y)
+        }
+        executor.parallaxHostOriginByObjectID = origins
+        let halfScene = SIMD2<Double>(Double(sceneRenderSize.width), Double(sceneRenderSize.height)) * 0.5
+        for system in particleSystems {
+            // A parent without a depth entry leaves the emitter as its own root; that center is not refreshed here.
+            guard let parent = system.hostAncestorIDs.first,
+                  parallaxAuthoredDepthByObjectID[parent] != nil,
+                  let rootOrigin = origins[parallaxRootObjectID(of: parent)] else { continue }
+            system.parallaxCenter = rootOrigin - halfScene
+        }
     }
 
     struct LiveScriptTransforms {
