@@ -288,10 +288,24 @@ enum HTMLWallpaperRuntimeScript {
                 return null;
             }
 
+            function pruneAudioContexts() {
+                __lwAudioContexts__ = __lwAudioContexts__.filter(function (ctx) {
+                    return ctx && ctx.state !== 'closed';
+                });
+            }
             function rememberContext(ctx) {
-                if (!ctx) return;
+                if (!ctx || ctx.state === 'closed') return;
+                pruneAudioContexts();
                 if (__lwAudioContexts__.indexOf(ctx) === -1) {
                     __lwAudioContexts__.push(ctx);
+                    if (typeof ctx.addEventListener === 'function') {
+                        function stateChanged() {
+                            if (ctx.state !== 'closed') return;
+                            pruneAudioContexts();
+                            ctx.removeEventListener('statechange', stateChanged);
+                        }
+                        ctx.addEventListener('statechange', stateChanged);
+                    }
                 }
             }
 
@@ -378,6 +392,7 @@ enum HTMLWallpaperRuntimeScript {
                 __lwMuted__ = !!muted;
                 forEachKnownMedia(applyToElement);
                 var level = effectiveLevel();
+                pruneAudioContexts();
                 for (var k = 0; k < __lwAudioContexts__.length; k++) {
                     var ctx = __lwAudioContexts__[k];
                     if (ctx && ctx.__lwGainNode__) {
@@ -387,6 +402,7 @@ enum HTMLWallpaperRuntimeScript {
             };
 
             window.__lwAudioDebugSnapshot__ = function () {
+                pruneAudioContexts();
                 var media = [];
                 forEachKnownMedia(function (el) {
                     var source = '';
@@ -427,6 +443,7 @@ enum HTMLWallpaperRuntimeScript {
             };
 
             window.__lwSuspendAudioContexts__ = function () {
+                pruneAudioContexts();
                 for (var i = 0; i < __lwAudioContexts__.length; i++) {
                     var ctx = __lwAudioContexts__[i];
                     if (ctx && typeof ctx.suspend === 'function' && ctx.state === 'running') {
@@ -435,6 +452,7 @@ enum HTMLWallpaperRuntimeScript {
                 }
             };
             window.__lwResumeAudioContexts__ = function () {
+                pruneAudioContexts();
                 for (var i = 0; i < __lwAudioContexts__.length; i++) {
                     var ctx = __lwAudioContexts__[i];
                     if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
@@ -958,7 +976,8 @@ enum HTMLWallpaperRuntimeScript {
                     __lwPacing__: {
                         ratio: rafThrottleRatio,
                         intervalMs: rafTargetIntervalMs
-                    }
+                    },
+                    __lwLifecycle__: suspended ? 'suspend' : 'resume'
                 };
             }
 
@@ -1019,13 +1038,11 @@ enum HTMLWallpaperRuntimeScript {
                             // Both knobs then one broadcast: public setters would post twice per level and double messages at every nesting depth.
                             installRafThrottle(clampRafRatio(pacing.ratio));
                             installRafTargetInterval(clampRafInterval(pacing.intervalMs));
-                            broadcastPacingToChildFrames();
-                            return;
                         }
                         var phase = data.__lwLifecycle__;
-                        if (phase !== 'suspend' && phase !== 'resume') return;
                         if (phase === 'suspend') window.__lwSuspend__();
-                        else window.__lwResume__();
+                        else if (phase === 'resume') window.__lwResume__();
+                        if (pacing && typeof pacing === 'object') broadcastPacingToChildFrames();
                     }, false);
                 } catch (e) {}
                 // After the listener exists, or the answer arrives at nobody.

@@ -479,6 +479,9 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
             bytesRemaining -= chunk.count
             await delivery.deliver(chunk: chunk)
         }
+        if bytesRemaining > 0 {
+            throw makeError(.cannotParseResponse, "Resource truncated by \(bytesRemaining) bytes")
+        }
     }
 
     nonisolated private static func totalLength(of source: ByteSource) throws -> Int {

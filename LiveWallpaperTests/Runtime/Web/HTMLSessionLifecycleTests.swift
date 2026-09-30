@@ -9,6 +9,34 @@ import LiveWallpaperCore
 @MainActor
 struct FolderURLSchemeHandlerLifecycleTests {
 
+    @Test("A loose file truncated after its response fails instead of finishing short")
+    func truncatedLooseFileFails() async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let asset = folder.appendingPathComponent("changing.bin")
+        try Data(repeating: 0xAB, count: 32).write(to: asset)
+
+        let handler = FolderURLSchemeHandler()
+        handler.folderURL = folder
+        let request = subresourceRequest(
+            url: "livewallpaper://wallpaper/changing.bin",
+            mainDocument: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")"
+        )
+        let task = FakeURLSchemeTask(request: request, onReceiveResponse: {
+            try? Data(repeating: 0xAB, count: 5).write(to: asset)
+        })
+        handler.webView(WKWebView(), start: task)
+        try await waitUntil(timeout: .seconds(2)) {
+            task.didFinishCalled || task.failedError != nil
+        }
+
+        let response = try #require(task.receivedResponse as? HTTPURLResponse)
+        #expect(response.value(forHTTPHeaderField: "Content-Length") == "32")
+        #expect(task.totalReceivedBytes == 5)
+        #expect(!task.didFinishCalled)
+        #expect((task.failedError as? NSError)?.code == URLError.cannotParseResponse.rawValue)
+    }
+
     @Test("Range request returns 206 with Content-Range header and trimmed payload")
     func rangeRequestReturns206() async throws {
         let folder = makeTemporaryFolder()
@@ -584,6 +612,93 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(script.contains("__lwUpdateAudio__(0.350000, true)"))
     }
 
+    @Test("Closed Web Audio contexts leave tracking without removing active contexts")
+    func closedAudioContextsLeaveTracking() throws {
+        let context = try makeAudioControllerContext()
+        context.evaluateScript("""
+        var live = new AudioContext();
+        var liveGain = live.destination;
+        for (var i = 0; i < 100; i++) {
+            var closed = new AudioContext();
+            closed.destination;
+            closed.close();
+            closed.destination;
+        }
+        window.__lwUpdateAudio__(0.25, false);
+        window.__lwSuspendAudioContexts__();
+        var suspended = live.state;
+        window.__lwResumeAudioContexts__();
+        var snapshot = window.__lwAudioDebugSnapshot__();
+        """)
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("snapshot.audioContexts.length")?.toInt32() == 1)
+        #expect(context.evaluateScript("snapshot.audioContexts[0]")?.toString() == "running")
+        #expect(context.evaluateScript("suspended")?.toString() == "suspended")
+        #expect(context.evaluateScript("liveGain.gain.value")?.toDouble() == 0.25)
+        #expect(context.evaluateScript("closed.listeners.length")?.toInt32() == 0)
+    }
+
+    @Test("A missed close notification is pruned while a pending close stays controlled")
+    func closedAudioContextsArePrunedWithoutPrematurelyDroppingPendingClose() throws {
+        let context = try makeAudioControllerContext()
+        context.evaluateScript("""
+        var pending = new AudioContext();
+        pending.destination;
+        var missed = new AudioContext();
+        missed.destination;
+        missed.state = 'closed';
+        window.__lwUpdateAudio__(0.1, true);
+        var snapshot = window.__lwAudioDebugSnapshot__();
+        """)
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("snapshot.audioContexts.length")?.toInt32() == 1)
+        #expect(context.evaluateScript("pending.__lwGainNode__.gain.value")?.toDouble() == 0)
+        #expect(context.evaluateScript("missed.__lwGainNode__.gain.value")?.toDouble() == 0.5)
+    }
+
+    private func makeAudioControllerContext() throws -> JSContext {
+        let context = try #require(JSContext())
+        context.evaluateScript("""
+        var window = this;
+        var document = { body: null, querySelectorAll: function () { return []; } };
+        function AudioNode(context) { this.context = context; }
+        AudioNode.prototype.connect = function (node) { return node; };
+        function AudioDestinationNode(context) { AudioNode.call(this, context); }
+        AudioDestinationNode.prototype = Object.create(AudioNode.prototype);
+        function AudioContext() {
+            this.state = 'running';
+            this.listeners = [];
+            this.realDestination = new AudioDestinationNode(this);
+        }
+        Object.defineProperty(AudioContext.prototype, 'destination', {
+            configurable: true,
+            get: function () { return this.realDestination; }
+        });
+        AudioContext.prototype.createGain = function () {
+            var node = new AudioNode(this);
+            node.gain = { value: 1 };
+            return node;
+        };
+        AudioContext.prototype.addEventListener = function (_, listener) { this.listeners.push(listener); };
+        AudioContext.prototype.removeEventListener = function (_, listener) {
+            this.listeners = this.listeners.filter(function (value) { return value !== listener; });
+        };
+        AudioContext.prototype.close = function () {
+            this.state = 'closed';
+            this.listeners.slice().forEach(function (listener) { listener(); });
+        };
+        AudioContext.prototype.suspend = function () { this.state = 'suspended'; };
+        AudioContext.prototype.resume = function () { this.state = 'running'; };
+        """)
+        context.evaluateScript(HTMLWallpaperRuntimeScript.masterAudioController(
+            initialVolume: 0.5, initialMuted: false
+        ))
+        #expect(context.exception == nil)
+        return context
+    }
+
     @Test("Master audio updates anonymous new Audio elements outside the DOM")
     func masterAudioUpdatesAnonymousElements() throws {
         let context = try #require(JSContext())
@@ -1081,14 +1196,16 @@ struct HTMLWallpaperCompatibilityPolicyTests {
 
 private final class FakeURLSchemeTask: NSObject, WKURLSchemeTask, @unchecked Sendable {
     let request: URLRequest
+    private let onReceiveResponse: (@Sendable () -> Void)?
     private let lock = NSLock()
     private var _receivedResponse: URLResponse?
     private var _receivedData: [Data] = []
     private var _didFinishCalled = false
     private var _failedError: Error?
 
-    init(request: URLRequest) {
+    init(request: URLRequest, onReceiveResponse: (@Sendable () -> Void)? = nil) {
         self.request = request
+        self.onReceiveResponse = onReceiveResponse
     }
 
     var receivedResponse: URLResponse? {
@@ -1112,8 +1229,10 @@ private final class FakeURLSchemeTask: NSObject, WKURLSchemeTask, @unchecked Sen
     }
 
     func didReceive(_ response: URLResponse) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         _receivedResponse = response
+        lock.unlock()
+        onReceiveResponse?()
     }
 
     func didReceive(_ data: Data) {

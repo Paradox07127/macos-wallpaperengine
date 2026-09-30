@@ -207,6 +207,37 @@ struct HTMLWallpaperFrameLifecycleTests {
         #expect(context.objectForKeyedSubscript("hiddenAfterSelfPost")?.toBool() == false)
     }
 
+    @Test("A late child frame receives its parent's current suspended phase")
+    func lateChildReceivesCurrentSuspendedPhase() throws {
+        let context = try makeLifecycleHarnessContext(isTopFrame: true)
+        context.evaluateScript(HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false))
+        context.evaluateScript("""
+        window.__lwSuspend__();
+        postedToChildren = [];
+        deliverMessage({ __lwPacingRequest__: true }, childFrame);
+        """)
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("postedToChildren.indexOf('suspend') >= 0")?.toBool() == true)
+
+        context.evaluateScript("""
+        postedToChildren = [];
+        deliverMessage({ __lwPacingRequest__: true }, { postMessage: function () { throw new Error('stranger'); } });
+        """)
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("postedToChildren.length")?.toInt32() == 0)
+
+        let child = try makeLifecycleHarnessContext(isTopFrame: false)
+        child.evaluateScript("window.frames = [childFrame];")
+        child.evaluateScript(HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false))
+        child.evaluateScript("""
+        deliverMessage({ __lwPacing__: { ratio: 1, intervalMs: 33 }, __lwLifecycle__: 'suspend' }, parentFrame);
+        """)
+        #expect(child.exception == nil)
+        #expect(child.evaluateScript("document.hidden === true")?.toBool() == true)
+        #expect(child.evaluateScript("postedToChildren.indexOf('resume')")?.toInt32() == -1)
+    }
+
     @MainActor
     @Test("The lifecycle controller is injected into every frame, the baseline only into the main frame")
     func lifecycleScriptIsInjectedIntoAllFrames() {
