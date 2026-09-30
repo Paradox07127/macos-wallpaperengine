@@ -1,60 +1,22 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct LibraryApplyTargetList: View {
-    let screens: [Screen]
-    let onApply: (Screen) -> Void
-    /// Nil for whole-display schemes, which apply to one display at a time.
-    var onApplyToAll: (() -> Void)?
-    let dismiss: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            ForEach(screens, id: \.id) { screen in
-                Button("Apply to \(screen.name)") {
-                    dismiss()
-                    onApply(screen)
-                }
-            }
-            if let onApplyToAll {
-                Button("Apply to All Displays") {
-                    dismiss()
-                    onApplyToAll()
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .popupMenuOptions(width: 220)
-    }
-}
-
-/// A real `Button` + popover, never a `Menu`: an AppKit popup paints its label in the system control colour, which is invisible over artwork.
+/// Keeps the artwork label white while the actual option list is a native macOS menu.
 struct LibraryTileOverflowButton<Content: View>: View {
-    var width: CGFloat = 200
     @ViewBuilder var content: (_ dismiss: @escaping () -> Void) -> Content
-
     @State private var isHovering = false
-    @State private var showingActions = false
 
     var body: some View {
-        Button { showingActions = true } label: {
+        NativeMenuButton { content {} } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
                 .frame(width: 22, height: 22)
                 .floatingGlyphGlass(hovered: isHovering)
-                .onHover { isHovering = $0 }
         }
-        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .help(Text("More actions"))
         .accessibilityLabel(Text("More actions"))
-        .appLanguagePopover(isPresented: $showingActions, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                content { showingActions = false }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .popupMenuOptions(width: width)
-        }
     }
 }
 

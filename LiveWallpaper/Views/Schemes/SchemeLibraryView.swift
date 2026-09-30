@@ -59,16 +59,17 @@ struct SchemeLibraryView: View {
         } search: {
             LibrarySearchField(text: $searchText, prompt: "Search schemes")
         } sort: {
-            LibrarySortControl(label: Text(LibraryChipsRow.sortTitle(sortOrder))) { dismiss in
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            LibrarySortControl(label: Text(LibraryChipsRow.sortTitle(sortOrder))) {
+                Picker("Sort", selection: Binding(
+                    get: { sortOrder },
+                    set: { sortOrder = $0 }
+                )) {
                     ForEach([SavedLibraryModel.Sort.recentlyUsed, .name, .type], id: \.self) { order in
-                        Button(LibraryChipsRow.sortTitle(order)) {
-                            sortOrder = order
-                            dismiss()
-                        }
-                        .accessibilityAddTraits(sortOrder == order ? .isSelected : [])
+                        Text(LibraryChipsRow.sortTitle(order)).tag(order)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.inline)
             }
         } actions: {
             EmptyView()
@@ -434,7 +435,6 @@ private struct SchemeTile: View {
                 }
             }
             replaceActions(dismiss: dismiss)
-            Divider()
             Button("Delete", role: .destructive) {
                 dismiss()
                 onDelete()
@@ -446,7 +446,6 @@ private struct SchemeTile: View {
     @ViewBuilder
     private func replaceActions(dismiss: @escaping () -> Void) -> some View {
         if !screens.isEmpty {
-            Divider()
             ForEach(screens, id: \.id) { screen in
                 Button {
                     dismiss()

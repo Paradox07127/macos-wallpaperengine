@@ -269,7 +269,6 @@ struct SystemWallpaperTile: View {
                     dismiss()
                     NSWorkspace.shared.activateFileViewerSelecting([videoURL])
                 }
-                Divider()
             }
             Button("Remove from System Wallpaper", role: .destructive) {
                 dismiss()

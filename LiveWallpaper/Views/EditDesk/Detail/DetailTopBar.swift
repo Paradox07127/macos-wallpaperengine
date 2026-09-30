@@ -28,8 +28,6 @@ struct DetailTopBar: View {
     /// True while the column shows a load attempt's page, which carries this display's only Clear; the
     /// actions reading the applied wallpaper (queue, scheme, apply to all) stay dimmed under it too.
     var attemptShown = false
-    @State private var schemeMenuPresented = false
-    @State private var changeMenuPresented = false
     @State private var bookmarkPresented = false
     @State private var schemeStore = SchemeStore.shared
 
@@ -62,8 +60,6 @@ struct DetailTopBar: View {
         .frame(height: DetailGeometry.topBarHeight)
         .accessibilityElement(children: .contain)
         .onChange(of: tags.first(where: \.isCurrent)?.id) {
-            schemeMenuPresented = false
-            changeMenuPresented = false
             bookmarkPresented = false
         }
     }
@@ -72,8 +68,11 @@ struct DetailTopBar: View {
     @ViewBuilder
     private var displayActions: some View {
         if section == .wallpaper {
-            icon("rectangle.2.swap", "Change Wallpaper") { changeMenuPresented.toggle() }
-                .appLanguagePopover(isPresented: $changeMenuPresented, arrowEdge: .bottom) { changeMenu }
+            NativeMenuButton { changeMenu } label: {
+                menuIcon("rectangle.2.swap")
+            }
+            .help(Text("Change Wallpaper"))
+            .accessibilityLabel(Text("Change Wallpaper"))
             icon("arrow.triangle.2.circlepath", "Reload display", help: Text("Reload display content")) { actions.reload() }
                 .disabled(!hasWallpaper || attemptShown)
             GlassToolbarItem("trash", role: .destructive, action: actions.clearWallpaper)
@@ -106,15 +105,16 @@ struct DetailTopBar: View {
         .appLanguagePopover(isPresented: $bookmarkPresented, arrowEdge: .bottom) {
             DetailBookmarkPopover(target: actions.bookmark) { bookmarkPresented = false }
         }
-        icon("square.stack", "Scheme") {
+        Group {
             if schemeStore.schemes.isEmpty {
-                actions.saveAsScheme()
+                icon("square.stack", "Scheme", action: actions.saveAsScheme)
             } else {
-                schemeMenuPresented.toggle()
+                NativeMenuButton { schemeMenu } label: { menuIcon("square.stack") }
+                    .help(Text("Scheme"))
+                    .accessibilityLabel(Text("Scheme"))
             }
         }
         .disabled(!hasWallpaper || attemptShown)
-        .appLanguagePopover(isPresented: $schemeMenuPresented, arrowEdge: .bottom) { schemeMenu }
         icon(
             "square.on.square", section == .overlay ? "Copy to Other Displays" : "Apply to All Displays",
             help: tags.count < 2 ? Text("Only one display is connected.") : nil
@@ -202,64 +202,55 @@ struct DetailTopBar: View {
         .accessibilityElement(children: .contain)
     }
 
+    @ViewBuilder
     private var schemeMenu: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Button("Save as Scheme") {
-                schemeMenuPresented = false
-                actions.saveAsScheme()
-            }
-            Divider()
-            Text("Apply to This Display")
-                .font(DesignTokens.Typography.badge)
-                .foregroundStyle(.secondary)
+        Button("Save as Scheme") {
+            actions.saveAsScheme()
+        }
+        Section("Apply to This Display") {
             ForEach(schemeStore.schemes) { scheme in
                 Button {
-                    schemeMenuPresented = false
                     actions.applyScheme(scheme)
                 } label: {
                     Text(verbatim: scheme.name).lineLimit(1)
                 }
             }
-            Button("Manage Schemes") {
-                schemeMenuPresented = false
-                actions.manageSchemes()
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .popupMenuOptions(width: 240)
+        Button("Manage Schemes") {
+            actions.manageSchemes()
+        }
     }
 
+    @ViewBuilder
     private var changeMenu: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            if let chooseFromLibrary = actions.chooseFromLibrary {
-                Button("Choose from Library") {
-                    changeMenuPresented = false
-                    chooseFromLibrary()
-                }
-            }
-            Button("Import and Apply to \(tags.first(where: \.isCurrent)?.name ?? "")") {
-                changeMenuPresented = false
-                actions.importFile()
-            }
-            Button("Enter Web Address") {
-                changeMenuPresented = false
-                actions.enterWebAddress()
-            }
-            if let switchBack = actions.switchBackToVideo {
-                Button("Switch Back to Previous Video") {
-                    changeMenuPresented = false
-                    switchBack()
-                }
-            }
-            if let switchBack = actions.switchBackToWebPage {
-                Button("Switch Back to Previous Web Page") {
-                    changeMenuPresented = false
-                    switchBack()
-                }
+        if let chooseFromLibrary = actions.chooseFromLibrary {
+            Button("Choose from Library") {
+                chooseFromLibrary()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .popupMenuOptions(width: 260)
+        Button("Import and Apply to \(tags.first(where: \.isCurrent)?.name ?? "")") {
+            actions.importFile()
+        }
+        Button("Enter Web Address") {
+            actions.enterWebAddress()
+        }
+        if let switchBack = actions.switchBackToVideo {
+            Button("Switch Back to Previous Video") {
+                switchBack()
+            }
+        }
+        if let switchBack = actions.switchBackToWebPage {
+            Button("Switch Back to Previous Web Page") {
+                switchBack()
+            }
+        }
+    }
+
+    private func menuIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(DesignTokens.Typography.body)
+            .imageScale(.large)
+            .frame(width: GlassToolbarMetrics.height, height: GlassToolbarMetrics.height)
     }
 
     /// `help` replaces the label as the tooltip, for a control that has to say why it is dimmed.

@@ -69,7 +69,6 @@ struct WallpaperAutomationSheet: View {
     @State private var shownBeforeTrial: ScreenConfiguration?
     @State private var search = ""
     @State private var picking = false
-    @State private var presetsPresented = false
     @State private var openedHour = Calendar.current.component(.hour, from: .now)
     @State private var pickTarget: PickTarget = .queue
     @State private var added: [LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
@@ -310,9 +309,15 @@ struct WallpaperAutomationSheet: View {
                 Label("Repeats every day", systemImage: "arrow.clockwise")
                     .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
                 Spacer()
-                addButton("Add schedule slot") { presetsPresented = true }
-                    .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
-                    .appLanguagePopover(isPresented: $presetsPresented, arrowEdge: .bottom) { presetMenu }
+                NativeMenuButton { presetMenu } label: {
+                    Image(systemName: "plus")
+                        .font(DesignTokens.Typography.body)
+                        .frame(width: DesignTokens.iconButtonDiameter(.regular), height: DesignTokens.iconButtonDiameter(.regular))
+                        .adaptiveGlassSurface(.capsule, interactive: true)
+                }
+                .help(Text("Add schedule slot"))
+                .accessibilityLabel(Text("Add schedule slot"))
+                .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
             }
             timeline
             if let problem {
@@ -399,30 +404,25 @@ struct WallpaperAutomationSheet: View {
         )
     }
 
+    @ViewBuilder
     private var presetMenu: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            ForEach(Preset.allCases) { preset in
-                let slot = Self.presetSlot(preset, in: slots)
-                Button {
-                    presetsPresented = false
-                    if let slot {
-                        slots.append(slot)
-                    }
-                } label: {
-                    let hours = String(format: "%02d:00–%02d:00", preset.hours.start, preset.hours.end)
-                    Label("\(preset.localized) · \(hours)", systemImage: preset.systemImage)
-                }
-                .disabled(slot == nil)
-            }
+        ForEach(Preset.allCases) { preset in
+            let slot = Self.presetSlot(preset, in: slots)
             Button {
-                presetsPresented = false
-                addSlot()
+                if let slot {
+                    slots.append(slot)
+                }
             } label: {
-                Label("Custom", systemImage: "slider.horizontal.below.rectangle")
+                let hours = String(format: "%02d:00–%02d:00", preset.hours.start, preset.hours.end)
+                Label("\(preset.localized) · \(hours)", systemImage: preset.systemImage)
             }
+            .disabled(slot == nil)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .popupMenuOptions(width: 240)
+        Button {
+            addSlot()
+        } label: {
+            Label("Custom", systemImage: "slider.horizontal.below.rectangle")
+        }
     }
 
     private var wallpaperPicker: some View {

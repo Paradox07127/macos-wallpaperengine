@@ -52,24 +52,17 @@ struct BrowseFilterRibbon: View {
     }
 
     private var sortMenu: some View {
-        LibrarySortControl(label: Text(verbatim: sortLabel(viewModel.preferredSort))) { dismiss in
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        LibrarySortControl(label: Text(verbatim: sortLabel(viewModel.preferredSort))) {
+            Picker("Sort Order", selection: Binding(
+                get: { viewModel.preferredSort },
+                set: { viewModel.updateSort($0) }
+            )) {
                 ForEach(sortOptions) { option in
-                    Button {
-                        viewModel.updateSort(option)
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(verbatim: sortLabel(option))
-                            Spacer()
-                            if viewModel.preferredSort == option {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                    .accessibilityAddTraits(viewModel.preferredSort == option ? .isSelected : [])
+                    Text(verbatim: sortLabel(option)).tag(option)
                 }
             }
+            .labelsHidden()
+            .pickerStyle(.inline)
         }
         .disabled(controlsDisabled)
         .help(Text("Sort criteria"))
@@ -85,8 +78,7 @@ struct BrowseFilterRibbon: View {
         .font(DesignTokens.EditDesk.Typography.body)
     }
 
-    /// The gear fills while a narrower target is active — a `Menu` label ignores
-    /// `foregroundStyle`, so a tint could not say it.
+    /// Search text scope belongs beside the field, as a compact icon action.
     private var searchTargetMenu: some View {
         Menu {
             Section {
@@ -105,11 +97,13 @@ struct BrowseFilterRibbon: View {
                 Text(verbatim: WorkshopSearchTextTarget.menuTitle)
             }
         } label: {
-            Image(systemName: viewModel.searchTextTarget == .all ? "gearshape" : "gearshape.fill")
-                .font(DesignTokens.EditDesk.Typography.body)
+            Image(systemName: viewModel.searchTextTarget == .all ? "text.magnifyingglass" : "doc.text.magnifyingglass")
+                .font(DesignTokens.EditDesk.Typography.chip)
         }
         .menuStyle(.button)
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
+        .menuIndicator(.hidden)
+        .controlSize(.small)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .regular)
         .fixedSize()
         .disabled(controlsDisabled)
         .help(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
@@ -240,7 +234,7 @@ struct BrowseFilterRibbon: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    private func chipFlow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func chipFlow(@ViewBuilder content: () -> some View) -> some View {
         WorkshopChipFlow(spacing: DesignTokens.Spacing.sm, lineSpacing: DesignTokens.Spacing.sm) {
             content()
         }
@@ -302,7 +296,7 @@ struct BrowseFilterRibbon: View {
     // MARK: - Sort / time frame options
 
     private static let browseSortOptions: [WorkshopSortMode] = [
-        .mostPopular, .topRated, .newest, .lastUpdated, .mostSubscribed
+        .mostPopular, .topRated, .newest, .lastUpdated, .mostSubscribed,
     ]
 
     /// Relevance only ranks against a search text. Trimmed like the request layer:
@@ -414,7 +408,10 @@ struct WorkshopFilterChip: View {
 }
 
 private struct FilterRowsHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat { 0 }
+    static var defaultValue: CGFloat {
+        0
+    }
+
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }

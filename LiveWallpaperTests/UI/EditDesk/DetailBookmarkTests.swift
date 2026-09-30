@@ -25,7 +25,7 @@ struct DetailBookmarkTests {
     func topBarCarriesTheBookmark() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift")
         let bookmark = try #require(source.range(of: #"icon(bookmarked ? "bookmark.fill" : "bookmark""#))
-        let scheme = try #require(source.range(of: #"icon("square.stack", "Scheme")"#))
+        let scheme = try #require(source.range(of: #"icon("square.stack", "Scheme","#))
         #expect(bookmark.upperBound <= scheme.lowerBound, "the bookmark sits left of Scheme")
         #expect(source.contains("let bookmarked = actions.bookmark?.isBookmarked == true"))
         #expect(source.contains("DetailBookmarkPopover(target: actions.bookmark)"))

@@ -39,20 +39,17 @@ struct OnboardingCapsule: View {
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
     @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
     @State private var isHovering = false
-    @State private var menuPresented = false
 
     private static let height: CGFloat = 22
 
     var body: some View {
         if let progress, !progress.isFinished {
             let dots = OnboardingCapsuleModel.dots(visible: progress.visiblePages, handled: progress.handled)
-            Button { menuPresented.toggle() } label: { capsule(dots) }
-                .buttonStyle(OnboardingPressStyle())
+            NativeMenuButton { menu(progress) } label: { capsule(dots) }
                 .onHover { isHovering = $0 }
                 .help(Text("Welcome Tour"))
                 .accessibilityLabel(Text("Get Started"))
                 .accessibilityValue(Text("Tour progress: \(dots.filter(\.self).count) / \(dots.count)"))
-                .appLanguagePopover(isPresented: $menuPresented, arrowEdge: .bottom) { menu(progress) }
         }
     }
 
@@ -83,33 +80,28 @@ struct OnboardingCapsule: View {
         .accessibilityElement(children: .ignore)
     }
 
+    @ViewBuilder
     private func menu(_ progress: OnboardingProgress) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            if let step = progress.currentPage {
-                Button {
-                    menuPresented = false
-                    if let router {
-                        pageGuide?.startTour(progress: progress, router: router, from: step)
-                    }
-                } label: {
-                    Text(
-                        "Next Step: \(Text(Self.pageTitle(step)))",
-                        comment: "Get Started capsule menu item that opens the page of the next welcome tour step. Placeholder is that page's name."
-                    )
-                }
-            }
+        if let step = progress.currentPage {
             Button {
-                menuPresented = false
-                progress.dismissRemaining()
+                if let router {
+                    pageGuide?.startTour(progress: progress, router: router, from: step)
+                }
             } label: {
                 Text(
-                    "End Welcome Tour",
-                    comment: "Get Started capsule menu item that marks every remaining welcome tour step as skipped."
+                    "Next Step: \(Text(Self.pageTitle(step)))",
+                    comment: "Get Started capsule menu item that opens the page of the next welcome tour step. Placeholder is that page's name."
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .popupMenuOptions(width: 240)
+        Button {
+            progress.dismissRemaining()
+        } label: {
+            Text(
+                "End Welcome Tour",
+                comment: "Get Started capsule menu item that marks every remaining welcome tour step as skipped."
+            )
+        }
     }
 
     private static func pageTitle(_ page: OnboardingProgress.Page) -> LocalizedStringKey {
@@ -121,12 +113,5 @@ struct OnboardingCapsule: View {
         case .overlay: "Overlays"
         case .settings: "Settings"
         }
-    }
-}
-
-struct OnboardingPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? DesignTokens.Opacity.dimmedIcon : 1)
     }
 }

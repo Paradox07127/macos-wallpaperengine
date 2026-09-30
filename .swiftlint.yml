@@ -167,9 +167,9 @@ custom_rules:
   # popup — it ignores the label's `foregroundStyle` and paints the glyph in the
   # system control colour. Over artwork or dark chrome that reads as a black,
   # invisible glyph (three sites shipped that way). Over-media glyph controls
-  # must be real Buttons; put the list in a popover.
+  # use NativeMenuButton, which draws the label separately from native menu tracking.
   over_media_menu_style:
     name: "Over-media glyph uses a Menu"
     regex: 'foregroundStyle\(DesignTokens\.Colors\.(overlayForeground|onAccentFill)\)[\s\S]{0,240}?menuStyle\(\.borderlessButton\)'
-    message: "An AppKit popup paints its label in the system control colour — use a Button + popover for glyph controls over media (w5, HistoryRow/LibraryTileApplyControl)"
+    message: "An AppKit popup paints its label in the system control colour — use NativeMenuButton to draw the label separately from native menu tracking over media"
     severity: warning

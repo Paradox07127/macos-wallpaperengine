@@ -413,7 +413,7 @@ struct LocalizationCoverageTests {
             }
         }
 
-        #expect(scoped > 15, "Only \(scoped) scoped popovers matched — the scan stopped working")
+        #expect(scoped > 0, "No scoped popovers matched — the scan stopped working")
         #expect(offenders.isEmpty, ".popover( without the language scope: \(offenders.joined(separator: "; "))")
         #expect(try Self.projectFile(modifier).contains("AppLanguageScope(defaults: .appScoped())"))
     }

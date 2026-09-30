@@ -39,7 +39,7 @@ struct LibraryChipsRow: View {
             LibrarySearchField(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt)
                 .modifier(LibrarySearchReveal(stage: stage))
         } sort: {
-            LibrarySortControl(label: sortLabel) { dismiss in sortMenu(dismiss: dismiss) }
+            LibrarySortControl(label: sortLabel) { sortMenu }
                 .id(stage.snappedIndex)
         } actions: {
             importButton
@@ -51,36 +51,25 @@ struct LibraryChipsRow: View {
         return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
     }
 
-    private func sortMenu(dismiss: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+    @ViewBuilder
+    private var sortMenu: some View {
+        Picker("Sort", selection: $sort) {
             ForEach(SavedLibraryModel.Sort.allCases, id: \.self) { order in
-                Button(Self.sortTitle(order)) {
-                    sort = order
-                    dismiss()
-                }
+                Text(Self.sortTitle(order)).tag(order)
             }
-            #if !LITE_BUILD
-            Divider()
-            Text("Filters")
-                .font(DesignTokens.Typography.badge)
-                .foregroundStyle(.secondary)
-            ForEach([SavedLibraryModel.Filter.unsupported] + InstalledStorageKind.allCases.map { .storage($0) }, id: \.self) { option in
-                Button {
-                    filter = filter == option ? nil : option
-                    dismiss()
-                } label: {
-                    HStack {
-                        Self.filterTitle(option)
-                        Spacer()
-                        if filter == option {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .accessibilityAddTraits(filter == option ? .isSelected : [])
-            }
-            #endif
         }
+        .labelsHidden()
+        .pickerStyle(.inline)
+        #if !LITE_BUILD
+        Section("Filters") {
+            ForEach([SavedLibraryModel.Filter.unsupported] + InstalledStorageKind.allCases.map { .storage($0) }, id: \.self) { option in
+                Toggle(isOn: Binding(
+                    get: { filter == option },
+                    set: { filter = $0 ? option : nil }
+                )) { Self.filterTitle(option) }
+            }
+        }
+        #endif
     }
 
     private var importButton: some View {
@@ -139,9 +128,9 @@ struct LibraryToolbarRow<Filters: View, Search: View, Sort: View, Actions: View>
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
+            search
             filters
             Spacer(minLength: DesignTokens.Spacing.md)
-            search
             sort
             actions
         }
@@ -150,11 +139,12 @@ struct LibraryToolbarRow<Filters: View, Search: View, Sort: View, Actions: View>
 
 struct LibrarySortControl<Content: View>: View {
     let label: Text
-    @ViewBuilder let content: (@escaping () -> Void) -> Content
-    @State private var isPresented = false
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        Button { isPresented.toggle() } label: {
+        NativeMenuButton {
+            content()
+        } label: {
             HStack(spacing: DesignTokens.Spacing.xxs) {
                 label
                 Image(systemName: "chevron.down")
@@ -162,15 +152,37 @@ struct LibrarySortControl<Content: View>: View {
             }
             .font(DesignTokens.EditDesk.Typography.body)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+            .padding(.horizontal, DesignTokens.Spacing.sm)
+            .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
+            .adaptiveGlassSurface(.capsule, interactive: true)
         }
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .large)
         .fixedSize()
         .accessibilityLabel(Text("Sort"))
         .accessibilityValue(label)
-        .appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {
-            content { isPresented = false }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .popupMenuOptions(width: 200)
+    }
+}
+
+#Preview("Library toolbar · search leading") {
+    VStack(spacing: 24) {
+        ForEach([CGFloat(920), CGFloat(760)], id: \.self) { width in
+            LibraryToolbarRow {
+                FilterChip(title: Text("All"), isSelected: true) {}
+                FilterChip(title: Text("Video"), isSelected: false) {}
+                FilterChip(title: Text("Scene"), isSelected: false) {}
+                FilterChip(title: Text("Web"), isSelected: false) {}
+            } search: {
+                LibrarySearchField(text: .constant(""), prompt: "Search wallpapers")
+            } sort: {
+                LibrarySortControl(label: Text("Recently Used")) {
+                    Button("Recently Used") {}
+                    Button("Name") {}
+                }
+            } actions: {
+                GlassIconButton("plus", size: .large) {}
+            }
+            .frame(width: width)
         }
     }
+    .padding(24)
+    .background(DesignTokens.Colors.surfaceRaised)
 }

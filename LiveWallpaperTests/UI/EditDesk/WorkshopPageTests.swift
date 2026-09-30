@@ -28,6 +28,18 @@ struct WorkshopRibbonLayoutTests {
         }
     }
 
+    @Test("Native menu triggers retain the full custom label size")
+    func nativeMenuKeepsTheWholeTrigger() {
+        for size in [CGSize(width: 22, height: 22), CGSize(width: 100, height: 28)] {
+            let view = NativeMenuButton {
+                Button("Name") {}
+            } label: {
+                Image(systemName: "ellipsis").frame(width: size.width, height: size.height)
+            }
+            #expect(NSHostingView(rootView: view.fixedSize()).fittingSize == size)
+        }
+    }
+
     @Test("No ribbon control is taller than the search field, so the row is its insets plus one control")
     func ribbonRowIsOneControlTall() throws {
         let suite = try TestScratch.defaultsSuite("workshop.ribbon.heights")
@@ -38,7 +50,7 @@ struct WorkshopRibbonLayoutTests {
         let ribbon = BrowseFilterRibbon(viewModel: model, hasWebAPIKey: true, showsLikes: .constant(false))
             .frame(width: 1040)
         let expected = DesignTokens.EditDesk.Spacing.filterRowInset + DesignTokens.LibraryFilterBar.controlHeight
-            + DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.Settings.formVerticalMargin
+            + DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.LibraryGrid.verticalPadding
         #expect(Self.height(ribbon) == expected)
     }
 }

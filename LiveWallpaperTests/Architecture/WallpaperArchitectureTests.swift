@@ -1642,7 +1642,7 @@ struct WallpaperAutomationCoordinatorTests {
     func addButtonsAreNamedForWhatTheyAdd() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift")
         #expect(source.contains(#"addButton("Add Wallpaper") { pickTarget = .queue"#), "the playlist page's add button lost its name")
-        #expect(source.contains(#"addButton("Add schedule slot") { presetsPresented = true }"#), "the schedule page's add button reads as adding a wallpaper")
+        #expect(source.contains(#".accessibilityLabel(Text("Add schedule slot"))"#), "the schedule page's add button reads as adding a wallpaper")
     }
 }
 
