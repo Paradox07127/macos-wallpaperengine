@@ -8,11 +8,26 @@ import SwiftUI
 @MainActor
 @Observable
 final class LibraryDragController {
-    /// What a drag carries: the row, the picture its ghost wears and the actions its drop applies with.
+    /// What a drag carries: the picture its ghost wears and what its drop applies.
     struct Payload {
-        let item: LibraryItem
+        /// The library row being dragged; nil for a drag that is not one, such as a scheme.
+        let item: LibraryItem?
         let image: CGImage?
-        let actions: WallpaperModalActions
+        let applyTo: @MainActor (CGDirectDisplayID) -> Void
+        /// nil where the payload cannot go to every display at once: the strip shows no All Displays tile and none is hit.
+        let applyToAllDisplays: (@MainActor () -> Void)?
+
+        init(item: LibraryItem?, image: CGImage?, applyTo: @escaping @MainActor (CGDirectDisplayID) -> Void,
+             applyToAllDisplays: (@MainActor () -> Void)?) {
+            self.item = item
+            self.image = image
+            self.applyTo = applyTo
+            self.applyToAllDisplays = applyToAllDisplays
+        }
+
+        init(item: LibraryItem, image: CGImage?, actions: WallpaperModalActions) {
+            self.init(item: item, image: image, applyTo: actions.applyTo, applyToAllDisplays: actions.applyToAllDisplays)
+        }
     }
 
     /// nil while no drag shows.
@@ -63,9 +78,9 @@ final class LibraryDragController {
         if let target = dropTarget(at: point), let payload {
             switch target {
             case let .display(id):
-                payload.actions.applyTo(id)
+                payload.applyTo(id)
             case .allDisplays:
-                payload.actions.applyToAllDisplays()
+                payload.applyToAllDisplays?()
             }
             clear()
         } else {
@@ -97,7 +112,10 @@ final class LibraryDragController {
     }
 
     private func dropTarget(at point: CGPoint) -> ModalDropTarget? {
-        Self.dropTarget(at: point, thumbnails: thumbnailFrames, run: runFrame, applyAll: applyAllFrame)
+        Self.dropTarget(
+            at: point, thumbnails: thumbnailFrames, run: runFrame,
+            applyAll: payload?.applyToAllDisplays == nil ? nil : applyAllFrame
+        )
     }
 
     /// `run` is the thumbnail run's visible box: a thumbnail scrolled out of it takes no drop.
@@ -155,7 +173,8 @@ struct LibraryDragOverlay: View {
                 onTargetFrame: { drag.thumbnailFrames[$0.id] = $0.rect },
                 onRunFrame: { drag.runFrame = $0 },
                 applyAllHighlighted: drag.target == .allDisplays,
-                onApplyAllFrame: { drag.applyAllFrame = $0 }
+                onApplyAllFrame: { drag.applyAllFrame = $0 },
+                showsAllDisplays: drag.payload?.applyToAllDisplays != nil
             )
             .padding(.top, FloatLayerGeometry.panelTop)
             .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))

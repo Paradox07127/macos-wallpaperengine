@@ -55,7 +55,7 @@ struct LibraryModalHost: View {
                 modal(for: item, content: content, targets: targets(for: item))
             }
             LibraryDragOverlay(
-                drag: drag, targets: drag.payload.map { targets(for: $0.item) } ?? [], windowWidth: stage.stageSize.width
+                drag: drag, targets: drag.payload?.item.map { targets(for: $0) } ?? [], windowWidth: stage.stageSize.width
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

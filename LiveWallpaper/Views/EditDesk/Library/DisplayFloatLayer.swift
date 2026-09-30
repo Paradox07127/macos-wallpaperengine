@@ -67,6 +67,8 @@ struct DisplayFloatLayer: View {
     var applyAllHighlighted = false
     /// The All Displays tile's frame in `EditDeskCoordinateSpace`, for the host's hit test.
     var onApplyAllFrame: (CGRect) -> Void = { _ in }
+    /// false drops the All Displays tile and its divider, for a payload that only goes to one display at a time.
+    var showsAllDisplays = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -78,10 +80,12 @@ struct DisplayFloatLayer: View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
             caption
             thumbnailRun
-            Rectangle()
-                .fill(DesignTokens.EditDesk.Colors.strokePanel)
-                .frame(width: 1, height: 60)
-            applyAllTile
+            if showsAllDisplays {
+                Rectangle()
+                    .fill(DesignTokens.EditDesk.Colors.strokePanel)
+                    .frame(width: 1, height: 60)
+                applyAllTile
+            }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
         .frame(height: FloatLayerGeometry.panelHeight)

@@ -24142,34 +24142,6 @@
         }
       }
     },
-    "Drop onto a display to apply" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suelta sobre una pantalla para aplicar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイにドロップして適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖放到显示器上以应用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖放到顯示器上以套用"
-          }
-        }
-      }
-    },
     "Drop target: %@" : {
       "extractionState" : "manual",
       "localizations" : {

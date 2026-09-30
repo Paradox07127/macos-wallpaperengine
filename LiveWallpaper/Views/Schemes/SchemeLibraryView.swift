@@ -11,13 +11,15 @@ struct SchemeLibraryView: View {
     @State private var searchText: String = ""
     @State private var typeFilter: SchemeTypeFilter = .all
     @State private var pendingDestructive: PendingDestructive?
-    @State private var dragSession = LibraryDragSession()
     @AppStorage(SavedLibrarySortOrder.preferencesKey, store: .appScoped())
     private var sortOrder: SavedLibrarySortOrder = .recent
+    /// Drives the host page's display strip; a tile's drop ends in `requestApply`.
+    private let drag: LibraryDragController
     /// The Edit Desk's apply path, which records the change for undo; nil applies the scheme straight away.
     private let apply: ((ScreenScheme, Screen) -> Void)?
 
-    init(apply: ((ScreenScheme, Screen) -> Void)? = nil) {
+    init(drag: LibraryDragController, apply: ((ScreenScheme, Screen) -> Void)? = nil) {
+        self.drag = drag
         self.apply = apply
     }
 
@@ -93,6 +95,7 @@ struct SchemeLibraryView: View {
                         SchemeTile(
                             scheme: scheme,
                             screens: screenManager.screens,
+                            drag: drag,
                             isRenaming: renamingID == scheme.id,
                             renameDraft: $renameDraft,
                             onApply: { screen in requestApply(scheme, to: screen) },
@@ -112,60 +115,11 @@ struct SchemeLibraryView: View {
                             },
                             onReplace: { screen in requestReplace(scheme, from: screen) }
                         )
-                        .onDrag {
-                            NSItemProvider(object: dragSession.begin(payload: scheme.id.uuidString) as NSString)
-                        } preview: {
-                            LibraryDragPreview(systemImage: scheme.iconName)
-                        }
                     }
                 }
                 .libraryGridPadding()
             }
-            .overlay(alignment: .top) {
-                if dragSession.isDragging, !screenManager.screens.isEmpty {
-                    dropBar
-                }
-            }
-            .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
         }
-    }
-
-    @State private var dropTickets = LibraryDropTickets()
-
-    private var dropBar: some View {
-        LibraryDragApplyBar(
-            screens: screenManager.screens,
-            onCancel: { dragSession.end() },
-            makeDropHandler: { screen in
-                { identifier, loadFailed in
-                    dragSession.end()
-                    guard !loadFailed,
-                          let identifier,
-                          let id = UUID(uuidString: identifier),
-                          // Re-read both sides: the archive and the display list can
-                          // both change while the provider read is in flight.
-                          let scheme = store.schemes.first(where: { $0.id == id }),
-                          screenManager.screens.contains(where: { $0.id == screen.id })
-                    else { return }
-                    // Same gate as the tile: a veiled scheme is not applied by dropping it either.
-                    let ticket = dropTickets.begin(screenID: screen.id)
-                    Task { @MainActor in
-                        let location = await LibraryContentLocator.locate(
-                            content: scheme.configuration.activeWallpaper,
-                            wpeOrigin: scheme.configuration.wpeOrigin
-                        )
-                        // Replace keeps the id, so the version is what tells a recaptured scheme
-                        // from the one that was dropped; a newer drop or a gone entry applies nothing.
-                        guard dropTickets.isCurrent(ticket), location.isAvailable,
-                              let current = store.schemes.first(where: { $0.id == id }),
-                              current.updatedAt == scheme.updatedAt,
-                              let target = screenManager.screens.first(where: { $0.id == screen.id })
-                        else { return }
-                        requestApply(current, to: target)
-                    }
-                }
-            }
-        )
     }
 
     private var emptyState: some View {
@@ -246,6 +200,7 @@ private enum SchemeTypeFilter: Hashable {
 private struct SchemeTile: View {
     let scheme: ScreenScheme
     let screens: [Screen]
+    let drag: LibraryDragController
     let isRenaming: Bool
     @Binding var renameDraft: String
     let onApply: (Screen) -> Void
@@ -266,6 +221,7 @@ private struct SchemeTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
+            .libraryDragSource(drag, enabled: location.isAvailable && !isRenaming) { dragPayload }
             .appLanguagePopover(isPresented: $showingTargets, arrowEdge: .bottom) {
                 LibraryApplyTargetList(
                     screens: screens,
@@ -286,7 +242,7 @@ private struct SchemeTile: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityActions {
-                // Same gate as the tap and the context menu.
+                // Same gate as the tap.
                 if location.isAvailable, screens.count == 1, let only = screens.first {
                     Button("Apply") { onApply(only) }
                 }
@@ -299,6 +255,20 @@ private struct SchemeTile: View {
         location.isAvailable
             ? Text("Apply")
             : Text("This wallpaper's file is missing")
+    }
+
+    /// A scheme overwrites one whole display, so its drag offers no All Displays drop.
+    private var dragPayload: LibraryDragController.Payload {
+        LibraryDragController.Payload(
+            item: nil,
+            image: thumbnail?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            applyTo: { id in
+                if let screen = screens.first(where: { $0.id == id }) {
+                    onApply(screen)
+                }
+            },
+            applyToAllDisplays: nil
+        )
     }
 
     private func applyFromCard() {
@@ -465,12 +435,6 @@ private struct SchemeTile: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        if !screens.isEmpty, location.isAvailable {
-            ForEach(screens, id: \.id) { screen in
-                Button("Apply to \(screen.name)") { onApply(screen) }
-            }
-            Divider()
-        }
         Button("Rename", action: onStartRename)
         if let revealURL = location.revealURL {
             Button("Show in Finder") {

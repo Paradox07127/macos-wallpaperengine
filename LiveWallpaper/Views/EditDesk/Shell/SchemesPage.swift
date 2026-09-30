@@ -9,13 +9,15 @@ struct SchemesPage: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var applies = HomePage.ApplyQueue()
+    @State private var drag = LibraryDragController()
     /// The window's own content size, which the top bar's budget is measured against.
     @State private var stageSize: CGSize = .zero
 
     var body: some View {
         ZStack(alignment: .top) {
-            SchemeLibraryView(apply: { apply($0, to: $1) })
+            SchemeLibraryView(drag: drag, apply: { apply($0, to: $1) })
                 .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
             TopBar(
                 page: Binding(get: { router.page }, set: { router.select($0) }),
@@ -23,10 +25,30 @@ struct SchemesPage: View {
                 windowWidth: stageSize.width,
                 status: nil
             )
+            .allowsHitTesting(!interactionLock)
+            ZStack(alignment: .top) {
+                LibraryDragOverlay(drag: drag, targets: dragTargets, windowWidth: stageSize.width)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
         .ignoresSafeArea()
+        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { stageSize = $0 }
+        .onChange(of: reduceMotion, initial: true) { drag.reduceMotion = reduceMotion }
+    }
+
+    /// The top bar ignores clicks while a scheme drag runs.
+    private var interactionLock: Bool {
+        drag.payload != nil
+    }
+
+    private var dragTargets: [ModalDisplayTarget] {
+        guard drag.payload != nil else { return [] }
+        return ModalActions.targets(
+            displays: screenManager.screens.map { ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame) },
+            activeOn: [], covers: [:]
+        )
     }
 
     private func apply(_ scheme: ScreenScheme, to screen: Screen) {
