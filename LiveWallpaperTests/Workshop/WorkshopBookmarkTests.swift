@@ -121,6 +121,18 @@ struct WorkshopBookmarkTests {
         #expect(items.map(\.rawTitle) == ["Rain", "Loaded", "Rain"])
     }
 
+    @Test("An older like appended later, as a backup import does, still sorts by its own like date")
+    func likedItemsSortByCreatedAt() throws {
+        let (_, workshop, suite) = try Self.stores("likesByDate")
+        defer { suite.discard() }
+        workshop.add(WorkshopBookmark(id: 1, rawTitle: "Rain", previewImageURL: nil, tags: [], createdAt: Date(timeIntervalSince1970: 200)))
+        workshop.add(WorkshopBookmark(id: 2, rawTitle: "Rain", previewImageURL: nil, tags: [], createdAt: Date(timeIntervalSince1970: 100)))
+
+        let items = WorkshopBookmarkActions.likedItems(browseItems: [], workshopStore: workshop)
+
+        #expect(items.map(\.id) == [1, 2])
+    }
+
     @Test("A card wired the way Browse wires it saves its item on the first click and removes it on the second")
     func browseCardTogglesTheBookmark() throws {
         let (_, workshop, suite) = try Self.stores("card")
@@ -151,6 +163,7 @@ struct WorkshopBookmarkTests {
         #expect(!cleanup.contains("WorkshopBookmark"), "deleting an installed item clears its like")
         #expect(cleanup.contains("store.removeWPEBookmarks(workshopID: $0)"), "a deleted item's saved library entries stay behind")
         #expect(cleanup.contains(#"libraryBookmarks.remove("workshop:\($0)")"#), "a deleted item's library bookmark stays behind")
+        #expect(cleanup.contains(#"libraryBookmarks.remove("bookmark:\("#), "a deleted item's saved variants keep their library marks")
     }
 
     @Test("Browse hands every card its bookmark state, read once per pass, and a toggle")

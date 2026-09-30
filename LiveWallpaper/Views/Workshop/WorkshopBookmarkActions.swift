@@ -34,7 +34,8 @@ enum WorkshopBookmarkActions {
     static func likedItems(
         browseItems: [WorkshopQueryItem], workshopStore: WorkshopBookmarkStore = .shared
     ) -> [WorkshopQueryItem] {
-        workshopStore.bookmarks.reversed().map { bookmark in
+        // Backup import appends old likes at the end, so store order is not like order.
+        workshopStore.bookmarks.reversed().sorted { $0.createdAt > $1.createdAt }.map { bookmark in
             let saved = queryItem(bookmark)
             return browseItems.first { $0.id == bookmark.id }?.preservingDetails(from: saved) ?? saved
         }
