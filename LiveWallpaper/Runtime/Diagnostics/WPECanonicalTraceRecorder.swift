@@ -38,6 +38,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         return Int(name.dropFirst("g_Texture".count))
     }
 
+    static func samplerName(at slot: Int, in names: [String]) -> String? {
+        names.enumerated().first { (authoredTextureSlot($0.element) ?? $0.offset) == slot }?.element
+    }
+
     /// A non-sprite texture a particle draw bound (group mask, refract normal,
     /// refract background snapshot).
     struct ParticleTextureInput {
@@ -287,11 +291,11 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 + (binding.slot < (result.vertexStage?.textureSlotCount ?? 0) ? ["vertex"] : [])
             for stage in stages {
                 let names = stage == "vertex" ? (result.vertexStage?.samplerNames ?? []) : result.samplerNames
-                let name = names.enumerated().first { (Self.authoredTextureSlot($0.element) ?? $0.offset) == binding.slot }?.element
+                let name = Self.samplerName(at: binding.slot, in: names)
                 textures.append([
                     "stage": stage,
-                // Authored register slot, matching the reflection and the Windows side. `binding.slot` is our dense Metal binding index.
-                "slot": Self.authoredTextureSlot(binding.name) ?? binding.slot,
+                    // The executor binds numeric authored registers directly, including holes.
+                    "slot": binding.slot,
                     "name": jsonOrNull(name),
                 "resource": texID,
                 "reference": jsonOrNull(Self.describe(reference: binding.reference)),
@@ -340,11 +344,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                                     "variables": WPECanonicalUniformTrace.variables(layout: vertex.uniformLayout, slots: vertexUniformSlots, sources: vertexUniformSources),
                                     "packedSlots": WPECanonicalUniformTrace.floatSlots(vertexUniformSlots), "rawSlotBits": WPECanonicalUniformTrace.bitSlots(vertexUniformSlots)])
         }
-        // Keyed by authored slot so it lines up with the sampler entries below
-        // and with the Windows side's register numbering.
+        // Numeric binding identity is authoritative; labels never renumber textures.
         let samplerBySlot = Dictionary(
             textureBindings.compactMap { binding in
-                binding.sampler.map { (Self.authoredTextureSlot(binding.name) ?? binding.slot, $0) }
+                binding.sampler.map { (binding.slot, $0) }
             },
             uniquingKeysWith: { first, _ in first }
         )

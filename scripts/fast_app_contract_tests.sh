@@ -46,6 +46,7 @@ PARALLEL_SUITES=(
   WPEPassVertexPathTests
   WPELinkedShaderStageTests
   WPEAuthoredVertexExecutorTests
+  WPESparseTextureTraceTests
   WPEParticleEventTests
   WPEParticlePlaybackTests
   WPESceneScriptParticlePlaybackTests

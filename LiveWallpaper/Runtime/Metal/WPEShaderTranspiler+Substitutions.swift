@@ -144,6 +144,7 @@ extension WPEShaderTranspiler {
             }
 
             var rewritten = wordReplace(line, find: "texSample2DLod", replace: "textureLod")
+            rewritten = wordReplace(rewritten, find: "texture2DLod", replace: "textureLod")
             rewritten = wordReplace(rewritten, find: "texSample2D", replace: "texture")
             rewritten = wordReplace(rewritten, find: "texture2D", replace: "texture")
             return rewritten

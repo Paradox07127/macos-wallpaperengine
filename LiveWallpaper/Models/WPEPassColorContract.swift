@@ -83,7 +83,7 @@ struct WPEPassColorContract: Codable {
     ) {
         schema = "wpe.pass-color-contract.v1"
         inputs = textureBindings.sorted { $0.slot < $1.slot }.map { binding in
-            let authored = WPECanonicalTraceRecorder.authoredTextureSlot(binding.name) ?? binding.slot
+            let authored = binding.slot
             let operation: String = if let alpha {
                 alpha.unpremultipliedInputSlots.contains(authored) ? "unpremultiply-after-sampling" : "no-injected-unpremultiply"
             } else {

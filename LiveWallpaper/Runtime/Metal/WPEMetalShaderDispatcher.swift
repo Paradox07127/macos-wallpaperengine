@@ -702,7 +702,8 @@ struct WPEMetalShaderDispatcher {
             #if !LITE_BUILD && DEBUG
             canonicalTextureBindings.append(WPECanonicalTraceRecorder.TextureBindingInput(
                 slot: slot,
-                name: result.samplerNames.indices.contains(slot) ? result.samplerNames[slot] : nil,
+                name: WPECanonicalTraceRecorder.samplerName(at: slot, in: result.samplerNames)
+                    ?? WPECanonicalTraceRecorder.samplerName(at: slot, in: result.vertexStage?.samplerNames ?? []),
                 reference: resolvedReference,
                 texture: texture,
                 fallbackToPrimary: fallbackToPrimary,
