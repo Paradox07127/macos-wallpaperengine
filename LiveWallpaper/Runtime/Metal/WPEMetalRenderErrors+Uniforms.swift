@@ -497,6 +497,7 @@ struct WPEParticleProjection {
     var modelToWorld = matrix_identity_float4x4
     var worldToModel = matrix_identity_float4x4
     var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
+    var cameraClipTransform = SIMD4<Float>(1, 1, 0, 0)
 }
 
 /// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized `effects/skew` MODE=1 vertex-displacement params (fractions of the quad extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.

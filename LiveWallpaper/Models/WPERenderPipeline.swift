@@ -405,11 +405,31 @@ extension WPEPreparedRenderPipeline {
             layer.graphLayer.isTimeVarying
                 || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants)
         }
-        let frameUniforms = WPEFrameUniformContext(
+        var frameUniforms = WPEFrameUniformContext(
             runtimeUniformValues: runtimeUniformValues,
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
+        if camera.sceneMotion != .identity {
+            let localCamera = camera.applyingSceneMotion(.identity).uniformValues
+            for layer in layers {
+                for pass in layer.passes {
+                    if case .scene = pass.pass.target {
+                        if layer.graphLayer.isUtilityModelLayer, layer.graphLayer.groupCompositeSource == nil {
+                            frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = localCamera
+                        } else if camera.usesObjectPerspective(objectID: layer.id) {
+                            var values = cameraUniformValues
+                            values["g_ViewProjectionMatrix"] = .vector(camera.objectViewProjectionMatrix(objectID: layer.id))
+                            frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = values
+                        }
+                    } else {
+                        // Camera zoom changes scene placement, never the local
+                        // image/text effect surface that will be composited later.
+                        frameUniforms.cameraUniformValuesByPassID[pass.pass.id] = localCamera
+                    }
+                }
+            }
+        }
         // Nothing below can change a value. Hand back the load-time pipeline instead of copying the tree every frame.
         guard needsRebuild else { return (self, frameUniforms) }
         let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in

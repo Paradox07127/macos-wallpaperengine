@@ -444,6 +444,7 @@ public enum WPESceneDocumentParser {
             camera: camera,
             authoredCamera: authoredCameraMetadata,
             authoredCameraObjects: authoredCameraObjects,
+            cameraMotion: parseCameraMotion(rawObjects),
             general: general,
             imageObjects: imageObjects,
             scriptHostObjects: scriptHostObjects,
@@ -1721,6 +1722,22 @@ public enum WPESceneDocumentParser {
             ?? parseDouble(general["fov"])
             ?? WPESceneCamera.defaultCamera.fov
         return WPESceneCamera(center: center, eye: eye, up: up, nearZ: nearZ, farZ: farZ, fov: fov)
+    }
+
+    private static func parseCameraMotion(_ objects: [[String: Any]]) -> WPESceneCameraMotion? {
+        guard let entry = objects.last(where: { $0["camera"] is String && (parseBool($0["visible"]) ?? true) }) else { return nil }
+        let animation = (entry["origin"] as? [String: Any])?["animation"] as? [String: Any]
+        let options = animation?["options"] as? [String: Any]
+        let parent = options?["parent"] as? [String: Any]
+        return WPESceneCameraMotion(
+            objectID: (entry["id"] as? String) ?? String(WPEValueParser.int(entry["id"]) ?? 0),
+            origin: parseVector3(entry["origin"]) ?? .zero,
+            zoom: entry["zoom"].flatMap(cameraDouble) ?? 1,
+            originAnimation: WPEValueParser.animatedValue(entry["origin"]),
+            zoomAnimation: WPEValueParser.animatedValue(entry["zoom"]),
+            originIsRelative: WPEValueParser.bool(animation?["relative"]) ?? false,
+            originFollowsZoom: parent?["key"] as? String == "zoom"
+        )
     }
 
     private static func runtimeCameraObjectOverride(

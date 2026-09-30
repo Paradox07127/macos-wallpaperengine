@@ -47,7 +47,15 @@ extension WPEMetalSceneRenderer {
         // The defer runs on the throw paths too, so an aborted frame otherwise records a
         // complete — and shorter — "frame" interval, which reads as a speed-up in a trace.
         var frameRendered = false
-        defer { signposter.endInterval("frame", frameState, "rendered:\(frameRendered, privacy: .public)") }
+        let previousCameraPlayback = cameraMotionPlayback
+        let previousCameraUniforms = cameraUniforms
+        defer {
+            if !frameRendered {
+                cameraMotionPlayback = previousCameraPlayback
+                cameraUniforms = previousCameraUniforms
+            }
+            signposter.endInterval("frame", frameState, "rendered:\(frameRendered, privacy: .public)")
+        }
 
         guard let pipeline = renderPipeline else {
             throw WPEMetalRenderExecutorError.noRenderablePasses
@@ -259,6 +267,7 @@ extension WPEMetalSceneRenderer {
             deferredPresent: deferredPresent
         )
         frameRendered = true
+        if cameraMotionPlayback != nil { synchronizeFrameDemand(); publishRuntimeActivity() }
         return rendered
     }
 

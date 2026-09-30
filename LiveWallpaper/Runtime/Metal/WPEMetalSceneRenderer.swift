@@ -242,6 +242,8 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     var sceneRenderSize: CGSize = CGSize(width: 1, height: 1)
     var cameraUniforms: WPEMetalCameraUniforms = .identity
+    var baseCameraUniforms: WPEMetalCameraUniforms = .identity
+    var cameraMotionPlayback: WPECameraMotionPlayback?
     var frameClock: WPEMetalFrameClock
     /// Oracle-only frozen frame globals (read once at load). `nil` in production.
     let oracleFrameOverride = WPEOracleMode.loadFrameOverride()

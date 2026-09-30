@@ -98,6 +98,9 @@ extension WPEMetalSceneRenderer {
                 pointerPosition: uniforms.pointerPosition
             )
         }
+        if let motion = cameraMotionPlayback?.sample(sceneTime: uniforms.time) {
+            cameraUniforms = baseCameraUniforms.applyingSceneMotion(motion)
+        }
         // Compute once per frame (advances smoothing state); assigned below
         // after the audio path may have rebuilt `uniforms`.
         let parallaxFrame = cameraParallaxSmoother.frame(

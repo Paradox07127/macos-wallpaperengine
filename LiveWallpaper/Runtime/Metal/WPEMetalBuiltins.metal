@@ -23,12 +23,14 @@ struct WPETextMeshVertex {
 [[vertex]] WPEVertexOut wpe_text_glyph_vertex(
     uint vid [[vertex_id]],
     constant WPETextMeshVertex* verts [[buffer(0)]],
-    constant float2& sceneSize [[buffer(1)]]
+    constant float2& sceneSize [[buffer(1)]],
+    constant float4& cameraClipTransform [[buffer(2)]]
 ) {
     WPETextMeshVertex v = verts[vid];
     float2 halfSize = max(sceneSize * 0.5, float2(0.5));
     WPEVertexOut out;
     out.position = float4(v.position.x / halfSize.x - 1.0, 1.0 - v.position.y / halfSize.y, 0.0, 1.0);
+    out.position.xy = out.position.xy * cameraClipTransform.xy + cameraClipTransform.zw;
     out.uv = v.uv;
     return out;
 }
@@ -1522,6 +1524,7 @@ struct WPEParticleProjection {
     float4x4 modelToWorld;
     float4x4 worldToModel;
     float4 eyeAndSizeScale;
+    float4 cameraClipTransform;
 };
 
 // Sprite-sheet slice + format hint. `grid.w == 1` means the atlas is an
@@ -1656,7 +1659,7 @@ struct WPEParticleSpriteParams {
 
     WPEParticleVertexOut out;
     float2 screenNDC = centerNDC + cornerNDC;
-    out.position = float4(screenNDC, 0.0, 1.0);
+    out.position = float4(screenNDC * projection.cameraClipTransform.xy + projection.cameraClipTransform.zw, 0.0, 1.0);
     if (projection.sceneSize.z > 0.5) {
         float3 center = float3(instance.positionAndSize.xy, instance.velocity.w);
         float3 offset = float3(cornerNDC * projection.sceneSize.xy * 0.5, 0.0);
@@ -1681,6 +1684,7 @@ struct WPEParticleSpriteParams {
         screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
     }
 
+    screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
     // NDC (y up, -1..1) → full-frame UV (y down, 0..1) for the group opacity mask.
     out.maskUV = float2(screenNDC.x * 0.5 + 0.5, 0.5 - screenNDC.y * 0.5);
     if (useFrameRects) {
@@ -1825,6 +1829,7 @@ struct WPEParticleRopeVertex {
         (v.positionUV.y + parallaxPixels.y) / halfHeight
     );
     WPEParticleVertexOut out;
+    ndc = ndc * projection.cameraClipTransform.xy + projection.cameraClipTransform.zw;
     out.position = float4(ndc, 0.0, 1.0);
     out.uvCurrent = v.positionUV.zw;
     out.uvNext = v.positionUV.zw;

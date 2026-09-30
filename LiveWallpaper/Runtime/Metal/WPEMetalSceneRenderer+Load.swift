@@ -347,6 +347,9 @@ extension WPEMetalSceneRenderer {
                 )
             }
         }
+        baseCameraUniforms = cameraUniforms
+        cameraMotionPlayback = document.general.usesPerspectiveProjection ? nil
+            : document.cameraMotion.map { WPECameraMotionPlayback(definition: $0) }
         cameraParallaxSettings = document.general.cameraParallax
         // Rigid-subtree walk needs groups too: a clock text's chain runs through non-drawn hosts before the depth/origin ancestor.
         parallaxAuthoredDepthByObjectID = WPERenderGraphBuilder.authoredParallaxDepthByObjectID(document)

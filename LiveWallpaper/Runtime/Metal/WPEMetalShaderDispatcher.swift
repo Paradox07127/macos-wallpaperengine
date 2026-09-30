@@ -825,7 +825,8 @@ struct WPEMetalShaderDispatcher {
                     destination: destination,
                     frameState: frameState
                 ),
-                cameraParallax: frameState.cameraParallax
+                cameraParallax: frameState.cameraParallax,
+                cameraUniforms: executor.objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
             )
             encoder.setVertexBytes(
                 &shapeUniforms,

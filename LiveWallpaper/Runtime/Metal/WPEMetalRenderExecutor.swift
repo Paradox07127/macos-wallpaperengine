@@ -1535,6 +1535,7 @@ final class WPEMetalRenderExecutor {
                 sceneSize: textCanvasSize,
                 output: destination.texture,
                 clearsOutput: clearsDestination,
+                cameraClipTransform: targetID == .scene ? frameState.cameraUniforms.sceneClipTransform : SIMD4(1, 1, 0, 0),
                 commandBuffer: commandBuffer
             )
             if encoded || copiedSceneBackground {
@@ -2339,7 +2340,8 @@ final class WPEMetalRenderExecutor {
         layer: WPERenderLayer,
         frameState: WPEMetalFrameState
     ) -> WPEMetalCameraUniforms {
-        isGroupRenderTarget(pass.target, layer: layer) ? .identity : frameState.cameraUniforms
+        if case .scene = pass.target { return frameState.cameraUniforms }
+        return .identity
     }
 
     /// The static half of the shift, `(nodePos - camPos) * depth * amount`, must be evaluated ONCE at the root — feeding each child its own origin turns the rigid translation into an anisotropic scale of the subtree about the scene centre by `(1 + depth * amount)`.
@@ -2432,7 +2434,8 @@ final class WPEMetalRenderExecutor {
                 sceneSize: sceneSize
             )
             let uniforms = WPEObjectQuadUniforms(
-                centerAndSize: SIMD4<Float>(parallax.x, parallax.y, sceneWidth, sceneHeight),
+                centerAndSize: SIMD4<Float>(cameraUniforms.transformScenePoint(parallax).x, cameraUniforms.transformScenePoint(parallax).y,
+                    sceneWidth * Float(cameraUniforms.sceneMotion.zoom), sceneHeight * Float(cameraUniforms.sceneMotion.zoom)),
                 sceneSizeAndRotation: SIMD4<Float>(sceneWidth, sceneHeight, 0, 0),
                 uvSignAndPadding: SIMD4<Float>(1, 1, 0, 0)
             )
@@ -2482,7 +2485,8 @@ final class WPEMetalRenderExecutor {
             sceneSize: sceneSize
         )
         let uniforms = WPEObjectQuadUniforms(
-            centerAndSize: SIMD4<Float>(center.x, center.y, width, height),
+            centerAndSize: SIMD4<Float>(cameraUniforms.transformScenePoint(center).x, cameraUniforms.transformScenePoint(center).y,
+                width * Float(cameraUniforms.sceneMotion.zoom), height * Float(cameraUniforms.sceneMotion.zoom)),
             sceneSizeAndRotation: SIMD4<Float>(
                 sceneWidth,
                 sceneHeight,
@@ -2566,7 +2570,8 @@ final class WPEMetalRenderExecutor {
     func shapeQuadUniforms(
         for layer: WPERenderLayer,
         sceneSize: CGSize,
-        cameraParallax: WPECameraParallaxFrame = .neutral
+        cameraParallax: WPECameraParallaxFrame = .neutral,
+        cameraUniforms: WPEMetalCameraUniforms = .identity
     ) -> WPEShapeQuadUniforms {
         let geometry = layer.geometry
         let sceneWidth = Float(max(sceneSize.width, 1))
@@ -2597,7 +2602,7 @@ final class WPEMetalRenderExecutor {
                 cosR * scaled.x - sinR * scaled.y,
                 sinR * scaled.x + cosR * scaled.y
             )
-            let scenePixels = center + rotated
+            let scenePixels = cameraUniforms.transformScenePoint(center + rotated)
             return SIMD4<Float>(scenePixels.x, scenePixels.y, Float(point.x), Float(point.y))
         }
 

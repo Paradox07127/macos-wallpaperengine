@@ -11,6 +11,7 @@ extension WPEMetalRenderExecutor {
         sceneSize: CGSize,
         output: MTLTexture,
         clearsOutput: Bool,
+        cameraClipTransform: SIMD4<Float> = SIMD4(1, 1, 0, 0),
         commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
         try encodeTextMeshes(
@@ -19,6 +20,7 @@ extension WPEMetalRenderExecutor {
             sceneSize: sceneSize,
             output: output,
             clearsOutput: clearsOutput,
+            cameraClipTransform: cameraClipTransform,
             commandBuffer: commandBuffer
         )
     }
@@ -30,6 +32,7 @@ extension WPEMetalRenderExecutor {
         sceneSize: CGSize,
         output: MTLTexture,
         clearsOutput: Bool,
+        cameraClipTransform: SIMD4<Float> = SIMD4(1, 1, 0, 0),
         commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
         guard !payloads.isEmpty || clearsOutput else { return false }
@@ -56,6 +59,8 @@ extension WPEMetalRenderExecutor {
             Float(max(sceneSize.height, 1))
         )
         encoder.setVertexBytes(&sceneSizeValue, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
+        var clipTransform = cameraClipTransform
+        encoder.setVertexBytes(&clipTransform, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
         for payload in payloads {
             var color = payload.color
             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
