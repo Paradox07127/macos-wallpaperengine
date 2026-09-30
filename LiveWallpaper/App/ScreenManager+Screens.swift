@@ -532,12 +532,6 @@ extension ScreenManager {
             return LegacyFingerprintMapping(legacy: legacy, current: screen.displayFingerprint)
         }
 
-        let defaults = UserDefaults.appScoped()
-        var sidebarOrder = SidebarDisplayOrder.decode(
-            defaults.data(forKey: SidebarDisplayOrder.preferencesKey) ?? Data()
-        )
-        let sidebarOrderBefore = sidebarOrder
-
         let migratedNames = Self.migrateLegacyFingerprintKeys(screenNames, mappings: mappings)
         let migratedOverlays = Self.migrateLegacyFingerprintKeys(monitorOverlays, mappings: mappings)
         let namesChanged = migratedNames != screenNames
@@ -548,10 +542,6 @@ extension ScreenManager {
         for screen in newScreens {
             guard let legacy = screen.legacyDisplayFingerprint else { continue }
             configurationStore.migrateFingerprint(from: legacy, to: screen.displayFingerprint, preferring: screen.id)
-            // Without this the saved entry keeps the pre-UUID key, matches neither by (ID, fingerprint) nor by fingerprint, and the user's sidebar order silently resets to system order.
-            sidebarOrder = SidebarDisplayOrder.rekeyed(
-                sidebarOrder, displayID: screen.id, from: legacy, to: screen.displayFingerprint
-            )
         }
 
         if namesChanged {
@@ -559,9 +549,6 @@ extension ScreenManager {
         }
         if overlaysChanged {
             SettingsManager.shared.saveMonitorOverlays(monitorOverlays)
-        }
-        if sidebarOrder != sidebarOrderBefore {
-            defaults.set(SidebarDisplayOrder.encode(sidebarOrder), forKey: SidebarDisplayOrder.preferencesKey)
         }
     }
 

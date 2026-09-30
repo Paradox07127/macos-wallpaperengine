@@ -3,12 +3,10 @@ import SwiftUI
 
 private struct GalleryCardPreferencesReader: ViewModifier {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
-    @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true
     @AppStorage(CardBadgeSettings.showsResolution, store: .appScoped()) private var showsResolution = true
     @AppStorage(CardBadgeSettings.showsInLibrary, store: .appScoped()) private var showsInLibrary = true
     @AppStorage(CardBadgeSettings.showsUpdate, store: .appScoped()) private var showsUpdate = true
     @AppStorage(CardBadgeSettings.showsInUse, store: .appScoped()) private var showsInUse = true
-    @AppStorage(CardBadgeSettings.typeStyle, store: .appScoped()) private var typeStyle: CardTypeBadgeStyle = .icon
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blursMature = true
 
     func body(content: Content) -> some View {
@@ -16,12 +14,10 @@ private struct GalleryCardPreferencesReader: ViewModifier {
             \.galleryCardPreferences,
             GalleryCardPreferences(
                 showsRating: showsRating,
-                showsType: showsType,
                 showsResolution: showsResolution,
                 showsInLibrary: showsInLibrary,
                 showsUpdate: showsUpdate,
                 showsInUse: showsInUse,
-                typeStyle: typeStyle,
                 blursMatureThumbnails: blursMature
             )
         )

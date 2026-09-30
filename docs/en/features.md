@@ -159,7 +159,7 @@ the discretionary policies. Menu-bar and display status explain pause reasons.
 Moderate thermal pressure reduces scene/web frame rates and can suspend video.
 A manual pause retains a still frame and enters deeper resource hibernation
 after the dwell period. Pro adds adaptive scene frame rates and per-display
-render actors. Display configuration and sidebar ordering persist.
+render actors. Display configuration persists.
 
 ## Workshop — Pro
 

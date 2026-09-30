@@ -10,13 +10,11 @@ struct GalleryCardPreferencesTests {
         // A card rendered outside the provider gets `defaultValue`.
         let defaults = GalleryCardPreferences()
         #expect(defaults.showsRating)
-        #expect(defaults.showsType)
         #expect(defaults.showsResolution)
         #expect(defaults.showsInLibrary)
         #expect(defaults.showsUpdate)
         #expect(defaults.showsInUse)
         #expect(defaults.blursMatureThumbnails)
-        #expect(defaults.typeStyle == .icon)
     }
 
     @Test("The reader publishes every card-badge default")
@@ -24,12 +22,10 @@ struct GalleryCardPreferencesTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/GalleryCardPreferencesReader.swift")
         let settings = [
             "CardBadgeSettings.showsRating",
-            "CardBadgeSettings.showsType",
             "CardBadgeSettings.showsResolution",
             "CardBadgeSettings.showsInLibrary",
             "CardBadgeSettings.showsUpdate",
             "CardBadgeSettings.showsInUse",
-            "CardBadgeSettings.typeStyle",
             "MatureContentSettings.blursThumbnails"
         ]
         let missing = settings.filter { !source.contains($0) }
