@@ -386,6 +386,10 @@ extension WPEMetalSceneRenderer {
         let childParentSystem = definition.rendersSprite ? registered : parentSystem
         let childAncestry = ancestry + [particlePath]
         for child in parsedDefinition.childReferences {
+            if case let .unsupported(type) = child.eventKind {
+                debugStage("particle", "skip unsupported child event type \(type): \(child.relativePath)")
+                continue
+            }
             // Event-driven probability belongs in `WPEParticleSystem` (per parent event). Rolling here would freeze the effect for the whole session.
             // A `static` child's condition is "the system starts", so this is its once-only roll. 0 and 1 are decided outright (corpus is all 1.0).
             if !child.rollsProbabilityPerEvent {
