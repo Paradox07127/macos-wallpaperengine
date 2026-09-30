@@ -126,8 +126,8 @@ struct BrowseCardEditDeskLayoutTests {
     private static func subscribersText(_ count: Int) -> String {
         let locale = AppLanguagePreference.current.locale
         return count < WorkshopCountFormatter.compactFloor
-            ? String(localized: "\(count) subscribers", bundle: .appLanguage, locale: locale)
-            : String(localized: "\(WorkshopCountFormatter.compact(count)) subscribers", bundle: .appLanguage, locale: locale)
+            ? String(localized: "\(count) subs", bundle: .appLanguage, locale: locale)
+            : String(localized: "\(WorkshopCountFormatter.compact(count)) subs", bundle: .appLanguage, locale: locale)
     }
 
     private static func metaTextSize(_ text: String) -> CGSize {
@@ -188,8 +188,8 @@ struct BrowseCardEditDeskLayoutTests {
         try AppLanguageOverride.with(.japanese) {
             let phrase = Self.subscribersText(123_400)
             let text = Self.metaTextSize(phrase)
-            // 130pt of band for a count that needs more.
-            let side: CGFloat = 150.6
+            // A band 20pt short of the count, kept off whole points like the real widths.
+            let side = (text.width - 20 + 2 * DesignTokens.EditDesk.Spacing.workshopCardBandInset).rounded(.down) + 0.6
             let region = CGSize(width: side - 2 * DesignTokens.EditDesk.Spacing.workshopCardBandInset, height: text.height + 2)
             let item = Self.item(subscribers: 123_400)
             let card = try Self.render(Self.card(item), width: side, height: side, in: drawing)
@@ -317,8 +317,8 @@ struct BrowseCardEditDeskLayoutTests {
             let capsule = Self.idealSize(NowPlayingCapsule(badge: badge, animates: false))
             let item = Self.item(subscribers: 123_400)
             let inset = DesignTokens.Spacing.sm
-            // Wide enough for the capsule, "4K" and Spanish's caption, the longest, side by side.
-            let side: CGFloat = 320
+            // Wide enough for the capsule, the rating, "4K" and Spanish's caption, the longest, side by side.
+            let side: CGFloat = 400
             let crowded = try Self.render(Self.card(item, inUse: badge, hasUpdate: true), width: side, height: side, in: drawing)
             let withoutResolution = try Self.render(
                 Self.card(item, inUse: badge, hasUpdate: true, showsResolution: false), width: side, height: side, in: drawing

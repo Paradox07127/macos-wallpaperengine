@@ -2800,65 +2800,6 @@
         }
       }
     },
-    "%lld subscribers" : {
-      "comment" : "Workshop card VoiceOver subscriber count below 1,000.",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld subscriber"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld subscribers"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld suscriptor"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld suscriptores"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 人のサブスクライバー"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 名订阅者"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 位訂閱者"
-          }
-        }
-      }
-    },
     "%lld temporary items left in the container by test runs." : {
       "comment" : "Storage tab, debug-only Test Artifacts section subtitle. Placeholder is the number of leftover test temp items.",
       "extractionState" : "manual",

@@ -81,10 +81,6 @@ struct WorkshopSteamMenu: View {
                 )
                 .accessibilityHidden(true)
             Text(verbatim: "Steam")
-            Image(systemName: "chevron.down")
-                .font(DesignTokens.Typography.badge)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
         }
         .font(DesignTokens.EditDesk.Typography.chip)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)

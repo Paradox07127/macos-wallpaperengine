@@ -167,7 +167,7 @@ struct BrowseCard: View, Equatable {
         .overlay(alignment: .topLeading) {
             if showsEditDeskTopRow {
                 EditDeskTopRow(
-                    inUseBadge: showsInUseBadge ? inUseBadge : nil, showsGIF: isHovered && !shouldBlur,
+                    inUseBadge: showsInUseBadge ? inUseBadge : nil, rating: shouldBlur ? nil : editDeskMarks.rating,
                     resolution: shouldBlur ? nil : editDeskMarks.resolution, status: editDeskStatus, like: likeMark
                 )
                 .padding(DesignTokens.Spacing.sm)
@@ -183,20 +183,13 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Footer
 
-    /// SCREENS S8: the title with the rating at its end, over subscribers and size, on a gradient that fades into the picture.
+    /// SCREENS S8: the title over subscribers and size, on a gradient that fades into the picture.
     private var editDeskInfoBand: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(verbatim: item.title)
-                    .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
-                    .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                    .lineLimit(1)
-                if let rating = editDeskMarks.rating {
-                    Spacer(minLength: DesignTokens.Spacing.sm)
-                    Self.editDeskMetaText(rating)
-                        .fixedSize()
-                }
-            }
+            // One line at rest; hover opens a second and scrolls whatever still overflows.
+            MarqueeText(item.title, lineLimit: isHovered ? 2 : 1, isActive: isHovered)
+                .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
+                .foregroundStyle(DesignTokens.Colors.overlayForeground)
             if subscriberText != nil || formattedSize != nil {
                 EditDeskStatsRow(subscribers: subscriberText, size: formattedSize)
             }
@@ -218,7 +211,7 @@ struct BrowseCard: View, Equatable {
         Self.editDeskMarks(rating: ratingValue, resolution: resolutionLabel, preferences: cardPreferences)
     }
 
-    /// The rating that ends the title row and the resolution the top row badges; nil where there is none or its switch is off.
+    /// The rating and the resolution the top row badges; nil where there is none or its switch is off.
     nonisolated static func editDeskMarks(
         rating: Double?, resolution: String?, preferences: GalleryCardPreferences
     ) -> (rating: String?, resolution: String?) {
@@ -241,7 +234,7 @@ struct BrowseCard: View, Equatable {
     /// The heart stays up on a blurred card too: it marks the user's choice, not the picture.
     private var showsEditDeskTopRow: Bool {
         likeMark != nil
-            || (!shouldBlur && (isHovered || showsInUseBadge || editDeskMarks.resolution != nil || editDeskStatus != nil))
+            || (!shouldBlur && (showsInUseBadge || editDeskMarks.rating != nil || editDeskMarks.resolution != nil || editDeskStatus != nil))
     }
 
     /// Always up once liked; offered on hover otherwise, except on a banned item, which cannot be liked.
@@ -341,8 +334,8 @@ struct BrowseCard: View, Equatable {
     private var subscriberText: String? {
         guard let subs = item.subscriptionCount, subs > 0 else { return nil }
         return subs < WorkshopCountFormatter.compactFloor
-            ? String(localized: "\(subs) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card VoiceOver subscriber count below 1,000.")
-            : String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card subscriber count, drawn on the card and read by VoiceOver. Placeholder is a compact number such as 1.2K.")
+            ? String(localized: "\(subs) subs", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop item subscriber count.")
+            : String(localized: "\(WorkshopCountFormatter.compact(subs)) subs", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card subscriber count. Placeholder is an abbreviated number such as 1.2K.")
     }
 
     private var formattedSize: String? {
@@ -410,7 +403,7 @@ struct BrowseCard: View, Equatable {
 }
 
 /// The Edit Desk card's top edge as one row, so its two ends see each other: the status marks keep the outer
-/// ends, and the resolution badge, then the update badge's caption, give way before two badges overlap.
+/// ends, and the resolution badge, then the update badge's caption, then the rating, give way before two badges overlap.
 private struct EditDeskTopRow: View {
     enum Status {
         case needsUpdate, inLibrary
@@ -422,7 +415,7 @@ private struct EditDeskTopRow: View {
     }
 
     let inUseBadge: NowPlayingBadge?
-    let showsGIF: Bool
+    let rating: String?
     let resolution: String?
     let status: Status?
     /// nil draws no heart.
@@ -430,22 +423,23 @@ private struct EditDeskTopRow: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            row(showsResolution: true, updateCaption: true)
-            row(showsResolution: false, updateCaption: true)
+            row(showsResolution: true, updateCaption: true, showsRating: true)
+            row(showsResolution: false, updateCaption: true, showsRating: true)
+            row(showsResolution: false, updateCaption: false, showsRating: true)
             // Taken even when too wide: the capsule then truncates its display names rather than slide under a badge.
-            row(showsResolution: false, updateCaption: false)
+            row(showsResolution: false, updateCaption: false, showsRating: false)
         }
     }
 
-    private func row(showsResolution: Bool, updateCaption: Bool) -> some View {
+    private func row(showsResolution: Bool, updateCaption: Bool, showsRating: Bool) -> some View {
         HStack(spacing: 0) {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 if let inUseBadge {
                     // The pane rebuilds these on configuration changes only, so it cannot tell playing from paused.
                     NowPlayingCapsule(badge: inUseBadge, animates: false)
                 }
-                if showsGIF {
-                    ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
+                if showsRating, let rating {
+                    ThumbnailBadge(verbatim: rating)
                 }
             }
             Spacer(minLength: DesignTokens.Spacing.xs)

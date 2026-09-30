@@ -29,6 +29,27 @@ struct BrowseCardEditDeskSkinTests {
         #expect(source.contains("workshopCardBandInset"))
     }
 
+    @Test("Hover draws no GIF badge, the rating leads the top row, and the title scrolls on hover")
+    func topRowAndTitle() throws {
+        let source = try RepositoryRoot.source(Self.path)
+        #expect(!source.contains("showsGIF") && !source.contains("\"GIF\""), "hovering still raises a GIF badge")
+        let topRow = try #require(source.range(of: "private struct EditDeskTopRow")).lowerBound
+        let statsRow = try #require(source.range(of: "private struct EditDeskStatsRow")).lowerBound
+        #expect(source[topRow ..< statsRow].contains("ThumbnailBadge(verbatim: rating)"), "the top row carries no rating badge")
+        let band = try #require(source.range(of: "private var editDeskInfoBand")).lowerBound
+        let marks = try #require(source.range(of: "private var editDeskMarks")).lowerBound
+        let bandSource = source[band ..< marks]
+        #expect(!bandSource.contains("rating"), "the rating still ends the title row too")
+        #expect(bandSource.contains("MarqueeText(") && bandSource.contains("isActive: isHovered"), "the title no longer scrolls on hover")
+    }
+
+    @Test("The subscriber count uses the short subs keys")
+    func subscriberCopy() throws {
+        let source = try RepositoryRoot.source(Self.path)
+        #expect(!source.contains(" subscribers\""), "the card still says subscribers")
+        #expect(source.contains("\\(subs) subs\"") && source.contains("compact(subs)) subs\""), "a subscriber branch does not use the subs keys")
+    }
+
     @Test("The in-library check is the solid green disc with a dark glyph")
     func presenceCheck() throws {
         let source = try RepositoryRoot.source(Self.path)
