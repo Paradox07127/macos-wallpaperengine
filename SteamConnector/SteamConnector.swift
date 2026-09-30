@@ -441,6 +441,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 ],
                 timeout: 3600,
                 operationID: operationID,
+                isCancelled: { !liveness.canContinue },
                 onProgress: { progress in
                     guard let data = try? JSONEncoder().encode(progress) else { return }
                     sink?.connectorDidReportProgress(data)
@@ -1625,7 +1626,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     "+quit"
                 ],
                 timeout: 180,
-                operationID: operationID
+                operationID: operationID,
+                isCancelled: { !liveness.canContinue }
             )
             if run.timedOut { return send(.failed(.timedOut)) }
             let out = run.output
@@ -1700,6 +1702,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 ],
                 timeout: 5400,
                 operationID: operationID,
+                isCancelled: { !liveness.canContinue },
                 onProgress: { progress in
                     guard let data = try? JSONEncoder().encode(progress) else { return }
                     sink?.connectorDidReportProgress(data)
@@ -1752,7 +1755,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                         "+app_info_print", SteamLibraryPaths.wallpaperEngineAppID,
                         "+quit"
                     ],
-                    timeout: 180
+                    timeout: 180,
+                    operationID: operationID,
+                    isCancelled: { !liveness.canContinue }
                 )
                 respond(
                     .installed,

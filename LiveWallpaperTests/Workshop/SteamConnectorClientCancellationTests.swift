@@ -248,6 +248,22 @@ struct SteamConnectorClientCancellationTests {
         #expect(spawn[register.lowerBound...].prefix(220).contains("isCancelled: isCancelled"))
     }
 
+    @Test("Downloads and engine queries carry connection cancellation through child registration")
+    func ownedOperationsCheckCancellationAtSpawn() throws {
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        for (start, end, expectedCalls) in [
+            ("    func downloadWorkshopItem(", "    func listSubscribedWorkshopItems(", 1),
+            ("    func latestWallpaperEngineBuildID(", "    func installWallpaperEngineAssets(", 1),
+            ("    func installWallpaperEngineAssets(", "    private static func discardStagedWorkshopTree(", 2),
+        ] {
+            let lower = try #require(source.range(of: start))
+            let upper = try #require(source.range(of: end, range: lower.upperBound ..< source.endIndex))
+            let body = source[lower.lowerBound ..< upper.lowerBound]
+            #expect(body.components(separatedBy: "isCancelled: { !liveness.canContinue }").count - 1 == expectedCalls)
+            #expect(body.components(separatedBy: "operationID: operationID,").count - 1 >= expectedCalls)
+        }
+    }
+
     @Test("SteamCMD termination runs alongside app shutdown, not ahead of it on the same 2 s fuse")
     func hostExitDoesNotSerialiseAheadOfShutdown() throws {
         let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
