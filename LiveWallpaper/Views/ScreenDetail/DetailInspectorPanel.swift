@@ -7,13 +7,11 @@ struct DetailInspectorPanel: View {
     @Binding var draft: DraftState
     let screenManager: ScreenManager
     let featureCatalog: FeatureCatalog
-    let reduceMotion: Bool
     let inspectorPanelWidth: CGFloat
     @Binding var isColorExpanded: Bool
-    let onWallpaperModeChange: (WallpaperMode) -> Void
     let showsResetDisplaySettings: Bool
     let onResetDisplaySettings: () -> Void
-    var onOpenAutomation: (() -> Void)?
+    let onOpenAutomation: () -> Void
     #if !LITE_BUILD
     @State private var wpeProjectCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
     @State private var wpeSceneCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
@@ -28,22 +26,18 @@ struct DetailInspectorPanel: View {
         draft: Binding<DraftState>,
         screenManager: ScreenManager,
         featureCatalog: FeatureCatalog,
-        reduceMotion: Bool,
         inspectorPanelWidth: CGFloat,
         isColorExpanded: Binding<Bool>,
-        onWallpaperModeChange: @escaping (WallpaperMode) -> Void,
         showsResetDisplaySettings: Bool,
         onResetDisplaySettings: @escaping () -> Void,
-        onOpenAutomation: (() -> Void)? = nil
+        onOpenAutomation: @escaping () -> Void
     ) {
         self.screen = screen
         _draft = draft
         self.screenManager = screenManager
         self.featureCatalog = featureCatalog
-        self.reduceMotion = reduceMotion
         self.inspectorPanelWidth = inspectorPanelWidth
         _isColorExpanded = isColorExpanded
-        self.onWallpaperModeChange = onWallpaperModeChange
         self.showsResetDisplaySettings = showsResetDisplaySettings
         self.onResetDisplaySettings = onResetDisplaySettings
         self.onOpenAutomation = onOpenAutomation
@@ -61,7 +55,7 @@ struct DetailInspectorPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                if let onOpenAutomation, featureCatalog.isEnabled(.playlists) {
+                if featureCatalog.isEnabled(.playlists) {
                     Button(action: onOpenAutomation) {
                         HStack {
                             Label("Playlist & Schedule", systemImage: "list.bullet")
@@ -72,9 +66,6 @@ struct DetailInspectorPanel: View {
                         .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
                     }
                     .buttonStyle(.plain)
-                } else if draft.selectedWallpaperType == .video,
-                          featureCatalog.capabilities.selectableWallpaperModes.count > 1 {
-                    wallpaperModeCard
                 }
 
                 if draft.selectedWallpaperType == .video {
@@ -332,71 +323,5 @@ struct DetailInspectorPanel: View {
             Spacer()
         }
         .padding(.top, 2)
-    }
-
-    @ViewBuilder
-    private var wallpaperModeCard: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                wallpaperModePill
-
-                Group {
-                    switch draft.selectedWallpaperMode {
-                    case .playlist:
-                        if featureCatalog.isEnabled(.playlists) {
-                            Divider()
-                            PlaylistSection(
-                                playlistBookmarks: $draft.playlistBookmarks,
-                                shufflePlaylist: $draft.shufflePlaylist,
-                                rotationMinutes: $draft.playlistRotationMinutes,
-                                screen: screen,
-                                screenManager: screenManager
-                            )
-                        }
-                    case .schedule:
-                        if featureCatalog.isEnabled(.scheduleAutomation) {
-                            Divider()
-                            ScheduleSection(
-                                scheduleSlots: $draft.scheduleSlots,
-                                screen: screen,
-                                screenManager: screenManager
-                            )
-                        }
-                    }
-                }
-                .transition(reduceMotion ? .opacity : .asymmetric(
-                    insertion: .opacity.combined(with: .move(edge: .top)),
-                    removal: .opacity
-                ))
-            }
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    private var wallpaperModePill: some View {
-        GlassSegmentedPicker(
-            selection: Binding(
-                get: { draft.selectedWallpaperMode },
-                set: { mode in
-                    draft.selectedWallpaperMode = mode
-                    onWallpaperModeChange(mode)
-                }
-            ),
-            values: featureCatalog.capabilities.selectableWallpaperModes,
-            shell: .flat
-        ) { mode, isSelected in
-            Text(mode.labelKey)
-                .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-                .accessibilityLabel(wallpaperModeAccessibilityLabel(mode))
-        }
-    }
-
-    private func wallpaperModeAccessibilityLabel(_ mode: WallpaperMode) -> Text {
-        switch mode {
-        case .playlist:
-            return Text("Playlist mode", comment: "A11y label for the playlist wallpaper mode tab.")
-        case .schedule:
-            return Text("Schedule mode", comment: "A11y label for the schedule wallpaper mode tab.")
-        }
     }
 }

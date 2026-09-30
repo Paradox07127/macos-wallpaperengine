@@ -57,7 +57,6 @@ struct DetailIconButtonSourceTests {
         let pinned = [
             "LiveWallpaper/Monitor/Board/EditChrome.swift": "prominence: isOpen ? .prominent : .regular,",
             "LiveWallpaper/Views/MenuBarContent.swift": ".adaptiveGlassButton(.prominent)",
-            "LiveWallpaper/Views/Schedule/TimeEditorPopover.swift": ".adaptiveGlassButton(.prominent)",
             "LiveWallpaper/Views/Schemes/SchemeCapturePopover.swift": ".adaptiveGlassButton(.prominent, size: .small)",
         ]
         for (path, fragment) in pinned {

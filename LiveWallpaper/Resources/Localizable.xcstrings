@@ -5435,42 +5435,6 @@
         }
       }
     },
-    "Active now" : {
-      "comment" : "VoiceOver tag for the schedule slot whose window matches the current hour.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active now"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activo ahora"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在アクティブ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前活跃"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前進行中"
-          }
-        }
-      }
-    },
     "Active only" : {
       "comment" : "Agent session activity monitor.",
       "extractionState" : "manual",
@@ -5841,40 +5805,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入排程時段"
-          }
-        }
-      }
-    },
-    "Add Slot" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Slot"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir franja"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スロットを追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加时段"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入時段"
           }
         }
       }
@@ -14941,41 +14871,6 @@
         }
       }
     },
-    "Clear video" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオをクリア"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除影片"
-          }
-        }
-      }
-    },
     "Clear Video Cache" : {
       "comment" : "Destructive button title for clearing extracted scene video cache files.",
       "extractionState" : "manual",
@@ -21908,40 +21803,6 @@
         }
       }
     },
-    "Disable schedule" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disable schedule"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desactivar programación"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールを無効化"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "禁用计划"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停用排程"
-          }
-        }
-      }
-    },
     "Disable Schedule" : {
       "localizations" : {
         "en" : {
@@ -24698,42 +24559,6 @@
         }
       }
     },
-    "Edit Time Range" : {
-      "comment" : "Schedule time editor popover title.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Time Range"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Editar intervalo horario"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯を編集"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑时段"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "編輯時段"
-          }
-        }
-      }
-    },
     "Effect Layer" : {
       "localizations" : {
         "en" : {
@@ -25049,42 +24874,6 @@
         }
       }
     },
-    "Enable Schedule" : {
-      "comment" : "Action enables a wallpaper schedule; keep the same enableSchedule behavior.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enable Schedule"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activar programación"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールを有効にする"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用计划"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟用排程"
-          }
-        }
-      }
-    },
     "Enable Wallpaper Interaction?" : {
       "comment" : "A confirmation dialog that lets the user enable",
       "isCommentAutoGenerated" : true,
@@ -25253,42 +25042,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "結束"
-          }
-        }
-      }
-    },
-    "End hour" : {
-      "comment" : "A11y label for the end-hour picker in the schedule time editor.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End hour"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hora de fin"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "終了時刻"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "结束小时"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "結束時間"
           }
         }
       }
@@ -30448,78 +30201,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "僅好友"
-          }
-        }
-      }
-    },
-    "From" : {
-      "comment" : "Schedule time editor: start-time label.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desde"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始"
-          }
-        }
-      }
-    },
-    "From Playlist" : {
-      "comment" : "Schedule slot row menu: submenu header for picking a video already in the screen's playlist.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From Playlist"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "De la playlist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストから選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从播放列表选择"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從播放列表選擇"
           }
         }
       }
@@ -42113,41 +41794,6 @@
         }
       }
     },
-    "No free time range. Adjust an existing slot first." : {
-      "comment" : "Schedule error shown when Add Slot cannot find a gap of at least 2 hours.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No free time range. Adjust an existing slot first."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay un intervalo libre. Ajusta primero una franja existente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空き時間がありません。先に既存の時間帯を調整してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有空闲时间段。请先调整现有时段。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有空閒時段，請先調整現有時段。"
-          }
-        }
-      }
-    },
     "No items on this page can be shown." : {
       "comment" : "Workshop browse: Steam's page held only items the client drops, so the pager stays visible.",
       "extractionState" : "manual",
@@ -42924,42 +42570,6 @@
         }
       }
     },
-    "No schedule" : {
-      "comment" : "Empty schedule state.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No schedule"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay programación"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールがありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无计划"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無排程"
-          }
-        }
-      }
-    },
     "No schemes match your search" : {
       "comment" : "Title of an empty state when no scheme matches the current search.",
       "localizations" : {
@@ -43336,42 +42946,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無工具活動"
-          }
-        }
-      }
-    },
-    "No video assigned" : {
-      "comment" : "Subtitle / VoiceOver label for a schedule slot without a video.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No video assigned"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ningún vídeo asignado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画が未割り当て"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未指定视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未指定影片"
           }
         }
       }
@@ -46515,42 +46089,6 @@
         }
       }
     },
-    "Overlaps with %@" : {
-      "comment" : "Schedule editor warning when the chosen range overlaps an existing slot. Placeholder is a comma-separated list of slot labels.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Overlaps with %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se solapa con %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ と重複しています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "与 %@ 时段重叠"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "與 %@ 時段重疊"
-          }
-        }
-      }
-    },
     "Overlay layer" : {
       "comment" : "Accessibility label for the Monitor overlay z-plane picker.",
       "extractionState" : "manual",
@@ -49333,42 +48871,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放列表與排程管理自動切換；書籤儲存來源；方案儲存完整顯示器設定。「套用至所有顯示器」會影響每台已連接的顯示器，使用前請核對目標。"
-          }
-        }
-      }
-    },
-    "Playlist mode" : {
-      "comment" : "A11y label for the playlist wallpaper mode tab.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playlist mode"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modo de playlist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストモード"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表模式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表模式"
           }
         }
       }
@@ -53920,40 +53422,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將清除 %@ 可回收快取檔案。使用中的桌布保留來源指派，需要時會重建快取。"
-          }
-        }
-      }
-    },
-    "Removes all schedule slots and returns to normal playback" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removes all schedule slots and returns to normal playback"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elimina todas las franjas de programación y vuelve a la reproducción normal"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのスケジュールスロットを削除して通常再生に戻します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除所有计划时段并恢复正常播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除所有排程時段並返回一般播放"
           }
         }
       }
@@ -59153,42 +58621,6 @@
         }
       }
     },
-    "Schedule mode" : {
-      "comment" : "A11y label for the schedule wallpaper mode tab.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schedule mode"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modo de programación"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールモード"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "计划模式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "排程模式"
-          }
-        }
-      }
-    },
     "Schedule paused until %@" : {
       "comment" : "Detail notice: this display's daily schedule is paused until the given time.",
       "localizations" : {
@@ -64282,42 +63714,6 @@
         }
       }
     },
-    "Start and end times must differ." : {
-      "comment" : "Validation message in the schedule time editor when start == end.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start and end times must differ."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La hora de inicio y la de fin deben ser distintas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始時刻と終了時刻は異なる必要があります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始与结束时间不能相同。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始與結束時間不能相同。"
-          }
-        }
-      }
-    },
     "Start at login" : {
       "localizations" : {
         "en" : {
@@ -64348,42 +63744,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登入時啟動"
-          }
-        }
-      }
-    },
-    "Start hour" : {
-      "comment" : "A11y label for the start-hour picker in the schedule time editor.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start hour"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hora de inicio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始時刻"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始小时"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起始時間"
           }
         }
       }
@@ -69318,42 +68678,6 @@
         }
       }
     },
-    "That preset overlaps an existing slot. Adjust an existing slot first." : {
-      "comment" : "Schedule error shown when a preset can't be applied because it overlaps.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That preset overlaps an existing slot. Adjust an existing slot first."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ese preajuste se solapa con un intervalo existente. Ajusta primero un intervalo existente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "そのプリセットは既存スロットと重複します。先に既存スロットを調整してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该预设与已有时段冲突。请先调整其他时段。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "該預設集與已有時段衝突。請先調整其他時段。"
-          }
-        }
-      }
-    },
     "That Steam Guard code wasn't accepted." : {
       "comment" : "In-app Steam sign-in failure.",
       "localizations" : {
@@ -74011,77 +73335,6 @@
         }
       }
     },
-    "Time range" : {
-      "comment" : "A11y label for the schedule slot row's time-range button.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time range"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Intervalo horario"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时段"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時段"
-          }
-        }
-      }
-    },
-    "Time range overlaps with %@" : {
-      "comment" : "Schedule conflict message; placeholder is a comma-separated list of overlapping slot labels.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time range overlaps with %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El intervalo se solapa con %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯が %@ と重複しています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时段与 %@ 重叠"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時段與 %@ 重疊"
-          }
-        }
-      }
-    },
     "Time slot %@ has no wallpaper yet. Choose one to save the schedule." : {
       "comment" : "Playlist and schedule panel: why Save is unavailable while a time slot has no wallpaper. Placeholder is the slot's hours, like 06:00–12:00.",
       "localizations" : {
@@ -74325,42 +73578,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標題大小"
-          }
-        }
-      }
-    },
-    "To" : {
-      "comment" : "Schedule time editor: end-time label.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hasta"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "終了"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "结束"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "結束"
           }
         }
       }

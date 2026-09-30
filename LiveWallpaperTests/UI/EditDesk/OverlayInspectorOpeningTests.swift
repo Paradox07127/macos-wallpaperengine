@@ -235,8 +235,8 @@ private final class InspectorRenderFixture {
         draft.selectedWallpaperType = .video
         return DetailInspectorPanel(
             screen: screen, draft: .constant(draft), screenManager: manager, featureCatalog: FeatureCatalog(capabilities: .pro),
-            reduceMotion: false, inspectorPanelWidth: InspectorRender.size.width, isColorExpanded: .constant(false),
-            onWallpaperModeChange: { _ in }, showsResetDisplaySettings: false, onResetDisplaySettings: {}
+            inspectorPanelWidth: InspectorRender.size.width, isColorExpanded: .constant(false),
+            showsResetDisplaySettings: false, onResetDisplaySettings: {}, onOpenAutomation: {}
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .leading) { Divider() }

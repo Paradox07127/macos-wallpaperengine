@@ -29,7 +29,6 @@ struct DisplayDetailHost: View {
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @State private var coordinator: DetailTransitionCoordinator?
@@ -531,10 +530,8 @@ struct DisplayDetailHost: View {
             draft: $draft,
             screenManager: screenManager,
             featureCatalog: featureCatalog,
-            reduceMotion: reduceMotion,
             inspectorPanelWidth: width,
             isColorExpanded: $isColorExpanded,
-            onWallpaperModeChange: { screenManager.updateWallpaperMode($0, for: screen) },
             showsResetDisplaySettings: screenManager.displaySettingsDifferFromDefaults(for: screen),
             onResetDisplaySettings: { requestResetDisplaySettings(for: screen) },
             onOpenAutomation: { showAutomation = true }
