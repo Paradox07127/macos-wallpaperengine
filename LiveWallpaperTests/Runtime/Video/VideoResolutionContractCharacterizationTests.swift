@@ -55,7 +55,10 @@ struct VideoResolutionContractCharacterizationTests {
 
         #expect(compactPlayerHost.contains("let layer = AVPlayerLayer()"))
         #expect(compactPlayerHost.contains("playerLayer?.videoGravity = gravity"))
-        #expect(compactPlayerHost.contains("playerLayer?.frame = bounds"))
+        #expect(
+            !compactPlayerHost.contains("playerLayer?.frame = bounds"),
+            "PlayerHostView resets its own backing layer's frame, which wipes the span canvas offset on non-leftmost screens"
+        )
         #expect(
             compactPlayerHost.contains(
                 "if let scale = window?.backingScaleFactor { playerLayer?.contentsScale = scale }"

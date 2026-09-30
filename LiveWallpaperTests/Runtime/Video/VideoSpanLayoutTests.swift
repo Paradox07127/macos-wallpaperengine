@@ -33,4 +33,29 @@ struct VideoSpanLayoutTests {
         #expect(lower.canvasFrameInScreenCoordinates == CGRect(x: 0, y: 0, width: 1440, height: 1800))
         #expect(upper.canvasFrameInScreenCoordinates == CGRect(x: 0, y: -900, width: 1440, height: 1800))
     }
+
+    @Test("Main display on the right with a negative-origin left display")
+    func mainOnRightWithNegativeOriginLeftDisplay() throws {
+        let layouts = VideoSpanLayout.renderConfigurations(for: [
+            .init(screenID: 1, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+            .init(screenID: 2, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080)),
+        ])
+
+        let main = try #require(layouts[1])
+        let left = try #require(layouts[2])
+
+        #expect(main.canvasFrame == CGRect(x: -1920, y: 0, width: 3840, height: 1080))
+        #expect(main.canvasFrameInScreenCoordinates == CGRect(x: -1920, y: 0, width: 3840, height: 1080))
+        #expect(left.canvasFrameInScreenCoordinates == CGRect(x: 0, y: 0, width: 3840, height: 1080))
+    }
+
+    @Test("Fewer than two non-empty displays produce no span")
+    func singleValidDisplayProducesNoSpan() {
+        let layouts = VideoSpanLayout.renderConfigurations(for: [
+            .init(screenID: 1, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+            .init(screenID: 2, frame: .zero),
+        ])
+
+        #expect(layouts.isEmpty)
+    }
 }

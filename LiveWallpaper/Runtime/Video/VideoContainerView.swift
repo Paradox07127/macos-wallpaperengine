@@ -45,11 +45,6 @@ final class PlayerHostView: NSView {
         }
     }
 
-    override func layout() {
-        super.layout()
-        playerLayer?.frame = bounds
-    }
-
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         if let scale = window?.backingScaleFactor {
