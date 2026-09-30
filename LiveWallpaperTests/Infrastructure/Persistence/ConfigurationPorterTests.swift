@@ -376,6 +376,15 @@ struct ConfigurationPorterBookmarkMergeTests {
         #expect(!body.contains("merged.contains"), "every import rescans every merged bookmark: O(existing × imported)")
     }
 
+    @Test("Merging library bookmarks looks each import up in a set instead of rescanning the merged list")
+    func libraryBookmarkMergeIsIndexed() throws {
+        let source = try RepositoryRoot.source("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Persistence/LibraryBookmarkStore.swift")
+        let start = try #require(source.range(of: "public func merge("))
+        let end = try #require(source.range(of: "public func resetAfterSettingsCleared(", range: start.upperBound ..< source.endIndex))
+        let body = source[start.upperBound ..< end.lowerBound]
+        #expect(!body.contains("merged.contains"), "every imported mark rescans every merged mark: O(existing × imported)")
+    }
+
     @Test("apply merges backup bookmarks into the current library instead of replacing it")
     func applyMergesBookmarksIntoLibrary() {
         let manager = SettingsManager.shared
@@ -444,6 +453,29 @@ struct ConfigurationPorterBookmarkMergeTests {
 
         ConfigurationPorter.apply(ConfigurationBundle())
         #expect(store.contains(markedSince), "a backup without library bookmarks cleared the marks")
+    }
+
+    @Test("An export with no library bookmarks writes an empty list, so nil only means a backup from before them")
+    func exportWritesEmptyLibraryBookmarks() {
+        let store = LibraryBookmarkStore.shared
+        let previous = store.ids
+        defer { store.merge(previous) }
+        for id in previous {
+            store.remove(id)
+        }
+
+        #expect(ConfigurationPorter.currentBundle().libraryBookmarks == [], "an export without marks reads as a backup from before them")
+    }
+
+    @Test("The import summary counts a mark on an entry of the same backup once")
+    func importSummaryCountsMarkedEntryOnce() {
+        let first = WallpaperBookmark(label: "First", content: .video(bookmarkData: Data([0xD0])))
+        let second = WallpaperBookmark(label: "Second", content: .video(bookmarkData: Data([0xD1])))
+        let bundle = ConfigurationBundle(wallpaperBookmarks: [first, second], libraryBookmarks: ["bookmark:\(first.id)", "workshop:42"])
+
+        let summary = ConfigurationPorter.importSummary(for: bundle)
+
+        #expect(summary.bookmarkCount == 3, "a marked entry of the backup is counted twice")
     }
 }
 
@@ -611,6 +643,37 @@ extension ConfigurationPorterTests {
         #expect(!summary.isEmpty, "A successful Workshop-only import must not be reported as unrecognized")
         #expect(store.contains(incoming.id), "the restore drops the backup's Workshop bookmarks")
         #expect(store.bookmarks.first { $0.id == existing.id }?.rawTitle == "Mine", "the backup overwrote a saved bookmark")
+    }
+
+    @Test("Restoring a backup from before library bookmarks marks the installed rows its saved entries fold into")
+    func legacyBackupMarksFoldedWorkshopRows() {
+        let manager = SettingsManager.shared
+        let store = LibraryBookmarkStore.shared
+        let previousBookmarks = manager.loadWallpaperBookmarks()
+        let previousGlobal = manager.loadGlobalSettings()
+        let hadMark = store.contains("workshop:123")
+        defer {
+            manager.saveGlobalSettings(previousGlobal)
+            manager.saveWallpaperBookmarks(previousBookmarks)
+            BookmarkStore.shared.reload()
+            if !hadMark { store.remove("workshop:123") }
+        }
+        store.remove("workshop:123")
+        let origin = WPEOrigin(
+            workshopID: "123", title: "Installed 123", originalType: .scene,
+            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil
+        )
+        var folded = WallpaperBookmark(
+            label: "Folded",
+            content: .scene(SceneDescriptor(workshopID: "123", cacheRelativePath: "scene-\(UUID())", entryFile: "scene.json", capabilityTier: .imageOnly))
+        )
+        folded.wpeOrigin = origin
+        var global = previousGlobal
+        global.recentWPEImports = [WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 1_750_000_000))]
+
+        ConfigurationPorter.apply(ConfigurationBundle(globalSettings: global, wallpaperBookmarks: [folded]))
+
+        #expect(store.contains("workshop:123"), "the saved entry folded into the installed row lost its bookmark")
     }
 }
 #endif

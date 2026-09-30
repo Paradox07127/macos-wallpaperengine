@@ -11,8 +11,7 @@ extension ConfigurationPorter {
             wallpaperBookmarks: manager.loadWallpaperBookmarks(),
             screenSchemes: manager.loadScreenSchemes()
         )
-        let libraryBookmarks = LibraryBookmarkStore.shared.ids
-        bundle.libraryBookmarks = libraryBookmarks.isEmpty ? nil : libraryBookmarks
+        bundle.libraryBookmarks = LibraryBookmarkStore.shared.ids
         #if !LITE_BUILD
         let workshopBookmarks = WorkshopBookmarkStore.shared.bookmarks
         bundle.workshopBookmarks = workshopBookmarks.isEmpty ? nil : workshopBookmarks
@@ -27,8 +26,10 @@ extension ConfigurationPorter {
         #else
         let workshopBookmarkCount = bundle.workshopBookmarks?.count
         #endif
-        // Library bookmarks are reported on the saved-bookmarks line.
-        let bookmarkCounts = [bundle.wallpaperBookmarks?.count, bundle.libraryBookmarks?.count].compactMap(\.self)
+        // Library bookmarks are reported on the saved-bookmarks line; a mark on an entry of this backup is that entry.
+        let entryMarks = Set((bundle.wallpaperBookmarks ?? []).map { "bookmark:\($0.id)" })
+        let otherMarkCount = bundle.libraryBookmarks?.count(where: { !entryMarks.contains($0) })
+        let bookmarkCounts = [bundle.wallpaperBookmarks?.count, otherMarkCount].compactMap(\.self)
         return ApplySummary(
             displayCount: bundle.screenConfigurations?.count,
             bookmarkCount: bookmarkCounts.isEmpty ? nil : bookmarkCounts.reduce(0, +),
@@ -81,6 +82,13 @@ extension ConfigurationPorter {
         bundle.mergeLibraryBookmarks(into: .shared, renaming: renamedLibraryBookmarks)
 
         #if !LITE_BUILD
+        // A backup from before library bookmarks: this machine's one-time carry-over has long run.
+        if bundle.libraryBookmarks == nil, bundle.wallpaperBookmarks != nil {
+            let installed = Set(manager.loadGlobalSettings().recentWPEImports.map(\.id))
+            LibraryBookmarkStore.shared.merge(
+                SavedLibraryModel.foldedBookmarkMarks(manager.loadWallpaperBookmarks(), installed: installed)
+            )
+        }
         bundle.mergeWorkshopBookmarks(into: .shared)
         #endif
 

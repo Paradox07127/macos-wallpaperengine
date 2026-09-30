@@ -52,7 +52,8 @@ public final class LibraryBookmarkStore {
     /// Import: the marks already here keep their places; each imported one not among them is appended once.
     public func merge(_ imported: [String]) {
         var merged = ids
-        for id in imported where !merged.contains(id) {
+        var seen = Set(ids)
+        for id in imported where seen.insert(id).inserted {
             merged.append(id)
         }
         guard merged != ids else { return }

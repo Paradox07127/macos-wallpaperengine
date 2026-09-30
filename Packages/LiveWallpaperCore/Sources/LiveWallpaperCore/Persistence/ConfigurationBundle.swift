@@ -42,7 +42,7 @@ public struct ConfigurationBundle: Codable, Sendable {
     public var screenSchemes: [ScreenScheme]?
     /// nil = the backup carries no Workshop bookmarks: written before they existed, by Lite, or with none saved.
     public var workshopBookmarks: [WorkshopBookmark]?
-    /// `LibraryBookmarkStore.ids`; nil = the backup carries no library bookmarks: written before they existed, or with none marked.
+    /// `LibraryBookmarkStore.ids`, empty when none are marked; nil = written before library bookmarks existed.
     public var libraryBookmarks: [String]?
 
     public init(
