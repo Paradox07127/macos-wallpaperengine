@@ -212,11 +212,13 @@ extension WPEMetalRenderExecutor {
             let id: String
             let target: WPERenderTarget
             let access: WPEPreparedPassAccess
+            let gate: WPEPassVisibilityGate?
         }
 
         struct SignatureEntry: Equatable {
             let objectID: String
             let imagePath: String
+            let localFBOs: [WPERenderFBO]
             let passes: [PassSignature]
         }
 
@@ -268,7 +270,8 @@ extension WPEMetalRenderExecutor {
 
         let items: [Item]
         /// Only explicit reads of private FBOs before their first write are temporal feedback.
-        let historyFBONames: Set<String>
+        let attachmentPlan: WPEAttachmentPlan
+        var historyFBONames: Set<String> { attachmentPlan.historyFBONames }
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
         /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
@@ -294,18 +297,7 @@ extension WPEMetalRenderExecutor {
             layers: [WPEPreparedRenderLayer]
         ) {
             self.items = items
-            var written: Set<String> = []
-            let unique = Set(layers.flatMap { $0.graphLayer.localFBOs }.filter {
-                $0.unique && !WPETextureReference.isSceneAliasName($0.name)
-            }.map(\.name))
-            var history: Set<String> = []
-            for layer in layers {
-                for pass in layer.passes {
-                    history.formUnion(pass.access.boundFBONames.filter { unique.contains($0) && !written.contains($0) })
-                    if case let .named(name) = WPEMetalTargetID(target: pass.pass.target) { written.insert(name) }
-                }
-            }
-            historyFBONames = history
+            attachmentPlan = WPEAttachmentPlan(layers: layers)
             self.itemIndicesByKeyName = itemIndicesByKeyName
             self.signature = signature
             self.sizingLayerIndices = sizingLayerIndices
@@ -352,13 +344,14 @@ extension WPEMetalRenderExecutor {
                 let entry = signature[index]
                 if entry.objectID != layer.graphLayer.objectID
                     || entry.imagePath != layer.graphLayer.imagePath
+                    || entry.localFBOs != layer.graphLayer.localFBOs
                     || entry.passes.count != layer.passes.count {
                     return false
                 }
                 for (passIndex, pass) in layer.passes.enumerated() {
                     let passEntry = entry.passes[passIndex]
                     if passEntry.id != pass.pass.id || passEntry.target != pass.pass.target
-                        || passEntry.access != pass.access {
+                        || passEntry.access != pass.access || passEntry.gate != pass.pass.visibilityGate {
                         return false
                     }
                 }
@@ -386,8 +379,9 @@ extension WPEMetalRenderExecutor {
             signature.append(FBOAliasTopology.SignatureEntry(
                 objectID: layer.graphLayer.objectID,
                 imagePath: layer.graphLayer.imagePath,
+                localFBOs: layer.graphLayer.localFBOs,
                 passes: layer.passes.map {
-                    FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target, access: $0.access)
+                    FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target, access: $0.access, gate: $0.pass.visibilityGate)
                 }
             ))
             for pass in layer.passes {
@@ -751,6 +745,11 @@ extension WPEMetalRenderExecutor {
         encoder.applyTraceLabel("bootstrapClear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "bootstrap-clear", label: "bootstrap-previous", destination: cleared,
+                                                                   contract: .color(target: targetID, initialized: false,
+                                                                                    readsCurrentTarget: false, blendNeedsDestination: false))
+        #endif
         let initialization = WPEMetalBootstrapInitialization(commandBuffer: commandBuffer)
         commandBuffer.addCompletedHandler { completed in
             initialization.complete(succeeded: completed.status == .completed)

@@ -53,6 +53,13 @@ extension WPEMetalRenderExecutor {
                 WPEFrameOccupancyMeter.count(.reflectionMipGeneration)
             }
             blit.endEncoding()
+            #if DEBUG
+            WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "blit-copy", label: traceLabel(), source: source,
+                                                                       destination: destination, writesPixels: source !== destination)
+            if needsMipmaps {
+                WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "mipmap-generation", label: traceLabel(), destination: destination)
+            }
+            #endif
             return
         }
 
@@ -67,6 +74,9 @@ extension WPEMetalRenderExecutor {
             blit.generateMipmaps(for: destination)
             WPEFrameOccupancyMeter.count(.reflectionMipGeneration)
             blit.endEncoding()
+            #if DEBUG
+            WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "mipmap-generation", label: traceLabel(), destination: destination)
+            #endif
         }
     }
 
@@ -103,8 +113,8 @@ extension WPEMetalRenderExecutor {
         )
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination
-        descriptor.colorAttachments[0].loadAction = .dontCare
-        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].loadAction = WPEAttachmentLoadContract.fullOverwrite.load
+        descriptor.colorAttachments[0].storeAction = WPEAttachmentLoadContract.fullOverwrite.store
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: traceLabel)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
@@ -116,6 +126,10 @@ extension WPEMetalRenderExecutor {
         encoder.setFragmentTexture(source, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "sampled-copy", label: traceLabel, source: source,
+                                                                   destination: destination, contract: .fullOverwrite)
+        #endif
     }
 
     private static func supportsSampledCopyFormat(_ format: MTLPixelFormat, destination: Bool) -> Bool {

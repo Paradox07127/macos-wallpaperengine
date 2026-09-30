@@ -807,6 +807,9 @@ final class WPEMetalRenderExecutor {
             pipelineIdentity: fboAliasTopologyRebuildCount
         )
         targetPool.beginAliasFrame()
+        #if DEBUG
+        if let plan = cachedFBOAliasTopology?.attachmentPlan { WPECanonicalTraceRecorder.shared.recordAttachmentPlan(plan) }
+        #endif
         // The per-frame output texture is `.private` and NOT zeroed by Metal. A scene-alias read before any scene-target pass writes would sample this garbage. Clear to the scene clear color so any pre-write alias read sees black.
         var initialClearStats = initialSceneClearPlan(
             pipeline: preparedPipeline, textures: textures, output: output,
@@ -1374,28 +1377,13 @@ final class WPEMetalRenderExecutor {
         sharedSceneRun?.end()
     }
 
-    /// A ping-pong composite's physical texture is reused across passes, so a later source-over pass writing the SAME named target would otherwise blend over an earlier pass's stale result. Only load when genuinely needed.
-    private func shouldLoadExistingAttachment(
-        for pass: WPEPreparedRenderPass,
-        targetID: WPEMetalTargetID,
-        destinationTexture: MTLTexture,
-        readsCurrentTarget: Bool,
-        frameState: WPEMetalFrameState
-    ) -> Bool {
-        guard frameState.hasInitialized(destinationTexture) else {
-            return false
-        }
-        if readsCurrentTarget {
-            return true
-        }
-        if case .scene = targetID {
-            return true
-        }
-        if case .named(let name) = targetID,
-           WPERenderTargetNames.LayerGroup.matches(name) {
-            return true
-        }
-        return blendFacts(pass.pass.blending).requiresExistingDestination
+    func attachmentLoadContract(
+        for pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID, destinationTexture: MTLTexture,
+        readsCurrentTarget: Bool, frameState: WPEMetalFrameState
+    ) -> WPEAttachmentLoadContract {
+        WPEAttachmentLoadContract.color(target: targetID, initialized: frameState.hasInitialized(destinationTexture),
+                                        readsCurrentTarget: readsCurrentTarget,
+                                        blendNeedsDestination: blendFacts(pass.pass.blending).requiresExistingDestination)
     }
 
     static func blendModeRequiresExistingDestination(_ blendMode: String) -> Bool {
@@ -1590,13 +1578,14 @@ final class WPEMetalRenderExecutor {
         let usesReversedZ = frameState.cameraUniforms.usesPerspectiveProjection
             || frameState.cameraUniforms.usesObjectPerspective(objectID: drawLayer.objectID)
 
-        let shouldLoadExistingAttachment = shouldLoadExistingAttachment(
+        let colorAttachmentContract = attachmentLoadContract(
             for: pass,
             targetID: targetID,
             destinationTexture: destination.texture,
             readsCurrentTarget: readsCurrentTarget,
             frameState: frameState
         )
+        let shouldLoadExistingAttachment = colorAttachmentContract.load == .load
 
         if try encodePuppetClipCompositePassIfNeeded(
             pass: pass,
@@ -1625,8 +1614,8 @@ final class WPEMetalRenderExecutor {
         } else {
             let descriptor = MTLRenderPassDescriptor()
             descriptor.colorAttachments[0].texture = destination.texture
-            descriptor.colorAttachments[0].loadAction = shouldLoadExistingAttachment ? .load : .clear
-            descriptor.colorAttachments[0].storeAction = .store
+            descriptor.colorAttachments[0].loadAction = colorAttachmentContract.load
+            descriptor.colorAttachments[0].storeAction = colorAttachmentContract.store
             descriptor.colorAttachments[0].clearColor = clearColor(for: targetID)
 
             if needsDepth {
@@ -1636,17 +1625,11 @@ final class WPEMetalRenderExecutor {
                     allowTransient: !persistentDepthTargetIDs.contains(targetID)
                 )
                 descriptor.depthAttachment.texture = depth
-                if depthCache.isTransientDepthAttachment(depth) {
-                    // Memoryless depth cannot load/store; it's per-pass transient regardless.
-                    descriptor.depthAttachment.loadAction = .clear
-                    descriptor.depthAttachment.storeAction = .dontCare
-                } else {
-                    // Depth is keyed independently of the color target and allocated fresh on first use per frame, so the color's `shouldLoadExistingAttachment` must NOT decide it. `.load` only once this exact depth texture was written this frame.
-                    let depthInitialized = frameState.hasInitialized(depth)
-                    descriptor.depthAttachment.loadAction = depthInitialized ? .load : .clear
-                    descriptor.depthAttachment.storeAction = .store
-                    frameState.markInitialized(depth)
-                }
+                let depthContract = WPEAttachmentLoadContract.depth(transient: depthCache.isTransientDepthAttachment(depth),
+                                                                     initialized: frameState.hasInitialized(depth))
+                descriptor.depthAttachment.loadAction = depthContract.load
+                descriptor.depthAttachment.storeAction = depthContract.store
+                if depthContract.store == .store { frameState.markInitialized(depth) }
                 descriptor.depthAttachment.clearDepth = WPEMetalDepthStateCache.clearDepth(
                     reversedZ: usesReversedZ
                 )
@@ -1657,6 +1640,11 @@ final class WPEMetalRenderExecutor {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
             encoder = createdEncoder
+            #if DEBUG
+            WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "render-attachment-begin", label: pass.pass.id,
+                                                                       destination: destination.texture, contract: colorAttachmentContract,
+                                                                       writesPixels: colorAttachmentContract.load == .clear)
+            #endif
             encoder.applyTraceLabel("pass|\(pass.pass.id)|\(pass.pass.shader)")
             WPEFrameOccupancyMeter.count(.renderPassEncoder)
 
@@ -1987,6 +1975,11 @@ final class WPEMetalRenderExecutor {
         encoder.applyTraceLabel("clear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "clear", label: "clear", destination: texture,
+                                                                   contract: .color(target: .scene, initialized: false,
+                                                                                    readsCurrentTarget: false, blendNeedsDestination: false))
+        #endif
     }
 
     /// It must be a separate texture, not the live scene target — this pass draws into that target, and sampling it would be an undefined read-write.
@@ -2047,8 +2040,12 @@ final class WPEMetalRenderExecutor {
         guard case .layerComposite = pass.pass.target else { return }
         let sourceTexture: MTLTexture?
         switch pass.pass.source {
-        case .fbo(let name):
-            sourceTexture = frameState.latestTexture(for: .named(name))
+        case .fbo:
+            // Use the same alias/bootstrap rules as an active shader read. A
+            // declared but unwritten FBO must overwrite the composite with zero.
+            sourceTexture = try? WPEMetalShaderInputs.resolve(reference: pass.pass.source, textures: textures,
+                                                             frameState: frameState,
+                                                             currentTargetID: WPEMetalTargetID(target: pass.pass.target))
         case .image(let name), .asset(let name):
             sourceTexture = textures[name]
         case .previous:
@@ -2131,8 +2128,8 @@ final class WPEMetalRenderExecutor {
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination.texture
         // Fullscreen quad, blending disabled, full write mask: every texel is overwritten, so neither previous contents nor a clear is ever observable. `.dontCare` drops the attachment read.
-        descriptor.colorAttachments[0].loadAction = .dontCare
-        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].loadAction = WPEAttachmentLoadContract.fullOverwrite.load
+        descriptor.colorAttachments[0].storeAction = WPEAttachmentLoadContract.fullOverwrite.store
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "copy|\(layer.objectName)")
         closeSharedSceneEncoderForHelperEncoder()
@@ -2915,6 +2912,7 @@ final class WPEMetalRenderExecutor {
     }
 
     func passReadsCurrentTarget(_ pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID) -> Bool {
+        if targetID == WPEMetalTargetID(target: pass.pass.target) { return pass.access.readsCurrentTarget }
         if pass.access.readsTargetHistory { return true }
         guard case .named(let name) = targetID else { return false }
         return pass.access.boundFBONames.contains(name)

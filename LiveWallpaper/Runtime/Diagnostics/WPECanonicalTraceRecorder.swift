@@ -57,6 +57,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var scene: SceneContext?
     private var frameComplete = false
     private var passes: [[String: Any]] = []
+    private var attachmentOperations: [[String: Any]] = []
+    private var attachmentPlan: [String: Any]?
+    private var physicalAttachmentRevisions: [String: Int] = [:]
     private var resources: ResourceTables = ResourceTables()
     private var semanticCoverage: [WPEShaderSemanticCoverage] = []
     private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
@@ -122,6 +125,60 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
     }
 
+    /// Helper transfers are separate events, never synthetic shader draws. Revisions
+    /// here identify encoded writes within this trace, not completed GPU contents.
+    func recordAttachmentOperation(kind: String, label: String, source: MTLTexture? = nil,
+                                   destination: MTLTexture, contract: WPEAttachmentLoadContract? = nil,
+                                   writesPixels: Bool = true) {
+        guard artifacts.isEnabled else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        let destinationID = textureResourceID(texture: destination, fallbackKey: "attachment")
+        if resources.textures[destinationID] == nil {
+            resources.textures[destinationID] = textureResource(id: destinationID, name: nil, reference: nil, texture: destination)
+        }
+        var sourceRecord: [String: Any]?
+        if let source {
+            let sourceID = textureResourceID(texture: source, fallbackKey: "attachment-source")
+            if resources.textures[sourceID] == nil {
+                resources.textures[sourceID] = textureResource(id: sourceID, name: nil, reference: nil, texture: source)
+            }
+            sourceRecord = ["resource": sourceID, "revision": physicalAttachmentRevisions[sourceID] ?? 0]
+        }
+        let before = physicalAttachmentRevisions[destinationID] ?? 0
+        let after = before + (writesPixels ? 1 : 0)
+        physicalAttachmentRevisions[destinationID] = after
+        attachmentOperations.append([
+            "ordinal": attachmentOperations.count, "recordedDrawsBefore": passes.count,
+            "kind": kind, "label": label, "source": sourceRecord ?? NSNull(),
+            "destination": ["resource": destinationID, "revisionBefore": before, "revisionAfter": after],
+            "load": contract.map { Self.loadName($0.load) } ?? NSNull(),
+            "store": contract.map { $0.store == .store ? "store" : "dontCare" } ?? NSNull(),
+            "reason": contract.map(\.reason.rawValue) ?? NSNull(),
+            "status": "encoded-not-gpu-completion", "revisionZero": "contents-unrecorded-or-external",
+        ])
+    }
+
+    func recordAttachmentPlan(_ plan: WPEAttachmentPlan) {
+        guard artifacts.isEnabled else { return }
+        guard isAccumulating else { return }
+        let record = plan.traceRecord()
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        attachmentPlan = record
+    }
+
+    private static func loadName(_ load: MTLLoadAction) -> String {
+        switch load {
+        case .load: "load"
+        case .clear: "clear"
+        case .dontCare: "dontCare"
+        @unknown default: "unknown"
+        }
+    }
+
     func beginScene(
         workshopID: String,
         projectJsonPath: String?,
@@ -133,6 +190,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         scene = SceneContext(workshopID: workshopID, projectJsonPath: projectJsonPath, descriptor: descriptor)
         frameComplete = false
         passes.removeAll(keepingCapacity: true)
+        attachmentOperations.removeAll(keepingCapacity: true)
+        attachmentPlan = nil
+        physicalAttachmentRevisions.removeAll(keepingCapacity: true)
         semanticCoverage.removeAll(keepingCapacity: true)
         resources = ResourceTables()
         self.shaderImplementationInventory = shaderImplementationInventory
@@ -757,6 +817,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         guard let scene, !frameComplete else { lock.unlock(); return nil }
         frameComplete = true
         let passSnapshot = passes
+        let attachmentOperationSnapshot = attachmentOperations
+        let attachmentPlanSnapshot = attachmentPlan
         let semanticCoverageSnapshot = semanticCoverage
         let resourceSnapshot = resources
         let shaderImplementationInventorySnapshot = shaderImplementationInventory
@@ -835,6 +897,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "capture": capture,
             "resources": resourceBlock,
             "passes": passSnapshot,
+            "attachmentOperations": ["schema": "wpe.attachment-operations.v1", "events": attachmentOperationSnapshot],
+            "attachmentPlan": attachmentPlanSnapshot ?? NSNull(),
             "semanticCoverage": WPEShaderSemanticCoverage.jsonObject(WPEShaderSemanticCoverage.Summary(semanticCoverageSnapshot)),
             "shaderImplementationInventory": shaderImplementationInventorySnapshot.map(
                 Self.shaderImplementationInventoryRecord

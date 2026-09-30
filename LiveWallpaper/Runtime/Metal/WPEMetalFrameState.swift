@@ -5,7 +5,7 @@ import LiveWallpaperProWPE
 import Metal
 
 /// Logical identity for a render target during one `render(...)` call. `.scene` is the persistent output texture; `.named(_)` covers FBOs and layer composites resolved through the pool.
-enum WPEMetalTargetID: Hashable {
+enum WPEMetalTargetID: Hashable, Sendable {
     case scene
     case named(String)
 
@@ -96,6 +96,10 @@ struct WPEMetalFrameState {
         let textureID = ObjectIdentifier(texture)
         writtenTargets.insert(targetID)
         initializedTextures.insert(textureID)
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "target-write-publication", label: String(describing: targetID),
+                                                                   destination: texture)
+        #endif
         if freshRefractionSnapshotOutputID == textureID {
             freshRefractionSnapshotOutputID = nil
         }

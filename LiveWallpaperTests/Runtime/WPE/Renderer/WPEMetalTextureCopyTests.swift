@@ -114,6 +114,111 @@ struct WPEMetalTextureCopyTests {
         }
     }
 
+    @Test("Closed gate replaces stale composite with declared unwritten FBO zero")
+    func gatedUnwrittenInput() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let source = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        let redPixel: [UInt8] = [255, 0, 0, 255]
+        upload(Array(repeating: redPixel, count: 4).flatMap(\.self), to: source, bytesPerPixel: 4)
+        let gate = WPEPassVisibilityGate(script: .init(script: "return false;", seed: .zero), initialVisible: false)
+        func prepared(_ id: String, source: WPETextureReference, target: WPERenderTarget,
+                      gate: WPEPassVisibilityGate? = nil) -> WPEPreparedRenderPass {
+            let raw = WPERenderPass(id: id, phase: .command(file: "test"), shader: "commands/copy", source: source, target: target,
+                                    textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                    cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled", visibilityGate: gate)
+            return WPEPreparedRenderPass(pass: raw, shader: .init(name: "commands/copy", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                         textureBindings: [0: source], comboValues: [:], uniformValues: [:])
+        }
+        let passes = [prepared("seed", source: .asset("red"), target: .layerComposite(name: "a")),
+                      prepared("gate", source: .fbo("unwritten"), target: .layerComposite(name: "a"), gate: gate),
+                      prepared("scene", source: .fbo("a"), target: .scene)]
+        let graph = WPERenderLayer(objectID: "gate-zero", objectName: "gate-zero", imagePath: "red", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [
+                                       .init(name: "unwritten", scale: 1, format: "rgba8888"),
+                                   ], passes: passes.map(\.pass))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes)])
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": source])
+        let staging = try texture(device, output.pixelFormat, 4, 4)
+        try copy(executor, output, staging)
+        #expect(readBytes(staging, bytesPerPixel: 4).allSatisfy { $0 == 0 })
+    }
+
+    @Test("Gate flips preserve a private source even when the active binding is overridden")
+    func gatedPrivateInputAcrossFrames() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let red = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        let blue = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        let black = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        upload([UInt8](repeating: 0, count: 16), to: black, bytesPerPixel: 4)
+        let redPixel: [UInt8] = [255, 0, 0, 255]
+        let bluePixel: [UInt8] = [0, 0, 255, 255]
+        upload(Array(repeating: redPixel, count: 4).flatMap(\.self), to: red, bytesPerPixel: 4)
+        upload(Array(repeating: bluePixel, count: 4).flatMap(\.self), to: blue, bytesPerPixel: 4)
+        let gate = WPEPassVisibilityGate(script: .init(script: "return true;", seed: .zero), initialVisible: false)
+        func prepared(_ id: String, source: WPETextureReference, target: WPERenderTarget,
+                      bound: WPETextureReference? = nil, gate: WPEPassVisibilityGate? = nil) -> WPEPreparedRenderPass {
+            let raw = WPERenderPass(id: id, phase: .command(file: "test"), shader: "commands/copy", source: source, target: target,
+                                    textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                    cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled", visibilityGate: gate)
+            return WPEPreparedRenderPass(pass: raw, shader: .init(name: "commands/copy", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                         textureBindings: [0: bound ?? source], comboValues: [:], uniformValues: [:])
+        }
+        let passes = [prepared("seed", source: .asset("black"), target: .layerComposite(name: "a")),
+                      prepared("gate", source: .fbo("private"), target: .layerComposite(name: "a"), bound: .asset("blue"), gate: gate),
+                      prepared("history", source: .asset("red"), target: .fbo(name: "private")),
+                      prepared("scene", source: .fbo("a"), target: .scene)]
+        let graph = WPERenderLayer(objectID: "gate-history", objectName: "gate-history", imagePath: "red", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [
+                                       .init(name: "private", scale: 1, format: "rgba8888", unique: true),
+                                   ], passes: passes.map(\.pass))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes)])
+        for (visible, expected) in [(false, [UInt8(0), 0, 0, 0]), (true, [0, 0, 255, 255]), (false, [255, 0, 0, 255])] {
+            let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": red, "blue": blue, "black": black],
+                                             passVisibility: [gate.id: visible])
+            let staging = try texture(device, output.pixelFormat, 4, 4)
+            try copy(executor, output, staging)
+            let bytes = readBytes(staging, bytesPerPixel: 4)
+            #expect(Array(bytes.prefix(4)) == expected)
+            #expect(executor.previousFrameHistory?.namedTextures["private"] != nil)
+            #expect(!executor.fboAliasIntervals(pipeline: pipeline, sceneSize: CGSize(width: 4, height: 4)).contains { $0.key.name == "private" })
+        }
+    }
+
+    @Test("A closed private FBO producer keeps the last frame for its downstream consumer")
+    func gatedPrivateProducerAcrossFrames() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let red = try texture(device, .rgba8Unorm_srgb, 2, 2)
+        let pixel: [UInt8] = [255, 0, 0, 255]
+        upload(Array(repeating: pixel, count: 4).flatMap(\.self), to: red, bytesPerPixel: 4)
+        let gate = WPEPassVisibilityGate(script: .init(script: "return true;", seed: .zero), initialVisible: true)
+        func prepared(_ id: String, source: WPETextureReference, target: WPERenderTarget,
+                      gate: WPEPassVisibilityGate? = nil) -> WPEPreparedRenderPass {
+            let raw = WPERenderPass(id: id, phase: .command(file: "test"), shader: "commands/copy", source: source, target: target,
+                                    textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                    cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled", visibilityGate: gate)
+            return WPEPreparedRenderPass(pass: raw, shader: .init(name: "commands/copy", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                         textureBindings: [0: source], comboValues: [:], uniformValues: [:])
+        }
+        let passes = [prepared("producer", source: .asset("red"), target: .fbo(name: "private"), gate: gate),
+                      prepared("scene", source: .fbo("private"), target: .scene)]
+        let graph = WPERenderLayer(objectID: "conditional-private", objectName: "conditional-private", imagePath: "red", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [
+                                       .init(name: "private", scale: 1, format: "rgba8888", unique: true),
+                                   ], passes: passes.map(\.pass))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes)])
+        for visible in [true, false, true] {
+            let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": red],
+                                             passVisibility: [gate.id: visible])
+            let staging = try texture(device, output.pixelFormat, 4, 4)
+            try copy(executor, output, staging)
+            #expect(Array(readBytes(staging, bytesPerPixel: 4).prefix(4)) == pixel)
+            #expect(executor.previousFrameHistory?.namedTextures["private"] != nil)
+        }
+    }
+
     @Test("Closed effect gate resizes and converts an external image into its composite")
     func gatedExternalInput() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

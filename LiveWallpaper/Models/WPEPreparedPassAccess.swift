@@ -15,6 +15,9 @@ final class WPEPreparedPassAccess: Equatable, Sendable {
     let rawTextures: [Int: WPETextureReference]
     let rawBinds: [Int: WPETextureReference]
     let preparedBindings: [Int: WPETextureReference]
+    /// Effective slots after bind lowering and prepared overrides.
+    let resolvedBindings: [Int: WPETextureReference]
+    let readsCurrentTarget: Bool
 
     /// Same group order and multiplicity as the original textureReferences API.
     /// Arrays/dictionaries share their CoW storage when the pass is copied.
@@ -51,6 +54,7 @@ final class WPEPreparedPassAccess: Equatable, Sendable {
         if bound[0] == nil {
             bound[0] = source
         }
+        resolvedBindings = bound
         readsTargetHistory = bound.values.contains(.previous)
         boundFBONames = Set(bound.values.compactMap {
             if case let .fbo(name) = $0 {
@@ -58,6 +62,13 @@ final class WPEPreparedPassAccess: Equatable, Sendable {
             }
             return nil
         })
+
+        let targetID = WPEMetalTargetID(target: target)
+        if case let .named(name) = targetID {
+            readsCurrentTarget = readsTargetHistory || boundFBONames.contains(name)
+        } else {
+            readsCurrentTarget = readsTargetHistory
+        }
 
         var names: [String] = []
         var previous = false
