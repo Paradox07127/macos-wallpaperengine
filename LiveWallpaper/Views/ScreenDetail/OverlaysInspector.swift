@@ -6,12 +6,7 @@ struct OverlaysInspectorPanel: View {
     let screen: Screen
     @Binding var draft: DraftState
     let screenManager: ScreenManager
-    let kind: OverlayKind
     let inspectorPanelWidth: CGFloat
-    let backdropAvailable: Bool
-    var showsBackdropControl = true
-    /// The weather card's own "Show on This Display"; Edit Desk turns it off from the layer list instead.
-    var showsVisibilityControl = true
     let onParticleEffectChange: (ParticleEffect) -> Void
     let onParticleDensityChange: (Double) -> Void
     let onWeatherReactiveChange: (Bool) -> Void
@@ -21,24 +16,7 @@ struct OverlaysInspectorPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                switch kind {
-                case .weather:
-                    weatherCard
-                case .monitor:
-                    MonitorOverlaySection(
-                        screen: screen,
-                        screenManager: screenManager,
-                        backdropAvailable: backdropAvailable
-                    )
-                case .clock:
-                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable)
-                case .music:
-                    MusicOverlaySection(
-                        screen: screen,
-                        screenManager: screenManager,
-                        backdropAvailable: backdropAvailable
-                    )
-                }
+                weatherCard
             }
             .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
             .padding(.vertical, 12)
@@ -50,16 +28,9 @@ struct OverlaysInspectorPanel: View {
     private var weatherCard: some View {
         GroupBox {
             VStack(spacing: 8) {
-                if showsVisibilityControl {
-                    weatherEnabledRow
-                }
-
                 if draft.selectedParticleEffect != .none {
                     particleEffectRow
                     particleDensityRow
-                }
-
-                if showsVisibilityControl || draft.selectedParticleEffect != .none {
                     Divider()
                 }
 
@@ -73,63 +44,9 @@ struct OverlaysInspectorPanel: View {
                         refresh: screenManager.weatherService.refresh
                     )
                 }
-
-                if showsBackdropControl {
-                    Divider()
-                    OverlayBackdropRow(available: backdropAvailable)
-                }
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    private var weatherEnabledRow: some View {
-        SettingRow(
-            icon: isWeatherOn ? "cloud.sun.rain.fill" : "cloud.sun",
-            iconColor: isWeatherOn ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display"
-        ) {
-            Toggle("", isOn: weatherEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel(Text("Weather overlay"))
-        }
-    }
-
-    private var isWeatherOn: Bool { draft.selectedParticleEffect != .none }
-
-    /// The model stores the effect as an enum, so a blunt on/off switch would
-    /// forget the choice; remembered per display because the effect is per display.
-    private var weatherEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { isWeatherOn },
-            set: { isOn in
-                let next: ParticleEffect
-                if isOn {
-                    next = rememberedParticleEffect
-                } else {
-                    rememberParticleEffect(draft.selectedParticleEffect)
-                    next = .none
-                }
-                draft.selectedParticleEffect = next
-                onParticleEffectChange(next)
-            }
-        )
-    }
-
-    private var rememberedEffectKey: String {
-        "Overlay.LastParticleEffect.\(screen.displayFingerprint)"
-    }
-
-    private func rememberParticleEffect(_ effect: ParticleEffect) {
-        guard effect != .none else { return }
-        UserDefaults.appScoped().set(effect.rawValue, forKey: rememberedEffectKey)
-    }
-
-    private var rememberedParticleEffect: ParticleEffect {
-        let raw = UserDefaults.appScoped().string(forKey: rememberedEffectKey)
-        return raw.flatMap(ParticleEffect.init(rawValue:)) ?? .snow
     }
 
     private var particleEffectRow: some View {
@@ -214,7 +131,7 @@ struct OverlaysInspectorPanel: View {
 
     // MARK: - Bindings
 
-    /// `.none` is what "off" is: closing it must go through `weatherEnabledBinding`
+    /// `.none` is what "off" is: closing it must go through `OverlayEditorSession.setEffectVisible`
     /// so the last effect is remembered.
     static var pickerEffects: [ParticleEffect] {
         ParticleEffect.allCases.filter { $0 != .none }

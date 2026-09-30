@@ -4,10 +4,6 @@ import SwiftUI
 struct MonitorOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
-    let backdropAvailable: Bool
-    var showsVisibilityControl = true
-    /// Edit Desk's canvas always draws the cover, so the backdrop preference does nothing there.
-    var showsBackdropControl = true
     var editBoard: (@MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void)?
 
 
@@ -25,36 +21,12 @@ struct MonitorOverlaySection: View {
     private var displayCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                if showsVisibilityControl {
-                    showOnThisDisplayRow
-                    Divider()
-                }
                 layerRow
                 Divider()
-                if showsBackdropControl {
-                    OverlayBackdropRow(available: backdropAvailable)
-                }
                 MonitorPreviewModeRow()
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    private var showOnThisDisplayRow: some View {
-        SettingRow(
-            icon: overlay.enabled ? "gauge.with.dots.needle.67percent" : "gauge.with.dots.needle.0percent",
-            iconColor: overlay.enabled ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display"
-        ) {
-            Toggle("", isOn: Binding(
-                get: { overlay.enabled },
-                set: { screenManager.setMonitorOverlayEnabled($0, for: screen) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .accessibilityLabel(Text("Show widgets on this display"))
-        }
     }
 
     private var layerRow: some View {
@@ -103,31 +75,6 @@ struct MonitorPreviewModeRow: View {
             .labelsHidden()
             .fixedSize()
             .accessibilityLabel(Text("Preview Contents"))
-        }
-    }
-}
-
-/// All overlay previews share the same wallpaper backdrop preference.
-struct OverlayBackdropRow: View {
-    /// Whether this display's wallpaper has a still frame to show at all.
-    let available: Bool
-
-    @AppStorage(OverlayBackdropPreference.showsWallpaperDefaultsKey) private var showsWallpaper = true
-
-    var body: some View {
-        SettingRow(
-            icon: "photo",
-            iconColor: .purple,
-            title: "Wallpaper Backdrop",
-            subtitle: available ? nil : "No still frame is available for this wallpaper.",
-            info: available ? "Applies to all overlay previews." : nil
-        ) {
-            Toggle("", isOn: $showsWallpaper)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(!available)
-                .accessibilityLabel(Text("Show wallpaper backdrop in the preview"))
         }
     }
 }

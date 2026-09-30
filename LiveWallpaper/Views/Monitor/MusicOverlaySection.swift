@@ -19,10 +19,6 @@ struct MusicOverlaySection: View {
         screenManager.monitorOverlay(for: screen)
     }
 
-    var backdropAvailable: Bool = false
-    var showsVisibilityControl = true
-    var showsBackdropControl = true
-
     private var music: MusicOverlayConfiguration {
         overlay.music
     }
@@ -76,19 +72,11 @@ struct MusicOverlaySection: View {
     private var controlCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                if showsVisibilityControl {
-                    showOnThisDisplayRow
-                    Divider()
-                }
                 layerRow
                 Divider()
                 styleRow
                 Divider()
                 sizeRow
-                if showsBackdropControl {
-                    Divider()
-                    OverlayBackdropRow(available: backdropAvailable)
-                }
                 #if !LITE_BUILD
                 // Keyed to the switch, not the live tap: demand-driven capture is legitimately
                 // idle while music is paused.
@@ -102,29 +90,6 @@ struct MusicOverlaySection: View {
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    private var showOnThisDisplayRow: some View {
-        SettingRow(
-            icon: isOn ? "music.note" : "music.note.list",
-            iconColor: isOn ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display"
-        ) {
-            Toggle("", isOn: showBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel(Text("Show Music on this display"))
-        }
-    }
-
-    /// The Music module's own switch; it never touches `enabled`, which is the Monitor
-    /// board's. Turning it off keeps the configuration.
-    private var showBinding: Binding<Bool> {
-        Binding(
-            get: { isOn },
-            set: { screenManager.setMusicOverlayEnabled($0, for: screen) }
-        )
     }
 
     private var layerRow: some View {

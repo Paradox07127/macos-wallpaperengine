@@ -102,7 +102,7 @@ final class NixieClockWidgetTests: XCTestCase {
             playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: []),
             featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
         ))
-        let root = ClockOverlaySection(screen: screen, screenManager: manager, backdropAvailable: false)
+        let root = ClockOverlaySection(screen: screen, screenManager: manager)
             .padding(16).frame(width: 380, height: 560, alignment: .top)
         let host = NSHostingView(rootView: root)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 560),

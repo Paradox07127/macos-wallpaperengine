@@ -162,10 +162,8 @@ struct OverlayLayerListTests {
     func inspectorSwitches() throws {
         let inspector = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/ObjectInspector.swift")
         #expect(!inspector.contains("headerToggle"))
-        let effect = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayEffectPanel.swift")
-        let panel = try #require(effect.range(of: "OverlaysInspectorPanel("))
-        let call = effect[panel.lowerBound...].prefix(700)
-        #expect(call.contains("showsVisibilityControl: false"))
+        let settings = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/OverlaysInspector.swift")
+        #expect(!settings.contains("\"Show on This Display\""))
     }
 
     @Test("Embedded widget settings use the settings group and row components")

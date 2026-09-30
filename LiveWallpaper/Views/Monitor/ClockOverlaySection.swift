@@ -4,9 +4,6 @@ import SwiftUI
 struct ClockOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
-    let backdropAvailable: Bool
-    var showsVisibilityControl = true
-    var showsBackdropControl = true
 
     private var clock: ClockOverlayConfiguration {
         screenManager.monitorOverlay(for: screen).clock
@@ -24,10 +21,6 @@ struct ClockOverlaySection: View {
         VStack(spacing: 12) {
             GroupBox {
                 VStack(spacing: 8) {
-                    if showsVisibilityControl {
-                        toggleRow("Show on This Display", icon: "clock", keyPath: \.enabled)
-                        Divider()
-                    }
                     SettingRow(icon: "square.stack.3d.up", iconColor: .blue, title: "Layer",
                                info: "Desktop: below windows. On Top: above windows.") {
                         GlassSegmentedPicker(selection: binding(\.level), values: [.desktop, .front], shell: .flat,
@@ -42,10 +35,6 @@ struct ClockOverlaySection: View {
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if showsBackdropControl {
-                        Divider()
-                        OverlayBackdropRow(available: backdropAvailable)
-                    }
                 }
             }
             .groupBoxStyle(ContainerGroupBoxStyle())

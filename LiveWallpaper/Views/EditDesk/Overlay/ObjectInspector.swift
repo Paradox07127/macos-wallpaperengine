@@ -76,8 +76,7 @@ struct ObjectInspector: View {
         case .board:
             if let screen {
                 scrolling {
-                    MonitorOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: false,
-                                          showsVisibilityControl: false, showsBackdropControl: false, editBoard: session.editBoard)
+                    MonitorOverlaySection(screen: screen, screenManager: screenManager, editBoard: session.editBoard)
                 }
             }
         case let .widget(id):
@@ -101,15 +100,13 @@ struct ObjectInspector: View {
         case .music:
             if let screen {
                 scrolling {
-                    MusicOverlaySection(screen: screen, screenManager: screenManager,
-                                        showsVisibilityControl: false, showsBackdropControl: false)
+                    MusicOverlaySection(screen: screen, screenManager: screenManager)
                 }
             }
         case .clock:
             if let screen {
                 scrolling {
-                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: false,
-                                        showsVisibilityControl: false, showsBackdropControl: false)
+                    ClockOverlaySection(screen: screen, screenManager: screenManager)
                 }
             }
         case .empty:

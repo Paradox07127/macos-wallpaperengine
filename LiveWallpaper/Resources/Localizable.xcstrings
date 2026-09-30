@@ -8169,42 +8169,6 @@
         }
       }
     },
-    "Applies to all overlay previews." : {
-      "comment" : "The wallpaper backdrop preference is shared across overlay preview pages; it does not affect the desktop wallpaper.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Applies to all overlay previews."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se aplica a todas las vistas previas de superposiciones."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのオーバーレイのプレビューに適用されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到所有叠加层预览。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用至所有疊加層預覽。"
-          }
-        }
-      }
-    },
     "Applies to every wallpaper grid." : {
       "comment" : "Settings row subtitle under Library tile size: which pages the size applies to.",
       "localizations" : {
@@ -42738,42 +42702,6 @@
         }
       }
     },
-    "No still frame is available for this wallpaper." : {
-      "comment" : "Reason the wallpaper backdrop preview toggle is unavailable. This is not a playback error.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No still frame is available for this wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este fondo no tiene una imagen fija disponible."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙にはプレビュー用の静止画がありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此壁纸无可用静帧。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此桌布無可用靜態影格。"
-          }
-        }
-      }
-    },
     "No tool events yet" : {
       "comment" : "Agent session activity monitor.",
       "extractionState" : "manual",
@@ -61292,42 +61220,6 @@
         }
       }
     },
-    "Show Music on this display" : {
-      "comment" : "Accessibility label for the Music overlay switch.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Music on this display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar Música en esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイにミュージックを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此显示器上显示音乐"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此顯示器上顯示音樂"
-          }
-        }
-      }
-    },
     "Show Next Wallpaper" : {
       "localizations" : {
         "en" : {
@@ -61393,36 +61285,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視下一張桌布（→）"
-          }
-        }
-      }
-    },
-    "Show on This Display" : {
-      "comment" : "Toggle that turns the Monitor overlay on for the selected display.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar en esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイに表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此显示器上显示"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此顯示器上顯示"
           }
         }
       }
@@ -61724,36 +61586,6 @@
         }
       }
     },
-    "Show wallpaper backdrop in the preview" : {
-      "comment" : "Accessibility label for the wallpaper-backdrop preview toggle.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el fondo de pantalla como telón de fondo en la vista previa"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレビューに壁紙の背景を表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在预览里显示壁纸底图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在預覽裡顯示桌布底圖"
-          }
-        }
-      }
-    },
     "Show wallpaper in screen captures" : {
       "comment" : "Setting title. Screen captures includes screenshots, recordings, and screen sharing.",
       "extractionState" : "manual",
@@ -61786,35 +61618,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在截圖與共享中顯示桌布"
-          }
-        }
-      }
-    },
-    "Show widgets on this display" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar widgets en esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイにウィジェットを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此显示器上显示小组件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此顯示器上顯示小工具"
           }
         }
       }
@@ -77716,36 +77519,6 @@
         }
       }
     },
-    "Wallpaper Backdrop" : {
-      "comment" : "Title of the setting that shows the wallpaper behind the board in the preview.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Telón de fondo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙の背景"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸底图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布底圖"
-          }
-        }
-      }
-    },
     "Wallpaper controls" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -78782,42 +78555,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "天氣位置資料來源"
-          }
-        }
-      }
-    },
-    "Weather overlay" : {
-      "comment" : "Accessibility label for the toolbar switch that turns the weather overlay on.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weather overlay"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superposición meteorológica"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気オーバーレイ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天气叠加层"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天氣疊加層"
           }
         }
       }
