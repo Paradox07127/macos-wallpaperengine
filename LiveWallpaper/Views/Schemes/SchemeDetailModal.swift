@@ -314,7 +314,7 @@ enum SchemeDetailRows {
             modeRow(String(localized: "Playlist", bundle: .appLanguage)),
             Row(
                 key: .playlist, label: String(localized: "Playlist", bundle: .appLanguage),
-                value: String(localized: "\(count) wallpapers", bundle: .appLanguage, locale: locale)
+                value: String(localized: "\(count) wallpapers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale)
             ),
             Row(key: .shuffle, label: String(localized: "Shuffle", bundle: .appLanguage), value: onOff(configuration.shufflePlaylist)),
         ]
