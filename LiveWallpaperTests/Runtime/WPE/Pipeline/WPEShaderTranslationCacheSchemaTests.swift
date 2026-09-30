@@ -80,6 +80,69 @@ struct WPEShaderTranslationCacheSchemaTests {
         #expect(cache.storeCountForTesting == 2)
     }
 
+    private func cachePayload(_ text: String) -> WPEShaderTranslationCache.Payload {
+        .init(schemaVersion: WPEShaderTranslationCache.schemaVersion,
+              vertexFunctionName: "vertex", fragmentFunctionName: "fragment",
+              mslSource: text, uniformLayout: [], samplerNames: [], textureSlotCount: 0)
+    }
+
+    @Test("Count eviction promotes memory hits and restores evicted entries from disk")
+    func memoryCountEvictionKeepsMostRecentlyUsed() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = WPEShaderTranslationCache(rootURL: root, memoryEntryLimit: 2)
+        let a = cachePayload("a"), b = cachePayload("b"), c = cachePayload("c")
+        cache.store(a, for: "a"); cache.store(b, for: "b")
+        #expect(cache.lookup("a") == a)
+        cache.store(c, for: "c")
+        #expect(cache.memoryUsageForTesting().entries == 2)
+        #expect(cache.lookup("a") == a)
+        #expect(cache.diskHitCountForTesting == 0)
+        #expect(cache.lookup("b") == b)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(cache.memoryUsageForTesting().entries == 2)
+    }
+
+    @Test("Byte budget skips oversized entries and replacement/removal release accounting")
+    func memoryByteEvictionAndOversizeDiskFallback() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let small = cachePayload("small")
+        let cost = try JSONEncoder().encode(small).count
+        let cache = WPEShaderTranslationCache(rootURL: root, memoryByteLimit: cost * 2)
+        cache.store(small, for: "a"); cache.store(small, for: "b")
+        cache.store(small, for: "c")
+        #expect(cache.memoryUsageForTesting().entries == 2)
+        #expect(cache.memoryUsageForTesting().bytes == cost * 2)
+        let large = cachePayload(String(repeating: "x", count: cost * 3))
+        cache.store(large, for: "large")
+        #expect(cache.lookup("large") == large)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(cache.memoryUsageForTesting().bytes == cost * 2)
+        #expect(cache.lookup("b") == small)
+        #expect(cache.diskHitCountForTesting == 1)
+        cache.store(large, for: "b")
+        #expect(cache.memoryUsageForTesting().entries == 1)
+        #expect(cache.memoryUsageForTesting().bytes == cost)
+        cache.remove("c")
+        #expect(cache.memoryUsageForTesting().bytes == 0)
+        #expect(cache.lookup("c") == nil)
+        cache.store(small, for: "d")
+        cache.dropMemoryForTesting()
+        #expect(cache.memoryUsageForTesting().entries == 0)
+        #expect(cache.memoryUsageForTesting().bytes == 0)
+        #expect(cache.lookup("d") == small)
+        for (bytes, entries) in [(0, 2), (cost * 2, 0)] {
+            let diskOnly = WPEShaderTranslationCache(rootURL: root,
+                                                     memoryByteLimit: bytes, memoryEntryLimit: entries)
+            diskOnly.store(small, for: "disabled")
+            #expect(diskOnly.lookup("disabled") == small)
+            #expect(diskOnly.memoryUsageForTesting().entries == 0)
+            #expect(diskOnly.memoryUsageForTesting().bytes == 0)
+            #expect(diskOnly.diskHitCountForTesting == 1)
+        }
+    }
+
     @Test("A translator edit forces a cache schema bump")
     func translatorFingerprintMatchesSchemaVersion() throws {
         var hasher = SHA256()

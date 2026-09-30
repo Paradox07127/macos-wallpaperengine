@@ -238,12 +238,25 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     }
 
     static let maximumDiskBytes = 64 * 1024 * 1024
+    /// One quarter of the disk budget in encoded payload bytes; the count cap
+    /// bounds collection overhead. This is a cache policy, not an RSS limit.
+    static let maximumMemoryBytes = maximumDiskBytes / 4
+    static let maximumMemoryEntries = 256
     /// Stores between sweeps. The sweep enumerates the directory, so it must not
     /// run on every store during a scene load's compile burst.
     private static let pruneInterval = 64
 
     private let lock = NSLock()
-    private var memory: [String: Payload] = [:]
+    private struct MemoryEntry {
+        let payload: Payload
+        let bytes: Int
+    }
+
+    private var memory: [String: MemoryEntry] = [:]
+    private var memoryLRU: [String] = []
+    private var memoryBytes = 0
+    private let memoryByteLimit: Int
+    private let memoryEntryLimit: Int
     private var storesSincePrune = 0
     private let rootURL: URL
     private let fileManager: FileManager
@@ -254,7 +267,10 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     private(set) var storeCountForTesting = 0
     #endif
 
-    init(rootURL: URL? = nil) {
+    init(rootURL: URL? = nil, memoryByteLimit: Int = maximumMemoryBytes,
+         memoryEntryLimit: Int = maximumMemoryEntries) {
+        self.memoryByteLimit = max(0, memoryByteLimit)
+        self.memoryEntryLimit = max(0, memoryEntryLimit)
         self.fileManager = .default
         let base = rootURL ?? Self.defaultRootURL
         self.rootURL = base.appendingPathComponent("v\(Self.schemaVersion)", isDirectory: true)
@@ -289,30 +305,32 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
 
     func lookup(_ translationCacheKey: String) -> Payload? {
         lock.lock()
-        if let payload = memory[translationCacheKey] {
+        if let entry = memory[translationCacheKey] {
+            touchMemory(translationCacheKey)
             #if DEBUG
             memoryHitCountForTesting += 1
             #endif
             lock.unlock()
-            return payload
+            return entry.payload
         }
         lock.unlock()
-        guard let payload = readDisk(translationCacheKey),
-              payload.schemaVersion == Self.schemaVersion else {
+        guard let disk = readDisk(translationCacheKey),
+              disk.payload.schemaVersion == Self.schemaVersion else {
             return nil
         }
         lock.lock()
-        memory[translationCacheKey] = payload
+        insertMemory(disk.payload, bytes: disk.bytes, for: translationCacheKey)
         #if DEBUG
         diskHitCountForTesting += 1
         #endif
         lock.unlock()
-        return payload
+        return disk.payload
     }
 
     func store(_ payload: Payload, for translationCacheKey: String) {
+        let data = try? JSONEncoder().encode(payload)
         lock.lock()
-        memory[translationCacheKey] = payload
+        insertMemory(payload, bytes: data?.count ?? Int.max, for: translationCacheKey)
         storesSincePrune += 1
         let shouldPrune = storesSincePrune >= Self.pruneInterval
         if shouldPrune { storesSincePrune = 0 }
@@ -320,13 +338,15 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         storeCountForTesting += 1
         #endif
         lock.unlock()
-        writeDisk(payload, for: translationCacheKey)
+        if let data {
+            writeDisk(data, for: translationCacheKey)
+        }
         if shouldPrune { pruneDisk() }
     }
 
     func remove(_ translationCacheKey: String) {
         lock.lock()
-        memory.removeValue(forKey: translationCacheKey)
+        removeMemory(translationCacheKey)
         lock.unlock()
         let url = fileURL(for: translationCacheKey)
         try? fileManager.removeItem(at: url)
@@ -336,7 +356,49 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     func dropMemoryForTesting() {
         lock.lock()
         memory.removeAll(keepingCapacity: false)
+        memoryLRU.removeAll(keepingCapacity: false)
+        memoryBytes = 0
         lock.unlock()
+    }
+    #endif
+
+    /// Called only while holding `lock`; hits promote an entry without disk I/O.
+    private func touchMemory(_ key: String) {
+        if let index = memoryLRU.firstIndex(of: key) {
+            memoryLRU.remove(at: index)
+        }
+        memoryLRU.append(key)
+    }
+
+    private func removeMemory(_ key: String) {
+        if let old = memory.removeValue(forKey: key) {
+            memoryBytes -= old.bytes
+        }
+        if let index = memoryLRU.firstIndex(of: key) {
+            memoryLRU.remove(at: index)
+        }
+    }
+
+    private func insertMemory(_ payload: Payload, bytes: Int, for key: String) {
+        removeMemory(key)
+        // Oversized entries remain on disk and must not evict useful small entries.
+        guard memoryEntryLimit > 0, bytes <= memoryByteLimit else {
+            return
+        }
+        while let oldest = memoryLRU.first,
+              memory.count >= memoryEntryLimit || bytes > memoryByteLimit - memoryBytes {
+            removeMemory(oldest)
+        }
+        memory[key] = MemoryEntry(payload: payload, bytes: bytes)
+        memoryBytes += bytes
+        touchMemory(key)
+    }
+
+    #if DEBUG
+    func memoryUsageForTesting() -> (entries: Int, bytes: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (memory.count, memoryBytes)
     }
     #endif
 
@@ -346,14 +408,14 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         return rootURL.appendingPathComponent("\(hex).json", isDirectory: false)
     }
 
-    private func readDisk(_ translationCacheKey: String) -> Payload? {
+    private func readDisk(_ translationCacheKey: String) -> (payload: Payload, bytes: Int)? {
         let url = fileURL(for: translationCacheKey)
         guard let data = try? Data(contentsOf: url) else { return nil }
         guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
             try? fileManager.removeItem(at: url)
             return nil
         }
-        return payload
+        return (payload, data.count)
     }
 
     /// Evicts oldest-written, not LRU: a hit only reads, so this is insertion order.
@@ -381,11 +443,10 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         }
     }
 
-    private func writeDisk(_ payload: Payload, for translationCacheKey: String) {
+    private func writeDisk(_ data: Data, for translationCacheKey: String) {
         let url = fileURL(for: translationCacheKey)
         do {
             try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(payload)
             try data.write(to: url, options: .atomic)
         } catch {
             // Cache is a speedup; a failed write must not fail the compile.
