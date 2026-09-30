@@ -1,7 +1,9 @@
+import AppKit
 import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 /// Pins SCREENS.md S1–S3, MOTION_SPEC 1–4 and GAP_ANALYSIS §6 numerically.
@@ -134,6 +136,7 @@ struct StageGeometryTests {
         }
     }
 
+    @MainActor
     @Test("The library's filter row sits 4pt under the top bar and 22pt over its first card, like the Workshop's")
     func filterRowMatchesTheWorkshopPage() throws {
         #expect(StageGeometry.chipRowTopFull == 60)
@@ -148,9 +151,24 @@ struct StageGeometryTests {
         #expect(page.contains(".padding(.top, DesignTokens.EditDesk.Spacing.topBar)"))
         let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
         #expect(ribbon.contains(".padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)"))
-        #expect(ribbon.contains(".padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.Settings.formVerticalMargin)"))
+        #expect(ribbon.contains("DesignTokens.LibraryGrid.verticalPadding"), "the ribbon must account for the shared grid inset")
+        #expect(!ribbon.contains("DesignTokens.Settings.formVerticalMargin"), "settings padding disagrees with the shared grid inset")
         let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(pane.contains(".padding(.vertical, DesignTokens.Settings.formVerticalMargin)"), "the Workshop grid's top inset moved")
+        let gridStart = try #require(pane.range(of: "private func cardGrid("))
+        let grid = try #require(String(pane[gridStart.lowerBound...]).components(separatedBy: "\n    }").first)
+        #expect(grid.contains(".libraryGridPadding()"), "the Workshop grid bypasses the shared inset")
+        #expect(!grid.contains(".padding("), "the Workshop grid adds a second page-specific inset")
+
+        // Measure the shared modifier itself: its implementation can change without touching the caller.
+        let contentSize = CGSize(width: 100, height: 80)
+        let measured = NSHostingView(rootView: Color.clear
+            .frame(width: contentSize.width, height: contentSize.height)
+            .libraryGridPadding()).fittingSize
+        #expect(near(measured.width - contentSize.width, 2 * DesignTokens.LibraryGrid.horizontalPadding))
+        let gridTopInset = (measured.height - contentSize.height) / 2
+        #expect(near(gridTopInset, DesignTokens.LibraryGrid.verticalPadding))
+        let ribbonBottomInset = DesignTokens.EditDesk.Spacing.filterRowToCards - gridTopInset
+        #expect(near(ribbonBottomInset, DesignTokens.Spacing.sm), "the grid and ribbon no longer leave the agreed card gap")
     }
 
     @Test("Snap spring converts to CASpringAnimation terms")

@@ -129,7 +129,10 @@ struct EditDeskChromeSourceTests {
 
         let detail = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift")
         let glass = try RepositoryRoot.source("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/AdaptiveGlass.swift")
-        #expect(detail.contains(".adaptiveGlassSurface(.capsule)"))
+        let sections = try member(detail, "private var sectionPicker: some View {")
+        #expect(sections.contains("GlassSegmentedPicker("), "detail tabs bypass the shared segmented chrome")
+        #expect(!sections.contains(".adaptiveGlassSurface("), "detail tabs add a second glass plate")
+        #expect(!sections.contains("Capsule().fill("), "detail tabs hide the shared glass behind a painted plate")
         #expect(!detail.contains("preferMaterial"), "the section picker is forced back onto material")
         #expect(!glass.contains("preferMaterial"))
 
