@@ -157,6 +157,7 @@ extension WPEMetalSceneRenderer {
     func discardSceneScriptVideoCommands() {
         _ = sceneScriptVideoCommandBuffer.finish(commit: false)
         sceneScriptIntroPhaseAlignPending = false
+        _ = sceneScriptSharedState?.drainParticleCommands()
     }
 
     @discardableResult
@@ -216,6 +217,9 @@ extension WPEMetalSceneRenderer {
     ) -> Bool {
         let committed = authorize {
             let bufferedCommands = sceneScriptVideoCommandBuffer.finish(commit: true)
+            let particleCommands = sceneScriptSharedState?.drainParticleCommands() ?? []
+            Self.applyParticlePlaybackCommands(particleCommands, systems: particleSystems)
+            publishParticlePlaybackSnapshots()
             let shouldAlignIntroPhase = sceneScriptIntroPhaseAlignPending
             sceneScriptIntroPhaseAlignPending = false
 

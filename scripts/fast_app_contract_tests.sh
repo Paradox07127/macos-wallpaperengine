@@ -47,6 +47,8 @@ PARALLEL_SUITES=(
   WPELinkedShaderStageTests
   WPEAuthoredVertexExecutorTests
   WPEParticleEventTests
+  WPEParticlePlaybackTests
+  WPESceneScriptParticlePlaybackTests
   WPEUniformStageBindingTests
   WPEAttachmentPlanTests
   WPESceneScriptBatchCompletionTests
@@ -70,7 +72,6 @@ PARALLEL_SUITES=(
   # The cache pane's latest-wins arbitration lives in private SwiftUI state, so
   # this pins the ordering in source; deleting the guard left everything green.
   CacheInventoryArbitrationTests
-  OverlayVisibilityLifecycleCharacterizationTests
   BoardPointerScopeTests
   MusicLayerPointerGateTests
   RuntimeLeaseChurnCharacterizationTests
@@ -246,6 +247,8 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
+  OverlayVisibilityLifecycleCharacterizationTests
   # Error snapshots compare app-language text across calls; locale probes change it process-wide.
   SceneFailureFlowTests
   # Screen ↔ runtime-session ownership, including the crossfade retire path.

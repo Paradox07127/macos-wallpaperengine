@@ -559,6 +559,7 @@ extension WPEMetalSceneRenderer {
             }
             return chain
         }()
+        system.scriptParticleObjectID = object.id
         system.sortIndex = sortIndex
         system.overbright = Self.particleOverbright(
             material: material?.overbright,

@@ -482,6 +482,7 @@ enum WPESceneScriptFailClosedReason: Sendable, Equatable {
     case capacityUnavailable(operation: WPESceneScriptOperation)
     case createdLayerLimitExceeded(limit: Int)
     case videoCommandLimitExceeded(limit: Int)
+    case particleCommandLimitExceeded(limit: Int)
     case sharedStateLimitExceeded(limit: Int)
     case timerCallbackLimitExceeded(limit: Int)
     case quarantineLimitReached(limit: Int)

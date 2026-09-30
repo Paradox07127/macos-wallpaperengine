@@ -158,6 +158,7 @@ final class WPELayerScriptInstance {
         initialVisible: Bool = true,
         initialAlpha: Double = 1,
         ownLayerName: String? = nil,
+        ownObjectID: String? = nil,
         createdLayerBridge: WPECreatedLayerBridgeConfiguration? = nil,
         governor: WPESceneScriptExecutionGovernor = .processShared,
         batchDispatcher: WPESceneScriptBatchDispatcher = .processShared
@@ -172,6 +173,7 @@ final class WPELayerScriptInstance {
             initialVisible: initialVisible,
             initialAlpha: initialAlpha,
             ownLayerName: ownLayerName,
+            ownObjectID: ownObjectID,
             createdLayerBridge: createdLayerBridge,
             governor: governor,
             batchDispatcher: batchDispatcher
@@ -625,6 +627,8 @@ final class WPELayerScriptInstance {
         private var neutralAnimationStubCache: JSValue?
         /// ownKey is the empty string, so without this thisLayer.name / .size / .origin and thisScene.getLayerIndex(thisLayer) all miss the layer table.
         private let ownLayerName: String?
+        private let ownObjectID: String?
+        private let particleBridge: WPESceneScriptParticleBridge
 
         init(
             nowProviderMillis: (@Sendable () -> Double)?,
@@ -635,6 +639,7 @@ final class WPELayerScriptInstance {
             initialVisible: Bool,
             initialAlpha: Double,
             ownLayerName: String?,
+            ownObjectID: String?,
             createdLayerBridge: WPECreatedLayerBridgeConfiguration?,
             governor: WPESceneScriptExecutionGovernor,
             batchDispatcher: WPESceneScriptBatchDispatcher
@@ -643,6 +648,8 @@ final class WPELayerScriptInstance {
             executionLane = lane
             virtualMachine = lane.virtualMachine
             self.ownLayerName = ownLayerName
+            self.ownObjectID = ownObjectID
+            particleBridge = WPESceneScriptParticleBridge(shared: shared)
             self.createdLayerBridge = createdLayerBridge
             currentLayerOrder = createdLayerBridge?.orderedLayerNames
                 ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
@@ -923,6 +930,8 @@ final class WPELayerScriptInstance {
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue]
         ) -> SetupOutcome {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
             self.context = context
             let timerScheduler = WPESceneScriptTimerScheduler()
@@ -951,6 +960,7 @@ final class WPELayerScriptInstance {
             }
             context.exceptionHandler = { [weak self] _, exception in
                 self?.didThrow = true
+                self?.particleBridge.failEvaluation()
                 self?.logFirstThrow(exception)
             }
             evaluationResourceBudget.beginEvaluation()
@@ -1019,6 +1029,8 @@ final class WPELayerScriptInstance {
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
@@ -1045,6 +1057,8 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?,
             pointerFrame: WPEPointerFrame?
         ) -> WPELayerScriptOutput {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             audioBridge?.refresh()
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
@@ -1098,6 +1112,8 @@ final class WPELayerScriptInstance {
             hit: WPELayerScriptCursorHit,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             updateInput(pointerFrame)
@@ -1131,6 +1147,8 @@ final class WPELayerScriptInstance {
             _ properties: [String: WPESceneScriptPropertyValue],
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
@@ -1147,6 +1165,8 @@ final class WPELayerScriptInstance {
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> WPELayerScriptOutput? {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             let size = SIMD2<Double>(max(requestedSize.x, 1), max(requestedSize.y, 1))
             guard size != screenSize else { return nil }
             screenSize = size
@@ -1166,6 +1186,8 @@ final class WPELayerScriptInstance {
         }
 
         private func applyGeneralSettingsOnQueue(language: String) -> WPELayerScriptOutput? {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
             guard let context,
@@ -1179,6 +1201,8 @@ final class WPELayerScriptInstance {
         }
 
         private func destroyOnQueue() -> WPELayerScriptOutput {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
             if let context,
@@ -1466,7 +1490,10 @@ final class WPELayerScriptInstance {
             handle.setObject(layerName, forKeyedSubscript: "name" as NSString)
             // Authored layer size. Zero when the name isn't a scene layer — getLayer mints handles for arbitrary strings.
             let size = JSValue(newObjectIn: context)!
-            let info = shared?.layers.first { $0.name == layerName }
+            let info = key == Self.ownKey
+                ? (ownObjectID.flatMap { id in shared?.layers.first { $0.id == id } }
+                    ?? shared?.layers.first { $0.name == layerName })
+                : shared?.layers.first { $0.name == layerName }
             size.setObject(info?.size.x ?? 0, forKeyedSubscript: "x" as NSString)
             size.setObject(info?.size.y ?? 0, forKeyedSubscript: "y" as NSString)
             handle.setObject(size, forKeyedSubscript: "size" as NSString)
@@ -1503,6 +1530,10 @@ final class WPELayerScriptInstance {
                 self?.neutralAnimationStubCache
             }
             handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
+            if let info, info.isParticleSystem {
+                particleBridge.install(on: handle, objectID: info.id, in: context)
+                return handle
+            }
             let store = shared
             for (method, command) in [
                 ("play", WPELayerSoundCommand.play),

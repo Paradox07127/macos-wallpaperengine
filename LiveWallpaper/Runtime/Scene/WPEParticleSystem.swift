@@ -296,6 +296,7 @@ final class WPEParticleSystem {
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
+    var scriptParticleObjectID: String?
     /// 1 when the object has no such script — and it keeps its last ticked value if the script later fails.
     var instanceAlphaScale: Float = 1
     /// Scene object whose `instanceoverride.alpha` script drives `instanceAlphaScale`.
@@ -353,6 +354,9 @@ final class WPEParticleSystem {
     private var cachedPrimarySlot: Int = .max
     private var spawnAccumulator: Double = 0
     private var hasEmittedBurst = false
+    private enum Playback { case playing, paused, stopped }
+    private var playback: Playback = .playing
+    private var explicitlyRequestedParticles = 0
     private var lastTickTime: Double?
     private var firstTickTime: Double?
     private var rng: WPEParticleRNG
@@ -1096,7 +1100,38 @@ final class WPEParticleSystem {
     /// True once every spawn gate is permanently closed. False until the first tick so an untouched system always counts as live.
     private var emissionExhausted = false
 
-    var isPermanentlyIdle: Bool { aliveCount == 0 && emissionExhausted }
+    var isPermanentlyIdle: Bool {
+        aliveCount == 0 && explicitlyRequestedParticles == 0 && (playback != .playing || emissionExhausted)
+    }
+
+    var playbackSnapshot: WPEParticlePlaybackSnapshot {
+        .init(liveParticleCount: aliveCount + explicitlyRequestedParticles,
+              isEmitting: playback == .playing && !emissionExhausted)
+    }
+
+    func applyPlaybackCommand(_ command: WPEParticlePlaybackCommand) {
+        switch command {
+        case .play:
+            if playback == .stopped || emissionExhausted {
+                firstTickTime = nil
+                lastTickTime = nil
+                systemElapsed = 0
+                lastFrameInterval = 0
+                spawnAccumulator = 0
+                hasEmittedBurst = false
+                emissionExhausted = false
+            }
+            playback = .playing
+        case .pause: playback = .paused
+        case .stop:
+            playback = .stopped
+            explicitlyRequestedParticles = 0
+            clearLiveParticles()
+            ropeVertexCount = 0
+        case let .emit(count):
+            explicitlyRequestedParticles = min(capacity, explicitlyRequestedParticles + max(0, min(count, capacity)))
+        }
+    }
 
     var tracksPointer: Bool { emitterTracksPointer }
 
@@ -1235,7 +1270,15 @@ final class WPEParticleSystem {
             elapsed <= emissionStart + $0
         } ?? true
         let emitterCanSpawn = definition.emitterShape.isRuntimeSupported
-        if hasStartedEmitting, emitterCanSpawn {
+        if explicitlyRequestedParticles > 0 {
+            let count = explicitlyRequestedParticles
+            explicitlyRequestedParticles = 0
+            for _ in 0 ..< count {
+                guard let slot = nextFreeSlot() else { break }
+                spawn(into: slot)
+            }
+        }
+        if playback == .playing, hasStartedEmitting, emitterCanSpawn {
             if definition.instantaneousCount > 0 {
                 if requiresFollowParent {
                     // eventfollow: burst once per parent birth, not once per system.

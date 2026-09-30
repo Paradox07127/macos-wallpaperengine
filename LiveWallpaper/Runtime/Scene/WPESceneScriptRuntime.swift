@@ -1641,6 +1641,7 @@ struct WPESceneScriptLayerInfo: Sendable {
     let parentName: String?
     let alignment: String
     let parallaxDepth: SIMD2<Double>
+    let isParticleSystem: Bool
 
     init(
         id: String,
@@ -1653,7 +1654,8 @@ struct WPESceneScriptLayerInfo: Sendable {
         index: Int,
         parentName: String?,
         alignment: String = "center",
-        parallaxDepth: SIMD2<Double> = .zero
+        parallaxDepth: SIMD2<Double> = .zero,
+        isParticleSystem: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -1666,6 +1668,7 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.parentName = parentName
         self.alignment = alignment
         self.parallaxDepth = parallaxDepth
+        self.isParticleSystem = isParticleSystem
     }
 }
 
@@ -1676,6 +1679,51 @@ final class WPESharedScriptState: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String: Any] = [:]
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
+    // Separate from shared-value storage: shared.set checks the token while
+    // holding its own lock; particle commits hold the token before this lock.
+    private let particleLock = NSLock()
+    private var particlePlaybackByID: [String: WPEParticlePlaybackSnapshot] = [:]
+    private var pendingParticleCommands: [WPESceneScriptParticleCommand] = []
+    static let maximumPendingParticleCommands = 4096
+
+    func publishParticlePlayback(_ snapshots: [String: WPEParticlePlaybackSnapshot]) {
+        particleLock.lock(); defer { particleLock.unlock() }
+        particlePlaybackByID = snapshots
+    }
+
+    func particlePlaybackSnapshot(objectID: String) -> WPEParticlePlaybackSnapshot? {
+        particleLock.lock(); defer { particleLock.unlock() }
+        return particlePlaybackByID[objectID]
+    }
+
+    func enqueueParticleCommands(_ commands: [WPESceneScriptParticleCommand]) {
+        guard !commands.isEmpty else { return }
+        var overflow = false
+        let commit = {
+            self.particleLock.lock(); defer { self.particleLock.unlock() }
+            guard commands.count <= Self.maximumPendingParticleCommands - self.pendingParticleCommands.count else {
+                overflow = true
+                return
+            }
+            self.pendingParticleCommands.append(contentsOf: commands)
+        }
+        if let sceneScriptLoadToken {
+            _ = sceneScriptLoadToken.withCompletionPermission(commit)
+        } else {
+            commit()
+        }
+        // Never re-enter the token while holding its completion lock.
+        if overflow {
+            sceneScriptLoadToken?.failClosed(.particleCommandLimitExceeded(limit: Self.maximumPendingParticleCommands))
+        }
+    }
+
+    /// The renderer drains under the current load's completion permission.
+    func drainParticleCommands() -> [WPESceneScriptParticleCommand] {
+        particleLock.lock(); defer { particleLock.unlock() }
+        defer { pendingParticleCommands.removeAll(keepingCapacity: true) }
+        return pendingParticleCommands
+    }
 
     struct LiveLayerTransform: Sendable {
         var origin: SIMD3<Double>?
@@ -2601,6 +2649,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private let ownLayerName: String?
         private let ownObjectID: String?
         private let shared: WPESharedScriptState?
+        private let particleBridge: WPESceneScriptParticleBridge
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
         let instanceLimitToken: WPESceneScriptInstanceLimitToken?
@@ -2652,6 +2701,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             self.ownLayerName = ownLayerName
             self.ownObjectID = ownObjectID
             self.shared = shared
+            particleBridge = WPESceneScriptParticleBridge(shared: shared)
             self.governor = governor
             self.participant = governor.makeParticipant()
             self.instanceLimitToken = shared?.sceneScriptLoadToken
@@ -2842,6 +2892,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue]
         ) -> SetupOutcome {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
             self.context = context
             updateArgument = nil
@@ -2858,8 +2910,13 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             installLayerBridge(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
             _ = updateEngineRuntime(0)
-            if let shared { wpeInstallSharedState(shared, in: context) }
-            context.exceptionHandler = { [weak self] _, _ in self?.didThrow = true }
+            if let shared {
+                wpeInstallSharedState(shared, in: context)
+            }
+            context.exceptionHandler = { [weak self] _, _ in
+                self?.didThrow = true
+                self?.particleBridge.failEvaluation()
+            }
 
             didThrow = false
             _ = context.evaluateScript(script)
@@ -2900,6 +2957,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?
         ) {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
@@ -2952,6 +3011,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             pointerPosition: SIMD2<Double>,
             runtimeSeconds: Double?
         ) -> SIMD3<Double>? {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard let context else { return nil }
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
@@ -3048,6 +3109,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             let size = SIMD2(max(requestedSize.x, 1), max(requestedSize.y, 1))
             guard size != screenSize else { return false }
             screenSize = size
@@ -3065,6 +3128,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         private func applyGeneralSettingsOnQueue(language: String) -> Bool {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard let context,
                   let function = context.objectForKeyedSubscript("applyGeneralSettings"),
                   !function.isUndefined, function.hasProperty("call"),
@@ -3076,6 +3141,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         private func destroyOnQueue() -> Bool {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             var invoked = false
             if let context,
                let function = context.objectForKeyedSubscript("destroy"),
@@ -3095,6 +3162,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         fileprivate func applyUserPropertiesOnQueue(
             _ properties: [String: WPESceneScriptPropertyValue]
         ) -> Bool {
+            particleBridge.beginEvaluation()
+            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
             guard let context,
                   let function = context.objectForKeyedSubscript("applyUserProperties"),
                   !function.isUndefined, function.hasProperty("call"),
@@ -3219,6 +3288,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return result
             }
             handle.setObject(getTransformMatrix, forKeyedSubscript: "getTransformMatrix" as NSString)
+            if layer.info.isParticleSystem {
+                particleBridge.install(on: handle, objectID: layer.info.id, in: context)
+            }
             layerHandles[cacheKey] = handle
             _ = neutralLayer(in: context)
             return handle

@@ -124,6 +124,7 @@ extension WPEMetalSceneRenderer {
                     canvasSize: scriptCanvasSize,
                     screenSize: scriptScreenSize,
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     createdLayerBridge: Self.createdLayerBridgeConfiguration(
                         document: document, pipeline: pipeline, ownerName: object.name
                     ),
@@ -152,6 +153,7 @@ extension WPEMetalSceneRenderer {
                     initialVisible: object.visible,
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     createdLayerBridge: Self.createdLayerBridgeConfiguration(
                         document: document, pipeline: pipeline, ownerName: object.name
                     ),

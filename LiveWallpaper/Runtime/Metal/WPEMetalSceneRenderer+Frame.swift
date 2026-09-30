@@ -538,6 +538,7 @@ extension WPEMetalSceneRenderer {
             Self.injectFollowControlPoint(into: system)
             system.tick(now: time, frameSlot: frameSlot)
         }
+        publishParticlePlaybackSnapshots()
     }
 
     nonisolated static func injectFollowControlPoint(into system: WPEParticleSystem) {
