@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
@@ -87,6 +88,18 @@ struct StatusCapsuleTests {
             StatusCapsuleModel.footerLabels(configured: 0, wallpapersEnabled: false, pausesOnBattery: true)
                 == [.wallpapersOff, .pausesOnBattery]
         )
+    }
+
+    @Test("The footer's display count picks one screen up to one display and two screens from two on")
+    func displaysSymbolFollowsTheCount() {
+        #expect(StatusCapsuleModel.displaysSymbol(count: 0) == "display")
+        #expect(StatusCapsuleModel.displaysSymbol(count: 1) == "display")
+        #expect(StatusCapsuleModel.displaysSymbol(count: 2) == "display.2")
+        #expect(StatusCapsuleModel.displaysSymbol(count: 3) == "display.2")
+        for count in [1, 2] {
+            let name = StatusCapsuleModel.displaysSymbol(count: count)
+            #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, Comment(rawValue: name))
+        }
     }
 
     @Test("Headline keys map one-to-one to health bands")

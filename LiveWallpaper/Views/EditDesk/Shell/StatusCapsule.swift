@@ -136,6 +136,11 @@ enum StatusCapsuleModel {
         return labels
     }
 
+    /// SF Symbols has no zero- or three-screen variant: 0 shares the single screen, 3+ the pair.
+    static func displaysSymbol(count: Int) -> String {
+        count >= 2 ? "display.2" : "display"
+    }
+
     /// `scope` is `RAMScopePicker`'s value: "app" reads this process, anything else the whole system.
     static func memoryReadout(
         scope: String, systemFraction: Double, appBytes: UInt64, totalBytes: UInt64
@@ -337,10 +342,6 @@ struct StatusCapsule: View {
                 headlineRow(showsChevron: true)
             }
             .buttonStyle(.plain)
-            noteText
-                .font(DesignTokens.EditDesk.Typography.footnote)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
                 dial("CPU", fraction: cpuPercent / 100) {
                     Text(verbatim: percentText(cpuPercent))
@@ -357,9 +358,6 @@ struct StatusCapsule: View {
                 }
             }
             memoryRow
-            Rectangle()
-                .fill(DesignTokens.EditDesk.Colors.strokePanel)
-                .frame(height: 1)
             footerRow
         }
         .padding(10)
@@ -444,7 +442,7 @@ struct StatusCapsule: View {
                 if index > 0 {
                     Text(verbatim: "·")
                 }
-                footerText(label)
+                footerItem(label)
             }
             if let battery = StatusCapsuleModel.batteryReadout(powerSource) {
                 Text(verbatim: "·")
@@ -466,10 +464,17 @@ struct StatusCapsule: View {
         .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
     }
 
-    private func footerText(_ label: StatusCapsuleFooterLabel) -> Text {
+    @ViewBuilder
+    private func footerItem(_ label: StatusCapsuleFooterLabel) -> some View {
         switch label {
         case .wallpapersOff: Text("Wallpapers Off")
-        case let .displaysConfigured(count): Text("\(count) Displays Configured")
+        case let .displaysConfigured(count):
+            HStack(spacing: 2) {
+                Image(systemName: StatusCapsuleModel.displaysSymbol(count: count))
+                Text(verbatim: "\(count)")
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("\(count) Displays Configured"))
         case .pausesOnBattery: Text("Pauses on Battery")
         }
     }
