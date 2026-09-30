@@ -120,6 +120,87 @@ struct WPEPuppetAttachmentFollowTests {
         #expect(abs(moved.geometry.origin.y - jewel.geometry.origin.y - Double(boneDelta.y)) < 0.01)
     }
 
+    private func groupChain(
+        child: WPERenderLayer, groupAngleZ: Double, groupScale: SIMD3<Double>
+    ) -> WPEMetalRenderExecutor.PuppetAttachmentFrameContext {
+        let rig = layer(id: "rig", origin: SIMD3(1000, 800, 0), puppetPath: "models/rig.mdl")
+        let group = layer(id: "grp", origin: SIMD3(1600, 1000, 0), scale: groupScale, angleZ: groupAngleZ)
+        let initial = context(parent: rig, boneTranslation: boneDelta)
+        return WPEMetalRenderExecutor.PuppetAttachmentFrameContext(
+            objectParentByID: ["face": "rig", "rig": "grp"],
+            layersByObjectID: initial.layersByObjectID.merging([
+                "grp": WPEPreparedRenderLayer(graphLayer: group, passes: []),
+                "face": WPEPreparedRenderLayer(graphLayer: child, passes: []),
+            ]) { first, _ in first }, skinningByObjectID: initial.skinningByObjectID, sceneSize: sceneSize
+        )
+    }
+
+    private func pass(target: WPERenderTarget) -> WPERenderPass {
+        WPERenderPass(
+            id: "face.final", phase: .material, shader: "genericimage2", source: .image("materials/face.png"),
+            target: target, textures: [:], binds: [:], constants: [:], combos: [:], blending: "normal",
+            cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+    }
+
+    @Test("An attached layer drawn into its composelayer target follows the bone through the group's inverse rotation and scale")
+    func groupedAttachmentFollowsInGroupLocalSpace() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let base = layer(id: "face", origin: childOrigin, parentObjectID: "rig", attachment: "head")
+        let groupTarget = WPERenderTargetNames.LayerGroup.make(objectID: "grp")
+        let groupLocal = WPERenderLayerGeometry(
+            origin: SIMD3(300, 200, 4), scale: SIMD3(0.5, 0.5, 1), angles: SIMD3(0, 0, -0.5), alignment: .topLeft,
+            size: CGSize(width: 400, height: 300), puppetMeshCenter: SIMD2(7, 9), alpha: 0.8,
+            color: SIMD3(0.2, 0.4, 0.6), brightness: 1.5, shapePoints: [SIMD2(0, 0), SIMD2(1, 0), SIMD2(1, 1), SIMD2(0, 1)]
+        )
+        let child = WPERenderLayer(
+            objectID: base.objectID, objectName: base.objectName, imagePath: base.imagePath, materialPath: nil,
+            parentObjectID: "rig", attachment: "head", geometry: base.geometry,
+            compositeA: base.compositeA, compositeB: base.compositeB, localFBOs: [], passes: [],
+            groupRenderTarget: groupTarget, groupLocalGeometry: groupLocal
+        )
+        let angle = 0.5
+        let moved = executor.layerApplyingAttachmentFollow(
+            child, context: groupChain(child: child, groupAngleZ: angle, groupScale: SIMD3(2, 2, 1))
+        )
+        let drawn = executor.layerForDrawing(pass: pass(target: .fbo(name: groupTarget)), layer: moved).geometry
+        let delta = SIMD2<Double>(Double(boneDelta.x), Double(boneDelta.y))
+        let expected = SIMD2<Double>(
+            (delta.x * cos(-angle) - delta.y * sin(-angle)) / 2,
+            (delta.x * sin(-angle) + delta.y * cos(-angle)) / 2
+        )
+        #expect(abs(drawn.origin.x - groupLocal.origin.x - expected.x) < 0.01, "x: \(drawn.origin.x - groupLocal.origin.x) vs \(expected.x)")
+        #expect(abs(drawn.origin.y - groupLocal.origin.y - expected.y) < 0.01, "y: \(drawn.origin.y - groupLocal.origin.y) vs \(expected.y)")
+        let movedLocal = try #require(moved.groupLocalGeometry)
+        #expect(movedLocal.origin.z == groupLocal.origin.z)
+        #expect(movedLocal.scale == groupLocal.scale)
+        #expect(movedLocal.angles == groupLocal.angles)
+        #expect(movedLocal.alignment == groupLocal.alignment)
+        #expect(movedLocal.size == groupLocal.size)
+        #expect(movedLocal.puppetMeshCenter == groupLocal.puppetMeshCenter)
+        #expect(movedLocal.alpha == groupLocal.alpha)
+        #expect(movedLocal.color == groupLocal.color)
+        #expect(movedLocal.brightness == groupLocal.brightness)
+        #expect(movedLocal.shapePoints == groupLocal.shapePoints)
+        #expect(moved.groupRenderTarget == groupTarget)
+        #expect(abs(moved.geometry.origin.x - childOrigin.x - delta.x) < 0.01)
+        #expect(abs(moved.geometry.origin.y - childOrigin.y - delta.y) < 0.01)
+    }
+
+    @Test("An attached layer outside any composelayer still moves only its scene geometry")
+    func ungroupedAttachmentUnchangedByGroupAncestor() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let child = layer(id: "face", origin: childOrigin, parentObjectID: "rig", attachment: "head")
+        let moved = executor.layerApplyingAttachmentFollow(
+            child, context: groupChain(child: child, groupAngleZ: 0.5, groupScale: SIMD3(2, 2, 1))
+        )
+        #expect(moved.groupLocalGeometry == nil)
+        #expect(abs(moved.geometry.origin.x - childOrigin.x - Double(boneDelta.x)) < 0.01)
+        #expect(abs(moved.geometry.origin.y - childOrigin.y - Double(boneDelta.y)) < 0.01)
+        let drawn = executor.layerForDrawing(pass: pass(target: .fbo(name: WPERenderTargetNames.LayerGroup.make(objectID: "grp"))), layer: moved)
+        #expect(drawn.geometry == moved.geometry)
+    }
+
     @Test("Zero bone motion under a mirrored parent leaves the child at its bind-pose origin")
     func zeroDeltaUnderMirroredParentIsNoOp() throws {
         let origin = try followedOrigin(parentScale: SIMD3<Double>(-1, -1, 1), angleZ: 0.7, boneTranslation: .zero)

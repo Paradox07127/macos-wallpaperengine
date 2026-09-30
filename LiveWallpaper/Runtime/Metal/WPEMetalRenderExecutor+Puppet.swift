@@ -436,7 +436,19 @@ extension WPEMetalRenderExecutor {
             }
         }
         guard delta.x.isFinite, delta.y.isFinite, delta != .zero else { return layer }
-        return replacingGeometryOrigin(of: layer, bySceneOffset: delta, sceneSize: context.sceneSize)
+        var groupGeometry: WPERenderLayerGeometry?
+        if let groupTarget = layer.groupRenderTarget {
+            var ancestorID = context.objectParentByID[layer.objectID]
+            var visited: Set<String> = []
+            while let id = ancestorID, visited.insert(id).inserted {
+                if WPERenderTargetNames.LayerGroup.make(objectID: id) == groupTarget {
+                    groupGeometry = context.layersByObjectID[id]?.graphLayer.geometry
+                    break
+                }
+                ancestorID = context.objectParentByID[id]
+            }
+        }
+        return replacingGeometryOrigin(of: layer, bySceneOffset: delta, sceneSize: context.sceneSize, groupGeometry: groupGeometry)
     }
 
     /// A WPE origin component in `0...1` is a normalized fraction of the scene; outside that range it
@@ -484,10 +496,39 @@ extension WPEMetalRenderExecutor {
     func replacingGeometryOrigin(
         of layer: WPERenderLayer,
         bySceneOffset delta: SIMD2<Float>,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        groupGeometry: WPERenderLayerGeometry? = nil
     ) -> WPERenderLayer {
         let geometry = layer.geometry
         let originPixels = Self.scenePixelOrigin(from: geometry.origin, sceneSize: sceneSize)
+        var adjustedGroupLocalGeometry = layer.groupLocalGeometry
+        if let group = groupGeometry, let local = layer.groupLocalGeometry {
+            // Same inverse group transform as WPERenderGraphBuilder.groupLocalGeometry(for:in:), applied to the scene delta.
+            let cosine = cos(-group.angles.z)
+            let sine = sin(-group.angles.z)
+            let dx = Double(delta.x)
+            let dy = Double(delta.y)
+            let scaleX = abs(group.scale.x) > 0.0001 ? group.scale.x : 1
+            let scaleY = abs(group.scale.y) > 0.0001 ? group.scale.y : 1
+            adjustedGroupLocalGeometry = WPERenderLayerGeometry(
+                origin: SIMD3<Double>(
+                    local.origin.x + (dx * cosine - dy * sine) / scaleX,
+                    local.origin.y + (dx * sine + dy * cosine) / scaleY,
+                    local.origin.z
+                ),
+                scale: local.scale,
+                angles: local.angles,
+                alignment: local.alignment,
+                size: local.size,
+                puppetMeshCenter: local.puppetMeshCenter,
+                alpha: local.alpha,
+                alphaAnimation: local.alphaAnimation,
+                color: local.color,
+                colorAnimation: local.colorAnimation,
+                brightness: local.brightness,
+                shapePoints: local.shapePoints
+            )
+        }
         let adjustedGeometry = WPERenderLayerGeometry(
             origin: SIMD3<Double>(
                 originPixels.x + Double(delta.x),
@@ -525,7 +566,7 @@ extension WPEMetalRenderExecutor {
             localFBOs: layer.localFBOs,
             passes: layer.passes,
             groupRenderTarget: layer.groupRenderTarget,
-            groupLocalGeometry: layer.groupLocalGeometry,
+            groupLocalGeometry: adjustedGroupLocalGeometry,
             groupCompositeSource: layer.groupCompositeSource,
             parallaxDepth: layer.parallaxDepth,
             sortIndex: layer.sortIndex
