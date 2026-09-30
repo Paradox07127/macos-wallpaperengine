@@ -712,7 +712,7 @@ extension WPEShaderTranspiler {
             if varying.metalType == "float4",
                texCoordZWFamilyName(shaderName: shaderName) == "blur_precise_gaussian",
                hasUniforms("g_Scale", "g_Texture0Resolution", in: availableUniforms) {
-                return comboValues["VERTICAL"] == 1
+                return (comboValues["VERTICAL"] ?? 0) != 0
                     ? "float4(in.uv, 0.0, g_Scale.y / g_Texture0Resolution.w)"
                     : "float4(in.uv, g_Scale.x / g_Texture0Resolution.z, 0.0)"
             }
@@ -1037,7 +1037,7 @@ extension WPEShaderTranspiler {
               hasUniforms("g_Scale", "g_Texture0Resolution", in: availableUniforms) else { return nil }
         let counts = [0: 13, 1: 7, 2: 3]
         guard count == counts[comboValues["KERNEL"] ?? 0] else { return nil }
-        let step = comboValues["VERTICAL"] == 1
+        let step = (comboValues["VERTICAL"] ?? 0) != 0
             ? "float2(0.0, g_Scale.y / g_Texture0Resolution.w)"
             : "float2(g_Scale.x / g_Texture0Resolution.z, 0.0)"
         return (0..<count).map { "in.uv + \(step) * \(Float($0 - count / 2))" }

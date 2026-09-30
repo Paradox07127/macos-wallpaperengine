@@ -62,6 +62,7 @@ struct WPEEffectProjectionReplayTests {
             ("mat3 m = mat3(2.0); vec4 probe = vec4(m[0][0], m[0][1], m[1][0], m[1][1]);", [2, 0, 0, 2]),
             ("mat2 m = mat2(vec4(2.0, 3.0, 5.0, 7.0)); vec4 probe = vec4(m[0], m[1]);", [2, 3, 5, 7]),
             ("mat2 m = mat2(vec2(2.0, 3.0), vec2(5.0, 7.0)); vec4 probe = vec4(m[0], m[1]);", [2, 3, 5, 7]),
+            ("mat3 m = g_EffectTextureProjectionMatrixInverse[3][3] < 0.5 ? mat3(1.0):mat3(g_EffectTextureProjectionMatrixInverse); vec4 probe = vec4(m[0][0], m[1][1], m[2][2], m[2][0]);", [2, 7, 23, 17]),
         ]
         for fixture in fixtures {
             #expect(try replay(matrix: matrix, normalized: false, bodyOverride: fixture.body) == fixture.expected)

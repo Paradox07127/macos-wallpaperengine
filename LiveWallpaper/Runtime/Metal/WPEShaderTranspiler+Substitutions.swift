@@ -93,7 +93,7 @@ extension WPEShaderTranspiler {
     /// Metal lacks GLSL's cross-size matrix constructors; a helper evaluates the argument once.
     private static func rewriteGLSLMatrixConstructors(_ source: String) -> String {
         let masked = maskComments(source)
-        guard let regex = try? NSRegularExpression(pattern: #"(?<![:A-Za-z0-9_])float([234])x\1\s*\("#) else {
+        guard let regex = try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9_])(?<!::)float([234])x\1\s*\("#) else {
             return source
         }
         var result = source

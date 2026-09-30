@@ -89,8 +89,9 @@ struct WPERenderFidelityRegressionTests {
         }
     }
 
-    @Test("Gaussian taps spread an impulse on the requested axis", arguments: [0, 1, 2], [false, true])
-    func gaussianImpulse(kernel: Int, vertical: Bool) throws {
+    @Test("Gaussian taps spread an impulse on the requested axis", arguments: [0, 1, 2], [0, 1, 2])
+    func gaussianImpulse(kernel: Int, verticalCombo: Int) throws {
+        let vertical = verticalCombo != 0
         let weights: [[Double]] = [
             [0.006299, 0.017298, 0.039533, 0.075189, 0.119007, 0.156756, 0.171834,
              0.156756, 0.119007, 0.075189, 0.039533, 0.017298, 0.006299],
@@ -118,7 +119,7 @@ struct WPERenderFidelityRegressionTests {
                         "g_Texture0Resolution": SIMD4(Float(width), Float(height), Float(width), Float(height))]
         let result = try render(source: source, name: "effects/blur_gaussian", width: width, height: height,
                                 uniforms: uniforms, pixels: pixels,
-                                combos: ["KERNEL": kernel, "VERTICAL": vertical ? 1 : 0])
+                                combos: ["KERNEL": kernel, "VERTICAL": verticalCombo])
         for (index, weight) in taps.enumerated() {
             let offset = index - taps.count / 2
             let x = cx + (vertical ? 0 : offset), y = cy + (vertical ? offset : 0)
