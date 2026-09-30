@@ -196,6 +196,10 @@ struct OracleCorpusCaptureTests {
                     // shifts every mouse-driven parallax/effect uniform.
                     pointerSampler: .fixed(Self.replayPointer())
                 )
+                // Config resolution is expressed in pixels. The convenience initializer
+                // receives AppKit points, whose backing scale can otherwise double HDR
+                // captures while SDR scenes hide the mistake behind their canvas cap.
+                renderer.updateSurfaceGeometry(drawableSize: CGSize(width: size[0], height: size[1]))
                 renderer.oracleSceneScriptBatchOrder = config.scriptOrder
                 renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
                 if config.videoMode == .firstFrameStill {
@@ -231,7 +235,7 @@ struct OracleCorpusCaptureTests {
                 authoredJSONPasses += authoredSummary.authoredPasses
                 malformedAuthoredPassLinks += authoredSummary.malformedPassLinks
                 Self.printTextEvidence(renderer: renderer, sceneID: id)
-                try Self.advanceToTracedFrame(
+                let advancedTrace = try Self.advanceToTracedFrame(
                     renderer: renderer,
                     id: id,
                     entryFile: descriptor.entryFile,
@@ -243,7 +247,19 @@ struct OracleCorpusCaptureTests {
                 if config.captureGPU {
                     captureManager.stopCapture()
                 }
-                if let trace = Self.awaitLatestTrace(forID: id, after: captureStarted) {
+                let frameTrace: URL?
+                if config.frames > 1 {
+                    // Use the exact last frame returned by the recorder. Shader dumps
+                    // from load can update an older session directory after this one,
+                    // making directory modification time an unreliable frame selector.
+                    let data = try #require(advancedTrace, "Final-frame canonical trace serialization failed")
+                    let url = outDir.appendingPathComponent("\(id)-raw-frame.json")
+                    try data.write(to: url, options: .atomic)
+                    frameTrace = url
+                } else {
+                    frameTrace = Self.awaitLatestTrace(forID: id, after: captureStarted)
+                }
+                if let trace = frameTrace {
                     let builtinSummary = try Self.validateBuiltinPasses(in: trace, sceneID: id)
                     builtinPassesCaptured += builtinSummary.count
                     let dest = outDir.appendingPathComponent("\(id).json")
@@ -496,8 +512,9 @@ struct OracleCorpusCaptureTests {
         frames: Int,
         stepSeconds: Double,
         perPass: Bool
-    ) throws {
-        guard frames > 1 else { return }
+    ) throws -> Data? {
+        guard frames > 1 else { return nil }
+        var finalTrace: Data?
         let summary = "\(id) oracle-capture frames=\(frames) step=\(stepSeconds)"
         for index in 1..<frames {
             WPEOracleMode.frameAdvanceSeconds = Double(index) * stepSeconds
@@ -520,7 +537,7 @@ struct OracleCorpusCaptureTests {
             if perPass {
                 renderer.dumpScenePassesIfRequested(suffix: "-f\(index)")
             }
-            WPECanonicalTraceRecorder.shared.finishFrame(
+            finalTrace = WPECanonicalTraceRecorder.shared.finishFrame(
                 outputTexture: texture,
                 runtimeUniforms: renderer.lastRuntimeUniforms,
                 firstFrameStats: WPEMetalTextureVisualStats.analyze(texture: texture),
@@ -534,6 +551,7 @@ struct OracleCorpusCaptureTests {
             print("[oracle-capture] [\(id)] advanced to frame \(index) "
                   + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")
         }
+        return finalTrace
     }
 
     private static func layerInputSnapshots(_ renderer: WPEMetalSceneRenderer) -> [[String: Any]] {

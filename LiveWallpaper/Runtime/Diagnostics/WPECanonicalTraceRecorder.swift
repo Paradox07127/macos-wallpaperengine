@@ -948,8 +948,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         ]
         let passCount = passSnapshot.count
 
-        guard JSONSerialization.isValidJSONObject(trace),
-              let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]),
+        guard JSONSerialization.isValidJSONObject(trace) else {
+            let issues = Self.jsonValidationIssues(trace)
+            let detail = issues.joined(separator: "\n")
+            artifacts.recordNote(name: "trace-serialization-error.txt", contents: detail)
+            print("[canonical-trace] trace.json serialization failed: \(detail)")
+            return nil
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else {
             artifacts.appendLog("[canonical-trace] trace.json serialization failed", level: .error)
             return nil
@@ -1119,6 +1125,28 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "colorStorage": WPEPixelColorContract(texture.pixelFormat).jsonObject(),
             "lineage": ["pass-\(String(format: "%04d", ordinal))"]
         ]
+    }
+
+    /// Preserve invalid observations as diagnostics rather than silently replacing
+    /// them with zero or dropping a whole scene without naming the offending field.
+    static func jsonValidationIssues(_ value: Any, path: String = "$") -> [String] {
+        if value is NSNull || value is String {
+            return []
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue.isFinite ? [] : ["\(path): non-finite number \(number)"]
+        }
+        if let object = value as? [String: Any] {
+            return Array(object.keys.sorted().flatMap { key in
+                jsonValidationIssues(object[key]!, path: "\(path).\(key)")
+            }.prefix(32))
+        }
+        if let array = value as? [Any] {
+            return Array(array.enumerated().flatMap { index, entry in
+                jsonValidationIssues(entry, path: "\(path)[\(index)]")
+            }.prefix(32))
+        }
+        return ["\(path): unsupported JSON type \(String(reflecting: type(of: value)))"]
     }
 
     // MARK: - Texture metrics (best-effort, post-commit only)

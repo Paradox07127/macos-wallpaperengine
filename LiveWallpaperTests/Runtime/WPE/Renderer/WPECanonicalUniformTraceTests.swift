@@ -37,6 +37,14 @@ struct WPECanonicalUniformTraceTests {
         }
     }
 
+    @Test func failedTraceSerializationReportsTheObservedField() {
+        let observed: [String: Any] = ["passes": [["depth": Double.infinity, "valid": 1.0]]]
+        #expect(!JSONSerialization.isValidJSONObject(observed))
+        #expect(WPECanonicalTraceRecorder.jsonValidationIssues(observed) == ["$.passes[0].depth: non-finite number inf"])
+        #expect((observed["passes"] as? [[String: Double]])?.first?["depth"] == .infinity)
+        #expect(WPECanonicalTraceRecorder.jsonValidationIssues(["passes": [["depth": NSNull(), "valid": 1.0]]]).isEmpty)
+    }
+
     @Test func integerExtremesAndNonfiniteFloatBitsSurviveJSON() throws {
         let layout = [
             WPEUniformSlot(name: "i", glslType: "ivec4", slot: 0, slotCount: 1),

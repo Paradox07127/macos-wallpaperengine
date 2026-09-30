@@ -106,7 +106,6 @@ PARALLEL_SUITES=(
   WPEMdlParserTests
   WPESceneModelMaterialShaderTests
   WPESceneScriptB2bResourceLimitTests
-  WPESceneScriptContainmentCharacterizationTests
   WPEUploadCancellationOracleTests
   InstalledOwnershipCharacterizationTests
   # Persistence/config/storage correctness. Deterministic, hardware-free, and
@@ -248,6 +247,10 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated
+  # parallel suites can exhaust the dispatch pool before their workers start.
+  # Keep the oracles' own concurrent operations and assertions unchanged.
+  WPESceneScriptContainmentCharacterizationTests
   # Live overlay windows/monitors share pointer and AppKit delivery with other UI suites.
   OverlayVisibilityLifecycleCharacterizationTests
   # Error snapshots compare app-language text across calls; locale probes change it process-wide.
