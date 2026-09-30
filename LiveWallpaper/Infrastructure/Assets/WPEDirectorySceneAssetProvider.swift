@@ -58,8 +58,7 @@ struct WPEDirectorySceneAssetProvider: WPESceneAssetProvider {
     }
 
     private func isRegularFile(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 
     private func strictURL(for relativePath: String) throws -> URL {

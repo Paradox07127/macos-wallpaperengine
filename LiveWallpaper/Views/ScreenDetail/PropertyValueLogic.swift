@@ -31,13 +31,20 @@ enum PropertyValueLogic {
     // MARK: - Slider normalization
 
     static func sliderRange(for property: Property) -> ClosedRange<Double> {
-        let lower = property.minimum ?? 0
+        let lower = property.minimum.flatMap { $0.isFinite ? $0 : nil } ?? 0
         let upper = property.maximum ?? max(100, lower + 1)
-        return upper > lower ? lower...upper : lower...(lower + 1)
+        if upper.isFinite, upper > lower, (upper - lower).isFinite {
+            return lower ... upper
+        }
+        let fallback = lower + 1
+        guard fallback.isFinite, fallback > lower else { return 0 ... 100 }
+        return lower ... fallback
     }
 
     static func sliderStep(for property: Property) -> Double {
-        if let step = property.step, step > 0 { return step }
+        if let step = property.step, step.isFinite, step > 0 {
+            return step
+        }
         return property.fraction ? 0.1 : 1
     }
 
@@ -63,7 +70,9 @@ enum PropertyValueLogic {
     }
 
     static func normalizedSliderValue(_ raw: Double, for property: Property) -> Double {
-        SliderValueGrid(in: sliderRange(for: property), step: sliderStep(for: property)).normalized(raw)
+        let range = sliderRange(for: property)
+        return SliderValueGrid(in: range, step: sliderStep(for: property))
+            .normalized(raw.isFinite ? raw : range.lowerBound)
     }
 
     static func formattedNumber(_ value: Double, for property: Property) -> String {

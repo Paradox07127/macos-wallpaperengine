@@ -298,11 +298,14 @@ extension WallpaperEngineProjectPropertySchema {
         }
 
         private static func double(from raw: Any?) -> Double? {
-            if let value = raw as? Double { return value }
-            if let value = raw as? Int { return Double(value) }
-            if let value = raw as? NSNumber { return value.doubleValue }
-            if let value = raw as? String { return Double(value) }
-            return nil
+            let value: Double? = if let number = raw as? NSNumber {
+                number.doubleValue
+            } else if let string = raw as? String {
+                Double(string)
+            } else {
+                nil
+            }
+            return value.flatMap { $0.isFinite ? $0 : nil }
         }
 
         private static func int(from raw: Any?) -> Int? {
@@ -392,7 +395,15 @@ private struct Localization: Equatable {
     private let fallback: [String: String]
 
     init(raw: [String: Any]?, preferredLanguages: [String]) {
-        let maps = raw?.compactMapValues { $0 as? [String: String] } ?? [:]
+        var maps: [String: [String: String]] = [:]
+        // Canonical lowercase spelling wins; remaining collisions use stable lexical order.
+        for key in raw?.keys.sorted() ?? [] {
+            guard let map = raw?[key] as? [String: String] else { continue }
+            let normalized = key.lowercased()
+            if maps[normalized] == nil || key == normalized {
+                maps[normalized] = map
+            }
+        }
         selected = Self.selectMap(from: maps, preferredLanguages: preferredLanguages) ?? [:]
         fallback = maps["en-us"] ?? maps["en"] ?? [:]
     }
@@ -421,11 +432,12 @@ private struct Localization: Equatable {
         from maps: [String: [String: String]],
         preferredLanguages: [String]
     ) -> [String: String]? {
-        let normalizedMaps = Dictionary(uniqueKeysWithValues: maps.map { ($0.key.lowercased(), $0.value) })
         for language in preferredLanguages.map({ $0.lowercased() }) {
             let candidates = localeCandidates(for: language)
             for candidate in candidates {
-                if let map = normalizedMaps[candidate] { return map }
+                if let map = maps[candidate] {
+                    return map
+                }
             }
         }
         return nil
@@ -493,16 +505,7 @@ private struct Localization: Equatable {
     }
 
     private static func clean(_ raw: String) -> String {
-        var text = raw
-            .replacingOccurrences(of: #"<br\s*/?>"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"</?(h[1-6]|p|big|small|b|center|hr)[^>]*>"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        WPEPropertyLabelText.clean(raw)
     }
 }
 
