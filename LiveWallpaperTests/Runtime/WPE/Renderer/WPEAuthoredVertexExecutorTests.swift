@@ -226,6 +226,37 @@ struct WPEAuthoredVertexExecutorTests {
         }
     }
 
+    @Test("Static root parallax keeps the captured positive and negative draw offsets", arguments: [0.5, -0.75])
+    func staticRootParallaxDrawMVPMatchesWindows(amount: Double) throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: original.shader,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
+                                              color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass], parallaxDepth: SIMD2(repeating: 1))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [pass])])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+        let base = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms
+        var context = base
+        fixture.executor.applyingAuthoredRootParallaxDrawProjection(to: &context, pipeline: pipeline, camera: camera,
+                                                                    parallax: .init(smoothed: .zero, amount: amount, influence: 0), sceneSize: camera.renderSize)
+        #expect(context.parallaxDrawMatrixPassIDs == [pass.id])
+        let matrix = try #require(context.value(named: "g_ModelViewProjectionMatrix", passID: pass.id)?.vectorValue)
+        let expectedX = amount > 0 ? 0.125 : 0.0208333731
+        let expectedY = amount > 0 ? -0.1875 : -0.0312499404
+        #expect(abs(matrix[12] - expectedX) < 0.000001 && abs(matrix[13] - expectedY) < 0.000001)
+        #expect(context.value(named: "g_ModelMatrix", passID: pass.id) == base.value(named: "g_ModelMatrix", passID: pass.id))
+        var dynamic = base
+        fixture.executor.applyingAuthoredRootParallaxDrawProjection(to: &dynamic, pipeline: pipeline, camera: camera,
+                                                                    parallax: .init(smoothed: SIMD2(0.25, -0.25), amount: amount, influence: 1), sceneSize: camera.renderSize)
+        #expect(dynamic.parallaxDrawMatrixPassIDs.isEmpty)
+    }
+
     @Test func serializedDefaultClipPlanesRetainCapturedProjection() {
         func camera(near: Double) -> WPEMetalCameraUniforms {
             .init(orthogonalProjection: .init(width: 7680, height: 4320, auto: false),

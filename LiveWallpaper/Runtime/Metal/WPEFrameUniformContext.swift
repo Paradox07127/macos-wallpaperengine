@@ -17,6 +17,9 @@ struct WPEFrameUniformContext: Sendable {
     /// Passes whose object producer consumed a finite full affine override, not decomposed TRS.
     var affineModelMatrixPassIDs: Set<String> = []
 
+    /// Root static parallax whose draw VP includes the measured pixel offset.
+    var parallaxDrawMatrixPassIDs: Set<String> = []
+
     static let empty = WPEFrameUniformContext(
         runtimeUniformValues: [:],
         cameraUniformValues: [:],

@@ -736,7 +736,10 @@ final class WPEMetalRenderExecutor {
             scriptedConstants: scriptedConstants,
             objectUniformCache: objectUniformCache
         )
-        frameUniformContext = frameUniforms
+        var drawUniforms = frameUniforms
+        applyingAuthoredRootParallaxDrawProjection(to: &drawUniforms, pipeline: preparedPipeline, camera: cameraUniforms,
+                                                   parallax: runtimeUniforms.cameraParallax, sceneSize: size)
+        frameUniformContext = drawUniforms
         frameNeedsReflectionHistory = false
         defer { frameUniformContext = .empty }
         currentOutputPixelFormat = cameraUniforms.sceneHDR ? .rgba16Float : Self.outputPixelFormat

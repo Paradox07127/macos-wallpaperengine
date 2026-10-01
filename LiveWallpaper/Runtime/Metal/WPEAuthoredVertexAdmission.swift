@@ -63,6 +63,37 @@ extension WPEMetalRenderExecutor {
         }
     }
 
+    /// The fresh oracle scope is a flat root, identity camera motion and no
+    /// nonzero mouse term. Dynamic cursor/camera and inherited parallax stay guarded.
+    func applyingAuthoredRootParallaxDrawProjection(
+        to context: inout WPEFrameUniformContext, pipeline: WPEPreparedRenderPipeline,
+        camera: WPEMetalCameraUniforms, parallax: WPECameraParallaxFrame, sceneSize: CGSize
+    ) {
+        guard parallax.amount != 0, camera.sceneMotion == .identity, sceneSize == camera.renderSize,
+              parallax.influence == 0 || parallax.smoothed == .zero else { return }
+        for prepared in pipeline.layers {
+            let layer = prepared.graphLayer
+            guard layer.parentObjectID == nil, layer.parallaxDepth != .zero,
+                  !(layer.geometry.origin.x > 0 && layer.geometry.origin.x <= 1),
+                  !(layer.geometry.origin.y > 0 && layer.geometry.origin.y <= 1),
+                  Self.canSupplyAuthoredObjectQuad(layer: layer, camera: camera) else { continue }
+            let center = Self.centeredOrigin(of: layer.geometry, sceneSize: sceneSize)
+            let offset = parallax.pixelOffset(objectCenter: parallaxObjectCenter(for: layer, fallback: center),
+                                              depth: layer.parallaxDepth, sceneSize: sceneSize)
+            guard offset.x.isFinite, offset.y.isFinite,
+                  let view = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: camera.shaderDrawViewProjectionMatrix(objectID: layer.id)) else { continue }
+            var translation = matrix_identity_double4x4
+            translation.columns.3 = SIMD4(Double(offset.x), Double(offset.y), 0, 1)
+            let values = WPEMetalObjectUniforms.flattenedColumnMajor(view * translation)
+            for pass in prepared.passes {
+                if case .scene = pass.pass.target {
+                    context.drawViewProjectionMatrixByPassID[pass.id] = .vector(values)
+                    context.parallaxDrawMatrixPassIDs.insert(pass.id)
+                }
+            }
+        }
+    }
+
     func authoredVertexResolvedInputRejection(for pass: WPEPreparedRenderPass, result: WPEShaderCompileResult,
                                               textures: WPEMetalTextureSlotTable) -> WPEAuthoredVertexRejection? {
         guard let vertex = result.vertexStage else { return .stageUnavailable("authored-stage-unavailable") }
@@ -88,8 +119,10 @@ extension WPEMetalRenderExecutor {
         }
         if vertex.execution == .authoredObjectQuad {
             guard case .scene = pass.pass.target,
-                  Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms),
-                  layer.parallaxDepth == .zero || frameState.cameraParallax.amount == 0 else { return .unverifiedObjectQuadSpace }
+                  Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms) else { return .unverifiedObjectQuadSpace }
+            if layer.parallaxDepth != .zero, frameState.cameraParallax.amount != 0 {
+                guard frameUniformContext.parallaxDrawMatrixPassIDs.contains(pass.id) else { return .unverifiedObjectQuadSpace }
+            }
             if layer.parentObjectID != nil {
                 guard frameUniformContext.affineModelMatrixPassIDs.contains(pass.id),
                       let values = frameUniformContext.value(named: "g_ModelMatrix", passID: pass.id)?.vectorValue,
@@ -104,6 +137,14 @@ extension WPEMetalRenderExecutor {
         }
         let plans = uniformPlans(for: pass, layout: vertex.uniformLayout, stage: .vertex)
         for (index, uniform) in vertex.uniformLayout.enumerated() {
+            if vertex.execution == .authoredObjectQuad, uniform.materialName == nil,
+               frameUniformContext.parallaxDrawMatrixPassIDs.contains(pass.id),
+               (uniform.name.hasPrefix("g_Model") && !["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name))
+               || uniform.name.hasPrefix("g_Layer") || uniform.name == "g_NormalModelMatrix" {
+                // The measured displacement belongs to draw MVP, not a claim
+                // about other model/layer uniforms under active parallax.
+                return .unverifiedObjectQuadSpace
+            }
             if ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name), uniform.materialName == nil {
                 guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
                 if vertex.execution == .authoredFullscreen {
