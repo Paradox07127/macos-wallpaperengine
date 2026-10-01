@@ -264,6 +264,38 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(dynamic.parallaxDrawMatrixPassIDs.isEmpty)
     }
 
+    @Test("Static parallax VS truth does not admit unmeasured fragment model inputs",
+          arguments: ["g_ModelMatrix", "g_ModelViewProjectionMatrix", "g_LayerTransform"])
+    func staticParallaxRejectsFragmentModelInputs(name: String) throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let source = try #require(original.shader)
+        let program = WPEShaderProgram(name: "parallax-fragment-owner", vertexSource: source.vertexSource,
+                                       fragmentSource: """
+                                       uniform mat4 \(name);
+                                       varying vec4 v_TexCoord;
+                                       void main() {
+                                           gl_FragColor = vec4(v_TexCoord.zw, 0, 1) + \(name)[0] * 0.00001;
+                                       }
+                                       """,
+                                       isBuiltin: false)
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: program,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        #expect(result.uniformLayout.contains { $0.name == name && $0.materialName == nil })
+        let geometry = WPERenderLayerGeometry(origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                                              size: CGSize(width: 10, height: 10), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass], parallaxDepth: SIMD2(repeating: 1))
+        let texture = try #require(fixture.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)))
+        var frame = WPEMetalFrameState(output: texture, sceneSize: CGSize(width: 4, height: 4))
+        frame.cameraParallax = .init(smoothed: .zero, amount: 0.5, influence: 0)
+        fixture.executor.frameUniformContext.parallaxDrawMatrixPassIDs = [pass.id]
+        let rejection = fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer, frameState: frame, effectTextureProjection: { nil })
+        #expect(rejection == .unverifiedObjectQuadSpace)
+    }
+
     @Test func serializedDefaultClipPlanesRetainCapturedProjection() {
         func camera(near: Double) -> WPEMetalCameraUniforms {
             .init(orthogonalProjection: .init(width: 7680, height: 4320, auto: false),

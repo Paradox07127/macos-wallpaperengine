@@ -122,6 +122,11 @@ extension WPEMetalRenderExecutor {
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms) else { return .unverifiedObjectQuadSpace }
             if layer.parallaxDepth != .zero, frameState.cameraParallax.amount != 0 {
                 guard frameUniformContext.parallaxDrawMatrixPassIDs.contains(pass.id) else { return .unverifiedObjectQuadSpace }
+                // Only VS draw MVP was measured. Fragment model/layer inputs
+                // (including its MVP) have no captured parallax owner yet.
+                guard !result.uniformLayout.contains(where: {
+                    $0.materialName == nil && ($0.name.hasPrefix("g_Model") || $0.name.hasPrefix("g_Layer") || $0.name == "g_NormalModelMatrix")
+                }) else { return .unverifiedObjectQuadSpace }
             }
             if layer.parentObjectID != nil {
                 guard frameUniformContext.affineModelMatrixPassIDs.contains(pass.id),
