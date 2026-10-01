@@ -125,8 +125,7 @@ struct SteamConnectorClientCancellationTests {
         let delegate = Delegate()
         listener.delegate = delegate
         listener.resume()
-        // `nonisolated(unsafe)`: the endpoint is only read to build a connection; the listener lives for the whole test.
-        nonisolated(unsafe) let endpoint = listener.endpoint
+        let endpoint = listener.endpoint
         SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
         defer {
             SteamConnectorClient.connectionFactoryForTesting = nil
@@ -160,8 +159,7 @@ struct SteamConnectorClientCancellationTests {
         let delegate = Delegate()
         listener.delegate = delegate
         listener.resume()
-        // `nonisolated(unsafe)`: the endpoint is only read to build a connection; the listener lives for the whole test.
-        nonisolated(unsafe) let endpoint = listener.endpoint
+        let endpoint = listener.endpoint
         SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
         defer {
             SteamConnectorClient.connectionFactoryForTesting = nil
@@ -191,8 +189,7 @@ struct SteamConnectorClientCancellationTests {
         let delegate = Delegate()
         listener.delegate = delegate
         listener.resume()
-        // `nonisolated(unsafe)`: the endpoint is only read to build a connection; the listener lives for the whole test.
-        nonisolated(unsafe) let endpoint = listener.endpoint
+        let endpoint = listener.endpoint
         SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
         defer {
             SteamConnectorClient.connectionFactoryForTesting = nil

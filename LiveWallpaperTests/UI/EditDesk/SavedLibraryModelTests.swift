@@ -3,6 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Observation
+import os
 import Testing
 
 @MainActor
@@ -47,9 +48,9 @@ struct SavedLibraryModelTests {
     @Test("Observation follows visible rows and refresh publishes the new rows")
     func visibleItemsRemainObservable() {
         @MainActor final class Changes { var count = 0 }
-        var saved = [bookmark("Alpha"), bookmark("Beta")]
+        let saved = OSAllocatedUnfairLock(initialState: [bookmark("Alpha"), bookmark("Beta")])
         var input = SavedLibraryModel.Inputs()
-        input.bookmarks = { saved }
+        input.bookmarks = { saved.withLock { $0 } }
         let model = SavedLibraryModel(inputs: input)
         model.sort = .name
         _ = model.visibleItems
@@ -62,7 +63,8 @@ struct SavedLibraryModelTests {
         model.query = "Beta"
         #expect(changes.count == 1)
         #expect(model.visibleItems.map(\.title) == ["Beta"])
-        saved = [bookmark("Beta new")]
+        let renamed = [bookmark("Beta new")]
+        saved.withLock { $0 = renamed }
         model.refresh()
         #expect(model.visibleItems.map(\.title) == ["Beta new"])
         model.chip = .bookmarks
@@ -335,14 +337,14 @@ struct SavedLibraryModelTests {
     func bookmarksChipKeepsOnlyMarkedRows() {
         let marked = bookmark("Marked")
         let plain = bookmark("Plain")
-        var marks: Set = ["bookmark:\(marked.id)", "aerial:/sky.mov", "bookmark:gone"]
+        let marks = OSAllocatedUnfairLock<Set<LibraryItem.ID>>(initialState: ["bookmark:\(marked.id)", "aerial:/sky.mov", "bookmark:gone"])
         var source = inputs([marked, plain], aerials: [aerial()])
-        source.libraryBookmarks = { marks }
+        source.libraryBookmarks = { marks.withLock { $0 } }
         let model = SavedLibraryModel(inputs: source)
         model.chip = .bookmarks
         #expect(Set(model.visibleItems.map(\.id)) == ["bookmark:\(marked.id)", "aerial:/sky.mov"])
 
-        marks = ["bookmark:\(plain.id)"]
+        marks.withLock { $0 = ["bookmark:\(plain.id)"] }
         model.refresh()
         #expect(model.visibleItems.map(\.title) == ["Plain"])
         model.chip = .all
@@ -843,11 +845,11 @@ struct SavedLibraryModelTests {
         var saved = bookmark("Saved")
         saved.wpeOrigin = origin("123")
         saved.content = .scene(descriptor())
-        var history: [WPEHistoryEntry] = []
+        let history = OSAllocatedUnfairLock<[WPEHistoryEntry]>(initialState: [])
         var marks: Set<LibraryItem.ID> = ["bookmark:\(saved.id)"]
         var remapped: [(LibraryItem.ID, LibraryItem.ID)] = []
         var source = inputs([saved])
-        source.history = { history }
+        source.history = { history.withLock { $0 } }
         source.libraryBookmarks = { marks }
         source.remapLibraryBookmark = { old, new in
             remapped.append((old, new))
@@ -858,7 +860,8 @@ struct SavedLibraryModelTests {
         #expect(model.bookmarkedIDs == ["bookmark:\(saved.id)"])
         #expect(remapped.isEmpty)
 
-        history = [WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)]
+        let installed = [WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)]
+        history.withLock { $0 = installed }
         model.refresh()
 
         #expect(model.bookmarkedIDs == ["workshop:123"])
@@ -913,21 +916,21 @@ struct SavedLibraryModelTests {
     func tagsFollowCurrentProjectSource(newGrant: Bool) async throws {
         let a = origin("123")
         let b = try #require(a.replacingSourceFolderBookmark(matching: Data(), with: Data("new grant".utf8)))
-        var history = [WPEHistoryEntry(origin: a, importedAt: .distantPast)]
-        var tags = ["Landscape"]
+        let history = OSAllocatedUnfairLock(initialState: [WPEHistoryEntry(origin: a, importedAt: .distantPast)])
+        let tags = OSAllocatedUnfairLock(initialState: ["Landscape"])
         var reads = 0
         var source = inputs()
-        source.history = { history }
+        source.history = { history.withLock { $0 } }
         source.projectTags = { _ in
             reads += 1
-            return tags
+            return tags.withLock { $0 }
         }
         let model = SavedLibraryModel(inputs: source)
         model.query = "landscape"
         await model.loadSearchTags()
         #expect(model.visibleItems.map(\.id) == ["workshop:123"])
-        tags = ["Nebula"]
-        history = [WPEHistoryEntry(origin: newGrant ? b : a, importedAt: Date(timeIntervalSince1970: 1))]
+        tags.withLock { $0 = ["Nebula"] }
+        history.withLock { $0 = [WPEHistoryEntry(origin: newGrant ? b : a, importedAt: Date(timeIntervalSince1970: 1))] }
         model.refresh()
         await model.loadSearchTags()
         model.query = "nebula"
@@ -937,7 +940,7 @@ struct SavedLibraryModelTests {
         #expect(reads == 2)
         await model.loadSearchTags()
         #expect(reads == 2, "an unchanged current source should retain one completed tag result")
-        history[0].lastUsedAt = Date(timeIntervalSince1970: 2)
+        history.withLock { $0[0].lastUsedAt = Date(timeIntervalSince1970: 2) }
         model.refresh()
         await model.loadSearchTags()
         #expect(reads == 2, "usage bookkeeping must not invalidate the source's completed tags")
@@ -947,10 +950,10 @@ struct SavedLibraryModelTests {
     func lateTagReadCannotReplaceCurrentSource() async throws {
         let a = origin("123")
         let b = try #require(a.replacingSourceFolderBookmark(matching: Data(), with: Data("replacement".utf8)))
-        var history = [WPEHistoryEntry(origin: a, importedAt: .distantPast)]
+        let history = OSAllocatedUnfairLock(initialState: [WPEHistoryEntry(origin: a, importedAt: .distantPast)])
         var parked: CheckedContinuation<[String], Never>?
         var source = inputs()
-        source.history = { history }
+        source.history = { history.withLock { $0 } }
         source.projectTags = { origin in
             if origin.sourceFolderBookmark == b.sourceFolderBookmark {
                 return ["Nebula"]
@@ -967,7 +970,7 @@ struct SavedLibraryModelTests {
         }
         await settle { parked != nil }
         let release = try #require(parked)
-        history = [WPEHistoryEntry(origin: b, importedAt: .distantPast)]
+        history.withLock { $0 = [WPEHistoryEntry(origin: b, importedAt: .distantPast)] }
         model.refresh()
         await model.loadSearchTags()
         #expect(model.visibleItems.map(\.id) == ["workshop:123"])
@@ -1183,9 +1186,9 @@ struct SavedLibraryModelTests {
         ))
         let frame = try #require(context.makeImage())
         let imported = WPEHistoryEntry(origin: origin("42"), importedAt: Date(timeIntervalSince1970: 1_700_000_000))
-        var history = [imported]
+        let history = OSAllocatedUnfairLock(initialState: [imported])
         var source = inputs()
-        source.history = { history }
+        source.history = { history.withLock { $0 } }
         source.workshopCoverRevision = { entry in
             WallpaperCoverStore.workshopFileName(workshopID: entry.origin.workshopID, importedAt: entry.importedAt)
                 .flatMap { store.revision(of: $0) }
@@ -1213,7 +1216,8 @@ struct SavedLibraryModelTests {
         try await drawCard()
         #expect(decodes == ["author", name, name], Comment(rawValue: "a rewritten cover, drawn twice, decoded as \(decodes)"))
 
-        history = [WPEHistoryEntry(origin: origin("42"), importedAt: Date(timeIntervalSince1970: 1_727_000_000))]
+        let reimported = [WPEHistoryEntry(origin: origin("42"), importedAt: Date(timeIntervalSince1970: 1_727_000_000))]
+        history.withLock { $0 = reimported }
         model.refresh()
         try await drawCard()
         #expect(decodes.last == "author", Comment(rawValue: "the re-imported project drew \(decodes)"))

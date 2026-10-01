@@ -72,6 +72,7 @@ struct DisplayFloatLayerTests {
     }
 
     @Test("The drag ghost is the 140×79 card MOTION 7 specifies")
+    @MainActor
     func ghostSize() {
         #expect(ModalDragGhost.size == CGSize(width: 140, height: 79))
     }

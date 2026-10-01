@@ -4,6 +4,7 @@ import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
+import os
 import SwiftUI
 import Testing
 import WebKit
@@ -985,7 +986,8 @@ struct WallpaperAutomationCoordinatorTests {
         initial.wallpaperQueue = [first]
         initial.playlistRotationMinutes = 120
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
-        var entries = [first, second, missing]
+        let entries = OSAllocatedUnfairLock<[WallpaperQueueEntry]>(initialState: [first, second, missing])
+        let liveEntries: @MainActor () -> [WallpaperQueueEntry] = { entries.withLock { $0 } }
         var restored: [WallpaperContent] = []
         var marks: [AutomaticSwitchMark.Source] = []
         let orchestrator = WallpaperAutomationOrchestrator(
@@ -1004,7 +1006,7 @@ struct WallpaperAutomationCoordinatorTests {
                 store.save(proposed)
                 return .ready
             },
-            libraryEntries: { entries }, libraryEntryAvailable: { $0.id != "missing" }
+            libraryEntries: liveEntries, libraryEntryAvailable: { $0.id != "missing" }
         )
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 50 where restored.isEmpty {
@@ -1012,7 +1014,7 @@ struct WallpaperAutomationCoordinatorTests {
         }
         #expect(restored == [second.content])
         let third = WallpaperQueueEntry(id: "third", title: "Third", content: .html(source: .inline("third"), config: .default))
-        entries = [second, third, missing]
+        entries.withLock { $0 = [second, third, missing] }
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 50 where restored.count < 2 {
             await Task.yield()
@@ -1023,13 +1025,13 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(saved.wallpaperQueue == [first])
         #expect(saved.playlistRotationMinutes == 120)
         #expect(saved.fitMode == .aspectFit)
-        entries = [third, missing]
+        entries.withLock { $0 = [third, missing] }
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 50 {
             await Task.yield()
         }
         #expect(restored.count == 2)
-        entries = [first]
+        entries.withLock { $0 = [first] }
         orchestrator.advanceLibraryShuffle(for: screen)
         orchestrator.suspendForUserAbsence()
         for _ in 0 ..< 50 {
@@ -1161,7 +1163,7 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var attempts = 0
         var pending: CheckedContinuation<WallpaperPreparationResult, Never>?
-        var hold = false
+        let hold = OSAllocatedUnfairLock(initialState: false)
         let orchestrator = WallpaperAutomationOrchestrator(
             configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
             playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
@@ -1170,7 +1172,7 @@ struct WallpaperAutomationCoordinatorTests {
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 attempts += 1
-                if hold {
+                if hold.withLock({ $0 }) {
                     return await withCheckedContinuation { pending = $0 }
                 }
                 if attempts == 1 {
@@ -1188,7 +1190,7 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(attempts == 2)
         #expect(store.get(for: screen.id)?.automationFailures.isEmpty == true)
         store.save(initial)
-        hold = true
+        hold.withLock { $0 = true }
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 100 where pending == nil {
             await Task.yield()
@@ -1211,7 +1213,7 @@ struct WallpaperAutomationCoordinatorTests {
         config.wallpaperMode = .libraryShuffle
         let ticks = AsyncStream<Date>.makeStream()
         var coordinator: WallpaperAutomationCoordinator? = WallpaperAutomationCoordinator(tickStreamFactory: { ticks.stream })
-        weak var weakCoordinator = coordinator
+        weak let weakCoordinator = coordinator
         coordinator?.start(screenProvider: { [screen] }, configurationProvider: { _ in config },
                            scheduleHandler: { _ in }, playlistHandler: { _ in }, runInitialScheduleCheck: false)
         for _ in 0 ..< 20 {

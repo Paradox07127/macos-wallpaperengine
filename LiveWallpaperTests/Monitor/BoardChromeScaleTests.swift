@@ -48,6 +48,7 @@ struct BoardChromeScaleTests {
     }
 
     @Test("boosted chrome still fits the canvas it is drawn into")
+    @MainActor
     func chromeFitsTheCanvas() {
         let metrics = MonitorBoardChromeMetrics(boardSize: board, renderScale: fifth)
         let canvas = CGSize(width: board.width * fifth, height: board.height * fifth)

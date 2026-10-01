@@ -80,8 +80,8 @@ struct WorkshopBookmarkMetadataTests {
 
     @Test("Snapshot identity mismatch or corrupt metadata cannot leak another item's details")
     func snapshotIdentityAndCorruptionFailClosed() throws {
-        let wrong = try WorkshopBookmark(id: 732, rawTitle: "Other", previewImageURL: nil, tags: [],
-                                         detailsSnapshot: #require(item().bookmarkDetailsSnapshot))
+        let wrong = WorkshopBookmark(id: 732, rawTitle: "Other", previewImageURL: nil, tags: [],
+                                     detailsSnapshot: item().bookmarkDetailsSnapshot)
         #expect(wrong.queryItemSnapshot == nil)
         let fallback = WorkshopBookmarkActions.queryItem(wrong)
         #expect(fallback.id == 732)
@@ -177,7 +177,7 @@ struct WorkshopBookmarkMetadataTests {
         #expect(restored.rating == original.rating)
         var longDetail = original
         longDetail.detailDescription = String(repeating: "x", count: 20000)
-        let boundedBookmark = try WorkshopBookmark(id: 731, rawTitle: "Bounded", previewImageURL: nil, tags: [], detailsSnapshot: #require(longDetail.bookmarkDetailsSnapshot))
+        let boundedBookmark = WorkshopBookmark(id: 731, rawTitle: "Bounded", previewImageURL: nil, tags: [], detailsSnapshot: longDetail.bookmarkDetailsSnapshot)
         let bounded = try #require(boundedBookmark.queryItemSnapshot?.detailDescription)
         #expect(bounded.unicodeScalars.count == SteamWorkshopMetadataService.detailDisplayScalarLimit)
         #expect(bounded.hasSuffix("…"))

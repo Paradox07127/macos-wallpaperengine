@@ -117,6 +117,7 @@ struct OverlayLayerListTests {
     }
 
     @Test("The add strip lays its tiles out seven to a row whatever their count, and grows a row at a time")
+    @MainActor
     func drawerLayout() {
         for count in [7, 13, 14, 15, 21] {
             #expect(AddOverlayDrawer.columns(for: count) == 7, "\(count) tiles")

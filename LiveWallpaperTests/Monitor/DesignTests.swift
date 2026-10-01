@@ -42,6 +42,7 @@ struct DesignTests {
     }
 
     @Test("Sparkline guides sit on the load band thresholds")
+    @MainActor
     func sparklineGuidesMatchLoadBands() {
         #expect(Sparkline.loadGuides == [Design.Load.elevated, Design.Load.hot])
     }

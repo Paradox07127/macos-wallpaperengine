@@ -184,7 +184,7 @@ struct DeferredApplyCoordinatorTests {
         await waitUntil { !manager.appliedEntries.isEmpty }
         #expect(ticket.id != attempt.id)
         #expect(ticket.state == .applying)
-        #expect(try #require(manager.appliedScreens.first) === refreshedScreen)
+        #expect(manager.appliedScreens.first === refreshedScreen)
         #expect(manager.appliedEntries == [manager.entry])
         #expect(manager.isCurrentTransition(selectedTarget.selectionGeneration + 1, for: refreshedScreen.id))
         manager.confirm(manager.entry, on: refreshedScreen)
@@ -310,7 +310,7 @@ struct DeferredApplyCoordinatorTests {
         #expect(first.outcome == .cancelled)
         var retry: WorkshopDownloadAttempt?
         if startRetry {
-            retry = try #require(downloads.download(itemID: 420_000_042, title: "Retry", using: fixture.downloader))
+            retry = downloads.download(itemID: 420_000_042, title: "Retry", using: fixture.downloader)
             let retryTask = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
             // The cancelled importer still holds the existing repository lock.
             // A retry must retain its own truthful failure, never the old success.

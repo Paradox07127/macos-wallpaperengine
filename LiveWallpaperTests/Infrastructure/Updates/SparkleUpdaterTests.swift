@@ -178,7 +178,7 @@ struct SparkleUpdaterOwnershipTests {
     @Test("The session-finished callback survives arriving off the main thread")
     func sessionFinishedFromBackgroundThreadDoesNotTrap() async throws {
         let delegate = await GentleReminderDelegate()
-        let flag = await CallbackFlag()
+        let flag = CallbackFlag()
         await MainActor.run {
             delegate.onSessionFinished = {
                 MainActor.assertIsolated("the callback must land back on the main actor")

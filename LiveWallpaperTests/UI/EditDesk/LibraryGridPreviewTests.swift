@@ -183,10 +183,10 @@ private final class GridPreviewHost {
             let projects = GridPreviewScenes.Project.allCases.compactMap { entries[$0] }
             do {
                 let covered = try #require(entries[.covered])
-                savedCover = try #require(WallpaperCoverStore.shared.storeWorkshopCover(
+                savedCover = WallpaperCoverStore.shared.storeWorkshopCover(
                     ProbeRenderer.solid(ProbeRenderer.thumbnailBlue, size: CGSize(width: 1024, height: 576)),
                     workshopID: covered.origin.workshopID, importedAt: covered.importedAt
-                ))
+                )
             } catch {
                 try? FileManager.default.removeItem(at: scenes.root)
                 throw error

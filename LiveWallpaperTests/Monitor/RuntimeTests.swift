@@ -178,7 +178,7 @@ struct RuntimeTests {
         #expect(await probe.stopInvocationCount == 1)
 
         await probe.allowStopToFinish()
-        await termination.value
+        _ = await termination.value
         await duplicateShutdown.value
 
         #expect(await probe.events == [

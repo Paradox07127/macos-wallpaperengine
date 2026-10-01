@@ -4,6 +4,7 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
+@MainActor
 @Suite("Workshop description collapse")
 struct CollapsibleDescriptionTests {
     private let collapsedHeight: CGFloat = 116

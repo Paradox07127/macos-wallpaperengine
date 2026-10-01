@@ -9,7 +9,7 @@ import Testing
 struct OverlayRemoveAllTests {
     @Test("The effect is no layer: the layer list and the add strip leave it out")
     func effectIsNoLayer() {
-        let rows = OverlayLayerList.rows(
+        _ = OverlayLayerList.rows(
             placements: [MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.1, y: 0.1)],
             boardEnabled: true, clockEnabled: true, musicEnabled: true
         )

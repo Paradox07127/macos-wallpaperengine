@@ -1,8 +1,9 @@
 import AppKit
 import Foundation
-import Testing
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import os
+import Testing
 
 @Suite("Master render gate")
 @MainActor
@@ -262,7 +263,7 @@ struct VideoSelectionGateTests {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("gate-selection-\(UUID().uuidString).mov")
         try Data().write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
-        var enabled = false
+        let enabled = OSAllocatedUnfairLock(initialState: false)
         var builtPlayers: [WallpaperVideoPlayer] = []
         var notifications = 0
         let coordinator = PlaybackCoordinator(
@@ -285,7 +286,7 @@ struct VideoSelectionGateTests {
             refreshRateLookup: { _ in 60 }, screensProvider: { [screen] },
             markSessionStateChanged: {}, releaseRuntimeSession: { $0.resetRuntimeSession() },
             notifyWallpaperSessionChanged: { notifications += 1 },
-            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { enabled }
+            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { enabled.withLock { $0 } }
         )
         defer {
             coordinator.transition.bumpTransition(for: screen.id)
@@ -309,7 +310,7 @@ struct VideoSelectionGateTests {
             #expect(saved?.videoVolume == 0.37)
             #expect(saved?.muted == true)
         }
-        enabled = true
+        enabled.withLock { $0 = true }
         let restored = try #require(saved)
         coordinator.applyConfiguration(restored, to: screen)
         #expect(builtPlayers.count == 1)
@@ -334,7 +335,7 @@ struct VideoSelectionGateTests {
             validationError: kind == "media-validation" ? .validationFailed : nil,
             suspendsValidation: true
         )
-        var active = true
+        let active = OSAllocatedUnfairLock(initialState: true)
         var lifecycleChecks = 0
         var savedValidationChecks = 0
         var notifications = 0
@@ -371,7 +372,7 @@ struct VideoSelectionGateTests {
             originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { false },
             isRuntimeInstallationAllowed: {
                 lifecycleChecks += 1
-                return active
+                return active.withLock { $0 }
             }
         )
         defer {
@@ -392,7 +393,7 @@ struct VideoSelectionGateTests {
             store.save(newer)
             expected = newer
         } else if kind == "termination" {
-            active = false
+            active.withLock { $0 = false }
         }
         await loader.resumeAllValidations()
         let completionDeadline = ContinuousClock.now.advanced(by: .seconds(2))

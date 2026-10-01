@@ -358,7 +358,7 @@ struct WallpaperExportServiceTests {
         )
 
         var persisted: SystemWallpaperManifest?
-        let updated = try #require(try SystemWallpaperLibrary.remove(
+        let updated = try #require(SystemWallpaperLibrary.remove(
             id: "drop", from: manifest, videosDirectory: videos,
             persist: { persisted = $0 }
         ))
@@ -401,7 +401,7 @@ struct WallpaperExportServiceTests {
             items: [.init(id: "keep", title: "Keep", fileName: "a.mp4", thumbnailFileName: nil, addedAt: Self.referenceNow)]
         )
         var persistCalls = 0
-        #expect(try SystemWallpaperLibrary.remove(
+        #expect(SystemWallpaperLibrary.remove(
             id: "ghost",
             from: manifest,
             videosDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
