@@ -31,6 +31,9 @@ struct WPEShaderStageLink {
         let effectRead = #"mul\s*\(\s*vec4\s*\(\s*a_Position\s*,\s*1(?:\.0*)?\s*\)\s*,\s*g_EffectModelViewProjectionMatrix\s*\)\s*\.(xyw|xy)\b"#
         active = active.replacingOccurrences(of: effectRead, with: "vec3(0.0)", options: .regularExpression)
         active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_EffectModelViewProjectionMatrix\s*;"#, with: "", options: .regularExpression)
+        // A declaration-only inverse does not consume a different position
+        // basis. Any actual inverse read remains below and rejects admission.
+        active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_ModelViewProjectionMatrixInverse\s*;"#, with: "", options: .regularExpression)
         active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_ModelViewProjectionMatrix\s*;"#, with: "", options: .regularExpression)
         let position = #"(?:vec4\s*\(\s*a_Position\s*,\s*1(?:\.0*)?\s*\)|vec4\s*\(\s*a_Position\.xy\s*,\s*0(?:\.0*)?\s*,\s*1(?:\.0*)?\s*\)|a_Position)"#
         let matrix = "g_ModelViewProjectionMatrix"
@@ -77,10 +80,25 @@ struct WPEShaderStageLink {
 
     let interface: WPEShaderInterface
     let varyings: [Varying]
+    private let promotedFragmentInputs: Set<String>
 
     init(vertex: String, fragment: String) throws {
         let inventory = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
         interface = inventory
+        let activeFragment = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragment))
+        promotedFragmentInputs = Set(inventory.variables(stage: .fragment, kind: .varyingInput).filter { input in
+            guard input.arrayDimensions.isEmpty,
+                  let output = Self.matchingOutput(for: input, in: inventory.variables(stage: .vertex, kind: .varyingOutput)),
+                  output.arrayDimensions.isEmpty, let declaredWidth = Self.floatWidth(input.glslType),
+                  let producedWidth = Self.floatWidth(output.glslType), declaredWidth < producedWidth,
+                  let swizzles = try? NSRegularExpression(pattern: "\\b" + NSRegularExpression.escapedPattern(for: input.key.name) + #"\s*\.\s*([xyzwrgba]{1,4})\b"#) else { return false }
+            let text = activeFragment as NSString
+            return swizzles.matches(in: activeFragment, range: NSRange(activeFragment.startIndex..., in: activeFragment)).contains { match in
+                let axes = Array("xyzw"), colors = Array("rgba")
+                let channels = text.substring(with: match.range(at: 1)).compactMap { axes.firstIndex(of: $0) ?? colors.firstIndex(of: $0) }
+                return channels.contains { $0 >= declaredWidth } && channels.allSatisfy { $0 < producedWidth }
+            }
+        }.map(\.key.name))
         let unreferenced = Set(inventory.unreferencedFragmentInputs ?? [])
         let requiredIssues = inventory.issues.filter { issue in
             if issue.stage == .fragment, issue.name.map(unreferenced.contains) == true,
@@ -146,9 +164,16 @@ struct WPEShaderStageLink {
     struct FragmentBinding {
         let input: WPEShaderInterfaceVariable
         let output: Varying
+        /// Windows binds the VS's physical channels even if an FS declaration
+        /// is narrower. Promote only when those extra channels are referenced.
+        let usesProducedWidth: Bool
+
+        var glslType: String {
+            usesProducedWidth ? output.variable.glslType : input.glslType
+        }
 
         var metalType: String {
-            WPEUniformDecl.mapType(input.glslType)
+            WPEUniformDecl.mapType(glslType)
         }
 
         var declaration: String {
@@ -157,6 +182,9 @@ struct WPEShaderStageLink {
 
         func value(_ element: Int) -> String {
             let source = "in." + output.field(element)
+            if usesProducedWidth {
+                return source
+            }
             guard let inputWidth = WPEShaderStageLink.floatWidth(input.glslType),
                   let outputWidth = WPEShaderStageLink.floatWidth(output.variable.glslType), inputWidth != outputWidth else { return source }
             if inputWidth < outputWidth {
@@ -177,7 +205,7 @@ struct WPEShaderStageLink {
                     return output.variable.location == location
                 }
                 return output.variable.location == nil && output.name == input.key.name
-            }.map { FragmentBinding(input: input, output: $0) }
+            }.map { FragmentBinding(input: input, output: $0, usesProducedWidth: promotedFragmentInputs.contains(input.key.name)) }
         }
     }
 

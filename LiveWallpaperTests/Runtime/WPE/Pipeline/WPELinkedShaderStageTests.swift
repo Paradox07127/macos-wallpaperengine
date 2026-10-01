@@ -119,6 +119,46 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func fragmentReadsChannelsActuallyProducedBeyondItsDeclaredWidth() throws {
+        let vertex = """
+        attribute vec3 a_Position; attribute vec2 a_TexCoord;
+        varying vec4 v_Result;
+        void main(){gl_Position=vec4(a_Position,1.0);v_Result=vec4(a_TexCoord,0.125,0.875);}
+        """
+        let fragment = """
+        varying vec2 v_Result;
+        vec2 prefix(vec2 value){return value;}
+        void main(){vec2 uv=prefix(v_Result);gl_FragColor=vec4(uv,v_Result.zw);}
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let pixel = pixels[y * 4 + x]
+                #expect(abs(pixel.x - (Float(x) + 0.5) / 4) < 0.00001)
+                #expect(abs(pixel.y - (Float(y) + 0.5) / 4) < 0.00001)
+                #expect(pixel.z == 0.125 && pixel.w == 0.875)
+            }
+        }
+        let gradient = (0 ..< 16).map { SIMD4<Float>(Float($0 % 4) / 3, Float($0 / 4) / 3, 0.25, 1) }
+        let sampled = try replay(vertex: vertex, fragment: """
+        varying vec2 v_Result;
+        uniform sampler2D g_Texture0;
+        void main(){gl_FragColor=vec4(texSample2D(g_Texture0,v_Result).rg,v_Result.zw);}
+        """, fragmentPixels: gradient)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                #expect(abs(sampled[y * 4 + x].x - Float(x) / 3) < 0.00001)
+                #expect(abs(sampled[y * 4 + x].y - Float(y) / 3) < 0.00001)
+                #expect(sampled[y * 4 + x].z == 0.125 && sampled[y * 4 + x].w == 0.875)
+            }
+        }
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.fragmentDeclarations.contains { $0.contains("float4 v_Result = in.wpe_v0_0;") })
+        #expect(link.interface.variables(stage: .fragment, kind: .varyingInput).first?.glslType == "vec2")
+        let masked = try WPEShaderStageLink(vertex: vertex, fragment: "varying vec2 v_Result; void main(){gl_FragColor=vec4(v_Result,0,1);/*v_Result.zw*/}")
+        #expect(masked.fragmentDeclarations.contains { $0.contains("float2 v_Result") })
+    }
+
     @Test func unusedWidthMismatchAndLocatedNamesDoNotInventConsumedInputs() throws {
         let vertex = """
         attribute vec3 a_Position; attribute vec2 a_TexCoord;
@@ -435,7 +475,7 @@ struct WPELinkedShaderStageTests {
     private func replay(vertex: String, fragment: String,
                         vertexValues: [String: WPESceneShaderConstantValue] = [:],
                         fragmentValues: [String: WPESceneShaderConstantValue] = [:],
-                        vertexSample: SIMD4<Float>? = nil, premultipliedInputSlots: Set<Int> = []) throws -> [SIMD4<Float>] {
+                        vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = []) throws -> [SIMD4<Float>] {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -489,6 +529,17 @@ struct WPELinkedShaderStageTests {
             let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
             for slot in 0 ..< vs.textureSlotCount {
                 encoder.setVertexTexture(sampled, index: slot); encoder.setVertexSamplerState(sampler, index: slot)
+            }
+        }
+        if let fragmentPixels {
+            #expect(fragmentPixels.count == 16)
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: 4, height: 4, mipmapped: false)
+            descriptor.storageMode = .shared; descriptor.usage = [.shaderRead]
+            let texture = try #require(device.makeTexture(descriptor: descriptor))
+            fragmentPixels.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 64) }
+            let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
+            for slot in 0 ..< fs.textureSlotCount {
+                encoder.setFragmentTexture(texture, index: slot); encoder.setFragmentSamplerState(sampler, index: slot)
             }
         }
         for (stage, layout, values) in [(WPEShaderStage.vertex, vs.uniformLayout, vertexValues), (.fragment, fs.uniformLayout, fragmentValues)] {

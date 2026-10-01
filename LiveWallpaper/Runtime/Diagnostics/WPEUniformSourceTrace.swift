@@ -10,6 +10,7 @@ enum WPEUniformValueSource: Equatable {
     case effectTextureProjection(inverse: Bool)
     case effectModelViewProjectionXYW
     case fullscreenVertexMVP
+    case unreferencedEngineDeclaration
     case authoredDefault
     case missing
 
@@ -39,6 +40,7 @@ enum WPEUniformValueSource: Equatable {
             ]
         case .effectModelViewProjectionXYW: ["kind": "draw-derived", "key": WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName, "scope": "final-ordinary-layer-normalized-position-XYW"]
         case .fullscreenVertexMVP: ["kind": "draw-derived", "key": "g_ModelViewProjectionMatrix", "scope": "fullscreen-clip-geometry"]
+        case .unreferencedEngineDeclaration: ["kind": "unreferenced-engine-declaration", "scope": "declared-ABI-only-no-admitted-read"]
         case .authoredDefault: ["kind": "authored-default", "scope": "declaration"]
         case .missing: ["kind": "missing", "scope": "none"]
         }

@@ -87,7 +87,7 @@ struct WPEShaderTranspiler {
 
         if let stageLink {
             varyings = stageLink.fragmentBindings.map {
-                WPEVaryingDecl(type: $0.input.glslType, name: $0.input.key.name, metalType: $0.metalType,
+                WPEVaryingDecl(type: $0.glslType, name: $0.input.key.name, metalType: $0.metalType,
                                arrayLength: $0.output.isArray ? $0.output.elementCount : nil,
                                arrayDimension: $0.output.isArray ? String($0.output.elementCount) : nil)
             }

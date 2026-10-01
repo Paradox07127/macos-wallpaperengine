@@ -52,7 +52,7 @@ extension WPEMetalRenderExecutor {
         }
         let plans = uniformPlans(for: pass, layout: vertex.uniformLayout, stage: .vertex)
         for (index, uniform) in vertex.uniformLayout.enumerated() {
-            if uniform.name == "g_ModelViewProjectionMatrix", uniform.materialName == nil {
+            if ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name), uniform.materialName == nil {
                 guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
                 guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
                 continue

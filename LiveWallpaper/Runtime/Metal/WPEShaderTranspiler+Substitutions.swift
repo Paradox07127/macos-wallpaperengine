@@ -93,7 +93,7 @@ extension WPEShaderTranspiler {
         s = rewriteArrayCopyInitialization(s)
         s = rewriteFloatArraySubscripts(s)
         s = rewriteHLSLImplicitConversions(s, uniforms: uniforms, functionDeclarations: functionDeclarations,
-                                           vertexTypes: stage == .vertex ? varyingTypesByName : [:])
+                                           vertexTypes: stage == .vertex || !fragmentUVFallbacks ? varyingTypesByName : [:])
         s = rewriteGLSLMatrixConstructors(s)
 
         s = rewriteReferenceParameters(s)
@@ -781,6 +781,7 @@ extension WPEShaderTranspiler {
         result = lowerScalarDistanceCalls(result, widths: widths)
         result = narrowMixArguments(result, widths: widths)
         result = narrowUserFunctionArguments(result, widths: widths, declarations: functionDeclarations)
+        result = narrowKnownTextureCoordinates(result, widths: widths)
         result = narrowWideInitializers(result, widths: widths)
         return narrowWideReturns(result, widths: widths)
     }
@@ -888,6 +889,24 @@ extension WPEShaderTranspiler {
                 }
                 cursor = result.index(after: hit.lowerBound)
             }
+        }
+        return result
+    }
+
+    /// WPE's sampler2D consumes XY even when the linked producer supplies a
+    /// wider varying. Unknown calls and expressions retain their source.
+    private static func narrowKnownTextureCoordinates(_ source: String, widths: [String: Int]) -> String {
+        var result = source
+        var cursor = result.startIndex
+        while let hit = result.range(of: ".sample", range: cursor..<result.endIndex) {
+            cursor = hit.upperBound
+            guard let close = closingDelimiter(in: result, after: hit.upperBound, open: "(", close: ")"),
+                  let open = result[hit.upperBound..<close].firstIndex(of: "(") else { continue }
+            let arguments = topLevelArgumentRanges(in: result, open: open, close: close)
+            guard arguments.count >= 2, let width = expressionWidth(result[arguments[1]], widths: widths), width > 2 else { continue }
+            let uv = result[arguments[1]].trimmingCharacters(in: .whitespacesAndNewlines)
+            result.replaceSubrange(arguments[1], with: "(\(uv)).xy")
+            cursor = result.index(after: hit.lowerBound)
         }
         return result
     }

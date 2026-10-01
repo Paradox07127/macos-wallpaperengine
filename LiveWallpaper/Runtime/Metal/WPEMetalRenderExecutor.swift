@@ -3164,6 +3164,16 @@ final class WPEMetalRenderExecutor {
         let useDirectPacking = derivedUniformPackingEnabled
         for (index, u) in layout.enumerated() {
             if stage == .vertex, vertexExecution == .authoredFullscreen,
+               u.name == "g_ModelViewProjectionMatrixInverse", u.materialName == nil, u.glslType == "mat4", u.arrayLength == nil {
+                // Admission excludes all inverse reads in this position basis.
+                // Retain its declared ABI without inventing a projection inverse.
+                for column in 0..<4 { slots[u.slot + column] = .zero }
+                #if DEBUG
+                recordUniformSource(.unreferencedEngineDeclaration)
+                #endif
+                continue
+            }
+            if stage == .vertex, vertexExecution == .authoredFullscreen,
                u.name == "g_ModelViewProjectionMatrix", u.materialName == nil, u.glslType == "mat4", u.arrayLength == nil {
                 // Fullscreen attributes are already in clip coordinates. This is
                 // a draw producer, never the layer owner's effect projection.

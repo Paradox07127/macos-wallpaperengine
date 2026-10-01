@@ -79,6 +79,8 @@ struct WPEAuthoredVertexExecutorTests {
         let declaration = "uniform mat4 g_ModelViewProjectionMatrix;"
         let position = "gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1.0);"
         #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + " void main(){" + position + "}"))
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + " uniform mat4 g_ModelViewProjectionMatrixInverse; void main(){" + position + "}"))
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + " uniform mat4 g_ModelViewProjectionMatrixInverse; void main(){" + position + "v_Other=g_ModelViewProjectionMatrixInverse[0];}"))
         for assignment in ["gl_Position = mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix);",
                            "gl_Position = mul(g_ModelViewProjectionMatrix, vec4(a_Position.xy, 0.0, 1.0));",
                            "gl_Position = vec4(a_Position, 1.0);"] {
@@ -150,6 +152,25 @@ struct WPEAuthoredVertexExecutorTests {
         let other = WPERenderPass(id: "other", phase: pass.pass.phase, shader: pass.pass.shader, source: pass.pass.source, target: pass.pass.target, textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
         let intermediate = WPERenderLayer(objectID: layer.objectID, objectName: layer.objectName, imagePath: layer.imagePath, materialPath: nil, geometry: layer.geometry, compositeA: layer.compositeA, compositeB: layer.compositeB, localFBOs: [], passes: [pass.pass, other, layer.passes[1]])
         #expect(fixture.executor.authoredVertexRejection(for: pass, result: fixture.result, layer: intermediate, frameState: frame, effectTextureProjection: { nil }) == .unverifiedEffectPositionContext)
+    }
+
+    @Test func fullscreenInverseDeclarationDoesNotInventAConsumedProducer() throws {
+        let fixture = try fixture(prewarmed: true)
+        let vertex = try #require(fixture.result.vertexStage)
+        let inverse = WPEUniformSlot(name: "g_ModelViewProjectionMatrixInverse", glslType: "mat4", slot: 0, slotCount: 4,
+                                     arrayLength: nil, materialName: nil, defaultValue: nil)
+        let pass = fixture.pipeline.layers[0].passes[0]
+        let (_, sources) = try fixture.executor.withUniformSourceTracing {
+            try fixture.executor.packTranslatedUniforms(for: pass, layout: [inverse], stage: .vertex, vertexExecution: .authoredFullscreen)
+        }
+        #expect(sources == [.unreferencedEngineDeclaration])
+        let output = try fixture.executor.render(pipeline: fixture.pipeline, size: CGSize(width: 4, height: 4), textures: [:])
+        var result = fixture.result
+        result.vertexStage = .init(library: vertex.library, mslSource: vertex.mslSource, uniformLayout: [inverse],
+                                   samplerNames: vertex.samplerNames, textureSlotCount: vertex.textureSlotCount)
+        result.fullscreenMVPPositionOnly = false
+        let frame = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4))
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: fixture.pipeline.layers[0].graphLayer, frameState: frame, effectTextureProjection: { nil }) == .unverifiedFullscreenMVP)
     }
 
     @Test func effectMVPProofRestrictsPositionToProjectedXYW() {

@@ -88,6 +88,9 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
                     case .effectModelViewProjectionXYW:
                         status = .limited
                         reason = "normalized-effect-position-XYW-2D-only"
+                    case .unreferencedEngineDeclaration:
+                        status = .unverified
+                        reason = "declaration-only-no-admitted-read"
                     case .authoredDefault:
                         status = .supported
                         reason = "authored-default-supplied"
