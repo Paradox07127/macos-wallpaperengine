@@ -78,6 +78,39 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func unobservedInverseWriteRetainsRealVSAndDoesNotAlterRasterOutput() throws {
+        let vertex = """
+        #define mul(a,b) ((b)*(a))
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        uniform mat4 g_ModelViewProjectionMatrix;
+        uniform mat4 g_ModelViewProjectionMatrixInverse;
+        varying vec2 uv;
+        varying vec4 unused;
+        void main() {
+            gl_Position=mul(vec4(a_Position,1),g_ModelViewProjectionMatrix);
+            uv=a_TexCoord*0.25+0.375;
+            unused=mul(vec4(0.5,0.25,0,1),g_ModelViewProjectionMatrixInverse);
+        }
+        """
+        let fragment = """
+        varying vec2 uv;
+        void main(){gl_FragColor=vec4(uv,0.625,1);}
+        """
+        for scale: Double in [1, 7] {
+            let matrix = [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, 1]
+            let identity: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+            let pixels = try replay(vertex: vertex, fragment: fragment, vertexValues: ["g_ModelViewProjectionMatrix": .vector(identity), "g_ModelViewProjectionMatrixInverse": .vector(matrix)], requiredPositionProof: true)
+            for y in 0 ..< 4 {
+                for x in 0 ..< 4 {
+                    #expect(abs(pixels[y * 4 + x].x - (0.375 + (Float(x) + 0.5) / 16)) < 0.00001)
+                    #expect(abs(pixels[y * 4 + x].y - (0.375 + (Float(y) + 0.5) / 16)) < 0.00001)
+                    #expect(pixels[y * 4 + x].z == 0.625)
+                }
+            }
+        }
+    }
+
     @Test func locallyShadowedInputsUseLocalValuesAndRealVertexInterpolation() throws {
         let vertex = """
         attribute vec3 a_Position;
@@ -541,7 +574,7 @@ struct WPELinkedShaderStageTests {
                         vertexValues: [String: WPESceneShaderConstantValue] = [:],
                         fragmentValues: [String: WPESceneShaderConstantValue] = [:],
                         vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = [],
-                        execution: WPEVertexExecution = .authoredFullscreen, positionScale: SIMD2<Float> = SIMD2(1, 1)) throws -> [SIMD4<Float>] {
+                        execution: WPEVertexExecution = .authoredFullscreen, positionScale: SIMD2<Float> = SIMD2(1, 1), requiredPositionProof: Bool? = nil) throws -> [SIMD4<Float>] {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -562,6 +595,9 @@ struct WPELinkedShaderStageTests {
             .replacingPremultipliedAlphaSettings(inputSlots: premultipliedInputSlots, output: false)
             .replacingVertexExecution(execution)
         let fs = try compiler.compile(request)
+        if let requiredPositionProof {
+            #expect(fs.fullscreenMVPPositionOnly == requiredPositionProof, Comment(rawValue: request.processedVertexSource))
+        }
         let vs = try #require(fs.vertexStage)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vs.library.makeFunction(name: fs.vertexFunctionName)

@@ -6,9 +6,12 @@ import Foundation
 struct WPEShaderStageLink {
     /// Conservative admission proof for the native fullscreen clip matrix. It is
     /// not a proof of WPE's Z projection: depth testing/writes remain separate.
-    static func usesMVPOnlyForFullscreenPosition(_ source: String) -> Bool {
+    static func usesMVPOnlyForFullscreenPosition(_ source: String, fragment: String? = nil) -> Bool {
         var active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source)
         active = WPEShaderTranspiler.maskComments(active)
+        if let fragment {
+            active = excludingUnconsumedPureWrites(active, fragment: fragment)
+        }
         if let mainRange = WPEShaderTranspiler.locateMain(in: active),
            let aliases = try? NSRegularExpression(pattern: #"\b(?:const\s+)?vec3\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*a_Position\s*;"#) {
             var main = String(active[mainRange])
@@ -48,6 +51,76 @@ struct WPEShaderStageLink {
         // The supplied attribute is clip XY. Raw authored position arithmetic
         // needs its own coordinate producer, even without another matrix read.
         return !active.contains("g_ModelViewProjectionMatrix") && !active.contains("gl_Position") && !active.contains("a_Position") && !active.contains("g_EffectModelViewProjectionMatrix")
+    }
+
+    /// Only the admission analysis is sliced. Actual authored VS code remains
+    /// intact. An unused FS binding alone is insufficient: other VS reads or
+    /// impure expressions keep the entire computation required.
+    private static func excludingUnconsumedPureWrites(_ source: String, fragment: String) -> String {
+        let interface = WPEShaderInterfaceParser.parse(vertex: source, fragment: fragment)
+        let outputs = interface.variables(stage: .vertex, kind: .varyingOutput)
+        let unused = Set(interface.unreferencedFragmentInputs ?? [])
+        let consumed = Set(interface.variables(stage: .fragment, kind: .varyingInput).filter {
+            !unused.contains($0.key.name)
+        }.compactMap { matchingOutput(for: $0, in: outputs)?.key.name })
+        var result = source
+        for output in outputs where output.arrayDimensions.isEmpty && !consumed.contains(output.key.name) {
+            let name = NSRegularExpression.escapedPattern(for: output.key.name)
+            let writes = #"(?<=[;{}])\s*"# + name + #"(?:\.[xyzwrgba]{1,4})?\s*(?:=|\+=|-=|\*=|/=)\s*([^;{}]+);"#
+            guard let regex = try? NSRegularExpression(pattern: writes) else { continue }
+            let text = result as NSString
+            let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
+            guard !matches.isEmpty, matches.allSatisfy({ pureWriteExpression(text.substring(with: $0.range(at: 1)), source: source) }) else { continue }
+            var candidate = result
+            for match in matches.reversed() {
+                candidate = (candidate as NSString).replacingCharacters(in: match.range, with: "")
+            }
+            let declaration = #"\b(?:varying|out)\s+(?:(?:highp|mediump|lowp)\s+)?[A-Za-z_]\w*\s+"# + name + #"\s*;"#
+            candidate = candidate.replacingOccurrences(of: declaration, with: "", options: .regularExpression)
+            // A relay into another varying, a helper read, loop condition or
+            // shadowed local retains the original source, including inverse use.
+            guard candidate.range(of: "\\b" + name + "\\b", options: .regularExpression) == nil else { continue }
+            result = candidate
+        }
+        return result
+    }
+
+    private static func pureWriteExpression(_ expression: String, source: String) -> Bool {
+        guard expression.range(of: #"[^A-Za-z0-9_\s.()+*/\[\],-]|\+\+|--"#, options: .regularExpression) == nil,
+              let calls = try? NSRegularExpression(pattern: #"\b([A-Za-z_]\w*)\s*\("#) else { return false }
+        // Object-like macros can hide increments or function calls as well.
+        // Only the canonical multiply macro is proved below; other referenced
+        // macro bodies are deliberately not guessed to be pure.
+        let definitions = source.components(separatedBy: "\n")
+        for line in definitions {
+            guard let names = try? NSRegularExpression(pattern: #"^\s*#\s*define\s+([A-Za-z_]\w*)"#),
+                  let declaration = names.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { continue }
+            let macroName = (line as NSString).substring(with: declaration.range(at: 1))
+            if macroName != "mul", expression.range(of: "\\b" + NSRegularExpression.escapedPattern(for: macroName) + "\\b", options: .regularExpression) != nil {
+                return false
+            }
+        }
+        let text = expression as NSString
+        for match in calls.matches(in: expression, range: NSRange(expression.startIndex..., in: expression)) {
+            let name = text.substring(with: match.range(at: 1))
+            if ["vec2", "vec3", "vec4", "mat2", "mat3", "mat4"].contains(name) {
+                continue
+            }
+            guard name == "mul", source.range(of: #"(?m)^\s*(?:(?:highp|mediump|lowp)\s+)?[A-Za-z_]\w*\s+mul\s*\([^()]*\)\s*\{"#, options: .regularExpression) == nil else { return false }
+            let definitions = source.components(separatedBy: "\n").filter { $0.range(of: #"^\s*#\s*define\s+mul\b"#, options: .regularExpression) != nil }
+            for definition in definitions {
+                guard let macro = try? NSRegularExpression(pattern: #"^\s*#\s*define\s+mul\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*(.*)$"#),
+                      let declaration = macro.firstMatch(in: definition, range: NSRange(definition.startIndex..., in: definition)) else { return false }
+                let line = definition as NSString
+                var body = line.substring(with: declaration.range(at: 3))
+                for index in [1, 2] {
+                    body = body.replacingOccurrences(of: "\\b" + NSRegularExpression.escapedPattern(for: line.substring(with: declaration.range(at: index))) + "\\b",
+                                                     with: "", options: .regularExpression)
+                }
+                guard body.range(of: #"[^\s()*]"#, options: .regularExpression) == nil else { return false }
+            }
+        }
+        return true
     }
 
     struct Varying {

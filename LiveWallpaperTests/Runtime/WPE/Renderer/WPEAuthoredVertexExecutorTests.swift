@@ -117,6 +117,46 @@ struct WPEAuthoredVertexExecutorTests {
         }
     }
 
+    @Test func fullscreenProofExcludesOnlyPureUnobservedVertexWrites() {
+        let vertex = """
+        #define mul(a,b) ((b)*(a))
+        attribute vec3 a_Position;
+        uniform mat4 g_ModelViewProjectionMatrix;
+        uniform mat4 g_ModelViewProjectionMatrixInverse;
+        varying vec4 unused;
+        varying vec2 uv;
+        void main() {
+            gl_Position = mul(vec4(a_Position,1),g_ModelViewProjectionMatrix);
+            uv = vec2(0.5);
+            unused.xyz = mul(vec4(0,0,0,1),g_ModelViewProjectionMatrixInverse).xyw;
+            unused.xy *= 0.5;
+        }
+        """
+        let fragment = "varying vec2 uv; void main(){gl_FragColor=vec4(uv,0,1);}"
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(vertex))
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(vertex, fragment: fragment))
+        let include = vertex.replacingOccurrences(of: "attribute vec3 a_Position;", with: "vec2 helper(vec2 value) { return value; }\nattribute vec3 a_Position;")
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(include, fragment: fragment))
+        let custom = vertex.replacingOccurrences(of: "attribute vec3 a_Position;", with: "vec4 mul(vec4 value,mat4 matrix) { counter++; return matrix*value; }\nattribute vec3 a_Position;")
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(custom, fragment: fragment))
+        for live in ["varying vec4 unused; void main(){gl_FragColor=unused;}",
+                     "varying vec4 unused; vec4 helper(){return unused;} void main(){gl_FragColor=helper();}"] {
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(vertex, fragment: live))
+        }
+        for change in ["uv = unused.xy;", "gl_Position.xy += unused.xy;", "if(unused.x>0) uv=vec2(1);"] {
+            let relay = vertex.replacingOccurrences(of: "unused.xy *= 0.5;", with: "unused.xy *= 0.5; " + change)
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(relay, fragment: fragment))
+        }
+        for expression in ["modify(g_ModelViewProjectionMatrixInverse)", "vec3(g_ModelViewProjectionMatrixInverse[0].x + counter++)", "mul(vec4(counter++),g_ModelViewProjectionMatrixInverse)"] {
+            let impure = vertex.replacingOccurrences(of: "mul(vec4(0,0,0,1),g_ModelViewProjectionMatrixInverse).xyw", with: expression)
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(impure, fragment: fragment))
+        }
+        let indirect = "#define HIDDEN (counter++)\n" + vertex.replacingOccurrences(of: "vec4(0,0,0,1)", with: "vec4(HIDDEN,0,0,1)")
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(indirect, fragment: fragment))
+        let macro = vertex.replacingOccurrences(of: "((b)*(a))", with: "((b)*(a)+(counter++))")
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(macro, fragment: fragment))
+    }
+
     @Test func finalOrdinaryEffectProjectionUsesCoupledNormalizedPosition() throws {
         let fixture = try fixture(prewarmed: true, effectProjection: true)
         let output = try fixture.executor.render(pipeline: fixture.pipeline, size: CGSize(width: 4, height: 4), textures: [:])
