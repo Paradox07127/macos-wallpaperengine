@@ -194,6 +194,38 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(coverage.entries.first { $0.feature == .uniformSupply && $0.stage == .vertex }?.status == .limited)
     }
 
+    @Test func inheritedQuadAdmissionRequiresTheFullAffineProducerAndFlatPositivePlane() throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: original.shader,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        let geometry = WPERenderLayerGeometry(origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                                              size: CGSize(width: 10, height: 10), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "child", objectName: "child", imagePath: "image", materialPath: nil,
+                                   parentObjectID: "parent", geometry: geometry, localGeometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass])
+        let texture = try #require(fixture.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)))
+        let frame = WPEMetalFrameState(output: texture, sceneSize: CGSize(width: 4, height: 4))
+        func context(scale: SIMD3<Double> = SIMD3(repeating: 1), angles: SIMD3<Double> = .zero, verified: Bool) -> WPEFrameUniformContext {
+            var value = WPEFrameUniformContext(runtimeUniformValues: [:], cameraUniformValues: WPEMetalCameraUniforms.identity.uniformValues,
+                                               objectUniformValuesByPassID: [pass.id: WPEMetalObjectUniforms.uniformValues(origin: .zero, scale: scale, angles: angles)])
+            if verified {
+                value.affineModelMatrixPassIDs = [pass.id]
+            }
+            return value
+        }
+        fixture.executor.frameUniformContext = context(verified: false)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer, frameState: frame, effectTextureProjection: { nil }) == .unverifiedInheritedObjectMatrix)
+        fixture.executor.frameUniformContext = context(verified: true)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer, frameState: frame, effectTextureProjection: { nil }) == nil)
+        for value in [context(scale: SIMD3(-1, 1, 1), verified: true), context(angles: SIMD3(0.2, 0, 0), verified: true)] {
+            fixture.executor.frameUniformContext = value
+            #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer, frameState: frame, effectTextureProjection: { nil }) == .unverifiedInheritedObjectMatrix)
+        }
+    }
+
     @Test func serializedDefaultClipPlanesRetainCapturedProjection() {
         func camera(near: Double) -> WPEMetalCameraUniforms {
             .init(orthogonalProjection: .init(width: 7680, height: 4320, auto: false),

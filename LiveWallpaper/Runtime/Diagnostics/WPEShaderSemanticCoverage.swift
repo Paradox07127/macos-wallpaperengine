@@ -40,7 +40,7 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
                   reason: "metal-library-compiled"),
             .init(feature: .authoredVertexExecution, stage: .vertex, name: nil,
                   status: authoredVertexExecuted ? .limited : (interface?.hasVertexSource == true ? .missing : .unverified),
-                  reason: authoredVertexExecuted ? (authoredObjectQuadExecuted ? "authored-root-object-quad-stage-executed" : "authored-fullscreen-stage-executed") : (authoredVertexFallback ?? (interface?.hasVertexSource == true ? "builtin-vertex-with-fragment-reconstruction" : "authored-vertex-source-unavailable"))),
+                  reason: authoredVertexExecuted ? (authoredObjectQuadExecuted ? "authored-model-pixel-quad-stage-executed" : "authored-fullscreen-stage-executed") : (authoredVertexFallback ?? (interface?.hasVertexSource == true ? "builtin-vertex-with-fragment-reconstruction" : "authored-vertex-source-unavailable"))),
             .init(feature: .visualFidelity, stage: nil, name: nil, status: .unverified,
                   reason: "compilation-and-source-selection-do-not-prove-image-equivalence"),
         ]

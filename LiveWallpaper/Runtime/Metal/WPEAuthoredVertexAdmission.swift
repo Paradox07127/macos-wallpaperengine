@@ -9,6 +9,7 @@ enum WPEAuthoredVertexRejection: Equatable {
     case disabledForIsolation, geometryUnavailable, pipelineNotPrewarmed, stageUnavailable(String)
     case requiredUniformMissing(String), invalidMatrix(String), unverifiedEffectProjection3D
     case unverifiedFullscreenDepth, unverifiedFullscreenMVP, unverifiedEffectPositionContext, unverifiedObjectQuadSpace
+    case unverifiedInheritedObjectMatrix
 
     var reason: String {
         switch self {
@@ -21,6 +22,7 @@ enum WPEAuthoredVertexRejection: Equatable {
         case .unverifiedFullscreenDepth: "fullscreen-depth-projection-unverified"
         case .unverifiedFullscreenMVP: "fullscreen-MVP-non-position-use-unverified"
         case .unverifiedObjectQuadSpace: "object-quad-position-space-unverified"
+        case .unverifiedInheritedObjectMatrix: "inherited-object-matrix-producer-unverified"
         case .unverifiedEffectPositionContext: "effect-position-context-unverified"
         case .unverifiedEffectProjection3D: "effect-projection-3D-unverified"
         }
@@ -30,7 +32,8 @@ enum WPEAuthoredVertexRejection: Equatable {
 extension WPEMetalRenderExecutor {
     static func canSupplyAuthoredObjectQuad(layer: WPERenderLayer, camera: WPEMetalCameraUniforms) -> Bool {
         let geometry = layer.geometry
-        guard !layer.isUtilityModelLayer, layer.parentObjectID == nil, layer.groupRenderTarget == nil,
+        guard !layer.isUtilityModelLayer, layer.attachment == nil, layer.groupRenderTarget == nil,
+              layer.parentObjectID == nil || layer.localGeometry != nil,
               layer.puppetPath == nil, geometry.alignment == .center,
               let size = geometry.size, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
               Float(size.width / 2).isFinite, Float(size.height / 2).isFinite,
@@ -87,6 +90,17 @@ extension WPEMetalRenderExecutor {
             guard case .scene = pass.pass.target,
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms),
                   layer.parallaxDepth == .zero || frameState.cameraParallax.amount == 0 else { return .unverifiedObjectQuadSpace }
+            if layer.parentObjectID != nil {
+                guard frameUniformContext.affineModelMatrixPassIDs.contains(pass.id),
+                      let values = frameUniformContext.value(named: "g_ModelMatrix", passID: pass.id)?.vectorValue,
+                      let model = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: values),
+                      abs(model.columns.0.z) < 0.000001, abs(model.columns.1.z) < 0.000001,
+                      abs(model.columns.2.x) < 0.000001, abs(model.columns.2.y) < 0.000001,
+                      abs(model.columns.3.z) < 0.000001,
+                      model.columns.0.x * model.columns.1.y - model.columns.1.x * model.columns.0.y > 0 else {
+                    return .unverifiedInheritedObjectMatrix
+                }
+            }
         }
         let plans = uniformPlans(for: pass, layout: vertex.uniformLayout, stage: .vertex)
         for (index, uniform) in vertex.uniformLayout.enumerated() {

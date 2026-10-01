@@ -49,7 +49,7 @@ enum WPEPassVertexPath: String, Codable, Sendable {
             "bufferValues": "unrecorded",
             "projectionContract": self == .authoredFullscreen
                 ? "native-fullscreen-XY; WPE-depth-unverified; MVP-position-only; depth-disabled"
-                : (self == .authoredObjectQuad ? "root-2D-model-pixel-attributes; depth-disabled" : "builtin-geometry"),
+                : (self == .authoredObjectQuad ? "2D-model-pixel-attributes; finite-draw-MVP; depth-disabled" : "builtin-geometry"),
         ]
     }
 }

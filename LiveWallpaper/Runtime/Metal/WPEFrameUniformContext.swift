@@ -14,6 +14,9 @@ struct WPEFrameUniformContext: Sendable {
     /// Draw-owned VP for composing MVP; does not replace the global shader VP.
     var drawViewProjectionMatrixByPassID: [String: WPESceneShaderConstantValue] = [:]
 
+    /// Passes whose object producer consumed a finite full affine override, not decomposed TRS.
+    var affineModelMatrixPassIDs: Set<String> = []
+
     static let empty = WPEFrameUniformContext(
         runtimeUniformValues: [:],
         cameraUniformValues: [:],

@@ -363,7 +363,7 @@ extension WPEMetalSceneRenderer {
             return try executor.render(
                 pipeline: textFrame.pipeline.resolvingSceneModelMatrices(
                     origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
-                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID
+                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID, camera: cameraUniforms
                 ),
                 size: sceneRenderSize,
                 textures: currentTextures,

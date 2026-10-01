@@ -810,7 +810,9 @@ struct WPEMetalShaderDispatcher {
             vertexPath: vertexPath,
             vertexUniformSlots: packedVertexUniforms.slotsForTracing(), vertexUniformSources: vertexUniformSources,
             authoredVertexFallback: result.vertexStage == nil ? rejection?.reason : nil,
-            authoredObjectInputs: result.vertexStage?.execution == .authoredObjectQuad ? WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer) : nil
+            authoredObjectInputs: result.vertexStage?.execution == .authoredObjectQuad ? WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer) : nil,
+            authoredObjectMatrixScope: result.vertexStage?.execution == .authoredObjectQuad
+                ? (layer.parentObjectID == nil ? "root-model" : "inherited-full-affine") : nil
         )
         #endif
         encoder.setRenderPipelineState(pipelineState)

@@ -180,18 +180,43 @@ struct WPEShaderProgram: Equatable, Sendable {
 
 extension WPEPreparedRenderPipeline {
     /// Resolve local transforms before the legacy 2D placement decomposition.
-    /// Only model meshes consume this override; 2D compositing keeps its existing
-    /// geometry contract. Resolve static ancestors as well as scripted hosts.
+    /// Model meshes and bounded authored 2D scene quads consume this override.
+    /// Native 2D placement keeps its existing geometry contract. Resolve static
+    /// ancestors as well as scripted hosts.
     func resolvingSceneModelMatrices(
         origins: [String: SIMD3<Double>], scales: [String: SIMD3<Double>], angles: [String: SIMD3<Double>],
-        parentByID: [String: String], hostTransforms: [String: WPERenderObjectTransform]
+        parentByID: [String: String], hostTransforms: [String: WPERenderObjectTransform],
+        camera: WPEMetalCameraUniforms = .identity
     ) -> WPEPreparedRenderPipeline {
-        let models = layers.filter { $0.graphLayer.puppetPath != nil && ($0.graphLayer.imagePath as NSString).pathExtension.lowercased() == "mdl" }
+        let inheritedQuadIDs = Set(layers.filter { layer in
+            layer.graphLayer.parentObjectID != nil
+                && WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera)
+                && layer.passes.contains { pass in
+                    if case .scene = pass.pass.target {
+                        return pass.shader?.isBuiltin == false
+                    }
+                    return false
+                }
+        }.map(\.id))
+        let models = layers.filter {
+            inheritedQuadIDs.contains($0.id)
+                || ($0.graphLayer.puppetPath != nil && ($0.graphLayer.imagePath as NSString).pathExtension.lowercased() == "mdl")
+        }
         guard !models.isEmpty else { return self }
         let localByID = Dictionary(layers.map {
             ($0.id, WPERenderObjectTransform($0.graphLayer.localGeometry ?? $0.graphLayer.geometry))
         }, uniquingKeysWith: { first, _ in first })
         let offsets = Dictionary(layers.map { ($0.id, $0.graphLayer.attachmentOriginOffset) }, uniquingKeysWith: { first, _ in first })
+        func hasCompleteHierarchy(_ id: String) -> Bool {
+            var visited = Set<String>()
+            var current = id
+            while visited.count < 100 {
+                guard visited.insert(current).inserted, localByID[current] != nil || hostTransforms[current] != nil else { return false }
+                guard let parent = parentByID[current] else { return true }
+                current = parent
+            }
+            return false
+        }
         var memo: [String: simd_double4x4] = [:]
         func resolve(_ id: String, stack: Set<String>) -> simd_double4x4? {
             if let cached = memo[id] {
@@ -213,7 +238,13 @@ extension WPEPreparedRenderPipeline {
         }
         let modelIDs = Set(models.map(\.id))
         return WPEPreparedRenderPipeline(layers: layers.map { layer in
-            guard modelIDs.contains(layer.id), let world = resolve(layer.id, stack: []) else { return layer }
+            guard modelIDs.contains(layer.id) else { return layer }
+            if inheritedQuadIDs.contains(layer.id) {
+                guard parentByID[layer.id] == layer.graphLayer.parentObjectID, hasCompleteHierarchy(layer.id) else {
+                    return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes)
+                }
+            }
+            guard let world = resolve(layer.id, stack: []) else { return layer }
             return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
                                           modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world))
         })
@@ -410,6 +441,9 @@ extension WPEPreparedRenderPipeline {
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
+        frameUniforms.affineModelMatrixPassIDs = Set(layers.filter {
+            $0.modelMatrixOverride.flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:)) != nil
+        }.flatMap { $0.passes.map(\.id) })
         if camera.hasCapturedFlatDrawProjection {
             for layer in layers where !layer.graphLayer.isUtilityModelLayer {
                 for pass in layer.passes {

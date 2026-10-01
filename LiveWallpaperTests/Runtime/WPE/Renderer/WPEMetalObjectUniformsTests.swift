@@ -253,6 +253,45 @@ struct WPEObjectUniformCacheTests {
         )
     }
 
+    @Test("Inherited authored quad retains the Windows nonuniform-parent MVP and rejects stale incomplete ancestry")
+    func authoredQuadHierarchyMatchesCapturedShear() throws {
+        let local = WPERenderLayerGeometry(origin: SIMD3(16, -12, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
+                                           alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
+                                           color: SIMD3(repeating: 1), brightness: 1)
+        let template = Self.layer(id: "quad", geometry: local)
+        let program = WPEShaderProgram(name: "quad", vertexSource: "", fragmentSource: "", isBuiltin: false)
+        let passes = template.passes.map { pass in
+            WPEPreparedRenderPass(pass: pass.pass, shader: program, textureBindings: [:], comboValues: [:], uniformValues: [:])
+        }
+        let graph = WPERenderLayer(objectID: "quad", objectName: "quad", imagePath: "models/util/solidlayer.json", materialPath: nil,
+                                   parentObjectID: "parent", geometry: local, localGeometry: local, compositeA: "a", compositeB: "b",
+                                   localFBOs: [], passes: passes.map(\.pass))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes)])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30)
+        let host = WPERenderObjectTransform(origin: SIMD3(192, 96, 0), scale: SIMD3(1.1, 0.9, 1), angles: SIMD3(0, 0, 0.09))
+        let resolved = pipeline.resolvingSceneModelMatrices(origins: [:], scales: [:], angles: [:],
+                                                            parentByID: ["quad": "parent"], hostTransforms: ["parent": host], camera: camera)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+        let cache = WPEObjectUniformCache()
+        let frame = resolved.addingMetalRuntimeUniforms(runtime, camera: camera, objectUniformCache: cache)
+        #expect(frame.frameUniforms.affineModelMatrixPassIDs == ["quad.0"])
+        let mvp = try #require(frame.frameUniforms.value(named: "g_ModelViewProjectionMatrix", passID: "quad.0")?.vectorValue)
+        let expected = [0.0066629387, 0.0031136139, 0, 0, -0.0011044668, 0.0072225812, 0, 0, 0, 0, 0.00025, 0, 0.0963513851, -0.0955668688, 0.5, 1]
+        for (actual, oracle) in zip(mvp, expected) {
+            #expect(abs(actual - oracle) < 0.000001)
+        }
+        _ = resolved.addingMetalRuntimeUniforms(runtime, camera: camera, objectUniformCache: cache)
+        #expect(cache.computeCount == 1)
+        for (parents, hosts) in [(["quad": "parent"], [String: WPERenderObjectTransform]()),
+                                 (["quad": "parent", "parent": "quad"], ["parent": host])] {
+            let invalid = resolved.resolvingSceneModelMatrices(origins: [:], scales: [:], angles: [:],
+                                                               parentByID: parents, hostTransforms: hosts, camera: camera)
+            #expect(invalid.layers[0].modelMatrixOverride == nil)
+            #expect(invalid.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms.affineModelMatrixPassIDs.isEmpty)
+        }
+    }
+
     @Test("Model hierarchy preserves non-commuting rotation and affine shear across cached frame uniforms")
     func modelHierarchyRetainsAffineTransform() throws {
         let local = Self.geometry(origin: SIMD3(1, 0, 0), angles: SIMD3(0, 0, Double.pi / 4))

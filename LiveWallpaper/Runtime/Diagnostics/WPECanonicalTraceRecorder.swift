@@ -230,7 +230,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         vertexUniformSlots: [SIMD4<Float>] = [],
         vertexUniformSources: [WPEUniformValueSource]? = nil,
         authoredVertexFallback: String? = nil,
-        authoredObjectInputs: [SIMD4<Float>]? = nil
+        authoredObjectInputs: [SIMD4<Float>]? = nil,
+        authoredObjectMatrixScope: String? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -388,6 +389,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 vertexContract["geometryInput"] = ["bufferIndex": 2, "byteLength": inputs.count * MemoryLayout<SIMD4<Float>>.stride,
                                                    "positionAndUV": inputs.map { [$0.x, $0.y, $0.z, $0.w] }, "space": "centered-model-pixels"]
                 vertexContract["bufferValues"] = "uniforms-in-constantBuffers; geometry-in-geometryInput"
+                if let scope = authoredObjectMatrixScope {
+                    vertexContract["modelMatrixScope"] = scope
+                }
             }
         }
         let passRecord: [String: Any] = [
