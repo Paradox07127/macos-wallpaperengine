@@ -48,6 +48,26 @@ struct WPEShaderInterfaceTests {
         #expect(interface.issues.filter { $0.code == .missingVertexOutput }.map(\.name) == ["absent"])
     }
 
+    @Test func unusedInputsRetainInventoryWithoutClaimingRasterConsumption() throws {
+        let interface = WPEShaderInterfaceParser.parse(
+            vertex: "varying vec2 uv;",
+            fragment: "varying vec2 uv; varying vec2 unused; void main() { gl_FragColor = vec4(uv, 0, 1); }"
+        )
+        #expect(interface.unreferencedFragmentInputs == ["unused"])
+        #expect(interface.issues.contains { $0.code == .missingVertexOutput && $0.name == "unused" })
+        #expect(try JSONDecoder().decode(WPEShaderInterface.self, from: JSONEncoder().encode(interface)) == interface)
+        #if DEBUG
+        let coverage = WPEShaderSemanticCoverage.observedCustomDraw(
+            passID: "unused", shaderName: "unused", sourceClassification: nil, sourceFingerprint: nil,
+            interface: interface, layout: [], sources: [], authoredVertexExecuted: true
+        )
+        let entries = coverage.entries.filter { $0.feature == .varyingExecution }
+        #expect(entries.first { $0.name == "uv" }?.status == .supported)
+        #expect(entries.first { $0.name == "unused" }?.status == .unverified)
+        #expect(entries.first { $0.name == "unused" }?.reason == "declaration-only-no-active-reference")
+        #endif
+    }
+
     @Test func incompleteDeclarationsArePreservedOrDiagnosed() {
         let interface = WPEShaderInterfaceParser.parse(
             vertex: "uniform mat4 matrices[COUNT][2]; uniform float x; uniform vec2 x; uniform Broken { vec4 value; } block;",

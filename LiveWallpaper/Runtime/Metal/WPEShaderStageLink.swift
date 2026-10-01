@@ -55,8 +55,13 @@ struct WPEShaderStageLink {
 
     init(vertex: String, fragment: String) throws {
         interface = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
-        guard interface.hasVertexSource, interface.issues.isEmpty else {
-            throw WPEShaderCompilerError.translationFailed("authored stage interface cannot link: \(interface.issues.map(\.code.rawValue).joined(separator: ","))")
+        let unreferenced = Set(interface.unreferencedFragmentInputs ?? [])
+        let requiredIssues = interface.issues.filter { issue in
+            !(issue.code == .missingVertexOutput && issue.stage == .fragment
+                && issue.name.map(unreferenced.contains) == true)
+        }
+        guard interface.hasVertexSource, requiredIssues.isEmpty else {
+            throw WPEShaderCompilerError.translationFailed("authored stage interface cannot link: \(requiredIssues.map(\.code.rawValue).joined(separator: ","))")
         }
         let attributes = interface.variables(stage: .vertex, kind: .attribute)
         guard attributes.allSatisfy({

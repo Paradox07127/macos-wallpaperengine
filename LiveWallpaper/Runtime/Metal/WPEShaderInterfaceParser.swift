@@ -29,8 +29,19 @@ enum WPEShaderInterfaceParser {
                 issues.append(.init(code: .varyingInterpolationMismatch, stage: .fragment, name: input.key.name))
             }
         }
-        return WPEShaderInterface(hasVertexSource: vs.hasVertexSource, hasFragmentSource: fs.hasFragmentSource,
-                                  variables: variables, issues: issues)
+        var interface = WPEShaderInterface(hasVertexSource: vs.hasVertexSource, hasFragmentSource: fs.hasFragmentSource,
+                                           variables: variables, issues: issues)
+        let activeFragment = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(
+            in: WPEShaderPreprocessor.normalizeNewlines(fragment)
+        ))
+        interface.unreferencedFragmentInputs = fs.variables.filter { variable in
+            guard variable.kind == .varyingInput,
+                  let identifier = try? NSRegularExpression(pattern: "\\b" + NSRegularExpression.escapedPattern(for: variable.key.name) + "\\b") else { return false }
+            // Include macro bodies and helpers: any additional occurrence keeps the
+            // input required, even when a compiler might optimize that read away.
+            return identifier.numberOfMatches(in: activeFragment, range: NSRange(activeFragment.startIndex..., in: activeFragment)) == 1
+        }.map(\.key.name)
+        return interface
     }
 
     private static let qualifiers: Set<String> = [

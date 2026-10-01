@@ -45,6 +45,9 @@ struct WPEShaderInterface: Codable, Equatable, Sendable {
     let hasFragmentSource: Bool
     let variables: [WPEShaderInterfaceVariable]
     let issues: [WPEShaderInterfaceIssue]
+    /// Declaration-only inputs, proved by no identifier reference in active source.
+    /// Optional for older diagnostic trace payloads. This is not GPU reflection.
+    var unreferencedFragmentInputs: [String]?
 
     func variables(stage: WPEShaderStage, kind: WPEShaderInterfaceVariable.Kind) -> [WPEShaderInterfaceVariable] {
         variables.filter { $0.key.stage == stage && $0.kind == kind }

@@ -51,9 +51,10 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
             for variable in interface.variables {
                 switch variable.kind {
                 case .varyingInput:
+                    let unreferenced = interface.unreferencedFragmentInputs?.contains(variable.key.name) == true
                     entries.append(.init(feature: .varyingExecution, stage: .fragment, name: variable.key.name,
-                                         status: authoredVertexExecuted ? .supported : .approximate,
-                                         reason: authoredVertexExecuted ? "authored-vertex-raster-interpolation" : "fragment-reconstruction-not-authored-vertex-interpolation"))
+                                         status: unreferenced ? .unverified : (authoredVertexExecuted ? .supported : .approximate),
+                                         reason: unreferenced ? "declaration-only-no-active-reference" : (authoredVertexExecuted ? "authored-vertex-raster-interpolation" : "fragment-reconstruction-not-authored-vertex-interpolation")))
                 case .uniform where variable.key.stage == .vertex && !authoredVertexExecuted:
                     entries.append(.init(feature: .uniformSupply, stage: .vertex, name: variable.key.name,
                                          status: .unverified, reason: "authored-stage-not-executed-declaration-is-not-a-read"))

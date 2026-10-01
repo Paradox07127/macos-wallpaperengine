@@ -41,6 +41,51 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func unreferencedOrphanInputsPreserveRealVertexInterpolation() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec4 v_Result;
+        void main() {
+            gl_Position = vec4(a_Position, 1.0);
+            v_Result = vec4(a_TexCoord * a_TexCoord, a_TexCoord * 0.25 + 0.375);
+        }
+        """
+        let fragment = """
+        varying vec4 v_Result;
+        varying vec2 v_Scroll;
+        #define USE_SCROLL 0
+        #if USE_SCROLL
+        vec2 helper() { return v_Scroll; }
+        #endif
+        // v_Scroll has no producer and no active reference.
+        void main() { gl_FragColor = v_Result; }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let uv = SIMD2<Float>((Float(x) + 0.5) / 4, (Float(y) + 0.5) / 4)
+                let pixel = pixels[y * 4 + x]
+                // Squaring the vertex endpoints still interpolates to uv. Doing
+                // this arithmetic per fragment would instead produce uv * uv.
+                #expect(abs(pixel.x - uv.x) < 0.00001 && abs(pixel.y - uv.y) < 0.00001)
+                #expect(abs(pixel.z - (0.375 + uv.x * 0.25)) < 0.00001)
+                #expect(abs(pixel.w - (0.375 + uv.y * 0.25)) < 0.00001)
+            }
+        }
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.interface.unreferencedFragmentInputs == ["v_Scroll"])
+        #expect(link.interface.issues.contains { $0.code == .missingVertexOutput && $0.name == "v_Scroll" })
+        for extra in ["vec2 helper() { return v_Scroll; }", "#define READ_SCROLL v_Scroll"] {
+            #expect(throws: WPEShaderCompilerError.self) {
+                try WPEShaderStageLink(vertex: vertex, fragment: fragment + "\n" + extra)
+            }
+        }
+        #expect(throws: WPEShaderCompilerError.self) {
+            try WPEShaderStageLink(vertex: vertex, fragment: fragment.replacingOccurrences(of: "gl_FragColor = v_Result", with: "gl_FragColor = vec4(v_Scroll, 0, 1)"))
+        }
+    }
+
     @Test func inversePreludeIsEmittedOnlyInConsumingStages() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
