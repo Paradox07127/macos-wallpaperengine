@@ -51,7 +51,7 @@ struct WPESwiftShaderCompiler: Sendable {
 
         if request.vertexExecution != .synthesized {
             let link = try WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource)
-            let vertex = try WPEShaderTranspiler.translateFullscreenVertex(
+            let vertex = try WPEShaderTranspiler.translateAuthoredVertex(
                 shaderName: request.shaderName, preprocessedSource: request.processedVertexSource,
                 link: link, comboValues: request.comboValues, premultipliedInputSlots: request.premultipliedInputSlots, execution: request.vertexExecution
             )

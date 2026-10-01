@@ -445,8 +445,8 @@ extension WPEPreparedRenderPipeline {
             $0.modelMatrixOverride.flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:)) != nil
         }.flatMap { $0.passes.map(\.id) })
         if camera.hasCapturedFlatDrawProjection {
-            for layer in layers where !layer.graphLayer.isUtilityModelLayer {
-                for pass in layer.passes {
+            for layer in layers where WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera) {
+                for pass in layer.passes where pass.shader?.isBuiltin == false {
                     if case .scene = pass.pass.target {
                         frameUniforms.drawViewProjectionMatrixByPassID[pass.id] = .vector(
                             camera.shaderDrawViewProjectionMatrix(objectID: layer.id)

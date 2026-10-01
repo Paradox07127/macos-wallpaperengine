@@ -383,6 +383,44 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(!WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: perspective))
     }
 
+    @Test("Measured quad draw projection preserves native and unsupported geometry owners",
+          arguments: ["authored", "builtin", "nonplanar"])
+    func measuredDrawProjectionKeepsExistingOwners(kind: String) throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let shader = kind == "builtin"
+            ? WPEShaderProgram(name: "commands/copy", vertexSource: "", fragmentSource: "", isBuiltin: true)
+            : original.shader
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: shader,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, kind == "nonplanar" ? 10 : 0),
+                                              scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 192, height: 192),
+                                              alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil,
+                                   geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [],
+                                   passes: [pass.pass], parallaxDepth: SIMD2(repeating: 1))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [pass])])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+        var context = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms
+        if kind == "authored" {
+            #expect(context.drawViewProjectionMatrixByPassID[pass.id] != nil)
+        } else {
+            #expect(context.drawViewProjectionMatrixByPassID[pass.id] == nil)
+            let model = WPEMetalObjectUniforms.uniformValues(origin: geometry.origin, scale: geometry.scale, angles: geometry.angles)
+            let previous = WPEFrameUniformContext(runtimeUniformValues: [:], cameraUniformValues: camera.uniformValues,
+                                                  objectUniformValuesByPassID: [pass.id: model])
+            #expect(context.value(named: "g_ModelViewProjectionMatrix", passID: pass.id)
+                == previous.value(named: "g_ModelViewProjectionMatrix", passID: pass.id))
+        }
+        fixture.executor.applyingAuthoredRootParallaxDrawProjection(to: &context, pipeline: pipeline, camera: camera,
+                                                                    parallax: .init(smoothed: .zero, amount: 0.5, influence: 0),
+                                                                    sceneSize: camera.renderSize)
+        #expect(context.parallaxDrawMatrixPassIDs.contains(pass.id) == (kind == "authored"))
+    }
+
     private struct Fixture {
         let device: MTLDevice
         let executor: WPEMetalRenderExecutor

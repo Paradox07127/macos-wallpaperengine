@@ -85,7 +85,7 @@ extension WPEMetalRenderExecutor {
             var translation = matrix_identity_double4x4
             translation.columns.3 = SIMD4(Double(offset.x), Double(offset.y), 0, 1)
             let values = WPEMetalObjectUniforms.flattenedColumnMajor(view * translation)
-            for pass in prepared.passes {
+            for pass in prepared.passes where pass.shader?.isBuiltin == false {
                 if case .scene = pass.pass.target {
                     context.drawViewProjectionMatrixByPassID[pass.id] = .vector(values)
                     context.parallaxDrawMatrixPassIDs.insert(pass.id)

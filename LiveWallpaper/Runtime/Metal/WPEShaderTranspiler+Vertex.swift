@@ -4,7 +4,7 @@ import Foundation
 extension WPEShaderTranspiler {
     /// Real vertex execution uses the common dialect transformations only.
     /// The linked fragment receives these outputs through rasterizer interpolation.
-    static func translateFullscreenVertex(
+    static func translateAuthoredVertex(
         shaderName: String, preprocessedSource: String, link: WPEShaderStageLink,
         comboValues: [String: Int] = [:], premultipliedInputSlots: Set<Int> = [],
         execution: WPEVertexExecution = .authoredFullscreen
