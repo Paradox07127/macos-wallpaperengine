@@ -472,6 +472,8 @@ extension WPEMetalSceneRenderer {
 
     func setClickCaptureEnabled(_ enabled: Bool) {
         if !enabled { cancelCursorInputRouting() }
+        // Epoch cancellation is immediate on the render owner, even when main-thread view-control delivery is still queued.
+        mailbox.setClickCaptureEnabled(enabled)
         surfaceControl.setClickCaptureEnabled(enabled)
         // Record before the demand re-evaluation so `pointerDrivenContent` sees
         // this toggle instead of the possibly-stale mailbox copy.

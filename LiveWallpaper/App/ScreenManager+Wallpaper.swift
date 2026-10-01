@@ -76,6 +76,7 @@ extension ScreenManager {
         // Retire any older WPE import so a late proposal cannot re-win latest.
         _ = wpeImportTracker.bumpGeneration(for: screen.id)
         #endif
+        automationOrchestrator.cancelAutomaticSelection(for: screen.id)
         return bumpTransition(for: screen.id)
     }
 

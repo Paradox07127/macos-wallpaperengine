@@ -211,7 +211,8 @@ final class SystemAudioCaptureService: @unchecked Sendable {
                 var current = AudioStreamBasicDescription()
                 let status = self.readTapFormat(self.tapID, into: &current)
                 guard status != noErr || !Self.sameFormat(current, expected) else { return }
-                self.invalidationHandler?()
+                // Stopping removes this listener; do it after the HAL callback has returned.
+                Task { @MainActor [weak self] in self?.invalidationHandler?() }
             }
         }
         var address = Self.tapFormatAddress
@@ -247,7 +248,10 @@ final class SystemAudioCaptureService: @unchecked Sendable {
             AudioHardwareDestroyProcessTap(tapID)
             tapID = AudioObjectID(kAudioObjectUnknown)
         }
-        broker.attachAnalyzer(nil)
+        // A retired service's deinit runs after its replacement attached; detaching again would unhook the new analyzer.
+        if context != nil {
+            broker.attachAnalyzer(nil)
+        }
         context = nil
         isRunning = false
     }

@@ -89,6 +89,33 @@ struct WPEParticleInstanceModifierTests {
         #expect((1 ... 3).allSatisfy { uploaded[$0].color.w == 0.5 })
     }
 
+    @Test func animatedOverrideAlphaIsNotAlsoAppliedAsTheBirthSeed() throws {
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "rate": 0, "instantaneous": 1]],
+            "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]))
+        let ramp = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[.init(frame: 0, value: 0), .init(frame: 15, value: 1), .init(frame: 30, value: 1)]],
+                fps: 30, length: 30, mode: "loop", wrapLoop: true
+            ),
+            scalarFallback: 0,
+            vectorFallback: nil
+        )
+        let override = WPESceneParticleInstanceOverride(alpha: 0, alphaAnimation: ramp)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let system = try #require(WPEParticleSystem(
+            definition: definition.applying(instanceOverride: override), device: device, seed: 62
+        ))
+        system.instanceValues = WPEParticleInstanceValues(override: override)
+        system.tick(now: 0)
+        system.tick(now: 0.75)
+        #expect(system.liveInstanceCount == 1)
+        let uploaded = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: system.capacity)
+        #expect(uploaded[0].color.w == 1)
+    }
+
     @Test func rateChangesMotionAgeAndEmissionTogetherAndZeroUsesCapturedMinimum() throws {
         let system = try makeSystem()
         system.applyPlaybackCommand(.pause)

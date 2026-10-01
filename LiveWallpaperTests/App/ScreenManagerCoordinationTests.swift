@@ -63,6 +63,49 @@ struct ScreenManagerCoordinationTests {
         #expect(standard.string(forKey: gateKey) == "sentinel-gate")
     }
 
+    @Test("A manual selection cancels an automatic retry still waiting on source availability")
+    func manualSelectionCancelsPendingAutomaticRetry() async throws {
+        let entry = WallpaperQueueEntry(id: "auto", title: "Auto", content: .html(source: .inline("auto"), config: .default))
+        try await Self.runWithHTMLConfiguration { manager, screen in
+            var config = try #require(manager.getConfiguration(for: screen))
+            config.wallpaperMode = .libraryShuffle
+            manager.configurationStore.save(config)
+            var prepareCalls = 0
+            var availabilityChecks = 0
+            var resumeAvailability: CheckedContinuation<Bool, Never>?
+            manager.automationOrchestrator = WallpaperAutomationOrchestrator(
+                configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(),
+                playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+                saveConfiguration: { manager.configurationStore.save($0) }, recordBookmarkDisplayName: { _, _ in },
+                setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+                bumpTransition: { manager.bumpTransition(for: $0) },
+                isCurrentTransition: { manager.isCurrentTransition($0, for: $1) },
+                prepareAutomation: { _, _, _, _ in
+                    prepareCalls += 1
+                    return .failed
+                },
+                libraryEntries: { [entry] },
+                libraryEntryAvailable: { _ in
+                    availabilityChecks += 1
+                    guard availabilityChecks > 1 else { return true }
+                    return await withCheckedContinuation { resumeAvailability = $0 }
+                }
+            )
+            manager.automationOrchestrator.advanceLibraryShuffle(for: screen)
+            for _ in 0 ..< 100 where resumeAvailability == nil {
+                await Task.yield()
+            }
+            let resume = try #require(resumeAvailability)
+            #expect(prepareCalls == 1)
+            manager.beginExplicitWallpaperSelection(for: screen)
+            resume.resume(returning: true)
+            for _ in 0 ..< 100 {
+                await Task.yield()
+            }
+            #expect(prepareCalls == 1)
+        }
+    }
+
     // MARK: - PlaybackTransitionRegistry
 
     @Test("bumpTransition starts at 1 and increments monotonically per screen")

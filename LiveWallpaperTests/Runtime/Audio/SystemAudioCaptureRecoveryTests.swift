@@ -79,5 +79,15 @@ struct SystemAudioCaptureRecoveryTests {
         old()
         #expect(services.count == 3)
     }
+
+    @Test("Releasing a stopped capture service keeps its replacement's analyzer attached")
+    func retiredServiceDeinitKeepsReplacementAnalyzer() {
+        let broker = AudioSpectrumBroker()
+        var retired: SystemAudioCaptureService? = SystemAudioCaptureService(broker: broker)
+        retired?.stop()
+        broker.attachAnalyzer(SpectrumAnalyzerStub(AudioSpectrumFrame(left: [0.5], right: [0.5], timestampNanos: 3)))
+        retired = nil
+        #expect(broker.snapshot().left[0] == 0.5)
+    }
 }
 #endif

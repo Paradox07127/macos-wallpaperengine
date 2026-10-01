@@ -183,6 +183,11 @@ final class WallpaperAutomationOrchestrator {
         restoreProposedConfiguration(screen, config.applyingAutomationEntry(entry))
     }
 
+    func cancelAutomaticSelection(for screenID: CGDirectDisplayID) {
+        validationTasksByScreen.removeValue(forKey: screenID)?.task.cancel()
+        automaticSelections[screenID] = nil
+    }
+
     func updateShufflePlaylist(_ shuffle: Bool, for screen: Screen) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.shufflePlaylist != shuffle else { return }

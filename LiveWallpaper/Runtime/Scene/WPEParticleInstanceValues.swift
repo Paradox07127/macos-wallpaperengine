@@ -36,7 +36,8 @@ struct WPEParticleInstanceValues: Equatable, Sendable {
 
     init(override: WPESceneParticleInstanceOverride? = nil) {
         guard let override else { return }
-        alpha = override.alpha ?? 1
+        // The keyframed alpha is applied per frame at draw time; seeding it here would multiply it twice.
+        alpha = override.alphaAnimation != nil ? 1 : override.alpha ?? 1
         size = override.size ?? 1
         count = override.count ?? 1
         speed = override.speed ?? 1
