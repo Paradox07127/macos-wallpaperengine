@@ -276,6 +276,156 @@ struct GIFPlaybackCoordinatorTests {
     }
 }
 
+@Suite("Mounted GIF host visibility", .serialized)
+@MainActor
+struct MountedGIFHostVisibilityTests {
+    private final class VisibilityWindow: NSWindow {
+        var presentsContent = true
+        var minimized = false
+        var contentOccluded = false
+        override var isVisible: Bool {
+            presentsContent
+        }
+
+        override var isMiniaturized: Bool {
+            minimized
+        }
+
+        override var occlusionState: NSWindow.OcclusionState {
+            contentOccluded ? [] : [.visible]
+        }
+    }
+
+    @Test("A mounted auto-play hero restores on activation only while its host presents content")
+    func mountedHeroLifecycle() async {
+        let controller = GIFAnimationController()
+        let asset = GIFTestFixtures.animatedAsset(frameCount: 3)
+        let thumbnail = AnimatedGIFThumbnail(
+            url: URL(fileURLWithPath: "/fixture.gif"), playbackMode: .autoPlay,
+            controller: controller, loadAsset: { _, _ in asset }
+        ).environment(\._accessibilityReduceMotion, false)
+        let host = NSHostingView(rootView: thumbnail)
+        let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        // Allow the representable to mount, without ordering a real window onto the desktop.
+        try? await Task.sleep(for: .milliseconds(100))
+        post(NSApplication.didBecomeActiveNotification)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+
+        post(NSApplication.didResignActiveNotification)
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        post(NSApplication.didBecomeActiveNotification)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+
+        window.minimized = true
+        post(NSWindow.didMiniaturizeNotification, object: window)
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        post(NSApplication.didResignActiveNotification)
+        post(NSApplication.didBecomeActiveNotification)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(!controller.isAnimating)
+        window.minimized = false
+        post(NSWindow.didDeminiaturizeNotification, object: window)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+
+        window.contentOccluded = true
+        post(NSWindow.didChangeOcclusionStateNotification, object: window)
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        window.contentOccluded = false
+        window.presentsContent = false
+        post(NSWindow.didChangeOcclusionStateNotification, object: window)
+        post(NSApplication.didResignActiveNotification)
+        post(NSApplication.didBecomeActiveNotification)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(!controller.isAnimating)
+        window.presentsContent = true
+        post(NSWindow.didChangeOcclusionStateNotification, object: window)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+
+        post(NSApplication.didHideNotification)
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        post(NSApplication.didUnhideNotification)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+        post(NSWindow.willCloseNotification, object: window)
+        post(NSApplication.didResignActiveNotification)
+        post(NSApplication.didBecomeActiveNotification)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(!controller.isAnimating)
+        window.contentView = nil
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        controller.stop()
+        window.close()
+    }
+
+    @Test("Only decoded animations mount host observers; delayed GIFs honor the initial inactive host")
+    func onlyAnimatedAssetsMountHostProbe() async throws {
+        func probes(_ view: NSView) -> Int {
+            (view is GIFHostVisibilityView ? 1 : 0) + view.subviews.reduce(0) { $0 + probes($1) }
+        }
+        func mount(_ view: AnimatedGIFThumbnail) -> (NSHostingView<AnyView>, VisibilityWindow) {
+            let host = NSHostingView(rootView: AnyView(view.environment(\._accessibilityReduceMotion, false)))
+            let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
+                                          styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            return (host, window)
+        }
+        let (emptyHost, emptyWindow) = mount(AnimatedGIFThumbnail(url: nil))
+        defer { emptyWindow.contentView = nil; emptyWindow.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(probes(emptyHost) == 0)
+
+        let staticAsset = try #require(WorkshopAnimatedGIF.make(from: GIFTestFixtures.png(width: 8, height: 8)))
+        let (staticHost, staticWindow) = mount(AnimatedGIFThumbnail(
+            url: URL(fileURLWithPath: "/fixture.png"), loadAsset: { _, _ in staticAsset }
+        ))
+        defer { staticWindow.contentView = nil; staticWindow.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(probes(staticHost) == 0)
+
+        var release: CheckedContinuation<WorkshopPreviewAsset?, Never>?
+        let controller = GIFAnimationController()
+        let (delayedHost, delayedWindow) = mount(AnimatedGIFThumbnail(
+            url: URL(fileURLWithPath: "/delayed.gif"), playbackMode: .autoPlay, controller: controller,
+            loadAsset: { _, _ in await withCheckedContinuation { release = $0 } }
+        ))
+        defer { delayedWindow.contentView = nil; controller.stop(); delayedWindow.close() }
+        await GIFTestFixtures.waitUntil { release != nil }
+        let continuation = try #require(release)
+        #expect(probes(delayedHost) == 0)
+        // An occluded real host must not play even when NSApp itself is active.
+        delayedWindow.contentOccluded = true
+        post(NSApplication.didBecomeActiveNotification)
+        continuation.resume(returning: GIFTestFixtures.animatedAsset(frameCount: 3))
+        await GIFTestFixtures.waitUntil { probes(delayedHost) == 1 }
+        #expect(probes(delayedHost) == 1)
+        post(NSApplication.didBecomeActiveNotification)
+        #expect(!controller.isAnimating)
+        delayedWindow.contentOccluded = false
+        post(NSWindow.didChangeOcclusionStateNotification, object: delayedWindow)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+    }
+
+    private func post(_ name: Notification.Name, object: Any? = nil) {
+        NotificationCenter.default.post(name: name, object: object)
+    }
+}
+
 @Suite("GIF controller stale frame task", .serialized)
 @MainActor
 struct GIFAnimationControllerStaleTaskTests {

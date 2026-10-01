@@ -25,9 +25,11 @@ enum HTMLWallpaperRuntimeScript {
                 return;
             }
             window.__lwAudioInstalled__ = true;
-            var __lwVolume__ = \(volumeLiteral);
-            var __lwMuted__ = \(mutedLiteral);
+            var __lwChildAudioFrame__ = !!window.parent && window.parent !== window;
+            var __lwVolume__ = __lwChildAudioFrame__ ? 0 : \(volumeLiteral);
+            var __lwMuted__ = __lwChildAudioFrame__ ? true : \(mutedLiteral);
             var __lwAudioContexts__ = [];
+            var __lwOfflineConstructors__ = [window.OfflineAudioContext, window.webkitOfflineAudioContext];
             var __lwOriginalAudioNodeConnect__ = null;
             var __lwMediaVolumes__ = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
             var __lwMediaMutes__ = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
@@ -319,8 +321,17 @@ enum HTMLWallpaperRuntimeScript {
                 } catch (e) {}
             }
 
+            function isOfflineContext(ctx) {
+                for (var i = 0; i < __lwOfflineConstructors__.length; i++) {
+                    var Ctor = __lwOfflineConstructors__[i];
+                    try { if (typeof Ctor === 'function' && ctx instanceof Ctor) return true; } catch (e) {}
+                }
+                return false;
+            }
             function ensureMasterGain(ctx, realDestination) {
-                if (!ctx || !realDestination) return realDestination;
+                // Offline rendering bakes page content. Scaling it by the playback master would persist a mute
+                // or attenuate it once here and again when the baked buffer is played in a real-time context.
+                if (!ctx || !realDestination || isOfflineContext(ctx)) return realDestination;
                 if (!ctx.__lwGainNode__) {
                     try {
                         var gain = ctx.createGain();
@@ -382,9 +393,24 @@ enum HTMLWallpaperRuntimeScript {
             patchAudioNodeConnect();
             patchAudioContext(window.AudioContext);
             patchAudioContext(window.webkitAudioContext);
-            patchAudioContext(window.OfflineAudioContext);
-            patchAudioContext(window.webkitOfflineAudioContext);
 
+            function sendAudioState(target) {
+                try {
+                    target.postMessage({ __lwMasterAudio__: 'state', volume: __lwVolume__, muted: __lwMuted__ }, '*');
+                } catch (e) {}
+            }
+            function broadcastAudioState() {
+                try {
+                    for (var i = 0; i < window.frames.length; i++) sendAudioState(window.frames[i]);
+                } catch (e) {}
+            }
+            function isDirectAudioChild(source) {
+                if (!source) return false;
+                try {
+                    for (var i = 0; i < window.frames.length; i++) if (window.frames[i] === source) return true;
+                } catch (e) {}
+                return false;
+            }
             window.__lwUpdateAudio__ = function (volume, muted) {
                 if (typeof volume === 'number' && isFinite(volume)) {
                     __lwVolume__ = Math.max(0, Math.min(1, volume));
@@ -399,7 +425,23 @@ enum HTMLWallpaperRuntimeScript {
                         try { ctx.__lwGainNode__.gain.value = level; } catch (e) {}
                     }
                 }
+                broadcastAudioState();
             };
+            if (typeof window.addEventListener === 'function') {
+                window.addEventListener('message', function (event) {
+                    var data = event.data;
+                    if (!data || typeof data !== 'object') return;
+                    if (data.__lwMasterAudio__ === 'request') {
+                        if (isDirectAudioChild(event.source)) sendAudioState(event.source);
+                    } else if (data.__lwMasterAudio__ === 'state' && __lwChildAudioFrame__ && event.source === window.parent) {
+                        if (typeof data.volume !== 'number' || !isFinite(data.volume) || data.volume < 0 || data.volume > 1 || typeof data.muted !== 'boolean') return;
+                        window.__lwUpdateAudio__(data.volume, data.muted);
+                    }
+                });
+                if (__lwChildAudioFrame__) {
+                    try { window.parent.postMessage({ __lwMasterAudio__: 'request' }, '*'); } catch (e) {}
+                }
+            }
 
             window.__lwAudioDebugSnapshot__ = function () {
                 pruneAudioContexts();

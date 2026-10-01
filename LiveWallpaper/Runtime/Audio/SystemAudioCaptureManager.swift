@@ -8,6 +8,7 @@ import os
 protocol SystemAudioCaptureServing: AnyObject {
     func start() throws
     func stop()
+    func setInvalidationHandler(_ handler: @escaping @MainActor @Sendable () -> Void)
 }
 
 extension SystemAudioCaptureService: SystemAudioCaptureServing {}
@@ -38,6 +39,8 @@ final class SystemAudioCaptureManager {
     private let makeService: @MainActor () -> any SystemAudioCaptureServing
     /// Preserve a failed attempt across demand changes until the user retries or toggles the feature.
     private var startupFailure: String?
+    /// Identifies the live service; any stop or failed start rotates it so retained invalidation callbacks go stale.
+    private var captureGeneration = UUID()
 
     init(makeService: @escaping @MainActor () -> any SystemAudioCaptureServing = {
         SystemAudioCaptureService(broker: SystemAudioCaptureManager.broker)
@@ -114,12 +117,16 @@ final class SystemAudioCaptureManager {
     private func startIfNeeded() {
         guard serviceBox == nil, startupFailure == nil else { return }
         let service = makeService()
+        let generation = UUID()
+        captureGeneration = generation
+        service.setInvalidationHandler { [weak self] in self?.captureInvalidated(generation: generation) }
         do {
             try service.start()
             serviceBox = service
             Self.captureActive.withLock { $0 = true }
             state = .capturing
         } catch {
+            captureGeneration = UUID()
             service.stop()
             serviceBox = nil
             Self.captureActive.withLock { $0 = false }
@@ -130,7 +137,14 @@ final class SystemAudioCaptureManager {
         }
     }
 
+    private func captureInvalidated(generation: UUID) {
+        guard captureGeneration == generation else { return }
+        stopIfNeeded()
+        reconcile()
+    }
+
     private func stopIfNeeded() {
+        captureGeneration = UUID()
         serviceBox?.stop()
         serviceBox = nil
         Self.captureActive.withLock { $0 = false }

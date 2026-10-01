@@ -182,6 +182,12 @@ final class SteamCMDDoctorService {
     @ObservationIgnored let fileManager: FileManager
     @ObservationIgnored private let workshopFileInventory: any SteamCMDWorkshopFileInventoryServing
 
+    typealias WorkshopDownloadOperation = @MainActor @Sendable (
+        String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void
+    ) async -> SteamWorkshopDownloadResult?
+
+    @ObservationIgnored private let downloadOperation: WorkshopDownloadOperation
+
     var probes: [DoctorProbeKind: DoctorProbeReport]
     var state: DoctorState = .idle
     var binaryDisplayPath: String?
@@ -248,9 +254,15 @@ final class SteamCMDDoctorService {
         defaults: UserDefaults = .appScoped(),
         fileManager: FileManager = .default,
         workshopFileInventory: (any SteamCMDWorkshopFileInventoryServing)? = nil,
-        operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared
+        operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared,
+        downloadOperation: @escaping WorkshopDownloadOperation = { @Sendable item, account, library, progress in
+            await SteamConnectorClient.downloadWorkshopItem(
+                workshopID: item, accountName: account, libraryPath: library, onProgress: progress
+            )
+        }
     ) {
         self.operationCoordinator = operationCoordinator
+        self.downloadOperation = downloadOperation
         self.defaults = defaults
         self.fileManager = fileManager
         self.workshopFileInventory = workshopFileInventory
@@ -1065,11 +1077,12 @@ final class SteamCMDDoctorService {
         guard lastBinarySHA256 != nil else { return .untrustedBinary }
 
         let generation = accountGeneration
-        let result = await SteamConnectorClient.downloadWorkshopItem(
-            workshopID: String(itemID),
-            accountName: username,
-            libraryPath: steamRoot.path(percentEncoded: false),
-            onProgress: { update in
+        let bindingRevision = defaultsRevision
+        let result = await downloadOperation(
+            String(itemID),
+            username,
+            steamRoot.path(percentEncoded: false),
+            { @Sendable update in
                 guard let fraction = update.fraction else { return }
                 onProgress?(fraction * 100, update.downloadedBytes, update.totalBytes)
             }
@@ -1084,6 +1097,9 @@ final class SteamCMDDoctorService {
         switch result.outcome {
         case .downloaded:
             noteSuccessfulSteamOperation(generation: generation)
+            guard isCurrentDownload(generation: generation, bindingRevision: bindingRevision) else {
+                return .failed(reason: String(localized: "Download cancelled.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
+            }
             guard result.itemPath != nil else { return .failed(reason: String(localized: "Download reported no folder.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
             // The import reads the folder and mints its own per-project bookmark,
             // so the Steam-library scope has to stay open across the handoff.
@@ -1093,10 +1109,14 @@ final class SteamCMDDoctorService {
                     steamRoot.stopAccessingSecurityScopedResource()
                 }
             }
-            guard let folder = authorizedDownloadedItemDirectory(
+            let folder = await authorizedDownloadedItemDirectory(
                 workshopID: String(itemID),
                 steamRoot: steamRoot
-            ) else {
+            )
+            guard isCurrentDownload(generation: generation, bindingRevision: bindingRevision) else {
+                return .failed(reason: String(localized: "Download cancelled.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
+            }
+            guard let folder else {
                 return .failed(reason: String(
                     localized: "The download didn't land in your authorized Steam library, so it wasn't imported.",
                     bundle: .appLanguage, comment: "Workshop download refused: the item directory failed containment revalidation under the authorized Steam library."
@@ -1123,14 +1143,32 @@ final class SteamCMDDoctorService {
     }
 
     /// `result.itemPath` is a claim from the connector's JSON, not an authorization; revalidate among the library's own items before the importer sees a URL.
-    func authorizedDownloadedItemDirectory(workshopID: String, steamRoot: URL) -> URL? {
-        guard let candidate = workshopFileInventory.projectFolders(
-            under: steamRoot,
-            anchoredTo: steamRoot,
-            skipping: []
-        ).first(where: { $0.url.lastPathComponent == workshopID })
-        else { return nil }
-        return workshopFileInventory.revalidatedURL(for: candidate, requiringProjectJSON: true)
+    func authorizedDownloadedItemDirectory(workshopID: String, steamRoot: URL) async -> URL? {
+        let generation = accountGeneration
+        let bindingRevision = defaultsRevision
+        let inventory = workshopFileInventory
+        let discovery = Task.detached(priority: .utility) { @Sendable in
+            guard !Task.isCancelled,
+                  let candidate = inventory.projectFolders(
+                      under: steamRoot,
+                      anchoredTo: steamRoot,
+                      skipping: []
+                  ).first(where: { $0.url.lastPathComponent == workshopID }),
+                  !Task.isCancelled
+            else { return nil as URL? }
+            return inventory.revalidatedURL(for: candidate, requiringProjectJSON: true)
+        }
+        let folder = await withTaskCancellationHandler {
+            await discovery.value
+        } onCancel: {
+            discovery.cancel()
+        }
+        guard isCurrentDownload(generation: generation, bindingRevision: bindingRevision) else { return nil }
+        return folder
+    }
+
+    private func isCurrentDownload(generation: Int, bindingRevision: UInt64) -> Bool {
+        !Task.isCancelled && accountGeneration == generation && defaultsRevision == bindingRevision
     }
 
     func enumerateDownloadedItemFolders(_ body: @MainActor (URL) async -> Void) async {

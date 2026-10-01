@@ -567,7 +567,7 @@ extension SavedLibraryModel.Sort {
         type: (Element) -> WallpaperType
     ) -> [Element] {
         switch self {
-        case .recentlyUsed:
+        case .recentlyUsed, .size:
             elements.sorted { date($0) > date($1) }
         case .name:
             elements.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }

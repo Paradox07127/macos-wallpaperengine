@@ -52,8 +52,12 @@ final class AudioSpectrumBroker: Sendable {
 
     func resetToSilence() {
         lock.withLock { state in
-            for index in state.left.indices { state.left[index] = 0 }
-            for index in state.right.indices { state.right[index] = 0 }
+            for index in state.left.indices {
+                state.left[index] = 0
+            }
+            for index in state.right.indices {
+                state.right[index] = 0
+            }
             state.timestampNanos = 0
         }
     }

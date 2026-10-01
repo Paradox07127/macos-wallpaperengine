@@ -96,7 +96,7 @@ struct AudioSpectrumBrokerTests {
 
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
-                for index in 0..<1000 {
+                for index in 0 ..< 1000 {
                     let value = Float(index % 2)
                     broker.attachAnalyzer(
                         SpectrumAnalyzerStub(

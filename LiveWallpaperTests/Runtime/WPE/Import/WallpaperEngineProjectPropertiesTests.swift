@@ -5,6 +5,186 @@ import LiveWallpaperCore
 
 @Suite("Wallpaper Engine project custom properties")
 struct WallpaperEngineProjectPropertiesTests {
+    @Test("An includes spelling inside a quoted array member cannot replace the real call", arguments: [
+        "['a.includes(b)', 'x'].includes(text.value)",
+        "['x', 'a.includes(b)'].includes(text.value)",
+    ])
+    func quotedIncludesMember(condition: String) {
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: condition, values: ["text": .string("a.includes(b)")]
+        ))
+    }
+
+    @Test("Quoted condition literals keep logical and list separators as data", arguments: [
+        "text.value == 'a&&b'", "text.value == 'a||b'",
+        "text.value == 'a,b'", "['other', 'a,b'].includes(text.value)",
+        "text.value != 'a==b'", "text.value != 'a!=b'",
+    ])
+    func quotedConditionSeparators(condition: String) {
+        let value = if condition.contains("a&&b") {
+            "a&&b"
+        } else if condition.contains("a||b") {
+            "a||b"
+        } else if condition.contains("a,b") {
+            "a,b"
+        } else {
+            "other"
+        }
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: condition, values: ["text": .string(value)]
+        ))
+    }
+
+    @Test("Quoted separators cannot create an extra OR branch")
+    func quotedConditionDoesNotIntroduceBranch() {
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "text.value != 'a||enabled'",
+            values: ["text": .string("a||enabled"), "enabled": .bool(true)]
+        ))
+    }
+
+    @Test("Condition budget and unterminated strings fail without executing author code")
+    func conditionBudgetAndMalformedLiteral() {
+        for condition in [String(repeating: "true||", count: 10000) + "false",
+                          Array(repeating: "true", count: 513).joined(separator: "||"),
+                          "true || text.value == 'unterminated"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: condition, values: [:]))
+        }
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: Array(repeating: "true", count: 512).joined(separator: "||"), values: [:]
+        ))
+    }
+
+    @Test("Empty includes arrays and trailing commas do not invent an empty-string member")
+    func emptyIncludesAndLegacyCoercion() {
+        for condition in ["[].includes(text.value)", "['x',].includes(text.value)"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["text": .string("")]
+            ))
+        }
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "[''].includes(text.value)", values: ["text": .string("")]
+        ))
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "kind.value == '2' && !!enabled", values: ["kind": .number(2), "enabled": .bool(true)]
+        ))
+    }
+
+    @Test("Strict conditions distinguish authored primitive types and exact numeric equality")
+    func strictConditionTypes() {
+        let cases: [(WallpaperEngineProjectPropertyValue, String, Bool)] = [
+            (.number(2), "value.value === 2", true),
+            (.number(2), "value.value !== 3", true),
+            (.number(2), "value.value === '2'", false),
+            (.number(2), "value.value !== '2'", true),
+            (.string("2"), "value.value === '2'", true),
+            (.string("true"), "value.value === 'true'", true),
+            (.bool(true), "value.value === true", true),
+            (.bool(true), "value.value === 'true'", false),
+            (.number(2.0000005), "value.value === 2", false),
+            (.number(-0.0), "value.value === 0", true),
+            (.number(.nan), "value.value === 2", false),
+            (.string("é"), "value.value === 'e\u{301}'", false),
+            (.string("\u{301}a"), "value.value === '\u{301}a'", true),
+            (.string("\u{301}a"), "value.value === \"\u{301}a\"", true),
+        ]
+        for (value, condition, expected) in cases {
+            #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["value": value]
+            ) == expected, "\(condition) for \(value)")
+        }
+        // Preserve the separately established legacy loose-coercion contract.
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value.value == '2'", values: ["value": .number(2)]
+        ))
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value.value == 2", values: ["value": .number(2.0000005)]
+        ))
+    }
+
+    @Test("Ordered numeric conditions implement inclusive bounds and preserve logical groups")
+    func orderedNumericConditions() {
+        for condition in ["level.value >= 2", "level.value <= 2", "level.value > 1",
+                          "level.value < 3", "level.value > -2.5 && level.value <= 2e0",
+                          "level.value < 0 || level.value >= 2"] {
+            #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["level": .number(2)]
+            ), "\(condition)")
+        }
+        for condition in ["level.value > 2", "level.value < 2", "level.value >= 3", "level.value <= 1"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["level": .number(2)]
+            ))
+        }
+        for value in [Double.nan, Double.infinity, -Double.infinity] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: "level.value >= 0 && level.value <= 100", values: ["level": .number(value)]
+            ))
+        }
+    }
+
+    @Test("Strict operator spellings inside strings are data")
+    func quotedStrictOperatorLiterals() {
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "text.value === 'a>=b&&c||d'", values: ["text": .string("a>=b&&c||d")]
+        ))
+    }
+
+    @Test("Malformed new operators, unsupported operands and extreme inputs fail closed")
+    func conditionOperatorFailureBounds() {
+        for condition in ["level.value ==== 2", "level.value >=", "level.value !==", "level.value < 2 < 3",
+                          "level.value === authorCall()", "level.value >= authorCall()", "missing.value !== 2",
+                          "level.value >= 0; authorCall()", "level.value === 'unterminated",
+                          String(repeating: "level.value >= 0 || ", count: 10000),
+                          String(repeating: " ", count: 20000) + "true", "true" + String(repeating: " ", count: 20000)] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["level": .number(2)]
+            ), "\(condition.prefix(80))")
+        }
+    }
+
+    @Test("Boolean groups preserve precedence, unary negation and atomic includes calls")
+    func parenthesizedConditionGroups() {
+        let values: [String: WallpaperEngineProjectPropertyValue] = ["a": .bool(true), "b": .bool(false),
+                                                                     "level": .number(2), "text": .string("(a||b)")]
+        for condition in ["(a.value)", "((a.value || b.value) && level.value >= 2)",
+                          "!(b.value || level.value < 2)", "!!(a.value && !b.value)",
+                          "(['x', '(a||b)'].includes(text.value) && (a.value || b.value))",
+                          "(text.value === '(a||b)')", "(a.value) == (true)", "(level.value) == 2"] {
+            #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: values
+            ), "\(condition)")
+        }
+        for condition in ["(a.value || b.value) && level.value > 2", "!(a.value && !b.value)"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: condition, values: values))
+        }
+    }
+
+    @Test("Grouping enforces nesting and cumulative clause budgets, including malformed unused branches")
+    func conditionGroupingBudgets() {
+        let nested = String(repeating: "(", count: 64) + "true" + String(repeating: ")", count: 64)
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: nested, values: [:]))
+        let allowed = Array(repeating: "(true && true)", count: 256).joined(separator: " || ")
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: allowed, values: [:]))
+        for condition in ["(" + nested + ")", Array(repeating: "(true && true)", count: 257).joined(separator: " || "),
+                          "true || (false", "true || false)", "true || ( )", "true || [false)",
+                          "(true) trailing)", "true || text.value === 'unterminated", "true || ()", "true || || false"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: condition, values: [:]),
+                    "\(condition.prefix(80))")
+        }
+    }
+
+    @Test("Parsed manifest and effective values feed the real visible-property consumer")
+    func conditionManifestConsumer() throws {
+        let manifest = #"{"general":{"properties":{"level":{"type":"slider","text":"Level","value":2},"dependent":{"type":"slider","text":"Dependent","value":5,"condition":"(level.value >= 2) && level.value === 2"}}}}"#
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8))
+        #expect(schema.visibleProperties(values: schema.defaultValues).contains { $0.key == "dependent" })
+        #expect(!schema.visibleProperties(values: schema.effectiveValues(overrides: ["level": .number(1)]))
+            .contains { $0.key == "dependent" })
+        #expect(!schema.visibleProperties(values: schema.effectiveValues(overrides: ["level": .string("2")]))
+            .contains { $0.key == "dependent" })
+    }
+
     @Test("Parses localized web project properties in Wallpaper Engine order")
     func parsesLocalizedProjectProperties() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(

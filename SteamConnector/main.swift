@@ -1,7 +1,19 @@
 import Foundation
+import Security
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {
-    func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
+    func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
+        let hostURL = Bundle.main.bundleURL.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        var requirementString: CFString?
+        guard SecStaticCodeCreateWithPath(hostURL as CFURL, [], &code) == errSecSuccess, let code,
+              SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess,
+              SecCodeCopyDesignatedRequirement(code, [], &requirement) == errSecSuccess, let requirement,
+              SecRequirementCopyString(requirement, [], &requirementString) == errSecSuccess,
+              let requirementString else { return false }
+        newConnection.setCodeSigningRequirement(requirementString as String)
         newConnection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
 
         // Reverse channel for progress. Installing Wallpaper Engine runs for

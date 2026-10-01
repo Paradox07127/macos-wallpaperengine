@@ -658,6 +658,147 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(context.evaluateScript("missed.__lwGainNode__.gain.value")?.toDouble() == 0.5)
     }
 
+    @MainActor
+    @Test("Actual wallpaper web view seeds and updates late nested iframe audio without trusting sibling messages")
+    func actualIframeAudioLifecycle() async throws {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 300, height: 200), initialEphemeral: true)
+        defer { view.cleanup() }
+        var config = HTMLConfig()
+        config.audioVolume = 0.35
+        config.muteAudio = true
+        view.apply(config)
+        view.webView.configuration.userContentController.addUserScript(WKUserScript(
+            source: """
+            window.sample = new Audio(); sample.volume = 0.8;
+            window.fixtureInitialMuted = sample.muted;
+            window.fixtureInitialVolume = typeof __lwAudioDebugSnapshot__ === 'function' ? __lwAudioDebugSnapshot__().media[0].nativeVolume : sample.volume;
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: false
+        ))
+        view.loadSource(.inline("<body></body>"))
+        let deadline = ContinuousClock.now + .seconds(5)
+        var ready = false
+        while !ready, ContinuousClock.now < deadline {
+            ready = await (try? view.webView.evaluateJavaScript("document.readyState === 'complete' && window.__lwAudioInstalled__ === true")) as? Bool == true
+            if !ready {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        #expect(ready)
+        let initial = try await view.webView.callAsyncJavaScript(#"""
+        window.frameFixture = {
+            markup: '<script>window.initialMuted = fixtureInitialMuted; window.initialVolume = fixtureInitialVolume;<\/script>',
+            level: function (frame) {
+                var w = frame.contentWindow;
+                if (typeof w.__lwAudioDebugSnapshot__ === 'function') return w.__lwAudioDebugSnapshot__().media[0].nativeVolume;
+                return w.sample.volume;
+            },
+            muted: function (frame) {
+                var w = frame.contentWindow;
+                if (typeof w.__lwAudioDebugSnapshot__ === 'function') return w.__lwAudioDebugSnapshot__().media[0].nativeMuted;
+                return w.sample.muted;
+            },
+            add: async function (parent) {
+                var f = parent.document.createElement('iframe');
+                var loaded = new Promise(function (resolve) { f.onload = resolve; });
+                f.srcdoc = this.markup;
+                parent.document.body.appendChild(f);
+                await loaded;
+                return f;
+            },
+            wait: async function (frames, level, muted) {
+                var deadline = Date.now() + 800;
+                while (Date.now() < deadline) {
+                    if (frames.every(f => Math.abs(this.level(f) - level) < 0.00001 && this.muted(f) === muted)) return true;
+                    await new Promise(resolve => setTimeout(resolve, 5));
+                }
+                return false;
+            }
+        };
+        window.child = await frameFixture.add(window);
+        window.nested = await frameFixture.add(child.contentWindow);
+        const synchronized = await frameFixture.wait([child, nested], 0.28, true);
+        return { synchronized: synchronized, childInitialMuted: child.contentWindow.initialMuted,
+                 childInitialVolume: child.contentWindow.initialVolume, nestedInitialMuted: nested.contentWindow.initialMuted };
+        """#, arguments: [:], in: nil, contentWorld: .page)
+        let initialState = try #require(initial as? [String: Any])
+        #expect(initialState["synchronized"] as? Bool == true)
+        #expect(initialState["childInitialMuted"] as? Bool == true)
+        #expect(initialState["nestedInitialMuted"] as? Bool == true)
+        #expect(initialState["childInitialVolume"] as? Double == 0)
+
+        config.audioVolume = 0.5
+        config.muteAudio = false
+        view.apply(config)
+        let updated = try await view.webView.callAsyncJavaScript(#"""
+        const hot = await frameFixture.wait([child, nested], 0.4, false);
+        window.late = await frameFixture.add(window);
+        const lateSynchronized = await frameFixture.wait([child, nested, late], 0.4, false);
+        // These are actual cross-window messages, not a synthetic MessageEvent with a forged source.
+        late.contentWindow.eval("parent.frames[0].postMessage({__lwMasterAudio__: 'state', volume: 0.9, muted: false}, '*')");
+        nested.contentWindow.postMessage({__lwMasterAudio__: 'state', volume: 0.9, muted: false}, '*');
+        await new Promise(resolve => setTimeout(resolve, 30));
+        return { hot: hot, late: lateSynchronized, lateInitialMuted: late.contentWindow.initialMuted,
+                 childLevel: frameFixture.level(child), nestedLevel: frameFixture.level(nested) };
+        """#, arguments: [:], in: nil, contentWorld: .page)
+        let updatedState = try #require(updated as? [String: Any])
+        #expect(updatedState["hot"] as? Bool == true)
+        #expect(updatedState["late"] as? Bool == true)
+        #expect(updatedState["lateInitialMuted"] as? Bool == true)
+        let childLevel = try #require(updatedState["childLevel"] as? Double)
+        let nestedLevel = try #require(updatedState["nestedLevel"] as? Double)
+        #expect(abs(childLevel - 0.4) < 0.00001)
+        #expect(abs(nestedLevel - 0.4) < 0.00001)
+    }
+
+    @MainActor
+    @Test("Offline audio baking keeps page gain independent of the playback master", arguments: [false, true])
+    func offlineAudioKeepsPageGain(muted: Bool) async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: HTMLWallpaperRuntimeScript.masterAudioController(initialVolume: 0.35, initialMuted: muted),
+            injectionTime: .atDocumentStart, forMainFrameOnly: true
+        ))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.loadHTMLString("<body></body>", baseURL: nil)
+        let deadline = ContinuousClock.now + .seconds(5)
+        var ready = false
+        while !ready, ContinuousClock.now < deadline {
+            ready = await (try? webView.evaluateJavaScript("window.__lwAudioInstalled__ === true")) as? Bool == true
+            if !ready {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        #expect(ready)
+        let raw = try await webView.callAsyncJavaScript("""
+        const offline = new OfflineAudioContext(1, 256, 48000);
+        const buffer = offline.createBuffer(1, 256, 48000);
+        buffer.getChannelData(0).fill(1);
+        const source = offline.createBufferSource();
+        source.buffer = buffer;
+        const pageGain = offline.createGain();
+        pageGain.gain.value = 0.8;
+        source.connect(pageGain);
+        pageGain.connect(offline.destination);
+        source.start();
+        const rendered = await offline.startRendering();
+        const sample = rendered.getChannelData(0)[128];
+        window.__lwUpdateAudio__(0.6, false);
+        const realtime = new AudioContext();
+        const master = realtime.destination;
+        const realtimeLevel = master.gain.value;
+        await realtime.close();
+        return { sample: sample, offlineHasMaster: !!offline.__lwGainNode__, realtimeLevel: realtimeLevel };
+        """, arguments: [:], in: nil, contentWorld: .page)
+        let result = try #require(raw as? [String: Any])
+        let sample = try #require(result["sample"] as? Double)
+        #expect(abs(sample - 0.8) < 0.00001)
+        #expect(result["offlineHasMaster"] as? Bool == false)
+        let realtimeLevel = try #require(result["realtimeLevel"] as? Double)
+        #expect(abs(realtimeLevel - 0.6) < 0.00001)
+        webView.stopLoading()
+    }
+
     private func makeAudioControllerContext() throws -> JSContext {
         let context = try #require(JSContext())
         context.evaluateScript("""

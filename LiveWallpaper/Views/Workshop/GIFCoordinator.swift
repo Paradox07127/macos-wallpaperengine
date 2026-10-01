@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import Foundation
+import SwiftUI
 
 /// Background pausing is owned by the coordinator's app-resign observer — this app hosts SwiftUI in AppKit windows, so SwiftUI `scenePhase` is unreliable here and is NOT gated on.
 struct ThumbnailPlaybackGate: Equatable {
@@ -48,6 +49,88 @@ enum PreviewFrameLoader {
             return nil
         }
         return frame
+    }
+}
+
+/// SwiftUI subtrees can stay mounted when their AppKit host stops presenting them.
+/// Observe the actual host rather than relying on `scenePhase` in AppKit-hosted UI.
+struct GIFHostVisibilityProbe: NSViewRepresentable {
+    let changed: @MainActor (Bool) -> Void
+
+    func makeNSView(context _: Context) -> GIFHostVisibilityView {
+        GIFHostVisibilityView(changed: changed)
+    }
+
+    func updateNSView(_ view: GIFHostVisibilityView, context _: Context) {
+        view.changed = changed
+    }
+}
+
+@MainActor
+final class GIFHostVisibilityView: NSView {
+    var changed: @MainActor (Bool) -> Void
+    private var applicationIsActive = NSApp.isActive
+    private var applicationIsHidden = NSApp.isHidden
+    private var lastValue: Bool?
+    private var windowIsClosing = false
+
+    init(changed: @escaping @MainActor (Bool) -> Void) {
+        self.changed = changed
+        super.init(frame: .zero)
+    }
+
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        let center = NotificationCenter.default
+        center.removeObserver(self)
+        windowIsClosing = false
+        if let window {
+            applicationIsActive = NSApp.isActive
+            applicationIsHidden = NSApp.isHidden
+            for name in [NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                         NSWindow.didChangeOcclusionStateNotification, NSWindow.willCloseNotification] {
+                center.addObserver(self, selector: #selector(windowChanged(_:)), name: name, object: window)
+            }
+            for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                         NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+                center.addObserver(self, selector: #selector(applicationChanged(_:)), name: name, object: nil)
+            }
+        }
+        publishVisibility()
+    }
+
+    @objc private func windowChanged(_ notification: Notification) {
+        if notification.name == NSWindow.willCloseNotification {
+            windowIsClosing = true
+            lastValue = false
+            changed(false)
+        } else {
+            publishVisibility()
+        }
+    }
+
+    @objc private func applicationChanged(_ notification: Notification) {
+        switch notification.name {
+        case NSApplication.didBecomeActiveNotification: applicationIsActive = true
+        case NSApplication.didResignActiveNotification: applicationIsActive = false
+        case NSApplication.didHideNotification: applicationIsHidden = true
+        case NSApplication.didUnhideNotification: applicationIsHidden = false
+        default: break
+        }
+        publishVisibility()
+    }
+
+    private func publishVisibility() {
+        let visible = applicationIsActive && !applicationIsHidden && !windowIsClosing && window.map {
+            $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)
+        } == true
+        guard visible != lastValue else { return }
+        lastValue = visible
+        changed(visible)
     }
 }
 

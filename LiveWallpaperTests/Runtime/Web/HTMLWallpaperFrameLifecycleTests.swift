@@ -246,10 +246,16 @@ struct HTMLWallpaperFrameLifecycleTests {
 
         let scripts = view.webView.configuration.userContentController.userScripts
         let allFrameScripts = scripts.filter { !$0.isForMainFrameOnly }
-        #expect(allFrameScripts.count == 1)
-        #expect(allFrameScripts.first?.source.contains("window.__lwSuspend__") == true)
-        #expect(allFrameScripts.first?.injectionTime == .atDocumentStart)
-        // The baseline is page CSS, transform, and audio.
+        let lifecycle = HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
+        let audio = HTMLWallpaperRuntimeScript.masterAudioController(initialVolume: 1, initialMuted: false)
+        let lifecycleScripts = scripts.filter { $0.source == lifecycle }
+        let audioScripts = scripts.filter { $0.source == audio }
+        #expect(lifecycleScripts.count == 1)
+        #expect(audioScripts.count == 1)
+        #expect(lifecycleScripts.first?.isForMainFrameOnly == false)
+        #expect(audioScripts.first?.isForMainFrameOnly == false)
+        #expect(lifecycleScripts.first?.injectionTime == .atDocumentStart)
+        #expect(audioScripts.first?.injectionTime == .atDocumentStart)
         let mainFrameScripts = scripts.filter(\.isForMainFrameOnly)
         #expect(mainFrameScripts.contains { $0.source.contains("lw-user-css") })
         #expect(!allFrameScripts.contains { $0.source.contains("lw-user-css") })

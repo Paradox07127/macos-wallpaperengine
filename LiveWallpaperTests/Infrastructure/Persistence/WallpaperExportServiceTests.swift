@@ -1,9 +1,10 @@
 import AVFoundation
+import Darwin
 import Foundation
-import LiveWallpaperCore
-import Testing
-
 @testable import LiveWallpaper
+import LiveWallpaperCore
+import os
+import Testing
 
 @MainActor
 @Suite("WallpaperExportService")
@@ -90,6 +91,8 @@ struct WallpaperExportServiceTests {
     private func makeRig(
         thumbnailJPEG: Data? = Data([0xFF, 0xD8, 0xFF, 0xE0]),
         now: Date = referenceNow,
+        copyOperation: (@Sendable (URL, URL) throws -> Void)? = nil,
+        extractionOperation: (@Sendable (URL, String, URL) throws -> Void)? = nil,
         duringThumbnail: PublishHook? = nil,
         expectedProvider: SystemWallpaperProviderIdentity? = nil,
         isProviderRunning: @escaping @Sendable (Int32) -> Bool = { _ in true }
@@ -109,18 +112,121 @@ struct WallpaperExportServiceTests {
             },
             refreshData: { _ in Data() }
         )
-        let service = WallpaperExportService(dependencies: .init(
+        var dependencies = WallpaperExportService.Dependencies(
             sharedRoot: root,
             resolver: resolver,
             now: { now },
             makeThumbnailJPEG: { _ in
-                if let duringThumbnail { await MainActor.run { duringThumbnail.fire() } }
+                if let duringThumbnail {
+                    await MainActor.run { duringThumbnail.fire() }
+                }
                 return thumbnailJPEG
             },
+            copyVideoFile: copyOperation ?? { try FileManager.default.copyItem(at: $0, to: $1) },
             expectedProvider: expectedProvider,
             isProviderRunning: isProviderRunning
-        ))
+        )
+        if let extractionOperation {
+            dependencies.extractVideoFromPackage = extractionOperation
+        }
+        let service = WallpaperExportService(dependencies: dependencies)
         return Rig(service: service, root: root, sourceDirectory: sources)
+    }
+
+    @Test("Video source admission rejects directories and FIFOs before copying or parsing", arguments: [false, true], [false, true])
+    func nonRegularVideoRejectedBeforeCopy(fifo: Bool, packaged: Bool) async throws {
+        final class Copies: Sendable {
+            let paths = OSAllocatedUnfairLock(initialState: [String]())
+
+            func safeCopy(_ source: URL, _ destination: URL) throws {
+                paths.withLock { $0.append(source.path) }
+                // Never open/copy a special file, even in the unfixed production path.
+                guard try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                try FileManager.default.copyItem(at: source, to: destination)
+            }
+        }
+        let copies = Copies()
+        let rig = try makeRig(
+            copyOperation: { try copies.safeCopy($0, $1) },
+            extractionOperation: { source, _, destination in try copies.safeCopy(source, destination) }
+        )
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let saved = try rig.makeVideoBookmark(bytes: Data("keep".utf8))
+        try await rig.service.publish(bookmark: saved)
+        let before = try Data(contentsOf: rig.manifestURL)
+        let files = try FileManager.default.contentsOfDirectory(atPath: rig.videosDirectory.path).sorted()
+        copies.paths.withLock { $0.removeAll() }
+        let input = rig.sourceDirectory.appendingPathComponent(fifo ? "pipe.mov" : "directory.mov")
+        if fifo {
+            #expect(mkfifo(input.path, 0o600) == 0)
+        } else {
+            try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
+        }
+        await #expect(throws: WallpaperExportService.ServiceError.unsupportedContent) {
+            if packaged {
+                try await rig.service.publish(bookmark: WallpaperBookmark(
+                    label: "Invalid package", content: .video(bookmarkData: Data(input.path.utf8), packageEntryName: "video.mp4")
+                ))
+            } else {
+                try await rig.service.publish(fileURL: input)
+            }
+        }
+        let copyPaths = copies.paths.withLock { $0 }
+        #expect(copyPaths.isEmpty)
+        #expect(try Data(contentsOf: rig.manifestURL) == before)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: rig.videosDirectory.path).sorted() == files)
+        #expect(rig.service.items.count == 1)
+        #expect(rig.service.lastError == WallpaperExportService.ServiceError.unsupportedContent.localizedDescription)
+    }
+
+    @Test("Video admission rejects non-file URLs before copying or parsing")
+    func nonFileVideoURLRejectedBeforeCopy() async throws {
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let rig = try makeRig(
+            copyOperation: { _, _ in
+                calls.withLock { $0 += 1 }
+                throw CocoaError(.fileReadUnsupportedScheme)
+            },
+            extractionOperation: { _, _, _ in
+                calls.withLock { $0 += 1 }
+                throw CocoaError(.fileReadUnsupportedScheme)
+            }
+        )
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let url = try #require(URL(string: "https://example.invalid/video.mov"))
+        await #expect(throws: WallpaperExportService.ServiceError.unsupportedContent) {
+            try await rig.service.publish(fileURL: url)
+        }
+        let count = calls.withLock { $0 }
+        #expect(count == 0)
+        #expect(rig.service.items.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: rig.manifestURL.path))
+    }
+
+    @Test("A selected regular-file symlink publishes independent video bytes", arguments: [false, true])
+    func regularTargetSymlinkPublishesIndependentBytes(bookmarked: Bool) async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bytes = Data("linked-video".utf8)
+        let target = rig.sourceDirectory.appendingPathComponent("original.mov")
+        try bytes.write(to: target)
+        let link = rig.sourceDirectory.appendingPathComponent("selected.mov")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        if bookmarked {
+            try await rig.service.publish(bookmark: WallpaperBookmark(
+                label: "Selected link", content: .video(bookmarkData: Data(link.path.utf8))
+            ))
+        } else {
+            try await rig.service.publish(fileURL: link)
+        }
+        let item = try #require(rig.service.items.first)
+        let published = try #require(rig.service.videoURL(for: item))
+        let isRegular = try published.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile
+        #expect(isRegular == true)
+        try FileManager.default.removeItem(at: target)
+        #expect(try Data(contentsOf: published) == bytes)
     }
 
     @Test("An atomically written heartbeat reaches the service through the directory watch")

@@ -525,15 +525,17 @@ extension WallpaperEngineProjectPropertySchema {
 }
 
 private enum ConditionEvaluator {
+    private static let maximumBytes = 16 * 1024
+    private static let maximumParts = 512
+
     static func isVisible(
         condition: String?,
         values: [String: WallpaperEngineProjectPropertyValue]
     ) -> Bool {
         guard let condition, !condition.isEmpty else { return true }
-        return condition
-            .components(separatedBy: "||")
-            .map { evaluateAndGroup($0, values: values) }
-            .contains(true)
+        guard condition.utf8.prefix(maximumBytes + 1).count <= maximumBytes else { return false }
+        var clauses = maximumParts
+        return evaluateBoolean(condition, values: values, depth: 0, clauses: &clauses) ?? false
     }
 
     static func matchesLiteral(
@@ -543,20 +545,104 @@ private enum ConditionEvaluator {
         value.matches(.conditionLiteral(condition))
     }
 
-    private static func evaluateAndGroup(
-        _ rawGroup: String,
-        values: [String: WallpaperEngineProjectPropertyValue]
-    ) -> Bool {
-        rawGroup
-            .components(separatedBy: "&&")
-            .map { evaluateClause($0, values: values) }
-            .allSatisfy { $0 }
+    private static let maximumNesting = 64
+
+    private static func evaluateBoolean(
+        _ raw: String,
+        values: [String: WallpaperEngineProjectPropertyValue],
+        depth: Int,
+        clauses: inout Int
+    ) -> Bool? {
+        guard depth <= maximumNesting else { return nil }
+        let expression = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !expression.isEmpty,
+              let groups = split(expression, separator: "||", topLevel: true) else { return nil }
+        if groups.count > 1 {
+            let results = groups.map { evaluateBoolean($0, values: values, depth: depth, clauses: &clauses) }
+            guard results.allSatisfy({ $0 != nil }) else { return nil }
+            return results.contains(true)
+        }
+        guard let terms = split(expression, separator: "&&", topLevel: true) else { return nil }
+        if terms.count > 1 {
+            let results = terms.map { evaluateBoolean($0, values: values, depth: depth, clauses: &clauses) }
+            guard results.allSatisfy({ $0 != nil }) else { return nil }
+            return results.allSatisfy { $0 == true }
+        }
+        // Strip a complete group only; an includes(...) call remains an atomic clause.
+        var body = expression
+        var negations = 0
+        while body.hasPrefix("!") {
+            body = String(body.unicodeScalars.dropFirst())
+            body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            negations += 1
+        }
+        guard !body.isEmpty else { return nil }
+        if isWholeGroup(body) {
+            guard let result = evaluateBoolean(String(body.unicodeScalars.dropFirst().dropLast()), values: values,
+                                               depth: depth + 1, clauses: &clauses) else { return nil }
+            return negations.isMultiple(of: 2) ? result : !result
+        }
+        guard clauses > 0 else { return nil }
+        clauses -= 1
+        return evaluateClause(expression, values: values)
+    }
+
+    /// True when the leading `(` closes at the final `)`, so `(a) && (b)` is not one group.
+    private static func isWholeGroup(_ raw: String) -> Bool {
+        guard raw.utf8.first == 40, raw.utf8.last == 41 else { return false }
+        // "(" never matches as a top-level delimiter, so this only checks that the inside is balanced.
+        return split(String(raw.unicodeScalars.dropFirst().dropLast()), separator: "(", topLevel: true) != nil
+    }
+
+    /// Quoted author literals are data. `topLevel` also requires balanced ()/[] and
+    /// splits only outside them, so groups and includes calls stay atomic.
+    private static func split(_ raw: String, separator: String, topLevel: Bool) -> [String]? {
+        let bytes = Array(raw.utf8)
+        let delimiter = Array(separator.utf8)
+        var stack: [UInt8] = []
+        var quote: UInt8?
+        var escaped = false
+        var parts: [String] = []
+        var start = 0
+        var index = 0
+        while index < bytes.count {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+            } else if byte == 34 || byte == 39 {
+                quote = byte
+            } else if topLevel, byte == 40 || byte == 91 {
+                guard stack.count < maximumNesting else { return nil }
+                stack.append(byte)
+            } else if topLevel, byte == 41 || byte == 93 {
+                guard stack.last == (byte == 41 ? 40 : 91) else { return nil }
+                stack.removeLast()
+            } else if stack.isEmpty, bytes[index...].starts(with: delimiter) {
+                guard let part = String(bytes: bytes[start ..< index], encoding: .utf8) else { return nil }
+                parts.append(part)
+                guard parts.count < maximumParts else { return nil }
+                index += delimiter.count
+                start = index
+                continue
+            }
+            index += 1
+        }
+        guard stack.isEmpty, quote == nil, !escaped,
+              let part = String(bytes: bytes[start...], encoding: .utf8) else { return nil }
+        parts.append(part)
+        return parts
     }
 
     private static func evaluateClause(
         _ rawClause: String,
         values: [String: WallpaperEngineProjectPropertyValue]
-    ) -> Bool {
+    ) -> Bool? {
         var clause = rawClause.trimmingCharacters(in: .whitespacesAndNewlines)
         // Strip all leading `!` so `!!flag` does not look up key "!flag".
         var negationCount = 0
@@ -572,15 +658,20 @@ private enum ConditionEvaluator {
             result = true
         } else if clause.caseInsensitiveCompare("false") == .orderedSame {
             result = false
+        } else if let comparison = evaluatePrimitiveComparison(clause, values: values) {
+            switch comparison {
+            case let .value(matched): result = matched
+            case .invalid: return nil
+            }
         } else if let includeMatch = evaluateIncludes(clause, values: values) {
             result = includeMatch
-        } else if let range = clause.range(of: "==") {
-            let key = propertyKey(from: String(clause[..<range.lowerBound]))
-            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(String(clause[range.upperBound...]))
+        } else if let operands = split(clause, separator: "==", topLevel: false), operands.count == 2 {
+            let key = propertyKey(from: unwrappedOperand(operands[0]))
+            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(unwrappedOperand(operands[1]))
             result = values[key].matches(expected)
-        } else if let range = clause.range(of: "!=") {
-            let key = propertyKey(from: String(clause[..<range.lowerBound]))
-            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(String(clause[range.upperBound...]))
+        } else if let operands = split(clause, separator: "!=", topLevel: false), operands.count == 2 {
+            let key = propertyKey(from: unwrappedOperand(operands[0]))
+            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(unwrappedOperand(operands[1]))
             result = !values[key].matches(expected)
         } else {
             let key = propertyKey(from: clause)
@@ -590,30 +681,100 @@ private enum ConditionEvaluator {
         return negated ? !result : result
     }
 
+    /// Strict ===/!== and numeric ordering; operators are tried longest-first so `>=` is not read as `>`.
+    private enum PrimitiveComparison { case value(Bool), invalid }
+
+    private static func evaluatePrimitiveComparison(
+        _ clause: String,
+        values: [String: WallpaperEngineProjectPropertyValue]
+    ) -> PrimitiveComparison? {
+        for operation in ["===", "!==", "<=", ">=", "<", ">"] {
+            guard let operands = split(clause, separator: operation, topLevel: false) else { return .invalid }
+            guard operands.count > 1 else { continue }
+            guard operands.count == 2,
+                  let lhs = primitiveOperand(operands[0], values: values),
+                  let rhs = primitiveOperand(operands[1], values: values) else { return .invalid }
+            if operation == "===" || operation == "!==" {
+                let equal: Bool = switch (lhs, rhs) {
+                case let (.bool(a), .bool(b)): a == b
+                case let (.number(a), .number(b)): a == b
+                case let (.string(a), .string(b)): a.utf16.elementsEqual(b.utf16)
+                default: false
+                }
+                return .value(operation == "===" ? equal : !equal)
+            }
+            guard let a = numericValue(lhs), let b = numericValue(rhs) else { return .value(false) }
+            switch operation {
+            case "<": return .value(a < b)
+            case ">": return .value(a > b)
+            case "<=": return .value(a <= b)
+            default: return .value(a >= b)
+            }
+        }
+        return nil
+    }
+
+    private static func unwrappedOperand(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while isWholeGroup(value) {
+            value = String(value.unicodeScalars.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
+    }
+
+    private static func primitiveOperand(
+        _ raw: String,
+        values: [String: WallpaperEngineProjectPropertyValue]
+    ) -> WallpaperEngineProjectPropertyValue? {
+        let value = unwrappedOperand(raw)
+        if value.hasSuffix(".value") {
+            return values[propertyKey(from: value)]
+        }
+        if value == "true" {
+            return .bool(true)
+        }
+        if value == "false" {
+            return .bool(false)
+        }
+        if let quote = value.utf8.first, quote == 34 || quote == 39 {
+            guard value.utf8.last == quote, value.utf8.count >= 2 else { return nil }
+            // Like conditionLiteral, quotes are stripped without escape decoding.
+            return .string(String(value.unicodeScalars.dropFirst().dropLast()))
+        }
+        return Double(value).map(WallpaperEngineProjectPropertyValue.number)
+    }
+
+    private static func numericValue(_ value: WallpaperEngineProjectPropertyValue) -> Double? {
+        switch value {
+        case let .number(number): number
+        case let .bool(flag): flag ? 1 : 0
+        case let .string(string): Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
     private static func evaluateIncludes(
         _ clause: String,
         values: [String: WallpaperEngineProjectPropertyValue]
     ) -> Bool? {
-        guard let includeRange = clause.range(of: ".includes("),
+        guard let operands = split(clause, separator: ".includes(", topLevel: false), operands.count == 2,
               clause.hasSuffix(")") else {
             return nil
         }
 
-        let rawList = String(clause[..<includeRange.lowerBound])
+        let rawList = operands[0]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard rawList.hasPrefix("["),
               rawList.hasSuffix("]") else {
             return nil
         }
 
-        let argumentStart = includeRange.upperBound
-        let argumentEnd = clause.index(before: clause.endIndex)
-        let key = propertyKey(from: String(clause[argumentStart..<argumentEnd]))
-        let candidates = rawList
-            .dropFirst()
-            .dropLast()
-            .split(separator: ",")
-            .map { WallpaperEngineProjectPropertyValue.conditionLiteral(String($0)) }
+        let key = propertyKey(from: String(operands[1].dropLast()))
+        guard let items = split(String(rawList.dropFirst().dropLast()), separator: ",", topLevel: false) else {
+            return false
+        }
+        let candidates = items
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(WallpaperEngineProjectPropertyValue.conditionLiteral)
 
         return candidates.contains { values[key].matches($0) }
     }
@@ -626,7 +787,6 @@ private enum ConditionEvaluator {
         }
         return trimmed
     }
-
 }
 
 private extension Optional where Wrapped == WallpaperEngineProjectPropertyValue {

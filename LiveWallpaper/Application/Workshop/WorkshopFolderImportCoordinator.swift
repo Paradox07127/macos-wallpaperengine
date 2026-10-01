@@ -35,15 +35,18 @@ final class WorkshopFolderImportCoordinator {
     private var isTerminated = false
     @ObservationIgnored private let importService: WallpaperEngineImportService
     @ObservationIgnored private let settings: SettingsManager
-    @ObservationIgnored private let fileManager: FileManager
+    @ObservationIgnored private let discoverFolders: @Sendable (URL) -> [URL]?
+    @ObservationIgnored private let toastCenter: WorkshopToastCenter
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
-        fileManager: FileManager = .default,
-        settings: SettingsManager = .shared
+        settings: SettingsManager = .shared,
+        discoverFolders: (@Sendable (URL) -> [URL]?)? = nil,
+        toastCenter: WorkshopToastCenter = .shared
     ) {
         self.importService = importService
-        self.fileManager = fileManager
+        self.discoverFolders = discoverFolders ?? Self.discoverProjectFolders
+        self.toastCenter = toastCenter
         self.settings = settings
     }
 
@@ -91,17 +94,28 @@ final class WorkshopFolderImportCoordinator {
         }
 
         let title = ListFormatter.localizedString(byJoining: folders.map(\.lastPathComponent))
-        var projectFolders: [URL] = []
-        var unreadableFolders = 0
-        for folder in folders {
-            if let found = discoverProjectFolders(in: folder) {
-                projectFolders += found
-            } else {
-                unreadableFolders += 1
+        let discoverFolders = discoverFolders
+        let discovery = Task.detached(priority: .utility) { @Sendable in
+            var projectFolders: [URL] = []
+            var unreadableFolders = 0
+            for folder in folders {
+                guard !Task.isCancelled else { break }
+                if let found = discoverFolders(folder) {
+                    projectFolders += found
+                } else {
+                    unreadableFolders += 1
+                }
             }
+            return (projectFolders, unreadableFolders)
         }
+        let (projectFolders, unreadableFolders) = await withTaskCancellationHandler {
+            await discovery.value
+        } onCancel: {
+            discovery.cancel()
+        }
+        guard allowsImport else { return }
         if unreadableFolders == folders.count {
-            WorkshopToastCenter.shared.post(
+            toastCenter.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: title,
                 message: String(localized: "That folder couldn't be read.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder could not be enumerated."),
@@ -110,7 +124,7 @@ final class WorkshopFolderImportCoordinator {
             return
         }
         guard !projectFolders.isEmpty else {
-            WorkshopToastCenter.shared.post(
+            toastCenter.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: title,
                 message: String(localized: "No Wallpaper Engine projects were found in that folder.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder had no project.json."),
@@ -188,7 +202,7 @@ final class WorkshopFolderImportCoordinator {
         }
 
         guard allowsImport, added > 0 || repaired > 0 else { return }
-        WorkshopToastCenter.shared.post(
+        toastCenter.post(
             headline: String(localized: "Library synced", bundle: .appLanguage, comment: "Toast headline after auto-importing existing SteamCMD downloads."),
             title: String(localized: "SteamCMD downloads", bundle: .appLanguage, comment: "Toast subject for the SteamCMD download sync."),
             message: Self.syncSummary(added: added, repaired: repaired),
@@ -273,7 +287,7 @@ final class WorkshopFolderImportCoordinator {
             let message = unreadable > 0 && rejected == 0
                 ? String(localized: "None of the projects in that folder could be read.", bundle: .appLanguage, comment: "Folder import failure: every discovered project failed to read.")
                 : String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected.")
-            WorkshopToastCenter.shared.post(
+            toastCenter.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: title,
                 message: message,
@@ -291,7 +305,7 @@ final class WorkshopFolderImportCoordinator {
         } else {
             String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
         }
-        WorkshopToastCenter.shared.post(
+        toastCenter.post(
             headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),
             title: title,
             message: message,
@@ -300,7 +314,9 @@ final class WorkshopFolderImportCoordinator {
     }
 
     /// nil when the folder could not be read at all — different from a folder that holds no projects.
-    private func discoverProjectFolders(in root: URL) -> [URL]? {
+    private nonisolated static func discoverProjectFolders(in root: URL) -> [URL]? {
+        guard !Task.isCancelled else { return [] }
+        let fileManager = FileManager()
         if fileManager.fileExists(atPath: root.appendingPathComponent("project.json").path) {
             return [root]
         }
@@ -317,10 +333,15 @@ final class WorkshopFolderImportCoordinator {
             return nil
         }
 
-        return children.filter { child in
+        var projects: [URL] = []
+        for child in children {
+            guard !Task.isCancelled else { break }
             let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            return isDir && fileManager.fileExists(atPath: child.appendingPathComponent("project.json").path)
+            if isDir, fileManager.fileExists(atPath: child.appendingPathComponent("project.json").path) {
+                projects.append(child)
+            }
         }
+        return projects
     }
 }
 #endif

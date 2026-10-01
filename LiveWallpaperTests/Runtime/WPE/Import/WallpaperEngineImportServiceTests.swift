@@ -876,6 +876,44 @@ struct WallpaperEngineImportServiceTests {
         #expect(packageEntryName == nil)
     }
 
+    @Test("Non-image producers import in place while light-only and empty inputs stay unsupported", arguments: ["text", "particle", "light", "empty"], [false, true])
+    func nonImageSceneImport(kind: String, packaged: Bool) async throws {
+        let object: [[String: Any]] = switch kind {
+        case "text": [["id": "text", "text": "MMMM", "origin": "32 32 0", "pointsize": 24]]
+        case "particle": [["id": "pfx", "particle": "particle.json", "origin": "32 32 0"]]
+        case "light": [["id": "lamp", "light": "lpoint"]]
+        default: []
+        }
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": object,
+        ]
+        let sceneData = try JSONSerialization.data(withJSONObject: scene)
+        let particleData = Data(#"{"material":"material.json","emitters":[{"name":"boxrandom","rate":10}],"initializers":[],"operators":[]}"#.utf8)
+        let entries = [PackageEntrySpec("scene.json", Array(sceneData)), PackageEntrySpec("particle.json", Array(particleData))]
+        let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: packaged ? entries : nil)
+        defer { fixture.cleanup() }
+        if !packaged {
+            try sceneData.write(to: fixture.folderURL.appendingPathComponent("scene.json"))
+            try particleData.write(to: fixture.folderURL.appendingPathComponent("particle.json"))
+        }
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+        if kind == "text" || kind == "particle" {
+            guard case let .ready(.scene(descriptor), origin) = result else {
+                Issue.record("Expected limited scene admission, got \(result)")
+                return
+            }
+            #expect(descriptor.capabilityTier == .degraded)
+            #expect(descriptor.assetStorage == (packaged ? .packageSource(fileName: "scene.pkg") : .sourceDirectory))
+            #expect(descriptor.preflightFeatureFlags.contains(kind == "text" ? .textObject : .particleObject))
+            #expect(origin.originalType == .scene)
+        } else {
+            guard case .unsupported = result else { Issue.record("Expected unsupported producer, got \(result)"); return }
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.cacheURL.appendingPathComponent(fixture.workshopID).path))
+    }
+
     private func makeFixture(
         type: WPEType,
         entryFile: String,

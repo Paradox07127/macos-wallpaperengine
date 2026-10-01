@@ -8,7 +8,7 @@ import Observation
 final class SavedLibraryModel {
     enum Chip: CaseIterable { case all, bookmarks, recent, steam, local, aerials }
     enum Sort: CaseIterable {
-        case recentlyUsed, name, type
+        case recentlyUsed, name, type, size
         #if !LITE_BUILD
         case needsUpdate
         #endif
@@ -139,7 +139,14 @@ final class SavedLibraryModel {
     }
 
     var chip: Chip = .all
-    var sort: Sort = .recentlyUsed
+
+    var sort: Sort = .recentlyUsed {
+        didSet {
+            guard sort != oldValue else { return }
+            restartSizeMetadataProbe()
+        }
+    }
+
     var filter: Filter?
     #if !LITE_BUILD
     var updatedWorkshopIDs: Set<String> = []
@@ -151,8 +158,20 @@ final class SavedLibraryModel {
     /// Each row's last use when the current browse began; nil while none is open.
     private var usageSnapshot: [LibraryItem.ID: Date]?
     #if !LITE_BUILD
-    /// Project tags by workshop ID, from `loadSearchTags()`; empty while a read is in flight or when it failed.
-    private var tagsByWorkshopID: [String: [String]] = [:]
+    private struct SearchTagSource: Hashable {
+        let origin: WPEOrigin
+        let importedAt: Date?
+
+        /// `WPEOrigin` is only Equatable; equality still compares the whole origin.
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(origin.workshopID)
+            hasher.combine(importedAt)
+        }
+    }
+
+    /// Project tags by source, from `loadSearchTags()`; empty while a read is in flight or when it failed.
+    private var tagsBySource: [SearchTagSource: [String]] = [:]
+    @ObservationIgnored private var searchTagSources: [LibraryItem.ID: SearchTagSource] = [:]
     #endif
     @ObservationIgnored private let inputs: Inputs
     /// Each row's source when it was last probed and whether it was found; nothing is resolved in `refresh()`.
@@ -164,6 +183,7 @@ final class SavedLibraryModel {
     /// `refresh()` empties it, so a moved file or a bookmark that failed to resolve is read again.
     @ObservationIgnored private var filePaths: [Data: String?] = [:]
     @ObservationIgnored private var subscriptions: Set<AnyCancellable> = []
+    @ObservationIgnored private var sizeMetadataTask: Task<Void, Never>?
 
     init(inputs: Inputs) {
         self.inputs = inputs
@@ -290,6 +310,7 @@ final class SavedLibraryModel {
             switch sort {
             case .recentlyUsed: return recentlyUsed(lhs, rhs)
             case .name: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            case .size: return Self.largerFileFirst(lhs, rhs)
             case .type:
                 let kinds: [LibraryItem.Kind] = [.video, .web, .scene, .aerial]
                 if lhs.kind != rhs.kind {
@@ -336,7 +357,7 @@ final class SavedLibraryModel {
         if origin.workshopID.range(of: query, options: .caseInsensitive) != nil || queryIsWhole(origin.localizedDisplayTypeName) {
             return true
         }
-        let tags = tagsByWorkshopID[origin.workshopID] ?? []
+        let tags = searchTagSources[item.id].flatMap { tagsBySource[$0] } ?? []
         return tags.contains { $0.range(of: query, options: .caseInsensitive) != nil }
         #else
         return false
@@ -363,24 +384,27 @@ final class SavedLibraryModel {
         usageSnapshot = Dictionary(
             items.compactMap { item in item.lastUsedAt.map { (item.id, $0) } }, uniquingKeysWith: { first, _ in first }
         )
+        restartSizeMetadataProbe()
     }
 
     func endBrowsing() {
         usageSnapshot = nil
+        cancelSizeMetadataProbe()
     }
 
     /// Reads the tags of the Workshop projects not read yet; nothing while the query is empty.
     func loadSearchTags() async {
         #if !LITE_BUILD
         guard !query.isEmpty else { return }
-        var pending: [WPEOrigin] = []
+        var pending: [SearchTagSource] = []
         // Marked read before the reads finish: every keystroke calls this while they are in flight.
-        for origin in items.compactMap(Self.workshopOrigin) where tagsByWorkshopID[origin.workshopID] == nil {
-            tagsByWorkshopID[origin.workshopID] = []
-            pending.append(origin)
+        for item in items {
+            guard let source = searchTagSources[item.id], tagsBySource[source] == nil else { continue }
+            tagsBySource[source] = []
+            pending.append(source)
         }
-        for origin in pending {
-            tagsByWorkshopID[origin.workshopID] = await inputs.projectTags(origin)
+        for source in pending {
+            tagsBySource[source] = await inputs.projectTags(source.origin)
         }
         #endif
     }
@@ -393,6 +417,23 @@ final class SavedLibraryModel {
         case let .bookmark(bookmark): bookmark.wpeOrigin
         case .aerial: nil
         }
+    }
+    #endif
+
+    #if !LITE_BUILD
+    /// Import revision changes even when an updated project's folder grant does not.
+    /// Variants follow that revision only when they reference the same folder bookmark.
+    private static func searchTagSources(in items: [LibraryItem]) -> [LibraryItem.ID: SearchTagSource] {
+        let imports = Dictionary(items.compactMap { item -> (String, WPEHistoryEntry)? in
+            guard case let .workshop(entry) = item.source else { return nil }
+            return (entry.id, entry)
+        }, uniquingKeysWith: { first, _ in first })
+        return Dictionary(items.compactMap { item -> (LibraryItem.ID, SearchTagSource)? in
+            guard let origin = workshopOrigin(of: item) else { return nil }
+            let entry = imports[origin.workshopID]
+            let revision = entry?.origin.sourceFolderBookmark == origin.sourceFolderBookmark ? entry?.importedAt : nil
+            return (item.id, SearchTagSource(origin: origin, importedAt: revision))
+        }, uniquingKeysWith: { first, _ in first })
     }
     #endif
 
@@ -484,7 +525,11 @@ final class SavedLibraryModel {
                 merged[index].metadata = metadataBookmark(for: merged[index].source).flatMap(inputs.metadata)
             }
         }
+        #if !LITE_BUILD
+        searchTagSources = Self.searchTagSources(in: merged)
+        #endif
         items = merged
+        restartSizeMetadataProbe()
         if items.contains(where: needsProbe) {
             Task { [weak self] in await self?.probeSources() }
         }
@@ -551,11 +596,40 @@ final class SavedLibraryModel {
         }
     }
 
+    /// A file size is not a Workshop project's total footprint; directories and shared assets stay unknown.
+    private static func knownFileSize(_ item: LibraryItem) -> Int64? {
+        guard case let .video(video)? = item.metadata, let size = video.fileSize, size >= 0 else { return nil }
+        return size
+    }
+
+    private static func largerFileFirst(_ lhs: LibraryItem, _ rhs: LibraryItem) -> Bool {
+        switch (knownFileSize(lhs), knownFileSize(rhs)) {
+        case let (left?, right?) where left != right: left > right
+        case (_?, nil): true
+        case (nil, _?): false
+        default: lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    private func cancelSizeMetadataProbe() {
+        sizeMetadataTask?.cancel()
+        sizeMetadataTask = nil
+    }
+
+    private func restartSizeMetadataProbe() {
+        cancelSizeMetadataProbe()
+        guard sort == .size, usageSnapshot != nil else { return }
+        let pendingIDs = items.filter { Self.knownFileSize($0) == nil }.map(\.id)
+        sizeMetadataTask = Task { [weak self] in await self?.probeMetadata(for: pendingIDs) }
+    }
+
     func probeMetadata(for ids: [LibraryItem.ID]) async {
         let requested = Set(ids)
         for item in items where requested.contains(item.id) && (item.kind == .video || item.kind == .aerial) {
+            guard !Task.isCancelled else { return }
             guard let bookmark = metadataBookmark(for: item.source) else { continue }
             let metadata = await inputs.probeMetadata(bookmark)
+            guard !Task.isCancelled else { return }
             guard let index = items.firstIndex(where: { $0.id == item.id && $0.source == item.source }) else { continue }
             items[index].metadata = metadata
         }

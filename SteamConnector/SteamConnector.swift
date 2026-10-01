@@ -23,8 +23,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// clients.
     private static let steamCMDQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.steamcmd")
 
-    /// Registered by `spawn` only on the SteamCMD path — codesign shares
-    /// `spawn` and must never be what a user cancel kills.
+    /// `spawn` records the current owned child, including replacement-signature
+    /// helpers belonging to the same operation, so cancellation covers that phase.
     static let activeSteamCMD = SteamCMDActiveProcessRegistry()
 
     /// How long a queued request may wait before the client is assumed to have
@@ -76,7 +76,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         spawn: ((String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool))? = nil
     ) -> String? {
         let spawn = spawn ?? { path, arguments, timeout in
-            let run = SteamConnector.spawn(executable: path, arguments: arguments, timeout: timeout)
+            let run = SteamConnector.spawn(executable: path, arguments: arguments, deadline: .now() + timeout)
             return (run.output, run.exitCode, run.timedOut)
         }
         return SteamCMDDiagnosisPlan.firstTrusted(
@@ -112,6 +112,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         isCancelled: @escaping @Sendable () -> Bool = { false },
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
+        let deadline = SteamCMDRunDeadline(timeout: timeout)
         // Every SteamCMD execution in this process funnels through here, so this
         // is the one place the fence has to hold. Reported as a failed spawn,
         // which is what a refused path already looks like to every caller.
@@ -126,22 +127,21 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return SteamCMDRun(output: "SteamCMD profile unavailable: \(error)", timedOut: false)
         }
         defer { close(profile.fd) }
-        // Exit 42 is SteamCMD's "my self-update replaced the binary —
-        // relaunch me"; a fresh install needs two restarts before its first
-        // 0 (measured 2026-08-28). Each attempt gets the full timeout, so
-        // worst-case wall clock is maxExecutions × timeout, and the
-        // rewritten binary is re-gated before every relaunch: earlier trust
-        // verdicts describe a file that no longer exists.
+        // Exit 42 = self-update replaced the binary; every relaunch is re-gated and shares one deadline.
         let verifySpawn: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = { path, verifyArguments, verifyTimeout in
-            let run = spawn(executable: path, arguments: verifyArguments, timeout: verifyTimeout)
+            let run = spawn(executable: path, arguments: verifyArguments,
+                            deadline: min(deadline.time, .now() + verifyTimeout),
+                            activeOperationID: operationID, isCancelled: isCancelled)
             return (run.output, run.exitCode, run.timedOut)
         }
         let outcome = SteamCMDSelfUpdateRestartPolicy.run(
+            deadline: deadline,
+            isCancelled: isCancelled,
             execute: {
                 spawn(
                     executable: steamCMDPath,
                     arguments: arguments,
-                    timeout: timeout,
+                    deadline: deadline.time,
                     profileHome: profile.home.path(percentEncoded: false),
                     activeOperationID: operationID,
                     isCancelled: isCancelled
@@ -169,6 +169,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         switch outcome {
         case .completed(let run):
             return run
+        case let .deadlineExceeded(last):
+            return SteamCMDRun(output: last?.output ?? "", timedOut: true, exitCode: last?.exitCode ?? -1)
+        case .cancelled:
+            return SteamCMDRun(output: "", timedOut: false)
         case .gateFailed(let reason):
             // Reported as a failed spawn (exit -1), which is what a refused
             // binary already looks like to every caller.
@@ -187,13 +191,20 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     private static func spawn(
         executable: String,
         arguments: [String],
-        timeout: TimeInterval,
+        deadline: DispatchTime,
         profileHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         activeOperationID: String? = nil,
         isCancelled: @escaping @Sendable () -> Bool = { false },
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
+        guard !isCancelled() else { return SteamCMDRun(output: "", timedOut: false) }
+        guard DispatchTime.now().uptimeNanoseconds < deadline.uptimeNanoseconds else {
+            return SteamCMDRun(output: "", timedOut: true)
+        }
         let process = Process()
+        let processDone = DispatchSemaphore(value: 0)
+        // Install before launch: an already-exited child must not miss this signal.
+        process.terminationHandler = { _ in processDone.signal() }
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.environment = SteamCMDChildEnvironment.make(home: profileHome)
@@ -203,6 +214,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         process.standardError = pipe
 
         guard !isCancelled() else { return SteamCMDRun(output: "", timedOut: false) }
+        guard DispatchTime.now().uptimeNanoseconds < deadline.uptimeNanoseconds else {
+            return SteamCMDRun(output: "", timedOut: true)
+        }
         do { try process.run() } catch {
             return SteamCMDRun(output: error.localizedDescription, timedOut: false)
         }
@@ -275,12 +289,26 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
         }
 
-        if done.wait(timeout: .now() + timeout) == .timedOut {
+        var streamComplete = false
+        var processComplete = false
+        func awaitCompletion(until deadline: DispatchTime) -> Bool {
+            if !streamComplete {
+                streamComplete = done.wait(timeout: deadline) == .success
+            }
+            if !processComplete {
+                processComplete = processDone.wait(timeout: deadline) == .success
+            }
+            return streamComplete && processComplete
+        }
+
+        // EOF alone is not completion: a child can close both pipes and keep
+        // running. Both producer lifetimes consume the same absolute deadline.
+        if !awaitCompletion(until: deadline) {
             state.withLock { $0.timedOut = true }
             kill(hasOwnGroup ? -pid : pid, SIGTERM)
-            if done.wait(timeout: .now() + 10) == .timedOut {
+            if !awaitCompletion(until: .now() + 10) {
                 kill(hasOwnGroup ? -pid : pid, SIGKILL)
-                _ = done.wait(timeout: .now() + 5)
+                _ = awaitCompletion(until: .now() + 5)
             }
         }
 
@@ -290,6 +318,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         state.withLock { $0.finished = true }
         handle.readabilityHandler = nil
         process.waitUntilExit()
+        process.terminationHandler = nil
         activeSteamCMD.clear()
         // Close deterministically rather than waiting for the Pipe to be
         // deallocated; a leaked descriptor per run adds up over a session.
@@ -660,12 +689,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             let verify = Self.spawn(
                 executable: "/usr/bin/codesign",
                 arguments: ["--verify", "--strict", path],
-                timeout: 30
+                deadline: .now() + 30
             )
             let display = Self.spawn(
                 executable: "/usr/bin/codesign",
                 arguments: ["-dv", "--verbose=4", path],
-                timeout: 30
+                deadline: .now() + 30
             )
             let quarantined = (try? URL(fileURLWithPath: path)
                 .resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties) ?? nil
@@ -730,7 +759,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 ))
             }
             let verify: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = {
-                let run = Self.spawn(executable: $0, arguments: $1, timeout: $2)
+                let run = Self.spawn(executable: $0, arguments: $1, deadline: .now() + $2)
                 return (run.output, run.exitCode, run.timedOut)
             }
             guard case .success = SteamCMDManagedInstaller.verifySignature(
@@ -895,7 +924,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
 
             let spawn: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = {
-                let run = Self.spawn(executable: $0, arguments: $1, timeout: $2)
+                let run = Self.spawn(executable: $0, arguments: $1, deadline: .now() + $2)
                 return (run.output, run.exitCode, run.timedOut)
             }
 
@@ -1503,84 +1532,86 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     continue candidates
                 }
 
-            let verify = Self.spawn(
-                executable: "/usr/bin/codesign",
-                arguments: ["--verify", "--strict", resolved.path],
-                timeout: 30
-            )
-            let describe = Self.spawn(
-                executable: "/usr/bin/codesign",
-                arguments: ["-dv", "--verbose=4", resolved.path],
-                timeout: 30
-            )
-            let signature = SteamCMDSignatureVerdict(
-                isValid: SteamCMDCodeSignatureParser.signatureValid(
-                    verifyExitCode: verify.exitCode, timedOut: verify.timedOut
-                ),
-                teamIdentifier: SteamCMDCodeSignatureParser.teamIdentifier(in: describe.output),
-                isHardenedRuntime: SteamCMDCodeSignatureParser.isHardenedRuntime(in: describe.output)
-            )
-            let quarantined = (try? URL(fileURLWithPath: resolved.path)
-                .resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties) ?? nil
-            // Hashed before the run: `+quit` self-updates, so a digest taken
-            // afterwards would describe a different file than the one launched.
-            let digest = SteamCMDBinaryDigest.sha256(ofFileAt: resolved.path)
-
-            // Launching is a privileged act: this process is unsandboxed and
-            // the path came from a sandboxed caller, so diagnosing must not
-            // become a way to execute an arbitrary Mach-O — trust gates run
-            // BEFORE the spawn. A refusal still reports everything learned;
-            // `isUsable` stays false because `launch` is nil.
-            guard signature.isValid,
-                  signature.teamIdentifier == SteamCMDBootstrapPackage.expectedTeamIdentifier,
-                  quarantined == nil else {
-                if firstRejection == nil {
-                    firstRejection = SteamCMDDiagnosis(
-                        source: resolved.source,
-                        canonicalPath: resolved.path,
-                        resolutionFailure: nil,
-                        sha256: digest,
-                        signature: signature,
-                        isQuarantined: quarantined != nil,
-                        launch: nil,
-                        unavailableReason: nil
-                    )
-                }
-                continue candidates
-            }
-
-            // The verdict. Everything above only explains it — a resolved,
-            // signed, unquarantined binary that cannot spawn is exactly the case
-            // the app's file-existence checks used to report as healthy.
-            let timeout = SteamCMDDiagnosisProbe.clampedLaunchTimeout(payload.launchTimeout)
-            let launch = Self.runSteamCMD(
-                steamCMDPath: resolved.path,
-                arguments: SteamCMDDiagnosisProbe.arguments,
-                timeout: timeout
-            )
-            let diagnosis = SteamCMDDiagnosis(
-                source: resolved.source,
-                canonicalPath: resolved.path,
-                resolutionFailure: nil,
-                sha256: digest,
-                signature: signature,
-                isQuarantined: quarantined != nil,
-                launch: SteamCMDLaunchProbe(
-                    outcome: SteamCMDLaunchProbe.classify(
-                        exitCode: launch.exitCode, timedOut: launch.timedOut
+                let verify = Self.spawn(
+                    executable: "/usr/bin/codesign",
+                    arguments: ["--verify", "--strict", resolved.path],
+                    deadline: .now() + 30
+                )
+                let describe = Self.spawn(
+                    executable: "/usr/bin/codesign",
+                    arguments: ["-dv", "--verbose=4", resolved.path],
+                    deadline: .now() + 30
+                )
+                let signature = SteamCMDSignatureVerdict(
+                    isValid: SteamCMDCodeSignatureParser.signatureValid(
+                        verifyExitCode: verify.exitCode, timedOut: verify.timedOut
                     ),
+                    teamIdentifier: SteamCMDCodeSignatureParser.teamIdentifier(in: describe.output),
+                    isHardenedRuntime: SteamCMDCodeSignatureParser.isHardenedRuntime(in: describe.output)
+                )
+                let quarantined = (try? URL(fileURLWithPath: resolved.path)
+                    .resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties) ?? nil
+                // Hashed before the run: `+quit` self-updates, so a digest taken
+                // afterwards would describe a different file than the one launched.
+                let digest = SteamCMDBinaryDigest.sha256(ofFileAt: resolved.path)
+
+                // Launching is a privileged act: this process is unsandboxed and
+                // the path came from a sandboxed caller, so diagnosing must not
+                // become a way to execute an arbitrary Mach-O — trust gates run
+                // BEFORE the spawn. A refusal still reports everything learned;
+                // `isUsable` stays false because `launch` is nil.
+                guard signature.isValid,
+                      signature.teamIdentifier == SteamCMDBootstrapPackage.expectedTeamIdentifier,
+                      quarantined == nil else {
+                    if firstRejection == nil {
+                        firstRejection = SteamCMDDiagnosis(
+                            source: resolved.source,
+                            canonicalPath: resolved.path,
+                            resolutionFailure: nil,
+                            sha256: digest,
+                            signature: signature,
+                            isQuarantined: quarantined != nil,
+                            launch: nil,
+                            unavailableReason: nil
+                        )
+                    }
+                    continue candidates
+                }
+
+                // The verdict. Everything above only explains it — a resolved,
+                // signed, unquarantined binary that cannot spawn is exactly the case
+                // the app's file-existence checks used to report as healthy.
+                let timeout = SteamCMDDiagnosisProbe.clampedLaunchTimeout(payload.launchTimeout)
+                let launch = Self.runSteamCMD(
+                    steamCMDPath: resolved.path,
                     arguments: SteamCMDDiagnosisProbe.arguments,
-                    exitCode: launch.exitCode,
-                    timeout: timeout,
-                    outputTail: launch.output
-                ),
-                unavailableReason: nil
-            )
-            if diagnosis.isUsable {
-                send(diagnosis)
-                return
-            }
-            if firstRejection == nil { firstRejection = diagnosis }
+                    timeout: timeout
+                )
+                let diagnosis = SteamCMDDiagnosis(
+                    source: resolved.source,
+                    canonicalPath: resolved.path,
+                    resolutionFailure: nil,
+                    sha256: digest,
+                    signature: signature,
+                    isQuarantined: quarantined != nil,
+                    launch: SteamCMDLaunchProbe(
+                        outcome: SteamCMDLaunchProbe.classify(
+                            exitCode: launch.exitCode, timedOut: launch.timedOut
+                        ),
+                        arguments: SteamCMDDiagnosisProbe.arguments,
+                        exitCode: launch.exitCode,
+                        timeout: timeout,
+                        outputTail: launch.output
+                    ),
+                    unavailableReason: nil
+                )
+                if diagnosis.isUsable {
+                    send(diagnosis)
+                    return
+                }
+                if firstRejection == nil {
+                    firstRejection = diagnosis
+                }
             }
             // Nothing worked: report the first real rejection, which carries the
             // signature/launch facts the remedy is derived from. `.notFound` only

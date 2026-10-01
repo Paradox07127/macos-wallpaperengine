@@ -35,13 +35,13 @@ struct EditDeskLibraryStateTests {
             let opened = await Self.settle(window) { Self.stage(in: window)?.progress == 2 && Self.searchField(in: window) != nil }
             try #require(opened, "the window never opened on the library")
             let field = try #require(Self.searchField(in: window))
-            Self.click(Self.chipCenter(.recent, rowMidY: field.convert(field.bounds, to: nil).midY, bundle: bundle), in: window)
+            Self.click(Self.chipCenter(.recent, after: field, bundle: bundle), in: window)
             try #require(window.makeFirstResponder(field))
             let editor = try #require(field.currentEditor() as? NSTextView)
             editor.insertText("S4b", replacementRange: NSRange(location: NSNotFound, length: 0))
-            // Name: the popover lists Recently Used, Name, Type.
+            // Select Name through the real native sort menu.
             let picked = await Self.pickSort(row: 1, in: window, rowMidY: field.convert(field.bounds, to: nil).midY)
-            try #require(picked, "the sort button never opened its popover")
+            try #require(picked, "the native sort menu never delivered the Name selection")
             let filtered = await Self.settle(window) { shelf() == ["S4b Alpha", "S4b Beta"] }
             try #require(filtered, Comment(rawValue: "control: Recent, S4b, by name never showed — the shelf is \(shelf())"))
 
@@ -349,29 +349,74 @@ struct EditDeskLibraryStateTests {
         views(in: window).lazy.compactMap { $0 as? NSTextField }.first(where: \.isEditable)
     }
 
-    /// Clicks the sort button 8pt inside its trailing end — the row ends one gutter in, after the
-    /// "+" and an 8pt gap — then the popover's `index`th row from the top. The rows carry no title.
+    /// Opens the current native widget and invokes its actual localized Picker action.
     private static func pickSort(row index: Int, in window: NSWindow, rowMidY: CGFloat) async -> Bool {
-        let plus = NSHostingView(rootView: GlassIconButton("plus", size: .regular) {}).fittingSize.width
-        let trailing = (window.contentView?.bounds.width ?? 0) - DesignTokens.EditDesk.Spacing.gutter - plus - DesignTokens.EditDesk.Spacing.s8
-        let hider = TransparentPopovers()
-        NotificationCenter.default.addObserver(
-            hider, selector: #selector(TransparentPopovers.willShow(_:)), name: NSPopover.willShowNotification, object: nil
-        )
-        defer { NotificationCenter.default.removeObserver(hider) }
-        click(NSPoint(x: trailing - 8, y: rowMidY), in: window)
-        var rows: [NSButton] = []
-        await settle(window) {
-            rows = NSApp.windows
-                .filter { $0 !== window && NSStringFromClass(type(of: $0)).contains("Popover") }
-                .flatMap { views(in: $0) }
-                .compactMap { $0 as? NSButton }
-                .sorted { $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY }
-            return rows.count > index
+        guard SavedLibraryModel.Sort.allCases.indices.contains(index) else { return false }
+        let bundle = AppLanguagePreference.current(in: .appScoped()).localizationBundle()
+        func title(_ order: SavedLibraryModel.Sort) -> String {
+            NSLocalizedString(LibraryChipsRow.sortTitle(order).probeKey, bundle: bundle, comment: "")
         }
-        guard rows.count > index else { return false }
-        rows[index].performClick(nil)
-        return true
+        let picker = NativeSortSelection(title: title(SavedLibraryModel.Sort.allCases[index]),
+                                         requiredTitles: [title(.recentlyUsed), title(.name), title(.type)])
+        NotificationCenter.default.addObserver(
+            picker, selector: #selector(NativeSortSelection.didBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil
+        )
+        defer { picker.cancel(); NotificationCenter.default.removeObserver(picker) }
+        let plus = NSHostingView(rootView: GlassIconButton("plus", size: .large) {}).fittingSize.width
+        let trailing = (window.contentView?.bounds.width ?? 0) - DesignTokens.EditDesk.Spacing.gutter - plus - DesignTokens.EditDesk.Spacing.s8
+        click(NSPoint(x: trailing - 8, y: rowMidY), in: window)
+        await settle(window) { picker.selected }
+        return picker.selected
+    }
+
+    @MainActor
+    private final class NativeSortSelection: NSObject {
+        let title: String
+        let requiredTitles: Set<String>
+        private var root: NSMenu?
+        private var selectedMenu: NSMenu?
+        private var index: Int?
+        private var timer: Timer?
+        private(set) var selected = false
+
+        init(title: String, requiredTitles: Set<String>) {
+            self.title = title
+            self.requiredTitles = requiredTitles
+        }
+
+        @objc func didBeginTracking(_ notification: Notification) {
+            guard let menu = notification.object as? NSMenu else { return }
+            func choices(_ menu: NSMenu) -> [(NSMenu, Int, String)] {
+                menu.items.enumerated().flatMap { index, item in
+                    [(menu, index, item.title)] + (item.submenu.map(choices) ?? [])
+                }
+            }
+            let options = choices(menu)
+            guard requiredTitles.isSubset(of: Set(options.map(\.2))),
+                  let choice = options.first(where: { $0.2 == title }) else { return }
+            root = menu
+            selectedMenu = choice.0
+            index = choice.1
+            // Native tracking uses a nested event loop; a main-run-loop timer selects after it opens.
+            timer = Timer(timeInterval: 0.01, target: self, selector: #selector(selectSort), userInfo: nil, repeats: false)
+            if let timer {
+                RunLoop.main.add(timer, forMode: .eventTracking)
+                RunLoop.main.add(timer, forMode: .common)
+            }
+        }
+
+        @objc private func selectSort() {
+            guard let selectedMenu, let index, let item = selectedMenu.item(at: index),
+                  item.isEnabled, item.action != nil else { root?.cancelTracking(); return }
+            selectedMenu.performActionForItem(at: index)
+            selected = true
+            root?.cancelTracking()
+        }
+
+        func cancel() {
+            timer?.invalidate()
+            root?.cancelTracking()
+        }
     }
 
     /// The release goes on the queue first, where a control that tracks the press takes it. A SwiftUI
@@ -405,30 +450,19 @@ struct EditDeskLibraryStateTests {
         return NSPoint(x: leading + widths[index] / 2, y: window.frame.height - DesignTokens.EditDesk.Spacing.topBar / 2)
     }
 
-    /// `FilterChip`s from the shelf chrome's gutter: the caption title plus 10pt a side, 8pt apart.
-    private static func chipCenter(_ chip: SavedLibraryModel.Chip, rowMidY: CGFloat, bundle: Bundle) -> NSPoint {
-        let font = NSFont.systemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize)
+    /// The search is first in the current toolbar. Its empty field ends one `md` padding before
+    /// the filter row; measure the actual localized `FilterChip`, including its current font/padding.
+    private static func chipCenter(_ chip: SavedLibraryModel.Chip, after field: NSTextField, bundle: Bundle) -> NSPoint {
         let chips = SavedLibraryModel.Chip.allCases
         let widths = chips.map { chip in
-            let title = NSLocalizedString(HomePage.chipTitle(chip).probeKey, bundle: bundle, comment: "")
-            return ceil((title as NSString).size(withAttributes: [.font: font]).width) + 2 * 10
+            NSHostingView(rootView: FilterChip(title: Text(HomePage.chipTitle(chip), bundle: bundle), isSelected: false) {}).fittingSize.width
         }
+        let fieldRect = field.convert(field.bounds, to: nil)
         let index = chips.firstIndex(of: chip) ?? 0
-        let leading = DesignTokens.EditDesk.Spacing.gutter + widths[..<index].reduce(0, +)
-            + DesignTokens.EditDesk.Spacing.s8 * CGFloat(index)
-        return NSPoint(x: leading + widths[index] / 2, y: rowMidY)
+        let leading = fieldRect.maxX + DesignTokens.Spacing.md + DesignTokens.Spacing.sm
+            + widths[..<index].reduce(0, +) + DesignTokens.Spacing.sm * CGFloat(index)
+        return NSPoint(x: leading + widths[index] / 2, y: fieldRect.midY)
     }
 
     private final class WindowDelegate: NSObject, NSWindowDelegate {}
-
-    /// `parkOffScreen()` leaves a corner of this titled window on a display at alpha 0; a popover anchored
-    /// in it opens on that display, so it is made transparent before it is ordered in.
-    @MainActor
-    private final class TransparentPopovers: NSObject {
-        @objc func willShow(_ notification: Notification) {
-            guard let popover = notification.object as? NSPopover else { return }
-            popover.animates = false
-            popover.contentViewController?.view.window?.alphaValue = 0
-        }
-    }
 }

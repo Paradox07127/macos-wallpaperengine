@@ -13,6 +13,17 @@ final class WallpaperExportService {
         let now: @Sendable () -> Date
         /// JPEG data (480×270 target) for the already-copied video, nil on failure.
         let makeThumbnailJPEG: @Sendable (URL) async -> Data?
+
+        /// Copies an admitted loose video into staging. Injectable so rejection tests never open a special file.
+        var copyVideoFile: @Sendable (URL, URL) throws -> Void = { source, destination in
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+
+        /// The same source admission precedes package parsing; injectable for special-file rejection fixtures.
+        var extractVideoFromPackage: @Sendable (URL, String, URL) throws -> Void = { source, name, destination in
+            try WallpaperExportService.extractPackagedVideo(packageURL: source, entryName: name, to: destination)
+        }
+
         /// The appex this app ships. A heartbeat stamped with anything else is not evidence about our extension. `nil` disables the check.
         var expectedProvider: SystemWallpaperProviderIdentity?
         var isProviderRunning: @Sendable (Int32) -> Bool = { pid in
@@ -349,6 +360,8 @@ final class WallpaperExportService {
 
     private func performPublish(id itemID: String, title: String, source: PublishSource) async throws {
         let resolver = dependencies.resolver
+        let copyVideoFile = dependencies.copyVideoFile
+        let extractVideoFromPackage = dependencies.extractVideoFromPackage
         let videosDirectory = videosDirectory
         let token = UUID()
         activePublishes[token] = itemID
@@ -380,14 +393,19 @@ final class WallpaperExportService {
             try manager.createDirectory(at: videosDirectory, withIntermediateDirectories: true)
             do {
                 try SecurityScopedBookmarkResolver.withScopedAccess(sourceURL) { _ in
+                    guard sourceURL.isFileURL else {
+                        throw ServiceError.unsupportedContent
+                    }
+                    // Keep the resolving bookmark's scope alive while validating and copying the local target.
+                    // Copying the link itself would leave the provider dependent on the original source.
+                    let readableSource = sourceURL.resolvingSymlinksInPath()
+                    guard try readableSource.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                        throw ServiceError.unsupportedContent
+                    }
                     if let packageEntryName {
-                        try Self.extractPackagedVideo(
-                            packageURL: sourceURL,
-                            entryName: packageEntryName,
-                            to: staging
-                        )
+                        try extractVideoFromPackage(readableSource, packageEntryName, staging)
                     } else {
-                        try manager.copyItem(at: sourceURL, to: staging)
+                        try copyVideoFile(readableSource, staging)
                         // `copyItem` carries the source's mtime over. Stamp the copy with now so the orphan sweep judges age by when it entered the library.
                         try? manager.setAttributes(
                             [.modificationDate: Date()], ofItemAtPath: staging.path

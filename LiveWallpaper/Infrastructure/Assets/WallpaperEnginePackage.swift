@@ -165,18 +165,11 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         let fileManager = FileManager.default
         let parentURL = rootURL.deletingLastPathComponent()
         let rootName = rootURL.lastPathComponent
-        let inflightURL = parentURL.appendingPathComponent("\(rootName).inflight", isDirectory: true)
-        let backupURL = parentURL.appendingPathComponent("\(rootName).replaced", isDirectory: true)
+        let runID = UUID().uuidString
+        let inflightURL = parentURL.appendingPathComponent("\(rootName).inflight-\(runID)", isDirectory: true)
+        let backupURL = parentURL.appendingPathComponent("\(rootName).replaced-\(runID)", isDirectory: true)
 
         try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
-
-        if !fileManager.fileExists(atPath: rootURL.path),
-           fileManager.fileExists(atPath: backupURL.path) {
-            try fileManager.moveItem(at: backupURL, to: rootURL)
-        }
-
-        try? fileManager.removeItem(at: inflightURL)
-        try? fileManager.removeItem(at: backupURL)
         try fileManager.createDirectory(at: inflightURL, withIntermediateDirectories: true)
 
         let inflightPath = inflightURL.standardizedFileURL.path

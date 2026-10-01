@@ -26,6 +26,8 @@ struct AnimatedGIFThumbnail: View {
     @State private var controller = GIFAnimationController()
     @State private var phase: LoadPhase = .loading
     @State private var isVisible = false
+    @State private var hostAllowsPlayback = false
+    private let loadAsset: @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A collapsed inspector keeps its subtree mounted, so `onDisappear` never
     /// fires and `isVisible` stays true — an `.autoPlay` hero would keep decoding.
@@ -36,7 +38,7 @@ struct AnimatedGIFThumbnail: View {
     private var playbackGate: ThumbnailPlaybackGate {
         ThumbnailPlaybackGate(
             isVisible: isVisible,
-            hostIsPresented: inspectorContentIsVisible,
+            hostIsPresented: phase == .ready && inspectorContentIsVisible && hostAllowsPlayback,
             isHovered: isHovered,
             reduceMotion: reduceMotion,
             isBlurred: isBlurred,
@@ -51,7 +53,11 @@ struct AnimatedGIFThumbnail: View {
         previewSize: WorkshopPreviewSize = .tile,
         isBlurred: Bool = false,
         contentMode: ContentMode = .fill,
-        isHovered: Binding<Bool> = .constant(false)
+        isHovered: Binding<Bool> = .constant(false),
+        controller: GIFAnimationController = GIFAnimationController(),
+        loadAsset: @escaping @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset? = { url, size in
+            await WorkshopPreviewImageLoader.shared.loadAsset(url, size: size)
+        }
     ) {
         self.url = url
         self.playbackMode = playbackMode
@@ -60,6 +66,8 @@ struct AnimatedGIFThumbnail: View {
         self.isBlurred = isBlurred
         self.contentMode = contentMode
         self._isHovered = isHovered
+        _controller = State(initialValue: controller)
+        self.loadAsset = loadAsset
     }
 
     var body: some View {
@@ -80,6 +88,17 @@ struct AnimatedGIFThumbnail: View {
         }
         .animation(DesignTokens.motion(reduceMotion, .easeInOut(duration: 0.15)), value: controller.isAnimating)
         .clipped()
+        .background {
+            // Static and missing previews have no playback lifecycle to observe.
+            if phase == .ready, controller.hasAnimatedAsset {
+                GIFHostVisibilityProbe { allowed in
+                    hostAllowsPlayback = allowed
+                    // Resign/activate can coalesce into one SwiftUI update after the coordinator stopped us.
+                    applyPlaybackGate(hostAllowsPlayback: allowed)
+                }
+                .id(url)
+            }
+        }
         .task(id: url) { await load() }
         .onAppear {
             isVisible = true
@@ -139,13 +158,15 @@ struct AnimatedGIFThumbnail: View {
 
     private func load() async {
         controller.stop(resetToPoster: false)
+        // A new source needs its own mounted host result before it can start.
+        hostAllowsPlayback = false
         guard let url else {
             controller.setAsset(nil)
             phase = .empty
             return
         }
         phase = .loading
-        let asset = await WorkshopPreviewImageLoader.shared.loadAsset(url, size: previewSize)
+        let asset = await loadAsset(url, previewSize)
         guard !Task.isCancelled else { return }
         controller.setAsset(asset)
         phase = asset == nil ? .failed : .ready
@@ -153,8 +174,12 @@ struct AnimatedGIFThumbnail: View {
         applyPlaybackGate()
     }
 
-    private func applyPlaybackGate() {
-        guard playbackGate.allowsPlayback else {
+    private func applyPlaybackGate(hostAllowsPlayback: Bool? = nil) {
+        var gate = playbackGate
+        if let hostAllowsPlayback {
+            gate.hostIsPresented = phase == .ready && inspectorContentIsVisible && hostAllowsPlayback
+        }
+        guard gate.allowsPlayback else {
             controller.stop()
             return
         }
@@ -170,6 +195,14 @@ final class GIFAnimationController {
 
     private let clientID = UUID()
     private var asset: WorkshopPreviewAsset?
+
+    var hasAnimatedAsset: Bool {
+        if case .animatedGIF = asset {
+            return true
+        }
+        return false
+    }
+
     private var playbackTask: Task<Void, Never>?
     private var debounceTask: Task<Void, Never>?
 

@@ -1,6 +1,7 @@
 import Foundation
 #if !LITE_BUILD
 import Darwin
+import LiveWallpaperProWPE
 #endif
 @testable import LiveWallpaper
 import Testing
@@ -112,6 +113,55 @@ struct WPEProjectPropertyInputSafetyTests {
         try Data("regular".utf8).write(to: root.appendingPathComponent("regular.json"))
         #expect(provider.exists(atRelativePath: "regular.json"))
         #expect(try provider.data(atRelativePath: "regular.json") == Data("regular".utf8))
+    }
+
+    @Test("NUL input never aliases a root or a truncated filesystem path")
+    func rejectsNULPaths() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("WPE-NUL-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("ordinary".utf8).write(to: root.appendingPathComponent("regular.json"))
+        let provider = WPEDirectorySceneAssetProvider(rootURL: root)
+        for path in ["\0", "regular.json\0suffix", "sub/\0file"] {
+            #expect(!WPEPathSafety.isSafePathComponent(path))
+            #expect(!WPEPathSafety.isSafeProjectID(path))
+            #expect(!WPEPathSafety.isSafeRelativePath(path))
+            #expect(!WPEPathSafety.isStrictSafeRelativePath(path))
+            #expect(!WPEPathSafety.isSafeCacheRelativePath("wpe-cache/" + path))
+            #expect(WPEPathSafety.resourceURL(root: root, relativePath: path) == nil)
+            #expect(WPEPathSafety.strictResourceURL(root: root, relativePath: path) == nil)
+            #expect(!provider.exists(atRelativePath: path))
+            #expect(throws: WPESceneAssetProviderError.invalidRelativePath(path)) { try provider.data(atRelativePath: path) }
+            #expect(throws: WPESceneAssetProviderError.invalidRelativePath(path)) { try provider.stagedURL(atRelativePath: path) }
+        }
+        #expect(try provider.data(atRelativePath: "regular.json") == Data("ordinary".utf8))
+        try Data("literal percent".utf8).write(to: root.appendingPathComponent("literal%00.json"))
+        #expect(try provider.data(atRelativePath: "literal%00.json") == Data("literal percent".utf8))
+    }
+
+    @Test("A missing leaf does not hide an escaping parent symlink")
+    func rejectsEscapingMissingLeaf() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("WPE-missing-leaf-\(UUID().uuidString)", isDirectory: true)
+        let root = base.appendingPathComponent("root", isDirectory: true)
+        let outside = base.appendingPathComponent("root-sibling", isDirectory: true)
+        let inside = root.appendingPathComponent("inside", isDirectory: true)
+        try FileManager.default.createDirectory(at: inside, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try Data("outside".utf8).write(to: outside.appendingPathComponent("exists.json"))
+        try Data("inside".utf8).write(to: inside.appendingPathComponent("exists.json"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("escape"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("internal"), withDestinationURL: inside)
+        let provider = WPEDirectorySceneAssetProvider(rootURL: root)
+        for path in ["escape/exists.json", "escape/missing.json", "escape/missing/sub/file.json"] {
+            #expect(WPEPathSafety.resourceURL(root: root, relativePath: path) == nil)
+            #expect(WPEPathSafety.strictResourceURL(root: root, relativePath: path) == nil)
+            #expect(!provider.exists(atRelativePath: path))
+            #expect(throws: WPESceneAssetProviderError.invalidRelativePath(path)) { try provider.data(atRelativePath: path) }
+        }
+        #expect(try provider.data(atRelativePath: "internal/exists.json") == Data("inside".utf8))
+        let expected = inside.resolvingSymlinksInPath().appendingPathComponent("missing/sub/file.json")
+        #expect(WPEPathSafety.strictResourceURL(root: root, relativePath: "internal/missing/sub/file.json") == expected)
     }
 
     private func slider(_ metadata: [String: Any]) throws -> WallpaperEngineProjectPropertySchema.Property {

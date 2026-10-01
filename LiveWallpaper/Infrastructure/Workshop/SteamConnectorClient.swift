@@ -194,6 +194,7 @@ enum SteamConnectorClient {
     // MARK: - Transport
 
     private final class ProgressReceiver: NSObject, SteamConnectorProgressProtocol {
+        private let closed = OSAllocatedUnfairLock(initialState: false)
         private let handler: @Sendable (SteamOperationProgress) -> Void
 
         init(handler: @escaping @Sendable (SteamOperationProgress) -> Void) {
@@ -202,11 +203,26 @@ enum SteamConnectorClient {
 
         func connectorDidReportProgress(_ payload: Data) {
             guard let progress = try? JSONDecoder().decode(SteamOperationProgress.self, from: payload) else { return }
-            handler(progress)
+            // Delivered under the lock so that once `close()` returns, no progress can follow the terminal result.
+            closed.withLock { isClosed in
+                guard !isClosed else { return }
+                handler(progress)
+            }
+        }
+
+        func close() {
+            closed.withLock { $0 = true }
         }
     }
 
     #if DEBUG
+    static func probeEnvironmentForTesting() async -> SteamConnectorEnvironmentProbe? {
+        guard let data = await call(timeout: 30, { connector, reply in
+            connector.probeEnvironment(with: reply)
+        }) else { return nil }
+        return try? JSONDecoder().decode(SteamConnectorEnvironmentProbe.self, from: data)
+    }
+
     /// Tests substitute an in-process anonymous listener for the XPC service.
     nonisolated(unsafe) static var connectionFactoryForTesting: (@Sendable () -> NSXPCConnection)?
     #endif
@@ -245,9 +261,10 @@ enum SteamConnectorClient {
         // `nonisolated(unsafe)`: the cancellation handler is the only off-actor user and it calls `invalidate()`, which NSXPCConnection serves from any thread.
         nonisolated(unsafe) let connection = makeConnection()
         connection.remoteObjectInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
-        if let onProgress {
+        let progressReceiver = onProgress.map { ProgressReceiver(handler: $0) }
+        if let progressReceiver {
             connection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProgressProtocol).self)
-            connection.exportedObject = ProgressReceiver(handler: onProgress)
+            connection.exportedObject = progressReceiver
         }
         didUseConnector = true
         connection.resume()
@@ -261,7 +278,9 @@ enum SteamConnectorClient {
                 defer { box = nil }
                 return box
             }
-            continuation?.resume(returning: value)
+            guard let continuation else { return }
+            progressReceiver?.close()
+            continuation.resume(returning: value)
         }
 
         return await withTaskCancellationHandler {

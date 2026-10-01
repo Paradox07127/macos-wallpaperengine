@@ -19,6 +19,7 @@ private final class ScriptedSteamCMD {
 
     func run() -> SteamCMDSelfUpdateRestartPolicy.Outcome<FakeRun> {
         SteamCMDSelfUpdateRestartPolicy.run(
+            deadline: SteamCMDRunDeadline(timeout: 60),
             execute: {
                 events.append("execute")
                 guard !script.isEmpty else { return FakeRun(exitCode: -99) }
@@ -155,6 +156,86 @@ struct SteamCMDSelfUpdateRestartTests {
         #expect(diagnosis.isUsable)
     }
 
+    @Test("Remaining time follows monotonic elapsed time and clamps after expiry")
+    func monotonicRemaining() {
+        let start = DispatchTime(uptimeNanoseconds: 1_000_000_000)
+        let deadline = SteamCMDRunDeadline(timeout: 2, start: start)
+        #expect(deadline.remaining(at: start) == 2)
+        #expect(deadline.remaining(at: DispatchTime(uptimeNanoseconds: 2_500_000_000)) == 0.5)
+        #expect(deadline.remaining(at: DispatchTime(uptimeNanoseconds: 3_000_000_000)) == 0)
+        #expect(deadline.remaining(at: DispatchTime(uptimeNanoseconds: 4_000_000_000)) == 0)
+    }
+
+    @Test("An expired or cancelled admission never launches a child")
+    func expiredAdmission() {
+        let now = DispatchTime(uptimeNanoseconds: 1_000_000_000)
+        let deadline = SteamCMDRunDeadline(timeout: 0, start: now)
+        for cancelled in [false, true] {
+            var calls = 0
+            let outcome = SteamCMDSelfUpdateRestartPolicy.run(deadline: deadline, now: { now },
+                                                              isCancelled: { cancelled }, execute: { calls += 1; return FakeRun(exitCode: 0) },
+                                                              exitCode: { $0.exitCode }, timedOut: { $0.timedOut }, revalidate: { calls += 1; return nil })
+            if cancelled {
+                guard case .cancelled = outcome else { Issue.record("expected cancellation"); continue }
+            } else {
+                guard case .deadlineExceeded(nil) = outcome else { Issue.record("expected empty expiry"); continue }
+            }
+            #expect(calls == 0)
+        }
+    }
+
+    @Test("A restart consumes the first attempt's elapsed time before any new trust helper")
+    func attemptExhaustsSharedBudget() {
+        let start = DispatchTime(uptimeNanoseconds: 1_000_000_000)
+        let deadline = SteamCMDRunDeadline(timeout: 1, start: start)
+        var clock = start
+        var executions = 0
+        var validations = 0
+        let outcome = SteamCMDSelfUpdateRestartPolicy.run(deadline: deadline, now: { clock }, execute: {
+            executions += 1
+            clock = deadline.time
+            return FakeRun(exitCode: 42)
+        }, exitCode: { $0.exitCode }, timedOut: { $0.timedOut }, revalidate: { validations += 1; return nil })
+        guard case let .deadlineExceeded(last) = outcome else { Issue.record("must retain expiry diagnosis"); return }
+        #expect(last?.exitCode == 42)
+        #expect(executions == 1)
+        #expect(validations == 0)
+    }
+
+    @Test("Signature budget expiry is a timeout, even if the helper reports an invalid signature")
+    func signatureExhaustsSharedBudget() {
+        let start = DispatchTime(uptimeNanoseconds: 1_000_000_000)
+        let deadline = SteamCMDRunDeadline(timeout: 1, start: start)
+        var clock = start
+        var executions = 0
+        let outcome = SteamCMDSelfUpdateRestartPolicy.run(deadline: deadline, now: { clock }, execute: {
+            executions += 1
+            return FakeRun(exitCode: 42)
+        }, exitCode: { $0.exitCode }, timedOut: { $0.timedOut }, revalidate: {
+            clock = deadline.time
+            return "codesign timed out"
+        })
+        guard case let .deadlineExceeded(last) = outcome else { Issue.record("expiry must take precedence over trust failure"); return }
+        #expect(last?.exitCode == 42)
+        #expect(executions == 1)
+    }
+
+    @Test("Cancellation during replacement verification cannot relaunch or become a trust failure")
+    func cancellationDuringVerification() {
+        let deadline = SteamCMDRunDeadline(timeout: 60)
+        var cancelled = false
+        var executions = 0
+        let outcome = SteamCMDSelfUpdateRestartPolicy.run(deadline: deadline, isCancelled: { cancelled }, execute: {
+            executions += 1
+            return FakeRun(exitCode: 42)
+        }, exitCode: { $0.exitCode }, timedOut: { $0.timedOut }, revalidate: {
+            cancelled = true
+            return "terminated verification"
+        })
+        guard case .cancelled = outcome else { Issue.record("must preserve cancellation"); return }
+        #expect(executions == 1)
+    }
+
     @Test("The connector's funnel is the one place restarts happen")
     func funnelRoutesThroughRestartEngine() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
@@ -162,7 +243,8 @@ struct SteamCMDSelfUpdateRestartTests {
             source.range(of: "static func runSteamCMD("),
             "SteamConnector.swift has no runSteamCMD — the scan is misconfigured, not passing."
         )
-        let body = String(source[start.lowerBound...].prefix(3_500))
+        let end = try #require(source.range(of: "private static func spawn(", range: start.upperBound ..< source.endIndex))
+        let body = String(source[start.lowerBound ..< end.lowerBound])
         #expect(body.contains("SteamCMDSelfUpdateRestartPolicy.run"))
         #expect(body.contains("verifySignature"))
         #expect(body.contains("rejectIfQuarantined"))

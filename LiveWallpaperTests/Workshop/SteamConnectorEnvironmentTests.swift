@@ -8,6 +8,15 @@ import os
 @Suite("SteamConnector execution boundary", .serialized)
 struct SteamConnectorEnvironmentTests {
 
+    @Test("The production client satisfies the embedded connector's signing requirement")
+    @MainActor
+    func signedReadOnlyConnection() async throws {
+        #expect(SteamConnectorClient.connectionFactoryForTesting == nil)
+        let probe = try #require(await SteamConnectorClient.probeEnvironmentForTesting())
+        #expect(probe.uid == getuid())
+        #expect(probe.nsHomeDirectory == probe.posixHomeDirectory)
+    }
+
     @Test("The connector runs outside the app sandbox with the real home")
     func connectorRunsOutsideTheSandbox() throws {
         let connection = NSXPCConnection(serviceName: "com.loomscreen.pro.SteamConnector")

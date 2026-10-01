@@ -13,6 +13,14 @@ struct SteamConnectorClientCancellationTests {
         let sawHostExit = OSAllocatedUnfairLock(initialState: false)
         private let held = OSAllocatedUnfairLock<[@Sendable (Data) -> Void]>(initialState: [])
 
+        var hasReply: Bool {
+            held.withLock { !$0.isEmpty }
+        }
+
+        func reply(_ data: Data) {
+            held.withLock { $0.last }?(data)
+        }
+
         private func hold(_ reply: @escaping @Sendable (Data) -> Void) {
             invoked.withLock { $0 = true }
             held.withLock { $0.append(reply) }
@@ -205,6 +213,62 @@ struct SteamConnectorClientCancellationTests {
             delegate.connector.sawHostExit.withLock { $0 },
             "a cancelled wait took the in-flight count back to zero, so quitting skipped the only RPC that can signal the child"
         )
+    }
+
+    @MainActor
+    private func progressFixture() -> (NSXPCListener, Delegate, NSXPCConnection) {
+        let listener = NSXPCListener.anonymous()
+        let delegate = Delegate()
+        listener.delegate = delegate
+        listener.resume()
+        // The endpoint and connection remain alive until the isolated test completes.
+        nonisolated(unsafe) let connection = NSXPCConnection(listenerEndpoint: listener.endpoint)
+        SteamConnectorClient.connectionFactoryForTesting = { connection }
+        return (listener, delegate, connection)
+    }
+
+    @MainActor
+    private func receiver(from connection: NSXPCConnection, delegate: Delegate) async throws -> any SteamConnectorProgressProtocol {
+        for _ in 0 ..< 50 where !delegate.connector.hasReply {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(delegate.connector.hasReply)
+        return try #require(connection.exportedObject as? any SteamConnectorProgressProtocol)
+    }
+
+    private func progressPayload(_ bytes: UInt64) throws -> Data {
+        try JSONEncoder().encode(SteamOperationProgress(
+            phase: .downloading, fraction: Double(bytes) / 10000,
+            downloadedBytes: bytes, totalBytes: 10000
+        ))
+    }
+
+    enum CallEnd: CaseIterable {
+        case reply, cancellation, transportError
+    }
+
+    @Test("progress arriving after the call ends is not delivered", .timeLimit(.minutes(1)), arguments: CallEnd.allCases)
+    @MainActor
+    func lateProgressIsDropped(end: CallEnd) async throws {
+        let (listener, delegate, connection) = progressFixture()
+        defer { SteamConnectorClient.connectionFactoryForTesting = nil; listener.invalidate() }
+        let published = OSAllocatedUnfairLock<[UInt64?]>(initialState: [])
+        let call = Task {
+            await SteamConnectorClient.downloadWorkshopItem(workshopID: "1", accountName: "someone", libraryPath: "/tmp") { update in
+                published.withLock { $0.append(update.downloadedBytes) }
+            }
+        }
+        defer { call.cancel() }
+        let receiver = try await receiver(from: connection, delegate: delegate)
+        try receiver.connectorDidReportProgress(progressPayload(99))
+        switch end {
+        case .reply: delegate.connector.reply(Data("{}".utf8))
+        case .cancellation: call.cancel()
+        case .transportError: connection.invalidate()
+        }
+        _ = await call.value
+        try receiver.connectorDidReportProgress(progressPayload(100))
+        #expect(published.withLock { $0 } == [99])
     }
 
     // MARK: - Source guards

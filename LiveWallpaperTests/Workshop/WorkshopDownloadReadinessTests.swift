@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import Testing
+import os
 @testable import LiveWallpaper
 
 @Suite("Workshop download readiness", .serialized)
@@ -232,7 +233,7 @@ struct WorkshopDownloadReadinessTests {
     }
 
     @Test("A finished download is authorized by containment, not by the reported path")
-    func downloadedItemDirectoryIsRevalidated() throws {
+    func downloadedItemDirectoryIsRevalidated() async throws {
         let doctor = try makeService()
         let fm = FileManager.default
         let root = fm.temporaryDirectory
@@ -251,23 +252,130 @@ struct WorkshopDownloadReadinessTests {
         try Data("{}".utf8).write(to: item.appendingPathComponent("project.json"))
 
         #expect(
-            doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot)?.path
+            await doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot)?.path
                 == item.resolvingSymlinksInPath().path
         )
 
         try fm.removeItem(at: item)
         try fm.createSymbolicLink(at: item, withDestinationURL: outside)
-        #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot) == nil)
+        #expect(await doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot) == nil)
 
-        #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "200", steamRoot: steamRoot) == nil)
+        #expect(await doctor.authorizedDownloadedItemDirectory(workshopID: "200", steamRoot: steamRoot) == nil)
+    }
 
-        // The download path cannot be driven without the connector, so pin that
-        // it hands the importer the revalidated folder and not the reply's path.
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift"
+    @Test("Slow inventory stays off MainActor and obsolete downloads never adopt", .timeLimit(.minutes(1)), arguments: AdoptionMutation.allCases, AdoptionInventoryPhase.allCases)
+    fileprivate func slowInventoryDoesNotAdoptObsoleteDownload(mutation: AdoptionMutation, phase: AdoptionInventoryPhase) async throws {
+        let fixture = try AdoptionLibraryFixture()
+        defer { fixture.discard() }
+        let inventory = BlockingAdoptionInventory(phase: phase)
+        defer { inventory.release() }
+        let doctor = SteamCMDDoctorService(
+            defaults: fixture.suite.defaults,
+            workshopFileInventory: inventory,
+            operationCoordinator: SteamCMDDoctorOperationCoordinator(),
+            downloadOperation: { @Sendable item, account, library, _ in
+                #expect(item == "100")
+                #expect(account == "someone")
+                #expect(library == fixture.steamRoot.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false))
+                return SteamWorkshopDownloadResult(
+                    outcome: .downloaded, itemPath: "/untrusted/reported-path", diagnosticTail: "",
+                    executedBinaryPath: "/tmp/fixture-execution-receipt"
+                )
+            }
         )
-        #expect(!source.contains("onContentReady(URL(fileURLWithPath:"))
-        #expect(source.contains("guard let folder = authorizedDownloadedItemDirectory("))
+        configureAllGreen(doctor, bookmark: fixture.bookmark)
+        doctor.lastBinarySHA256 = "fixture-sha"
+        let callbacks = AdoptionCallbackLog()
+        let task = Task {
+            await doctor.downloadWorkshopItem(100) { @Sendable url in
+                callbacks.paths.append(url.path(percentEncoded: false))
+                return url.path(percentEncoded: false)
+            }
+        }
+        await waitForInventory { inventory.hasStarted }
+        #expect(inventory.hasStarted)
+        #expect(!inventory.hasFinished, "MainActor only continued after inventory timed out")
+        #expect(!inventory.ranOnMainThread)
+
+        switch mutation {
+        case .unchanged: break
+        case .cancelled: task.cancel()
+        case .accountChanged: try doctor.setUsername("bob")
+        case .accountChangedBack:
+            try doctor.setUsername("bob")
+            try doctor.setUsername("someone")
+        case .libraryChanged: doctor.workdirBookmarkData = fixture.otherBookmark
+        case .libraryChangedBack:
+            doctor.workdirBookmarkData = fixture.otherBookmark
+            doctor.workdirBookmarkData = fixture.bookmark
+        case .symlinkSwap:
+            try FileManager.default.removeItem(at: fixture.item)
+            try FileManager.default.createSymbolicLink(at: fixture.item, withDestinationURL: fixture.outside)
+        }
+        inventory.release()
+        let result = await task.value
+        if mutation == .unchanged {
+            #expect(callbacks.paths == [fixture.item.resolvingSymlinksInPath().path(percentEncoded: false)])
+            guard case .imported = result else {
+                Issue.record("unchanged authorized content was not adopted")
+                return
+            }
+        } else {
+            #expect(callbacks.paths.isEmpty)
+            guard case .failed = result else {
+                Issue.record("obsolete or replaced content was adopted")
+                return
+            }
+        }
+        #expect(doctor.lastExecutedBinaryPath == "/tmp/fixture-execution-receipt")
+    }
+
+    @Test("A connector reply from a previous binding does not adopt", .timeLimit(.minutes(1)), arguments: [false, true])
+    func lateConnectorReplyCannotAdoptChangedBinding(changeAccount: Bool) async throws {
+        let fixture = try AdoptionLibraryFixture()
+        defer { fixture.discard() }
+        let reply = AdoptionReplyGate()
+        defer { Task { await reply.release() } }
+        let doctor = SteamCMDDoctorService(
+            defaults: fixture.suite.defaults,
+            operationCoordinator: SteamCMDDoctorOperationCoordinator(),
+            downloadOperation: { @Sendable _, _, _, _ in await reply.wait() }
+        )
+        configureAllGreen(doctor, bookmark: fixture.bookmark)
+        doctor.lastBinarySHA256 = "fixture-sha"
+        let callbacks = AdoptionCallbackLog()
+        let task = Task {
+            await doctor.downloadWorkshopItem(100) { @Sendable url in
+                callbacks.paths.append(url.path(percentEncoded: false))
+                return url.path(percentEncoded: false)
+            }
+        }
+        await waitForInventory { await reply.hasStarted }
+        #expect(await reply.hasStarted)
+        if changeAccount {
+            try doctor.setUsername("bob")
+            try doctor.setUsername("someone")
+        } else {
+            doctor.workdirBookmarkData = fixture.otherBookmark
+            doctor.workdirBookmarkData = fixture.bookmark
+        }
+        await reply.release()
+        let result = await task.value
+        #expect(callbacks.paths.isEmpty)
+        guard case .failed = result else {
+            Issue.record("a late connector reply adopted content after the binding changed")
+            return
+        }
+        #expect(doctor.lastExecutedBinaryPath == "/tmp/fixture-execution-receipt")
+    }
+
+    private func waitForInventory(_ hasStarted: () async -> Bool) async {
+        for _ in 0 ..< 200 {
+            if await hasStarted() {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     @Test("Everything green with a resolvable grant is ready")
@@ -279,6 +387,135 @@ struct WorkshopDownloadReadinessTests {
 
         #expect(service.downloadBlocker == nil)
         #expect(service.isDownloadReady)
+    }
+}
+private enum AdoptionMutation: String, CaseIterable, Sendable {
+    case unchanged, cancelled, accountChanged, accountChangedBack, libraryChanged, libraryChangedBack, symlinkSwap
+}
+
+private enum AdoptionInventoryPhase: CaseIterable, Sendable {
+    case enumeration, revalidation
+}
+
+private final class BlockingAdoptionInventory: SteamCMDWorkshopFileInventoryServing {
+    private struct State {
+        var started = false
+        var finished = false
+        var ranOnMainThread = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let base: any SteamCMDWorkshopFileInventoryServing = SteamCMDWorkshopFileInventory()
+    private let phase: AdoptionInventoryPhase
+
+    init(phase: AdoptionInventoryPhase) {
+        self.phase = phase
+    }
+
+    var hasStarted: Bool {
+        state.withLock { $0.started }
+    }
+
+    var hasFinished: Bool {
+        state.withLock { $0.finished }
+    }
+
+    var ranOnMainThread: Bool {
+        state.withLock { $0.ranOnMainThread }
+    }
+
+    private func park() {
+        state.withLock {
+            $0.started = true
+            $0.ranOnMainThread = Thread.isMainThread
+        }
+        // The synchronous negative control must fail instead of hanging the test host.
+        _ = semaphore.wait(timeout: .now() + 2)
+        state.withLock { $0.finished = true }
+    }
+
+    func projectFolders(under steamRoot: URL, anchoredTo trustAnchor: URL, skipping seen: Set<String>) -> [SteamCMDValidatedWorkshopItem] {
+        if phase == .enumeration {
+            park()
+        }
+        return base.projectFolders(under: steamRoot, anchoredTo: trustAnchor, skipping: seen)
+    }
+
+    func revalidatedURL(for candidate: SteamCMDValidatedWorkshopItem, requiringProjectJSON: Bool) -> URL? {
+        if phase == .revalidation {
+            park()
+        }
+        return base.revalidatedURL(for: candidate, requiringProjectJSON: requiringProjectJSON)
+    }
+
+    func release() {
+        semaphore.signal()
+    }
+}
+
+@MainActor
+private struct AdoptionLibraryFixture {
+    let root: URL
+    let steamRoot: URL
+    let item: URL
+    let outside: URL
+    let bookmark: Data
+    let otherBookmark: Data
+    let suite: TestScratch.DefaultsSuite
+
+    init() throws {
+        let fm = FileManager.default
+        root = fm.temporaryDirectory.appendingPathComponent("AdoptionInventory-\(UUID())")
+        steamRoot = root.appendingPathComponent("Steam")
+        item = steamRoot.appendingPathComponent("steamapps/workshop/content/431960/100")
+        outside = root.appendingPathComponent("outside")
+        let otherRoot = root.appendingPathComponent("OtherSteam")
+        try fm.createDirectory(at: item, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        try fm.createDirectory(at: otherRoot, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: item.appendingPathComponent("project.json"))
+        try Data("{}".utf8).write(to: outside.appendingPathComponent("project.json"))
+        bookmark = try steamRoot.bookmarkData()
+        otherBookmark = try otherRoot.bookmarkData()
+        suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.DownloadAdoption")
+    }
+
+    func discard() {
+        suite.discard()
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+@MainActor
+private final class AdoptionCallbackLog {
+    var paths: [String] = []
+}
+
+private actor AdoptionReplyGate {
+    private(set) var hasStarted = false
+    private var isReleased = false
+    private var continuation: CheckedContinuation<SteamWorkshopDownloadResult, Never>?
+
+    func wait() async -> SteamWorkshopDownloadResult {
+        hasStarted = true
+        if isReleased {
+            return Self.reply
+        }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        isReleased = true
+        continuation?.resume(returning: Self.reply)
+        continuation = nil
+    }
+
+    private static var reply: SteamWorkshopDownloadResult {
+        SteamWorkshopDownloadResult(
+            outcome: .downloaded, itemPath: "/untrusted/reported-path", diagnosticTail: "",
+            executedBinaryPath: "/tmp/fixture-execution-receipt"
+        )
     }
 }
 #endif

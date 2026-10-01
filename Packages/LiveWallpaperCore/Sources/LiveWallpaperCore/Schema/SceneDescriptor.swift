@@ -194,8 +194,8 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
 /// Import-time capability tier (avoids reparse before runtime fallback).
 public enum SceneCapabilityTier: String, Codable, Equatable, Sendable {
     case imageOnly
-    /// Decode-only; nothing produces it any more. Kept because older persisted configs hold it
-    /// and an unknown case would decode to `.unsupported`.
+    /// Text/particle scenes admitted through their native runtime consumers, with
+    /// material and feature compatibility resolved at load; also decodes older configs.
     case degraded
     case unsupported
 

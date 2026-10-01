@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import Testing
 
 @MainActor
@@ -42,6 +43,209 @@ struct SavedLibraryModelTests {
         inputs.aerials = { .init(assets: aerials, isAuthorized: true, lastScanError: nil, isScanning: false) }
         return inputs
     }
+
+    @Test("Observation follows visible rows and refresh publishes the new rows")
+    func visibleItemsRemainObservable() {
+        @MainActor final class Changes { var count = 0 }
+        var saved = [bookmark("Alpha"), bookmark("Beta")]
+        var input = SavedLibraryModel.Inputs()
+        input.bookmarks = { saved }
+        let model = SavedLibraryModel(inputs: input)
+        model.sort = .name
+        _ = model.visibleItems
+        let changes = Changes()
+        withObservationTracking {
+            _ = model.visibleItems
+        } onChange: {
+            MainActor.assumeIsolated { changes.count += 1 }
+        }
+        model.query = "Beta"
+        #expect(changes.count == 1)
+        #expect(model.visibleItems.map(\.title) == ["Beta"])
+        saved = [bookmark("Beta new")]
+        model.refresh()
+        #expect(model.visibleItems.map(\.title) == ["Beta new"])
+        model.chip = .bookmarks
+        #expect(model.visibleItems.isEmpty)
+    }
+
+    @Test("Live usage refresh invalidates the snapshot while a browsing order stays frozen")
+    func usageRefreshAndBrowseFreeze() {
+        var saved = [bookmark("First", used: 2), bookmark("Second", used: 1)]
+        var input = SavedLibraryModel.Inputs()
+        input.bookmarks = { saved }
+        let model = SavedLibraryModel(inputs: input)
+        #expect(model.visibleItems.map(\.title) == ["First", "Second"])
+        saved[1].lastUsedAt = Date(timeIntervalSince1970: 3)
+        model.refresh()
+        #expect(model.visibleItems.map(\.title) == ["Second", "First"])
+        model.beginBrowsing()
+        saved[0].lastUsedAt = Date(timeIntervalSince1970: 4)
+        model.refresh()
+        #expect(model.visibleItems.map(\.title) == ["Second", "First"])
+        model.endBrowsing()
+        #expect(model.visibleItems.map(\.title) == ["First", "Second"])
+    }
+
+    @Test("Size ordering uses known file bytes largest-first and never treats unknown as zero")
+    func knownFileSizeSort() {
+        var input = inputs([bookmark("A small"), bookmark("Z large"), bookmark("Zero"), bookmark("Unknown"), bookmark("Negative")])
+        input.metadata = { bookmark in
+            let size: Int64? = switch bookmark.label {
+            case "A small": 20
+            case "Z large": Int64.max
+            case "Zero": 0
+            case "Negative": -1
+            default: nil
+            }
+            return .video(.init(resolution: nil, isHDR: false, duration: nil, fileSize: size, probedAt: .distantPast))
+        }
+        let model = SavedLibraryModel(inputs: input)
+        model.sort = .size
+        #expect(model.visibleItems.map(\.title) == ["Z large", "A small", "Zero", "Negative", "Unknown"])
+        model.sort = .name
+        #expect(model.visibleItems.first?.title == "A small")
+    }
+
+    @Test("Leaving Size or ending browsing stops subsequent probes and rejects the cancelled result")
+    func sizeProbeCancellationDoesNotUpdateRows() async {
+        @MainActor final class Probe {
+            var labels: [String] = []
+            var continuation: CheckedContinuation<LibraryMetadata?, Never>?
+
+            func read(_ bookmark: WallpaperBookmark) async -> LibraryMetadata? {
+                labels.append(bookmark.label)
+                return await withCheckedContinuation { continuation = $0 }
+            }
+
+            func finish() {
+                continuation?.resume(returning: .video(.init(resolution: nil, isHDR: false, duration: nil, fileSize: 500, probedAt: .distantPast)))
+                continuation = nil
+            }
+        }
+        let probe = Probe()
+        var input = inputs([bookmark("First"), bookmark("Second")])
+        input.probeMetadata = { await probe.read($0) }
+        let model = SavedLibraryModel(inputs: input)
+        model.beginBrowsing()
+        model.sort = .size
+        let firstDeadline = ContinuousClock.now + .seconds(3)
+        while probe.labels.isEmpty, ContinuousClock.now < firstDeadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(probe.labels == ["First"])
+        model.sort = .name
+        probe.finish()
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(probe.labels == ["First"])
+        #expect(model.items.allSatisfy { $0.metadata == nil })
+        model.sort = .size
+        let secondDeadline = ContinuousClock.now + .seconds(3)
+        while probe.labels.count < 2, ContinuousClock.now < secondDeadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(probe.labels == ["First", "First"])
+        model.endBrowsing()
+        probe.finish()
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(probe.labels.count == 2)
+        #expect(model.items.allSatisfy { $0.metadata == nil })
+        model.refresh()
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(probe.labels.count == 2, "refreshing a hidden library restarted file probes")
+    }
+
+    @Test("A late size result cannot update a replaced source with the same row ID")
+    func sizeProbeSourceIdentity() async {
+        @MainActor final class Probe {
+            var contents: [WallpaperContent] = []
+            var parked: [CheckedContinuation<LibraryMetadata?, Never>] = []
+
+            func read(_ bookmark: WallpaperBookmark) async -> LibraryMetadata? {
+                contents.append(bookmark.content)
+                return await withCheckedContinuation { parked.append($0) }
+            }
+
+            func finish(_ index: Int, bytes: Int64) {
+                parked.remove(at: index).resume(returning: .video(.init(resolution: nil, isHDR: false, duration: nil, fileSize: bytes, probedAt: .distantPast)))
+            }
+        }
+        let probe = Probe()
+        var saved = bookmark("Same row")
+        var input = inputs()
+        input.bookmarks = { [saved] }
+        input.probeMetadata = { await probe.read($0) }
+        let model = SavedLibraryModel(inputs: input)
+        model.beginBrowsing()
+        model.sort = .size
+        await settle { probe.parked.count == 1 }
+        #expect(probe.parked.count == 1)
+        saved.content = .video(bookmarkData: Data("replacement".utf8))
+        model.refresh()
+        await settle { probe.parked.count == 2 }
+        #expect(probe.parked.count == 2)
+        probe.finish(0, bytes: 111)
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(model.items.first?.metadata == nil)
+        probe.finish(0, bytes: 222)
+        await settle { model.items.first?.metadata != nil }
+        guard case let .video(metadata)? = model.items.first?.metadata else {
+            Issue.record("the current source's probe did not publish")
+            return
+        }
+        #expect(metadata.fileSize == 222)
+        #expect(probe.contents == [.video(bookmarkData: Data("Same row".utf8)), saved.content])
+        model.endBrowsing()
+    }
+
+    @Test("Store refresh after browsing ends does not restart unresolved size probes")
+    func hiddenSizeSortDoesNotProbeOnRefresh() async {
+        var probes = 0
+        var input = inputs([bookmark("Unknown file")])
+        input.probeMetadata = { _ in
+            probes += 1
+            return nil
+        }
+        let model = SavedLibraryModel(inputs: input)
+        model.sort = .size
+        await Task.yield()
+        #expect(probes == 0)
+        model.beginBrowsing()
+        await settle { probes == 1 }
+        #expect(probes == 1)
+        model.endBrowsing()
+        model.refresh()
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(probes == 1)
+        model.beginBrowsing()
+        await settle { probes == 2 }
+        #expect(probes == 2)
+        model.endBrowsing()
+    }
+
+    #if !LITE_BUILD
+    @Test("A video Workshop row without authorized content does not block the next size probe")
+    func sizeProbeSkipsUnavailableWorkshopContent() async {
+        let unavailable = WPEHistoryEntry(origin: origin("123", type: .video), importedAt: .distantPast)
+        var labels: [String] = []
+        var input = inputs([bookmark("Valid file")])
+        input.history = { [unavailable] }
+        input.workshopContent = { _ in nil }
+        input.probeMetadata = {
+            labels.append($0.label)
+            return .video(.init(resolution: nil, isHDR: false, duration: nil, fileSize: 25, probedAt: .distantPast))
+        }
+        let model = SavedLibraryModel(inputs: input)
+        #expect(model.items.first?.id == "workshop:123")
+        model.sort = .size
+        #expect(labels.isEmpty)
+        model.beginBrowsing()
+        await settle { labels.count == 1 }
+        #expect(labels == ["Valid file"])
+        #expect(model.visibleItems.first?.title == "Valid file")
+        model.endBrowsing()
+    }
+    #endif
 
     @Test func allIncludesAerials() {
         let saved = bookmark("Saved")
@@ -234,6 +438,45 @@ struct SavedLibraryModelTests {
         #expect(model.aerialsStatus.lastScanError == nil)
         #expect(!model.aerialsStatus.isScanning)
         #expect(!model.aerialsStatus.isEmpty)
+    }
+
+    @Test("Cancelled manual metadata probes never publish or start a subsequent item", arguments: [false, true])
+    func cancelledManualMetadataProbe(cancelledBeforeStart: Bool) async throws {
+        @MainActor final class Probe {
+            var labels: [String] = []
+            var continuation: CheckedContinuation<LibraryMetadata?, Never>?
+            let result: LibraryMetadata
+            init(result: LibraryMetadata) {
+                self.result = result
+            }
+
+            func read(_ bookmark: WallpaperBookmark) async -> LibraryMetadata? {
+                labels.append(bookmark.label)
+                // A cancelled caller must not enter even a cooperative decoder.
+                if Task.isCancelled || labels.count > 1 {
+                    return result
+                }
+                return await withCheckedContinuation { continuation = $0 }
+            }
+        }
+        let first = bookmark("First"), second = bookmark("Second")
+        let probe = Probe(result: fourK)
+        var source = inputs([first, second])
+        source.probeMetadata = { await probe.read($0) }
+        let model = SavedLibraryModel(inputs: source)
+        let task = Task { await model.probeMetadata(for: ["bookmark:\(first.id)", "bookmark:\(second.id)"]) }
+        if cancelledBeforeStart {
+            task.cancel()
+        } else {
+            await settle { probe.continuation != nil }
+            let parked = try #require(probe.continuation)
+            task.cancel()
+            parked.resume(returning: fourK)
+            probe.continuation = nil
+        }
+        await task.value
+        #expect(probe.labels == (cancelledBeforeStart ? [] : ["First"]))
+        #expect(model.items.allSatisfy { $0.metadata == nil })
     }
 
     @Test func probeMetadataOnlyUpdatesRequestedVideoItems() async {
@@ -664,6 +907,94 @@ struct SavedLibraryModelTests {
         #expect(probed == [content])
         #expect(model.visibleItems.first?.metadata == fourK)
         #expect(model.items.first { $0.kind == .aerial }?.metadata == nil)
+    }
+
+    @Test("Search tags refresh for the same ID's new grant or import revision", arguments: [false, true])
+    func tagsFollowCurrentProjectSource(newGrant: Bool) async throws {
+        let a = origin("123")
+        let b = try #require(a.replacingSourceFolderBookmark(matching: Data(), with: Data("new grant".utf8)))
+        var history = [WPEHistoryEntry(origin: a, importedAt: .distantPast)]
+        var tags = ["Landscape"]
+        var reads = 0
+        var source = inputs()
+        source.history = { history }
+        source.projectTags = { _ in
+            reads += 1
+            return tags
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.query = "landscape"
+        await model.loadSearchTags()
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"])
+        tags = ["Nebula"]
+        history = [WPEHistoryEntry(origin: newGrant ? b : a, importedAt: Date(timeIntervalSince1970: 1))]
+        model.refresh()
+        await model.loadSearchTags()
+        model.query = "nebula"
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"])
+        model.query = "landscape"
+        #expect(model.visibleItems.isEmpty)
+        #expect(reads == 2)
+        await model.loadSearchTags()
+        #expect(reads == 2, "an unchanged current source should retain one completed tag result")
+        history[0].lastUsedAt = Date(timeIntervalSince1970: 2)
+        model.refresh()
+        await model.loadSearchTags()
+        #expect(reads == 2, "usage bookkeeping must not invalidate the source's completed tags")
+    }
+
+    @Test("An old source's delayed tags cannot override its replacement")
+    func lateTagReadCannotReplaceCurrentSource() async throws {
+        let a = origin("123")
+        let b = try #require(a.replacingSourceFolderBookmark(matching: Data(), with: Data("replacement".utf8)))
+        var history = [WPEHistoryEntry(origin: a, importedAt: .distantPast)]
+        var parked: CheckedContinuation<[String], Never>?
+        var source = inputs()
+        source.history = { history }
+        source.projectTags = { origin in
+            if origin.sourceFolderBookmark == b.sourceFolderBookmark {
+                return ["Nebula"]
+            }
+            return await withCheckedContinuation { parked = $0 }
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.query = "nebula"
+        let old = Task { await model.loadSearchTags() }
+        defer {
+            old.cancel()
+            parked?.resume(returning: [])
+            parked = nil
+        }
+        await settle { parked != nil }
+        let release = try #require(parked)
+        history = [WPEHistoryEntry(origin: b, importedAt: .distantPast)]
+        model.refresh()
+        await model.loadSearchTags()
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"])
+        release.resume(returning: ["Landscape"])
+        parked = nil
+        await old.value
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"])
+        model.query = "landscape"
+        #expect(model.visibleItems.isEmpty)
+    }
+
+    @Test("Rows with the same Workshop ID search only their own source's tags")
+    func sharedProjectIDDoesNotShareDifferentSourceTags() async throws {
+        let a = origin("123")
+        let b = try #require(a.replacingSourceFolderBookmark(matching: Data(), with: Data("variant source".utf8)))
+        var variant = bookmark("Custom version")
+        variant.wpeOrigin = b
+        variant.content = .scene(descriptor(overrides: ["speed": .number(2)]))
+        var source = inputs([variant])
+        source.history = { [WPEHistoryEntry(origin: a, importedAt: .distantPast)] }
+        source.projectTags = { $0.sourceFolderBookmark == b.sourceFolderBookmark ? ["Nebula"] : ["Landscape"] }
+        let model = SavedLibraryModel(inputs: source)
+        model.query = "landscape"
+        await model.loadSearchTags()
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"])
+        model.query = "nebula"
+        #expect(model.visibleItems.map(\.id) == ["bookmark:\(variant.id)"])
     }
 
     @Test("A search matches a Workshop project's tags once they are read")

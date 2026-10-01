@@ -862,5 +862,7 @@ private final class RecordingAudioCaptureService: SystemAudioCaptureServing {
     func stop() {
         stopCount += 1
     }
+
+    func setInvalidationHandler(_: @escaping @MainActor @Sendable () -> Void) {}
 }
 #endif

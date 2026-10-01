@@ -83,6 +83,7 @@ struct LibraryChipsRow: View {
         case .recentlyUsed: "Recently Used"
         case .name: "Name"
         case .type: "Type"
+        case .size: "Size"
         #if !LITE_BUILD
         case .needsUpdate: "Needs Update"
         #endif

@@ -179,6 +179,16 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             ))
         }
 
+        // Audio starts muted in child realms until the direct parent supplies its current master state.
+        controller.addUserScript(WKUserScript(
+            source: HTMLWallpaperRuntimeScript.masterAudioController(
+                initialVolume: config?.audioVolume ?? 1,
+                initialMuted: config?.muteAudio ?? false
+            ),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+
         // Every frame (not main-only): an ad/iframe owns timers, rAF and canvases the main frame's hooks cannot reach.
         controller.addUserScript(WKUserScript(
             source: HTMLWallpaperRuntimeScript.lifecycleController(
@@ -233,10 +243,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             ? HTMLWallpaperRuntimeScript.peerConnectionBlocker()
             : ""
 
-        let audioController = HTMLWallpaperRuntimeScript.masterAudioController(
-            initialVolume: config?.audioVolume ?? 1.0,
-            initialMuted: config?.muteAudio ?? false
-        )
         let transformController = HTMLWallpaperRuntimeScript.transformController(
             scale: config?.transformScale ?? 1.0,
             translateX: config?.transformTranslateX ?? 0,
@@ -281,7 +287,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
                 mo.observe(document.documentElement, { childList: true });
             }
         })();
-        \(audioController)
         \(transformController)
         """
     }

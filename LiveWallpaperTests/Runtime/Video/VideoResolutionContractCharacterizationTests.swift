@@ -92,9 +92,9 @@ struct VideoResolutionContractCharacterizationTests {
         let compactPublishPath = Self.compact(publishPath)
         #expect(compactPublishPath.contains("let width = CVPixelBufferGetWidth(pixelBuffer)"))
         #expect(compactPublishPath.contains("let height = CVPixelBufferGetHeight(pixelBuffer)"))
-        #expect(compactPublishPath.contains(".bgra8Unorm_srgb, width, height, 0"))
-        // A plain-unorm retry would sample gamma bytes as linear; a failed sRGB wrap keeps the last frame instead.
-        #expect(!compactPublishPath.contains(".bgra8Unorm, width, height, 0"))
+        #expect(compactPublishPath.contains(".bgra8Unorm, width, height, 0"))
+        // An sRGB retry would decode WPE authored numbers; a failed identity-transfer wrap keeps the last frame instead.
+        #expect(!compactPublishPath.contains(".bgra8Unorm_srgb, width, height, 0"))
         // Working texture still follows the (possibly capped) buffer, not the file.
         #expect(compactPublishPath.contains("CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)"))
         #expect(compactPublishPath.contains(".r8Unorm, lumaWidth, lumaHeight, 0"))

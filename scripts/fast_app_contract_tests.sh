@@ -27,6 +27,9 @@ EOF
 # A suite that fails beside others belongs in SERIAL_SUITES.
 PARALLEL_SUITES=(
   GeneralSettingsOwnershipCharacterizationTests
+  # Capture lifecycle resets use fake sources.
+  AudioSpectrumBrokerTests
+  AudioSpectrumCadenceTests
   SettingsPersistenceFailureTests
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
@@ -80,14 +83,15 @@ PARALLEL_SUITES=(
   # unrecognized response or send the user to re-sign in.
   SteamCachedLoginVerdictTests
   SteamCMDOutputStreamTests
-  WorkshopDownloadReadinessTests
-  WorkshopFolderImportCoordinatorTests
   DesktopPictureFrameExtractorTests
   WorkshopDateLanguageTests
   SparkleUpdaterOwnershipTests
   SystemMemoryPressureWatcherTests
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests
+  WallpaperEngineProjectPropertiesTests
+  WPEProjectPropertyInputSafetyTests
+  WallpaperEngineWebPropertyBridgeTests
   # String transform only, no Metal device: a workshop varying with no
   # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
   WPEWorkshopVaryingReconstructionTests
@@ -121,7 +125,6 @@ PARALLEL_SUITES=(
   PreviewFrameTimingTests
   # System Wallpaper publish/status machine, including the provider stamp: a
   # leftover appex used to condemn the installed one and pause the whole page.
-  WallpaperExportServiceTests
   SystemWallpaperMaintenanceTests
   WPEStorageInventoryTests
   # Edit Desk (2026-09-18): the stage ↔ SwiftUI contract and the pure geometry
@@ -137,7 +140,6 @@ PARALLEL_SUITES=(
   # Wallpaper transition setting: default, persistence and search. The shader and
   # controller suites need Metal and windows, so they stay out of this shard.
   WallpaperTransitionSettingTests
-  SavedLibraryModelTests
   StageSpringTests
   # Edit Desk M4/M5 (2026-09-20): overlay canvas session/geometry, modal chrome,
   # workshop session/page and deferred apply. Pure-value and source-probe suites.
@@ -161,10 +163,10 @@ PARALLEL_SUITES=(
   BrowseFilterTests
   WorkshopBookmarkTests
   WorkshopBookmarkMetadataTests
+  WorkshopMetadataBatchTests
   BrowseCardEqualityTests
   WorkshopPageSourceTests
   GalleryCardPreferencesTests
-  BrowseCardEditDeskLayoutTests
   WallpaperEngineProjectWorkshopIDTests
   DeferredApplyToastsTests
   OnboardingProgressTests
@@ -221,6 +223,8 @@ PARALLEL_SUITES=(
   # The connector's id/containment predicates are the last line of defence
   # before a write lands in the user's real Steam library.
   SteamLibraryPathsTests
+  LitePathSafetyShadowTests
+  WallpaperEngineImportServiceTests
   # Pure alpha arithmetic, no view host: the paused dim used to multiply the
   # music tile's type as well as its cover, so a dialled-down overlay went
   # unreadable the moment playback stopped.
@@ -242,6 +246,27 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # These fixtures mutate global render defaults/language or need prompt AppKit/decoder delivery.
+  WPEDisplayRenderActorTests
+  SavedLibraryModelTests
+  WallpaperExportServiceTests
+  BrowseCardEditDeskLayoutTests
+  # XPC factory substitution and blocked filesystem fixtures require an isolated pass.
+  SteamConnectorClientCancellationTests
+  SteamConnectorEnvironmentTests
+  SteamCMDSelfUpdateRestartTests
+  # Pin native menu/page persistence, child-frame script ownership and static preview fallback.
+  EditDeskLibraryStateTests
+  HTMLWallpaperFrameLifecycleTests
+  WallpaperVideoPlayerStartupPolicyTests
+  # HAL services are injected; AppKit/WK fixtures share host delivery and must run in isolation.
+  SystemAudioCaptureRecoveryTests
+  WPESceneMediaEventDispatchTests
+  MountedGIFHostVisibilityTests
+  HTMLWallpaperRuntimeScriptTests
+  WorkshopFolderImportCoordinatorTests
+  WorkshopDownloadReadinessTests
+  WallpaperEnginePackageTests
   # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated
   # parallel suites can exhaust the dispatch pool before their workers start.
   # Keep the oracles' own concurrent operations and assertions unchanged.

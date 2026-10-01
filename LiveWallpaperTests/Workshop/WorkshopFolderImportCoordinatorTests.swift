@@ -2,6 +2,7 @@
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import os
 import Testing
 
 @Suite("Workshop folder import — queued requests")
@@ -215,6 +216,64 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(restarted.loadGlobalSettings().scenePresets["3471679253"]?.baseWorkshopID == "3470764447")
     }
 
+    @Test("Directory discovery leaves MainActor responsive", .timeLimit(.minutes(1)))
+    func blockingDiscoveryDoesNotOccupyMainActor() async throws {
+        let gate = BlockingDiscoveryGate()
+        defer { gate.release() }
+        let coordinator = WorkshopFolderImportCoordinator(
+            discoverFolders: { @Sendable _ in gate.discover(returning: []) },
+            toastCenter: WorkshopToastCenter()
+        )
+        coordinator.importProjects(from: [FileManager.default.temporaryDirectory])
+        try await settle { gate.hasStarted }
+        #expect(gate.hasStarted)
+        #expect(!gate.hasFinished, "MainActor could only continue after discovery stopped blocking")
+        #expect(!gate.ranOnMainThread)
+        gate.release()
+        try await settle { !coordinator.isImporting }
+        #expect(!coordinator.isImporting)
+    }
+
+    @Test("Late discovery cannot publish after shutdown", .timeLimit(.minutes(1)), arguments: [0, 1, 2])
+    func lateDiscoveryCannotPublishAfterShutdown(outcome: Int) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("DiscoveryExit-\(UUID())")
+        let folder = root.appendingPathComponent("project")
+        try writeVideoProject(at: folder, workshopID: "late-discovery")
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.DiscoveryExit")
+        defer { defaults.discard() }
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
+        defer { await TestScratch.discard(root, flushing: manager) }
+        let gate = BlockingDiscoveryGate()
+        defer { gate.release() }
+        let result: [URL]? = outcome == 0 ? nil : outcome == 1 ? [] : [folder]
+        let toastCenter = WorkshopToastCenter()
+        let finished = ImportBatchLog()
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { Data($0.path.utf8) }),
+            settings: manager,
+            discoverFolders: { @Sendable _ in gate.discover(returning: result) },
+            toastCenter: toastCenter
+        )
+        coordinator.onLocalLibraryImported = { _ in finished.batches += 1 }
+        coordinator.importProjects(from: [root])
+        try await settle { gate.hasStarted }
+        #expect(gate.hasStarted)
+        #expect(!gate.hasFinished)
+        coordinator.importProjects(from: [folder])
+        coordinator.shutdown()
+        #expect(await manager.flushPendingWrites())
+        gate.release()
+        try await settle { !coordinator.isImporting }
+        #expect(!coordinator.isImporting)
+        #expect(coordinator.progress == nil)
+        #expect(toastCenter.lastEvent == nil)
+        #expect(manager.loadGlobalSettings().recentWPEImports.isEmpty)
+        #expect(manager.loadGlobalSettings().scenePresets.isEmpty)
+        #expect(!manager.persistenceStatus.hasUnsavedChanges)
+        #expect(finished.batches == 0)
+        #expect(gate.calls == 1)
+    }
+
     private func importer(parkingOn gate: ValidationGate) -> WallpaperEngineImportService {
         WallpaperEngineImportService(
             validateVideo: { _ in try await gate.park() },
@@ -305,6 +364,48 @@ private actor SuccessfulValidationGate {
     func release() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private final class BlockingDiscoveryGate: Sendable {
+    private struct State {
+        var calls = 0
+        var finished = false
+        var ranOnMainThread = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    var hasStarted: Bool {
+        state.withLock { $0.calls > 0 }
+    }
+
+    var hasFinished: Bool {
+        state.withLock { $0.finished }
+    }
+
+    var ranOnMainThread: Bool {
+        state.withLock { $0.ranOnMainThread }
+    }
+
+    var calls: Int {
+        state.withLock { $0.calls }
+    }
+
+    func discover(returning result: [URL]?) -> [URL]? {
+        state.withLock {
+            $0.calls += 1
+            $0.ranOnMainThread = Thread.isMainThread
+        }
+        // A timeout makes the synchronous negative control fail without hanging the host.
+        _ = semaphore.wait(timeout: .now() + 2)
+        state.withLock { $0.finished = true }
+        return result
+    }
+
+    func release() {
+        semaphore.signal()
     }
 }
 

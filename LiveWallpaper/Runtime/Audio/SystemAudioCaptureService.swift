@@ -53,6 +53,18 @@ final class SystemAudioCaptureService: @unchecked Sendable {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var context: IOContext?
+    private var formatListener: AudioObjectPropertyListenerBlock?
+    private var invalidationHandler: (@MainActor @Sendable () -> Void)?
+
+    private static let tapFormatAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioTapPropertyFormat,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    func setInvalidationHandler(_ handler: @escaping @MainActor @Sendable () -> Void) {
+        invalidationHandler = handler
+    }
 
     private let ioQueue = DispatchQueue(label: "com.livewallpaper.audio.capture.ioproc", qos: .userInitiated)
 
@@ -169,6 +181,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         }
 
         isRunning = true
+        startFormatListener(expected: asbd)
         Logger.notice(
             "[AudioCapture] started — tap=\(tapID) aggregate=\(aggregateID) "
                 + "rate=\(Int(asbd.mSampleRate)) ch=\(channelCount) "
@@ -190,7 +203,36 @@ final class SystemAudioCaptureService: @unchecked Sendable {
 
     // MARK: - Teardown
 
+    /// HAL dispatches non-IO property listeners asynchronously onto the queue passed here (`.main`).
+    private func startFormatListener(expected: AudioStreamBasicDescription) {
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                var current = AudioStreamBasicDescription()
+                let status = self.readTapFormat(self.tapID, into: &current)
+                guard status != noErr || !Self.sameFormat(current, expected) else { return }
+                self.invalidationHandler?()
+            }
+        }
+        var address = Self.tapFormatAddress
+        let status = AudioObjectAddPropertyListenerBlock(tapID, &address, .main, listener)
+        if status == noErr {
+            formatListener = listener
+        } else {
+            Logger.warning("[AudioCapture] tap format listener unavailable (OSStatus \(status))", category: .audioCapture)
+        }
+    }
+
+    private static func sameFormat(_ lhs: AudioStreamBasicDescription, _ rhs: AudioStreamBasicDescription) -> Bool {
+        withUnsafeBytes(of: lhs) { left in withUnsafeBytes(of: rhs) { left.elementsEqual($0) } }
+    }
+
     private func teardown() {
+        if let formatListener {
+            var address = Self.tapFormatAddress
+            AudioObjectRemovePropertyListenerBlock(tapID, &address, .main, formatListener)
+            self.formatListener = nil
+        }
         if let ioProcID, aggregateID != AudioObjectID(kAudioObjectUnknown) {
             AudioDeviceStop(aggregateID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
@@ -353,11 +395,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
     }
 
     private func readTapFormat(_ tap: AudioObjectID, into asbd: inout AudioStreamBasicDescription) -> OSStatus {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioTapPropertyFormat,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
+        var address = Self.tapFormatAddress
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         return AudioObjectGetPropertyData(tap, &address, 0, nil, &size, &asbd)
     }

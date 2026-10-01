@@ -551,6 +551,20 @@ enum SteamCMDDownloadRetryPolicy {
     }
 }
 
+/// One monotonic budget shared by a SteamCMD run and its replacement trust checks.
+struct SteamCMDRunDeadline {
+    let time: DispatchTime
+
+    init(timeout: TimeInterval, start: DispatchTime = .now()) {
+        time = start + timeout
+    }
+
+    func remaining(at now: DispatchTime = .now()) -> TimeInterval {
+        guard now.uptimeNanoseconds < time.uptimeNanoseconds else { return 0 }
+        return Double(time.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000_000
+    }
+}
+
 enum SteamCMDSelfUpdateRestartPolicy {
     static let restartExitCode: Int32 = 42
     /// A measured fresh install asks twice (42, 42, 0 — 2026-08-28); three
@@ -565,14 +579,22 @@ enum SteamCMDSelfUpdateRestartPolicy {
         case completed(Run)
         /// The rewritten binary failed a trust gate; it was not relaunched.
         case gateFailed(String)
+        /// No new child may start after this run's budget; retain the last diagnostic.
+        case deadlineExceeded(Run?)
+        case cancelled
     }
 
     static func run<Run>(
+        deadline: SteamCMDRunDeadline,
+        now: () -> DispatchTime = { .now() },
+        isCancelled: () -> Bool = { false },
         execute: () -> Run,
         exitCode: (Run) -> Int32,
         timedOut: (Run) -> Bool,
         revalidate: () -> String?
     ) -> Outcome<Run> {
+        guard !isCancelled() else { return .cancelled }
+        guard deadline.remaining(at: now()) > 0 else { return .deadlineExceeded(nil) }
         var run = execute()
         var executions = 1
         // A timed-out run was killed by us; whatever status the kill produced
@@ -580,11 +602,20 @@ enum SteamCMDSelfUpdateRestartPolicy {
         while executions < maxExecutions,
               !timedOut(run),
               exitCode(run) == restartExitCode {
-            if let reason = revalidate() { return .gateFailed(reason) }
+            guard !isCancelled() else { return .cancelled }
+            guard deadline.remaining(at: now()) > 0 else { return .deadlineExceeded(run) }
+            let reason = revalidate()
+            guard !isCancelled() else { return .cancelled }
+            // A timed-out signature helper must not turn budget exhaustion into
+            // a false "untrusted replacement" diagnosis.
+            guard deadline.remaining(at: now()) > 0 else { return .deadlineExceeded(run) }
+            if let reason {
+                return .gateFailed(reason)
+            }
             run = execute()
             executions += 1
         }
-        return .completed(run)
+        return isCancelled() ? .cancelled : .completed(run)
     }
 }
 
