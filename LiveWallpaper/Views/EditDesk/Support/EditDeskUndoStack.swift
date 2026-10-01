@@ -721,6 +721,8 @@ extension EditDeskUndoStack.Outcome.Skipped {
                 localized: "\(name) was switched by the playlist afterward. Skipped.", bundle: .appLanguage,
                 comment: "Toast when Undo or Redo left a display alone because its playlist moved on later. Placeholder is a display name."
             )
+        case .automaticSwitch(.libraryShuffle):
+            String(localized: "\(name) was switched by library shuffle afterward. Skipped.", bundle: .appLanguage)
         case .changedAfterward:
             String(
                 localized: "\(name) was changed afterward. Skipped.", bundle: .appLanguage,

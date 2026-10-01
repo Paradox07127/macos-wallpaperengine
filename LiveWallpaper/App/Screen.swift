@@ -132,10 +132,15 @@ final class Screen: Identifiable, Hashable {
     func installRuntimeSession(_ session: any WallpaperRuntimeSession) {
         guard !isSameSession(runtimeSession, session) else { return }
         let old = runtimeSession
+        let automationPlan = nextAutomationTransitionPlan
+        nextAutomationTransitionPlan = nil
         handleRuntimeSessionTransition(from: old, to: session)
         runtimeSession = session
-        retire(old)
+        retire(old, automationPlan: automationPlan)
     }
+
+    /// Set only in a successful automation commit; never leaks into a later manual selection.
+    @ObservationIgnored var nextAutomationTransitionPlan: WallpaperTransitionPlan?
 
     /// Swapped by tests to pin the transition and drive it with a manual clock.
     @ObservationIgnored var transitionEnvironment = WallpaperTransitionEnvironment()
@@ -145,11 +150,11 @@ final class Screen: Identifiable, Hashable {
 
     /// Video keeps wallpaperWindow nil, so retirement reaches its window through the player.
     /// A session that never installed a window takes the immediate path below.
-    private func retire(_ old: (any WallpaperRuntimeSession)?) {
+    private func retire(_ old: (any WallpaperRuntimeSession)?, automationPlan: WallpaperTransitionPlan? = nil) {
         guard let old else { return }
         // A newer swap ends a reveal still in progress rather than stacking a second mask over it.
         finishRevealTransitions()
-        let plan = transitionEnvironment.plan(transitionEnvironment.reduceMotion())
+        let plan = automationPlan ?? transitionEnvironment.plan(transitionEnvironment.reduceMotion())
         guard let window = old.wallpaperWindow ?? old.videoPlayer?.playbackWindow, plan != .none else {
             old.cleanup()
             return
@@ -231,6 +236,7 @@ final class Screen: Identifiable, Hashable {
     /// Drops every still-fading session immediately. Finishing the fade after the screen goes away would leave a window AppKit can reposition onto a surviving display.
     private func flushRetiringSessions() {
         finishRevealTransitions()
+        nextAutomationTransitionPlan = nil
         let fading = retiringSessions.values
         retiringSessions.removeAll()
         for session in fading {

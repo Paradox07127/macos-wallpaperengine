@@ -1,14 +1,16 @@
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
+import Observation
 
-@MainActor
+@MainActor @Observable
 final class WallpaperAutomationCoordinator {
-    private var automationTask: Task<Void, Never>?
-    private var taskGeneration = 0
+    private(set) var currentTime = Date()
+    @ObservationIgnored private var automationTask: Task<Void, Never>?
+    @ObservationIgnored private var taskGeneration = 0
     /// Deterministic tick seam for behavior tests. Production uses the existing
     /// one-minute clock when this is nil.
-    private let tickStreamFactory: (() -> AsyncStream<Date>)?
+    @ObservationIgnored private let tickStreamFactory: (() -> AsyncStream<Date>)?
     #if DEBUG
     private(set) var taskStartCountForTesting = 0
     #endif
@@ -26,10 +28,13 @@ final class WallpaperAutomationCoordinator {
     static func hasDemand(_ configuration: ScreenConfiguration) -> Bool {
         switch configuration.wallpaperMode {
         case .playlist:
-            return (configuration.playlistRotationMinutes ?? 0) > 0
-                && configuration.effectiveWallpaperQueue.count > 1
+            (configuration.playlistRotationMinutes ?? 0) > 0
+                && configuration.effectiveWallpaperQueue.filter { configuration.automationFailures[$0.id]?.entry.content != $0.content }.count > 1
+        case .libraryShuffle:
+            // Keep polling even with an empty library, so later imports participate.
+            configuration.libraryShuffleRotationMinutes > 0
         case .schedule:
-            return configuration.scheduleSlots?.contains {
+            configuration.scheduleFallback != nil || configuration.scheduleSlots?.contains {
                 $0.wallpaper != nil || $0.videoBookmarkData?.isEmpty == false
             } == true
         }
@@ -40,6 +45,7 @@ final class WallpaperAutomationCoordinator {
         configurationProvider: @escaping @MainActor (CGDirectDisplayID) -> ScreenConfiguration?,
         scheduleHandler: @escaping @MainActor (Screen) -> Void,
         playlistHandler: @escaping @MainActor (Screen) -> Void,
+        libraryShuffleHandler: @escaping @MainActor (Screen) -> Void = { _ in },
         runInitialScheduleCheck: Bool = true
     ) {
         let screens = screenProvider()
@@ -71,9 +77,22 @@ final class WallpaperAutomationCoordinator {
             }
 
             var lastRotation: [CGDirectDisplayID: Date] = [:]
+            var rotationSettings: [CGDirectDisplayID: (mode: WallpaperMode, minutes: Int)] = [:]
+            // Real time starts at enable/resume, rather than one minute after the first tick.
+            if self?.tickStreamFactory == nil {
+                let startTime = Date()
+                for screen in screens {
+                    guard let config = configurationProvider(screen.id) else { continue }
+                    let minutes = config.wallpaperMode == .libraryShuffle
+                        ? config.libraryShuffleRotationMinutes : (config.playlistRotationMinutes ?? 0)
+                    lastRotation[screen.id] = startTime
+                    rotationSettings[screen.id] = (config.wallpaperMode, minutes)
+                }
+            }
 
             @MainActor
             func processTick(at now: Date) -> Bool {
+                self?.currentTime = now
                 let screens = screenProvider()
                 let configurations = Dictionary(
                     uniqueKeysWithValues: screens.compactMap { screen in
@@ -96,11 +115,24 @@ final class WallpaperAutomationCoordinator {
 
                 let liveIDs = Set(screens.map(\.id))
                 lastRotation = lastRotation.filter { liveIDs.contains($0.key) }
+                rotationSettings = rotationSettings.filter { liveIDs.contains($0.key) }
                 for screen in screens {
                     guard let configuration = configurations[screen.id],
-                          let rotationMinutes = configuration.playlistRotationMinutes,
-                          rotationMinutes > 0,
-                          configuration.effectiveWallpaperQueue.count > 1 else {
+                          configuration.wallpaperMode == .libraryShuffle || configuration.effectiveWallpaperQueue.count > 1 else {
+                        continue
+                    }
+
+                    let rotationMinutes = configuration.wallpaperMode == .libraryShuffle
+                        ? configuration.libraryShuffleRotationMinutes : (configuration.playlistRotationMinutes ?? 0)
+                    guard rotationMinutes > 0 else {
+                        lastRotation[screen.id] = nil
+                        rotationSettings[screen.id] = nil
+                        continue
+                    }
+                    let previous = rotationSettings[screen.id]
+                    rotationSettings[screen.id] = (configuration.wallpaperMode, rotationMinutes)
+                    if previous?.mode != configuration.wallpaperMode || previous?.minutes != rotationMinutes {
+                        lastRotation[screen.id] = now
                         continue
                     }
 
@@ -118,6 +150,8 @@ final class WallpaperAutomationCoordinator {
                         // Advance deadline clock in schedule mode; rotate only in playlist.
                         if configuration.wallpaperMode == .playlist {
                             playlistHandler(screen)
+                        } else if configuration.wallpaperMode == .libraryShuffle {
+                            libraryShuffleHandler(screen)
                         }
                     }
                 }

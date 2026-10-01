@@ -15,6 +15,7 @@ extension ScreenManager {
         _ definition: WallpaperSessionDefinition,
         for screen: Screen,
         configuration: ScreenConfiguration,
+        inspectPreparation: Bool = true,
         beforeCommit: @MainActor @escaping () -> Bool = { true },
         completion: WallpaperPreparationCompletion? = nil
     ) -> RuntimePreparationWork? {
@@ -30,7 +31,7 @@ extension ScreenManager {
             // Rebuilding the scene that is already on screen (a property change) must not swap the detail page to the attempt views.
             let rebuildsRunningScene = screen.runtimeSession?.wallpaperType == .scene
                 && runningSceneWorkshopID(for: screen) == descriptor.workshopID
-            let id = current?.phase == .importing ? current!.id : wallpaperLoads.begin(for: screen, title: configuration.wpeOrigin?.title ?? definition.displayName(using: { bookmarkDisplayName(for: $0) }) ?? String(localized: "Scene wallpaper", bundle: .appLanguage), origin: configuration.wpeOrigin, inspecting: !rebuildsRunningScene)
+            let id = current?.phase == .importing ? current!.id : wallpaperLoads.begin(for: screen, title: configuration.wpeOrigin?.title ?? definition.displayName(using: { bookmarkDisplayName(for: $0) }) ?? String(localized: "Scene wallpaper", bundle: .appLanguage), origin: configuration.wpeOrigin, inspecting: inspectPreparation && !rebuildsRunningScene)
             wallpaperLoads.update(id, for: screen) {
                 $0.configuration = configuration
                 $0.origin = configuration.wpeOrigin

@@ -292,6 +292,16 @@ enum SchemeDetailRows {
     }
 
     private static func automationRows(_ configuration: ScreenConfiguration, locale: Locale) -> [Row] {
+        if configuration.wallpaperMode == .libraryShuffle {
+            let minutes = configuration.libraryShuffleRotationMinutes
+            return [
+                modeRow(String(localized: "Library Shuffle", bundle: .appLanguage)),
+                Row(
+                    key: .rotation, label: String(localized: "Rotation interval", bundle: .appLanguage),
+                    value: String(localized: "Every \(minutes) min", bundle: .appLanguage, locale: locale)
+                ),
+            ]
+        }
         if configuration.wallpaperMode == .schedule {
             var rows = [
                 modeRow(String(localized: "Daily Schedule", bundle: .appLanguage)),

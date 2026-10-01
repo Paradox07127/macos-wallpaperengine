@@ -101,8 +101,8 @@ public struct ProductCapabilities: Sendable, Equatable {
         guard enabledFeatures.contains(.playlists) else { return [] }
         return WallpaperMode.allCases.filter { mode in
             switch mode {
-            case .playlist: return true
-            case .schedule: return enabledFeatures.contains(.scheduleAutomation)
+            case .playlist, .libraryShuffle: true
+            case .schedule: enabledFeatures.contains(.scheduleAutomation)
             }
         }
     }

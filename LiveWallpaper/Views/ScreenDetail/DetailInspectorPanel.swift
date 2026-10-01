@@ -11,7 +11,6 @@ struct DetailInspectorPanel: View {
     @Binding var isColorExpanded: Bool
     let showsResetDisplaySettings: Bool
     let onResetDisplaySettings: () -> Void
-    let onOpenAutomation: () -> Void
     #if !LITE_BUILD
     @State private var wpeProjectCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
     @State private var wpeSceneCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
@@ -29,8 +28,7 @@ struct DetailInspectorPanel: View {
         inspectorPanelWidth: CGFloat,
         isColorExpanded: Binding<Bool>,
         showsResetDisplaySettings: Bool,
-        onResetDisplaySettings: @escaping () -> Void,
-        onOpenAutomation: @escaping () -> Void
+        onResetDisplaySettings: @escaping () -> Void
     ) {
         self.screen = screen
         _draft = draft
@@ -40,7 +38,6 @@ struct DetailInspectorPanel: View {
         _isColorExpanded = isColorExpanded
         self.showsResetDisplaySettings = showsResetDisplaySettings
         self.onResetDisplaySettings = onResetDisplaySettings
-        self.onOpenAutomation = onOpenAutomation
         // A memoized answer renders on the panel's first frame instead of behind the loading placeholder.
         let current = draft.wrappedValue
         if current.selectedWallpaperType == .scene,
@@ -55,22 +52,6 @@ struct DetailInspectorPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: DesignTokens.Spacing.md) {
-                if featureCatalog.isEnabled(.playlists) {
-                    GroupBox {
-                        Button(action: onOpenAutomation) {
-                            HStack {
-                                Label("Playlist & Schedule", systemImage: "list.bullet")
-                                Spacer()
-                                Image(systemName: "arrow.up.right.square")
-                            }
-                            .font(DesignTokens.Typography.bodyEmphasized)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .groupBoxStyle(ContainerGroupBoxStyle())
-                }
-
                 if draft.selectedWallpaperType == .video {
                     displayGroup
                 }

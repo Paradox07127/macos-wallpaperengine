@@ -715,6 +715,41 @@
         }
       }
     },
+    "%@ was switched by library shuffle afterward. Skipped." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ was switched by library shuffle afterward. Skipped."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ cambió después por la reproducción aleatoria de la biblioteca. Se omitió."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はその後ライブラリのランダム再生で切り替わったため、スキップしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 随后已被壁纸库随机切换，已跳过。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 隨後已被桌布庫隨機切換，已略過。"
+          }
+        }
+      }
+    },
     "%@ was switched by the playlist afterward. Skipped." : {
       "comment" : "Toast when Undo or Redo left a display alone because its playlist moved on later. Placeholder is a display name.",
       "localizations" : {
@@ -3271,6 +3306,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "24 小時制"
+          }
+        }
+      }
+    },
+    "24-hour schedule" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24-hour schedule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24 小时计划"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24 小時排程"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24時間スケジュール"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programación de 24 horas"
           }
         }
       }
@@ -9096,6 +9166,41 @@
         }
       }
     },
+    "Automatically picks a random wallpaper from your entire library. New imports join automatically; unavailable wallpapers are skipped. The same wallpaper never plays twice in a row." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically picks a random wallpaper from your entire library. New imports join automatically; unavailable wallpapers are skipped. The same wallpaper never plays twice in a row."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un fondo al azar de toda la biblioteca a intervalos regulares. Los nuevos fondos se incluyen automáticamente y se omiten los no disponibles. El mismo fondo nunca se reproduce dos veces seguidas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定した間隔でライブラリ全体から壁紙をランダムに選びます。新しく読み込んだ壁紙は自動的に対象となり、利用できない壁紙はスキップされます。同じ壁紙は連続して再生されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按设定间隔从整个壁纸库随机选择壁纸。新导入的壁纸会自动加入，无法使用的壁纸会跳过，不会连续播放同一张壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按設定間隔從整個桌布庫隨機選擇桌布。新匯入的桌布會自動加入，無法使用的桌布會跳過，不會連續播放同一張桌布。"
+          }
+        }
+      }
+    },
     "Automatically recover stalled connections" : {
       "localizations" : {
         "en" : {
@@ -12768,6 +12873,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請選擇影片、網頁檔案或桌布資料夾。"
+          }
+        }
+      }
+    },
+    "Choose a wallpaper around the clock to edit its hours." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a wallpaper around the clock to edit its hours."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择圆盘周围的壁纸以编辑时段。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇圓盤周圍的桌布以編輯時段。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時計の周囲の壁紙を選択して時間帯を編集します。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un fondo alrededor del reloj para editar sus horas."
           }
         }
       }
@@ -23373,6 +23513,41 @@
         }
       }
     },
+    "Enable Again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新启用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新啟用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再び有効にする"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a activar"
+          }
+        }
+      }
+    },
     "Enable Global Shortcuts" : {
       "comment" : "Master toggle label at the top of Settings → Shortcuts. Turning it off unregisters every global hot key without erasing the user's saved bindings.",
       "extractionState" : "manual",
@@ -25004,6 +25179,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "失敗"
+          }
+        }
+      }
+    },
+    "Failed sources are retried once, then skipped until you enable them again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed sources are retried once, then skipped until you enable them again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载失败时会重试一次。再次失败后会跳过，直到你重新启用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "載入失敗時會重試一次。再次失敗後會略過，直到你重新啟用。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込みに失敗すると1回再試行します。再び失敗すると、再有効化するまでスキップします。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si una carga falla, se reintenta una vez. Si vuelve a fallar, se omite hasta que la actives de nuevo."
+          }
+        }
+      }
+    },
+    "Failed twice. Click to enable this wallpaper again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed twice. Click to enable this wallpaper again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连续两次加载失败。点击重新启用此壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連續兩次載入失敗。點按重新啟用此桌布。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2回読み込みに失敗しました。クリックしてこの壁紙を再び有効にします。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carga falló dos veces. Haz clic para volver a activar este fondo."
           }
         }
       }
@@ -30947,6 +31192,41 @@
         }
       }
     },
+    "Library Shuffle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Library Shuffle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aleatorio de toda la biblioteca"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリ全体をランダム再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸库随机"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布庫隨機"
+          }
+        }
+      }
+    },
     "Library synced" : {
       "comment" : "Toast headline after auto-importing existing SteamCMD downloads.",
       "localizations" : {
@@ -36632,6 +36912,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下一頁"
+          }
+        }
+      }
+    },
+    "Next Random Wallpaper" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Random Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siguiente fondo aleatorio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の壁紙をランダムに選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随机下一张壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隨機下一張桌布"
           }
         }
       }
@@ -51964,6 +52279,41 @@
         }
       }
     },
+    "Save and Use Library Shuffle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save and Use Library Shuffle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar y usar aleatorio de toda la biblioteca"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存してライブラリ全体をランダム再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存并启用壁纸库随机"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存並啟用桌布庫隨機"
+          }
+        }
+      }
+    },
     "Save and Use Playlist" : {
       "localizations" : {
         "en" : {
@@ -54002,6 +54352,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查連線前請先選擇 SteamCMD。"
+          }
+        }
+      }
+    },
+    "Select a time slot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a time slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择时段"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇時段"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯を選択"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un tramo"
+          }
+        }
+      }
+    },
+    "Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择圆盘周围的壁纸。拖动圆弧端点调整时间；双击空闲时段添加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇圓盤周圍的桌布。拖移圓弧端點調整時間；按兩下空閒時段新增。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時計の周囲の壁紙を選択します。円弧の両端をドラッグして時間を調整し、空いている時間をダブルクリックして時間帯を追加します。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un fondo alrededor del reloj. Arrastra los extremos del arco para ajustar las horas y haz doble clic en una hora libre para añadir un tramo."
           }
         }
       }
@@ -57020,6 +57440,41 @@
         }
       }
     },
+    "Skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已略過"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップ済み"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitido"
+          }
+        }
+      }
+    },
     "Skipped %lld displays that changed afterward." : {
       "comment" : "Toast after Undo or Redo left several displays alone because they changed later. Placeholder is the count.",
       "localizations" : {
@@ -57051,6 +57506,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已略過 %lld 台之後被變更過的顯示器。"
+          }
+        }
+      }
+    },
+    "Skipped wallpapers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped wallpapers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已略過的桌布"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップした壁紙"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondos omitidos"
           }
         }
       }
@@ -67412,6 +67902,41 @@
         }
       }
     },
+    "Time Slot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time Slot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时段"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時段"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tramo"
+          }
+        }
+      }
+    },
     "Time Slots" : {
       "comment" : "Scheme detail row: how many time slots the daily schedule has.",
       "localizations" : {
@@ -67580,6 +68105,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "時段 %1$@ 與 %2$@ 重疊。"
+          }
+        }
+      }
+    },
+    "Time slots overlap. Choose different hours." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time slots overlap. Choose different hours."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时段重叠，请选择其他时间。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時段重疊，請選擇其他時間。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯が重なっています。別の時間を選択してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los tramos se superponen. Elige otras horas."
           }
         }
       }
@@ -71748,6 +72308,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布"
+          }
+        }
+      }
+    },
+    "Wallpaper Automation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Automation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambio automático de fondo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙の自動切り替え"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸自动切换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布自動切換"
           }
         }
       }

@@ -118,12 +118,12 @@ extension ScreenManager {
 
     func updateWallpaperAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
-        rotationMinutes: Int?, shuffle: Bool, for screen: Screen
+        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil, for screen: Screen
     ) {
         guard !isTerminating else { return }
         automationOrchestrator.updateAutomation(
             queue: queue, slots: slots, fallback: fallback, mode: mode, rotationMinutes: rotationMinutes,
-            shuffle: shuffle, for: screen
+            shuffle: shuffle, libraryShuffleRotationMinutes: libraryShuffleRotationMinutes, for: screen
         )
     }
 
@@ -163,6 +163,67 @@ extension ScreenManager {
     func advancePlaylist(for screen: Screen) {
         guard !isTerminating else { return }
         automationOrchestrator.advancePlaylist(for: screen)
+    }
+
+    var automationTime: Date { automationCoordinator.currentTime }
+
+    func clearAutomationFailure(_ entryID: String, for screen: Screen) {
+        guard !isTerminating, var config = getConfiguration(for: screen) else { return }
+        config.automationFailures[entryID] = nil
+        saveConfiguration(config)
+    }
+
+    /// Awaits the actual first-frame/commit result; no polling timer or detached retry loop.
+    func prepareAutomationWallpaper(
+        _ configuration: ScreenConfiguration, for screen: Screen, source: AutomaticSwitchMark.Source?,
+        isStillIntended: @MainActor @escaping () -> Bool
+    ) async -> WallpaperPreparationResult {
+        guard !isTerminating, !isUserAbsent, wallpapersGloballyEnabled,
+              screens.contains(where: { $0 === screen }) else { return .cancelled }
+        wallpaperLoads.clear(for: screen)
+        let commit: @MainActor (_ saves: Bool) -> Bool = { [weak self, weak screen] saves in
+            guard let self, let screen, !isTerminating, !isUserAbsent, isStillIntended() else { return false }
+            // Marked before the save: the automation panel reads the serial in the change notification.
+            if let source {
+                noteAutomaticSwitch(on: screen, source: source)
+            }
+            if WallpaperTransitionChoice.stored() != .none {
+                var generator = SystemRandomNumberGenerator()
+                screen.nextAutomationTransitionPlan = WallpaperTransitionPlan.resolve(
+                    .random, reduceMotion: screen.transitionEnvironment.reduceMotion(), using: &generator
+                )
+            }
+            if saves {
+                saveConfiguration(configuration)
+            }
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            if case let .video(bookmark, _) = configuration.activeWallpaper {
+                guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient) else {
+                    continuation.resume(returning: .failed)
+                    return
+                }
+                var effective = configuration
+                if resolved.didRefresh { effective = effective.withUpdatedActiveBookmark(resolved.bookmarkData) }
+                // setupVideoPlayback saves `effective` itself once the commit passes, so this commit must not save too.
+                playbackCoordinator.setupVideoPlayback(
+                    url: resolved.url, screen: screen, proposedConfiguration: effective, beforeCommit: { commit(false) },
+                    completion: { continuation.resume(returning: $0) }
+                )
+            } else {
+                restoreWallpaperSession(
+                    for: screen, configuration: configuration, preservingState: false, intent: .proposal,
+                    inspectPreparation: false,
+                    beforeCommit: { commit(true) }, sceneCompletion: { result, _ in continuation.resume(returning: result) }
+                )
+            }
+        }
+    }
+
+    func advanceLibraryShuffle(for screen: Screen) {
+        guard !isTerminating else { return }
+        automationOrchestrator.advanceLibraryShuffle(for: screen)
     }
 
     func regressPlaylist(for screen: Screen) {

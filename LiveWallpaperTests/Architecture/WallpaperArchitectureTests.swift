@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
@@ -917,7 +918,11 @@ struct WallpaperAutomationCoordinatorTests {
             saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
             setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Reorder must not rebuild playback") },
             restoreProposedConfiguration: { _, _ in Issue.record("Retained active bookmark must not reload") },
-            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, _, _, _ in
+                Issue.record("Retained active bookmark must not reload")
+                return .cancelled
+            }
         )
         orchestrator.replacePlaylist(ordered: [other, primary], primary: primary, for: screen)
         #expect(store.get(for: screen.id)?.playlistCursorIndex == 1)
@@ -926,7 +931,7 @@ struct WallpaperAutomationCoordinatorTests {
     }
 
     @Test("Universal queue navigation reaches the product restore path for every wallpaper type")
-    func universalQueueRoutesAllTypes() throws {
+    func universalQueueRoutesAllTypes() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let entries = [
             WallpaperQueueEntry(title: "Video", content: .video(bookmarkData: Data([1]))),
@@ -944,13 +949,21 @@ struct WallpaperAutomationCoordinatorTests {
             playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
             saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
             setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Universal entries must use the common product restore path") },
-            restoreProposedConfiguration: { _, config in restored.append(config.activeWallpaper); store.save(config) },
-            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }
+            restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
         )
-        orchestrator.advancePlaylist(for: screen)
-        orchestrator.advancePlaylist(for: screen)
-        orchestrator.advancePlaylist(for: screen)
-        orchestrator.regressPlaylist(for: screen)
+        for step in [orchestrator.advancePlaylist, orchestrator.advancePlaylist, orchestrator.advancePlaylist, orchestrator.regressPlaylist] {
+            step(screen)
+            for _ in 0 ..< 50 {
+                await Task.yield()
+            }
+        }
         #expect(restored == [entries[1].content, entries[2].content, entries[0].content, entries[2].content])
         #expect(store.get(for: screen.id)?.fitMode == .aspectFit)
         #expect(try WallpaperAutomationCoordinator.hasDemand(#require(store.get(for: screen.id))))
@@ -959,6 +972,258 @@ struct WallpaperAutomationCoordinatorTests {
         orchestrator.suspendForUserAbsence()
         orchestrator.advancePlaylist(for: screen)
         #expect(restored.count == 4)
+    }
+
+    @Test("Library shuffle follows live membership, skips missing sources and preserves the curated queue")
+    func libraryShuffleUsesLiveMembership() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let first = WallpaperQueueEntry(id: "first", title: "First", content: .html(source: .inline("first"), config: .default))
+        let second = WallpaperQueueEntry(id: "second", title: "Second", content: .html(source: .inline("second"), config: .default))
+        let missing = WallpaperQueueEntry(id: "missing", title: "Missing", content: .video(bookmarkData: Data([99])))
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: first.content, fitMode: .aspectFit)
+        initial.wallpaperMode = .libraryShuffle
+        initial.wallpaperQueue = [first]
+        initial.playlistRotationMinutes = 120
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var entries = [first, second, missing]
+        var restored: [WallpaperContent] = []
+        var marks: [AutomaticSwitchMark.Source] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Shuffle must use the common restore path") },
+            restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, source, intended in
+                guard intended() else { return .cancelled }
+                restored.append(proposed.activeWallpaper)
+                if let source {
+                    marks.append(source)
+                }
+                store.save(proposed)
+                return .ready
+            },
+            libraryEntries: { entries }, libraryEntryAvailable: { $0.id != "missing" }
+        )
+        orchestrator.advanceLibraryShuffle(for: screen)
+        for _ in 0 ..< 50 where restored.isEmpty {
+            await Task.yield()
+        }
+        #expect(restored == [second.content])
+        let third = WallpaperQueueEntry(id: "third", title: "Third", content: .html(source: .inline("third"), config: .default))
+        entries = [second, third, missing]
+        orchestrator.advanceLibraryShuffle(for: screen)
+        for _ in 0 ..< 50 where restored.count < 2 {
+            await Task.yield()
+        }
+        #expect(restored == [second.content, third.content])
+        #expect(marks == [.libraryShuffle, .libraryShuffle])
+        let saved = try #require(store.get(for: screen.id))
+        #expect(saved.wallpaperQueue == [first])
+        #expect(saved.playlistRotationMinutes == 120)
+        #expect(saved.fitMode == .aspectFit)
+        entries = [third, missing]
+        orchestrator.advanceLibraryShuffle(for: screen)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(restored.count == 2)
+        entries = [first]
+        orchestrator.advanceLibraryShuffle(for: screen)
+        orchestrator.suspendForUserAbsence()
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(restored.count == 2)
+    }
+
+    @Test("Library shuffle has its own timer without needing a playlist")
+    func libraryShuffleTimer() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let ticks = AsyncStream<Date>.makeStream()
+        let coordinator = WallpaperAutomationCoordinator(tickStreamFactory: { ticks.stream })
+        defer { coordinator.stop(); ticks.continuation.finish() }
+        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([1]))
+        configuration.wallpaperMode = .libraryShuffle
+        configuration.libraryShuffleRotationMinutes = 5
+        #expect(WallpaperAutomationCoordinator.hasDemand(configuration))
+        var randomSwitches = 0
+        var playlistSwitches = 0
+        coordinator.start(
+            screenProvider: { [screen] }, configurationProvider: { _ in configuration },
+            scheduleHandler: { _ in }, playlistHandler: { _ in playlistSwitches += 1 },
+            libraryShuffleHandler: { _ in randomSwitches += 1 }, runInitialScheduleCheck: false
+        )
+        let baseline = Date(timeIntervalSince1970: 1000)
+        ticks.continuation.yield(baseline)
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        ticks.continuation.yield(baseline.addingTimeInterval(4 * 60))
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(randomSwitches == 0)
+        ticks.continuation.yield(baseline.addingTimeInterval(5 * 60))
+        for _ in 0 ..< 50 where randomSwitches == 0 {
+            await Task.yield()
+        }
+        #expect(randomSwitches == 1)
+        #expect(playlistSwitches == 0)
+        configuration.libraryShuffleRotationMinutes = 1
+        ticks.continuation.yield(baseline.addingTimeInterval(6 * 60))
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(randomSwitches == 1)
+        ticks.continuation.yield(baseline.addingTimeInterval(7 * 60))
+        for _ in 0 ..< 50 where randomSwitches < 2 {
+            await Task.yield()
+        }
+        #expect(randomSwitches == 2)
+        configuration.wallpaperMode = .playlist
+        ticks.continuation.yield(baseline.addingTimeInterval(10 * 60))
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(randomSwitches == 2)
+    }
+
+    @Test("Library shuffle excludes the current content and duplicate entry IDs")
+    func libraryShuffleCandidates() {
+        let current = WallpaperContent.html(source: .inline("current"), config: .default)
+        let next = WallpaperQueueEntry(id: "next", title: "Next", content: .video(bookmarkData: Data([2])))
+        #expect(LibraryShufflePolicy.candidates(in: [], excluding: current).isEmpty)
+        #expect(LibraryShufflePolicy.candidates(in: [WallpaperQueueEntry(title: "Current", content: current), next, next], excluding: current) == [next])
+    }
+
+    @Test("A failed automation entry gets exactly one retry, is marked and is skipped on later rotations")
+    func automationRetryAndSkip() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = ["current", "bad", "good"].map {
+            WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
+        }
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var attempts: [String] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                let id = proposed.activeWallpaper.htmlSource == .inline("bad") ? "bad" : "good"
+                attempts.append(id)
+                if id == "bad" {
+                    return .failed
+                }
+                store.save(proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
+        )
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 100 where attempts.count < 3 {
+            await Task.yield()
+        }
+        #expect(attempts == ["bad", "bad", "good"])
+        let marked = try #require(store.get(for: screen.id))
+        #expect(marked.automationFailures["bad"]?.entry == entries[1])
+        #expect(marked.playlistCursorIndex == 2)
+        var reset = marked
+        reset.activeWallpaper = entries[0].content
+        reset.playlistCursorIndex = 0
+        store.save(reset)
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 100 where attempts.count < 4 {
+            await Task.yield()
+        }
+        #expect(attempts == ["bad", "bad", "good", "good"])
+        reset.automationFailures = [:]
+        store.save(reset)
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 100 where attempts.count < 7 {
+            await Task.yield()
+        }
+        #expect(attempts.suffix(3) == ["bad", "bad", "good"])
+        orchestrator.stopMonitoring()
+    }
+
+    @Test("A successful retry is not marked, and cancelling a pending load never marks or retries it")
+    func automationRetrySuccessAndCancellation() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entry = WallpaperQueueEntry(id: "next", title: "Next", content: .html(source: .inline("next"), config: .default))
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("current"), config: .default))
+        initial.wallpaperMode = .libraryShuffle
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var attempts = 0
+        var pending: CheckedContinuation<WallpaperPreparationResult, Never>?
+        var hold = false
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                attempts += 1
+                if hold {
+                    return await withCheckedContinuation { pending = $0 }
+                }
+                if attempts == 1 {
+                    return .failed
+                }
+                guard intended() else { return .cancelled }
+                store.save(proposed)
+                return .ready
+            }, libraryEntries: { [entry] }, libraryEntryAvailable: { _ in true }
+        )
+        orchestrator.advanceLibraryShuffle(for: screen)
+        for _ in 0 ..< 100 where attempts < 2 {
+            await Task.yield()
+        }
+        #expect(attempts == 2)
+        #expect(store.get(for: screen.id)?.automationFailures.isEmpty == true)
+        store.save(initial)
+        hold = true
+        orchestrator.advanceLibraryShuffle(for: screen)
+        for _ in 0 ..< 100 where pending == nil {
+            await Task.yield()
+        }
+        #expect(pending != nil)
+        orchestrator.suspendForUserAbsence()
+        pending?.resume(returning: .cancelled)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(attempts == 3)
+        #expect(store.get(for: screen.id)?.automationFailures.isEmpty == true)
+        #expect(store.get(for: screen.id)?.activeWallpaper == initial.activeWallpaper)
+    }
+
+    @Test("The one shared automation task is released and stream cancellation drains on stop")
+    func automationClockIsReleased() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        var config = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([1]))
+        config.wallpaperMode = .libraryShuffle
+        let ticks = AsyncStream<Date>.makeStream()
+        var coordinator: WallpaperAutomationCoordinator? = WallpaperAutomationCoordinator(tickStreamFactory: { ticks.stream })
+        weak var weakCoordinator = coordinator
+        coordinator?.start(screenProvider: { [screen] }, configurationProvider: { _ in config },
+                           scheduleHandler: { _ in }, playlistHandler: { _ in }, runInitialScheduleCheck: false)
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(coordinator?.taskStartCountForTesting == 1)
+        coordinator = nil
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(weakCoordinator == nil)
+        ticks.continuation.finish()
     }
 
     @Test("Monitoring stays dormant when no screen has automation demand")
@@ -1110,7 +1375,6 @@ struct WallpaperAutomationCoordinatorTests {
         store: WallpaperConfigurationStore,
         screen: Screen,
         clock: @escaping @MainActor () -> Date,
-        setup: @escaping @MainActor (URL, Screen, ScreenConfiguration, @MainActor @escaping () -> Bool) -> Void = { _, _, _, _ in },
         bump: @escaping @MainActor (CGDirectDisplayID) -> Int = { _ in 0 },
         note: @escaping @MainActor (Screen, AutomaticSwitchMark.Source) -> Void = { _, _ in },
         restore: @escaping @MainActor (Screen, ScreenConfiguration) -> Void
@@ -1119,13 +1383,28 @@ struct WallpaperAutomationCoordinatorTests {
             configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
             playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
             saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: setup, restoreProposedConfiguration: restore,
-            bumpTransition: bump, isCurrentTransition: { _, _ in true }, noteAutomaticSwitch: note, now: clock
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: restore,
+            bumpTransition: bump, isCurrentTransition: { _, _ in true }, now: clock,
+            prepareAutomation: { screen, proposed, source, intended in
+                guard intended() else { return .cancelled }
+                if let source {
+                    note(screen, source)
+                }
+                restore(screen, proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
         )
     }
 
+    /// Automatic switches run on the orchestrator's selection task.
+    private static func settle() async {
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+    }
+
     @Test("A schedule switch and a playlist step mark the display; a schedule check that changes nothing does not")
-    func automaticSwitchesMarkTheDisplay() throws {
+    func automaticSwitchesMarkTheDisplay() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
         var marks: [AutomaticSwitchMark.Source] = []
@@ -1135,8 +1414,10 @@ struct WallpaperAutomationCoordinatorTests {
             restore: { _, config in store.save(config) }
         )
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(marks == [.schedule])
         orchestrator.checkAndApplySchedule(for: screen, force: true)
+        await Self.settle()
         #expect(marks == [.schedule], "a check that left the display alone marked it")
 
         var queued = try #require(store.get(for: screen.id))
@@ -1144,6 +1425,7 @@ struct WallpaperAutomationCoordinatorTests {
         queued.wallpaperQueue = [Self.dayPage, Self.eveningPage]
         store.save(queued)
         orchestrator.advancePlaylist(for: screen)
+        await Self.settle()
         #expect(marks == [.schedule, .playlist])
     }
 
@@ -1171,7 +1453,7 @@ struct WallpaperAutomationCoordinatorTests {
     }
 
     @Test("A hand-picked wallpaper holds until the next slot starts, and a failed apply is not retried within its slot")
-    func manualPickHoldsUntilNextSlot() throws {
+    func manualPickHoldsUntilNextSlot() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
         var clock = automationTime(12, 0, 30)
@@ -1182,15 +1464,18 @@ struct WallpaperAutomationCoordinatorTests {
         })
 
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(restored == [Self.dayPage.content])
         try Self.pickByHand(on: screen, in: store)
         clock = automationTime(13, 5)
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(restored.count == 1)
         #expect(try SchedulePolicy.pausedUntil(for: #require(store.get(for: screen.id)), now: clock, calendar: .current) == automationTime(18))
 
         clock = automationTime(18, 0, 30)
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(restored.last == Self.eveningPage.content)
         #expect(try SchedulePolicy.pausedUntil(for: #require(store.get(for: screen.id)), now: clock, calendar: .current) == nil)
 
@@ -1199,18 +1484,21 @@ struct WallpaperAutomationCoordinatorTests {
         })
         clock = automationTime(22, 0, 30)
         failing.checkAndApplySchedule(for: screen)
+        await Self.settle()
         clock = automationTime(22, 1, 30)
         failing.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(restored.count == 3)
     }
 
     @Test("A hold survives a relaunch, and a check while the user is away leaves the slot unsettled")
-    func pauseSurvivesRelaunchAndAbsence() throws {
+    func pauseSurvivesRelaunchAndAbsence() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
         var clock = automationTime(12, 0, 30)
         let first = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in store.save(config) })
         first.checkAndApplySchedule(for: screen)
+        await Self.settle()
         try Self.pickByHand(on: screen, in: store)
 
         clock = automationTime(14)
@@ -1220,6 +1508,7 @@ struct WallpaperAutomationCoordinatorTests {
             store.save(config)
         })
         relaunched.startMonitoring()
+        await Self.settle()
         #expect(restored.isEmpty)
 
         relaunched.suspendForUserAbsence()
@@ -1228,12 +1517,13 @@ struct WallpaperAutomationCoordinatorTests {
         relaunched.checkAndApplySchedule(for: screen)
         #expect(store.get(for: screen.id)?.scheduleSettledUntil == settled)
         relaunched.resumeAfterUserAbsence()
+        await Self.settle()
         relaunched.stopMonitoring()
         #expect(restored == [Self.eveningPage.content])
     }
 
     @Test("Resuming and editing the plan apply the current slot at once")
-    func resumeAndPlanEditsApplyNow() throws {
+    func resumeAndPlanEditsApplyNow() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
         var clock = automationTime(12, 0, 30)
@@ -1243,15 +1533,18 @@ struct WallpaperAutomationCoordinatorTests {
             store.save(config)
         })
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
 
         try Self.pickByHand(on: screen, in: store)
         clock = automationTime(13, 10)
         orchestrator.checkAndApplySchedule(for: screen, force: true)
+        await Self.settle()
         #expect(restored == [Self.dayPage.content, Self.dayPage.content])
 
         try Self.pickByHand(on: screen, in: store)
         let slots = try #require(store.get(for: screen.id)?.scheduleSlots)
         orchestrator.updateAutomation(queue: [], slots: slots, mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+        await Self.settle()
         #expect(restored.count == 3)
     }
 
@@ -1271,17 +1564,14 @@ struct WallpaperAutomationCoordinatorTests {
         var commits = 0
         let orchestrator = Self.scheduleOrchestrator(
             store: store, screen: screen, clock: { clock },
-            setup: { _, _, proposed, beforeCommit in
-                if beforeCommit() {
-                    store.save(proposed)
-                    commits += 1
-                }
-            },
             bump: { _ in
                 transitions += 1
                 return transitions
             },
-            restore: { _, _ in Issue.record("An old video-only slot switches through prepared video playback") }
+            restore: { _, proposed in
+                store.save(proposed)
+                commits += 1
+            }
         )
 
         orchestrator.checkAndApplySchedule(for: screen)
@@ -1292,6 +1582,7 @@ struct WallpaperAutomationCoordinatorTests {
         try Self.pickByHand(on: screen, in: store)
         clock = automationTime(8)
         orchestrator.checkAndApplySchedule(for: screen)
+        await Self.settle()
         #expect(transitions == 1)
     }
 
@@ -1461,10 +1752,10 @@ struct WallpaperAutomationCoordinatorTests {
     }
 
     @Test("Removing the playing row plays the row that takes its place; removing another row leaves the display alone")
-    func removingPlayingRowPlaysItsSuccessor() throws {
+    func removingPlayingRowPlaysItsSuccessor() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let rows = ["A", "B", "C"].map { WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default)) }
-        func run(saving queue: [WallpaperQueueEntry]) -> (restored: [WallpaperContent], cursor: Int?) {
+        func run(saving queue: [WallpaperQueueEntry]) async -> (restored: [WallpaperContent], cursor: Int?) {
             var config = ScreenConfiguration(screenID: screen.id, wallpaper: rows[0].content)
             config.wallpaperQueue = rows
             config.playlistCursorIndex = 0
@@ -1475,19 +1766,20 @@ struct WallpaperAutomationCoordinatorTests {
                 store.save(proposed)
             })
             orchestrator.updateAutomation(queue: queue, slots: [], mode: .playlist, rotationMinutes: nil, shuffle: false, for: screen)
+            await Self.settle()
             return (restored, store.get(for: screen.id)?.playlistCursorIndex)
         }
 
-        let removedPlaying = run(saving: [rows[1], rows[2]])
+        let removedPlaying = await run(saving: [rows[1], rows[2]])
         #expect(removedPlaying.restored == [rows[1].content], "the removed row kept playing")
         #expect(removedPlaying.cursor == 0)
-        let removedOther = run(saving: [rows[0], rows[2]])
+        let removedOther = await run(saving: [rows[0], rows[2]])
         #expect(removedOther.restored.isEmpty, "removing a row that was not playing changed the display")
         #expect(removedOther.cursor == 0)
     }
 
     @Test("Clearing every slot fills the day with the unscheduled-hours wallpaper at once")
-    func clearedSlotsApplyFallback() throws {
+    func clearedSlotsApplyFallback() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         var planned = Self.plannedConfiguration(for: screen)
         planned.activeWallpaper = Self.dayPage.content
@@ -1499,6 +1791,7 @@ struct WallpaperAutomationCoordinatorTests {
         })
 
         orchestrator.updateAutomation(queue: [], slots: [], mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+        await Self.settle()
 
         #expect(restored == [Self.fallbackVideo.content])
     }
@@ -1582,7 +1875,7 @@ struct WallpaperAutomationCoordinatorTests {
     }
 
     @Test("A fallback picked in the panel is saved and fills the unscheduled hours at once")
-    func pickedFallbackFillsUnscheduledHours() throws {
+    func pickedFallbackFillsUnscheduledHours() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
         let planned = Self.plannedConfiguration(for: screen)
         let slots = try #require(planned.scheduleSlots)
@@ -1595,6 +1888,7 @@ struct WallpaperAutomationCoordinatorTests {
         let other = WallpaperQueueEntry(title: "Other", content: .html(source: .inline("other"), config: .default))
 
         orchestrator.updateAutomation(queue: [], slots: slots, fallback: other, mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+        await Self.settle()
 
         #expect(store.get(for: screen.id)?.scheduleFallback == other)
         #expect(restored == [other.content])
@@ -1629,19 +1923,6 @@ struct WallpaperAutomationCoordinatorTests {
         let evening = try #require(WallpaperAutomationSheet.presetSlot(.evening, in: Self.morningAndAfternoon))
         #expect(evening.startHour == 18 && evening.endHour == 22)
         #expect(WallpaperAutomationSheet.presetSlot(.midday, in: Self.morningAndAfternoon) == nil, "an overlapping preset was added")
-    }
-
-    @Test("Dragging a slot's end handle reaches midnight as 24")
-    func trailingHandleReachesTwentyFour() {
-        let hours = TimelineDragSession(slotID: UUID(), kind: .edge(.trailingEdge), originalStart: 18, originalEnd: 24, deltaHours: 0)
-            .proposedHours
-        #expect(hours.start == 18 && hours.end == 24)
-    }
-
-    @Test("A slot with a wallpaper and no old video bookmark is drawn as assigned")
-    func slotWithWallpaperIsAssigned() {
-        let page = WallpaperQueueEntry(title: "Page", content: .html(source: .inline("page"), config: .default))
-        #expect(!TimelineEditor.isUnassigned(ScheduleSlot(startHour: 6, endHour: 12, label: "Morning", wallpaper: page)))
     }
 
     @Test("A drag onto another slot's hours is dropped; a drag into free hours moves the slot")
@@ -1723,10 +2004,14 @@ struct WallpaperAutomationAbsenceTests {
             },
             isCurrentTransition: { generation, _ in
                 generation == transitionGeneration
+            },
+            prepareAutomation: { _, _, _, _ in
+                Issue.record("Picking a legacy playlist row validates through the video loader")
+                return .cancelled
             }
         )
 
-        orchestrator.advancePlaylist(for: screen)
+        orchestrator.playPlaylistEntry(at: 1, for: screen)
         for _ in 0..<50 where await loader.pendingValidationCount == 0 {
             await Task.yield()
         }
@@ -1899,16 +2184,45 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         #expect(!executor.contains("private var puppetBoundScanDetailByObjectID: [String: String?]"))
     }
 
-    @Test("Scene preview has a bounded static poster mode and releases ImageIO state")
-    func sceneDetailPreviewFallbackDoesNotRetainAnimatedPreviewState() throws {
-        let preview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
+    @Test("The current scene detail consumes a bounded first-frame image without retaining an animated preview")
+    func sceneDetailPreviewFallbackDoesNotRetainAnimatedPreviewState() async throws {
+        let hero = try Self.readSourceFile("LiveWallpaper/Views/EditDesk/Detail/DetailHero.swift")
+        let thumbnail = try Self.readSourceFile("LiveWallpaper/Views/EditDesk/Support/ShelfThumbnailCache.swift")
+        #expect(!hero.contains("ShelfPreviewPlayer"))
+        #expect(!hero.contains("CGImageSource"))
+        #expect(!hero.contains("CAKeyframeAnimation"))
+        #expect(!thumbnail.contains("WPEPreviewDecodedCache"))
 
-        #expect(preview.contains("case staticPoster"))
-        #expect(preview.contains("static func dismantleNSView"))
-        #expect(preview.contains("context.coordinator.cancelInflight()"))
-        #expect(preview.contains("nsView.clearImage()"))
-        #expect(preview.contains("WPEPreviewImageDecodeBudget"))
-        #expect(preview.contains("kCGImageSourceShouldCache"))
+        #if !LITE_BUILD
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("scene-static-consumer-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let data = NSMutableData()
+        let gif = try #require(CGImageDestinationCreateWithData(data, "com.compuserve.gif" as CFString, 2, nil))
+        for color in [CGColor(red: 1, green: 0, blue: 0, alpha: 1), CGColor(red: 0, green: 0, blue: 1, alpha: 1)] {
+            let context = try #require(CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+                                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(color)
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+            try CGImageDestinationAddImage(gif, #require(context.makeImage()),
+                                           [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.05]] as CFDictionary)
+        }
+        try #require(CGImageDestinationFinalize(gif))
+        let previewURL = directory.appendingPathComponent("preview.gif")
+        try (data as Data).write(to: previewURL)
+        let input = try #require(CGImageSourceCreateWithData(data, nil))
+        #expect(CGImageSourceGetCount(input) == 2)
+        let origin = try WPEOrigin(workshopID: "static-fixture", title: "Static fixture", originalType: .scene,
+                                   sourceFolderBookmark: directory.bookmarkData(options: .withSecurityScope),
+                                   cacheRelativePath: nil, previewFileName: "preview.gif")
+        let image = try #require(await ShelfThumbnailCache.Sources().scene(origin, CGSize(width: 32, height: 32)))
+        #expect(image.width == 32 && image.height == 16)
+        let pixel = try #require(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        pixel.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let bytes = try #require(pixel.data).assumingMemoryBound(to: UInt8.self)
+        #expect(bytes[0] > 240 && bytes[2] < 10, "The static consumer returned an animated later frame instead of the red first frame")
+        #endif
     }
 
     @Test("Scene diagnostic inventory is not owned by the SwiftUI view")
@@ -2421,29 +2735,6 @@ struct ScreenConfigurationHelpersTests {
         #expect(config.playlistRotationMinutes == 15)
     }
 
-    @Test("applyScheduledBookmark preserves savedVideoBookmarkData (primary)")
-    func applyScheduledBookmarkPreservesPrimary() {
-        let primary = Data([0x01])
-        let scheduled = Data([0xAA])
-
-        var config = ScreenConfiguration(
-            screenID: 2,
-            videoBookmarkData: primary,
-            particleEffect: .rain,
-            effectConfig: .default,
-            playlistBookmarks: [Data([0xBB])],
-            playlistCursorIndex: 1
-        )
-
-        config.applyScheduledBookmark(scheduled)
-
-        #expect(config.activeWallpaper == .video(bookmarkData: scheduled))
-        #expect(config.savedVideoBookmarkData == primary, "primary survives schedule")
-        #expect(config.playlistCursorIndex == 1, "cursor survives schedule")
-        #expect(config.particleEffect == .rain)
-        #expect(config.playlistBookmarks == [Data([0xBB])])
-    }
-
     @Test("withUpdatedActiveBookmark refreshes primary when cursor=0")
     func withUpdatedActiveBookmarkAtPrimary() {
         let config = ScreenConfiguration(
@@ -2534,7 +2825,7 @@ struct ScreenConfigurationHelpersTests {
         let scheduled = Data([0xAA])
         var config = ScreenConfiguration(screenID: 7, videoBookmarkData: primary)
 
-        config.applyScheduledBookmark(scheduled)
+        config.activeWallpaper = .video(bookmarkData: scheduled)
         config.setHTMLWallpaper(source: .inline("<p>ambient</p>"))
 
         #expect(config.savedVideoBookmarkData == primary)
@@ -2547,7 +2838,7 @@ struct ScreenConfigurationHelpersTests {
         let scheduled = Data([0xAA])
         var config = ScreenConfiguration(screenID: 8, videoBookmarkData: primary)
 
-        config.applyScheduledBookmark(scheduled)
+        config.activeWallpaper = .video(bookmarkData: scheduled)
         let restored = config.activateSavedVideoWallpaper()
 
         #expect(restored)

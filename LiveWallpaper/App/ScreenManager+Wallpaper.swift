@@ -354,6 +354,7 @@ extension ScreenManager {
         if wallpapersGloballyEnabled {
             refreshPerformancePolicyForAllScreens()
         }
+        automationOrchestrator.refreshMonitoringIfActive()
         // Both directions: particles outlive the wallpaper session, so the gate going
         // off is the only thing that takes them down.
         if effectsCoordinatorWasInitialized {

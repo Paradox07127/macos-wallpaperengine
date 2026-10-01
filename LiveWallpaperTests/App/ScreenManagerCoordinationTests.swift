@@ -1203,6 +1203,66 @@ struct ScreenManagerCoordinationTests {
 
     // MARK: - Helpers
 
+    @Test("Background automation failures preserve the desktop and never take over its inspector")
+    func automationFailuresDoNotInspectCandidates() async throws {
+        try await Self.runWithSeededConfiguration { manager, screen in
+            defer { manager.tearDownForTermination() }
+            let original = try #require(manager.getConfiguration(for: screen))
+            let runtime = TestRuntimeSession(wallpaperType: .html)
+            screen.installRuntimeSession(runtime)
+            var proposal = original
+            proposal.activeWallpaper = .scene(SceneDescriptor(
+                workshopID: "missing-automation-source", cacheRelativePath: "../invalid",
+                entryFile: "scene.json", capabilityTier: .imageOnly
+            ))
+            let sceneResult = await manager.prepareAutomationWallpaper(proposal, for: screen, source: nil, isStillIntended: { true })
+            #expect(sceneResult == .failed)
+            #expect(manager.wallpaperLoads.attempt(for: screen)?.isInspecting == false)
+            #expect(Self.isSameSession(screen.runtimeSession, runtime))
+            #expect(manager.getConfiguration(for: screen) == original)
+
+            proposal.activeWallpaper = .video(bookmarkData: Data([0xFF]))
+            let videoResult = await manager.prepareAutomationWallpaper(proposal, for: screen, source: nil, isStillIntended: { true })
+            #expect(videoResult == .failed)
+            #expect(manager.wallpaperLoads.attempt(for: screen) == nil)
+            #expect(Self.isSameSession(screen.runtimeSession, runtime))
+            #expect(manager.getConfiguration(for: screen) == original)
+        }
+    }
+
+    @Test("An automatic switch is marked before its commit announces the new configuration", .timeLimit(.minutes(1)))
+    func automaticSwitchIsMarkedBeforeCommitNotification() async throws {
+        try await Self.runWithHTMLConfiguration { manager, screen in
+            defer { manager.tearDownForTermination() }
+            var queued = try #require(manager.getConfiguration(for: screen))
+            queued.wallpaperQueue = ["a", "b"].map {
+                WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline("<p>\($0)</p>"), config: .default))
+            }
+            queued.playlistCursorIndex = 0
+            manager.saveConfiguration(queued)
+            await Self.drainMainQueue()
+            @MainActor final class Serials { var seen: [Int?] = [] }
+            let serials = Serials()
+            let fingerprint = screen.displayFingerprint
+            let screenID = screen.id
+            let observer = NotificationCenter.default.addObserver(
+                forName: .wallpaperConfigurationDidChange, object: nil, queue: .main
+            ) { notification in
+                guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screenID else { return }
+                MainActor.assumeIsolated {
+                    serials.seen.append(manager.automaticSwitchMark(for: fingerprint)?.serial)
+                }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            manager.advancePlaylist(for: screen)
+            try await Self.waitUntil(timeout: .seconds(20)) { manager.automaticSwitchMark(for: fingerprint) != nil }
+            await Self.drainMainQueue()
+
+            #expect(serials.seen == [1], "the panel read the switch serial before the switch was marked, so an open trial survives it")
+        }
+    }
+
     private static func makeSuspendedTask() -> Task<Void, Never> {
         Task.detached {
             try? await Task.sleep(for: .seconds(60))

@@ -15,6 +15,16 @@ public struct WallpaperQueueEntry: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// A source disabled after its initial attempt and one retry both failed.
+public struct WallpaperAutomationFailure: Codable, Equatable, Sendable {
+    public var entry: WallpaperQueueEntry
+    public var failedAt: Date
+    public init(entry: WallpaperQueueEntry, failedAt: Date) {
+        self.entry = entry
+        self.failedAt = failedAt
+    }
+}
+
 public extension ScreenConfiguration {
     /// Read-through migration preserves the primary position and cursor of older video lists.
     var effectiveWallpaperQueue: [WallpaperQueueEntry] {

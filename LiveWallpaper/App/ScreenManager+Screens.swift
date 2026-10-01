@@ -231,6 +231,7 @@ extension ScreenManager {
         configuration: ScreenConfiguration,
         preservingState: Bool,
         intent: WallpaperSessionRestoreIntent = .persistedConfiguration,
+        inspectPreparation: Bool = true,
         beforeCommit: @MainActor @escaping () -> Bool = { true },
         sceneCompletion: WallpaperPreparationCompletion? = nil
     ) -> RuntimePreparationWork? {
@@ -277,13 +278,15 @@ extension ScreenManager {
                 .html(source, htmlConfig),
                 for: screen,
                 configuration: configuration,
-                beforeCommit: beforeCommit
+                beforeCommit: beforeCommit,
+                completion: sceneCompletion
             )
         case .scene(let descriptor):
             return activateAmbientWallpaper(
                 .scene(descriptor),
                 for: screen,
                 configuration: configuration,
+                inspectPreparation: inspectPreparation,
                 beforeCommit: beforeCommit,
                 completion: sceneCompletion
             )

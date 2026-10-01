@@ -58,7 +58,7 @@ struct ProductCapabilitiesTests {
 
     @Test("Lite catalog exposes playlist and schedule automation modes")
     func liteCatalogWallpaperModes() {
-        #expect(ProductCapabilities.lite.selectableWallpaperModes == [.playlist, .schedule])
+        #expect(ProductCapabilities.lite.selectableWallpaperModes == [.playlist, .schedule, .libraryShuffle])
     }
 
     @Test("Pro catalog keeps every automation mode")

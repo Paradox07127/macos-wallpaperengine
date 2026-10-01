@@ -5,6 +5,7 @@ import SwiftUI
 public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case playlist
     case schedule
+    case libraryShuffle
 
     public var id: String { rawValue }
 
@@ -23,8 +24,9 @@ public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable
 
     public var labelKey: LocalizedStringKey {
         switch self {
-        case .playlist: return "Playlist"
-        case .schedule: return "Schedule"
+        case .playlist: "Playlist"
+        case .schedule: "Schedule"
+        case .libraryShuffle: "Library Shuffle"
         }
     }
 }

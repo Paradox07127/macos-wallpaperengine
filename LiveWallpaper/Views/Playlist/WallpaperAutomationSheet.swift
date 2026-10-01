@@ -55,6 +55,7 @@ extension WallpaperQueueEntry {
 struct WallpaperAutomationSheet: View {
     let screen: Screen
     let library: SavedLibraryModel
+    private let initialConfiguration: ScreenConfiguration?
     @Environment(ScreenManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,13 +64,16 @@ struct WallpaperAutomationSheet: View {
     @State private var mode: WallpaperMode = .playlist
     @State private var savedMode: WallpaperMode = .playlist
     @State private var rotation = 0
+    @State private var libraryRotation = 15
     @State private var shuffle = false
     @State private var fallback: WallpaperQueueEntry?
     @State private var derivedFallback: WallpaperQueueEntry?
     @State private var shownBeforeTrial: ScreenConfiguration?
     @State private var search = ""
     @State private var picking = false
-    @State private var openedHour = Calendar.current.component(.hour, from: .now)
+    @State private var openedAt = Date()
+    @State private var selectedSlotID: UUID?
+    @State private var failures: [String: WallpaperAutomationFailure] = [:]
     @State private var pickTarget: PickTarget = .queue
     @State private var added: [LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
     @State private var error: String?
@@ -78,6 +82,17 @@ struct WallpaperAutomationSheet: View {
     /// The row "Preview on This Display" put on screen, and the display's automatic-switch serial at that moment.
     @State private var preview: (entryID: WallpaperQueueEntry.ID, switchSerial: Int?)?
     @State private var thumbnails = ShelfThumbnailCache()
+
+    init(screen: Screen, library: SavedLibraryModel, initialConfiguration: ScreenConfiguration? = nil) {
+        self.screen = screen
+        self.library = library
+        self.initialConfiguration = initialConfiguration
+        _mode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
+        _savedMode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
+        _queue = State(initialValue: initialConfiguration?.effectiveWallpaperQueue ?? [])
+        _slots = State(initialValue: initialConfiguration?.scheduleSlots ?? [])
+        _failures = State(initialValue: initialConfiguration?.automationFailures ?? [:])
+    }
 
     private enum PickTarget: Equatable {
         case queue, slot(UUID), fallback
@@ -95,7 +110,11 @@ struct WallpaperAutomationSheet: View {
         if mode == savedMode {
             return "Save"
         }
-        return mode == .playlist ? "Save and Use Playlist" : "Save and Use Daily Schedule"
+        switch mode {
+        case .playlist: return "Save and Use Playlist"
+        case .schedule: return "Save and Use Daily Schedule"
+        case .libraryShuffle: return "Save and Use Library Shuffle"
+        }
     }
 
     static func togglePick(
@@ -186,25 +205,27 @@ struct WallpaperAutomationSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: mode == .playlist ? "list.bullet" : "clock")
+                Image(systemName: "clock.arrow.circlepath")
                     .font(.title2).foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Playlist & Schedule").font(DesignTokens.Typography.sheetTitle)
+                    Text("Wallpaper Automation").font(DesignTokens.Typography.sheetTitle)
                     Text(verbatim: screen.name).font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Picker("Playback Mode", selection: $mode) {
-                    Label("Playlist", systemImage: "list.bullet").tag(WallpaperMode.playlist)
-                    Label("Daily Schedule", systemImage: "clock").tag(WallpaperMode.schedule)
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 270)
             }
             .padding(24)
+            Picker("Playback Mode", selection: $mode) {
+                Label("Playlist", systemImage: "play.rectangle.on.rectangle").tag(WallpaperMode.playlist)
+                Label("Daily Schedule", systemImage: "clock").tag(WallpaperMode.schedule)
+                Label("Library Shuffle", systemImage: "shuffle").tag(WallpaperMode.libraryShuffle)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .padding(.horizontal, 24).padding(.bottom, 16)
             Group {
-                if mode == .playlist {
-                    queuePage
-                } else {
-                    schedulePage
+                switch mode {
+                case .playlist: queuePage
+                case .schedule: schedulePage
+                case .libraryShuffle: libraryShufflePage
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -225,7 +246,8 @@ struct WallpaperAutomationSheet: View {
             }
             .padding(20)
         }
-        .frame(width: 820, height: 600)
+        .frame(width: min(1040, max(760, (NSScreen.main?.visibleFrame.width ?? 1200) - 80)),
+               height: min(720, max(540, (NSScreen.main?.visibleFrame.height ?? 900) - 80)))
         .background(DesignTokens.Colors.pageBackground)
         .onAppear(perform: load)
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
@@ -234,6 +256,7 @@ struct WallpaperAutomationSheet: View {
                 &preview, shownBeforeTrial: &shownBeforeTrial,
                 currentSerial: manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial
             )
+            failures = manager.getConfiguration(for: screen)?.automationFailures ?? [:]
             playingEntryID = Self.nowPlayingEntryID(
                 in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID, previewing: preview?.entryID
             )
@@ -250,10 +273,67 @@ struct WallpaperAutomationSheet: View {
         .appLanguagePopover(isPresented: $picking, arrowEdge: .bottom) { wallpaperPicker }
     }
 
+    private var libraryShufflePage: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Label("Library Shuffle", systemImage: "shuffle")
+                .font(DesignTokens.Typography.sectionTitle)
+            Text("Automatically picks a random wallpaper from your entire library. New imports join automatically; unavailable wallpapers are skipped. The same wallpaper never plays twice in a row.")
+                .foregroundStyle(.secondary)
+            HStack {
+                Picker("Rotate", selection: $libraryRotation) {
+                    ForEach(Array(Set([1, 5, 15, 30, 60, 120, libraryRotation])).sorted(), id: \.self) { value in
+                        Text("Every \(value) min").tag(value)
+                    }
+                }.frame(width: 240)
+                Spacer()
+                if savedMode == .libraryShuffle {
+                    Button("Next Random Wallpaper") { manager.advanceLibraryShuffle(for: screen) }
+                }
+            }
+            skippedSources
+            Spacer()
+        }
+        .padding(24)
+    }
+
+    @ViewBuilder
+    private var skippedSources: some View {
+        if !failures.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Skipped wallpapers", systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(failures.values.sorted { $0.failedAt > $1.failedAt }, id: \.entry.id) { failure in
+                            HStack {
+                                Text(verbatim: failure.entry.displayTitle).lineLimit(1)
+                                Spacer()
+                                Button("Enable Again") { manager.clearAutomationFailure(failure.entry.id, for: screen) }
+                            }
+                        }
+                    }
+                }.frame(maxHeight: 200)
+            }
+            .padding(16)
+            .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.lg))
+        }
+    }
+
+    @ViewBuilder
+    private func failureBadge(_ entry: WallpaperQueueEntry) -> some View {
+        if failures[entry.id]?.entry.content == entry.content {
+            Button { manager.clearAutomationFailure(entry.id, for: screen) } label: {
+                Label("Skipped", systemImage: "exclamationmark.triangle.fill")
+                    .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
+            }
+            .buttonStyle(.borderless)
+            .help(Text("Failed twice. Click to enable this wallpaper again."))
+        }
+    }
+
     private var queuePage: some View {
         VStack(spacing: 16) {
             HStack {
-                Label("Plays in order, then repeats", systemImage: "repeat")
+                Label(shuffle ? "Shuffle" : "Plays in order, then repeats", systemImage: shuffle ? "shuffle" : "repeat")
                     .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Toggle("Shuffle", isOn: $shuffle).toggleStyle(.switch).controlSize(.small)
@@ -273,7 +353,6 @@ struct WallpaperAutomationSheet: View {
                         HStack(spacing: 14) {
                             if entry.id == playingEntryID {
                                 Image(systemName: "waveform").foregroundStyle(.tint)
-                                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: !reduceMotion)
                                     .frame(width: 22).accessibilityHidden(true)
                             } else {
                                 Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
@@ -281,6 +360,7 @@ struct WallpaperAutomationSheet: View {
                             QueueEntryLabel(entry: entry, isPlaying: entry.id == playingEntryID, thumbnails: thumbnails) {
                                 thumbnailRequest(for: entry)
                             }
+                            failureBadge(entry)
                             Spacer()
                             icon("play.fill", "Preview on This Display") {
                                 preview = (entry.id, manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial)
@@ -290,24 +370,27 @@ struct WallpaperAutomationSheet: View {
                             icon("arrow.down", "Move Down") { move(index, by: 1) }.disabled(index == queue.count - 1)
                             icon("minus", "Remove") { queue.remove(at: index) }
                         }
-                        .padding(.vertical, 6)
+                        .padding(12)
+                        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.lg))
+                        .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .accessibilityElement(children: .contain)
                     }
                     .onMove { from, to in queue.move(fromOffsets: from, toOffset: to) }
                 }
                 .listStyle(.plain).scrollContentBackground(.hidden)
-                .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
             }
+            Text("Failed sources are retried once, then skipped until you enable them again.")
+                .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
         }
         .padding(24)
     }
 
     private var schedulePage: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Repeats every day", systemImage: "arrow.clockwise")
-                    .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
+                Label("24-hour schedule", systemImage: "clock")
+                    .font(DesignTokens.Typography.sectionTitle)
                 Spacer()
                 NativeMenuButton { presetMenu } label: {
                     Image(systemName: "plus")
@@ -319,7 +402,56 @@ struct WallpaperAutomationSheet: View {
                 .accessibilityLabel(Text("Add schedule slot"))
                 .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
             }
-            timeline
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    timeline.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Text("Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot.")
+                        .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    scheduleInspector
+                    Divider()
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(slots.sorted { $0.startHour < $1.startHour }) { slot in
+                                    Button { selectedSlotID = slot.id } label: {
+                                        HStack(spacing: 8) {
+                                            Text(verbatim: String(ScheduleDialStyle.number(slot, in: slots)))
+                                                .font(DesignTokens.Typography.badge).monospacedDigit()
+                                                .foregroundStyle(slotColor(slot.id)).frame(width: 22, height: 22)
+                                                .background(slotColor(slot.id).opacity(0.1), in: Circle())
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(verbatim: rangeText(for: slot.id)).font(DesignTokens.Typography.caption).monospacedDigit()
+                                                Text(verbatim: slot.wallpaper?.displayTitle ?? slot.localizedLabel).lineLimit(1)
+                                            }
+                                            Spacer(minLength: 0)
+                                            if let entry = slot.wallpaper, failures[entry.id]?.entry.content == entry.content {
+                                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DesignTokens.Colors.Status.warning)
+                                            }
+                                        }.padding(10)
+                                            .background(selectedSlotID == slot.id ? slotColor(slot.id).opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
+                                    }.buttonStyle(.plain).id(slot.id)
+                                }
+                            }
+                        }.onChange(of: selectedSlotID, initial: true) { _, id in
+                            if let id {
+                                proxy.scrollTo(id, anchor: .center)
+                            }
+                        }
+                    }
+                    if SchedulePolicy.findFreeRange(in: slots, minHours: 1) != nil, let entry = fallback ?? derivedFallback {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Unscheduled Hours").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+                            Button { pickTarget = .fallback; picking = true } label: { entryLabel(entry) }
+                                .buttonStyle(.plain)
+                            failureBadge(entry)
+                        }
+                    }
+                }.padding(16).frame(width: 270)
+                    .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
+            }
             if let problem {
                 Group {
                     switch problem {
@@ -328,78 +460,66 @@ struct WallpaperAutomationSheet: View {
                     case let .overlap(first, second):
                         Label("Time slots \(rangeText(for: first)) and \(rangeText(for: second)) overlap.", systemImage: "exclamationmark.triangle")
                     }
-                }
-                .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
+                }.font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
             } else if let id = slotWithoutWallpaper {
-                Label(
-                    String(
-                        localized: "Time slot \(rangeText(for: id)) has no wallpaper yet. Choose one to save the schedule.", bundle: .appLanguage,
-                        comment: "Playlist and schedule panel: why Save is unavailable while a time slot has no wallpaper. Placeholder is the slot's hours, like 06:00–12:00."
-                    ),
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
+                Text("Time slot \(rangeText(for: id)) has no wallpaper yet. Choose one to save the schedule.")
+                    .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.Status.warning)
             }
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach($slots) { $slot in
-                        HStack(spacing: 12) {
-                            Circle().fill(slotColor(slot.id)).frame(width: 8, height: 8)
-                            hourPicker("Start", hour: $slot.startHour, hours: 0 ..< 24)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            hourPicker("End", hour: Self.endHourBinding($slot.endHour), hours: 1 ..< 25)
-                            Button {
-                                pickTarget = .slot(slot.id); picking = true
-                            } label: {
-                                if let entry = slot.wallpaper {
-                                    entryLabel(entry)
-                                } else {
-                                    Label("Choose Wallpaper", systemImage: "plus")
-                                }
-                            }
-                            .buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
-                            icon("minus", "Remove") { slots.removeAll { $0.id == slot.id } }
-                        }
-                        .padding(12)
-                        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
-                    }
+        }.padding(24)
+    }
+
+    @ViewBuilder
+    private var scheduleInspector: some View {
+        if let index = slots.firstIndex(where: { $0.id == selectedSlotID }) {
+            let slot = slots[index]
+            Text("Time Slot").font(DesignTokens.Typography.sectionTitle)
+            HStack {
+                hourPicker("Start", hour: $slots[index].startHour, hours: 0 ..< 24)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                hourPicker("End", hour: Self.endHourBinding($slots[index].endHour), hours: 1 ..< 25)
+            }
+            Button { pickTarget = .slot(slot.id); picking = true } label: {
+                if let entry = slot.wallpaper {
+                    QueueEntryLabel(entry: entry, isPlaying: false, thumbnails: thumbnails) { thumbnailRequest(for: entry) }
+                } else {
+                    Label("Choose Wallpaper", systemImage: "plus")
                 }
+            }.buttonStyle(.plain)
+            if let entry = slot.wallpaper {
+                failureBadge(entry)
             }
-            if SchedulePolicy.findFreeRange(in: slots, minHours: 1) != nil, let entry = fallback ?? derivedFallback {
-                HStack(spacing: 12) {
-                    Text("Unscheduled Hours")
-                    Button {
-                        pickTarget = .fallback; picking = true
-                    } label: {
-                        entryLabel(entry)
-                    }
-                    .buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(12)
-                .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
-            }
+            Button(role: .destructive) {
+                slots.removeAll { $0.id == slot.id }
+                selectedSlotID = slots.first?.id
+            } label: { Label("Remove", systemImage: "trash") }
+                .buttonStyle(.borderless)
+        } else {
+            Text("Select a time slot").font(DesignTokens.Typography.sectionTitle)
+            Text("Choose a wallpaper around the clock to edit its hours.")
+                .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
         }
-        .padding(24)
     }
 
     private var timeline: some View {
-        TimelineEditor(
-            slots: slots, currentHour: openedHour, palette: Self.slotPalette,
-            onCommitTimeChange: { id, start, end in
+        ScheduleDial(
+            slots: slots, now: max(openedAt, manager.automationTime), palette: Self.slotPalette, selectedID: $selectedSlotID,
+            onRetimed: { id, start, end in
                 if let retimed = Self.retimed(slots, id: id, start: start, end: end) {
                     slots = retimed
-                }
-            },
-            onRequestInsert: { hour in
-                if let slot = Self.insertedSlot(atHour: hour, in: slots) {
-                    slots.append(slot)
                     error = nil
                 } else {
-                    error = String(
-                        localized: "No room here. Drag a neighbouring slot edge first.", bundle: .appLanguage,
-                        comment: "Schedule error shown when a double-tap insertion would collide with neighbours."
-                    )
+                    error = String(localized: "Time slots overlap. Choose different hours.", bundle: .appLanguage)
                 }
+            },
+            onInsert: { hour in
+                if let slot = Self.insertedSlot(atHour: hour, in: slots) {
+                    slots.append(slot)
+                    selectedSlotID = slot.id
+                    error = nil
+                }
+            },
+            thumbnail: { slot in
+                AnyView(ScheduleSlotThumbnail(entry: slot.wallpaper, thumbnails: thumbnails) { slot.wallpaper.map(thumbnailRequest) })
             }
         )
     }
@@ -411,6 +531,7 @@ struct WallpaperAutomationSheet: View {
             Button {
                 if let slot {
                     slots.append(slot)
+                    selectedSlotID = slot.id
                 }
             } label: {
                 let hours = String(format: "%02d:00–%02d:00", preset.hours.start, preset.hours.end)
@@ -503,10 +624,11 @@ struct WallpaperAutomationSheet: View {
         GlassIconButton("plus", size: .regular, action: action).help(Text(title)).accessibilityLabel(Text(title))
     }
 
-    private static let slotPalette: [Color] = [.blue, .teal, .indigo, .orange, .purple, .mint]
+    private static let slotPalette = ScheduleDialStyle.palette
 
     private func slotColor(_ id: UUID) -> Color {
-        Self.slotPalette[(slots.firstIndex(where: { $0.id == id }) ?? 0) % Self.slotPalette.count]
+        let number = slots.first(where: { $0.id == id }).map { ScheduleDialStyle.number($0, in: slots) } ?? 1
+        return Self.slotPalette[(number - 1) % Self.slotPalette.count]
     }
 
     private func move(_ index: Int, by offset: Int) {
@@ -517,7 +639,9 @@ struct WallpaperAutomationSheet: View {
     private func addSlot() {
         guard let range = SchedulePolicy.findFreeRange(in: slots, minHours: 1) else { return }
         let end = min(range.start + 6, range.end)
-        slots.append(ScheduleSlot(startHour: range.start, endHour: end > 24 ? end - 24 : end, label: ""))
+        let slot = ScheduleSlot(startHour: range.start, endHour: end > 24 ? end - 24 : end, label: "")
+        slots.append(slot)
+        selectedSlotID = slot.id
     }
 
     private func assign(_ entry: WallpaperQueueEntry, toSlot id: UUID) {
@@ -599,7 +723,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func load() {
-        guard let config = manager.getConfiguration(for: screen) else { return }
+        guard let config = manager.getConfiguration(for: screen) ?? initialConfiguration else { return }
         mode = config.wallpaperMode
         savedMode = config.wallpaperMode
         queue = config.effectiveWallpaperQueue
@@ -617,7 +741,10 @@ struct WallpaperAutomationSheet: View {
             }
             return migrated
         }
+        failures = config.automationFailures
+        selectedSlotID = slots.first { $0.containsHour(Calendar.current.component(.hour, from: openedAt)) }?.id ?? slots.first?.id
         rotation = config.playlistRotationMinutes ?? 0
+        libraryRotation = max(1, config.libraryShuffleRotationMinutes)
         shuffle = config.shufflePlaylist
         fallback = config.scheduleFallback
         derivedFallback = currentEntry.map { SchedulePolicy.initialFallback(for: config, current: $0) }
@@ -626,13 +753,14 @@ struct WallpaperAutomationSheet: View {
     private func save() {
         manager.updateWallpaperAutomation(
             queue: queue, slots: slots, fallback: fallback ?? (mode == .schedule ? derivedFallback : nil), mode: mode,
-            rotationMinutes: rotation > 0 ? rotation : nil, shuffle: shuffle, for: screen
+            rotationMinutes: rotation > 0 ? rotation : nil, shuffle: shuffle,
+            libraryShuffleRotationMinutes: libraryRotation, for: screen
         )
     }
 }
 
 private struct QueueEntryLabel: View {
-    private static let thumbnailSize = CGSize(width: 64, height: 36)
+    private static let thumbnailSize = CGSize(width: 80, height: 45)
     let entry: WallpaperQueueEntry
     let isPlaying: Bool
     let thumbnails: ShelfThumbnailCache
@@ -673,6 +801,27 @@ private struct QueueEntryLabel: View {
             Image(systemName: entry.symbol).font(DesignTokens.Typography.sectionTitle)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.quaternary)
+        }
+    }
+}
+
+private struct ScheduleSlotThumbnail: View {
+    let entry: WallpaperQueueEntry?
+    let thumbnails: ShelfThumbnailCache
+    let request: () -> ShelfThumbnailCache.Request?
+    @State private var image: CGImage?
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            } else {
+                Image(systemName: entry?.symbol ?? "photo").frame(maxWidth: .infinity, maxHeight: .infinity).background(.quaternary)
+            }
+        }.task(id: entry?.id) {
+            guard let request = request() else { image = nil; return }
+            image = await thumbnails.image(request, pixelSize: CGSize(width: 92 * scale, height: 60 * scale), scale: scale)
         }
     }
 }

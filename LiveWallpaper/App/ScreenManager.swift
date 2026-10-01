@@ -40,7 +40,7 @@ final class ScreenManager {
     @ObservationIgnored var sceneSpanGroups: [UUID: SceneSpanWallpaperGroup] = [:]
     @ObservationIgnored var sceneSpanProposals: [UUID: [CGDirectDisplayID: ScreenConfiguration]] = [:]
     #endif
-    @ObservationIgnored private let automationCoordinator = WallpaperAutomationCoordinator()
+    @ObservationIgnored let automationCoordinator = WallpaperAutomationCoordinator()
     @ObservationIgnored let powerMonitor: any PowerMonitoring
     @ObservationIgnored let playbackStateSubject = CurrentValueSubject<Bool, Never>(false)
     @ObservationIgnored let fullScreenDetector: any FullScreenDetecting
@@ -250,8 +250,16 @@ final class ScreenManager {
         isCurrentTransition: { [weak self] generation, screenID in
             self?.isCurrentTransition(generation, for: screenID) ?? false
         },
-        noteAutomaticSwitch: { [weak self] screen, source in
-            self?.noteAutomaticSwitch(on: screen, source: source)
+        prepareAutomation: { [weak self] screen, config, source, intended in
+            guard let self else { return .cancelled }
+            return await self.prepareAutomationWallpaper(config, for: screen, source: source, isStillIntended: intended)
+        },
+        automationAllowed: { [weak self] in
+            self?.wallpapersGloballyEnabled == true && self?.isTerminating == false
+        },
+        libraryEntries: { [weak self] in
+            guard let self else { return [] }
+            return LibraryShufflePolicy.liveEntries().filter { self.featureCatalog.capabilities.canRender($0.content.wallpaperType) }
         }
     )
     /// Keyed by `displayFingerprint`; read by the Edit Desk's undo and the playlist sheet's preview to spot a switch they did not make.

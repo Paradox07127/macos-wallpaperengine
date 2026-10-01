@@ -236,7 +236,7 @@ private final class InspectorRenderFixture {
         return DetailInspectorPanel(
             screen: screen, draft: .constant(draft), screenManager: manager, featureCatalog: FeatureCatalog(capabilities: .pro),
             inspectorPanelWidth: InspectorRender.size.width, isColorExpanded: .constant(false),
-            showsResetDisplaySettings: false, onResetDisplaySettings: {}, onOpenAutomation: {}
+            showsResetDisplaySettings: false, onResetDisplaySettings: {}
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .leading) { Divider() }

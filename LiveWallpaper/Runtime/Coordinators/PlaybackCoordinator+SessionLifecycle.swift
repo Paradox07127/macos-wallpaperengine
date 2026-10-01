@@ -290,16 +290,18 @@ extension PlaybackCoordinator {
         url: URL,
         screen: Screen,
         proposedConfiguration: ScreenConfiguration,
-        beforeCommit: @MainActor @escaping () -> Bool = { true }
+        beforeCommit: @MainActor @escaping () -> Bool = { true },
+        completion: (@MainActor (WallpaperPreparationResult) -> Void)? = nil
     ) {
         let generation = transition.bumpTransition(for: screen.id)
         let expectedConfigurationRevision = configurationStore.revision(for: screen.id)
-        guard isRuntimeInstallationAllowed() else { return }
+        guard isRuntimeInstallationAllowed() else { completion?(.cancelled); return }
         guard isGloballyEnabled() else {
-            guard beforeCommit() else { return }
+            guard beforeCommit() else { completion?(.cancelled); return }
             save(proposedConfiguration)
             releaseRuntimeSession(screen)
             notifyWallpaperSessionChanged()
+            completion?(.ready)
             return
         }
         beginPreparedVideoSession(
@@ -313,7 +315,8 @@ extension PlaybackCoordinator {
                 guard beforeCommit() else { return false }
                 self.save(proposedConfiguration)
                 return true
-            }
+            },
+            completion: completion
         )
     }
 
@@ -323,9 +326,11 @@ extension PlaybackCoordinator {
         configuration: ScreenConfiguration?,
         transitionGeneration: Int,
         expectedConfigurationRevision: UInt64,
-        beforeCommit: @MainActor @escaping () -> Bool = { true }
+        beforeCommit: @MainActor @escaping () -> Bool = { true },
+        completion: (@MainActor (WallpaperPreparationResult) -> Void)? = nil
     ) {
         guard let liveScreen = screensProvider().first(where: { $0.id == screen.id }) else {
+            completion?(.cancelled)
             Logger.warning("Screen with ID \(screen.id) not found in screens array", category: .screenManager)
             return
         }
@@ -368,6 +373,7 @@ extension PlaybackCoordinator {
         let task = Task { @MainActor [weak self, weak liveScreen, weak work] in
             guard let self, let liveScreen else {
                 session.cleanup()
+                completion?(.cancelled)
                 return
             }
             // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
@@ -522,6 +528,7 @@ extension PlaybackCoordinator {
             if let work {
                 self.transition.clearRuntimePreparationIfMatch(work, for: screenID)
             }
+            completion?(result)
         }
         work.task = task
         transition.setRuntimePreparation(work, for: screenID)

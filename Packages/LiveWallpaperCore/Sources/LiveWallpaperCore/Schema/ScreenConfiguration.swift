@@ -25,10 +25,13 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var scheduleSlots: [ScheduleSlot]?
     public var playlistBookmarks: [Data]?
     public var wallpaperQueue: [WallpaperQueueEntry]?
+    public var automationFailures: [String: WallpaperAutomationFailure] = [:]
     public var scheduleFallback: WallpaperQueueEntry?
     /// Until this instant the daily schedule leaves the content alone; nil = not reconciled yet.
     public var scheduleSettledUntil: Date?
     public var shufflePlaylist: Bool
+    /// Independent of the curated playlist interval; live library membership is never persisted here.
+    public var libraryShuffleRotationMinutes: Int = 15
     public var playlistRotationMinutes: Int?
     public var playlistCursorIndex: Int?
     /// Starred primary index in the visible list; nil = legacy pin at 0.
@@ -66,9 +69,11 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case scheduleSlots
         case playlistBookmarks
         case wallpaperQueue
+        case automationFailures
         case scheduleFallback
         case scheduleSettledUntil
         case shufflePlaylist
+        case libraryShuffleRotationMinutes
         case playlistRotationMinutes
         case playlistCursorIndex
         case playlistPrimaryIndex
@@ -242,7 +247,9 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         sceneMouseInteractionEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneMouseInteractionEnabled) ?? true
         sceneClickCaptureEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneClickCaptureEnabled) ?? false
 
+        automationFailures = try c.decodeIfPresent([String: WallpaperAutomationFailure].self, forKey: .automationFailures) ?? [:]
         wallpaperMode = try c.decodeIfPresent(WallpaperMode.self, forKey: .wallpaperMode) ?? .playlist
+        libraryShuffleRotationMinutes = try max(1, c.decodeIfPresent(Int.self, forKey: .libraryShuffleRotationMinutes) ?? 15)
 
         savedHTMLSource = try c.decodeIfPresent(HTMLSource.self, forKey: .savedHTMLSource)
         savedHTMLConfig = try c.decodeIfPresent(HTMLConfig.self, forKey: .savedHTMLConfig)
@@ -296,6 +303,9 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(scheduleSlots, forKey: .scheduleSlots)
         try c.encodeIfPresent(playlistBookmarks, forKey: .playlistBookmarks)
         try c.encodeIfPresent(wallpaperQueue, forKey: .wallpaperQueue)
+        if !automationFailures.isEmpty {
+            try c.encode(automationFailures, forKey: .automationFailures)
+        }
         try c.encodeIfPresent(scheduleFallback, forKey: .scheduleFallback)
         try c.encodeIfPresent(scheduleSettledUntil, forKey: .scheduleSettledUntil)
         try c.encode(shufflePlaylist, forKey: .shufflePlaylist)
@@ -304,6 +314,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(playlistPrimaryIndex, forKey: .playlistPrimaryIndex)
         try c.encode(setAsLockScreen, forKey: .setAsLockScreen)
         try c.encode(wallpaperMode, forKey: .wallpaperMode)
+        try c.encode(libraryShuffleRotationMinutes, forKey: .libraryShuffleRotationMinutes)
         try c.encode(muted, forKey: .muted)
         try c.encode(videoVolume, forKey: .videoVolume)
         try c.encode(videoColorSpace, forKey: .videoColorSpace)
@@ -422,11 +433,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper = .video(bookmarkData: bookmarkData, packageEntryName: packageEntryName)
         playlistCursorIndex = 0
         playlistPrimaryIndex = nil
-    }
-
-    /// Slots are bare bookmarks (loose video only; packaged cannot round-trip).
-    public mutating func applyScheduledBookmark(_ bookmarkData: Data) {
-        activeWallpaper = .video(bookmarkData: bookmarkData)
     }
 
     private mutating func preserveCurrentVideoBookmarkIfNeeded() {

@@ -91,7 +91,7 @@ struct DetailTopBar: View {
     @ViewBuilder
     private var sharedActions: some View {
         if let openAutomation = actions.openAutomation {
-            icon("list.bullet", "Playlist & Schedule", action: openAutomation)
+            icon("clock.arrow.circlepath", "Wallpaper Automation", action: openAutomation)
                 .disabled(!hasWallpaper || attemptShown)
         }
         let bookmarked = actions.bookmark?.isBookmarked == true

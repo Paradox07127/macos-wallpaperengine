@@ -183,7 +183,7 @@ struct DisplayDetailHost: View {
             .sheet(isPresented: $showAutomation) {
                 if let library {
                     AppLanguageScope(defaults: .appScoped()) {
-                        WallpaperAutomationSheet(screen: screen, library: library)
+                        WallpaperAutomationSheet(screen: screen, library: library, initialConfiguration: screenManager.getConfiguration(for: screen))
                             .environment(screenManager)
                     }
                 }
@@ -533,8 +533,7 @@ struct DisplayDetailHost: View {
             inspectorPanelWidth: width,
             isColorExpanded: $isColorExpanded,
             showsResetDisplaySettings: screenManager.displaySettingsDifferFromDefaults(for: screen),
-            onResetDisplaySettings: { requestResetDisplaySettings(for: screen) },
-            onOpenAutomation: { showAutomation = true }
+            onResetDisplaySettings: { requestResetDisplaySettings(for: screen) }
         )
     }
 
