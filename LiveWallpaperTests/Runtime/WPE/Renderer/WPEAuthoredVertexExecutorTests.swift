@@ -108,6 +108,62 @@ struct WPEAuthoredVertexExecutorTests {
         }
     }
 
+    @Test func finalOrdinaryEffectProjectionUsesCoupledNormalizedPosition() throws {
+        let fixture = try fixture(prewarmed: true, effectProjection: true)
+        let output = try fixture.executor.render(pipeline: fixture.pipeline, size: CGSize(width: 4, height: 4), textures: [:])
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: output.pixelFormat, width: 4, height: 4, mipmapped: false)
+        descriptor.storageMode = .shared
+        let staging = try #require(fixture.device.makeTexture(descriptor: descriptor))
+        let command = try #require(fixture.executor.textureSourceCommandQueue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: output, to: staging)
+        blit.endEncoding(); command.commit(); command.waitUntilCompleted()
+        #expect(command.error == nil)
+        var pixels = [UInt8](repeating: 0, count: 64)
+        pixels.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0) }
+        let bgra = output.pixelFormat == .bgra8Unorm || output.pixelFormat == .bgra8Unorm_srgb
+        let srgb = output.pixelFormat == .rgba8Unorm_srgb || output.pixelFormat == .bgra8Unorm_srgb
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let expected = [0.25 + 0.5 * (Double(x) + 0.5) / 4, 0.75 - 0.5 * (Double(y) + 0.5) / 4].map { Int((255 * (srgb ? encode($0) : $0)).rounded()) }
+                #expect(abs(Int(pixels[(y * 4 + x) * 4 + (bgra ? 2 : 0)]) - expected[0]) <= 1)
+                #expect(abs(Int(pixels[(y * 4 + x) * 4 + 1]) - expected[1]) <= 1)
+            }
+        }
+        let pass = fixture.pipeline.layers[0].passes[0]
+        let layer = fixture.pipeline.layers[0].graphLayer
+        let frame = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4))
+        let utility = WPERenderLayer(objectID: layer.objectID, objectName: layer.objectName, imagePath: "models/util/composelayer.json", materialPath: nil, geometry: layer.geometry, compositeA: layer.compositeA, compositeB: layer.compositeB, localFBOs: [], passes: layer.passes)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: fixture.result, layer: utility, frameState: frame, effectTextureProjection: { nil }) == .geometryUnavailable)
+        var annotatedResult = fixture.result
+        let vertex = try #require(annotatedResult.vertexStage)
+        let annotatedLayout = vertex.uniformLayout.map { uniform in
+            uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName
+                ? WPEUniformSlot(name: uniform.name, glslType: uniform.glslType, slot: uniform.slot, slotCount: uniform.slotCount,
+                                 arrayLength: uniform.arrayLength, materialName: "projection", defaultValue: uniform.defaultValue)
+                : uniform
+        }
+        annotatedResult.vertexStage = .init(library: vertex.library, mslSource: vertex.mslSource, uniformLayout: annotatedLayout,
+                                            samplerNames: vertex.samplerNames, textureSlotCount: vertex.textureSlotCount)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: annotatedResult, layer: layer, frameState: frame, effectTextureProjection: { nil }) == .unverifiedEffectPositionContext)
+        // A distinct following effect owns the final local output.
+        let other = WPERenderPass(id: "other", phase: pass.pass.phase, shader: pass.pass.shader, source: pass.pass.source, target: pass.pass.target, textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let intermediate = WPERenderLayer(objectID: layer.objectID, objectName: layer.objectName, imagePath: layer.imagePath, materialPath: nil, geometry: layer.geometry, compositeA: layer.compositeA, compositeB: layer.compositeB, localFBOs: [], passes: [pass.pass, other, layer.passes[1]])
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: fixture.result, layer: intermediate, frameState: frame, effectTextureProjection: { nil }) == .unverifiedEffectPositionContext)
+    }
+
+    @Test func effectMVPProofRestrictsPositionToProjectedXYW() {
+        let declaration = "uniform mat4 g_ModelViewProjectionMatrix; uniform mat4 g_EffectModelViewProjectionMatrix; attribute vec3 a_Position;"
+        let position = "gl_Position=mul(vec4(a_Position,1.0),g_ModelViewProjectionMatrix);"
+        let effect = "v_View=mul(vec4(a_Position,1.0),g_EffectModelViewProjectionMatrix)"
+        for channels in ["xy", "xyw"] {
+            #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + "void main(){" + position + effect + "." + channels + ";}"))
+        }
+        for extra in [effect + ".xyz;", effect + ";", "v_Raw=a_Position.xy;", "v_View=g_EffectModelViewProjectionMatrix[0].xy;"] {
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + "void main(){" + position + extra + "}"))
+        }
+    }
+
     @Test func recordedNativeClipMVPDoesNotClaimFullProjectionCoverage() {
         let uniform = WPEUniformSlot(name: "g_ModelViewProjectionMatrix", glslType: "mat4", slot: 0, slotCount: 4,
                                      arrayLength: nil, materialName: nil, defaultValue: nil)
@@ -124,10 +180,10 @@ struct WPEAuthoredVertexExecutorTests {
         let result: WPEShaderCompileResult
     }
 
-    private func fixture(prewarmed: Bool) throws -> Fixture {
+    private func fixture(prewarmed: Bool, effectProjection: Bool = false) throws -> Fixture {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let program = WPEShaderProgram(name: "linked-dispatch-test", vertexSource: """
+        let vertexSource = """
         attribute vec3 a_Position;
         attribute vec2 a_TexCoord;
         uniform mat4 g_ModelViewProjectionMatrix;
@@ -136,7 +192,10 @@ struct WPEAuthoredVertexExecutorTests {
             gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1);
             v_TexCoord = vec4(a_TexCoord, 0.375 + 0.25 * a_TexCoord);
         }
-        """, fragmentSource: """
+        """
+        let effectVertex = "#define mul(v,m) ((m)*(v))\n" + vertexSource.replacingOccurrences(of: "uniform mat4 g_ModelViewProjectionMatrix;", with: "uniform mat4 g_ModelViewProjectionMatrix;\nuniform mat4 g_EffectModelViewProjectionMatrix;")
+            .replacingOccurrences(of: "0.375 + 0.25 * a_TexCoord", with: "0.5 + 0.25 * mul(vec4(a_Position,1.0),g_EffectModelViewProjectionMatrix).xy")
+        let program = WPEShaderProgram(name: "linked-dispatch-test", vertexSource: effectProjection ? effectVertex : vertexSource, fragmentSource: """
         varying vec4 v_TexCoord;
         uniform float tint; // {"default":1.0}
         void main() { gl_FragColor = vec4(v_TexCoord.zw * tint, 0, 1); }

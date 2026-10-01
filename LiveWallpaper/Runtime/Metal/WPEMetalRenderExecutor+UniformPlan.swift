@@ -47,6 +47,7 @@ extension WPEMetalRenderExecutor {
         let textureTranslationSlot: Int?
         /// nil = not an effect-texture projection uniform; true = the inverse. Falls through without a draw context.
         let effectTextureProjectionInverse: Bool?
+        let isEffectModelViewProjection: Bool
         let steps: [UniformResolutionStep]
         let defaultValue: WPESceneShaderConstantValue?
     }
@@ -129,7 +130,8 @@ extension WPEMetalRenderExecutor {
                                          textureMipMapInfoSlot: Self.textureMipMapInfoSlotIndex(for: uniform),
                                          textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
                                          textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
-                                         effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
+                                         effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform, stage: stage),
+                                         isEffectModelViewProjection: uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName,
                                          steps: steps, defaultValue: uniform.defaultValue)
         }
 
@@ -178,7 +180,8 @@ extension WPEMetalRenderExecutor {
             textureMipMapInfoSlot: Self.textureMipMapInfoSlotIndex(for: uniform),
             textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
             textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
-            effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
+            effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform, stage: stage),
+            isEffectModelViewProjection: uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName,
             steps: steps,
             defaultValue: uniform.defaultValue
         )
@@ -189,8 +192,13 @@ extension WPEMetalRenderExecutor {
         return officialTextureSamplingSlotIndex(for: uniform.name, suffix: "MipMapInfo")
     }
 
-    private static func effectTextureProjectionInverse(for uniform: WPEUniformSlot) -> Bool? {
+    private static func effectTextureProjectionInverse(for uniform: WPEUniformSlot, stage: WPEShaderStage) -> Bool? {
         guard uniform.slotCount == 4 else { return nil }
+        if uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName {
+            // Vertex admission proves normalized-position XY/W consumption and
+            // excludes utility geometry and unmeasured 3D placement.
+            return stage == .vertex && uniform.materialName == nil && uniform.glslType == "mat4" && uniform.arrayLength == nil ? false : nil
+        }
         switch uniform.name {
         case WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName: return false
         case WPEMetalObjectUniforms.effectTextureProjectionMatrixInverseUniformName: return true
@@ -291,7 +299,7 @@ extension WPEMetalRenderExecutor {
         if let inverse = plan.effectTextureProjectionInverse,
            let matrix = effectTextureProjection?() {
             #if DEBUG
-            recordUniformSource(.effectTextureProjection(inverse: inverse))
+            recordUniformSource(plan.isEffectModelViewProjection ? .effectModelViewProjectionXYW : .effectTextureProjection(inverse: inverse))
             #endif
             return .vector(WPEMetalObjectUniforms.flattenedColumnMajor(
                 inverse ? WPEMetalObjectUniforms.safeInverse(matrix) : matrix

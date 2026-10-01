@@ -8,6 +8,7 @@ enum WPEUniformValueSource: Equatable {
     case stagePassValue(WPEShaderBindingKey)
     case passConstant(String)
     case effectTextureProjection(inverse: Bool)
+    case effectModelViewProjectionXYW
     case fullscreenVertexMVP
     case authoredDefault
     case missing
@@ -36,6 +37,7 @@ enum WPEUniformValueSource: Equatable {
                     : WPEMetalObjectUniforms.effectTextureProjectionMatrixUniformName,
                 "scope": "layer",
             ]
+        case .effectModelViewProjectionXYW: ["kind": "draw-derived", "key": WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName, "scope": "final-ordinary-layer-normalized-position-XYW"]
         case .fullscreenVertexMVP: ["kind": "draw-derived", "key": "g_ModelViewProjectionMatrix", "scope": "fullscreen-clip-geometry"]
         case .authoredDefault: ["kind": "authored-default", "scope": "declaration"]
         case .missing: ["kind": "missing", "scope": "none"]

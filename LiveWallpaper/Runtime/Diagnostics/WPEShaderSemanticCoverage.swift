@@ -85,6 +85,9 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
                     case .fullscreenVertexMVP:
                         status = .limited
                         reason = "native-fullscreen-XY-position-only-depth-disabled"
+                    case .effectModelViewProjectionXYW:
+                        status = .limited
+                        reason = "normalized-effect-position-XYW-2D-only"
                     case .authoredDefault:
                         status = .supported
                         reason = "authored-default-supplied"
@@ -109,7 +112,7 @@ struct WPEShaderSemanticCoverage: Codable, Equatable {
             return true
         }
         if ["g_EffectTextureProjectionMatrix", "g_EffectTextureProjectionMatrixInverse",
-            "g_EffectModelMatrix", "g_EffectModelMatrixInverse", "g_TexelSize", "g_TexelSizeHalf", "g_Screen"].contains(name) {
+            "g_EffectModelMatrix", "g_EffectModelMatrixInverse", "g_EffectModelViewProjectionMatrix", "g_TexelSize", "g_TexelSizeHalf", "g_Screen"].contains(name) {
             return true
         }
         return name.range(of: #"^g_Texture[0-9]+(?:Resolution|Rotation|Translation)$"#, options: .regularExpression) != nil

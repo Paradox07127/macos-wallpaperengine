@@ -25,6 +25,12 @@ struct WPEShaderStageLink {
             }
             active.replaceSubrange(mainRange, with: main)
         }
+        // The local effect quad is normalized even when WPE draws the final
+        // effect with raw pixel vertices. Only the coupled XY/W projection is
+        // invariant under that change of basis; raw arithmetic and Z are not.
+        let effectRead = #"mul\s*\(\s*vec4\s*\(\s*a_Position\s*,\s*1(?:\.0*)?\s*\)\s*,\s*g_EffectModelViewProjectionMatrix\s*\)\s*\.(xyw|xy)\b"#
+        active = active.replacingOccurrences(of: effectRead, with: "vec3(0.0)", options: .regularExpression)
+        active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_EffectModelViewProjectionMatrix\s*;"#, with: "", options: .regularExpression)
         active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_ModelViewProjectionMatrix\s*;"#, with: "", options: .regularExpression)
         let position = #"(?:vec4\s*\(\s*a_Position\s*,\s*1(?:\.0*)?\s*\)|vec4\s*\(\s*a_Position\.xy\s*,\s*0(?:\.0*)?\s*,\s*1(?:\.0*)?\s*\)|a_Position)"#
         let matrix = "g_ModelViewProjectionMatrix"
@@ -38,7 +44,7 @@ struct WPEShaderStageLink {
         active = active.replacingOccurrences(of: #"\b(?:attribute|in)\s+(?:vec3|vec4)\s+a_Position\s*;"#, with: "", options: .regularExpression)
         // The supplied attribute is clip XY. Raw authored position arithmetic
         // needs its own coordinate producer, even without another matrix read.
-        return !active.contains("g_ModelViewProjectionMatrix") && !active.contains("gl_Position") && !active.contains("a_Position")
+        return !active.contains("g_ModelViewProjectionMatrix") && !active.contains("gl_Position") && !active.contains("a_Position") && !active.contains("g_EffectModelViewProjectionMatrix")
     }
 
     struct Varying {

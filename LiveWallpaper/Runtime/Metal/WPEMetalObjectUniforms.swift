@@ -13,6 +13,8 @@ enum WPEMetalObjectUniforms {
         modelViewProjectionMatrixInverseUniformName
     ]
 
+    static let effectModelViewProjectionMatrixUniformName = "g_EffectModelViewProjectionMatrix"
+
     static let effectTextureProjectionMatrixUniformName = "g_EffectTextureProjectionMatrix"
     static let effectTextureProjectionMatrixInverseUniformName = "g_EffectTextureProjectionMatrixInverse"
 

@@ -8,7 +8,7 @@ import simd
 enum WPEAuthoredVertexRejection: Equatable {
     case disabledForIsolation, geometryUnavailable, pipelineNotPrewarmed, stageUnavailable(String)
     case requiredUniformMissing(String), invalidMatrix(String), unverifiedEffectProjection3D
-    case unverifiedFullscreenDepth, unverifiedFullscreenMVP
+    case unverifiedFullscreenDepth, unverifiedFullscreenMVP, unverifiedEffectPositionContext
 
     var reason: String {
         switch self {
@@ -20,6 +20,7 @@ enum WPEAuthoredVertexRejection: Equatable {
         case let .invalidMatrix(name): "invalid-vertex-matrix:\(name)"
         case .unverifiedFullscreenDepth: "fullscreen-depth-projection-unverified"
         case .unverifiedFullscreenMVP: "fullscreen-MVP-non-position-use-unverified"
+        case .unverifiedEffectPositionContext: "effect-position-context-unverified"
         case .unverifiedEffectProjection3D: "effect-projection-3D-unverified"
         }
     }
@@ -55,6 +56,25 @@ extension WPEMetalRenderExecutor {
                 guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
                 guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
                 continue
+            }
+            if uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName {
+                guard uniform.materialName == nil else { return .unverifiedEffectPositionContext }
+                guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
+                guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
+                guard !layer.isUtilityModelLayer else { return .geometryUnavailable }
+                // The fresh oracle contract is the final ordinary layer effect.
+                // Named FBOs, intermediate effects and inherited/group geometry
+                // have different Windows position/matrix owners.
+                guard layer.parentObjectID == nil, layer.groupRenderTarget == nil,
+                      case .layerComposite = pass.pass.target,
+                      layer.passes.last(where: {
+                          if case .layerComposite = $0.target {
+                              return true
+                          }
+                          return false
+                      })?.id == pass.pass.id else {
+                    return .unverifiedEffectPositionContext
+                }
             }
             if plans[index].effectTextureProjectionInverse != nil {
                 guard !frameState.cameraUniforms.usesPerspectiveProjection,
