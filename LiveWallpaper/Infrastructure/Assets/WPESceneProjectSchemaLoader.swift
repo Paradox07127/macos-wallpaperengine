@@ -121,7 +121,7 @@ enum WPESceneProjectSchemaLoader {
             if ProjectFingerprint(projectURL) == entry.fingerprint {
                 return entry.outcome
             }
-            cache.withLock { $0.removeValue(forKey: key) }
+            cache.withLock { _ = $0.removeValue(forKey: key) }
         }
         let outcome = await read(
             descriptor: descriptor,

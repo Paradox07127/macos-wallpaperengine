@@ -53,9 +53,27 @@ struct EditDeskRoot: View {
     }
 
     var body: some View {
+        guidedContent
+            .modifier(UndoCommands(undo: undo, toasts: toasts))
+            .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
+            .providesGalleryCardPreferences()
+            .background { EditDeskBackdrop(frosted: background == .frosted) }
+            .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)
+            .onAppear { prepareWindowState() }
+            #if !LITE_BUILD
+            .modifier(RouterNotifications(router: router, screenManager: screenManager, workshopSession: workshopSession))
+            #else
+            .modifier(RouterNotifications(router: router, screenManager: screenManager))
+            #endif
+            .onChange(of: router?.onboardingRequested) {
+                guard let router, let progress else { return }
+                Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
+            }
+    }
+
+    private var guidedContent: some View {
         Group {
             if let router, let progress {
-                @Bindable var router = router
                 Group {
                     switch router.page {
                     case .home, .library:
@@ -77,35 +95,8 @@ struct EditDeskRoot: View {
                         Color.clear
                         #endif
                     case .settings:
-                        GeometryReader { geometry in
-                            VStack(spacing: 0) {
-                                TopBar(
-                                    page: Binding(get: { router.page }, set: { router.select($0) }),
-                                    workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                                    windowWidth: geometry.size.width, status: nil
-                                )
-                                // Above the columns, whose scroll view reaches up into this strip and would cover it.
-                                .zIndex(1)
-                                HStack(spacing: 0) {
-                                    SettingsSidebar(
-                                        selection: $router.settingsSelection,
-                                        searchText: $router.settingsSearchText,
-                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
-                                        searchRequest: $router.settingsSearchRequest
-                                    )
-                                    .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
-                                    .pageGuideTarget(.settingsSidebar)
-                                    Divider()
-                                    SettingsDetailContent(
-                                        selection: $router.settingsSelection,
-                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
-                                        searchText: router.settingsSearchText,
-                                        searchRequest: router.settingsSearchRequest
-                                    )
-                                }
-                            }
-                        }
-                        .ignoresSafeArea()
+                        SettingsPageLayout(router: router, workshopAvailable: featureCatalog.isEnabled(.wpeImport))
+                            .ignoresSafeArea()
                     }
                 }
                 .allowsHitTesting(pageGuide.context == nil)
@@ -116,21 +107,7 @@ struct EditDeskRoot: View {
                 Color.clear
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if SettingsManager.shared.persistenceStatus.hasFailure {
-                HStack {
-                    Text("Your latest changes aren't saved yet. Keep Loomscreen open and retry.")
-                    Spacer()
-                    Button("Retry Save") {
-                        Task { await SettingsManager.shared.flushPendingWrites() }
-                    }
-                    .disabled(SettingsManager.shared.persistenceStatus.isSaving)
-                }
-                .padding()
-                .contentColumnBackground()
-                .accessibilityIdentifier("settings.persistenceFailure")
-            }
-        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { persistenceFailureNotice }
         .overlay(alignment: .top) {
             EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })
         }
@@ -178,59 +155,62 @@ struct EditDeskRoot: View {
                 pageGuide.closeIfOutsideRoute(router)
             }
         }
-        .modifier(UndoCommands(undo: undo, toasts: toasts))
-        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
-        .providesGalleryCardPreferences()
-        .background { EditDeskBackdrop(frosted: background == .frosted) }
-        .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)
-        .onAppear {
-            guard router == nil else { return }
-            let progress = OnboardingProgress(
-                defaults: .appScoped(), legacyDefaults: .standard,
-                workshopAvailable: featureCatalog.isEnabled(.wpeImport)
-            )
-            self.progress = progress
-            let undo = EditDeskUndoStack(
-                manager: screenManager,
-                router: ApplyRouter(
-                    manager: screenManager, bookmarks: BookmarkStore.shared, sceneCapable: featureCatalog.isEnabled(.scene)
-                ),
-                bookmarks: BookmarkStore.shared
-            )
-            undo.onRecord = { [toasts] text, stepID in toasts.post(text, style: .success, undoStepID: stepID) }
-            self.undo = undo
-            menuUndo?.stack = undo
-            menuUndo?.toasts = toasts
-            let library = SavedLibraryModel(screenManager: screenManager)
-            library.prepareLibrary(alsoKeeping: undo.retainedCoverFileNames)
-            self.library = library
-            let router = EditDeskRouter(
-                initialNavigation: initialNavigation,
-                initialAddWallpaperRequest: initialAddWallpaperRequest,
-                initialOnboardingRequested: initialOnboardingRequested,
-                isWorkshopAvailable: { [featureCatalog] in featureCatalog.isEnabled(.wpeImport) }
-            )
-            self.router = router
-            if progress.handled.isEmpty, !progress.hasPresentedTour {
-                router.onboardingRequested = true
+    }
+
+    @ViewBuilder private var persistenceFailureNotice: some View {
+        if SettingsManager.shared.persistenceStatus.hasFailure {
+            HStack {
+                Text("Your latest changes aren't saved yet. Keep Loomscreen open and retry.")
+                Spacer()
+                Button("Retry Save") {
+                    Task { await SettingsManager.shared.flushPendingWrites() }
+                }
+                .disabled(SettingsManager.shared.persistenceStatus.isSaving)
             }
-            Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
-            #if !LITE_BUILD
-            let session = makeWorkshopSession(undo: undo)
-            workshopSession = session
-            // A launch-time "open Workshop scoped to this item" arrives before any page mounts.
-            session.consumePendingDeepLink()
-            #endif
+            .padding()
+            .contentColumnBackground()
+            .accessibilityIdentifier("settings.persistenceFailure")
         }
+    }
+
+    private func prepareWindowState() {
+        guard router == nil else { return }
+        let progress = OnboardingProgress(
+            defaults: .appScoped(), legacyDefaults: .standard,
+            workshopAvailable: featureCatalog.isEnabled(.wpeImport)
+        )
+        self.progress = progress
+        let undo = EditDeskUndoStack(
+            manager: screenManager,
+            router: ApplyRouter(
+                manager: screenManager, bookmarks: BookmarkStore.shared, sceneCapable: featureCatalog.isEnabled(.scene)
+            ),
+            bookmarks: BookmarkStore.shared
+        )
+        undo.onRecord = { [toasts] text, stepID in toasts.post(text, style: .success, undoStepID: stepID) }
+        self.undo = undo
+        menuUndo?.stack = undo
+        menuUndo?.toasts = toasts
+        let library = SavedLibraryModel(screenManager: screenManager)
+        library.prepareLibrary(alsoKeeping: undo.retainedCoverFileNames)
+        self.library = library
+        let router = EditDeskRouter(
+            initialNavigation: initialNavigation,
+            initialAddWallpaperRequest: initialAddWallpaperRequest,
+            initialOnboardingRequested: initialOnboardingRequested,
+            isWorkshopAvailable: { [featureCatalog] in featureCatalog.isEnabled(.wpeImport) }
+        )
+        self.router = router
+        if progress.handled.isEmpty, !progress.hasPresentedTour {
+            router.onboardingRequested = true
+        }
+        Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
         #if !LITE_BUILD
-        .modifier(RouterNotifications(router: router, screenManager: screenManager, workshopSession: workshopSession))
-        #else
-        .modifier(RouterNotifications(router: router, screenManager: screenManager))
+        let session = makeWorkshopSession(undo: undo)
+        workshopSession = session
+        // A launch-time "open Workshop scoped to this item" arrives before any page mounts.
+        session.consumePendingDeepLink()
         #endif
-        .onChange(of: router?.onboardingRequested) {
-            guard let router, let progress else { return }
-            Self.consumeOnboardingRequest(router: router, progress: progress, pageGuide: pageGuide)
-        }
     }
 
     private func openGuideSettings(_ anchor: SettingsSearchAnchor) {
@@ -312,6 +292,42 @@ struct EditDeskRoot: View {
         NotificationCenter.default.post(name: .selectScreenInSettings, object: nil, userInfo: ["screenID": screenID, "failureID": failure.id])
     }
     #endif
+}
+
+private struct SettingsPageLayout: View {
+    @Bindable var router: EditDeskRouter
+    let workshopAvailable: Bool
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                TopBar(
+                    page: Binding(get: { router.page }, set: { router.select($0) }),
+                    workshopAvailable: workshopAvailable,
+                    windowWidth: geometry.size.width, status: nil
+                )
+                // Above the columns, whose scroll view reaches up into this strip and would cover it.
+                .zIndex(1)
+                HStack(spacing: 0) {
+                    SettingsSidebar(
+                        selection: $router.settingsSelection,
+                        searchText: $router.settingsSearchText,
+                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
+                        searchRequest: $router.settingsSearchRequest
+                    )
+                    .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
+                    .pageGuideTarget(.settingsSidebar)
+                    Divider()
+                    SettingsDetailContent(
+                        selection: $router.settingsSelection,
+                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
+                        searchText: router.settingsSearchText,
+                        searchRequest: router.settingsSearchRequest
+                    )
+                }
+            }
+        }
+    }
 }
 
 /// ⌘Z and ⇧⌘Z for every page, and the undo history in their environment. Off `body`, which is already

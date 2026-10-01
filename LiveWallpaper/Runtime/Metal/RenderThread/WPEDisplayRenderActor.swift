@@ -517,7 +517,7 @@ actor WPEDisplayRenderActor {
         // closures in the renderer's isolated-parameter method lost executor inheritance
         // on the cooperative pool, racing the render loop's dictionary drain.
         return await withTaskCancellationHandler(operation: {
-            await withCheckedContinuation(isolation: self) { continuation in
+            await withCheckedContinuation { continuation in
                 self.preconditionIsolated()
                 guard !Task.isCancelled, let renderer = self.renderer else {
                     continuation.resume(returning: nil)

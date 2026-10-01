@@ -156,7 +156,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         physicalAttachmentRevisions[destinationID] = after
         attachmentOperations.append([
             "ordinal": attachmentOperations.count, "recordedDrawsBefore": passes.count,
-            "kind": kind, "label": label, "source": sourceRecord ?? NSNull(),
+            "kind": kind, "label": label, "source": sourceRecord.map { $0 as Any } ?? NSNull(),
             "destination": ["resource": destinationID, "revisionBefore": before, "revisionAfter": after],
             "load": contract.map { Self.loadName($0.load) } ?? NSNull(),
             "store": contract.map { $0.store == .store ? "store" : "dontCare" } ?? NSNull(),

@@ -188,7 +188,7 @@ final class SteamConnectorCallerLiveness: Sendable {
 
     /// Record before enqueueing: the run may register its child only after this connection is already gone.
     func own(operationID: String) {
-        state.withLock { $0.ownedOperationIDs.insert(operationID) }
+        state.withLock { _ = $0.ownedOperationIDs.insert(operationID) }
     }
 
     /// Checked at the top of every queued body and again right before a child is spawned. False once the

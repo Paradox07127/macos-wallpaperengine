@@ -92,10 +92,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         init(registry: SurfaceRegistry, store: SharedLibraryStore) {
             self.registry = registry
             self.store = store
-            // Same one-way handoff `reapplyPolicy` documents: the registry is
-            // confined to the lifecycle queue, and these closures do nothing
-            // with it but pass it there.
-            nonisolated(unsafe) let registry = registry
+            // The registry is confined to the lifecycle queue; these closures only pass it there.
             let store = store
             for name in [ProcessInfo.thermalStateDidChangeNotification,
                          NSNotification.Name.NSProcessInfoPowerStateDidChange] {

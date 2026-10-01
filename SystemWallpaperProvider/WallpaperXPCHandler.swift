@@ -603,9 +603,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             return
         }
         guard heartbeatKeepAlive == nil else { return }
-        // Same one-way handoff `reapplyPolicy` documents: the registry is
-        // confined to this queue and the timer fires on it.
-        nonisolated(unsafe) let registry = registry
+        // The registry is confined to this queue, and the timer fires on it.
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(
             deadline: .now() + .seconds(heartbeatKeepAliveInterval),
@@ -629,9 +627,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         store: SharedLibraryStore,
         hasLiveConnections: @escaping @Sendable () -> Bool
     ) {
-        // Same one-way handoff `reapplyPolicy` documents: the registry is
-        // confined to this queue.
-        nonisolated(unsafe) let registry = registry
+        // The registry is confined to this queue.
         queue.async {
             ProviderStaleness.exitIfIdleAndSuperseded(
                 registry: registry, store: store, hasLiveConnections: hasLiveConnections
@@ -660,9 +656,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// and a running wallpaper should follow now, not at the next system
     /// update callback.
     static func reapplyPolicy(registry: SurfaceRegistry, store: SharedLibraryStore) {
-        // The registry is confined to the lifecycle queue; this hop is the
-        // only thing the Darwin callback does with it.
-        nonisolated(unsafe) let registry = registry
+        // The registry is confined to the lifecycle queue; the Darwin callback only hops it there.
         queue.async {
             guard let manifest = store.loadManifestIfReadable() else {
                 // Damaged index: touch nothing. Treating it as an empty library
