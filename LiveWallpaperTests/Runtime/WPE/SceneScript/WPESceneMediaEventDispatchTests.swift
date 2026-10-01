@@ -12,7 +12,9 @@ final class FakeNowPlayingSource: WPENowPlayingEventSource {
     private var handlers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
     private var ordinal: UInt64 = 0
 
-    var subscriberCount: Int { handlers.count }
+    var subscriberCount: Int {
+        handlers.count
+    }
     private(set) var replayedState = MonitorNowPlayingState(phase: .noPlayer, title: "")
 
     func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {

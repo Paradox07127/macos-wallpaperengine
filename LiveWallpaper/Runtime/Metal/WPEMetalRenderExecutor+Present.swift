@@ -84,8 +84,11 @@ extension WPEMetalRenderExecutor {
         )
         var encodedByUpscaler = false
         if uniforms == nil, let upscaler = metalFXUpscaler {
+            let scalerSource = drawable.texture.pixelFormat == .rgba16Float
+                ? try encodeLinearPresentationTexture(source: source, into: commandBuffer)
+                : source
             encodedByUpscaler = upscaler.encodeIfEligible(
-                source: source,
+                source: scalerSource,
                 drawableTexture: drawable.texture,
                 fitMode: fitMode,
                 commandBuffer: commandBuffer
@@ -140,6 +143,45 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
+    static func presentFragment(source: MTLPixelFormat) -> String {
+        switch source {
+        case .rgba16Float, .rgba32Float: "wpe_present_hdr_fragment"
+        default: "wpe_present_authored_fragment"
+        }
+    }
+
+    private func encodeLinearPresentationTexture(
+        source: MTLTexture, into commandBuffer: MTLCommandBuffer
+    ) throws -> MTLTexture {
+        if linearPresentationTexture?.width != source.width || linearPresentationTexture?.height != source.height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false
+            )
+            descriptor.usage = [.renderTarget, .shaderRead]
+            descriptor.storageMode = .private
+            linearPresentationTexture = device.makeTexture(descriptor: descriptor)
+        }
+        guard let destination = linearPresentationTexture else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = destination
+        descriptor.colorAttachments[0].loadAction = .dontCare
+        descriptor.colorAttachments[0].storeAction = .store
+        let pipeline = try renderPipeline(
+            fragmentName: Self.presentFragment(source: source.pixelFormat),
+            blendMode: "disabled", alphaWritePolicy: .all, colorPixelFormat: .rgba16Float
+        )
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentTexture(source, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        return destination
+    }
+
     private func acquireDrawable(from layer: CAMetalLayer) -> CAMetalDrawable? {
         let start = CACurrentMediaTime()
         defer { drawableAcquisitionSeconds += CACurrentMediaTime() - start }
@@ -162,7 +204,7 @@ extension WPEMetalRenderExecutor {
 
         let copyState = try renderPipeline(
             vertexName: "wpe_present_vertex",
-            fragmentName: "wpe_present_fragment",
+            fragmentName: Self.presentFragment(source: source.pixelFormat),
             blendMode: "disabled",
             // The wallpaper window is transparent, but its wallpaper content is terminal and opaque. The fragment writes alpha=1 explicitly; do not encode that contract indirectly through a color write mask.
             alphaWritePolicy: .all,

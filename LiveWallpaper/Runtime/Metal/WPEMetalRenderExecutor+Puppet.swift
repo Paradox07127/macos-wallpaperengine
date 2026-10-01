@@ -1120,7 +1120,9 @@ extension WPEMetalRenderExecutor {
                 quadUniforms.uvSignAndPadding.y
             ),
             objectCenterAndSize: quadUniforms.centerAndSize,
-            sceneSizeAndRotation: quadUniforms.sceneSizeAndRotation
+            sceneSizeAndRotation: quadUniforms.sceneSizeAndRotation,
+            cameraOrientation: quadUniforms.cameraOrientation,
+            cameraWorldDepth: quadUniforms.cameraWorldDepth
         )
 
         encoder.setRenderPipelineState(try renderPipeline(
@@ -2159,7 +2161,9 @@ extension WPEMetalRenderExecutor {
                 quadUniforms.uvSignAndPadding.y
             ),
             objectCenterAndSize: quadUniforms.centerAndSize,
-            sceneSizeAndRotation: quadUniforms.sceneSizeAndRotation
+            sceneSizeAndRotation: quadUniforms.sceneSizeAndRotation,
+            cameraOrientation: quadUniforms.cameraOrientation,
+            cameraWorldDepth: quadUniforms.cameraWorldDepth
         )
 
         let transparentClear = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)

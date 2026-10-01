@@ -281,7 +281,7 @@ final class WPEMetalFXSpatialUpscaler {
     private func alphaFixPipeline(for format: MTLPixelFormat) -> MTLRenderPipelineState? {
         if let cached = alphaFixPipelines[format.rawValue] { return cached }
         guard let vertex = library.makeFunction(name: "wpe_fullscreen_vertex"),
-              let fragment = library.makeFunction(name: "wpe_solidcolor_fragment") else { return nil }
+              let fragment = try? WPEMetalColorOutput.fragment(library: library, name: "wpe_solidcolor_fragment", format: format) else { return nil }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertex
         descriptor.fragmentFunction = fragment

@@ -81,12 +81,12 @@ struct WPEShaderTextureSlotTests {
         #expect(wide.textureSlotCount == 9)
     }
 
-    /// The generator and the binding loop must be sized by the SAME value: a regression
-    /// to a fixed span stays green on every behavioural test, so only a source assertion catches it.
+    /// Metadata discovery can exceed sampler arity; actual GPU binding must keep
+    /// each compiled stage's own count rather than bind a fixed span.
     @Test("The dispatcher binds per-shader slots, not a fixed span")
     func dispatcherBindsPerShaderSlotCount() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift")
-        #expect(source.contains("for slot in 0..<result.textureSlotCount"))
+        #expect(source.contains("for slot in 0..<textureSlotCount"))
         #expect(!source.contains("for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit"))
     }
 

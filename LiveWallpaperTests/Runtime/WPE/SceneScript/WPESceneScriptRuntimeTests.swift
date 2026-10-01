@@ -1986,6 +1986,41 @@ export function init(value) {
         #expect(canvas == SIMD3(480, 270, 0))
     }
 
+    @Test("Moving 2D cameras invert the rendered origin and zoom in both script engines")
+    func orthographicCursorConsumesCurrentCameraMotion() throws {
+        let store = WPESharedScriptState()
+        let transform = try WPEDynamicTransformScriptInstance(
+            script: "export function update(v) { return input.cursorWorldPosition; }",
+            seed: .zero, canvasSize: SIMD2(256, 128), shared: store
+        )
+        let layer = try WPELayerScriptInstance(script: """
+        export function update() {
+            shared.wx = input.cursorWorldPosition.x;
+            shared.wy = input.cursorWorldPosition.y;
+        }
+        """, shared: store, canvasSize: SIMD2(256, 128))
+        let pointer = SIMD2<Double>(0.25, 0.75)
+        for (frame, motion) in [WPESceneCameraMotionSample.identity,
+                                .init(origin: SIMD3(40, 20, 0), zoom: 2),
+                                .init(origin: SIMD3(-10, 30, 0), zoom: 0.5)].enumerated() {
+            store.setCursorWorldProjection(nil, sceneMotion: motion)
+            let expected = SIMD3(128 + (64 - 128) / motion.zoom + motion.origin.x,
+                                 64 + (32 - 64) / motion.zoom + motion.origin.y, 0)
+            #expect(try transform.tick(pointerPosition: pointer, runtimeSeconds: Double(frame)) == expected)
+            let input = WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
+            _ = layer.tick(runtimeSeconds: Double(frame), pointerFrame: input)
+            #expect(store.get("wx") as? Double == expected.x)
+            #expect(store.get("wy") as? Double == expected.y)
+        }
+        // Windows reference values; the pointer lies outside this preview's viewport.
+        store.setCursorWorldProjection(nil, sceneMotion: .init(origin: SIMD3(40, 20, 0), zoom: 2))
+        let captured = store.cursorWorldPosition(pointer: SIMD2(2630.0 / 256, 263.0 / 128), canvasSize: SIMD2(256, 128))
+        #expect(abs(captured.x - 1419.0000295639038) < 0.0003)
+        #expect(abs(captured.y + 15.499889850616455) < 0.0003)
+        store.setCursorWorldProjection(nil)
+        #expect(store.cursorWorldPosition(pointer: pointer, canvasSize: SIMD2(256, 128)) == SIMD3(64, 32, 0))
+    }
+
     @Test("Invalid camera projection cannot inject non-finite cursor values into scripts")
     func invalidCursorProjectionFallsBackToCanvas() {
         let store = WPESharedScriptState()
@@ -3420,7 +3455,8 @@ export function init(value) {
             isDown: true,
             isRightDown: false
         )
-        instance.liveDispatchCursorEvents([.down], pointerFrame: frame)
+        let job = try #require(instance.batchCursorEvents([.init(event: .down, pointerFrame: frame, runtimeSeconds: 0)]))
+        WPESceneScriptBatchDispatcher.processShared.submit([job])
         var received: WPELayerScriptOutput?
         for _ in 0..<100 {
             if let output = WPEBatchTickDriver.tick(instance, pointerFrame: frame) {
@@ -3452,7 +3488,11 @@ export function init(value) {
             isDown: false,
             isRightDown: false
         )
-        instance.liveDispatchCursorEvents([.up, .click], pointerFrame: frame)
+        let job = try #require(instance.batchCursorEvents([
+            .init(event: .up, pointerFrame: frame, runtimeSeconds: 0),
+            .init(event: .click, pointerFrame: frame, runtimeSeconds: 0),
+        ]))
+        WPESceneScriptBatchDispatcher.processShared.submit([job])
         var received: WPELayerScriptOutput?
         for _ in 0 ..< 100 {
             if let output = WPEBatchTickDriver.tick(instance, pointerFrame: frame) {

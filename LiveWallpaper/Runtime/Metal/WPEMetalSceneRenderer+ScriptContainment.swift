@@ -73,12 +73,15 @@ extension WPEMetalSceneRenderer {
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.originScript.map { (object.id, $0) }
         }
-        let scaleScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+        var scaleScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
         } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
+        }
+        if let motion = document.cameraMotion, let script = motion.zoomScript {
+            scaleScripts.append((WPECameraMotionPlayback.zoomScriptKey, script))
         }
         // Angles seeds come from scene.json in radians; the script sees degrees
         // (same boundary as the deg→rad conversion in the per-frame tick).
@@ -106,7 +109,8 @@ extension WPEMetalSceneRenderer {
         // moving transform host composes onto its children exactly the same way.
         dynamicOriginAnimations = Dictionary(
             document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
-                object.originAnimation.map { (object.id, $0) }
+                guard object.id != cameraMotionPlayback?.definition.objectID else { return nil }
+                return object.originAnimation.map { (object.id, $0) }
             },
             uniquingKeysWith: { first, _ in first }
         )
@@ -150,6 +154,7 @@ extension WPEMetalSceneRenderer {
                             script: script.script,
                             scriptProperties: script.scriptProperties,
                             seed: script.seed,
+                            valueShape: objectID == WPECameraMotionPlayback.zoomScriptKey ? .scalar : .vector3,
                             canvasSize: canvasSize,
                             screenSize: screenSize,
                             ownLayerName: layerNameByID[objectID],

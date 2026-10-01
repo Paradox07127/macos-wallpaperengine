@@ -3,6 +3,7 @@ import Foundation
 public enum WPEPathSafety {
     public static func isSafePathComponent(_ value: String) -> Bool {
         !value.isEmpty
+            && !value.contains("\0")
             && value != "."
             && value != ".."
             && !value.contains("/")
@@ -18,6 +19,7 @@ public enum WPEPathSafety {
 
     public static func isSafeRelativePath(_ value: String) -> Bool {
         !value.isEmpty
+            && !value.contains("\0")
             && !value.hasPrefix("/")
             && !value.contains("..")
             && value != "."
@@ -26,6 +28,7 @@ public enum WPEPathSafety {
     public static func isStrictSafeRelativePath(_ value: String) -> Bool {
         let components = value.split(separator: "/", omittingEmptySubsequences: false)
         return !value.isEmpty
+            && !value.contains("\0")
             && !value.hasPrefix("/")
             && !value.contains("\\")
             && !components.contains("..")
@@ -35,6 +38,7 @@ public enum WPEPathSafety {
 
     public static func isSafeCacheRelativePath(_ path: String) -> Bool {
         path.hasPrefix("wpe-cache/")
+            && !path.contains("\0")
             && !path.contains("\\")
             && !path.contains("..")
             && !path.contains("//")
@@ -58,11 +62,13 @@ public enum WPEPathSafety {
 
     private static func containedResourceURL(root: URL, relativePath: String) -> URL? {
         let rootURL = root.standardizedFileURL.resolvingSymlinksInPath()
-        let url = rootURL
-            .appendingPathComponent(relativePath)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-        guard contains(url, in: rootURL) else { return nil }
+        // Resolving a whole nonexistent path can leave existing parent links unresolved.
+        var url = rootURL
+        for component in relativePath.split(separator: "/") {
+            url = url.appendingPathComponent(String(component))
+                .standardizedFileURL.resolvingSymlinksInPath()
+            guard contains(url, in: rootURL) else { return nil }
+        }
         return url
     }
 
@@ -81,7 +87,7 @@ public enum WPEPathSafety {
 
     private static func normalizedPath(_ path: String) -> String {
         var normalized = path
-        while normalized.count > 1 && normalized.hasSuffix("/") {
+        while normalized.count > 1, normalized.hasSuffix("/") {
             normalized.removeLast()
         }
         return normalized

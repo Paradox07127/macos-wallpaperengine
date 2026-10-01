@@ -3,6 +3,7 @@ import Foundation
 import LiveWallpaperProWPE
 
 struct WPECameraMotionPlayback: Equatable, Sendable {
+    static let zoomScriptKey = "\u{1}camera-zoom"
     let definition: WPESceneCameraMotion
     private(set) var elapsed = 0.0
     private var previousSceneTime: Double?

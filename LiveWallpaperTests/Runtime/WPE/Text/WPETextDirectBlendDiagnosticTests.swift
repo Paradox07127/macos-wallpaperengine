@@ -6,26 +6,19 @@ import Metal
 import simd
 import Testing
 
-/// Two separate contracts: the renderer converts the authored sRGB colour to linear
-/// (like `linearLayerTint` does for image layers), and the direct glyph pass then blends
-/// that as a plain over into the scene target.
+/// Glyph coverage composites the same authored colour numbers as image layers.
 @Suite("WPE text colour space")
 struct WPETextDirectBlendDiagnosticTests {
-    private static func sRGBToLinear(_ value: Float) -> Float {
-        let c = min(max(value, 0), 1)
-        return c <= 0.04045 ? c / 12.92 : Float(pow(Double((c + 0.055) / 1.055), 2.4))
-    }
-
-    @Test("an authored text colour reaches the target in linear space, like a layer tint")
+    @Test("an authored text colour blends in the same number domain as a layer tint")
     func directGlyphOverBackground() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        // What `WPETextMeshRenderer` emits: the authored sRGB triple converted to linear.
+        // What the renderer emits: the authored triple, without an implicit transfer.
         let authoredSRGB = SIMD3<Float>(0.52941, 0.46275, 0.83137)
         let clock = SIMD4<Float>(
-            Self.sRGBToLinear(authoredSRGB.x),
-            Self.sRGBToLinear(authoredSRGB.y),
-            Self.sRGBToLinear(authoredSRGB.z),
+            authoredSRGB.x,
+            authoredSRGB.y,
+            authoredSRGB.z,
             1
         )
         // The wallpaper behind the clock, converted from the screenshot's sRGB (182,167,230).
@@ -115,9 +108,7 @@ struct WPETextDirectBlendDiagnosticTests {
         }
     }
 
-    /// The conversion itself, where the bug was: the payload the renderer hands the pass
-    /// must already be linear, the same treatment `linearLayerTint` gives image layers.
-    @Test("the renderer converts an authored sRGB colour to linear")
+    @Test("the renderer preserves authored colour numbers")
     func rendererConvertsAuthoredColour() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let renderer = WPETextMeshRenderer(
@@ -147,10 +138,8 @@ struct WPETextDirectBlendDiagnosticTests {
             )
         ))
         for (index, authoredChannel) in [authored.x, authored.y, authored.z].enumerated() {
-            let expected = Self.sRGBToLinear(Float(authoredChannel))
-            #expect(abs(payload.color[index] - expected) < 0.001, "channel \(index) was not converted")
-            // Guard against the identity: sRGB and linear must actually differ here.
-            #expect(abs(Float(authoredChannel) - expected) > 0.05)
+            let expected = Float(authoredChannel)
+            #expect(abs(payload.color[index] - expected) < 0.001, "channel \(index) changed authored values")
         }
     }
 }

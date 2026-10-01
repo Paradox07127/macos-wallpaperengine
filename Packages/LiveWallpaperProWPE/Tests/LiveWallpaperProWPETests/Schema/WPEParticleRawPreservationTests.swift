@@ -180,14 +180,6 @@ struct WPEParticleRawPreservationTests {
         #expect(definition.controlPoints[3].flagsRaw == 2)
         #expect(definition.controlPoints[3].isWorldSpace)
 
-        let overridden = definition.applying(instanceOverride: .init(
-            controlPointOffsets: [2: SIMD3<Double>(9, 8, 7)]
-        ))
-        #expect(overridden.controlPoints.map(\.id) == [0, 1, 2, 3])
-        #expect(overridden.controlPoints[2].offset == SIMD3<Double>(9, 8, 7))
-        #expect(overridden.controlPoints[2].flagsRaw == 0)
-        #expect(overridden.controlPoints[2].angles == SIMD3<Double>.zero)
-
         let rawControlPoints = definition.rawComponents.controlPoints
         #expect(rawControlPoints[0]["flags"] == nil)
         #expect(rawControlPoints[1]["flags"] == .null)

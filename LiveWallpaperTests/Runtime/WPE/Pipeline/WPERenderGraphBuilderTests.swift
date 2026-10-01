@@ -43,8 +43,8 @@ struct WPERenderGraphBuilderTests {
                 "scale": 4,
                 "fit": 512,
                 "format": "rgba_backbuffer",
-                "unique": true
-            ]]
+                "unique": true,
+            ]],
         ], to: root.appendingPathComponent("effects/custom/effect.json"))
         try writeJSON([
             "futureEffectMaterialRoot": ["values": [true, false]],

@@ -46,12 +46,15 @@ struct WPESceneScriptTransformMutationJournal: Equatable {
 }
 
 extension WPEMetalSceneRenderer {
+    typealias CursorEventDelivery = (WPELayerScriptInstance, [WPELayerScriptCursorEvent], WPEPointerFrame) -> Void
+
     // MARK: - Script loading & seeding
 
     func loadLayerScripts(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) {
+        cancelCursorInputRouting()
         layerTransformMutationJournal.removeAll()
         liveLayerPresentation = [:]
         layerScriptInstances = [:]
@@ -609,7 +612,7 @@ extension WPEMetalSceneRenderer {
         pointer: SIMD2<Double>?,
         pipeline: WPEPreparedRenderPipeline,
         pointerFrame: WPEPointerFrame,
-        runtimeSeconds: Double
+        deliver: CursorEventDelivery
     ) {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
@@ -644,12 +647,7 @@ extension WPEMetalSceneRenderer {
                 events.append(inside ? .enter : .leave)
             }
             if moved, inside { events.append(.move) }
-            dispatchScriptCursorEvents(
-                instance,
-                events: events,
-                pointerFrame: pointerFrame,
-                runtimeSeconds: runtimeSeconds
-            )
+            deliver(instance, events, pointerFrame)
         }
 
         if hoverCursorDebugEnabled, let pointerPixels {
@@ -738,7 +736,7 @@ extension WPEMetalSceneRenderer {
     func dispatchPointerButtonEdges(
         from previous: WPEPointerFrame,
         to current: WPEPointerFrame,
-        runtimeSeconds: Double
+        deliver: CursorEventDelivery
     ) {
         var events: [WPELayerScriptCursorEvent] = []
         if !previous.isDown, current.isDown { events.append(.down) }
@@ -762,18 +760,13 @@ extension WPEMetalSceneRenderer {
                     batch.append(.click)
                 }
             }
-            dispatchScriptCursorEvents(
-                instance,
-                events: batch,
-                pointerFrame: current,
-                runtimeSeconds: runtimeSeconds
-            )
+            deliver(instance, batch, current)
         }
         if released { layerPressStates.removeAll(keepingCapacity: true) }
     }
 
     /// `textVisible` and `textAlpha` are the same `WPELayerScriptInstance` type as the layer families; leaving them out would silently drop those handlers.
-    private func forEachCursorScriptInstance(
+    func forEachCursorScriptInstance(
         _ body: (String, WPELayerScriptInstance) -> Void
     ) {
         var seen: Set<ObjectIdentifier> = []
@@ -789,6 +782,13 @@ extension WPEMetalSceneRenderer {
                 body(objectID, instance)
             }
         }
+    }
+
+    func cancelCursorInputRouting() {
+        mailbox.resetButtonEvents()
+        previousLayerScriptPointerFrame = .neutral
+        layerPressStates.removeAll(keepingCapacity: true)
+        forEachCursorScriptInstance { _, instance in instance.cancelPendingCursorEvents() }
     }
 
     // MARK: - Script output application

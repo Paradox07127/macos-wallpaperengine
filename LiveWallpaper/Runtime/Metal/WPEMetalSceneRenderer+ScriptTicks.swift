@@ -134,20 +134,6 @@ extension WPEMetalSceneRenderer {
         return value
     }
 
-    /// Returning nothing is the point — an optional return here reads like the caller can apply the output in the same frame. Everything one instance gets in one frame goes as one batch: a second event sent separately in the same frame would be silently dropped.
-    func dispatchScriptCursorEvents(
-        _ instance: WPELayerScriptInstance,
-        events: [WPELayerScriptCursorEvent],
-        pointerFrame: WPEPointerFrame,
-        runtimeSeconds: Double
-    ) {
-        instance.liveDispatchCursorEvents(
-            events,
-            pointerFrame: pointerFrame,
-            runtimeSeconds: runtimeSeconds
-        )
-    }
-
     func drainMediaEvents(runtimeSeconds: Double) {
         guard let events = mediaEventMailbox?.drain(), !events.isEmpty else { return }
         // The whole drain goes to each instance as one batch: dispatched per event, the single in-flight async slot would admit the first and silently drop the rest of a cold-start burst.

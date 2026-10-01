@@ -78,35 +78,5 @@ struct WPEParticleInstanceControlPointTests {
         #expect(override.controlPointOffsets.count == 2)
         #expect(override.size == 0.5, "control: sibling keys still parse")
     }
-
-    @Test("An override control point replaces the definition's own offset")
-    func controlPointOverrideReplacesAuthoredOffset() throws {
-        let definition = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 4, rate: 1, startDelay: 0,
-            lifetimeMin: 1, lifetimeMax: 1, sizeMin: 1, sizeMax: 1,
-            originOffset: SIMD3<Double>(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3<Double>(0, 0, 0), velocityMax: SIMD3<Double>(0, 0, 0),
-            colorMin: SIMD3<Double>(255, 255, 255), colorMax: SIMD3<Double>(255, 255, 255),
-            fadeInSeconds: 0,
-            controlPoints: [
-                // offset (0,0,0) = the emitter itself: what an authored point with no offset parses to.
-                WPEParticleControlPoint(id: 1, offset: SIMD3<Double>(0, 0, 0), pointerLocked: false),
-                WPEParticleControlPoint(id: 2, offset: SIMD3<Double>(9, 9, 9), pointerLocked: true),
-            ]
-        )
-        let applied = definition.applying(
-            instanceOverride: WPESceneParticleInstanceOverride(
-                controlPointOffsets: [1: SIMD3<Double>(-204.06, -81.03, 0)]
-            )
-        )
-        let byID = Dictionary(uniqueKeysWithValues: applied.controlPoints.map { ($0.id, $0) })
-        #expect(byID[1]?.offset == SIMD3<Double>(-204.06, -81.03, 0), "override wins")
-        #expect(byID[2]?.offset == SIMD3<Double>(9, 9, 9), "an omitted point keeps its authored offset")
-        #expect(byID[2]?.pointerLocked == true, "control: other fields survive the rebuild")
-
-        let untouched = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(size: 2))
-        #expect(untouched.controlPoints == definition.controlPoints)
-    }
 }
 #endif

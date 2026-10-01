@@ -74,6 +74,12 @@ final class WPEMetalSceneRenderer: NSObject {
     var latchedTextureCap: Int?
     var didLatchTextureCap = false
     var particleSystems: [WPEParticleSystem] = []
+    var particleIndependentSystems: [WPEParticleSystem] = []
+    var particleInstanceCoordinator: WPEParticleInstanceCoordinator?
+    var particleTemplates: [ObjectIdentifier: WPEParticleTemplate] = [:]
+    var particleRootTemplates: [WPEParticleTemplate] = []
+    var particleTemplateTextures: [ObjectIdentifier: MTLTexture] = [:]
+    var particleTemplateNormals: [ObjectIdentifier: MTLTexture] = [:]
     var particleTextures: [ObjectIdentifier: MTLTexture] = [:]
     /// REFRACT `g_Texture1`. Absent ⇒ the system renders as a flat sprite.
     var particleNormalTextures: [ObjectIdentifier: MTLTexture] = [:]
@@ -245,6 +251,7 @@ final class WPEMetalSceneRenderer: NSObject {
     var sceneRenderSize: CGSize = CGSize(width: 1, height: 1)
     var cameraUniforms: WPEMetalCameraUniforms = .identity
     var baseCameraUniforms: WPEMetalCameraUniforms = .identity
+    var cameraPathPlayback: WPECameraPathPlayback?
     var cameraMotionPlayback: WPECameraMotionPlayback?
     var frameClock: WPEMetalFrameClock
     /// Oracle-only frozen frame globals (read once at load). `nil` in production.

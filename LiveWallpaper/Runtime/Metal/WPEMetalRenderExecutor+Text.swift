@@ -12,6 +12,7 @@ extension WPEMetalRenderExecutor {
         output: MTLTexture,
         clearsOutput: Bool,
         cameraClipTransform: SIMD4<Float> = SIMD4(1, 1, 0, 0),
+        cameraOrientation: simd_float4x4 = matrix_identity_float4x4,
         commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
         try encodeTextMeshes(
@@ -21,6 +22,7 @@ extension WPEMetalRenderExecutor {
             output: output,
             clearsOutput: clearsOutput,
             cameraClipTransform: cameraClipTransform,
+            cameraOrientation: cameraOrientation,
             commandBuffer: commandBuffer
         )
     }
@@ -33,6 +35,7 @@ extension WPEMetalRenderExecutor {
         output: MTLTexture,
         clearsOutput: Bool,
         cameraClipTransform: SIMD4<Float> = SIMD4(1, 1, 0, 0),
+        cameraOrientation: simd_float4x4 = matrix_identity_float4x4,
         commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
         guard !payloads.isEmpty || clearsOutput else { return false }
@@ -61,6 +64,8 @@ extension WPEMetalRenderExecutor {
         encoder.setVertexBytes(&sceneSizeValue, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
         var clipTransform = cameraClipTransform
         encoder.setVertexBytes(&clipTransform, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
+        var orientation = cameraOrientation
+        encoder.setVertexBytes(&orientation, length: MemoryLayout<simd_float4x4>.stride, index: 3)
         for payload in payloads {
             var color = payload.color
             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
@@ -106,7 +111,7 @@ extension WPEMetalRenderExecutor {
     ) throws -> MTLRenderPipelineState {
         if let cached = textBackgroundPipelineCache[colorPixelFormat.rawValue] { return cached }
         guard let vertex = defaultLibrary.makeFunction(name: "wpe_fullscreen_vertex"),
-              let fragment = defaultLibrary.makeFunction(name: "wpe_text_background_fragment") else {
+              let fragment = try WPEMetalColorOutput.fragment(library: defaultLibrary, name: "wpe_text_background_fragment", format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_text_background_fragment")
         }
         let descriptor = MTLRenderPipelineDescriptor()
@@ -123,7 +128,7 @@ extension WPEMetalRenderExecutor {
             return cached
         }
         guard let vertex = defaultLibrary.makeFunction(name: "wpe_text_glyph_vertex"),
-              let fragment = defaultLibrary.makeFunction(name: "wpe_text_glyph_fragment") else {
+              let fragment = try WPEMetalColorOutput.fragment(library: defaultLibrary, name: "wpe_text_glyph_fragment", format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_text_glyph_fragment")
         }
         let descriptor = MTLRenderPipelineDescriptor()

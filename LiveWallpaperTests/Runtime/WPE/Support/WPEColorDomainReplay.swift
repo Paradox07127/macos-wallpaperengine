@@ -100,6 +100,10 @@ enum WPEColorDomainReplay {
             var raw = [Float](repeating: 0, count: 4)
             raw.withUnsafeMutableBytes { target.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0) }
             pixels = raw
+        } else if outputFormat == .rgba16Float {
+            var raw = [UInt16](repeating: 0, count: 4)
+            raw.withUnsafeMutableBytes { target.getBytes($0.baseAddress!, bytesPerRow: 8, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0) }
+            pixels = raw.map { Float(Float16(bitPattern: $0)) }
         } else {
             var raw = [UInt8](repeating: 0, count: 4)
             raw.withUnsafeMutableBytes { target.getBytes($0.baseAddress!, bytesPerRow: 4, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0) }

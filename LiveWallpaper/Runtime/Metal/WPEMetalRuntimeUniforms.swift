@@ -351,6 +351,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
 
     let renderSize: CGSize
     let viewProjectionMatrix: [Double]
+    let hasCapturedOrthographicShaderGlobals: Bool
     let usesPerspectiveProjection: Bool
     /// `general.perspectiveoverridefov`, in degrees. 0 means the scene never built a
     /// perspective camera, so an object flag alone cannot conjure one.
@@ -409,6 +410,8 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.lightSkylightColor = lightSkylightColor
         self.sceneHDR = sceneHDR
         self.bloom = bloom
+        hasCapturedOrthographicShaderGlobals = !usesPerspectiveProjection && perspectiveOverrideFOVDegrees <= 0
+            && sceneCamera.nearZ == WPESceneCamera.defaultCamera.nearZ && sceneCamera.farZ == WPESceneCamera.defaultCamera.farZ
         self.sceneMotion = usesPerspectiveProjection ? .identity : sceneMotion
         let motion = self.sceneMotion
         var sceneMatrix = usesPerspectiveProjection
@@ -519,6 +522,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     ) {
         self.renderSize = renderSize
         self.viewProjectionMatrix = viewProjectionMatrix
+        hasCapturedOrthographicShaderGlobals = false
         self.usesPerspectiveProjection = usesPerspectiveProjection
         perspectiveOverrideFOVDegrees = 0
         perspectiveObjectIDs = []
@@ -547,11 +551,15 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
               Float(-2 * sceneMotion.zoom * sceneMotion.origin.y / max(renderSize.height, 1)))
     }
 
+    var sceneOrientationCorrection: simd_float4x4 {
+        WPECameraMotionProjection.correction(motion: sceneMotion, size: renderSize)
+    }
+
     func transformScenePoint(_ point: SIMD2<Float>) -> SIMD2<Float> {
         (point - SIMD2(Float(sceneMotion.origin.x), Float(sceneMotion.origin.y))) * Float(sceneMotion.zoom)
     }
 
-    var uniformValues: [String: WPESceneShaderConstantValue] {
+    var legacyCameraUniformValues: [String: WPESceneShaderConstantValue] {
         [
             "g_EyePosition": .vector([sceneCamera.eye.x, sceneCamera.eye.y, sceneCamera.eye.z]),
             "g_ViewForward": .vector([Self.viewForward.x, Self.viewForward.y, Self.viewForward.z]),
@@ -563,6 +571,24 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
             // Internal `general.hdr` carrier — not a WPE uniform name.
             "g_SceneHDREnabled": .number(sceneHDR ? 1 : 0)
         ]
+    }
+
+    var uniformValues: [String: WPESceneShaderConstantValue] {
+        var values = legacyCameraUniformValues
+        guard hasCapturedOrthographicShaderGlobals else { return values }
+        let rotation = WPECameraMotionProjection.viewRotation(sceneMotion.angles).transpose
+        let right = rotation.columns.0, up = rotation.columns.1, forward = -rotation.columns.2
+        // WPE's explicitly consumed 2D eye uses canvas centre + XY origin and
+        // fixed Z=2000, even with an authored camera origin.z of 10.
+        values["g_EyePosition"] = .vector([renderSize.width * 0.5 + sceneMotion.origin.x,
+                                           renderSize.height * 0.5 + sceneMotion.origin.y, 2000])
+        values["g_ViewRight"] = .vector([right.x, right.y, right.z])
+        values["g_ViewUp"] = .vector([up.x, up.y, up.z])
+        values["g_ViewForward"] = .vector([forward.x, forward.y, forward.z])
+        values["g_ViewProjectionMatrix"] = .vector(WPEMetalObjectUniforms.flattenedColumnMajor(
+            WPECameraMotionProjection.shaderViewProjection(motion: sceneMotion, size: renderSize)
+        ))
+        return values
     }
 
     func projectedCenterInScenePixels(

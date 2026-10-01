@@ -19,18 +19,19 @@ enum WPEMetalTargetID: Hashable, Sendable {
     }
 }
 
-/// Attachment alpha writes are surface semantics, not a side effect of the authored blend mode. The render-graph `.scene` target must retain alpha like named FBOs; the terminal present pass makes opaque-alpha explicit in the fragment result, never via color write masks.
+/// Windows scene attachments preserve opaque backdrop coverage, while local
+/// image/effect targets store RGBA for later sampling. The policy belongs to
+/// the attachment rather than to a material's RGB blend factors.
 enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     case all
-    /// Postprocessing bloom adds RGB while preserving the scene's coverage.
-    /// Authored scene/FBO draws continue to use `all` via `resolve`.
     case rgbOnly
 
-    /// `blendMode` is taken and deliberately ignored — not a leftover: keying the write mask off it produced RGB>0/A=0 texels wherever a transparent clear met a blended draw. (see `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`)
     static func resolve(targetID: WPEMetalTargetID, blendMode _: String) -> Self {
         switch targetID {
-        case .scene, .named:
-            return .all
+        case .scene:
+            .rgbOnly
+        case .named:
+            .all
         }
     }
 

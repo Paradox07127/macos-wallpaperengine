@@ -22,7 +22,7 @@ extension WPEMetalRenderExecutor {
         let drawLayer = layerForDrawing(pass: composite, layer: layer)
         // Branch before building the quad: a parented identity layer still gets a static parallax
         // offset from `objectQuadUniforms`, yet it is drawn fullscreen while parallax is idle.
-        guard usesObjectQuadGeometry(for: composite, layer: drawLayer, cameraParallax: frameState.cameraParallax) else {
+        guard usesObjectQuadGeometry(for: composite, layer: drawLayer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms) else {
             return matrix_identity_double4x4
         }
         let quad = objectQuadUniforms(

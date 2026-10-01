@@ -99,7 +99,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         payload: WPETexStreamingPayload,
         device: MTLDevice,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace = .linear,
         capabilities: WPEMetalTextureCapabilities? = nil,
         maximumTextureDimension2D: Int? = nil,
         frameByteCache: WPEAnimatedFrameByteCache = .shared

@@ -345,20 +345,22 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private func reloadForWake() async {
         await reload()
-        guard loadError != nil else { return }
+        guard hasRenderer, !Task.isCancelled, loadError != nil else { return }
         do {
             try await Task.sleep(for: wakeRetryDelay)
         } catch {
             return
         }
+        guard hasRenderer, !Task.isCancelled else { return }
         // Giving up while still broken must restore isHibernated, or later play is a no-op.
-        guard hasRenderer, effectivePerformanceProfile == .quality, loadError != nil else {
-            if hasRenderer, loadError != nil {
+        guard effectivePerformanceProfile == .quality, loadError != nil else {
+            if loadError != nil {
                 isHibernated = true
             }
             return
         }
         await reload()
+        guard hasRenderer, !Task.isCancelled else { return }
         if loadError != nil {
             isHibernated = true
         }

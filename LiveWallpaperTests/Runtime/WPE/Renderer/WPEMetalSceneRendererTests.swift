@@ -15,6 +15,61 @@ import UniformTypeIdentifiers
 @Suite("WPE Metal scene renderer")
 struct WPEMetalSceneRendererTests {
 
+    @Test("Text and particles render without an authored image layer", arguments: [false, true])
+    func nonImageSceneHasVisibleOutput(particle: Bool) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try particle ? MetalSceneFixture.audioResponsiveParticleScene(audioFields: false) : MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let url = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        scene["objects"] = particle
+            ? [["id": "pfx", "particle": "particles/audio.json", "origin": "32 32 0", "visible": true]]
+            : [["id": "text", "type": "text", "text": "MMMM", "origin": "32 32 0", "pointsize": 24, "color": "1 1 1"]]
+        let data = try JSONSerialization.data(withJSONObject: scene)
+        try data.write(to: url)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        #expect(document.imageObjects.isEmpty)
+        #expect(WPESceneCapabilityClassifier().capabilityTier(for: document, cacheURL: fixture.root) == .degraded)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root,
+            dependencyMounts: [], frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let texture = try #require(renderer.outputTexture)
+        #expect(texture.width == 64 && texture.height == 64)
+        if particle {
+            let system = try #require(renderer.particleSystems.first)
+            #expect(renderer.particleSystems.count == 1)
+            #expect(system.definition.rate == 10)
+            system.applyPlaybackCommand(.play)
+            system.prewarm(simulatedSeconds: 0.25)
+            renderer.executor.synchronizeFrameCompletion = true
+            let emitted = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            #expect(system.liveInstanceCount > 0)
+            #expect(try #require(WPEMetalTextureVisualStats.analyze(texture: emitted)).nonBlackPixelCount > 0)
+        } else {
+            #expect(try #require(WPEMetalTextureVisualStats.analyze(texture: texture)).nonBlackPixelCount > 0)
+        }
+    }
+
+    @Test("A truly empty scene still fails instead of publishing a clear-only wallpaper")
+    func emptySceneHasNoRenderablePasses() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let url = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        scene["objects"] = [] as [Any]
+        try JSONSerialization.data(withJSONObject: scene).write(to: url)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root,
+            dependencyMounts: [], frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        defer { renderer.cleanup() }
+        await #expect(throws: WPEMetalRenderExecutorError.noRenderablePasses) { try await renderer.load() }
+    }
+
     @Test("Only the primary texture slot is mandatory at load")
     func onlyPrimarySlotIsMandatoryAtLoad() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2658,7 +2713,7 @@ struct WPEMetalTextureSnapshotterFormatTests {
         #expect(px.r == 30 && px.g == 20 && px.b == 10 && px.a == 255)
     }
 
-    @Test("RGBA16Float HDR sources clamp and sRGB-encode (the 'hdr': true poster fix)")
+    @Test("RGBA16Float authored HDR posters apply the measured terminal transfer")
     func rgba16FloatConverts() throws {
         let texture = try makeTexture(format: .rgba16Float, width: 2, height: 1)
         var halves: [UInt16] = [
@@ -2670,7 +2725,7 @@ struct WPEMetalTextureSnapshotterFormatTests {
         let hot = try pixel(of: image, x: 0)
         #expect(hot.r == 255 && hot.g == 255 && hot.b == 0 && hot.a == 255)
         let mid = try pixel(of: image, x: 1)
-        #expect(abs(Int(mid.r) - 188) <= 2 && abs(Int(mid.g) - 188) <= 2 && abs(Int(mid.b) - 188) <= 2)
+        #expect(abs(Int(mid.r) - 210) <= 2 && abs(Int(mid.g) - 210) <= 2 && abs(Int(mid.b) - 210) <= 2)
     }
 }
 

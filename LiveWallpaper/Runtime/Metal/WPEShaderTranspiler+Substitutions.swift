@@ -92,7 +92,8 @@ extension WPEShaderTranspiler {
         s = rewriteGLSLArrayConstructors(s)
         s = rewriteArrayCopyInitialization(s)
         s = rewriteFloatArraySubscripts(s)
-        s = rewriteHLSLImplicitConversions(s, uniforms: uniforms, functionDeclarations: functionDeclarations)
+        s = rewriteHLSLImplicitConversions(s, uniforms: uniforms, functionDeclarations: functionDeclarations,
+                                           vertexTypes: stage == .vertex ? varyingTypesByName : [:])
         s = rewriteGLSLMatrixConstructors(s)
 
         s = rewriteReferenceParameters(s)
@@ -745,9 +746,12 @@ extension WPEShaderTranspiler {
     private static func rewriteHLSLImplicitConversions(
         _ source: String,
         uniforms: [WPEUniformDecl],
-        functionDeclarations: String
+        functionDeclarations: String,
+        vertexTypes: [String: String] = [:]
     ) -> String {
-        var widths: [String: Int] = [:]
+        var widths = vertexTypes.compactMapValues { type -> Int? in
+            ["float", "float2", "float3", "float4"].contains(type) ? vectorWidth(ofType: type) : nil
+        }
         var ambiguous: Set<String> = []
         var scalarArrays: Set<String> = []
         for uniform in uniforms {
@@ -769,13 +773,65 @@ extension WPEShaderTranspiler {
                 widths[name] = width
             }
         }
-        for name in ambiguous { widths.removeValue(forKey: name) }
-        var result = dropScalarArrayInnerSubscripts(source, names: scalarArrays)
+        for name in ambiguous {
+            widths.removeValue(forKey: name)
+        }
+        var result = vertexTypes.isEmpty ? source : narrowVertexVectorOperations(source, widths: widths)
+        result = dropScalarArrayInnerSubscripts(result, names: scalarArrays)
         result = lowerScalarDistanceCalls(result, widths: widths)
         result = narrowMixArguments(result, widths: widths)
         result = narrowUserFunctionArguments(result, widths: widths, declarations: functionDeclarations)
         result = narrowWideInitializers(result, widths: widths)
         return narrowWideReturns(result, widths: widths)
+    }
+
+    /// The WPE HLSL backend truncates known unequal vector operands and assignments.
+    /// Limit this to bare vertex identifiers: matrices, calls, arrays and unknown
+    /// widths keep their source and fail compilation instead of acquiring a guess.
+    private static func narrowVertexVectorOperations(_ source: String, widths: [String: Int]) -> String {
+        let operand = #"([A-Za-z_]\w*)(?:\.([xyzwrgba]{1,4}))?"#
+        func width(_ match: NSTextCheckingResult, _ group: Int, _ text: String) -> Int? {
+            if let swizzle = Range(match.range(at: group + 1), in: text) {
+                return text[swizzle].count
+            }
+            guard let name = Range(match.range(at: group), in: text) else { return nil }
+            return widths[String(text[name])]
+        }
+        var result = source
+        let binary = #"(?<![A-Za-z0-9_.])"# + operand + #"\s*([+*/-])\s*"# + operand + #"(?![A-Za-z0-9_.\[(])"#
+        if let regex = try? NSRegularExpression(pattern: binary) {
+            // An operand can participate in both adjacent operations in a chain.
+            for _ in 0 ..< 4 {
+                let masked = maskComments(result)
+                let before = result
+                for match in regex.matches(in: masked, range: NSRange(masked.startIndex..., in: masked)).reversed() {
+                    guard let left = width(match, 1, masked), let right = width(match, 4, masked),
+                          left > 1, right > 1, left != right else { continue }
+                    let group = left > right ? 1 : 4
+                    let name = match.range(at: group)
+                    let swizzle = match.range(at: group + 1)
+                    let range = NSRange(location: name.location, length: name.length + (swizzle.location == NSNotFound ? 0 : swizzle.length + 1))
+                    guard let actual = Range(range, in: result) else { continue }
+                    result.replaceSubrange(actual, with: "(\(result[actual]))\(vectorSwizzle(width: min(left, right)))")
+                }
+                if result == before {
+                    break
+                }
+            }
+        }
+        let assignment = #"(?<![A-Za-z0-9_.])([A-Za-z_]\w*)\s*=\s*"# + operand + #"\s*;"#
+        if let regex = try? NSRegularExpression(pattern: assignment) {
+            let masked = maskComments(result)
+            for match in regex.matches(in: masked, range: NSRange(masked.startIndex..., in: masked)).reversed() {
+                guard let lhs = Range(match.range(at: 1), in: result), let target = widths[String(result[lhs])],
+                      let actual = width(match, 2, masked), actual > target,
+                      let rhs = Range(match.range(at: 2), in: result) else { continue }
+                let suffix = match.range(at: 3)
+                let range = suffix.location == NSNotFound ? rhs : rhs.lowerBound ..< result.index(rhs.upperBound, offsetBy: suffix.length + 1)
+                result.replaceSubrange(range, with: "(\(result[range]))\(vectorSwizzle(width: target))")
+            }
+        }
+        return result
     }
 
     /// Only initializers whose width can be judged are touched, so a `dot`/`length` right-hand side stays as written.

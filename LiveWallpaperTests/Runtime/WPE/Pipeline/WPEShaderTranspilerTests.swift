@@ -3038,5 +3038,8 @@ struct WPEShaderTranslationCacheTests {
         #expect(second.mslSource == first.mslSource)
         #expect(second.mslSource != "// stale schema must not be assembled")
         #expect(cache.diskHitCountForTesting == 0)
+        #expect(cache.storeCountForTesting == 2)
+        #expect(try JSONDecoder().decode(WPEShaderTranslationCache.Payload.self, from: Data(contentsOf: json)).schemaVersion
+            == WPEShaderTranslationCache.schemaVersion)
     }
 }

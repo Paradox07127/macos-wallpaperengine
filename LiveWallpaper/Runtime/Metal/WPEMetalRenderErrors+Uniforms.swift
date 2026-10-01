@@ -319,6 +319,8 @@ struct WPEObjectQuadUniforms {
     var sceneSizeAndRotation: SIMD4<Float>
     /// x/y = UV sign for preserving negative WPE scale mirroring, z = local capture CLEARALPHA, w reserved.
     var uvSignAndPadding: SIMD4<Float>
+    var cameraOrientation = matrix_identity_float4x4
+    var cameraWorldDepth = SIMD4<Float>.zero
 }
 
 /// Layout MUST match `WPEBloomUniforms` in `WPEMetalBuiltins.metal`.
@@ -367,6 +369,8 @@ struct WPEShapeQuadUniforms {
     var corner3: SIMD4<Float>
     /// x/y = half scene width/height, z/w = padding.
     var sceneHalfAndPad: SIMD4<Float>
+    var cameraOrientation = matrix_identity_float4x4
+    var cameraWorldDepth = SIMD4<Float>.zero
 }
 
 struct WPEMetalPuppetVertex {
@@ -410,6 +414,8 @@ struct WPEPuppetSceneCompositeUniforms {
     var objectCenterAndSize: SIMD4<Float>
     /// Exact copy of `WPEObjectQuadUniforms.sceneSizeAndRotation`.
     var sceneSizeAndRotation: SIMD4<Float>
+    var cameraOrientation = matrix_identity_float4x4
+    var cameraWorldDepth = SIMD4<Float>.zero
 }
 
 struct WPEOpacityUniforms {
@@ -518,6 +524,7 @@ struct WPEParticleProjection {
     var worldToModel = matrix_identity_float4x4
     var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
     var cameraClipTransform = SIMD4<Float>(1, 1, 0, 0)
+    var cameraOrientation = matrix_identity_float4x4
 }
 
 /// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized `effects/skew` MODE=1 vertex-displacement params (fractions of the quad extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.

@@ -21,11 +21,11 @@ struct WPEColorCorrectionPassTests {
         let library = try #require(device.makeDefaultLibrary())
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
-        descriptor.fragmentFunction = library.makeFunction(name: "wpe_color_correction_fragment")
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: "wpe_color_correction_fragment", format: .rgba8Unorm)
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
-        return Harness(
+        return try Harness(
             device: device, queue: queue,
-            pipeline: try device.makeRenderPipelineState(descriptor: descriptor)
+            pipeline: device.makeRenderPipelineState(descriptor: descriptor)
         )
     }
 

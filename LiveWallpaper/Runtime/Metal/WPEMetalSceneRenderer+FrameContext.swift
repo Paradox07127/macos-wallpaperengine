@@ -51,7 +51,7 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    private func presentUniforms() -> WPEPresentUniforms {
+    func presentUniforms() -> WPEPresentUniforms {
         WPEPresentUniforms.make(
             fitMode: presentFitMode,
             sourceWidth: Int(sceneRenderSize.width),
@@ -71,15 +71,13 @@ extension WPEMetalSceneRenderer {
             sample: pointerSample,
             frame: inputs.pointerFrame,
             followEnabled: mouseInteractionEnabled,
-            clickEnabled: inputs.clickCaptureEnabled
+            clickEnabled: inputs.clickCaptureEnabled && !inputs.buttonsSuppressed
+                && (inputs.buttonCursor.map { mailbox.isCurrentButtonCursor($0) } ?? true)
         )
         let followPointerIsLive = space.followPointerIsLive
         let clickPointerIsLive = space.clickPointerIsLive
         // Oracle overrides are authored in scene space already.
         let pointer = oracleFrameOverride?.pointer ?? space.pointer
-        sceneScriptSharedState?.setCursorWorldProjection(
-            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
-        )
         if !followPointerIsLive && previousPointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()
@@ -101,6 +99,16 @@ extension WPEMetalSceneRenderer {
         if let motion = cameraMotionPlayback?.sample(sceneTime: uniforms.time) {
             cameraUniforms = baseCameraUniforms.applyingSceneMotion(motion)
         }
+        if let motion = cameraPathPlayback?.sample(sceneTime: uniforms.time), cameraMotionPlayback == nil {
+            cameraUniforms = baseCameraUniforms.applyingSceneMotion(motion)
+        }
+        if cameraMotionPlayback == nil, cameraPathPlayback == nil, let camera = sceneScriptSharedState?.staticCameraSnapshot(), camera.hasOverride {
+            cameraUniforms = baseCameraUniforms.applyingSceneMotion(camera.transforms.motion)
+        }
+        sceneScriptSharedState?.setCursorWorldProjection(
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil,
+            sceneMotion: cameraUniforms.usesPerspectiveProjection ? nil : cameraUniforms.sceneMotion
+        )
         // Compute once per frame (advances smoothing state); assigned below
         // after the audio path may have rebuilt `uniforms`.
         let parallaxFrame = cameraParallaxSmoother.frame(

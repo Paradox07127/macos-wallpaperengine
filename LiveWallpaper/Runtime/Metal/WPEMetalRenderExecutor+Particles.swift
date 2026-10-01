@@ -84,12 +84,22 @@ extension WPEMetalRenderExecutor {
             )
         )
         projection.cameraClipTransform = frameState.cameraUniforms.sceneClipTransform
+        // The measured rigid UP-axis contract belongs to orthographic sprites.
+        // Perspective sprites and ribbons retain their existing geometry owner.
+        let cameraAngles = !system.definition.isPerspective && !system.usesRibbonGeometry
+            && !frameState.cameraUniforms.usesPerspectiveProjection
+            ? frameState.cameraUniforms.sceneMotion.angles : .zero
+        projection.cameraOrientation = cameraAngles == .zero ? matrix_identity_float4x4
+            : frameState.cameraUniforms.sceneOrientationCorrection
+        projection.sceneSize.w = cameraAngles == .zero ? 0 : 1
         let transform = system.sceneTransform
+        let projectedRotation = WPECameraMotionProjection.spriteRotation(modelAngle: transform.objectAngleZ,
+                                                                         cameraAngles: cameraAngles)
         let averageScale = transform.worldSizeMultiplier()
         if averageScale > 0 {
             projection.modelShape = SIMD4<Float>(
                 transform.objectScale.x / averageScale, transform.objectScale.y / averageScale,
-                cos(transform.objectAngleZ), sin(transform.objectAngleZ)
+                projectedRotation.x, projectedRotation.y
             )
         }
         // Translate the whole system by its camera-parallax depth (pixels),

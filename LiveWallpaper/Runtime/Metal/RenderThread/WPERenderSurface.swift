@@ -67,8 +67,8 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         publisher.onPointerEnteredView = { [weak self] in
             self?.client?.renderAndPresentFrame()
         }
-        view.onPointerFrameChange = { [mailbox] frame in
-            mailbox.publishPointerFrame(frame)
+        view.onPointerFrameChange = { [mailbox, weak view] frame in
+            mailbox.publishPointerFrame(frame, isInsideView: view?.pointerIsInsideView ?? false)
         }
     }
 
@@ -179,9 +179,9 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
 
     /// The per-screen Interaction toggle: the view gates event capture on it, the
     /// mailbox exposes it to the render path. Both must see the same value.
-    private func setClickCaptureEnabledOnMain(_ enabled: Bool) {
-        mtkView.clickCaptureEnabled = enabled
-        mailbox.setClickCaptureEnabled(enabled)
+    private func setClickCaptureEnabledOnMain() {
+        // Deliver the latest caller-published value, not a stale queued toggle.
+        mtkView.clickCaptureEnabled = mailbox.read().clickCaptureEnabled
     }
 
     private func detachOnMain() {
@@ -225,7 +225,7 @@ enum WPEDisplayHDROutput {
     }
 
     static func drawablePixelFormat(hdrOutputEnabled: Bool) -> MTLPixelFormat {
-        hdrOutputEnabled ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
+        hdrOutputEnabled ? .rgba16Float : .rgba8Unorm_srgb
     }
 
     /// Use the destination's potential capability, not another attached screen or its current brightness.
@@ -243,9 +243,9 @@ enum WPEDisplayHDROutput {
     /// Extended-range colorspace + the EDR request. Construction-time only: calling this
     /// once frames are in flight is the race `WPEPresentLayer` warns about.
     static func apply(to layer: CAMetalLayer, hdrOutputEnabled: Bool) {
+        layer.colorspace = CGColorSpace(name: hdrOutputEnabled ? CGColorSpace.extendedLinearSRGB : CGColorSpace.sRGB)
         guard hdrOutputEnabled else { return }
-        // The scene works in linear sRGB (sRGB textures decode in hardware, no pass converts primaries); a P3 tag would reinterpret every saturated colour.
-        layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
+        // Present performs the explicit authored-number → linear display transfer.
         layer.wantsExtendedDynamicRangeContent = true
     }
 }
@@ -306,7 +306,8 @@ extension WPERenderSurface: WPESurfaceControl {
     }
 
     nonisolated func setClickCaptureEnabled(_ enabled: Bool) {
-        deliver { $0.setClickCaptureEnabledOnMain(enabled) }
+        mailbox.setClickCaptureEnabled(enabled)
+        deliver { $0.setClickCaptureEnabledOnMain() }
     }
 
     private nonisolated func deliver(_ body: @escaping @MainActor (WPERenderSurface) -> Void) {

@@ -37,8 +37,8 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 25
-    static let expectedFingerprint = "82ad0c7a39f9dc1bebc14cdd06afe2a4beb37c8538f74c1757e6069305b67831"
+    static let expectedSchemaVersion = 29
+    static let expectedFingerprint = "78774fd78e5f3a560d21fbaeb7df49415f889158ac9ce30fea4959089d1054d4"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {
@@ -79,6 +79,68 @@ struct WPEShaderTranslationCacheSchemaTests {
         #expect(try compiler.compile(request).mslSource == fresh.mslSource)
         #expect(cache.memoryHitCountForTesting == 1)
         #expect(cache.storeCountForTesting == 2)
+    }
+
+    @Test("Integer remainder stays exact above Float32 precision; floating WPE remainder still renders",
+          arguments: ["uint bucket = 5.5 % 3;", "float bucketHash = 5.5; uint bucket = bucketHash % 3;",
+                      "float frequency = 5.5; uint bucket = frequency % RESOLUTION;",
+                      "uint bucket = 16777217u % (3u);",
+                      "uint bucketHash = 16777217; uint divisor = 3; uint bucket = ((bucketHash)) % ((divisor));",
+                      "uint bucket = (5.5) % 3;",
+                      "float bucketHash = 5.5; uint bucket = ((bucketHash)) % 3;",
+                      "uint bucket = float(5.5) % 3;",
+                      "uint bucket = uint(5.5) % 3;"])
+    func unsignedModuloColdAndWarmGPU(statement: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = WPEShaderTranslationCache(rootURL: root)
+        let compiler = try WPESwiftShaderCompiler(device: device, translationCache: cache)
+        let request = WPEShaderCompileRequest(
+            shaderName: "modulo-precision", processedVertexSource: "",
+            processedFragmentSource: "#define RESOLUTION 3\nvoid main() { \(statement) gl_FragColor = vec4(float(bucket) / 2.0, 0.0, 0.0, 1.0); }",
+            sourceHash: UUID().uuidString, comboValues: [:], textureBindings: [:]
+        )
+        let cold = try compiler.compile(request)
+        let coldPixel = try moduloPixel(device: device, result: cold)
+        #expect(coldPixel == 255)
+        cache.dropMemoryForTesting()
+        let warm = try compiler.compile(request)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(warm.mslSource == cold.mslSource)
+        let warmPixel = try moduloPixel(device: device, result: warm)
+        #expect(warmPixel == 255)
+    }
+
+    private func moduloPixel(device: MTLDevice, result: WPEShaderCompileResult) throws -> UInt8 {
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = try #require(device.makeDefaultLibrary()?.makeFunction(name: result.vertexFunctionName))
+        let fragment = try WPEMetalColorOutput.fragment(
+            library: result.library, name: result.fragmentFunctionName, format: .rgba8Unorm
+        )
+        descriptor.fragmentFunction = try #require(fragment)
+        descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 2, height: 2, mipmapped: false)
+        textureDescriptor.usage = [.renderTarget]
+        textureDescriptor.storageMode = .shared
+        let target = try #require(device.makeTexture(descriptor: textureDescriptor))
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        let command = try #require(device.makeCommandQueue()?.makeCommandBuffer())
+        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
+        encoder.setRenderPipelineState(pipeline)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        target.getBytes(&pixel, bytesPerRow: 4, from: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0)
+        #expect(pixel[3] == 255)
+        return pixel[0]
     }
 
     private func cachePayload(_ text: String) -> WPEShaderTranslationCache.Payload {

@@ -85,12 +85,12 @@ struct WPESceneModelNormalMatrixTests {
         let output = try executor.render(
             pipeline: pipeline(testCase), size: size, textures: ["white": white], cameraUniforms: camera
         )
-        #expect(output.pixelFormat == .rgba8Unorm_srgb)
+        #expect(output.pixelFormat == .rgba8Unorm)
         let center = try centerPixel(output)
         #expect(center.a == 255, "mesh did not cover the centre pixel")
 
-        // Fragment wrote linear `0.5 - 0.5·n.y`; the target is sRGB-encoded.
-        let lit = srgbToLinear(Double(center.r) / 255)
+        // Fragment wrote `0.5 - 0.5·n.y` into an identity-transfer work target.
+        let lit = Double(center.r) / 255
         let worldNormalY = Float(1 - 2 * lit)
         #expect(
             abs(worldNormalY - expected.y) <= 0.03,
@@ -219,10 +219,6 @@ struct WPESceneModelNormalMatrixTests {
             from: MTLRegionMake2D(output.width / 2, output.height / 2, 1, 1), mipmapLevel: 0
         )
         return (pixel[0], pixel[1], pixel[2], pixel[3])
-    }
-
-    private func srgbToLinear(_ c: Double) -> Double {
-        c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
     }
 }
 #endif

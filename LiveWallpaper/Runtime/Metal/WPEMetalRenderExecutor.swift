@@ -68,8 +68,8 @@ final class WPEMetalRenderExecutor {
         }
         return false
     }()
-    static let outputPixelFormat: MTLPixelFormat = .rgba8Unorm_srgb
-    /// `.rgba16Float` for HDR so >1 emissive survives to the bloom prefilter (an 8-bit target clamps at scene write); SDR keeps 8-bit sRGB.
+    static let outputPixelFormat = MTLPixelFormat.rgba8Unorm
+    /// `.rgba16Float` for HDR so >1 emissive survives to the bloom prefilter (an 8-bit target clamps at scene write); SDR keeps authored channel numbers in 8-bit UNORM.
     var currentOutputPixelFormat: MTLPixelFormat = WPEMetalRenderExecutor.outputPixelFormat
 
     /// `nil` (the default, and always in Release) means decide automatically per puppet. Clip-composite puppets ignore this and never defer.
@@ -124,6 +124,7 @@ final class WPEMetalRenderExecutor {
 
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
+    var linearPresentationTexture: MTLTexture?
     /// The app's compiled `.metallib`, fetched once in `init` — `makeDefaultLibrary()`
     /// re-loads the library bundle on every call, so per-pipeline fetches were pure waste.
     let defaultLibrary: MTLLibrary
@@ -738,9 +739,7 @@ final class WPEMetalRenderExecutor {
         frameUniformContext = frameUniforms
         frameNeedsReflectionHistory = false
         defer { frameUniformContext = .empty }
-        currentOutputPixelFormat = cameraUniforms.sceneHDR
-            ? .rgba16Float
-            : Self.outputPixelFormat
+        currentOutputPixelFormat = cameraUniforms.sceneHDR ? .rgba16Float : Self.outputPixelFormat
         targetPool.promotesLDRFormatsToHDR = cameraUniforms.sceneHDR
         // ONE pixel scale for the whole frame: scene output, every pool target and the alias plan must shrink together or `copyTexture` blits mismatched extents. `size` stays WORLD-sized; only allocations and g_TexelSize go through the scaled-canvas conversion.
         let outputPixelScale = upscalePlan.renderPixelScale
@@ -1168,7 +1167,10 @@ final class WPEMetalRenderExecutor {
         try finishInitialSceneClear()
         try flushParticles(before: Int.max)
 
-        guard didEncode else {
+        // A registered particle-only scene can have no live instances at time zero
+        // or between bursts; its cleared output is still a valid frame.
+        let idleParticleScene = preparedPipeline.layers.isEmpty && !particleSystems.isEmpty
+        guard didEncode || idleParticleScene else {
             throw skippedShaderError ?? WPEMetalRenderExecutorError.noRenderablePasses
         }
 
@@ -1543,6 +1545,7 @@ final class WPEMetalRenderExecutor {
                 output: destination.texture,
                 clearsOutput: clearsDestination,
                 cameraClipTransform: targetID == .scene ? frameState.cameraUniforms.sceneClipTransform : SIMD4(1, 1, 0, 0),
+                cameraOrientation: targetID == .scene ? frameState.cameraUniforms.sceneOrientationCorrection : matrix_identity_float4x4,
                 commandBuffer: commandBuffer
             )
             if encoded || copiedSceneBackground {
@@ -2174,6 +2177,7 @@ final class WPEMetalRenderExecutor {
         let pipelineState = try renderPipeline(
             fragmentName: "wpe_copy_fragment",
             blendMode: "disabled",
+            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: "disabled"),
             colorPixelFormat: destination.texture.pixelFormat
         )
         let sourceTexture = try WPEMetalShaderInputs.resolve(
@@ -2185,8 +2189,10 @@ final class WPEMetalRenderExecutor {
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination.texture
-        // Fullscreen quad, blending disabled, full write mask: every texel is overwritten, so neither previous contents nor a clear is ever observable. `.dontCare` drops the attachment read.
-        descriptor.colorAttachments[0].loadAction = WPEAttachmentLoadContract.fullOverwrite.load
+        // Local copies overwrite RGBA. A scene copy overwrites RGB but must
+        // initialize the backdrop alpha that its attachment preserves.
+        descriptor.colorAttachments[0].loadAction = destination.id == .scene ? .clear : WPEAttachmentLoadContract.fullOverwrite.load
+        descriptor.colorAttachments[0].clearColor = clearColor(for: destination.id)
         descriptor.colorAttachments[0].storeAction = WPEAttachmentLoadContract.fullOverwrite.store
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "copy|\(layer.objectName)")
@@ -2285,7 +2291,8 @@ final class WPEMetalRenderExecutor {
     func usesObjectQuadGeometry(
         for pass: WPERenderPass,
         layer: WPERenderLayer,
-        cameraParallax: WPECameraParallaxFrame = .neutral
+        cameraParallax: WPECameraParallaxFrame = .neutral,
+        cameraUniforms: WPEMetalCameraUniforms = .identity
     ) -> Bool {
         if isGroupRenderTarget(pass.target, layer: layer) {
             return true
@@ -2293,6 +2300,9 @@ final class WPEMetalRenderExecutor {
         guard case .scene = pass.target else { return false }
         if layer.geometry == .identity {
             // Route identity full-frame layers through the object quad only when there's an actual parallax shift. Gated on `amount != 0` AND a live cursor: a nonzero `smoothed` alone would drag full-frame layers off the fullscreen path for a zero shift.
+            if !layer.isUtilityModelLayer, cameraUniforms.sceneMotion != .identity {
+                return true
+            }
             return layer.parallaxDepth != SIMD2<Double>(0, 0)
                 && cameraParallax.amount != 0
                 && cameraParallax.smoothed != SIMD2<Float>(0, 0)
@@ -2444,7 +2454,9 @@ final class WPEMetalRenderExecutor {
                 centerAndSize: SIMD4<Float>(cameraUniforms.transformScenePoint(parallax).x, cameraUniforms.transformScenePoint(parallax).y,
                     sceneWidth * Float(cameraUniforms.sceneMotion.zoom), sceneHeight * Float(cameraUniforms.sceneMotion.zoom)),
                 sceneSizeAndRotation: SIMD4<Float>(sceneWidth, sceneHeight, 0, 0),
-                uvSignAndPadding: SIMD4<Float>(1, 1, 0, 0)
+                uvSignAndPadding: SIMD4<Float>(1, 1, 0, 0),
+                cameraOrientation: cameraUniforms.sceneOrientationCorrection,
+                cameraWorldDepth: SIMD4(Float(geometry.origin.z), 0, 0, 0)
             )
             recordObjectQuadDebug(
                 layer: layer,
@@ -2505,7 +2517,9 @@ final class WPEMetalRenderExecutor {
                 scaleY < 0 ? -1 : 1,
                 0,
                 0
-            )
+            ),
+            cameraOrientation: cameraUniforms.sceneOrientationCorrection,
+            cameraWorldDepth: SIMD4(Float(geometry.origin.z), 0, 0, 0)
         )
         recordObjectQuadDebug(
             layer: layer,
@@ -2624,7 +2638,9 @@ final class WPEMetalRenderExecutor {
             corner1: corner(p1),
             corner2: corner(p3),
             corner3: corner(p2),
-            sceneHalfAndPad: SIMD4<Float>(sceneWidth * 0.5, sceneHeight * 0.5, 0, 0)
+            sceneHalfAndPad: SIMD4<Float>(sceneWidth * 0.5, sceneHeight * 0.5, 0, 0),
+            cameraOrientation: cameraUniforms.sceneOrientationCorrection,
+            cameraWorldDepth: SIMD4(Float(geometry.origin.z), 0, 0, 0)
         )
     }
 
@@ -2785,7 +2801,7 @@ final class WPEMetalRenderExecutor {
     ) -> WPEGenericImageUniforms {
         // WPE bakes the object's authored `color` into g_Color4 for every image material, so the layer tint multiplies the material's own g_Color — same channel the brightness field already rides.
         let materialColor = WPEMetalShaderInputs.colorVector(for: pass)
-        let layerTint = WPEMetalShaderInputs.linearLayerTint(layer.geometry.color)
+        let layerTint = SIMD3<Float>(layer.geometry.color)
         let color = SIMD4<Float>(
             materialColor.x * layerTint.x,
             materialColor.y * layerTint.y,
@@ -2800,7 +2816,10 @@ final class WPEMetalRenderExecutor {
             default: 1
         )
         let alpha = gAlpha * Float(layer.geometry.alpha)
-        let brightness = gBrightness * Float(layer.geometry.brightness)
+        // WPE g_Color4 bakes object brightness only in HDR scenes. The
+        // material's explicit g_Brightness remains a separate shader input.
+        let sceneHDR = (frameUniformContext.frameValue(named: "g_SceneHDREnabled")?.numberValue ?? 0) > 0.5
+        let brightness = gBrightness * Float(sceneHDR ? layer.geometry.brightness : 1)
         let sourceUVScale = Self.logicalUVScale(for: sourceTexture)
         let maskUVScale = Self.logicalUVScale(for: maskTexture)
         if WPESceneDebugArtifacts.shared.isEnabled {
@@ -3022,7 +3041,7 @@ final class WPEMetalRenderExecutor {
         guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
             ?? result.library.makeFunction(name: resolvedVertexName)
             ?? defaultLibrary.makeFunction(name: resolvedVertexName),
-              let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
+            let fragment = try WPEMetalColorOutput.fragment(library: result.library, name: result.fragmentFunctionName, format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable(result.fragmentFunctionName)
         }
         let descriptor = MTLRenderPipelineDescriptor()
@@ -3087,7 +3106,7 @@ final class WPEMetalRenderExecutor {
         guard let vertex = result.vertexStage?.library.makeFunction(name: resolvedVertexName)
             ?? result.library.makeFunction(name: resolvedVertexName)
             ?? prewarm.defaultLibrary.makeFunction(name: resolvedVertexName),
-              let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
+            let fragment = try? WPEMetalColorOutput.fragment(library: result.library, name: result.fragmentFunctionName, format: prewarm.colorPixelFormat) else {
             return nil
         }
         let descriptor = MTLRenderPipelineDescriptor()
@@ -3288,7 +3307,7 @@ final class WPEMetalRenderExecutor {
         officialTextureSamplingSlotIndex(for: name, suffix: "Translation")
     }
 
-    private static func officialTextureSamplingSlotIndex(
+    static func officialTextureSamplingSlotIndex(
         for name: String,
         suffix: String
     ) -> Int? {

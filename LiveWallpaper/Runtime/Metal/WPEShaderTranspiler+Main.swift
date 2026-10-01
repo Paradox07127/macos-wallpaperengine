@@ -103,10 +103,10 @@ extension WPEShaderTranspiler {
             }
             inner = "float4 out_color = float4(0.0);\n"
                 + inner
-                + "\nreturn \(premultiplyOutput ? "wpe_premultiply_output(out_color)" : "out_color");\n"
+                + "\nreturn \(premultiplyOutput ? "wpe_premultiply_output(wpe_attachment_output(out_color))" : "wpe_attachment_output(out_color)");\n"
         } else {
             let zero = premultiplyOutput ? "wpe_premultiply_output(float4(0.0))" : "float4(0.0)"
-            inner = inner + "\nreturn \(zero);\n"
+            inner += "\nreturn wpe_attachment_output(\(zero));\n"
         }
         return inner
     }

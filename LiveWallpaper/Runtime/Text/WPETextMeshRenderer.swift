@@ -62,10 +62,8 @@ final class WPETextMeshRenderer {
         placement: WPETextMeshPlacement
     ) -> WPETextMeshPayload? {
         let brightness = Float(max(object.brightness, 0))
-        // Authored `color` is sRGB, and the glyph pass writes into a linear target — the
-        // same conversion image layers get from `linearLayerTint`. Without it the same
-        // authored value renders far lighter here than on every other layer.
-        let tint = WPEMetalShaderInputs.linearLayerTint(object.color)
+        // Glyph and image layers use the same authored channel-number arithmetic.
+        let tint = WPEMetalShaderInputs.layerTint(object.color)
         let color = SIMD4<Float>(
             tint.x * brightness,
             tint.y * brightness,

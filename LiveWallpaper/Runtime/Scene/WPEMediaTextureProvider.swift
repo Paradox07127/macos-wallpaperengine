@@ -211,7 +211,8 @@ final class WPEMediaTextureSubscription {
         // mid-song shows the right cover on its first frame.
         source.subscribe(id: id) { [weak self] ordinal, state in
             MainActor.assumeIsolated {
-                self?.ingest(ordinal: ordinal, state: state)
+                guard let self, self.isSubscribed else { return }
+                self.ingest(ordinal: ordinal, state: state)
             }
         }
     }

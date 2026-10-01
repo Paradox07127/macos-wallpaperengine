@@ -12,11 +12,31 @@ final class WPEPointerMailbox: Sendable {
         static let none = Geometry(viewFrameInScreen: .zero)
     }
 
+    /// A snapshot high-water mark: peeking never consumes input.
+    struct ButtonCursor: Equatable, Sendable {
+        let epoch: UInt64
+        let sequence: UInt64
+    }
+
+    struct ButtonEdge: Equatable, Sendable {
+        let cursor: ButtonCursor
+        let frame: WPEPointerFrame
+        let isInsideView: Bool
+    }
+
+    struct ButtonBatch: Sendable {
+        let edges: [ButtonEdge]
+        let cancelled: Bool
+        let snapshotCurrent: Bool
+    }
+
     struct Reading: Equatable, Sendable {
         var pointerSample: WPEMetalPointerSample
         var pointerFrame: WPEPointerFrame
         var clickCaptureEnabled: Bool
         var mouseTimestampNanos: UInt64
+        var buttonCursor: ButtonCursor
+        var buttonsSuppressed: Bool
     }
 
     private struct State {
@@ -25,7 +45,14 @@ final class WPEPointerMailbox: Sendable {
         var geometry: Geometry
         var pointerFrame: WPEPointerFrame
         var clickCaptureEnabled: Bool
+        var epoch: UInt64 = 0
+        var sequence: UInt64 = 0
+        var edges: [ButtonEdge] = []
+        var cancelled = false
+        var suppressed = false
     }
+
+    private let buttonCapacity = 256
 
     private let lock = OSAllocatedUnfairLock(
         initialState: State(
@@ -53,12 +80,74 @@ final class WPEPointerMailbox: Sendable {
         lock.withLock { $0.geometry = geometry }
     }
 
-    func publishPointerFrame(_ frame: WPEPointerFrame) {
-        lock.withLock { $0.pointerFrame = frame }
+    func publishPointerFrame(_ frame: WPEPointerFrame, isInsideView: Bool = true) {
+        lock.withLock { state in
+            let changed = frame.isDown != state.pointerFrame.isDown
+                || frame.isRightDown != state.pointerFrame.isRightDown
+            state.pointerFrame = frame
+            guard state.clickCaptureEnabled else { return }
+            if state.suppressed {
+                if !frame.isDown, !frame.isRightDown {
+                    state.suppressed = false
+                    state.epoch &+= 1
+                }
+                return
+            }
+            guard changed else { return }
+            guard state.edges.count < buttonCapacity else {
+                Self.cancel(&state)
+                return
+            }
+            state.sequence &+= 1
+            var eligible = isInsideView
+            if state.geometry.interactiveFrames != nil {
+                let rect = state.geometry.viewFrameInScreen
+                let screenLocation = CGPoint(x: rect.minX + frame.position.x * rect.width,
+                                             y: rect.minY + (1 - frame.position.y) * rect.height)
+                eligible = eligible && Self.pointerSample(forScreenLocation: screenLocation,
+                                                          geometry: state.geometry).isInsideView
+            }
+            state.edges.append(ButtonEdge(cursor: .init(epoch: state.epoch, sequence: state.sequence),
+                                          frame: frame, isInsideView: eligible))
+        }
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
-        lock.withLock { $0.clickCaptureEnabled = enabled }
+        lock.withLock { state in
+            guard state.clickCaptureEnabled != enabled else { return }
+            state.clickCaptureEnabled = enabled
+            Self.cancel(&state)
+        }
+    }
+
+    func resetButtonEvents() {
+        lock.withLock { Self.cancel(&$0) }
+    }
+
+    private static func cancel(_ state: inout State) {
+        state.edges.removeAll(keepingCapacity: true)
+        state.epoch &+= 1
+        state.cancelled = true
+        state.suppressed = state.pointerFrame.isDown || state.pointerFrame.isRightDown
+    }
+
+    func isCurrentButtonCursor(_ cursor: ButtonCursor) -> Bool {
+        lock.withLock { $0.epoch == cursor.epoch }
+    }
+
+    func takeButtonEvents(through cursor: ButtonCursor) -> ButtonBatch {
+        lock.withLock { state in
+            guard cursor.epoch == state.epoch else {
+                // An old snapshot cannot consume a new scene's events.
+                return ButtonBatch(edges: [], cancelled: true, snapshotCurrent: false)
+            }
+            let count = state.edges.prefix { $0.cursor.sequence <= cursor.sequence }.count
+            let edges = Array(state.edges.prefix(count))
+            state.edges.removeFirst(count)
+            let cancelled = state.cancelled
+            state.cancelled = false
+            return ButtonBatch(edges: edges, cancelled: cancelled, snapshotCurrent: true)
+        }
     }
 
     // MARK: - Reader
@@ -72,7 +161,9 @@ final class WPEPointerMailbox: Sendable {
                 ),
                 pointerFrame: state.pointerFrame,
                 clickCaptureEnabled: state.clickCaptureEnabled,
-                mouseTimestampNanos: state.mouseTimestampNanos
+                mouseTimestampNanos: state.mouseTimestampNanos,
+                buttonCursor: .init(epoch: state.epoch, sequence: state.sequence),
+                buttonsSuppressed: state.suppressed
             )
         }
     }

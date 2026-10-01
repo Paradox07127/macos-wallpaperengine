@@ -27,12 +27,15 @@ enum WPEMetalObjectUniforms {
         let c = cos(rotation), s = sin(rotation)
         let signX: Double = quad.uvSignAndPadding.x < 0 ? -1 : 1
         let signY: Double = quad.uvSignAndPadding.y < 0 ? -1 : 1
-        return simd_double4x4(
+        let placement = simd_double4x4(
             SIMD4(signX * halfW * c / halfWidth, signX * halfW * s / halfHeight, 0, 0),
             SIMD4(-signY * halfH * s / halfWidth, signY * halfH * c / halfHeight, 0, 0),
             SIMD4(0, 0, 1, 0),
-            SIMD4(Double(quad.centerAndSize.x) / halfWidth, Double(quad.centerAndSize.y) / halfHeight, 0, 1)
+            SIMD4(Double(quad.centerAndSize.x) / halfWidth, Double(quad.centerAndSize.y) / halfHeight, Double(quad.cameraWorldDepth.x), 1)
         )
+        let orientation = simd_double4x4(SIMD4<Double>(quad.cameraOrientation.columns.0), SIMD4<Double>(quad.cameraOrientation.columns.1),
+                                         SIMD4<Double>(quad.cameraOrientation.columns.2), SIMD4<Double>(quad.cameraOrientation.columns.3))
+        return orientation * placement
     }
 
     /// Object/layer matrices are 16-value column-major arrays;

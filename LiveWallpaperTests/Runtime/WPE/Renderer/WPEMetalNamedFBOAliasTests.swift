@@ -77,8 +77,54 @@ struct WPEMetalSolidSceneRunTests {
             sceneCamera: .defaultCamera, sceneHDR: hdr
         )
         let output = try executor.render(pipeline: pipeline, size: size, textures: textures, cameraUniforms: camera)
-        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm_srgb))
+        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm))
         return try bytes(output)
+    }
+
+    /// Read local alpha into RGB so terminal scene opacity cannot hide a wrong local clear.
+    private func alphaProbe(_ index: Int, source: WPETextureReference) -> WPEPreparedRenderLayer {
+        let base = layer(index, shader: "effects/local-alpha-probe", source: source,
+                         builtin: false, transformed: false, blending: "disabled")
+        let pass = WPEPreparedRenderPass(
+            pass: base.passes[0].pass,
+            shader: WPEShaderProgram(name: "effects/local-alpha-probe", vertexSource: "", fragmentSource: """
+            uniform sampler2D g_Texture0;
+            in vec2 v_TexCoord;
+            void main() {
+                float alpha = texture(g_Texture0, v_TexCoord).a;
+                gl_FragColor = vec4(alpha, alpha, alpha, 1.0);
+            }
+            """, isBuiltin: false),
+            textureBindings: base.passes[0].textureBindings, comboValues: [:], uniformValues: [:]
+        )
+        return WPEPreparedRenderLayer(graphLayer: base.graphLayer, passes: [pass])
+    }
+
+    @Test("A failed named pass publishes transparent pixels while normal scene composition retains its opaque backdrop")
+    func skippedShaderCompositeAndSceneAlphaDomains() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let base = layer(0, shader: "effects/broken", target: .layerComposite(name: "solid-0-a"), builtin: false, transformed: false)
+        let broken = WPEPreparedRenderPass(
+            pass: base.passes[0].pass,
+            shader: WPEShaderProgram(name: "effects/broken", vertexSource: "", fragmentSource: "void main() { this is not glsl }", isBuiltin: false),
+            textureBindings: [:], comboValues: [:], uniformValues: [:]
+        )
+        let producer = WPEPreparedRenderLayer(graphLayer: base.graphLayer, passes: [broken])
+        for (consumerShader, blending) in [("genericimage2", "normal"), ("commands/copy", "disabled")] {
+            let executor = try WPEMetalRenderExecutor(device: device)
+            let consumer = layer(1, shader: consumerShader, source: .fbo("solid-0-a"), transformed: false, blending: blending)
+            let raw = try renderBytes(executor, pipeline: WPEPreparedRenderPipeline(layers: [producer, consumer]), hdr: true)
+            #expect(executor.untranslatableShaderReasonByPassID[broken.id] != nil)
+            let components = raw.withUnsafeBytes { $0.bindMemory(to: UInt16.self).map { Float(Float16(bitPattern: $0)) } }
+            #expect(components[0] == 0 && components[1] == 0 && components[2] == 0)
+            #expect(components[3] == 1, "Both scene paths retain the opaque backdrop")
+            let alphaRaw = try renderBytes(executor, pipeline: WPEPreparedRenderPipeline(layers: [
+                producer, alphaProbe(1, source: .fbo("solid-0-a")),
+            ]), hdr: true)
+            let local = alphaRaw.withUnsafeBytes { $0.bindMemory(to: UInt16.self).map { Float(Float16(bitPattern: $0)) } }
+            #expect(local[0] == 0, "The failed local pass must still publish transparent alpha")
+            #expect(local[3] == 1)
+        }
     }
 
     @Test("Diagnostic controls are independent, strict and disabled by default")
@@ -245,7 +291,7 @@ struct WPEMetalSolidSceneRunTests {
             let red = Float16(bitPattern: UInt16(actual[0]) | UInt16(actual[1]) << 8)
             let alpha = Float16(bitPattern: UInt16(actual[6]) | UInt16(actual[7]) << 8)
             #expect(red > 1)
-            #expect(alpha == 0.5)
+            #expect(alpha == 1, "Windows scene writeMask=7 preserves the opaque backdrop")
             if let previous {
                 #expect(actual != previous)
             }

@@ -129,7 +129,7 @@ struct WPEVideoNV12ConversionTests {
 
         #expect(source.lastPublishPathForTesting == .biPlanar)
         let texture = try #require(source.texture(at: 0))
-        #expect(texture.pixelFormat == .bgra8Unorm_srgb)
+        #expect(texture.pixelFormat == .bgra8Unorm)
         #expect(texture.width == 64)
         #expect(texture.height == 64)
 
@@ -176,7 +176,7 @@ struct WPEVideoNV12ConversionTests {
         source.ingestForTesting(pixelBuffer: bgra)
         #expect(source.lastPublishPathForTesting == .bgra)
         let texture = try #require(source.texture(at: 0))
-        #expect(texture.pixelFormat == .bgra8Unorm_srgb || texture.pixelFormat == .bgra8Unorm)
+        #expect(texture.pixelFormat == .bgra8Unorm)
     }
 
     // MARK: - AVFoundation integration (format negotiation)
@@ -202,7 +202,7 @@ struct WPEVideoNV12ConversionTests {
         let frame = try #require(texture, "AVPlayer-backed source must publish a frame within 3s")
         #expect(source.lastPublishPathForTesting == .biPlanar,
                 "SDR H.264 must negotiate NV12, not fall back to BGRA")
-        #expect(frame.pixelFormat == .bgra8Unorm_srgb)
+        #expect(frame.pixelFormat == .bgra8Unorm)
         #expect(frame.width == 64)
         #expect(frame.height == 64)
 

@@ -21,8 +21,12 @@ struct WPEParticlePlaybackTests {
         #expect(!system.playbackSnapshot.isEmitting && system.playbackSnapshot.isPlaying)
         system.applyPlaybackCommand(.play)
         system.tick(now: 2.0 / 60)
-        #expect(system.liveInstanceCount == 5)
+        #expect(system.liveInstanceCount == 4)
         #expect(system.snapshot(for: identity) != nil)
+        for frame in 3 ... 8 {
+            system.tick(now: Double(frame) / 60)
+        }
+        #expect(system.liveInstanceCount == 7)
     }
 
     @Test func stopClearsIdentityAndForcedEmissionRunsWhileAutomaticEmissionStaysStopped() throws {

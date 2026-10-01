@@ -687,5 +687,67 @@ struct WPEUniformResolutionPlanTests {
         #expect(executor.uniformPlanCompileCount == 1)
         #expect(executor.uniformKeyIndexBuildCount == 1)
     }
+    @Test("Canonical texture mip info follows the actual bound texture in both stages and plan modes")
+    func textureMipInfoUsesBoundMipCount() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let (_, pass) = Self.makePass(id: "mips", uniformValues: ["g_Texture3MipMapInfo": .number(99)])
+        let layout = [WPEUniformSlot(name: "g_Texture3MipMapInfo", glslType: "float", slot: 0, slotCount: 1)]
+        let textures = WPEMetalTextureSlotTable()
+        for count in [1, 2, 5] {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
+            descriptor.mipmapLevelCount = count
+            textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+            for stage in [WPEShaderStage.vertex, .fragment] {
+                for direct in [false, true] {
+                    executor.derivedUniformPackingEnabled = direct
+                    let slots = try executor.packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: textures, stage: stage)
+                    #expect(slots == [SIMD4<Float>(Float(count), 0, 0, 0)])
+                }
+            }
+        }
+        #expect(executor.uniformPlanCompileCount == 2)
+        textures[3] = nil
+        #expect(try executor.packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: textures)[0].x == 99)
+        let array = WPEUniformSlot(name: "g_Texture3MipMapInfo", glslType: "float", slot: 0, slotCount: 1, arrayLength: 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
+        textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+        #expect(try executor.packTranslatedUniforms(for: pass, layout: [array], texturesBySlot: textures)[0].x == 99)
+    }
+
+    @Test("Translated custom mip uniform transports its draw-local value through actual Metal execution")
+    func customMipInfoGPURoundTrip() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let (_, pass) = Self.makePass(id: "mip-gpu", uniformValues: [:])
+        let source = "uniform float g_Texture3MipMapInfo;\nvoid main() { gl_FragColor = vec4(g_Texture3MipMapInfo); }"
+        let translation = try WPEShaderTranspiler.translateFragment(shaderName: "mip-info", preprocessedSource: source)
+        let declarations = source.components(separatedBy: "\n").flatMap(WPEUniformDecl.parseAll)
+        let probe = translation.mslSource + "\n" + """
+        kernel void mipProbe(constant WPEUniforms& u [[buffer(0)]], device float* result [[buffer(1)]]) {
+            \(WPEShaderTranspiler.uniformDeclarationLines(declarations).joined(separator: "\n"))
+            result[0] = g_Texture3MipMapInfo;
+        }
+        """
+        let library = try device.makeLibrary(source: probe, options: WPEMetalLibraryRegistry.Configuration().makeOptions())
+        let pipeline = try device.makeComputePipelineState(function: #require(library.makeFunction(name: "mipProbe")))
+        let textures = WPEMetalTextureSlotTable()
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
+        textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+        let slots = try executor.packTranslatedUniforms(for: pass, layout: translation.uniformLayout, texturesBySlot: textures)
+        let input = try slots.withUnsafeBytes { try #require(device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)) }
+        let output = try #require(device.makeBuffer(length: MemoryLayout<Float>.size, options: .storageModeShared))
+        let command = try #require(device.makeCommandQueue()?.makeCommandBuffer())
+        let encoder = try #require(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(input, offset: 0, index: 0)
+        encoder.setBuffer(output, offset: 0, index: 1)
+        encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        #expect(output.contents().load(as: Float.self) == 5)
+    }
 }
 #endif

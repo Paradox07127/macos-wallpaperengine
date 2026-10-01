@@ -81,14 +81,22 @@ test-app:
 # Keep the local gate explicit and require every listed suite to execute.
 WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
     WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
+    WPEParticleInstanceCoordinatorTests WPEParticleInstanceModifierTests \
+    WPEParticleControlPointExecutionTests \
     WPEUniformStageBindingTests WPEAttachmentPlanTests WPECameraMotionTests \
     WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests \
     WPEColorDomainProbeTests WPEOraclePixelProbeTests WPECanonicalUniformTraceTests \
-    WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests
+    WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests \
+    WPEUniformResolutionPlanTests WPEMetalSolidSceneRunTests WPERenderGraphBuilderTests \
+    WPEMetalSceneRendererTests WPESceneHibernateTests WPEMediaTextureProviderTests \
+    SceneLoadProgressTests WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
+    WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
+    WPERenderThreadTests WPERenderThreadDrainRuntimeTests
 
+# Keep certificate-signed Metal products separate from the ad-hoc fast host.
 test-wpe-metal:
-	DERIVED_DATA="$(DERIVED_DATA)" \
-	RESULT_BUNDLE="$(DERIVED_DATA)/WPEMetalContracts-$$(date +%Y%m%d-%H%M%S)-$$$$.xcresult" \
+	DERIVED_DATA="$(DERIVED_DATA)Metal" \
+	RESULT_BUNDLE="$(DERIVED_DATA)Metal/WPEMetalContracts-$$(date +%Y%m%d-%H%M%S)-$$$$.xcresult" \
 	TEST_RUNNER_MTL_DEBUG_LAYER=1 TEST_RUNNER_MTL_SHADER_VALIDATION=1 \
 	bash scripts/app_tests.sh suites $(WPE_METAL_SUITES)
 

@@ -199,7 +199,9 @@ final class WPEMetalRenderTargetPool {
     func discardTextures(named names: Set<String>) {
         guard !names.isEmpty else { return }
         slots = slots.filter { !names.contains($0.key.name) }
-        for name in names { zeroPlaceholderTextures[name] = nil }
+        for name in names {
+            zeroPlaceholderTextures[name] = nil
+        }
         // The alias plan includes dimensions in its signature and must be
         // rebuilt alongside the discrete slots.
         releaseAliasState()

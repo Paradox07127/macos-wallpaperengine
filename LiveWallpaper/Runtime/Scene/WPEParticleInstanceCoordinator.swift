@@ -1,0 +1,304 @@
+#if !LITE_BUILD
+import Foundation
+import LiveWallpaperProWPE
+import Metal
+
+/// A loaded definition/material prototype is shared; every trigger owns its pool,
+/// clock and descendant relationships. Prototypes never serve as event instances.
+final class WPEParticleTemplate {
+    struct Child {
+        let reference: WPEParticleChildReference
+        let template: WPEParticleTemplate
+    }
+
+    let prototype: WPEParticleSystem
+    var children: [Child] = []
+
+    init(_ prototype: WPEParticleSystem) {
+        self.prototype = prototype
+    }
+}
+
+final class WPEParticleInstanceCoordinator {
+    struct Binding {
+        let system: WPEParticleSystem
+        let prototype: WPEParticleSystem
+    }
+
+    private final class Instance {
+        let system: WPEParticleSystem
+        let template: WPEParticleTemplate
+        let referenceIndex: Int?
+        weak var parent: Instance?
+        var followedParticle: WPEParticleIdentity?
+        var followsParent = false
+        var emissionEndedWithParent = false
+        var children: [Instance] = []
+
+        init(system: WPEParticleSystem, template: WPEParticleTemplate,
+             parent: Instance? = nil, referenceIndex: Int? = nil) {
+            self.system = system
+            self.template = template
+            self.parent = parent
+            self.referenceIndex = referenceIndex
+            if template.children.contains(where: \.reference.rollsProbabilityPerEvent) {
+                system.beginRecordingParticleEvents()
+            }
+        }
+    }
+
+    /// Event pools are bounded separately from the existing authored root pools.
+    /// The slot budget covers CPU particles and three in-flight GPU buffers.
+    static let maximumEventInstances = 1024
+    static let maximumEventParticleSlots = 65536
+    private let device: MTLDevice
+    private var roots: [Instance] = []
+    private var eventInstanceCount = 0
+    private var eventParticleSlots = 0
+    private var creationOrdinal: UInt64 = 0
+    private var random: SplitMix64
+    private var previousTime: Double?
+    private var previousInterval: Double = 0
+
+    init(templates: [WPEParticleTemplate], device: MTLDevice, seed: UInt64) {
+        self.device = device
+        random = SplitMix64(seed: seed)
+        for template in templates {
+            let root = Instance(system: template.prototype, template: template)
+            roots.append(root)
+            addStaticChildren(to: root, reusePrototypes: true)
+        }
+    }
+
+    var bindings: [Binding] {
+        var result: [Binding] = []
+        func append(_ instance: Instance) {
+            result.append(.init(system: instance.system, prototype: instance.template.prototype))
+            for child in instance.children {
+                append(child)
+            }
+        }
+        for root in roots {
+            append(root)
+        }
+        return result
+    }
+
+    /// One substep clock for the entire tree. A follower sees its own parent's
+    /// same-substep position, including a terminal death snapshot, before ticking.
+    func tick(now: Double, frameSlot: Int = 0, configure: (WPEParticleSystem) -> Void = { _ in }) {
+        guard now.isFinite else { return }
+        let raw = max(0, now - (previousTime ?? now))
+        let delta = min(raw, max(0.1, 2 * previousInterval))
+        previousTime = now
+        previousInterval = delta
+        let steps = max(1, Int(ceil(delta * 60 - 1e-6)))
+        for index in 0 ..< steps {
+            let time = now - delta + Double(index + 1) * delta / Double(steps)
+            for root in roots {
+                tick(root, now: time, frameSlot: frameSlot, configure: configure)
+            }
+        }
+    }
+
+    func prewarm(secondsByRoot: [ObjectIdentifier: Double], step: Double = 1.0 / 60) {
+        guard step > 0, let longest = secondsByRoot.values.max(), longest > 0 else { return }
+        for root in roots {
+            let seconds = max(0, secondsByRoot[ObjectIdentifier(root.system)] ?? 0)
+            preparePrewarm(root, start: -seconds)
+        }
+        for index in 0 ... Int(ceil(longest / step)) {
+            let now = min(0, -longest + Double(index) * step)
+            for root in roots {
+                let seconds = max(0, secondsByRoot[ObjectIdentifier(root.system)] ?? 0)
+                guard now >= -seconds else { continue }
+                tick(root, now: now, frameSlot: 0, configure: { _ in })
+            }
+        }
+        for binding in bindings {
+            binding.system.finishInstancePrewarm()
+        }
+        previousTime = 0
+        previousInterval = step
+    }
+
+    private func preparePrewarm(_ instance: Instance, start: Double) {
+        instance.system.anchorInstanceClock(at: start, presimulateDelay: true)
+        for child in instance.children {
+            preparePrewarm(child, start: start)
+        }
+    }
+
+    private func tick(_ instance: Instance, now: Double, frameSlot: Int,
+                      configure: (WPEParticleSystem) -> Void) {
+        let system = instance.system
+        if let parent = instance.parent {
+            if instance.followsParent, let identity = instance.followedParticle {
+                if let snapshot = parent.system.snapshot(for: identity) {
+                    system.instanceOriginOffset = snapshot.position + parent.system.instanceOriginOffset
+                        - parent.system.sceneTransform.renderOrigin
+                } else {
+                    if let death = parent.system.particleEventsThisTick.first(where: {
+                        $0.kind == .death && $0.particle.identity == identity
+                    }) {
+                        system.instanceOriginOffset = death.particle.position + parent.system.instanceOriginOffset
+                            - parent.system.sceneTransform.renderOrigin
+                    }
+                    pauseSubtree(instance)
+                    instance.emissionEndedWithParent = true
+                    instance.followsParent = false
+                    instance.followedParticle = nil
+                }
+            } else if instance.referenceIndex.map({
+                !parent.template.children[$0].reference.rollsProbabilityPerEvent
+            }) == true {
+                system.instanceOriginOffset = parent.system.instanceOriginOffset
+            }
+        }
+        if let parent = instance.parent, let referenceIndex = instance.referenceIndex {
+            let reference = parent.template.children[referenceIndex].reference
+            if reference.setsParentParticleControlPoints {
+                let start = reference.controlPointStartIndex ?? 0
+                if (0 ... 7).contains(start) {
+                    for (index, position) in parent.system.liveControlPointSourcePositions(limit: 8 - start).enumerated() {
+                        system.injectedControlPoints[start + index] = system.sceneTransform.applyModelMatrix(toLocalPoint: position)
+                    }
+                }
+            }
+        }
+        configure(system)
+        system.tick(now: now, frameSlot: frameSlot)
+        for event in system.particleEventsThisTick {
+            for (index, child) in instance.template.children.enumerated() {
+                let kind = child.reference.eventKind
+                let triggered = event.kind == .spawn && (kind == .spawn || kind == .follow)
+                    || event.kind == .death && kind == .death
+                guard triggered, allowsCreation(child.reference, parent: instance, index: index) else { continue }
+                guard let created = makeChild(child, parent: instance, index: index) else { continue }
+                created.system.instanceOriginOffset = event.particle.position + system.instanceOriginOffset
+                    - system.sceneTransform.renderOrigin
+                if kind == .follow {
+                    created.followedParticle = event.particle.identity
+                    created.followsParent = true
+                }
+                // Establish this instance's own birth clock, not the scene clock.
+                created.system.anchorInstanceClock(at: event.simulationTime)
+                instance.children.append(created)
+                addStaticChildren(to: created, reusePrototypes: false)
+            }
+        }
+        for child in instance.children {
+            tick(child, now: now, frameSlot: frameSlot, configure: configure)
+        }
+        instance.children.removeAll { child in
+            let reference = instance.template.children[child.referenceIndex!].reference
+            guard reference.rollsProbabilityPerEvent, subtreeIsIdle(child) else { return false }
+            release(child)
+            return true
+        }
+    }
+
+    private func allowsCreation(_ reference: WPEParticleChildReference, parent: Instance, index: Int) -> Bool {
+        if let maximum = reference.maxCount,
+           parent.children.filter({ $0.referenceIndex == index }).count >= max(0, maximum) {
+            return false
+        }
+        return reference.probability > 0 && (reference.probability >= 1 || Double.random(in: 0 ..< 1, using: &random) < reference.probability)
+    }
+
+    private func makeChild(_ child: WPEParticleTemplate.Child, parent: Instance, index: Int) -> Instance? {
+        let prototype = child.template.prototype
+        guard eventInstanceCount < Self.maximumEventInstances,
+              prototype.capacity <= Self.maximumEventParticleSlots - eventParticleSlots else {
+            return nil
+        }
+        creationOrdinal &+= 1
+        guard let system = prototype.makeEventInstance(device: device, seed: random.next() ^ creationOrdinal) else {
+            return nil
+        }
+        eventInstanceCount += 1
+        eventParticleSlots += system.capacity
+        return Instance(system: system, template: child.template, parent: parent, referenceIndex: index)
+    }
+
+    private func addStaticChildren(to parent: Instance, reusePrototypes: Bool) {
+        for (index, child) in parent.template.children.enumerated() where !child.reference.rollsProbabilityPerEvent {
+            guard allowsCreation(child.reference, parent: parent, index: index) else { continue }
+            let instance: Instance? = if reusePrototypes {
+                Instance(system: child.template.prototype, template: child.template,
+                         parent: parent, referenceIndex: index)
+            } else {
+                makeChild(child, parent: parent, index: index)
+            }
+            guard let instance else { continue }
+            instance.system.instanceOriginOffset = parent.system.instanceOriginOffset
+            parent.children.append(instance)
+            addStaticChildren(to: instance, reusePrototypes: reusePrototypes)
+        }
+    }
+
+    private func subtreeIsIdle(_ instance: Instance) -> Bool {
+        instance.system.isPermanentlyIdle && instance.children.allSatisfy(subtreeIsIdle)
+    }
+
+    private func resumeSubtree(_ instance: Instance) {
+        guard !instance.emissionEndedWithParent else { return }
+        instance.system.applyPlaybackCommand(.play)
+        for child in instance.children {
+            resumeSubtree(child)
+        }
+    }
+
+    private func pauseSubtree(_ instance: Instance) {
+        instance.system.applyPlaybackCommand(.pause)
+        for child in instance.children {
+            pauseSubtree(child)
+        }
+    }
+
+    private func release(_ instance: Instance) {
+        for child in instance.children {
+            release(child)
+        }
+        if instance.system !== instance.template.prototype {
+            eventInstanceCount -= 1
+            eventParticleSlots -= instance.system.capacity
+        }
+    }
+
+    func apply(_ commands: [WPESceneScriptParticleCommand]) {
+        for event in commands {
+            for root in roots where root.system.scriptParticleObjectID == event.objectID {
+                switch event.command {
+                case .stop:
+                    root.system.applyPlaybackCommand(.stop)
+                    for child in root.children {
+                        release(child)
+                    }
+                    root.children.removeAll()
+                case .play:
+                    resumeSubtree(root)
+                    if root.children.isEmpty {
+                        addStaticChildren(to: root, reusePrototypes: false)
+                    }
+                case .pause: pauseSubtree(root)
+                case let .emit(count):
+                    root.system.requestEmission(count, values: event.emissionValues ?? root.system.instanceValues)
+                case .modify:
+                    func updateTemplate(_ template: WPEParticleTemplate) {
+                        template.prototype.applyPlaybackCommand(event.command)
+                        for child in template.children {
+                            updateTemplate(child.template)
+                        }
+                    }
+                    updateTemplate(root.template)
+                    for binding in bindings where binding.system.scriptParticleObjectID == event.objectID
+                        && binding.system !== binding.prototype {
+                        binding.system.applyPlaybackCommand(event.command)
+                    }
+                }
+            }
+        }
+    }
+}
+#endif

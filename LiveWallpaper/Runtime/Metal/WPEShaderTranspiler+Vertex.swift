@@ -42,10 +42,14 @@ extension WPEShaderTranspiler {
             throw WPEShaderCompilerError.translationFailed("malformed authored vertex entry point")
         }
         let helperSource = String(body[..<mainRange.lowerBound]) + "\n" + String(body[mainRange.upperBound...])
-        let helpers = rewriteSamplersToPerSlot(applySubstitutions(helperSource, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, stage: .vertex))
+        let stageTypes = Dictionary(link.interface.variables.filter {
+            $0.key.stage == .vertex && $0.arrayDimensions.isEmpty
+                && [.attribute, .varyingOutput].contains($0.kind)
+        }.map { ($0.key.name, WPEUniformDecl.mapType($0.glslType)) }, uniquingKeysWith: { _, last in last })
+        let helpers = rewriteSamplersToPerSlot(applySubstitutions(helperSource, varyingTypesByName: stageTypes, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, stage: .vertex))
         let inner = rewriteSamplersToPerSlot(applySubstitutions(
             String(main[main.index(after: open) ..< close]), rewriteProgramScopeConsts: false,
-            premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, functionDeclarations: helperSource, stage: .vertex
+            varyingTypesByName: stageTypes, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, functionDeclarations: helperSource, stage: .vertex
         ))
         let globals = extractProgramScopeMutableDeclarations(from: helpers)
         // Helper output writes use the same by-reference threading as authored globals.

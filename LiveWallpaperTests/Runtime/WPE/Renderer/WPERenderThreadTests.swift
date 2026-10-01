@@ -379,6 +379,71 @@ struct WPERenderThreadTests {
         #expect(drained.count == 1)
     }
 
+    @Test("Native null shutdown overrides are never ended", arguments: [false, true])
+    func failedNativeShutdownQoSOverride(syncJoin: Bool) async {
+        let started = Counter()
+        let ended = Counter()
+        let drained = Counter()
+        let gate = DispatchSemaphore(value: 0)
+        let thread = WPERenderThread(label: "test.stop.qos-null", shutdownQoS: .init(
+            start: { target in
+                // The public SDK documents this invalid class as returning NULL.
+                let token = pthread_override_qos_class_start_np(target, QOS_CLASS_UNSPECIFIED, 0)
+                #expect(UInt(bitPattern: token) == 0)
+                started.increment()
+                return token
+            },
+            end: { token in
+                ended.increment()
+                _ = pthread_override_qos_class_end_np(token)
+            }
+        ))
+        thread.perform { gate.wait(); drained.increment() }
+        thread.requestStop()
+        let waiter = Task.detached {
+            if syncJoin {
+                return thread.stopAndJoin(timeout: 2)
+            }
+            return await thread.waitUntilStopped(timeout: .seconds(2))
+        }
+        #expect(await eventually { started.count == 1 })
+        gate.signal()
+        #expect(await waiter.value)
+        #expect(drained.count == 1)
+        #expect(ended.count == 0, "native end requires a successfully allocated override object")
+    }
+
+    @Test("Successful native shutdown overrides are ended exactly once", arguments: [false, true])
+    func successfulNativeShutdownQoSOverride(syncJoin: Bool) async {
+        let started = Counter()
+        let ended = Counter()
+        let gate = DispatchSemaphore(value: 0)
+        let thread = WPERenderThread(label: "test.stop.qos-valid", shutdownQoS: .init(
+            start: { target in
+                let token = pthread_override_qos_class_start_np(target, QOS_CLASS_USER_INTERACTIVE, 0)
+                #expect(UInt(bitPattern: token) != 0)
+                started.increment()
+                return token
+            },
+            end: { token in
+                ended.increment()
+                _ = pthread_override_qos_class_end_np(token)
+            }
+        ))
+        thread.perform { gate.wait() }
+        thread.requestStop()
+        let waiter = Task.detached {
+            if syncJoin {
+                return thread.stopAndJoin(timeout: 2)
+            }
+            return await thread.waitUntilStopped(timeout: .seconds(2))
+        }
+        #expect(await eventually { started.count == 1 })
+        gate.signal()
+        #expect(await waiter.value)
+        #expect(ended.count == 1)
+    }
+
     @Test("waitUntilStopped reports a wedged thread as false and true once it finally exits")
     func waitUntilStoppedTimesOutOnWedgedThread() async {
         let thread = WPERenderThread(label: "test.stop.wedged")

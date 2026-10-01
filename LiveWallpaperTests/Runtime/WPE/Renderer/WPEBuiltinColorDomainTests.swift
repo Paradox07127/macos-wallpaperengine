@@ -24,7 +24,7 @@ struct WPEBuiltinColorDomainTests {
         for grading in [false, true] {
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
-            descriptor.fragmentFunction = library.makeFunction(name: grading ? "wpe_effect_color_grading_fragment" : "wpe_effect_colorbalance_fragment")
+            descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: grading ? "wpe_effect_color_grading_fragment" : "wpe_effect_colorbalance_fragment", format: .rgba16Float)
             descriptor.colorAttachments[0].pixelFormat = .rgba16Float
             let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
             for input in inputs {

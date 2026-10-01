@@ -8,6 +8,39 @@ import Testing
 
 @Suite("Production stage translation GPU contracts", .serialized)
 struct WPELinkedShaderStageTests {
+    @Test func vertexVectorTruncationPreservesConsumedChannelsThroughInterpolation() throws {
+        // Active patterns from cloudmotion and iris: an output float2 receives a
+        // float4, and a cursor float4 multiplies a float2 scale before sampling.
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_NoiseCoord;
+        varying vec2 v_Cursor;
+        uniform vec2 scale;
+        void main() {
+            gl_Position = vec4(a_Position, 1.0);
+            vec4 coord = vec4(a_TexCoord, 31, 47);
+            v_NoiseCoord = coord;
+            vec2 scaled = (coord * scale * 0.5).xy;
+            v_Cursor = scaled;
+        }
+        """
+        let fragment = """
+        varying vec2 v_NoiseCoord;
+        varying vec2 v_Cursor;
+        void main() { gl_FragColor = vec4(v_NoiseCoord, v_Cursor); }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment, vertexValues: ["scale": .vector([2, 3])])
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let uv = SIMD2<Float>((Float(x) + 0.5) / 4, (Float(y) + 0.5) / 4)
+                let pixel = pixels[y * 4 + x]
+                #expect(abs(pixel.x - uv.x) < 0.00001 && abs(pixel.y - uv.y) < 0.00001)
+                #expect(abs(pixel.z - uv.x) < 0.00001 && abs(pixel.w - uv.y * 1.5) < 0.00001)
+            }
+        }
+    }
+
     @Test func inversePreludeIsEmittedOnlyInConsumingStages() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -323,7 +356,7 @@ struct WPELinkedShaderStageTests {
         let vs = try #require(fs.vertexStage)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vs.library.makeFunction(name: fs.vertexFunctionName)
-        descriptor.fragmentFunction = fs.library.makeFunction(name: fs.fragmentFunctionName)
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: fs.library, name: fs.fragmentFunctionName, format: .rgba32Float)
         descriptor.colorAttachments[0].pixelFormat = .rgba32Float
         let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         let binder = try WPEMetalRenderExecutor(device: device)

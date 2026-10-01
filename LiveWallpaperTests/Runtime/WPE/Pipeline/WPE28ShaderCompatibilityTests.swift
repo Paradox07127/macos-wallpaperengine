@@ -295,7 +295,7 @@ struct WPE28ShaderCompatibilityTests {
         let library = try device.makeLibrary(source: source + "\n" + vertex, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "flow_probe_vertex")
-        descriptor.fragmentFunction = library.makeFunction(name: "wpe_translated_fragment")
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: "wpe_translated_fragment", format: .rgba32Float)
         descriptor.colorAttachments[0].pixelFormat = .rgba32Float
         let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         let outputDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: 33, height: 17, mipmapped: false)

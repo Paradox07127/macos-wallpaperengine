@@ -118,6 +118,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         static func particle(blendMode: WPEParticleBlendMode) -> NativeRenderState {
             let attachment = MTLRenderPipelineColorAttachmentDescriptor()
             WPEMetalRenderExecutor.applyParticleBlend(blendMode, to: attachment)
+            WPEMetalPipelineCache.applyAlphaWritePolicy(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: blendMode.rawValue), to: attachment)
             return NativeRenderState(
                 attachment: attachment,
                 cullMode: .none,

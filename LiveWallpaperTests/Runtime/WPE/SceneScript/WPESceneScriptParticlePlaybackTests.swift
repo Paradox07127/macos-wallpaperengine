@@ -50,7 +50,7 @@ struct WPESceneScriptParticlePlaybackTests {
         #expect(state.get("forced") as? Bool == true)
         #expect(state.drainParticleCommands() == [.init(objectID: "particleA", command: .pause),
                                                   .init(objectID: "particleA", command: .stop),
-                                                  .init(objectID: "particleA", command: .emit(3)),
+                                                  .init(objectID: "particleA", command: .emit(3), emissionValues: .init()),
                                                   .init(objectID: "particleA", command: .play)])
         #expect(state.drainSoundCommands().isEmpty)
     }
@@ -63,7 +63,7 @@ struct WPESceneScriptParticlePlaybackTests {
         }
         """, shared: state, ownLayerName: "", ownObjectID: "particleC")
         #expect(state.drainParticleCommands() == [.init(objectID: "particleC", command: .stop),
-                                                  .init(objectID: "particleA", command: .emit(2))])
+                                                  .init(objectID: "particleA", command: .emit(2), emissionValues: .init())])
     }
 
     @Test func propertyScriptsUseTheSameRealParticleInterface() throws {
@@ -74,7 +74,7 @@ struct WPESceneScriptParticlePlaybackTests {
         """, seed: SIMD3(repeating: 1), valueShape: .scalar, canvasSize: SIMD2(1920, 1080), ownLayerName: "", ownObjectID: "particleC", shared: state)
         #expect(state.drainParticleCommands() == [.init(objectID: "particleC", command: .pause)])
         #expect(instance.tick(pointerPosition: SIMD2(repeating: 0.5), runtimeSeconds: 1) != nil)
-        #expect(state.drainParticleCommands() == [.init(objectID: "particleA", command: .emit(2))])
+        #expect(state.drainParticleCommands() == [.init(objectID: "particleA", command: .emit(2), emissionValues: .init())])
     }
 
     @Test func exceptionsAndUnknownOptionalDefaultDoNotCommitPartialPlayback() throws {
@@ -89,6 +89,42 @@ struct WPESceneScriptParticlePlaybackTests {
         """, shared: state, ownLayerName: "snow", ownObjectID: "particleA")
         #expect(state.drainParticleCommands().isEmpty)
         #expect(state.particlePlaybackSnapshot(objectID: "particleA")?.isEmitting == true)
+    }
+
+    @Test func mutableInstancePropertiesPreserveIdentityReadbackAndVectorComponents() throws {
+        let state = shared()
+        _ = try WPELayerScriptInstance(script: """
+        export function init(value) {
+            thisLayer.instance.rate = 0.5;
+            thisLayer.instance.size = 2;
+            thisLayer.instance.colorn = new Vec3(0, 1, 0);
+            thisLayer.instance.controlpoint3 = new Vec3(4, 5, 6);
+            thisLayer.instance.controlpoint3.x = 9;
+            shared.rate = thisLayer.instance.rate;
+            shared.cp = thisScene.getLayer('snow').instance.controlpoint3.x;
+            return value;
+        }
+        """, shared: state, ownLayerName: "snow", ownObjectID: "particleA")
+        #expect(state.get("rate") as? Double == 0.5)
+        #expect(state.get("cp") as? Double == 9)
+        let values = state.particleInstanceValues(objectID: "particleA")
+        #expect(values.rate == 0.5 && values.size == 2)
+        #expect(values.colorn == SIMD3(0, 1, 0))
+        #expect(values.controlPoints[3] == SIMD3(9, 5, 6))
+        #expect(state.drainParticleCommands().count == 5)
+    }
+
+    @Test func invalidInstanceWriteAndThrowRollBackTheWholeCallback() throws {
+        let state = shared()
+        _ = try WPELayerScriptInstance(script: """
+        export function init(value) {
+            thisLayer.instance.size = 2;
+            thisLayer.instance.controlpoint0 = new Vec3(NaN, 1, 0);
+            return value;
+        }
+        """, shared: state, ownLayerName: "snow", ownObjectID: "particleA")
+        #expect(state.drainParticleCommands().isEmpty)
+        #expect(state.particleInstanceValues(objectID: "particleA").size == 1)
     }
 
     @Test func commandBudgetRejectsEntireCallbackAndRetirementRejectsLateBatches() throws {

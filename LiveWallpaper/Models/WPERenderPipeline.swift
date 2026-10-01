@@ -410,8 +410,8 @@ extension WPEPreparedRenderPipeline {
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
-        if camera.sceneMotion != .identity {
-            let localCamera = camera.applyingSceneMotion(.identity).uniformValues
+        if camera.sceneMotion != .identity || camera.hasCapturedOrthographicShaderGlobals {
+            let localCamera = camera.applyingSceneMotion(.identity).legacyCameraUniformValues
             for layer in layers {
                 for pass in layer.passes {
                     if case .scene = pass.pass.target {

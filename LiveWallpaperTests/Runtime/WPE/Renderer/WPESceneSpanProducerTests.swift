@@ -77,7 +77,7 @@ struct WPESceneSpanProducerTests {
         pixels.withUnsafeMutableBytes {
             source.replace(region: MTLRegionMake2D(0, 0, 64, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 256)
         }
-        let pipeline = try executor.renderPipeline(vertexName: "wpe_present_vertex", fragmentName: "wpe_present_fragment", colorPixelFormat: .rgba8Unorm)
+        let pipeline = try executor.renderPipeline(vertexName: "wpe_present_vertex", fragmentName: "wpe_present_authored_fragment", colorPixelFormat: .rgba8Unorm)
         let canvas = CGRect(x: -32, y: 0, width: 64, height: 1)
         for (x, expected) in [(-32, [UInt8(255), 0, 0, 255]), (0, [UInt8(0), 0, 255, 255])] {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 32, height: 1, mipmapped: false)

@@ -102,6 +102,11 @@ public struct WPEParticleChildReference: Equatable, Sendable {
         eventKind == .follow
     }
 
+    /// Child bit 0 broadcasts live parent positions from controlPointStartIndex; other bits stay opaque.
+    public var setsParentParticleControlPoints: Bool {
+        flagsRaw.map { ($0 & 1) != 0 } ?? false
+    }
+
     /// Probability belongs to one child-system creation event, not to its particles.
     public var rollsProbabilityPerEvent: Bool {
         eventKind.isEventDriven
@@ -592,6 +597,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     public let originOffset: SIMD3<Double>
     /// `.sphere` uses dispersalMin/Max `.x` as radius. `.box` samples each axis with `min + U(-1...1) * (max - min)`, then multiplies by `directions`.
     public let emitterShape: WPEParticleEmitterShape
+    public let emitterControlPointID: Int
     /// Sphere reads `.x` as radius; box reads all three as interpolation endpoints so `distancemax: "1200 1000 0"` survives.
     public let dispersalMin: SIMD3<Double>
     public let dispersalMax: SIMD3<Double>
@@ -648,7 +654,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// True when the emitter's origin (control point `id 0`) tracks the cursor —
     /// the canonical "particles spawn at the pointer" / follow behavior.
     public var emitterTracksPointer: Bool {
-        controlPoints.first(where: { $0.id == 0 })?.pointerLocked ?? false
+        controlPoints.first(where: { $0.id == emitterControlPointID })?.pointerLocked ?? false
     }
 
     public init(
@@ -673,6 +679,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         sizeExponent: Double = 1,
         originOffset: SIMD3<Double>,
         emitterShape: WPEParticleEmitterShape = .sphere,
+        emitterControlPointID: Int = 0,
         dispersalMin: SIMD3<Double>,
         dispersalMax: SIMD3<Double>,
         velocityMin: SIMD3<Double>,
@@ -736,6 +743,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         self.sizeExponent = max(0.0001, sizeExponent)
         self.originOffset = originOffset
         self.emitterShape = emitterShape
+        self.emitterControlPointID = emitterControlPointID
         self.dispersalMin = dispersalMin
         self.dispersalMax = dispersalMax
         self.directionMask = directionMask
@@ -775,78 +783,11 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         self.attractors = attractors
     }
 
-    /// `colorn` arrives ×255 (see `parseNormalizedParticleColor`); treat it as a
-    /// 0…1 fraction multiplying the 0…255 base colour channel-wise.
-    private static func multiplyingColor(
-        _ base: SIMD3<Double>,
-        byNormalizedOverride override: SIMD3<Double>?
-    ) -> SIMD3<Double> {
-        guard let override else { return base }
-        return SIMD3<Double>(
-            base.x * max(0, override.x) / 255,
-            base.y * max(0, override.y) / 255,
-            base.z * max(0, override.z) / 255
-        )
-    }
-
+    /// Only the immutable parts of an instance override: the other fields are sampled per birth by the runtime.
     public func applying(instanceOverride: WPESceneParticleInstanceOverride?) -> WPEParticleDefinition {
         guard let instanceOverride else { return self }
-
-        let countScale = max(0, instanceOverride.count ?? 1)
-        let rateScale = max(0, instanceOverride.rate ?? countScale)
-        let lifetimeScale = max(0.0001, instanceOverride.lifetime ?? 1)
-        let sizeScale = max(0, instanceOverride.size ?? 1)
-        let speedScale = instanceOverride.speed ?? 1
         // Unlike material g_Overbright, the instance override is baked into each generated vertex COLOR.rgb.
         let brightnessScale = max(0, instanceOverride.brightness ?? 1)
-        // Per-instance control points replace the definition's own. Points the override omits keep their authored offset.
-        let overriddenControlPoints = instanceOverride.controlPointOffsets.isEmpty
-            ? controlPoints
-            : controlPoints.map { point in
-                instanceOverride.controlPointOffsets[point.id].map {
-                    WPEParticleControlPoint(
-                        id: point.id,
-                        offset: $0,
-                        pointerLocked: point.pointerLocked,
-                        flagsRaw: point.flagsRaw,
-                        angles: point.angles
-                    )
-                } ?? point
-            }
-        // Keyframed or scripted override alpha must not be baked: `alpha` is only the static seed. Baking a scripted seed would square it.
-        let alphaScale = instanceOverride.alphaAnimation != nil || instanceOverride.alphaScript != nil
-            ? 1
-            : max(0, instanceOverride.alpha ?? 1)
-        let scaledMaxCount: Int
-        if countScale == 0 || maxCount == 0 {
-            scaledMaxCount = 0
-        } else {
-            scaledMaxCount = max(1, WPEValueParser.saturatingInt((Double(maxCount) * countScale).rounded()))
-        }
-        let scaledInstantaneous: Int
-        if countScale == 0 || instantaneousCount == 0 {
-            scaledInstantaneous = 0
-        } else {
-            scaledInstantaneous = max(1, WPEValueParser.saturatingInt((Double(instantaneousCount) * countScale).rounded()))
-        }
-        // `speed` override scales emission velocity — including the turbulence
-        // seed/wind speeds (the reference renderer multiplies every velocity op).
-        let scaledTurbulentVelocityInit = turbulentVelocityInit.map {
-            WPEParticleTurbulentVelocityInit(
-                speedMin: $0.speedMin * speedScale, speedMax: $0.speedMax * speedScale,
-                scale: $0.scale, timescale: $0.timescale, offset: $0.offset,
-                phaseMin: $0.phaseMin, phaseMax: $0.phaseMax,
-                forward: $0.forward, right: $0.right
-            )
-        }
-        let scaledTurbulence = turbulence.map {
-            WPEParticleTurbulenceOperator(
-                speedMin: $0.speedMin * speedScale, speedMax: $0.speedMax * speedScale,
-                scale: $0.scale, timescale: $0.timescale,
-                phaseMin: $0.phaseMin, phaseMax: $0.phaseMax, mask: $0.mask
-            )
-        }
-
         return WPEParticleDefinition(
             materialRelativePath: materialRelativePath,
             childReferences: childReferences,
@@ -854,40 +795,38 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             overrideAlphaAnimation: instanceOverride.alphaAnimation,
             isRope: isRope,
             trailRenderer: trailRenderer,
-            maxCount: scaledMaxCount,
-            rate: rate * rateScale,
-            instantaneousCount: scaledInstantaneous,
+            maxCount: maxCount,
+            rate: rate,
+            instantaneousCount: instantaneousCount,
             startDelay: startDelay,
             duration: duration,
             emitterFlagsRaw: emitterFlagsRaw,
             emitterAudioState: emitterAudioState,
-            lifetimeMin: lifetimeMin * lifetimeScale,
-            lifetimeMax: lifetimeMax * lifetimeScale,
-            sizeMin: sizeMin * sizeScale,
-            sizeMax: sizeMax * sizeScale,
+            lifetimeMin: lifetimeMin,
+            lifetimeMax: lifetimeMax,
+            sizeMin: sizeMin,
+            sizeMax: sizeMax,
             sizeExponent: sizeExponent,
             originOffset: originOffset,
             emitterShape: emitterShape,
+            emitterControlPointID: emitterControlPointID,
             dispersalMin: dispersalMin,
             dispersalMax: dispersalMax,
-            velocityMin: velocityMin * speedScale,
-            velocityMax: velocityMax * speedScale,
-            // `colorn` is a per-instance colour multiplier, not a replacement.
-            colorMin: Self.multiplyingColor(
-                colorMin, byNormalizedOverride: instanceOverride.color) * brightnessScale,
-            colorMax: Self.multiplyingColor(
-                colorMax, byNormalizedOverride: instanceOverride.color) * brightnessScale,
+            velocityMin: velocityMin,
+            velocityMax: velocityMax,
+            colorMin: colorMin * brightnessScale,
+            colorMax: colorMax * brightnessScale,
             fadeInSeconds: fadeInSeconds,
             directionMask: directionMask,
             sign: sign,
-            emitterSpeedMin: emitterSpeedMin * speedScale,
-            emitterSpeedMax: emitterSpeedMax * speedScale,
-            alphaMin: alphaMin * alphaScale,
-            alphaMax: alphaMax * alphaScale,
+            emitterSpeedMin: emitterSpeedMin,
+            emitterSpeedMax: emitterSpeedMax,
+            alphaMin: alphaMin,
+            alphaMax: alphaMax,
             rotationMin: rotationMin,
             rotationMax: rotationMax,
-            angularVelocityMin: angularVelocityMin * speedScale,
-            angularVelocityMax: angularVelocityMax * speedScale,
+            angularVelocityMin: angularVelocityMin,
+            angularVelocityMax: angularVelocityMax,
             fadeOutSeconds: fadeOutSeconds,
             alphaChange: alphaChange,
             oscillateAlpha: oscillateAlpha,
@@ -895,15 +834,15 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             sizeChange: sizeChange,
             colorChange: colorChange,
             oscillatePosition: oscillatePosition,
-            gravity: gravity * speedScale,
+            gravity: gravity,
             drag: drag,
-            angularForceZ: angularForceZ * speedScale,
+            angularForceZ: angularForceZ,
             angularDrag: angularDrag,
-            turbulentVelocityInit: scaledTurbulentVelocityInit,
-            turbulence: scaledTurbulence,
+            turbulentVelocityInit: turbulentVelocityInit,
+            turbulence: turbulence,
             sequenceMultiplier: sequenceMultiplier,
             animationMode: animationMode,
-            controlPoints: overriddenControlPoints,
+            controlPoints: controlPoints,
             attractors: attractors,
             hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
@@ -935,6 +874,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             sizeExponent: sizeExponent,
             originOffset: originOffset + delta,
             emitterShape: emitterShape,
+            emitterControlPointID: emitterControlPointID,
             dispersalMin: dispersalMin,
             dispersalMax: dispersalMax,
             velocityMin: velocityMin,
@@ -1119,6 +1059,7 @@ public enum WPEParticleDefinitionParser {
         var instantaneousCount: Int = 0
         var origin: SIMD3<Double> = SIMD3(0, 0, 0)
         var emitterShape: WPEParticleEmitterShape = .sphere
+        var emitterControlPointID = 0
         var dispersalMin = SIMD3<Double>(0, 0, 0)
         var dispersalMax = SIMD3<Double>(0, 0, 0)
         // Do not default missing `directions` to Z=1: that collapses depth-only random offsets onto the same screen-space center.
@@ -1135,6 +1076,7 @@ public enum WPEParticleDefinitionParser {
             origin = WPEValueParser.vector3(first["origin"]) ?? SIMD3(0, 0, 0)
             emitterSpeedMin = WPEValueParser.double(first["speedmin"]) ?? 0
             emitterSpeedMax = WPEValueParser.double(first["speedmax"]) ?? emitterSpeedMin
+            emitterControlPointID = WPEValueParser.int(first["controlpoint"]) ?? 0
             let emitterName = (first["name"] as? String)?.lowercased()
             if emitterName == "boxrandom" {
                 // `boxrandom` distances are per-axis interpolation endpoints; scalar parsing would collapse the box to a point.
@@ -1276,7 +1218,8 @@ public enum WPEParticleDefinitionParser {
             }
         }
 
-        var fadeInSeconds: Double = 0.1
+        // No alphafade operator means no envelope.
+        var fadeInSeconds: Double = 0
         var fadeOutSeconds: Double = 0
         var alphaChange: WPEParticleAlphaChange?
         var oscillateAlpha: WPEParticleOscillateAlpha?
@@ -1446,6 +1389,7 @@ public enum WPEParticleDefinitionParser {
             sizeExponent: sizeExponent,
             originOffset: origin,
             emitterShape: emitterShape,
+            emitterControlPointID: emitterControlPointID,
             dispersalMin: dispersalMin,
             dispersalMax: dispersalMax,
             velocityMin: velocityMin,

@@ -30,6 +30,7 @@ extension WPEMetalSceneRenderer {
     }
 
     func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async {
+        cancelCursorInputRouting()
         didLoad = false
         let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
         loadGeneration &+= 1
@@ -69,6 +70,12 @@ extension WPEMetalSceneRenderer {
         loadDiagnostics = nil
         resolutionTracer.reset()
         releaseDynamicTextureSources()
+        particleIndependentSystems.removeAll()
+        particleInstanceCoordinator = nil
+        particleTemplates.removeAll()
+        particleRootTemplates.removeAll()
+        particleTemplateTextures.removeAll()
+        particleTemplateNormals.removeAll()
         particleSystems.removeAll(keepingCapacity: false)
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)
@@ -92,6 +99,7 @@ extension WPEMetalSceneRenderer {
         cameraUniforms = .identity
         baseCameraUniforms = .identity
         cameraMotionPlayback = nil
+        cameraPathPlayback = nil
         lastRuntimeUniforms = nil
         lastFramePipeline = nil
         cachedSnapshot = nil
@@ -463,6 +471,7 @@ extension WPEMetalSceneRenderer {
     }
 
     func setClickCaptureEnabled(_ enabled: Bool) {
+        if !enabled { cancelCursorInputRouting() }
         surfaceControl.setClickCaptureEnabled(enabled)
         // Record before the demand re-evaluation so `pointerDrivenContent` sees
         // this toggle instead of the possibly-stale mailbox copy.
@@ -543,10 +552,18 @@ extension WPEMetalSceneRenderer {
     /// Each bit is "needs the loop RIGHT NOW", not "scene contains this subsystem". A wrong shrink freezes a live animation.
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
-        if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
-        if !dynamicOriginAnimations.isEmpty || cameraMotionPlayback?.needsFrames == true { demand.insert(.animations) }
-        if sceneSupportsAudioProcessing { demand.insert(.audioReactive) }
-        if !dynamicTextureSources.isEmpty { demand.insert(.dynamicTextures) }
+        if hasAnimatedShaderPasses {
+            demand.insert(.animatedShaders)
+        }
+        if !dynamicOriginAnimations.isEmpty || cameraMotionPlayback?.needsFrames == true || cameraPathPlayback?.needsFrames == true {
+            demand.insert(.animations)
+        }
+        if sceneSupportsAudioProcessing {
+            demand.insert(.audioReactive)
+        }
+        if !dynamicTextureSources.isEmpty {
+            demand.insert(.dynamicTextures)
+        }
         if particleSystems.contains(where: { !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer }) {
             demand.insert(.particles)
         }
@@ -706,6 +723,7 @@ extension WPEMetalSceneRenderer {
             soundRuntime?.resume()
         case .suspended:
             cameraMotionPlayback?.suspend()
+            cameraPathPlayback?.suspend()
             // Nil, not false: the next `.quality` transition must re-apply the
             // pause state unconditionally.
             lastAppliedContinuousFrames = nil
@@ -731,6 +749,7 @@ extension WPEMetalSceneRenderer {
 
     func cleanup() {
         cameraMotionPlayback = nil
+        cameraPathPlayback = nil
         baseCameraUniforms = .identity
         didLoad = false
         Task { [owner = staticTextureReloadTaskOwner] in _ = await owner.quiesce() }
@@ -763,6 +782,12 @@ extension WPEMetalSceneRenderer {
         sceneScriptBatchDispatcher.releaseLanesForSceneRetirement()
         sceneScriptLoadState.retireCurrent()
         releaseDynamicTextureSources()
+        particleIndependentSystems.removeAll()
+        particleInstanceCoordinator = nil
+        particleTemplates.removeAll()
+        particleRootTemplates.removeAll()
+        particleTemplateTextures.removeAll()
+        particleTemplateNormals.removeAll()
         particleSystems.removeAll(keepingCapacity: false)
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)

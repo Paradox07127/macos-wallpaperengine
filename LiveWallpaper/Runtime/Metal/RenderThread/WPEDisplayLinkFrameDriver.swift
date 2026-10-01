@@ -68,7 +68,9 @@ final class WPERenderThreadFramePacer: WPESurfaceControl, @unchecked Sendable {
 
     nonisolated func releaseDrawables() { surface.releaseDrawables() }
 
-    nonisolated func detach() { surface.detach() }
+    nonisolated func detach() {
+        surface.detach()
+    }
 
     nonisolated func setClickCaptureEnabled(_ enabled: Bool) {
         surface.setClickCaptureEnabled(enabled)

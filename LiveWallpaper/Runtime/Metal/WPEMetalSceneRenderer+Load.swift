@@ -179,6 +179,27 @@ extension WPEMetalSceneRenderer {
             return try WPESceneDocumentParser.parse(data: data, userValues: userValues)
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        let pathReferences: [String] = if case let .value(references)? = parsedDocument.authoredCamera.paths {
+            references
+        } else {
+            []
+        }
+        let sceneID = id
+        let cameraPaths = try await CancellableBackgroundWork.run {
+            pathReferences.flatMap { reference -> [WPESceneCameraPath] in
+                guard let loaded = try? WPESceneCameraPath.parse(data: entryReader.data(relativePath: reference)) else {
+                    Logger.warning("Scene \(sceneID) camera path \(reference) is unreadable; ignored", category: .wpeRender)
+                    return []
+                }
+                return loaded
+            }
+        }
+        try checkCurrentSceneScriptLoad(scriptLoadToken)
+        cameraPathPlayback = parsedDocument.general.usesPerspectiveProjection ? nil : WPECameraPathPlayback(paths: cameraPaths)
+        if !cameraPaths.isEmpty, cameraPathPlayback == nil {
+            debugStage("camera.paths", "not admitted: perspective, unverified multi-key timing or zero-duration multi-path queue")
+            Logger.warning("Scene \(id) root camera paths retain their static camera: path geometry contract is not yet verified", category: .wpeRender)
+        }
         // Promote text to image layers before the graph so paint order / effects / parallax share one graph. After-the-fact overlay cannot hide a later character.
         let textFonts = WPETextFontResolver(resolver: resourceResolver)
         textRenderPlans = WPETextRenderPlanner.plans(for: parsedDocument, fonts: textFonts)
@@ -245,7 +266,7 @@ extension WPEMetalSceneRenderer {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.buildReportingCanonicalRotation(graph: graph, sceneHDR: document.general.hdr)
+            return try builder.buildReportingCanonicalRotation(graph: graph, sceneHDR: document.general.usesHDRRendering)
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         lastCanonicalRotation = canonicalRotation
@@ -312,7 +333,7 @@ extension WPEMetalSceneRenderer {
             perspectiveObjectIDs: perspectiveObjectIDs,
             lightAmbientColor: document.general.lightAmbientColor,
             lightSkylightColor: document.general.lightSkylightColor,
-            sceneHDR: document.general.hdr,
+            sceneHDR: document.general.usesHDRRendering,
             bloom: document.general.bloom
         )
         // Perspective has no authored pixel canvas. Render at drawable size (4K cap, never below authored) so HUD text stays 1:1. Kill switch: WPEMetalPerspectiveNativeResolution -bool NO.
@@ -324,7 +345,7 @@ extension WPEMetalSceneRenderer {
             var targetW = min(max(drawable.width, base.width), cap.width)
             var targetH = min(max(drawable.height, base.height), cap.height)
             // Clamp to the memory tier (HDR float16 counts double) so native-res + bloom do not OOM 8/16 GB Macs.
-            let budget = WPEMemoryTier.current.perspectiveRenderPixelBudget(hdr: document.general.hdr)
+            let budget = WPEMemoryTier.current.perspectiveRenderPixelBudget(hdr: document.general.usesHDRRendering)
             let pixels = Double(targetW * targetH)
             if pixels > budget {
                 let shrink = (budget / pixels).squareRoot()
@@ -343,7 +364,7 @@ extension WPEMetalSceneRenderer {
                     perspectiveObjectIDs: perspectiveObjectIDs,
                     lightAmbientColor: document.general.lightAmbientColor,
                     lightSkylightColor: document.general.lightSkylightColor,
-                    sceneHDR: document.general.hdr,
+                    sceneHDR: document.general.usesHDRRendering,
                     bloom: document.general.bloom
                 )
             }
@@ -409,8 +430,10 @@ extension WPEMetalSceneRenderer {
             userProperties: currentSceneScriptUserProperties(),
             layers: Self.scriptLayerTable(for: document)
         )
+        sceneScriptSharedState?.seedStaticCamera(document.staticCamera, allowsMutation: !document.general.usesPerspectiveProjection)
         sceneScriptSharedState?.setCursorWorldProjection(
-            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil
+            cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil,
+            sceneMotion: cameraUniforms.usesPerspectiveProjection ? nil : cameraUniforms.sceneMotion
         )
         loadDynamicOriginScripts(from: document, scriptLoadToken: scriptLoadToken)
         loadEffectConstantScripts(from: pipeline, document: document, scriptLoadToken: scriptLoadToken)
@@ -604,7 +627,8 @@ extension WPEMetalSceneRenderer {
                 origin: SIMD2(object.origin.x, object.origin.y), originZ: object.origin.z,
                 scale: object.scale, angles: object.angles, index: layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
-                parallaxDepth: object.parallaxDepth, isParticleSystem: true
+                parallaxDepth: object.parallaxDepth, isParticleSystem: true,
+                particleInstanceSeed: WPEParticleInstanceValues(override: object.instanceOverride)
             ))
         }
         return layers

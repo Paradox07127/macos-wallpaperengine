@@ -192,7 +192,7 @@ struct WPEMetalTextureLoaderTests {
                     "A flat normal border must not displace the whole particle quad")
         }
         let color = try await loader.makeAnimatedTextureSource(from: payload, label: "color")
-        #expect(color.texture(at: 0)?.pixelFormat == .rgba8Unorm_srgb)
+        #expect(color.texture(at: 0)?.pixelFormat == .rgba8Unorm)
     }
 
     private func sampleNormal(_ texture: MTLTexture, device: MTLDevice) throws -> SIMD2<Float> {
@@ -250,7 +250,7 @@ struct WPEMetalTextureLoaderTests {
 
         #expect(texture.width == 2)
         #expect(texture.height == 2)
-        #expect(texture.pixelFormat == .rgba8Unorm_srgb)
+        #expect(texture.pixelFormat == .rgba8Unorm)
     }
 
     @Test("RG88 alpha-channel-priority uploads .rg8Unorm with (R,R,R,G) swizzle")

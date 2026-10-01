@@ -29,7 +29,9 @@ extension WPEMetalSceneRenderer {
             clickCaptureEnabled: pointer.clickCaptureEnabled,
             pointerSample: pointerSampler.sample(),
             pointerFrame: pointer.pointerFrame,
-            preferredFramesPerSecond: effectiveFPS
+            preferredFramesPerSecond: effectiveFPS,
+            buttonCursor: pointer.buttonCursor,
+            buttonsSuppressed: pointer.buttonsSuppressed
         )
     }
 
@@ -47,10 +49,12 @@ extension WPEMetalSceneRenderer {
         // The defer runs on the throw paths too, so an aborted frame otherwise records a
         // complete — and shorter — "frame" interval, which reads as a speed-up in a trace.
         var frameRendered = false
+        let previousCameraPathPlayback = cameraPathPlayback
         let previousCameraPlayback = cameraMotionPlayback
         let previousCameraUniforms = cameraUniforms
         defer {
             if !frameRendered {
+                cameraPathPlayback = previousCameraPathPlayback
                 cameraMotionPlayback = previousCameraPlayback
                 cameraUniforms = previousCameraUniforms
             }
@@ -120,6 +124,15 @@ extension WPEMetalSceneRenderer {
             ),
             generation: loadGeneration
         )
+        if let definition = cameraMotionPlayback?.definition {
+            let previous = cameraUniforms.sceneMotion
+            cameraUniforms = baseCameraUniforms.applyingSceneMotion(.init(
+                origin: liveScriptTransforms.origins[definition.objectID] ?? previous.origin,
+                zoom: liveScriptTransforms.scales[WPECameraMotionPlayback.zoomScriptKey]?.x ?? previous.zoom,
+                angles: liveScriptTransforms.angles[definition.objectID] ?? previous.angles
+            ))
+            sceneScriptSharedState?.setCursorWorldProjection(nil, sceneMotion: cameraUniforms.sceneMotion)
+        }
         frameOverlay.colors = layerColorsExcludingText(liveTransforms.colors)
         var framePipeline = pipeline.applyingFrameOverlay(frameOverlay)
         if !liveTransforms.isEmpty {
@@ -136,22 +149,58 @@ extension WPEMetalSceneRenderer {
                     hostTransforms: layerAncestorLocalTransformsByID
                 )
         }
-        // Hover hit-testing AFTER live transforms: the pads follow the moving
-        // bodies (per-star cursorEnter → shared.cretN → label fade-in), so the
-        // rects must come from this frame's transformed geometry.
+        // Aggregate the complete per-instance cursor burst before claiming a VM job.
+        // Hover uses this frame's transformed geometry before every button edge.
+        var cursorBursts: [ObjectIdentifier: [WPELayerScriptCursorInvocation]] = [:]
+        let deliver: CursorEventDelivery = { instance, events, frame in
+            cursorBursts[ObjectIdentifier(instance), default: []].append(contentsOf: events.map {
+                .init(event: $0, pointerFrame: frame, runtimeSeconds: uniforms.time)
+            })
+        }
+        let buttonBatch = inputs.buttonCursor.map { mailbox.takeButtonEvents(through: $0) }
+        if buttonBatch?.cancelled == true {
+            layerPressStates.removeAll(keepingCapacity: true)
+            previousLayerScriptPointerFrame = .neutral
+            forEachCursorScriptInstance { _, instance in instance.cancelPendingCursorEvents() }
+        }
+        for edge in buttonBatch?.edges ?? [] {
+            let space = Self.pointerSpace(
+                present: presentUniforms(),
+                sample: edge.isInsideView ? .inside(edge.frame.position) : .inactive,
+                frame: edge.frame, followEnabled: mouseInteractionEnabled,
+                clickEnabled: inputs.clickCaptureEnabled
+            )
+            dispatchLayerHoverEvents(
+                pointer: space.clickPointerIsLive ? space.pointerFrame.position : nil,
+                pipeline: framePipeline, pointerFrame: space.pointerFrame, deliver: deliver
+            )
+            dispatchPointerButtonEdges(
+                from: previousLayerScriptPointerFrame, to: space.pointerFrame, deliver: deliver
+            )
+            previousLayerScriptPointerFrame = space.pointerFrame
+        }
+        var finalCursorFrame = frameContext.layerScriptPointerFrame
+        if buttonBatch?.snapshotCurrent == false {
+            finalCursorFrame.isDown = false
+            finalCursorFrame.isRightDown = false
+        }
         dispatchLayerHoverEvents(
             pointer: frameContext.followPointerIsLive ? frameContext.pointer : nil,
-            pipeline: framePipeline,
-            pointerFrame: frameContext.layerScriptPointerFrame,
-            runtimeSeconds: uniforms.time
+            pipeline: framePipeline, pointerFrame: finalCursorFrame, deliver: deliver
         )
-        // AFTER the hover pass, not before it: a press is attributed to whatever `layerHoverStates` says is under the cursor. Hover cannot move earlier: its hit rects have to come from this frame's live transforms.
-        dispatchPointerButtonEdges(
-            from: previousLayerScriptPointerFrame,
-            to: frameContext.layerScriptPointerFrame,
-            runtimeSeconds: uniforms.time
-        )
-        previousLayerScriptPointerFrame = frameContext.layerScriptPointerFrame
+        // Explicit oracle/manual inputs keep their existing snapshot-only behavior.
+        // Mailbox edges own button delivery when a snapshot cursor is present.
+        if buttonBatch == nil {
+            dispatchPointerButtonEdges(
+                from: previousLayerScriptPointerFrame, to: frameContext.layerScriptPointerFrame, deliver: deliver
+            )
+            previousLayerScriptPointerFrame = frameContext.layerScriptPointerFrame
+        }
+        forEachCursorScriptInstance { _, instance in
+            if let job = instance.batchCursorEvents(cursorBursts[ObjectIdentifier(instance)] ?? []) {
+                pendingSceneScriptBatchJobs.append(job)
+            }
+        }
         // Before the text tick: a `mediaPropertiesChanged` that landed since the
         // last frame should reach `update()` on THIS frame, not the next one.
         drainMediaEvents(runtimeSeconds: uniforms.time)
@@ -267,7 +316,9 @@ extension WPEMetalSceneRenderer {
             deferredPresent: deferredPresent
         )
         frameRendered = true
-        if cameraMotionPlayback != nil { synchronizeFrameDemand(); publishRuntimeActivity() }
+        if cameraMotionPlayback != nil || cameraPathPlayback != nil {
+            synchronizeFrameDemand(); publishRuntimeActivity()
+        }
         return rendered
     }
 
@@ -554,11 +605,8 @@ extension WPEMetalSceneRenderer {
             )
             : nil
         updateParticleHostOriginOffsets(using: liveTransforms)
-        // Parents precede their children in `particleSystems` (DFS
-        // registration order), so a parent's `primaryLiveParticlePosition`
-        // is already this-frame-fresh when its event-follow child ticks.
         let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
-        for system in particleSystems {
+        for system in particleIndependentSystems {
             system.pointerCentered = particlePointer
             system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
             if let objectID = system.instanceAlphaScriptObjectID,
@@ -566,25 +614,25 @@ extension WPEMetalSceneRenderer {
                 system.instanceAlphaScale = Float(max(0, min(1, alpha)))
             }
             if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
-            Self.injectFollowControlPoint(into: system)
             system.tick(now: time, frameSlot: frameSlot)
         }
-        publishParticlePlaybackSnapshots()
-    }
-
-    nonisolated static func injectFollowControlPoint(into system: WPEParticleSystem) {
-        if let parent = system.followParent {
-            if let followPosition = parent.primaryLiveParticlePosition {
-                system.injectedControlPoints[system.followControlPointID] = followPosition
-            } else {
-                system.injectedControlPoints.removeValue(forKey: system.followControlPointID)
+        if let coordinator = particleInstanceCoordinator {
+            let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
+            coordinator.tick(now: time, frameSlot: frameSlot) { system in
+                updateParticleHostOriginOffset(system, using: liveTransforms)
+                system.pointerCentered = system.pointerInSimulationFrame(particlePointer)
+                system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
+                if let objectID = system.instanceAlphaScriptObjectID,
+                   let alpha = liveParticleInstanceAlpha[objectID] {
+                    system.instanceAlphaScale = Float(max(0, min(1, alpha)))
+                }
+                if system.isAudioResponsive {
+                    system.audioSpectrum16 = audioSpectrum16
+                }
             }
-        } else if system.requiresFollowParent {
-            // Parent missing (failed to register or weak ref gone): keep
-            // the follow gate so the orphan stays disabled instead of
-            // spawning at a wrong static origin.
-            system.injectedControlPoints.removeValue(forKey: system.followControlPointID)
+            synchronizeParticleInstanceBindings()
         }
+        publishParticlePlaybackSnapshots()
     }
 
     /// A constant keeps its last good value when its script returns nothing, matching how the transform families hold their last value.

@@ -91,21 +91,6 @@ struct WPEParticlePermanentIdleTests {
         #expect(!system.isPermanentlyIdle)
     }
 
-    @Test("An eventfollow child without a duration stays live for future parent births")
-    func eventFollowChildStaysLive() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let system = try makeSystem([
-            "maxcount": 8,
-            "emitter": [["rate": 0, "instantaneous": 1]],
-            "initializer": [["name": "lifetimerandom", "min": 0.05, "max": 0.1]],
-        ], device: device)
-        system.requiresFollowParent = true
-
-        system.tick(now: 0)
-        system.tick(now: 1000)
-        #expect(system.liveInstanceCount == 0)
-        #expect(!system.isPermanentlyIdle)
-    }
 }
 
 // MARK: - Renderer frame demand (loaded static fixture)

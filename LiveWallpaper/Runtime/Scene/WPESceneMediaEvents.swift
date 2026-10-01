@@ -288,7 +288,8 @@ final class WPESceneMediaEventDispatcher {
         // forces the first delivery — a scene loaded mid-song starts correct.
         source.subscribe(id: id) { [weak self] ordinal, state in
             MainActor.assumeIsolated {
-                self?.ingest(ordinal: ordinal, state: state)
+                guard let self, self.isSubscribed else { return }
+                self.ingest(ordinal: ordinal, state: state)
             }
         }
     }

@@ -58,6 +58,8 @@ extension WPEMetalRenderExecutor {
             }
             if plans[index].effectTextureProjectionInverse != nil {
                 guard !frameState.cameraUniforms.usesPerspectiveProjection,
+                      abs(frameState.cameraUniforms.sceneMotion.angles.x) < 0.000001,
+                      abs(frameState.cameraUniforms.sceneMotion.angles.y) < 0.000001,
                       abs(layer.geometry.angles.x) < 0.000001, abs(layer.geometry.angles.y) < 0.000001 else {
                     return .unverifiedEffectProjection3D
                 }

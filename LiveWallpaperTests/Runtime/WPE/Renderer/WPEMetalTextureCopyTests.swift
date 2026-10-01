@@ -141,7 +141,8 @@ struct WPEMetalTextureCopyTests {
         let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": source])
         let staging = try texture(device, output.pixelFormat, 4, 4)
         try copy(executor, output, staging)
-        #expect(readBytes(staging, bytesPerPixel: 4).allSatisfy { $0 == 0 })
+        let bytes = readBytes(staging, bytesPerPixel: 4)
+        #expect(bytes.enumerated().allSatisfy { index, value in value == (index % 4 == 3 ? 255 : 0) })
     }
 
     @Test("Gate flips preserve a private source even when the active binding is overridden")
@@ -174,7 +175,7 @@ struct WPEMetalTextureCopyTests {
                                        .init(name: "private", scale: 1, format: "rgba8888", unique: true),
                                    ], passes: passes.map(\.pass))
         let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes)])
-        for (visible, expected) in [(false, [UInt8(0), 0, 0, 0]), (true, [0, 0, 255, 255]), (false, [255, 0, 0, 255])] {
+        for (visible, expected) in [(false, [UInt8(0), 0, 0, 255]), (true, [0, 0, 255, 255]), (false, [255, 0, 0, 255])] {
             let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["red": red, "blue": blue, "black": black],
                                              passVisibility: [gate.id: visible])
             let staging = try texture(device, output.pixelFormat, 4, 4)
@@ -281,7 +282,7 @@ struct WPEMetalTextureCopyTests {
         try #require(isSRGB || output.pixelFormat == .rgba8Unorm || output.pixelFormat == .bgra8Unorm)
         // The external half-float input is linear. An sRGB composite encodes
         // on store, then its scene sample decodes before the final sRGB store.
-        // Compute the independent transfer-function oracle; alpha stays linear.
+        // Compute the independent transfer-function oracle; scene coverage stays opaque.
         var expected = [Double(0.25), 0.5, 0.75].map { linear -> UInt8 in
             let encoded = isSRGB
                 ? (linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055)
@@ -291,7 +292,7 @@ struct WPEMetalTextureCopyTests {
         if isBGRA {
             expected.swapAt(0, 2)
         }
-        expected.append(UInt8((0.5 * 255).rounded()))
+        expected.append(255)
         let actual = readBytes(staging, bytesPerPixel: 4)
         for index in actual.indices {
             #expect(abs(Int(actual[index]) - Int(expected[index % 4])) <= 1)

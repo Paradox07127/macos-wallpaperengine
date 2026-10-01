@@ -41,7 +41,7 @@ final class WPEMetalPipelineCache {
         }
 
         guard let vertex = library.makeFunction(name: vertexName),
-              let fragment = library.makeFunction(name: fragmentName) else {
+              let fragment = try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable(fragmentName)
         }
 

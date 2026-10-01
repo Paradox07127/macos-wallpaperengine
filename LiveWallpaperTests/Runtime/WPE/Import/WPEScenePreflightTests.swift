@@ -5,6 +5,14 @@ import Testing
 
 struct WPEScenePreflightTests {
 
+    @Test("A light-only scene has no drawable producer")
+    func lightOnlySceneIsUnsupported() throws {
+        let document = try WPESceneDocumentParser.parse(data: Data(#"{"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},"objects":[{"id":"lamp","light":"lpoint"}]}"#.utf8))
+        let result = WPEScenePreflight.classify(document: document, project: Self.makeProject(), scenePackageEntries: [])
+        #expect(result.featureFlags.contains(.lightObject))
+        #expect(result.tier == .unsupported)
+    }
+
     @Test("Image-only scene with built-in shaders classifies as native playable")
     func imageOnlyScenePlaysNatively() {
         let project = Self.makeProject(requiresWindowsPlugin: false)

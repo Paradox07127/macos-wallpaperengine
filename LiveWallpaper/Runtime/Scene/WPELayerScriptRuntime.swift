@@ -127,6 +127,148 @@ struct WPELayerScriptCursorHit: Sendable, Equatable {
     }
 }
 
+/// Each callback retains the pointer state belonging to its own event.
+struct WPELayerScriptCursorInvocation: Sendable {
+    let event: WPELayerScriptCursorEvent
+    let pointerFrame: WPEPointerFrame
+    var hit: WPELayerScriptCursorHit = .init()
+    let runtimeSeconds: Double
+}
+
+/// Render-owner producers and the existing serial VM worker share only this finite inbox.
+/// A busy safety slot leaves the entire burst pending for a later frame.
+final class WPELayerScriptCursorInbox: Sendable {
+    struct Claim: Sendable { let id: UInt64; let epoch: UInt64 }
+    private struct State {
+        var epoch: UInt64 = 0
+        var nextID: UInt64 = 0
+        var scheduled: UInt64?
+        var pending: [WPELayerScriptCursorInvocation] = []
+        var lastDelivered: WPEPointerFrame = .neutral
+        var lastRuntimeSeconds: Double = 0
+        var needsCancel = false
+        var suppressed = false
+        var requiresFreshPress = false
+        var closed = false
+    }
+
+    private let capacity: Int
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    init(capacity: Int = 1024) {
+        self.capacity = min(max(capacity, 1), 1024)
+    }
+
+    func append(_ events: [WPELayerScriptCursorInvocation]) {
+        state.withLock { value in
+            guard !value.closed else { return }
+            guard events.count <= capacity - value.pending.count else {
+                Self.cancel(&value)
+                // The discarded burst itself may already have released both
+                // buttons; scripts without update() still observe that boundary.
+                value.suppressed = events.last.map {
+                    $0.pointerFrame.isDown || $0.pointerFrame.isRightDown
+                } ?? true
+                value.requiresFreshPress = true
+                return
+            }
+            for event in events {
+                if value.suppressed {
+                    if !event.pointerFrame.isDown, !event.pointerFrame.isRightDown {
+                        value.suppressed = false
+                    }
+                    // The release/click of a discarded press must not be replayed.
+                    continue
+                }
+                if value.requiresFreshPress {
+                    if event.event == .down || event.event == .rightDown {
+                        value.requiresFreshPress = false
+                    } else if [.up, .click, .rightUp].contains(event.event) {
+                        continue
+                    }
+                }
+                value.pending.append(event)
+            }
+        }
+    }
+
+    func claim() -> Claim? {
+        state.withLock { value in
+            guard !value.closed, value.scheduled == nil,
+                  value.needsCancel || !value.pending.isEmpty else { return nil }
+            value.nextID &+= 1
+            value.scheduled = value.nextID
+            return Claim(id: value.nextID, epoch: value.epoch)
+        }
+    }
+
+    func take(_ claim: Claim) -> [WPELayerScriptCursorInvocation]? {
+        state.withLock { value in
+            guard !value.closed, value.scheduled == claim.id, value.epoch == claim.epoch else { return nil }
+            var result: [WPELayerScriptCursorInvocation] = []
+            if value.needsCancel {
+                var neutral = value.lastDelivered
+                neutral.isDown = false
+                neutral.isRightDown = false
+                if value.lastDelivered.isDown {
+                    result.append(.init(event: .up, pointerFrame: neutral, runtimeSeconds: value.lastRuntimeSeconds))
+                }
+                if value.lastDelivered.isRightDown {
+                    result.append(.init(event: .rightUp, pointerFrame: neutral, runtimeSeconds: value.lastRuntimeSeconds))
+                }
+                value.needsCancel = false
+            }
+            result.append(contentsOf: value.pending)
+            value.pending.removeAll(keepingCapacity: true)
+            return result
+        }
+    }
+
+    func isCurrent(_ claim: Claim) -> Bool {
+        state.withLock { !$0.closed && $0.epoch == claim.epoch }
+    }
+
+    func didDeliver(_ event: WPELayerScriptCursorInvocation) {
+        state.withLock {
+            $0.lastDelivered = event.pointerFrame
+            $0.lastRuntimeSeconds = event.runtimeSeconds
+        }
+    }
+
+    func complete(_ claim: Claim) {
+        state.withLock {
+            if $0.scheduled == claim.id {
+                $0.scheduled = nil
+            }
+        }
+    }
+
+    func cancel() {
+        state.withLock { Self.cancel(&$0) }
+    }
+
+    func close() {
+        state.withLock { Self.cancel(&$0); $0.closed = true }
+    }
+
+    private static func cancel(_ value: inout State) {
+        value.epoch &+= 1
+        value.pending.removeAll(keepingCapacity: true)
+        value.needsCancel = true
+    }
+
+    func maskingSuppressedButtons(_ frame: WPEPointerFrame?) -> WPEPointerFrame? {
+        state.withLock { value in
+            guard value.suppressed, var frame else { return frame }
+            if !frame.isDown, !frame.isRightDown {
+                value.suppressed = false
+            }
+            frame.isDown = false
+            frame.isRightDown = false
+            return frame
+        }
+    }
+}
+
 /// Not @MainActor.
 final class WPELayerScriptInstance {
     private let engineRelease: WPESceneScriptLaneRelease<LayerEngine>
@@ -139,6 +281,7 @@ final class WPELayerScriptInstance {
     /// Lifecycle is one-way; only the first teardown path may invoke the authored destroy() handler.
     private var isDestroyed = false
     let initialOutput: WPELayerScriptOutput
+    private let cursorInbox = WPELayerScriptCursorInbox()
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
         combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
     )
@@ -365,7 +508,7 @@ final class WPELayerScriptInstance {
         guard hasUpdateFunction, let claim = asyncOutcomeSlot.beginTick() else { return (fresh, nil) }
         guard let work = engine.makeBatchTick(
             runtimeSeconds: runtimeSeconds,
-            pointerFrame: pointerFrame,
+            pointerFrame: cursorInbox.maskingSuppressedButtons(pointerFrame),
             claim: claim,
             publishTo: asyncOutcomeSlot
         ) else {
@@ -375,21 +518,21 @@ final class WPELayerScriptInstance {
         return (fresh, WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work))
     }
 
-    /// One frame's cursor events in one async hop. Dispatched one at a time, the single in-flight slot admitted only the first: cursorUp swallowed the cursorClick synthesised from the same release.
-    func liveDispatchCursorEvents(
-        _ events: [WPELayerScriptCursorEvent],
-        pointerFrame: WPEPointerFrame,
-        hit: WPELayerScriptCursorHit = .init(),
-        runtimeSeconds: Double? = nil
-    ) {
-        guard !isPoisoned, !isDestroyed, !events.isEmpty, engine.allows(.event) else { return }
-        _ = engine.dispatchCursorEventsAsync(
-            events,
-            pointerFrame: pointerFrame,
-            hit: hit,
-            runtimeSeconds: runtimeSeconds,
-            publishTo: asyncOutcomeSlot
-        )
+    func batchCursorEvents(
+        _ events: [WPELayerScriptCursorInvocation]
+    ) -> WPESceneScriptBatchDispatcher.Job? {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else {
+            cursorInbox.close()
+            return nil
+        }
+        cursorInbox.append(events)
+        guard let claim = cursorInbox.claim() else { return nil }
+        let work = engine.makeCursorBatch(claim: claim, inbox: cursorInbox, publishTo: asyncOutcomeSlot)
+        return WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work)
+    }
+
+    func cancelPendingCursorEvents() {
+        cursorInbox.cancel()
     }
 
     /// Async applyUserProperties: fold through outcome slot so a pending tick cannot clobber it.
@@ -487,6 +630,7 @@ final class WPELayerScriptInstance {
     func destroy() -> WPELayerScriptOutput? {
         guard !isDestroyed else { return nil }
         isDestroyed = true
+        cursorInbox.close()
         guard !isPoisoned, engine.allows(.event) else { return nil }
         let budget = tickBudget * 2
         switch engine.destroy(budget: budget) {
@@ -629,6 +773,7 @@ final class WPELayerScriptInstance {
         private let ownLayerName: String?
         private let ownObjectID: String?
         private let particleBridge: WPESceneScriptParticleBridge
+        private let cameraBridge: WPESceneScriptCameraBridge
 
         init(
             nowProviderMillis: (@Sendable () -> Double)?,
@@ -650,6 +795,7 @@ final class WPELayerScriptInstance {
             self.ownLayerName = ownLayerName
             self.ownObjectID = ownObjectID
             particleBridge = WPESceneScriptParticleBridge(shared: shared)
+            cameraBridge = WPESceneScriptCameraBridge(shared: shared)
             self.createdLayerBridge = createdLayerBridge
             currentLayerOrder = createdLayerBridge?.orderedLayerNames
                 ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
@@ -873,39 +1019,31 @@ final class WPELayerScriptInstance {
             }
         }
 
-        func dispatchCursorEventsAsync(
-            _ events: [WPELayerScriptCursorEvent],
-            pointerFrame: WPEPointerFrame,
-            hit: WPELayerScriptCursorHit,
-            runtimeSeconds: Double?,
+        func makeCursorBatch(
+            claim: WPELayerScriptCursorInbox.Claim,
+            inbox: WPELayerScriptCursorInbox,
             publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
-        ) -> Bool {
-            guard !events.isEmpty, allows(.event) else { return false }
-            guard let safety = asyncExecutionSafety.begin(
-                sceneToken: instanceLimitToken,
-                operation: .event
-            ) else { return false }
-            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
-                asyncExecutionSafety.complete(safety)
-                return false
-            }
-            queue.async {
-                defer {
-                    self.asyncExecutionSafety.complete(safety)
-                    permit.release()
-                }
+        ) -> @Sendable () -> Void {
+            { @Sendable [self] in
+                defer { inbox.complete(claim) }
+                // Reserve on the VM worker, never while building a frame's jobs.
+                // Failed admission leaves the inbox intact for the next frame.
+                guard allows(.event), let safety = asyncExecutionSafety.begin(
+                    sceneToken: instanceLimitToken, operation: .event
+                ) else { return }
+                defer { asyncExecutionSafety.complete(safety) }
+                guard let events = inbox.take(claim) else { return }
                 for event in events {
-                    let outcome = self.dispatchCursorEventOnQueue(
-                        event,
-                        pointerFrame: pointerFrame,
-                        hit: hit,
-                        runtimeSeconds: runtimeSeconds
+                    guard inbox.isCurrent(claim), acceptsCompletion() else { return }
+                    let outcome = dispatchCursorEventOnQueue(
+                        event.event, pointerFrame: event.pointerFrame,
+                        hit: event.hit, runtimeSeconds: event.runtimeSeconds
                     )
-                    guard self.acceptsCompletion() else { return }
+                    inbox.didDeliver(event)
+                    guard inbox.isCurrent(claim), acceptsCompletion() else { return }
                     slot.publishEvent(outcome)
                 }
             }
-            return true
         }
 
         /// The one conversion from a returned JS value to a `visible` flag —
@@ -931,7 +1069,12 @@ final class WPELayerScriptInstance {
             scriptProperties: [String: WPESceneScriptPropertyValue]
         ) -> SetupOutcome {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
             self.context = context
             let timerScheduler = WPESceneScriptTimerScheduler()
@@ -961,6 +1104,7 @@ final class WPELayerScriptInstance {
             context.exceptionHandler = { [weak self] _, exception in
                 self?.didThrow = true
                 self?.particleBridge.failEvaluation()
+                self?.cameraBridge.failEvaluation()
                 self?.logFirstThrow(exception)
             }
             evaluationResourceBudget.beginEvaluation()
@@ -1036,7 +1180,12 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
@@ -1064,7 +1213,12 @@ final class WPELayerScriptInstance {
             pointerFrame: WPEPointerFrame?
         ) -> WPELayerScriptOutput {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             audioBridge?.refresh()
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
@@ -1119,7 +1273,12 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             updateInput(pointerFrame)
@@ -1154,7 +1313,12 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
@@ -1172,7 +1336,12 @@ final class WPELayerScriptInstance {
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> WPELayerScriptOutput? {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             let size = SIMD2<Double>(max(requestedSize.x, 1), max(requestedSize.y, 1))
             guard size != screenSize else { return nil }
             screenSize = size
@@ -1193,7 +1362,12 @@ final class WPELayerScriptInstance {
 
         private func applyGeneralSettingsOnQueue(language: String) -> WPELayerScriptOutput? {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
             guard let context,
@@ -1208,7 +1382,12 @@ final class WPELayerScriptInstance {
 
         private func destroyOnQueue() -> WPELayerScriptOutput {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
             if let context,
@@ -1444,6 +1623,7 @@ final class WPELayerScriptInstance {
             // a no-op stub keeps such a script from throwing at top-level eval.
             let on: @convention(block) (JSValue, JSValue) -> Void = { _, _ in }
             scene.setObject(on, forKeyedSubscript: "on" as NSString)
+            cameraBridge.install(on: scene, in: context)
             context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
             context.setObject(scene, forKeyedSubscript: "scene" as NSString)
 

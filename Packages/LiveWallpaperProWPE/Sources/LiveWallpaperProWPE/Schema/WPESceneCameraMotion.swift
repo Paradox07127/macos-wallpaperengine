@@ -6,17 +6,25 @@ public struct WPESceneCameraMotion: Equatable, Sendable {
     public let objectID: String
     public let origin: SIMD3<Double>
     public let zoom: Double
+    public let angles: SIMD3<Double>
     public let originAnimation: WPESceneAnimatedValue?
     public let zoomAnimation: WPESceneAnimatedValue?
+    public let anglesAnimation: WPESceneAnimatedValue?
+    public let zoomScript: WPESceneTransformScript?
     public let originIsRelative: Bool
     public let originFollowsZoom: Bool
 
     public init(objectID: String, origin: SIMD3<Double>, zoom: Double,
                 originAnimation: WPESceneAnimatedValue? = nil, zoomAnimation: WPESceneAnimatedValue? = nil,
-                originIsRelative: Bool = false, originFollowsZoom: Bool = false) {
+                originIsRelative: Bool = false, originFollowsZoom: Bool = false,
+                angles: SIMD3<Double> = .zero, anglesAnimation: WPESceneAnimatedValue? = nil,
+                zoomScript: WPESceneTransformScript? = nil) {
         self.objectID = objectID
         self.origin = origin
         self.zoom = zoom
+        self.angles = angles
+        self.anglesAnimation = anglesAnimation
+        self.zoomScript = zoomScript
         self.originAnimation = originAnimation
         self.zoomAnimation = zoomAnimation
         self.originIsRelative = originIsRelative
@@ -24,7 +32,7 @@ public struct WPESceneCameraMotion: Equatable, Sendable {
     }
 
     public var seed: WPESceneCameraMotionSample {
-        .init(origin: origin, zoom: zoom)
+        .init(origin: origin, zoom: zoom, angles: angles)
     }
 
     public func sample(at time: Double) -> WPESceneCameraMotionSample {
@@ -44,11 +52,15 @@ public struct WPESceneCameraMotion: Equatable, Sendable {
             }
         }
         let sampledZoom = zoomAnimation.flatMap { Self.isPaused($0.animation) ? nil : $0.scalar(at: time) } ?? zoom
-        return .init(origin: position, zoom: sampledZoom)
+        var orientation = angles
+        if let animated = anglesAnimation, !Self.isPaused(animated.animation), let values = animated.vector(at: time), values.count == 3 {
+            orientation = SIMD3(values[0], values[1], values[2])
+        }
+        return .init(origin: position, zoom: sampledZoom, angles: orientation)
     }
 
     public func needsFrames(at time: Double) -> Bool {
-        let animations = [zoomAnimation?.animation, originFollowsZoom ? (zoomAnimation?.animation ?? originAnimation?.animation) : originAnimation?.animation].compactMap(\.self)
+        let animations = [anglesAnimation?.animation, zoomAnimation?.animation, originFollowsZoom ? (zoomAnimation?.animation ?? originAnimation?.animation) : originAnimation?.animation].compactMap(\.self)
         return animations.contains { animation in
             guard !Self.isPaused(animation), animation.tracks.contains(where: { $0.count > 1 }) else { return false }
             if animation.mode == "loop" || animation.mode == "mirror" || animation.wrapLoop {
@@ -67,10 +79,12 @@ public struct WPESceneCameraMotion: Equatable, Sendable {
 public struct WPESceneCameraMotionSample: Equatable, Sendable {
     public let origin: SIMD3<Double>
     public let zoom: Double
+    public let angles: SIMD3<Double>
     public static let identity = Self(origin: .zero, zoom: 1)
 
-    public init(origin: SIMD3<Double>, zoom: Double) {
+    public init(origin: SIMD3<Double>, zoom: Double, angles: SIMD3<Double> = .zero) {
         self.origin = origin.x.isFinite && origin.y.isFinite && origin.z.isFinite ? origin : .zero
         self.zoom = zoom.isFinite && zoom > 0 ? zoom : 1
+        self.angles = angles.x.isFinite && angles.y.isFinite && angles.z.isFinite ? angles : .zero
     }
 }

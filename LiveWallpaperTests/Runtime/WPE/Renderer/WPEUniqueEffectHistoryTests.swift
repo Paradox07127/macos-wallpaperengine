@@ -137,7 +137,7 @@ struct WPEUniqueEffectHistoryTests {
             #expect(Set(history.namedTextures.keys) == ["_rt_unique_red", "_rt_unique_green"])
             for (id, channel) in [("red", 0), ("green", 1)] {
                 let pixel = try sample(#require(history.namedTextures["_rt_unique_" + id]))
-                #expect(abs(Int(pixel[channel]) - Int((1.055 * pow(0.5 * (1 - pow(0.5, Double(frame + 1))), 1 / 2.4) - 0.055) * 255)) <= 2)
+                #expect(abs(Int(pixel[channel]) - Int(0.5 * (1 - pow(0.5, Double(frame + 1))) * 255)) <= 2)
                 #expect(pixel[1 - channel] == 0)
                 #expect(abs(Int(pixel[3]) - 128) <= 1)
             }
@@ -145,12 +145,12 @@ struct WPEUniqueEffectHistoryTests {
         // A scene-size change must discard old history just like a scene reload.
         _ = try executor.render(pipeline: pipeline, size: CGSize(width: 9, height: 8), textures: [:], cameraUniforms: camera)
         let reset = try sample(#require(executor.previousFrameHistory?.namedTextures["_rt_unique_red"]))
-        #expect(abs(Int(reset[0]) - 137) <= 2)
+        #expect(abs(Int(reset[0]) - 64) <= 2)
         executor.releaseTransientResources()
         #expect(executor.previousFrameHistory == nil)
         _ = try executor.render(pipeline: pipeline, size: size, textures: [:], cameraUniforms: camera)
         let reloaded = try sample(#require(executor.previousFrameHistory?.namedTextures["_rt_unique_red"]))
-        #expect(abs(Int(reloaded[0]) - 137) <= 2)
+        #expect(abs(Int(reloaded[0]) - 64) <= 2)
     }
 }
 #endif

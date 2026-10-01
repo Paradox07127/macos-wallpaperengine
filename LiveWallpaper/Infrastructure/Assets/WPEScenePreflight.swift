@@ -54,8 +54,10 @@ enum WPEScenePreflight {
         for flags: Set<WPESceneFeatureFlag>,
         hasImageObjects: Bool
     ) -> WPEScenePreflightTier {
-        if flags.contains(.windowsPlugin) { return .unsupported }
-        if !hasImageObjects && flags.isDisjoint(with: [.particleObject, .textObject, .lightObject]) {
+        if flags.contains(.windowsPlugin) {
+            return .unsupported
+        }
+        if !hasImageObjects, flags.isDisjoint(with: [.particleObject, .textObject]) {
             return .unsupported
         }
 

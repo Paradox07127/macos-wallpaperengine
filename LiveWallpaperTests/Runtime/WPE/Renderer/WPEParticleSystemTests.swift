@@ -153,51 +153,6 @@ struct WPEParticleSystemTests {
         #expect(def.directionMask == SIMD3<Double>(1, 1, 0))
     }
 
-    @Test("Particle instance override scales count rate lifetime size and speed")
-    func particleInstanceOverrideScalesDefinition() {
-        let base = WPEParticleDefinition(
-            materialRelativePath: nil,
-            maxCount: 5,
-            rate: 1.7,
-            startDelay: 3,
-            lifetimeMin: 20, lifetimeMax: 20,
-            sizeMin: 100, sizeMax: 110,
-            originOffset: SIMD3(350, 750, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(750, 750, 750),
-            velocityMin: SIMD3(-200, -100, 0), velocityMax: SIMD3(-300, -15, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 236, 0),
-            fadeInSeconds: 0.1,
-            turbulentVelocityInit: WPEParticleTurbulentVelocityInit(speedMin: 35, speedMax: 100)
-        )
-        let override = WPESceneParticleInstanceOverride(
-            count: 0.2,
-            rate: 0.5,
-            lifetime: 1.77,
-            size: 0.69,
-            speed: 1.32,
-            alpha: 0.03,
-            brightness: 2,
-            color: SIMD3<Double>(192, 192, 192)
-        )
-
-        let scaled = base.applying(instanceOverride: override)
-
-        #expect(scaled.maxCount == 1)
-        #expect(abs(scaled.rate - 0.85) < 0.0001)
-        #expect(abs(scaled.lifetimeMin - 35.4) < 0.0001)
-        #expect(abs(scaled.sizeMin - 69) < 0.0001)
-        #expect(abs(scaled.sizeMax - 75.9) < 0.0001)
-        #expect(abs(scaled.velocityMin.x - (-264)) < 0.0001)
-        #expect(abs((scaled.turbulentVelocityInit?.speedMax ?? 0) - 132) < 0.0001)
-        #expect(abs(scaled.alphaMin - 0.03) < 0.0001)
-        #expect(abs(scaled.alphaMax - 0.03) < 0.0001)
-        #expect(scaled.colorMin == SIMD3<Double>(384, 384, 384))
-        let expectedColorMax = SIMD3<Double>(384, 2 * 236.0 * 192.0 / 255.0, 0)
-        #expect(abs(scaled.colorMax.x - expectedColorMax.x) < 0.0001)
-        #expect(abs(scaled.colorMax.y - expectedColorMax.y) < 0.0001)
-        #expect(abs(scaled.colorMax.z - expectedColorMax.z) < 0.0001)
-    }
-
     @Test("particle instance brightness survives as HDR vertex RGB")
     func particleInstanceBrightnessProducesHDRVertexColor() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -1687,8 +1642,8 @@ struct WPEParticleSystemTests {
         #expect(abs(inst.positionAndSize.y - 150) < 1)
     }
 
-    @Test("Event-follow control point injection wins over static resolution")
-    func eventFollowControlPointInjectionWins() throws {
+    @Test("An injected control point wins over static resolution")
+    func injectedControlPointWins() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let def = stillParticleDefinition(rate: 0, originOffset: SIMD3(300, 300, 0))
         let system = try #require(WPEParticleSystem(
@@ -1698,73 +1653,9 @@ struct WPEParticleSystemTests {
         ))
         let injected = SIMD3<Float>(120, -35, 9)
 
-        system.injectedControlPoints[system.followControlPointID] = injected
+        system.injectedControlPoints[1] = injected
 
-        #expect(system.controlPointPosition(system.followControlPointID) == injected)
-    }
-
-    @Test("Event-follow child spawns at injected parent particle position")
-    func eventFollowChildSpawnsAtInjectedParentPosition() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let def = stillParticleDefinition(maxCount: 1, originOffset: SIMD3(300, 300, 0))
-        let system = try #require(WPEParticleSystem(
-            definition: def,
-            device: device,
-            sceneTransform: centeredParticleTransform
-        ))
-        let injected = SIMD3<Float>(42, -84, 0)
-        system.requiresFollowParent = true
-        system.injectedControlPoints[system.followControlPointID] = injected
-
-        system.tick(now: 0)
-        system.tick(now: 0.02)
-
-        #expect(system.liveInstanceCount == 1)
-        let inst = system.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0]
-        #expect(abs(inst.positionAndSize.x - injected.x) < 1)
-        #expect(abs(inst.positionAndSize.y - injected.y) < 1)
-    }
-
-    @Test("Event-follow child does not spawn without a live parent injection")
-    func eventFollowChildSkipsSpawnWithoutInjectedPosition() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let parent = try #require(WPEParticleSystem(
-            definition: stillParticleDefinition(maxCount: 1),
-            device: device,
-            sceneTransform: centeredParticleTransform
-        ))
-        let child = try #require(WPEParticleSystem(
-            definition: stillParticleDefinition(maxCount: 1),
-            device: device,
-            sceneTransform: centeredParticleTransform
-        ))
-        child.followParent = parent
-        child.requiresFollowParent = true
-
-        child.tick(now: 0)
-        child.tick(now: 0.05)
-
-        #expect(child.liveInstanceCount == 0)
-    }
-
-    @Test("Primary live particle position reports the youngest live particle")
-    func primaryLiveParticlePositionReportsLiveParticle() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let def = stillParticleDefinition(maxCount: 1, originOffset: SIMD3(12, -8, 0))
-        let system = try #require(WPEParticleSystem(
-            definition: def,
-            device: device,
-            sceneTransform: centeredParticleTransform
-        ))
-
-        #expect(system.primaryLiveParticlePosition == nil)
-        system.tick(now: 0)
-        system.tick(now: 0.02)
-
-        let position = try #require(system.primaryLiveParticlePosition)
-        #expect(abs(position.x - 12) < 1)
-        #expect(abs(position.y + 8) < 1)
+        #expect(system.controlPointPosition(1) == injected)
     }
 
     @Test("Parser captures sizechange, colorchange, oscillateposition operators")
@@ -1981,25 +1872,6 @@ struct WPEParticleSystemTests {
         #expect(c.z > 0.9, "blue NOT zeroed — stays ~white")
     }
 
-    @Test("colorn instance-override applies (dims) even without a colour initializer")
-    func colornOverrideAppliesWithoutColorInitializer() throws {
-        let base = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 1,
-            rate: 1, startDelay: 0,
-            lifetimeMin: 1, lifetimeMax: 1,
-            sizeMin: 1, sizeMax: 1,
-            originOffset: SIMD3(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0
-        )
-        let override = WPESceneParticleInstanceOverride(color: SIMD3(61, 41, 69))
-        let applied = base.applying(instanceOverride: override)
-        #expect(applied.colorMin == SIMD3(61, 41, 69))
-        #expect(applied.colorMax == SIMD3(61, 41, 69))
-    }
-
     @Test("oscillateposition mask transforms into render space with object rotation")
     func oscillatePositionMaskRotatesWithObject() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2203,7 +2075,7 @@ struct WPEParticleSystemTests {
         #expect(diagnostics.contains { $0.message.contains("flags 5") && $0.message.contains("without runtime interpretation") })
         #expect(diagnostics.contains { $0.message.contains("audio fields") && $0.message.contains("without a runtime consumer") })
 
-        let copied = def.applying(instanceOverride: WPESceneParticleInstanceOverride(count: 1))
+        let copied = def.applying(instanceOverride: WPESceneParticleInstanceOverride(brightness: 1))
             .offsettingOrigin(by: SIMD3(1, 2, 3))
         #expect(copied.duration == def.duration)
         #expect(copied.emitterFlagsRaw == def.emitterFlagsRaw)
@@ -2525,50 +2397,6 @@ struct WPEParticleSystemTests {
         #expect(system.liveInstanceCount == 30)
     }
 
-    @Test("event-follow burst waits for a parent birth, then fires at its position")
-    func eventFollowInstantaneousBurstWaitsForParentBirth() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let def = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 10,
-            rate: 0, instantaneousCount: 4, startDelay: 0,
-            lifetimeMin: 100, lifetimeMax: 100,
-            sizeMin: 1, sizeMax: 1,
-            originOffset: SIMD3(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0
-        )
-        let parentPosition = SIMD3<Double>(25, -10, 0)
-        let parentDef = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 4,
-            rate: 20, startDelay: 0,
-            lifetimeMin: 100, lifetimeMax: 100,
-            sizeMin: 1, sizeMax: 1,
-            originOffset: parentPosition,
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0
-        )
-        let parent = try #require(WPEParticleSystem(definition: parentDef, device: device))
-        let child = try #require(WPEParticleSystem(definition: def, device: device))
-        child.followParent = parent
-        child.requiresFollowParent = true
-
-        parent.tick(now: 0)
-        child.tick(now: 0)
-        #expect(child.liveInstanceCount == 0, "nothing has been born to follow yet")
-
-        parent.tick(now: 0.05)
-        child.tick(now: 0.05)
-        #expect(child.liveInstanceCount == 4)
-        let first = child.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 4)[0]
-        #expect(abs(first.positionAndSize.x - Float(parentPosition.x)) < 1)
-        #expect(abs(first.positionAndSize.y - Float(parentPosition.y)) < 1)
-    }
-
     @Test("instantaneous burst is capped by maxCount")
     func instantaneousBurstCappedByMaxCount() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2586,23 +2414,6 @@ struct WPEParticleSystemTests {
         let system = try #require(WPEParticleSystem(definition: def, device: device))
         system.tick(now: 0)
         #expect(system.liveInstanceCount == 3)
-    }
-
-    @Test("instance override count scales the instantaneous burst")
-    func instanceOverrideScalesInstantaneousBurst() {
-        let def = WPEParticleDefinition(
-            materialRelativePath: nil, maxCount: 100,
-            rate: 0, instantaneousCount: 10, startDelay: 0,
-            lifetimeMin: 1, lifetimeMax: 1,
-            sizeMin: 1, sizeMax: 1,
-            originOffset: SIMD3(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0
-        )
-        let scaled = def.applying(instanceOverride: WPESceneParticleInstanceOverride(count: 2))
-        #expect(scaled.instantaneousCount == 20)
     }
 
     @Test("material overbright parse: numeric, absent default, bool guard, negative clamp")
@@ -3154,7 +2965,7 @@ struct WPEParticleSystemTests {
         #expect(system.ropeVertexCount == 0)
     }
 
-    // MARK: - eventfollow bursts (scene 3413921910 meteor glow / shine)
+    // MARK: - burst and event fixtures
 
     private static func eventFollowParentDefinition() -> WPEParticleDefinition {
         WPEParticleDefinition(
@@ -3189,54 +3000,6 @@ struct WPEParticleSystemTests {
             colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
             fadeInSeconds: 0
         )
-    }
-
-    @Test("eventfollow child bursts once per parent birth, not once per system")
-    func eventFollowBurstsPerParentSpawn() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let parent = try #require(
-            WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device)
-        )
-        let child = try #require(
-            WPEParticleSystem(definition: Self.burstChildDefinition(), device: device)
-        )
-        child.followParent = parent
-        child.requiresFollowParent = true
-
-        parent.tick(now: 0)
-        child.tick(now: 0)
-        #expect(parent.liveInstanceCount == 0, "dt is 0 on the first tick, so rate spawns nothing")
-        #expect(child.liveInstanceCount == 0)
-
-        for step in 1...3 {
-            let time = Double(step) * 0.05
-            parent.tick(now: time)
-            child.tick(now: time)
-        }
-        #expect(parent.liveInstanceCount == 3)
-        #expect(child.liveInstanceCount == 6, "2 per birth × 3 births — not a single one-shot")
-    }
-
-    @Test("Substeps keep eventfollow child ages aligned with each parent birth")
-    func eventFollowBirthTimesSurviveSubsteps() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let parent = try #require(WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device))
-        let child = try #require(WPEParticleSystem(definition: Self.burstChildDefinition(), device: device))
-        child.followParent = parent
-        child.requiresFollowParent = true
-        parent.tick(now: 0)
-        child.tick(now: 0)
-        parent.tick(now: 0.1)
-        child.tick(now: 0.1)
-        try #require(parent.liveInstanceCount == 2)
-        try #require(child.liveInstanceCount == 4)
-        let parents = parent.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 32)
-        let children = child.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 16)
-        let parentAges = (0 ..< 2).map { parents[$0].rotationAndLife.y }.sorted()
-        let childAges = (0 ..< 4).map { children[$0].rotationAndLife.y }.sorted()
-        for i in 0 ..< 4 {
-            #expect(abs(childAges[i] - parentAges[i / 2]) < 0.000001)
-        }
     }
 
     @Test("Child probability and scale parse, with engine defaults and a clamp")
@@ -3369,44 +3132,6 @@ struct WPEParticleSystemTests {
         #expect(abs(instance.positionAndSize.w - 15) < 0.0001)
     }
 
-    @Test("eventfollow probability is rolled per parent event, not once per system")
-    func eventFollowProbabilityRollsPerEvent() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        /// The child pool is deliberately far larger than the parent's so saturation
-        /// can't mask the difference between 0.5 and 1.
-        func bursts(probability: Double, seed: UInt64) throws -> Int {
-            let parent = try #require(
-                WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device)
-            )
-            let child = try #require(
-                WPEParticleSystem(
-                    definition: Self.burstChildDefinition(instantaneous: 1, maxCount: 256),
-                    device: device, seed: seed
-                )
-            )
-            child.followParent = parent
-            child.requiresFollowParent = true
-            child.spawnProbability = probability
-            for step in 0...40 {
-                let time = Double(step) * 0.05
-                parent.tick(now: time)
-                child.tick(now: time)
-            }
-            return child.liveInstanceCount
-        }
-
-        // The parent's own pool (maxCount 32) bounds how many events exist.
-        let all = try bursts(probability: 1, seed: 0xC0FF_EE01)
-        #expect(all == 32, "one burst per parent birth")
-        #expect(try bursts(probability: 0, seed: 0xC0FF_EE01) == 0)
-
-        // Two seeds so one lucky draw can't carry the assertion.
-        for seed in [UInt64(0xC0FF_EE01), 0xC0FF_EE02] {
-            let half = try bursts(probability: 0.5, seed: seed)
-            #expect(half > 8 && half < 26, "seed \(String(seed, radix: 16)) gave \(half)")
-        }
-    }
-
     @Test("A non-eventfollow instantaneous burst still fires exactly once")
     func instantaneousBurstStaysOneShot() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -3417,39 +3142,20 @@ struct WPEParticleSystemTests {
         #expect(system.liveInstanceCount == 3, "fireworks/explosion bursts must not repeat")
     }
 
-    @Test("eventfollow child with no parent stays empty")
-    func eventFollowWithoutParentStaysEmpty() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let system = try #require(
-            WPEParticleSystem(definition: Self.burstChildDefinition(), device: device)
-        )
-        system.requiresFollowParent = true
-        for step in 0...20 { system.tick(now: Double(step) * 0.05) }
-        #expect(system.liveInstanceCount == 0)
-    }
-
-    @Test("prewarm spawn events are dropped, and live births still burst afterwards")
-    func prewarmDropsSpawnEventsButKeepsBursting() throws {
+    @Test("prewarm spawn events are dropped, and live births are still recorded afterwards")
+    func prewarmDropsSpawnEventsButKeepsRecording() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let parent = try #require(
             WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device)
         )
-        let child = try #require(
-            WPEParticleSystem(definition: Self.burstChildDefinition(), device: device)
-        )
-        child.followParent = parent
-        child.requiresFollowParent = true
+        parent.beginRecordingParticleEvents()
 
         parent.prewarm(simulatedSeconds: 1)
         #expect(parent.particleEventsThisTick.isEmpty, "prewarm births must not reach the first frame")
-        child.prewarm(simulatedSeconds: 1)
 
-        for step in 0...2 {
-            let time = Double(step) * 0.05
-            parent.tick(now: time)
-            child.tick(now: time)
-        }
-        #expect(child.liveInstanceCount == 4, "2 live parent births × 2 particles")
+        parent.tick(now: 0)
+        parent.tick(now: 0.05)
+        #expect(parent.particleEventsThisTick.contains { $0.kind == .spawn })
     }
 
     // MARK: - prewarm convergence (skipping the pre-lifetimeMax treadmill)
@@ -3505,111 +3211,6 @@ struct WPEParticleSystemTests {
         // as a spike above it, and a dead system as 0.
         #expect(expired.liveInstanceCount >= 100 && expired.liveInstanceCount <= 130,
                 "got \(expired.liveInstanceCount)")
-    }
-
-    // MARK: - eventfollow prewarm (scene 3226487183 matrix_trail)
-
-    /// Rate-based `eventfollow` child: it rides the parent continuously rather
-    /// than bursting on birth events.
-    private static func rateFollowChildDefinition() -> WPEParticleDefinition {
-        WPEParticleDefinition(
-            materialRelativePath: nil,
-            maxCount: 100,
-            rate: 2,
-            startDelay: 0,
-            lifetimeMin: 100, lifetimeMax: 100,
-            sizeMin: 10, sizeMax: 10,
-            originOffset: SIMD3<Double>(0, 0, 0),
-            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
-            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
-            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
-            fadeInSeconds: 0
-        )
-    }
-
-    private func makeFollowPair(
-        _ device: MTLDevice
-    ) throws -> (parent: WPEParticleSystem, child: WPEParticleSystem) {
-        let parent = try #require(
-            WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device)
-        )
-        let child = try #require(
-            WPEParticleSystem(definition: Self.rateFollowChildDefinition(), device: device)
-        )
-        child.followParent = parent
-        child.requiresFollowParent = true
-        return (parent, child)
-    }
-
-    @Test("Prewarming an eventfollow child alone leaves it empty — the bug the chain fixes")
-    func independentPrewarmStarvesFollowChild() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let (parent, child) = try makeFollowPair(device)
-
-        parent.prewarm(simulatedSeconds: 6, presimulateDelay: true)
-        child.prewarm(simulatedSeconds: 6, presimulateDelay: true)
-        // prewarm never writes the instance buffer; `tick` at dt 0 publishes it.
-        parent.tick(now: 0)
-        child.tick(now: 0)
-
-        #expect(parent.liveInstanceCount > 0, "the parent prewarms fine on its own")
-        #expect(child.liveInstanceCount == 0,
-                "no injected parent position, so every rate spawn is refused")
-    }
-
-    @Test("Lockstep chain prewarm populates a rate-based eventfollow child")
-    func chainPrewarmPopulatesFollowChild() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let (parent, child) = try makeFollowPair(device)
-
-        WPEMetalSceneRenderer.prewarmFollowChain(
-            [(parent, 6), (child, 6)], presimulateDelay: true
-        )
-        parent.tick(now: 0)
-        child.tick(now: 0)
-
-        #expect(parent.liveInstanceCount > 0)
-        // rate 2/s over ~6s, minus the parent's first-spawn lead-in; lifetime is
-        // 100s here so nothing dies. Bounded above by the authored maxcount.
-        #expect(child.liveInstanceCount >= 10,
-                "child had \(child.liveInstanceCount) particles, expected ~12")
-        #expect(child.liveInstanceCount <= 12)
-    }
-
-    @Test("Chain prewarm spawns the child ON the parent, not at the static origin")
-    func chainPrewarmSpawnsAtParentPositions() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let (parent, child) = try makeFollowPair(device)
-
-        WPEMetalSceneRenderer.prewarmFollowChain(
-            [(parent, 6), (child, 6)], presimulateDelay: true
-        )
-        child.tick(now: 0)
-
-        // The parent moves at +100 x/s from `trailSpawnOrigin`, so children must be strewn
-        // along x; spawning at the child's own (0,0,0) origin would collapse them onto one point.
-        let count = child.liveInstanceCount
-        try #require(count >= 2)
-        let instances = child.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: count)
-        let xs = Set((0..<count).map { instances[$0].positionAndSize.x })
-        #expect(xs.count > 1, "every child spawned at the same x — not following")
-    }
-
-    @Test("A follow chain whose members have different starttimes aligns on the capture instant")
-    func chainPrewarmAlignsWindowEnds() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let (parent, child) = try makeFollowPair(device)
-
-        // Parent pre-simulates 4s longer than the child; both must END together,
-        // so the child still sees a live parent for its whole window.
-        WPEMetalSceneRenderer.prewarmFollowChain(
-            [(parent, 10), (child, 6)], presimulateDelay: true
-        )
-        child.tick(now: 0)
-
-        #expect(child.liveInstanceCount >= 10,
-                "child had \(child.liveInstanceCount); a start-aligned window would starve it")
     }
 
     // MARK: - boxrandom emitter (scene 3351072238 rain pile)

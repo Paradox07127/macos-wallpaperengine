@@ -20,6 +20,7 @@ enum WPEUniformValueSource: Equatable {
             case .texelSizeHalf: ["kind": "scene-derived", "key": "g_TexelSizeHalf", "scope": "scene"]
             case .screen: ["kind": "scene-derived", "key": "g_Screen", "scope": "scene"]
             case let .textureResolution(slot): texture(slot, property: "resolution")
+            case let .textureMipMapInfo(slot): texture(slot, property: "mip-level-count")
             case let .textureRotation(slot): texture(slot, property: "rotation")
             case let .textureTranslation(slot): texture(slot, property: "translation")
             }

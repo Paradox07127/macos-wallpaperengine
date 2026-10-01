@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 @testable import LiveWallpaper
+import Metal
 import Testing
 
 @Suite("Pointer press is matched against this frame's hover state")
@@ -46,3 +48,380 @@ struct PointerEventOrderTests {
         )
     }
 }
+
+#if !LITE_BUILD
+@MainActor
+@Suite("Pointer button edge delivery")
+struct WPEPointerEdgeDeliveryTests {
+    private func fixture() throws -> MetalSceneFixture {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        objects[0]["origin"] = "32 32 0"
+        objects[0]["size"] = "32 32"
+        objects[0]["visible"] = ["value": true, "script": """
+        export function init() { shared.events = ''; }
+        export function update(value) { return value; }
+        export function cursorDown() { shared.events += 'd'; }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        export function cursorRightDown() { shared.events += 'r'; }
+        export function cursorRightUp() { shared.events += 'R'; }
+        """]
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        return fixture
+    }
+
+    private func event(_ type: NSEvent.EventType, point: CGPoint = CGPoint(x: 32, y: 32)) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                        windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    }
+
+    private func waitForEvents(_ expected: String, renderer: WPEMetalSceneRenderer) async throws {
+        for _ in 0 ..< 100 {
+            if renderer.sharedScriptValueForTesting("events") as? String == expected {
+                break
+            }
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        #expect(renderer.sharedScriptValueForTesting("events") as? String == expected)
+    }
+
+    @Test("A full down/up between frame samples reaches authored SceneScript in order")
+    func rapidClickBetweenFramesReachesScript() async throws {
+        let scene = try fixture()
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        #expect(renderer.makeFrameInputs().pointerFrame.isDown == false)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("duc", renderer: renderer)
+    }
+
+    private func pointer(_ down: Bool, x: Double = 0.5) -> WPEPointerFrame {
+        WPEPointerFrame(position: SIMD2(x, 0.5), clickPosition: SIMD2(x, 0.5),
+                        isDown: down, isRightDown: false)
+    }
+
+    private func invocation(_ event: WPELayerScriptCursorEvent, down: Bool,
+                            x: Double = 0.5) -> WPELayerScriptCursorInvocation {
+        .init(event: event, pointerFrame: pointer(down, x: x), runtimeSeconds: 2)
+    }
+
+    @Test("Peeking/high-water snapshots cannot consume future button edges")
+    func mailboxHighWaterIsNonconsuming() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.setClickCaptureEnabled(true)
+        mailbox.publishPointerFrame(pointer(true, x: 0.2))
+        let first = mailbox.read()
+        #expect(mailbox.read().buttonCursor == first.buttonCursor)
+        mailbox.publishPointerFrame(pointer(false, x: 0.7))
+        let second = mailbox.read()
+        let down = mailbox.takeButtonEvents(through: first.buttonCursor)
+        #expect(down.edges.map(\.frame) == [pointer(true, x: 0.2)])
+        #expect(mailbox.takeButtonEvents(through: first.buttonCursor).edges.isEmpty)
+        #expect(mailbox.takeButtonEvents(through: second.buttonCursor).edges.map(\.frame)
+            == [pointer(false, x: 0.7)])
+    }
+
+    @Test("A paused/stalled overflow cancels the whole press until both buttons release")
+    func mailboxOverflowAndReloadResynchronize() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.setClickCaptureEnabled(true)
+        for _ in 0 ..< 128 {
+            mailbox.publishPointerFrame(pointer(true))
+            mailbox.publishPointerFrame(pointer(false))
+        }
+        let old = mailbox.read()
+        mailbox.publishPointerFrame(pointer(true)) // 257th edge overflows: discard, never a half-press.
+        #expect(mailbox.read().buttonsSuppressed)
+        #expect(mailbox.takeButtonEvents(through: old.buttonCursor).edges.isEmpty)
+        #expect(mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).cancelled)
+        mailbox.publishPointerFrame(pointer(false))
+        #expect(!mailbox.read().buttonsSuppressed)
+        mailbox.publishPointerFrame(pointer(true))
+        mailbox.publishPointerFrame(pointer(false))
+        let beforeReload = mailbox.read()
+        mailbox.resetButtonEvents()
+        mailbox.publishPointerFrame(pointer(true, x: 0.3))
+        #expect(mailbox.takeButtonEvents(through: beforeReload.buttonCursor).edges.isEmpty)
+        #expect(mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges.count == 1)
+        mailbox.setClickCaptureEnabled(false)
+        mailbox.setClickCaptureEnabled(true)
+        #expect(mailbox.read().buttonsSuppressed)
+        mailbox.publishPointerFrame(pointer(false))
+        #expect(mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges.isEmpty)
+    }
+
+    @Test("Inbox admission retains whole bursts and cancellation fences old queued claims")
+    func inboxClaimCancellationAndOverflow() throws {
+        let inbox = WPELayerScriptCursorInbox(capacity: 3)
+        inbox.append([invocation(.down, down: true)])
+        let old = try #require(inbox.claim())
+        inbox.append([invocation(.up, down: false), invocation(.click, down: false)])
+        #expect(inbox.claim() == nil)
+        inbox.cancel()
+        #expect(inbox.take(old) == nil)
+        inbox.complete(old)
+        let cancelled = try #require(inbox.claim())
+        #expect(try #require(inbox.take(cancelled)).isEmpty)
+        inbox.complete(cancelled)
+        let delivered = invocation(.down, down: true)
+        inbox.didDeliver(delivered)
+        inbox.append([delivered, invocation(.move, down: true), invocation(.move, down: true)])
+        inbox.append([invocation(.up, down: false)]) // Overflow invalidates all pending input.
+        let overflow = try #require(inbox.claim())
+        #expect(try #require(inbox.take(overflow)).map(\.event) == [.up])
+        inbox.complete(overflow)
+        inbox.append([invocation(.up, down: false), invocation(.click, down: false)])
+        #expect(inbox.claim() == nil)
+        inbox.append([delivered, invocation(.up, down: false), invocation(.click, down: false)])
+        let fresh = try #require(inbox.claim())
+        #expect(try #require(inbox.take(fresh)).map(\.event) == [.down, .up, .click])
+        inbox.close()
+        #expect(!inbox.isCurrent(fresh))
+        #expect(inbox.claim() == nil)
+    }
+
+    @Test("A blocked VM worker retains bursts and callbacks keep their own pointer coordinates")
+    func stalledWorkerReceivesPerEventFrames() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+                                                  export function init() { shared.events = ''; }
+                                                  export function cursorDown(e) { shared.events += 'd' + input.cursorScreenPosition.x + ':' + e.leftDown + ';'; }
+                                                  export function cursorUp(e) { shared.events += 'u' + input.cursorScreenPosition.x + ':' + e.leftDown + ';'; }
+                                                  export function cursorClick() { shared.events += 'c;'; }
+                                                  """, shared: shared, canvasSize: SIMD2(100, 100),
+                                                  governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher)
+        defer { _ = instance.destroy() }
+        let held = DispatchSemaphore(value: 0)
+        let started = DispatchSemaphore(value: 0)
+        defer { held.signal() }
+        let lane = dispatcher.reserveLane()
+        lane.queue.async { started.signal(); _ = held.wait(timeout: .now() + 2) }
+        #expect(started.wait(timeout: .now() + 1) == .success)
+        let first = try #require(instance.batchCursorEvents([invocation(.down, down: true, x: 0.2)]))
+        let completion = try #require(dispatcher.submit([first], trackingCompletion: true))
+        #expect(instance.batchCursorEvents([
+            invocation(.up, down: false, x: 0.7), invocation(.click, down: false, x: 0.7),
+        ]) == nil)
+        #expect(shared.get("events") as? String == "")
+        held.signal()
+        #expect(completion.wait(timeout: .now() + 1))
+        #expect(shared.get("events") as? String == "d20:true;u70:false;c;")
+        #expect(instance.batchCursorEvents([]) == nil)
+    }
+
+    @Test("Safety admission failure retries pending callbacks instead of consuming input")
+    func busySafetyRetriesWholeBurst() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { shared.events = ''; }
+        export function cursorDown() { shared.events += 'd'; }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        export function mediaPlaybackChanged() {}
+        """, shared: shared, governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher)
+        defer { _ = instance.destroy() }
+        let held = DispatchSemaphore(value: 0)
+        let started = DispatchSemaphore(value: 0)
+        defer { held.signal() }
+        let lane = dispatcher.reserveLane()
+        lane.queue.async { started.signal(); _ = held.wait(timeout: .now() + 2) }
+        #expect(started.wait(timeout: .now() + 1) == .success)
+        let job = try #require(instance.batchCursorEvents([
+            invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false),
+        ]))
+        let completion = try #require(dispatcher.submit([job], trackingCompletion: true))
+        // The media entry point reserves safety before the worker; its event
+        // runs AFTER our queued batch and deliberately makes that admission busy.
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
+        held.signal()
+        #expect(completion.wait(timeout: .now() + 1))
+        lane.queue.sync {} // The deliberately reserved media event has completed.
+        #expect(shared.get("events") as? String == "")
+        let retry = try #require(instance.batchCursorEvents([]))
+        let retryCompletion = try #require(dispatcher.submit([retry], trackingCompletion: true))
+        #expect(retryCompletion.wait(timeout: .now() + 1))
+        #expect(shared.get("events") as? String == "duc")
+    }
+
+    @Test("Release outside the view ends the press without synthesizing click")
+    func releaseOutsideDoesNotClick() async throws {
+        let scene = try fixture()
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp, point: CGPoint(x: -10, y: 32)))
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("du", renderer: renderer)
+    }
+
+    @Test("Disable/reload drops old clicks and a fresh click reaches the replacement scene")
+    func disableAndReloadDiscardOldClicks() async throws {
+        let scene = try fixture()
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        let stale = renderer.makeFrameInputs()
+        #expect(stale.pointerFrame.isDown)
+        try view.mouseUp(with: event(.leftMouseUp))
+        renderer.setClickCaptureEnabled(false)
+        renderer.setClickCaptureEnabled(true)
+        #expect(!renderer.sampleFrameContext(inputs: stale).layerScriptPointerFrame.isDown)
+        _ = try renderer.renderCurrentFrame(inputs: stale)
+        try await waitForEvents("", renderer: renderer)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        try await renderer.reload()
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("", renderer: renderer)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("duc", renderer: renderer)
+    }
+
+    @Test("Cancelling an already queued VM burst prevents old-generation callbacks")
+    func cancelledWorkerBurstCannotPublish() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { shared.events = ''; }
+        export function cursorDown() { shared.events += 'd'; }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        """, shared: shared, governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher)
+        defer { _ = instance.destroy() }
+        let held = DispatchSemaphore(value: 0)
+        let started = DispatchSemaphore(value: 0)
+        defer { held.signal() }
+        let lane = dispatcher.reserveLane()
+        lane.queue.async { started.signal(); _ = held.wait(timeout: .now() + 2) }
+        #expect(started.wait(timeout: .now() + 1) == .success)
+        let job = try #require(instance.batchCursorEvents([
+            invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false),
+        ]))
+        let completion = try #require(dispatcher.submit([job], trackingCompletion: true))
+        instance.cancelPendingCursorEvents()
+        held.signal()
+        #expect(completion.wait(timeout: .now() + 1))
+        #expect(shared.get("events") as? String == "")
+        let fresh = try #require(instance.batchCursorEvents([
+            invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false),
+        ]))
+        let freshCompletion = try #require(dispatcher.submit([fresh], trackingCompletion: true))
+        #expect(freshCompletion.wait(timeout: .now() + 1))
+        #expect(shared.get("events") as? String == "duc")
+    }
+
+    @Test("Overflow ending with all buttons released accepts the first new press")
+    func overflowNeutralTailAcceptsFreshPress() throws {
+        let inbox = WPELayerScriptCursorInbox(capacity: 3)
+        inbox.append([invocation(.down, down: true), invocation(.move, down: true), invocation(.move, down: true)])
+        // This whole discarded burst ends neutral; no separate update() or
+        // extra release callback is needed to observe the released state.
+        inbox.append([invocation(.up, down: false), invocation(.click, down: false)])
+        let cancel = try #require(inbox.claim())
+        #expect(try #require(inbox.take(cancel)).isEmpty)
+        inbox.complete(cancel)
+        inbox.append([invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false)])
+        let fresh = try #require(inbox.claim())
+        #expect(try #require(inbox.take(fresh)).map(\.event) == [.down, .up, .click])
+    }
+
+    @Test("Right down/up between samples reaches authored callbacks exactly once")
+    func rapidRightClickBetweenFrames() async throws {
+        let scene = try fixture()
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.rightMouseDown(with: event(.rightMouseDown))
+        try view.rightMouseUp(with: event(.rightMouseUp))
+        #expect(!renderer.makeFrameInputs().pointerFrame.isRightDown)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("rR", renderer: renderer)
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("rR", renderer: renderer)
+    }
+
+    @Test("Queued button edges preserve span interaction masks at their own event location")
+    func queuedEdgesKeepInteractionMask() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.publishGeometry(.init(viewFrameInScreen: CGRect(x: 100, y: 200, width: 100, height: 100),
+                                      interactiveFrames: [CGRect(x: 100, y: 200, width: 40, height: 100)]))
+        mailbox.setClickCaptureEnabled(true)
+        // Latest global follow sample is deliberately opposite to the event.
+        mailbox.publishMouseLocation(CGPoint(x: 110, y: 250), timestampNanos: 1)
+        mailbox.publishPointerFrame(pointer(true, x: 0.75))
+        mailbox.publishPointerFrame(pointer(false, x: 0.2))
+        let edges = mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges
+        #expect(edges.map(\.isInsideView) == [false, true])
+    }
+
+    @Test("Background click-control publication is immediate and main view receives latest flag")
+    func surfaceClickControlUsesLatestMailboxFlag() async throws {
+        let surface = try WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 16, height: 16),
+                                           device: #require(MTLCreateSystemDefaultDevice()))
+        surface.mtkView.clickCaptureEnabled = true
+        // A bounded synchronous fixture holds main delivery while the writer
+        // publishes both values; the following async wait then admits delivery.
+        #expect(publishClickFlagsWhileMainIsHeld(surface))
+        #expect(!surface.mailbox.read().clickCaptureEnabled)
+        for _ in 0 ..< 100 {
+            if !surface.mtkView.clickCaptureEnabled {
+                break
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(!surface.mtkView.clickCaptureEnabled)
+        #expect(!surface.mailbox.read().clickCaptureEnabled)
+    }
+
+    private func publishClickFlagsWhileMainIsHeld(_ surface: WPERenderSurface) -> Bool {
+        let published = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            surface.setClickCaptureEnabled(true)
+            surface.setClickCaptureEnabled(false)
+            published.signal()
+        }
+        return published.wait(timeout: .now() + 1) == .success
+    }
+}
+#endif

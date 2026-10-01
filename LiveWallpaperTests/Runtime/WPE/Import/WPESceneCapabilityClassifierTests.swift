@@ -49,6 +49,43 @@ struct WPESceneCapabilityClassifierTests {
         #expect(tier == .imageOnly)
     }
 
+    @Test("Text-only scenes use the existing limited compatibility tier")
+    func textOnlySceneIsAdmitted() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let document = try parseObjects([["id": "text", "text": "Hello", "origin": "32 32 0"]])
+        #expect(WPESceneCapabilityClassifier().capabilityTier(for: document, cacheURL: fixture.cacheRoot) == .degraded)
+    }
+
+    @Test("Particle-only scenes require a reachable definition", arguments: [false, true])
+    func particleOnlyNeedsDefinition(reachable: Bool) throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        if reachable {
+            try Data(#"{"material":"missing.json"}"#.utf8).write(to: fixture.cacheRoot.appendingPathComponent("particle.json"))
+        }
+        let document = try parseObjects([["id": "pfx", "particle": "particle.json"]])
+        let tier = WPESceneCapabilityClassifier().capabilityTier(for: document, cacheURL: fixture.cacheRoot)
+        #expect(tier == (reachable ? .degraded : .unsupported))
+    }
+
+    @Test("Light-only and empty scenes remain unsupported", arguments: [false, true])
+    func noRenderableProducerIsUnsupported(light: Bool) throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let document = try parseObjects(light ? [["id": "lamp", "light": "lpoint"]] : [])
+        #expect(WPESceneCapabilityClassifier().capabilityTier(for: document, cacheURL: fixture.cacheRoot) == .unsupported)
+    }
+
+    private func parseObjects(_ objects: [[String: Any]]) throws -> WPESceneDocument {
+        let json: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": objects,
+        ]
+        return try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: json))
+    }
+
     private struct Fixture {
         let root: URL
         let cacheRoot: URL

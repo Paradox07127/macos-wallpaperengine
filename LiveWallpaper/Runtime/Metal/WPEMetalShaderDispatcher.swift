@@ -138,6 +138,8 @@ struct WPEMetalShaderDispatcher {
             sourceTexture: sourceTexture,
             cameraUniforms: executor.objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState)
         )
+        quadUniforms.cameraOrientation = executor.objectQuadCameraUniforms(for: pass.pass, layer: layer, frameState: frameState).sceneOrientationCorrection
+        quadUniforms.cameraWorldDepth.x = Float(layer.geometry.origin.z)
         encoder.setVertexBytes(
             &quadUniforms,
             length: MemoryLayout<WPEObjectQuadUniforms>.stride,
@@ -156,8 +158,8 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: variant,
             objectQuad: usesObjectQuad,
@@ -190,8 +192,8 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat,
         fetchSceneColor: Bool
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: fetchSceneColor ? .blendCompositeFramebufferFetch : .blendComposite,
             objectQuad: usesObjectQuad,
@@ -253,8 +255,8 @@ struct WPEMetalShaderDispatcher {
         let fragmentName = pass.pass.shader == "commands/copy"
             ? "wpe_copy_fragment"
             : "wpe_util_copy_fragment"
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: .copy,
             objectQuad: usesObjectQuad,
@@ -372,8 +374,8 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState,
                 currentTargetID: destination.id
             )
-            let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-            encoder.setRenderPipelineState(try executor.passPipelineState(
+            let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+            try encoder.setRenderPipelineState(executor.passPipelineState(
                 passID: pass.pass.id,
                 variant: .compose,
                 objectQuad: usesObjectQuad,
@@ -416,8 +418,8 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: .genericImage2,
             objectQuad: usesObjectQuad,
@@ -467,8 +469,8 @@ struct WPEMetalShaderDispatcher {
     ) throws {
         let primarySlot = 0
         let maskSlot = 1
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: .genericImage4,
             objectQuad: usesObjectQuad,
@@ -576,7 +578,7 @@ struct WPEMetalShaderDispatcher {
 
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
         let usesObjectQuad = !usesShapeQuad
-            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax)
+            && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
         var cachedProjection: simd_double4x4?
         var projectionResolved = false
         let effectTextureProjection: () -> simd_double4x4? = {
@@ -862,9 +864,10 @@ struct WPEMetalShaderDispatcher {
         let usesObjectQuad = executor.usesObjectQuadGeometry(
             for: pass.pass,
             layer: layer,
-            cameraParallax: frameState.cameraParallax
+            cameraParallax: frameState.cameraParallax,
+            cameraUniforms: frameState.cameraUniforms
         )
-        encoder.setRenderPipelineState(try executor.passPipelineState(
+        try encoder.setRenderPipelineState(executor.passPipelineState(
             passID: pass.pass.id,
             variant: .godraysCombine,
             objectQuad: usesObjectQuad,

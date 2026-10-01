@@ -65,7 +65,7 @@ extension WPEMetalRenderExecutor {
         let vertexName = isRope ? "wpe_particle_rope_vertex" : "wpe_particle_vertex"
         let fragmentName = isRefract ? "wpe_particle_refract_fragment" : "wpe_particle_instanced_fragment"
         guard let vertex = defaultLibrary.makeFunction(name: vertexName),
-              let fragment = defaultLibrary.makeFunction(name: fragmentName) else {
+              let fragment = try WPEMetalColorOutput.fragment(library: defaultLibrary, name: fragmentName, format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_particle_instanced_fragment")
         }
         let descriptor = MTLRenderPipelineDescriptor()
@@ -76,6 +76,8 @@ extension WPEMetalRenderExecutor {
         }
         attachment.pixelFormat = colorPixelFormat
         Self.applyParticleBlend(blendMode, to: attachment)
+        // Native particles always draw into the opaque scene attachment (writeMask = RGB, alpha untouched).
+        attachment.writeMask = WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "").writeMask
         let state = try device.makeRenderPipelineState(descriptor: descriptor)
         particlePipelineCache[key] = state
         return state

@@ -126,25 +126,25 @@ struct WPEMetalRenderExecutorTests {
         )
     }
 
-    @Test("Shader-readable scene and FBO targets retain complete premultiplied RGBA")
-    func alphaWritePolicyKeepsRenderGraphTargetsRGBA() {
+    @Test("Scene preserves backdrop alpha while local FBO stores coverage")
+    func alphaWritePolicyMatchesAttachmentCoverage() {
         let scenePolicy = WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "normal")
         let fboPolicy = WPEMetalAlphaWritePolicy.resolve(
             targetID: .named("_rt_imageLayerComposite_test"),
             blendMode: "normal"
         )
 
-        #expect(scenePolicy == .all)
-        #expect(scenePolicy.writeMask == .all)
+        #expect(scenePolicy == .rgbOnly)
+        #expect(scenePolicy.writeMask == [.red, .green, .blue])
         #expect(fboPolicy == .all)
         #expect(fboPolicy.writeMask == .all)
     }
 
     @Test("Blend mode never changes alpha writes for render-graph targets")
     func alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph() {
-        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "disabled") == .all)
-        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "premultipliedDisabled") == .all)
-        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "normal") == .all)
+        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "disabled") == .rgbOnly)
+        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "premultipliedDisabled") == .rgbOnly)
+        #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .scene, blendMode: "normal") == .rgbOnly)
         #expect(WPEMetalAlphaWritePolicy.resolve(targetID: .named("_rt_guard"), blendMode: "additive") == .all)
 
         let attachment = MTLRenderPipelineColorAttachmentDescriptor()
@@ -498,11 +498,9 @@ struct WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        // Opaque albedo means COPYBG contributes nothing: the bounds are the
-        // sRGB encode of 40/90/140 (≈108/160/195), not black and not the red base.
-        #expect(pixel.r >= 90 && pixel.r <= 140)
-        #expect(pixel.g >= 140 && pixel.g <= 180)
-        #expect(pixel.b >= 175 && pixel.b <= 215)
+        // COPYBG contributes nothing to opaque albedo. The UNORM work target
+        // preserves authored storage numbers, without display transfer here.
+        expectPixel(pixel, approximately: Pixel(r: 40, g: 90, b: 140, a: 255), tolerance: 2)
         #expect(pixel.a >= 250)
     }
 
@@ -666,9 +664,10 @@ struct WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        #expect(pixel.r > 20)
-        #expect(pixel.g > 20)
-        #expect(pixel.b > 20)
+        // 128/255 RGB × 5/255 coverage gives about 2.5/255 in number space.
+        #expect(pixel.r >= 2 && pixel.r <= 4)
+        #expect(pixel.g >= 2 && pixel.g <= 4)
+        #expect(pixel.b >= 2 && pixel.b <= 4)
         #expect(pixel.a > 0)
     }
 
@@ -3701,7 +3700,7 @@ struct WPEMetalRenderExecutorTests {
         let visible = try readPixel(output, x: 1, y: 1)
 
         #expect(maskedOut.r <= 5)
-        #expect(maskedOut.a <= 5)
+        #expect(maskedOut.a == 255, "Scene keeps the opaque backdrop coverage")
         #expect(visible.r >= 250)
         #expect(visible.a >= 250)
     }
@@ -4066,8 +4065,8 @@ private func copyPass() -> WPERenderPass {
 }
 
 private extension WPEMetalRenderExecutorTests {
-    @Test("Offscreen output is sRGB-tagged for stable gamma")
-    func outputTextureIsSRGB() throws {
+    @Test("Offscreen output preserves WPE authored channel numbers")
+    func outputTextureUsesNumberDomain() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let pass = solidPass()
@@ -4086,11 +4085,11 @@ private extension WPEMetalRenderExecutorTests {
 
         let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: [:])
 
-        #expect(output.pixelFormat == .rgba8Unorm_srgb)
-        #expect(WPEMetalRenderExecutor.outputPixelFormat == .rgba8Unorm_srgb)
+        #expect(output.pixelFormat == .rgba8Unorm)
+        #expect(WPEMetalRenderExecutor.outputPixelFormat == .rgba8Unorm)
     }
 
-    @Test("solidcolor mid-tone uniform round-trips through sRGB target without gamma double-encoding")
+    @Test("solidcolor mid-tone uses authored numbers in the UNORM target")
     func solidcolorMidToneSRGBRoundTrip() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -4451,12 +4450,12 @@ private struct BlendFixture: Sendable {
 }
 
 private let blendFixtures: [BlendFixture] = [
-    BlendFixture(mode: "normal", expected: Pixel(r: 188, g: 0, b: 188, a: 255)),
-    BlendFixture(mode: "additive", expected: Pixel(r: 188, g: 0, b: 255, a: 255)),
+    BlendFixture(mode: "normal", expected: Pixel(r: 128, g: 0, b: 128, a: 255)),
+    BlendFixture(mode: "additive", expected: Pixel(r: 128, g: 0, b: 255, a: 255)),
     BlendFixture(mode: "multiply", expected: Pixel(r: 0, g: 0, b: 0, a: 255)),
-    BlendFixture(mode: "translucent", expected: Pixel(r: 188, g: 0, b: 188, a: 255)),
-    BlendFixture(mode: "normalmapped", expected: Pixel(r: 188, g: 0, b: 188, a: 255)),
-    BlendFixture(mode: "disabled", expected: Pixel(r: 255, g: 0, b: 0, a: 128))
+    BlendFixture(mode: "translucent", expected: Pixel(r: 128, g: 0, b: 128, a: 255)),
+    BlendFixture(mode: "normalmapped", expected: Pixel(r: 128, g: 0, b: 128, a: 255)),
+    BlendFixture(mode: "disabled", expected: Pixel(r: 255, g: 0, b: 0, a: 255)),
 ]
 
 private extension WPEMetalRenderExecutorTests {
@@ -5184,7 +5183,10 @@ private extension WPEMetalRenderExecutorTests {
         let output = try executor.render(pipeline: pipeline, size: CGSize(width: 2, height: 2), textures: [:])
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        #expect(pixel.a <= 5)
+        #expect(pixel.a == 255)
+        let captured = try executor.targetPool.texture(for: .layerComposite(name: compositeName), layer: layer,
+                                                       sceneSize: CGSize(width: 2, height: 2), avoiding: nil)
+        #expect(try readPixel(captured, x: 1, y: 1).a <= 5, "CLEARALPHA remains observable in the local FBO")
     }
 
     @Test("Resolves previous to the most recent write to the same FBO target")
@@ -5333,7 +5335,7 @@ private extension WPEMetalRenderExecutorTests {
         let recovered = try #require(executor.bootstrapPreviousTextureCache.values.first)
         let outputPixel = try readPixel(output, x: 1, y: 1)
         let recoveredPixel = try readPixel(recovered.texture, x: 1, y: 1)
-        #expect(outputPixel == transparentBlack)
+        #expect(outputPixel == Pixel(r: 0, g: 0, b: 0, a: 255))
         #expect(recoveredPixel == transparentBlack)
 
         // `render` waits for the GPU, but the completed handler that marks the clear ready may still be in flight.
@@ -5423,7 +5425,7 @@ private extension WPEMetalRenderExecutorTests {
         #expect(pixel.r <= 5)
         #expect(pixel.g <= 5)
         #expect(pixel.b <= 5)
-        #expect(pixel.a <= 5)
+        #expect(pixel.a == 255)
     }
 
     @Test("Applies WPE blend factors", arguments: blendFixtures)
@@ -5561,9 +5563,9 @@ private extension WPEMetalRenderExecutorTests {
         let pixel = try readPixel(output, x: 2, y: 2)
 
         #expect(pixel.r <= 5)
-        #expect(abs(Int(pixel.g) - 188) <= 4)
+        #expect(abs(Int(pixel.g) - 128) <= 4)
         #expect(pixel.b <= 5)
-        #expect(abs(Int(pixel.a) - 128) <= 4)
+        #expect(pixel.a == 255)
     }
 
     @Test("compose tints layer composites into the scene")
@@ -5793,7 +5795,7 @@ private extension WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 0, y: 0)
 
-        expectPixel(pixel, approximately: Pixel(r: 127, g: 127, b: 127, a: 255))
+        expectPixel(pixel, approximately: Pixel(r: 54, g: 54, b: 54, a: 255))
     }
 
     @Test("Blur built-in applies centered 9 tap kernel")
@@ -5842,7 +5844,7 @@ private extension WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 4, y: 0)
 
-        expectPixel(pixel, approximately: Pixel(r: 118, g: 0, b: 0, a: 255))
+        expectPixel(pixel, approximately: Pixel(r: 46, g: 0, b: 0, a: 255))
     }
 
     @Test("Vignette built-in darkens outside outer radius")
@@ -6281,7 +6283,7 @@ private func staticCachePreparedLayer(
 
 @Suite("WPE generic image layer tint")
 struct WPEGenericImageLayerTintTests {
-    @Test("Layer color reaches the generic image uniforms in linear space")
+    @Test("Layer color reaches generic image uniforms as authored numbers")
     func layerColorReachesGenericImageUniforms() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -6323,10 +6325,9 @@ struct WPEGenericImageLayerTintTests {
 
         let uniforms = executor.genericImageUniforms(for: prepared, layer: layer, hasMask: false)
 
-        // sRGB→linear of the authored tint, same conversion the g_Color
-        // constant path applies (0.5 → 0.2140, 0.25 → 0.0509).
-        #expect(abs(uniforms.color.x - 0.21404) < 0.001)
-        #expect(abs(uniforms.color.y - 0.05088) < 0.001)
+        // Authored tint channel numbers pass through unchanged.
+        #expect(abs(uniforms.color.x - 0.5) < 0.001)
+        #expect(abs(uniforms.color.y - 0.25) < 0.001)
         #expect(abs(uniforms.color.z - 1.0) < 0.001)
         #expect(uniforms.color.w == 1)
     }
@@ -6357,7 +6358,7 @@ struct WPEMetalProjectedGeometryCullingTests {
         source: MTLTexture, camera: WPEMetalCameraUniforms
     ) throws -> [UInt8] {
         let output = try executor.render(pipeline: pipeline, size: size, textures: ["white": source], cameraUniforms: camera)
-        #expect(output.pixelFormat == .rgba8Unorm_srgb)
+        #expect(output.pixelFormat == .rgba8Unorm)
         let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
         var result = [UInt8](repeating: 0, count: output.width * output.height * 4)
         result.withUnsafeMutableBytes {
@@ -6385,13 +6386,13 @@ struct WPEMetalProjectedGeometryCullingTests {
             ])
         }
         let expected = try bytes(executor: executor, pipeline: pipeline(cull: "nocull"), source: source, camera: camera)
-        #expect(expected.contains { $0 != 0 })
+        #expect(expected.enumerated().contains { index, byte in index % 4 != 3 && byte != 0 })
         for cull in ["normal", "back"] {
             let actual = try bytes(executor: executor, pipeline: pipeline(cull: cull), source: source, camera: camera)
             #expect(actual == expected)
         }
         let front = try bytes(executor: executor, pipeline: pipeline(cull: "front"), source: source, camera: camera)
-        #expect(front.allSatisfy { $0 == 0 })
+        #expect(front.enumerated().allSatisfy { index, byte in byte == (index % 4 == 3 ? 255 : 0) })
     }
 
     @Test("Scene model meshes retain camera-dependent winding for both projections", arguments: [false, true])
@@ -6428,13 +6429,13 @@ struct WPEMetalProjectedGeometryCullingTests {
             ])
         }
         let expected = try bytes(executor: executor, pipeline: pipeline(cull: "nocull"), source: source, camera: camera)
-        #expect(expected.contains { $0 != 0 })
+        #expect(expected.enumerated().contains { index, byte in index % 4 != 3 && byte != 0 })
         for cull in ["normal", "back"] {
             let actual = try bytes(executor: executor, pipeline: pipeline(cull: cull), source: source, camera: camera)
             #expect(actual == expected)
         }
         let front = try bytes(executor: executor, pipeline: pipeline(cull: "front"), source: source, camera: camera)
-        #expect(front.allSatisfy { $0 == 0 })
+        #expect(front.enumerated().allSatisfy { index, byte in byte == (index % 4 == 3 ? 255 : 0) })
     }
 }
 
@@ -6514,7 +6515,7 @@ struct WPEMetalInitialSceneClearTests {
             sceneCamera: .defaultCamera, sceneHDR: hdr
         )
         let output = try executor.render(pipeline: pipeline, size: size, textures: ["input": input], cameraUniforms: camera)
-        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm_srgb))
+        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm))
         let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
         let stride = output.width * (hdr ? 8 : 4)
         var bytes = [UInt8](repeating: 0, count: stride * output.height)

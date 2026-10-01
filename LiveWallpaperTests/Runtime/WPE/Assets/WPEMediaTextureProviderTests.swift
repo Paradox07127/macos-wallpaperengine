@@ -277,7 +277,7 @@ struct WPEMediaTextureProviderTests {
         #expect(pixel.b < 100)
     }
 
-    @Test("A pass whose shader cannot translate leaves its cleared composite readable")
+    @Test("A skipped shader publishes a transparent composite onto an opaque scene")
     func skippedShaderPassStillPublishesItsClearedComposite() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -292,7 +292,8 @@ struct WPEMediaTextureProviderTests {
         // and the scene still rendered instead of dying on the downstream `_a` read.
         #expect(executor.untranslatableShaderReasonByPassID["broken.0"] != nil)
         let pixel = try Self.readPixel(output, x: 2, y: 2)
-        #expect(pixel.a < 10, "a skipped pass publishes its cleared (transparent) target")
+        #expect(pixel.r == 0 && pixel.g == 0 && pixel.b == 0)
+        #expect(pixel.a == 255, "normal composition must preserve the opaque scene backdrop")
     }
 
     // MARK: - Fixtures

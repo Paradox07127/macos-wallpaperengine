@@ -120,13 +120,12 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "                safety.complete()\n                return false",
             in: runtime
         ) == 0)
-        // 5 = the two single-event lanes (layer media, transform media), the two batch
-        // variants, and the layer cursor batch; every one releases the safety claim on
-        // the permit-refused path.
+        // 4 = the two single-event media lanes (layer, transform) and their two batch
+        // variants; every one releases the safety claim on the permit-refused path.
         #expect(RR10ProductionSource.occurrences(
             of: "                asyncExecutionSafety.complete(safety)\n                return false",
             in: runtime
-        ) == 5)
+        ) == 4)
         // The synchronous runner owns its reservation outright and must keep
         // releasing it directly; this pins the two forms apart.
         #expect(RR10ProductionSource.occurrences(

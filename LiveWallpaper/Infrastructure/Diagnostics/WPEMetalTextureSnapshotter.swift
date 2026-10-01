@@ -72,8 +72,8 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             }
             bytes = swizzled
         case .rgba16Float:
-            // Linear HDR output (bloom scenes): clamp to SDR and sRGB-encode — the same clamp the unorm drawable applies, so the poster matches the frame the user sees.
-            bytes = convertRGBA16FloatToSRGB8(texture)
+            // Encoded HDR work texture: mirror terminal combine_hdr and the SDR attachment transfer.
+            bytes = convertAuthoredHDRToSRGB8(texture)
         default:
             Logger.warning(
                 "[snapshot] unsupported pixel format \(texture.pixelFormat.rawValue) (\(texture.width)x\(texture.height)) — no poster",
@@ -245,7 +245,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
 
     /// Internal (not private): the renderer's DEBUG PNG dump path reuses it — the
     /// sampling fallback there renders float targets black.
-    static func convertRGBA16FloatToSRGB8(_ texture: MTLTexture) -> [UInt8] {
+    static func convertAuthoredHDRToSRGB8(_ texture: MTLTexture) -> [UInt8] {
         let pixelCount = texture.width * texture.height
         var halves = [UInt16](repeating: 0, count: pixelCount * 4)
         texture.getBytes(
@@ -258,7 +258,10 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         for pixel in 0..<pixelCount {
             let base = pixel * 4
             for channel in 0..<3 {
-                let linear = clampedUnit(Float(Float16(bitPattern: halves[base + channel])))
+                let number = Float(Float16(bitPattern: halves[base + channel]))
+                let positive = number.isFinite ? max(number, 0) : 0
+                let decoded = positive <= 0.04045 ? positive / 12.92 : pow((positive + 0.055) / 1.055, 2.4)
+                let linear = clampedUnit(min(decoded, 1) * 3)
                 out[base + channel] = UInt8(sRGBEncode(linear) * 255 + 0.5)
             }
             let alpha = clampedUnit(Float(Float16(bitPattern: halves[base + 3])))

@@ -154,7 +154,7 @@ struct WPERenderFidelityRegressionTests {
         let library = try device.makeLibrary(source: translated.mslSource + "\n" + vertex, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "fidelity_vertex")
-        descriptor.fragmentFunction = library.makeFunction(name: "wpe_translated_fragment")
+        descriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: "wpe_translated_fragment", format: .rgba8Unorm)
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
         WPEMetalPipelineCache.applyBlendMode(blend, to: descriptor.colorAttachments[0])
         let state = try device.makeRenderPipelineState(descriptor: descriptor)

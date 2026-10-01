@@ -60,7 +60,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     func makeTexture(
         from payload: WPETexTexturePayload,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
         preserveMipmaps: Bool = false
     ) async throws -> MTLTexture {
@@ -93,7 +93,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     func makeLazyAnimatedTextureSource(
         from payload: WPETexStreamingPayload,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB
+        colorSpace: WPEMetalColorSpace = .linear
     ) throws -> WPETexLazyAnimatedTextureSource {
         try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label, colorSpace: colorSpace)
     }
@@ -102,7 +102,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     func makeAnimatedTextureSource(
         from payload: WPETexTexturePayload,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB
+        colorSpace: WPEMetalColorSpace = .linear
     ) async throws -> WPETexAnimatedTextureSource {
         guard let animation = payload.animationTrack else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing animation track")
@@ -158,7 +158,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     func makeTexture(
         from cgImage: CGImage,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
         sourcePixelSize: (width: Int, height: Int)? = nil
     ) async throws -> MTLTexture {
@@ -224,7 +224,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         label: String,
         device: MTLDevice,
         capabilities: WPEMetalTextureCapabilities,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
         preserveMipmaps: Bool = false
     ) throws -> MTLTexture {

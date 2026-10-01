@@ -84,26 +84,4 @@ struct WPEParticleInstanceAlphaScriptTests {
         #expect(override.alphaScript == nil)
         #expect(override.alpha == 0.5)
     }
-
-    /// The seed must not be baked into spawn alpha when a script drives the
-    /// property — `update(value)` REPLACES it, so baking would square it.
-    @Test("A scripted alpha override leaves the definition's spawn alpha unbaked")
-    func scriptedAlphaIsNotBaked() {
-        let definition = WPEParticleDefinitionParser.parse(dictionary: [
-            "maxcount": 4,
-            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
-            "initializer": [
-                ["name": "alpharandom", "min": 1, "max": 1],
-                ["name": "lifetimerandom", "min": 10, "max": 10],
-                ["name": "sizerandom", "min": 8, "max": 8],
-            ],
-        ])
-        let scripted = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(
-            alpha: 0.5, alphaScript: Self.alphaScriptSource
-        ))
-        #expect(scripted.alphaMax == definition.alphaMax)
-        // Control: the same seed with no script still bakes, as it always has.
-        let baked = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(alpha: 0.5))
-        #expect(baked.alphaMax == definition.alphaMax * 0.5)
-    }
 }

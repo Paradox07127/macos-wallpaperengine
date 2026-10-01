@@ -5,15 +5,15 @@ import Testing
 @Suite("WPE Metal texture format mapper")
 struct WPEMetalTextureFormatMapperTests {
 
-    @Test("Defaults to sRGB pixel formats for color textures")
-    func defaultsToSRGBForColorFormats() throws {
+    @Test("Defaults to identity-transfer views for WPE color textures")
+    func defaultsToIdentityTransferForColorFormats() throws {
         let capabilities = WPEMetalTextureCapabilities(supportsBCTextureCompression: true)
 
-        #expect(try WPEMetalTextureFormatMapper.mapping(for: .rgba8888, capabilities: capabilities).pixelFormat == .rgba8Unorm_srgb)
-        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt1, capabilities: capabilities).pixelFormat == .bc1_rgba_srgb)
-        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt3, capabilities: capabilities).pixelFormat == .bc2_rgba_srgb)
-        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt5, capabilities: capabilities).pixelFormat == .bc3_rgba_srgb)
-        #expect(try WPEMetalTextureFormatMapper.mapping(for: .bc7, capabilities: capabilities).pixelFormat == .bc7_rgbaUnorm_srgb)
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .rgba8888, capabilities: capabilities).pixelFormat == .rgba8Unorm)
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt1, capabilities: capabilities).pixelFormat == .bc1_rgba)
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt3, capabilities: capabilities).pixelFormat == .bc2_rgba)
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .dxt5, capabilities: capabilities).pixelFormat == .bc3_rgba)
+        #expect(try WPEMetalTextureFormatMapper.mapping(for: .bc7, capabilities: capabilities).pixelFormat == .bc7_rgbaUnorm)
     }
 
     @Test("Linear color space maps to non-sRGB variants")

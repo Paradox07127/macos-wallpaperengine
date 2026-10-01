@@ -1643,6 +1643,7 @@ struct WPESceneScriptLayerInfo: Sendable {
     let alignment: String
     let parallaxDepth: SIMD2<Double>
     let isParticleSystem: Bool
+    let particleInstanceSeed: WPEParticleInstanceValues
 
     init(
         id: String,
@@ -1656,7 +1657,8 @@ struct WPESceneScriptLayerInfo: Sendable {
         parentName: String?,
         alignment: String = "center",
         parallaxDepth: SIMD2<Double> = .zero,
-        isParticleSystem: Bool = false
+        isParticleSystem: Bool = false,
+        particleInstanceSeed: WPEParticleInstanceValues = .init()
     ) {
         self.id = id
         self.name = name
@@ -1670,6 +1672,7 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.alignment = alignment
         self.parallaxDepth = parallaxDepth
         self.isParticleSystem = isParticleSystem
+        self.particleInstanceSeed = particleInstanceSeed
     }
 }
 
@@ -1682,13 +1685,39 @@ final class WPESharedScriptState: @unchecked Sendable {
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
     private var cursorProjectionMatrix: [Double]?
     private var inverseCursorProjection: simd_double4x4?
+    private var cursorSceneMotion: WPESceneCameraMotionSample?
+
+    private var staticCameraState = WPEStaticCameraScriptSnapshot()
+
+    func seedStaticCamera(_ camera: WPESceneCamera, allowsMutation: Bool = true) {
+        lock.lock(); defer { lock.unlock() }
+        staticCameraState = .init(transforms: .init(eye: camera.eye, center: camera.center, up: camera.up, zoom: 1), allowsMutation: allowsMutation)
+    }
+
+    func staticCameraSnapshot() -> WPEStaticCameraScriptSnapshot {
+        lock.lock(); defer { lock.unlock() }
+        return staticCameraState
+    }
+
+    func restoreStaticCamera(_ snapshot: WPEStaticCameraScriptSnapshot) {
+        lock.lock(); defer { lock.unlock() }
+        staticCameraState = snapshot
+    }
+
+    func publishStaticCamera(_ transforms: WPEScriptCameraTransforms) {
+        lock.lock(); defer { lock.unlock() }
+        guard sceneScriptLoadToken?.acceptsCompletion() ?? true else { return }
+        guard staticCameraState.allowsMutation else { return }
+        staticCameraState = .init(transforms: transforms, hasOverride: true)
+    }
 
     /// Observed WPE 2.8 3D compatibility behavior: cursorWorldPosition is a
     /// point on the camera's far plane, not a ray hit or a canvas pixel. The
     /// public API documents only the 2D case. Use the rendered reversed-Z
     /// matrix so camera pose, FOV, aspect and clip distances stay consistent.
-    func setCursorWorldProjection(_ matrix: [Double]?) {
+    func setCursorWorldProjection(_ matrix: [Double]?, sceneMotion: WPESceneCameraMotionSample? = nil) {
         lock.lock(); defer { lock.unlock() }
+        cursorSceneMotion = matrix == nil ? sceneMotion : nil
         guard matrix != cursorProjectionMatrix else { return }
         cursorProjectionMatrix = matrix
         inverseCursorProjection = nil
@@ -1704,8 +1733,17 @@ final class WPESharedScriptState: @unchecked Sendable {
     }
 
     func cursorWorldPosition(pointer: SIMD2<Double>, canvasSize: SIMD2<Double>, fallbackZ: Double = 0) -> SIMD3<Double> {
-        projectedCursorWorldPosition(pointer: pointer)
-            ?? SIMD3(pointer.x * canvasSize.x, (1 - pointer.y) * canvasSize.y, fallbackZ)
+        if let projected = projectedCursorWorldPosition(pointer: pointer) {
+            return projected
+        }
+        lock.lock()
+        let motion = cursorSceneMotion
+        lock.unlock()
+        let screen = SIMD2(pointer.x * canvasSize.x, (1 - pointer.y) * canvasSize.y)
+        guard let motion else { return SIMD3(screen.x, screen.y, fallbackZ) }
+        // Zoom pivots about the canvas centre.
+        return WPECameraMotionProjection.cursor(pointer: pointer, size: canvasSize, motion: motion)
+            ?? SIMD3(screen.x, screen.y, fallbackZ)
     }
 
     func projectedCursorWorldPosition(pointer: SIMD2<Double>) -> SIMD3<Double>? {
@@ -1723,6 +1761,25 @@ final class WPESharedScriptState: @unchecked Sendable {
     // holding its own lock; particle commits hold the token before this lock.
     private let particleLock = NSLock()
     private var particlePlaybackByID: [String: WPEParticlePlaybackSnapshot] = [:]
+    private var particleInstanceByID: [String: WPEParticleInstanceValues] = [:]
+
+    func publishParticleInstanceValues(_ values: [String: WPEParticleInstanceValues]) {
+        particleLock.lock(); defer { particleLock.unlock() }
+        particleInstanceByID = values
+    }
+
+    func particleInstanceValues(objectID: String) -> WPEParticleInstanceValues {
+        particleLock.lock(); defer { particleLock.unlock() }
+        var result = particleInstanceByID[objectID]
+            ?? layers.first(where: { $0.id == objectID })?.particleInstanceSeed ?? .init()
+        for event in pendingParticleCommands where event.objectID == objectID {
+            if case let .modify(mutation) = event.command {
+                result.apply(mutation)
+            }
+        }
+        return result
+    }
+
     private var pendingParticleCommands: [WPESceneScriptParticleCommand] = []
     static let maximumPendingParticleCommands = 4096
 
@@ -2690,6 +2747,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private let ownObjectID: String?
         private let shared: WPESharedScriptState?
         private let particleBridge: WPESceneScriptParticleBridge
+        private let cameraBridge: WPESceneScriptCameraBridge
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
         let instanceLimitToken: WPESceneScriptInstanceLimitToken?
@@ -2742,9 +2800,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             self.ownObjectID = ownObjectID
             self.shared = shared
             particleBridge = WPESceneScriptParticleBridge(shared: shared)
+            cameraBridge = WPESceneScriptCameraBridge(shared: shared)
             self.governor = governor
-            self.participant = governor.makeParticipant()
-            self.instanceLimitToken = shared?.sceneScriptLoadToken
+            participant = governor.makeParticipant()
+            instanceLimitToken = shared?.sceneScriptLoadToken
         }
 
         func setUp(
@@ -2933,7 +2992,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             scriptProperties: [String: WPESceneScriptPropertyValue]
         ) -> SetupOutcome {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
             self.context = context
             updateArgument = nil
@@ -2956,6 +3020,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             context.exceptionHandler = { [weak self] _, _ in
                 self?.didThrow = true
                 self?.particleBridge.failEvaluation()
+                self?.cameraBridge.failEvaluation()
             }
 
             didThrow = false
@@ -2998,7 +3063,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             runtimeSeconds: Double?
         ) {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
@@ -3052,7 +3122,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             runtimeSeconds: Double?
         ) -> SIMD3<Double>? {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard let context else { return nil }
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
@@ -3152,7 +3227,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             let size = SIMD2(max(requestedSize.x, 1), max(requestedSize.y, 1))
             guard size != screenSize else { return false }
             screenSize = size
@@ -3171,7 +3251,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func applyGeneralSettingsOnQueue(language: String) -> Bool {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard let context,
                   let function = context.objectForKeyedSubscript("applyGeneralSettings"),
                   !function.isUndefined, function.hasProperty("call"),
@@ -3184,7 +3269,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func destroyOnQueue() -> Bool {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             var invoked = false
             if let context,
                let function = context.objectForKeyedSubscript("destroy"),
@@ -3205,7 +3295,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             _ properties: [String: WPESceneScriptPropertyValue]
         ) -> Bool {
             particleBridge.beginEvaluation()
-            defer { particleBridge.finishEvaluation(commit: acceptsCompletion()) }
+            cameraBridge.beginEvaluation()
+            defer {
+                let commit = acceptsCompletion()
+                particleBridge.finishEvaluation(commit: commit)
+                cameraBridge.finishEvaluation(commit: commit)
+            }
             guard let context,
                   let function = context.objectForKeyedSubscript("applyUserProperties"),
                   !function.isUndefined, function.hasProperty("call"),
@@ -3264,6 +3359,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return self.layerHandle(named: name, in: context)
             }
             scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
+            cameraBridge.install(on: scene, in: context)
             context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
             context.setObject(scene, forKeyedSubscript: "scene" as NSString)
         }

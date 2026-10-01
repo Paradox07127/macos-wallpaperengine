@@ -70,6 +70,7 @@ struct WPEPassColorContract: Codable {
     let schema: String
     let inputs: [Input]
     let shaderOutputAlphaOperation: String
+    let attachmentSourceRangeOperation: String
     let attachment: WPEPixelColorContract
     let blend: Blend
     /// No texture format proves the source asset encoding, explicit shader transfer or display transfer.
@@ -94,13 +95,18 @@ struct WPEPassColorContract: Codable {
         }
         shaderOutputAlphaOperation = alpha.map { $0.premultipliedOutput ? "premultiply-before-attachment" : "no-injected-premultiply" } ?? "unverified"
         attachment = WPEPixelColorContract(target.pixelFormat)
+        attachmentSourceRangeOperation = switch attachment.storage {
+        case .normalized: "clamp-source-rgba-before-blend"
+        case .floatingPoint: "retain-source-range-before-blend"
+        case .unknown: "unverified"
+        }
         let state = nativeState.attachment
         blend = Blend(api: "metal", enabled: state.isBlendingEnabled, sourceRGB: state.sourceRGBBlendFactor.rawValue,
                       destinationRGB: state.destinationRGBBlendFactor.rawValue, sourceAlpha: state.sourceAlphaBlendFactor.rawValue,
                       destinationAlpha: state.destinationAlphaBlendFactor.rawValue, rgbOperation: state.rgbBlendOperation.rawValue,
                       alphaOperation: state.alphaBlendOperation.rawValue, metalWriteMask: state.writeMask.rawValue)
         authoredRGBEncoding = "unverified"
-        shaderRGBArithmetic = "unverified-explicit-shader-transfers"
+        shaderRGBArithmetic = "authored-sample-numbers-with-explicit-shader-transfers"
         finalDisplayTransfer = "outside-pass-contract"
     }
 

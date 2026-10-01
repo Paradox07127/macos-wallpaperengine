@@ -3,6 +3,17 @@ import LiveWallpaperCore
 import os
 import QuartzCore
 
+/// Native failure can return a null-address token despite the SDK's nonnull annotation.
+struct WPERenderThreadShutdownQoS: Sendable {
+    let start: @Sendable (pthread_t) -> pthread_override_t
+    let end: @Sendable (pthread_override_t) -> Void
+
+    static let native = Self(
+        start: { pthread_override_qos_class_start_np($0, QOS_CLASS_USER_INTERACTIVE, 0) },
+        end: { _ = pthread_override_qos_class_end_np($0) }
+    )
+}
+
 /// Persistent serial render thread with a live run loop for display-link callbacks.
 /// Initialization handoff and mutable lifecycle state are synchronized before cross-thread access.
 final class WPERenderThread: @unchecked Sendable {
@@ -118,6 +129,7 @@ final class WPERenderThread: @unchecked Sendable {
     private let cfRunLoop: CFRunLoop
     private let drainSource: CFRunLoopSource
     private let backingPThread: pthread_t
+    private let shutdownQoS: WPERenderThreadShutdownQoS
 
     /// Escape hatch: `defaults write <bundle> loomscreen.wallpapers.adaptiveRenderQoS.v1 -bool NO` pins `.userInteractive`. Default ON.
     static let adaptiveQoSDefaultsKey = "loomscreen.wallpapers.adaptiveRenderQoS.v1"
@@ -141,8 +153,10 @@ final class WPERenderThread: @unchecked Sendable {
     init(
         label: String = "com.livewallpaper.render",
         adaptiveQoSEnabled: Bool? = nil,
-        qosMode: WPERenderQoSMode? = nil
+        qosMode: WPERenderQoSMode? = nil,
+        shutdownQoS: WPERenderThreadShutdownQoS = .native
     ) {
+        self.shutdownQoS = shutdownQoS
         let adaptiveEnabled = adaptiveQoSEnabled ?? Self.adaptiveQoSEnabledFromDefaults
         self.qosMode = qosMode ?? WPERenderQoSMode.resolve(
             environment: adaptiveQoSEnabled == nil ? ProcessInfo.processInfo.environment : [:],
@@ -355,10 +369,12 @@ final class WPERenderThread: @unchecked Sendable {
             return true
         }
         guard !Task.isCancelled else { return false }
-        let override = pthread_override_qos_class_start_np(
-            backingPThread, QOS_CLASS_USER_INTERACTIVE, 0
-        )
-        defer { pthread_override_qos_class_end_np(override) }
+        let override = startShutdownQoSOverride()
+        defer {
+            if let override {
+                shutdownQoS.end(override)
+            }
+        }
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while !lifecycle.hasExitedValue {
@@ -389,15 +405,27 @@ final class WPERenderThread: @unchecked Sendable {
         if lifecycle.hasExitedValue {
             return true
         }
-        let override = pthread_override_qos_class_start_np(
-            backingPThread, QOS_CLASS_USER_INTERACTIVE, 0
-        )
-        defer { pthread_override_qos_class_end_np(override) }
+        let override = startShutdownQoSOverride()
+        defer {
+            if let override {
+                shutdownQoS.end(override)
+            }
+        }
         let exited = lifecycle.waitForExit(until: Date(timeIntervalSinceNow: timeout))
         if !exited {
             logExitTimeout(.seconds(timeout))
         }
         return exited
+    }
+
+    /// Exit publishes under this condition before returning from the native thread. Keep that
+    /// thread alive until the override attempt completes; a valid token then owns its own port.
+    private func startShutdownQoSOverride() -> pthread_override_t? {
+        lifecycle.condition.lock()
+        defer { lifecycle.condition.unlock() }
+        guard !lifecycle.hasExited else { return nil }
+        let token = shutdownQoS.start(backingPThread)
+        return UInt(bitPattern: token) == 0 ? nil : token
     }
 
     private func logExitTimeout(_ timeout: Duration) {

@@ -141,12 +141,10 @@ final class WPEVideoTextureSource {
     private var conversionPipeline: MTLRenderPipelineState?
     private var conversionSetupFailed = false
     private var workingTarget: MTLTexture?
-    private var workingSampleView: MTLTexture?
     /// HDR fallback engaged — outputs are pinned to 32BGRA for the source's lifetime.
     private var forcedBGRAOutput = false
     private var loggedUnsupportedFormat = false
-    private var loggedSRGBWrapFailure = false
-    private var loggedSampleViewFailure = false
+    private var loggedBGRAWrapFailure = false
 
     enum PublishPath {
         case biPlanar
@@ -159,9 +157,8 @@ final class WPEVideoTextureSource {
     private(set) var workingTextureClearsForTesting = 0
     var didForceBGRAOutputForTesting: Bool { forcedBGRAOutput }
     private(set) var publishedFrameCountForTesting = 0
-    /// Fault injection for the two sRGB-decode sites and the allocation clear.
-    var forceSRGBWrapFailureForTesting = false
-    var forceSampleViewFailureForTesting = false
+    /// Fault injection for the BGRA wrap, the allocation clear and the conversion encoder.
+    var forceBGRAWrapFailureForTesting = false
     var forceWorkingTextureClearFailureForTesting = false
     var forceConversionEncoderFailureForTesting = false
     var publishedTextureForTesting: MTLTexture? {
@@ -172,8 +169,7 @@ final class WPEVideoTextureSource {
         lastPlayerLevelPresentationTime
     }
 
-    private(set) var srgbWrapFailuresForTesting = 0
-    private(set) var sampleViewFailuresForTesting = 0
+    private(set) var bgraWrapFailuresForTesting = 0
     #endif
 
     private struct StagedFrame {
@@ -469,7 +465,6 @@ final class WPEVideoTextureSource {
         latest = nil
         CVMetalTextureCacheFlush(textureCache, 0)
         workingTarget = nil
-        workingSampleView = nil
         conversionPipeline = nil
         if #available(macOS 15.0, *), let playerOutput = playerLevelOutput as? WPEPlayerLevelVideoOutput {
             playerOutput.detach()
@@ -606,10 +601,10 @@ final class WPEVideoTextureSource {
         lastPublishPathForTesting = .biPlanar
         #endif
         stage(
-            PublishedFrame(texture: working.sampleView, retainedSourceTextures: [lumaCV, chromaCV]),
+            PublishedFrame(texture: working, retainedSourceTextures: [lumaCV, chromaCV]),
             conversion: PendingConversion(
                 pipeline: pipeline,
-                target: working.target,
+                target: working,
                 luma: lumaTexture,
                 chroma: chromaTexture,
                 uniforms: conversion
@@ -622,7 +617,7 @@ final class WPEVideoTextureSource {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         #if DEBUG
-        let forceWrapFailure = forceSRGBWrapFailureForTesting
+        let forceWrapFailure = forceBGRAWrapFailureForTesting
         #else
         let forceWrapFailure = false
         #endif
@@ -632,7 +627,7 @@ final class WPEVideoTextureSource {
             textureCache,
             pixelBuffer,
             nil,
-            .bgra8Unorm_srgb,
+            .bgra8Unorm,
             width,
             height,
             0,
@@ -642,14 +637,14 @@ final class WPEVideoTextureSource {
               status == kCVReturnSuccess,
               let cvTexture,
               let texture = CVMetalTextureGetTexture(cvTexture) else {
-            // No plain-unorm retry: the renderer would sample its gamma bytes as linear. The last frame stays published.
+            // Refuse failed wraps; keep the last complete frame published.
             #if DEBUG
-            srgbWrapFailuresForTesting += 1
+            bgraWrapFailuresForTesting += 1
             #endif
-            if !loggedSRGBWrapFailure {
-                loggedSRGBWrapFailure = true
+            if !loggedBGRAWrapFailure {
+                loggedBGRAWrapFailure = true
                 Logger.warning(
-                    "[WPE.video] sRGB BGRA wrap failed (CVReturn \(status)) — keeping the last frame",
+                    "[WPE.video] BGRA wrap failed (CVReturn \(status)) — keeping the last frame",
                     category: .wpeRender
                 )
             }
@@ -826,7 +821,7 @@ final class WPEVideoTextureSource {
         guard !conversionSetupFailed else { return nil }
         guard let library = device.makeDefaultLibrary(),
               let vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex"),
-              let fragmentFunction = library.makeFunction(name: "wpe_video_nv12_convert_fragment") else {
+              let fragmentFunction = try? WPEMetalColorOutput.fragment(library: library, name: "wpe_video_nv12_convert_fragment", format: .bgra8Unorm) else {
             conversionSetupFailed = true
             // Same escape hatch as HDR: don't latch into dropping every NV12
             // frame (frozen video) — rebuild the outputs as 32BGRA and keep playing.
@@ -848,10 +843,9 @@ final class WPEVideoTextureSource {
         }
     }
 
-    private func ensureWorkingTexture(width: Int, height: Int) -> (target: MTLTexture, sampleView: MTLTexture)? {
-        if let workingTarget, let workingSampleView,
-           workingTarget.width == width, workingTarget.height == height {
-            return (workingTarget, workingSampleView)
+    private func ensureWorkingTexture(width: Int, height: Int) -> MTLTexture? {
+        if let workingTarget, workingTarget.width == width, workingTarget.height == height {
+            return workingTarget
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm,
@@ -859,34 +853,12 @@ final class WPEVideoTextureSource {
             height: height,
             mipmapped: false
         )
-        // `.pixelFormatView` is required for the sRGB view below; omitting it happens to work on
-        // this Mac but is undocumented tolerance, and a failed view refuses every NV12 frame.
-        descriptor.usage = [.renderTarget, .shaderRead, .pixelFormatView]
+        descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .private
         guard let target = device.makeTexture(descriptor: descriptor) else { return nil }
         target.label = "WPE video NV12 working texture"
-        // The pass stores gamma R'G'B' bytes in a non-sRGB target; the renderer
-        // samples through this sRGB view — byte-identical to the old
-        // `.bgra8Unorm_srgb` CV wrap, with no double gamma conversion.
-        #if DEBUG
-        let forceViewFailure = forceSampleViewFailureForTesting
-        #else
-        let forceViewFailure = false
-        #endif
-        guard !forceViewFailure, let sampleView = target.makeTextureView(pixelFormat: .bgra8Unorm_srgb) else {
-            // Handing out the raw target instead would sample its gamma bytes as linear. The last frame stays published.
-            #if DEBUG
-            sampleViewFailuresForTesting += 1
-            #endif
-            if !loggedSampleViewFailure {
-                loggedSampleViewFailure = true
-                Logger.warning(
-                    "[WPE.video] sRGB view of the NV12 working texture failed — keeping the last frame",
-                    category: .wpeRender
-                )
-            }
-            return nil
-        }
+        // Both NV12 conversion and BGRA ingestion publish identity-transfer R'G'B'
+        // samples. Scene shaders perform arithmetic on those stored numbers.
         // Clear once at allocation, not per frame: texture(at:) hands a staged target out before conversion, so an unwritten .private backing would sample as undefined if the encoder is nil.
         let clearPass = MTLRenderPassDescriptor()
         clearPass.colorAttachments[0].texture = target
@@ -910,8 +882,7 @@ final class WPEVideoTextureSource {
         workingTextureClearsForTesting += 1
         #endif
         workingTarget = target
-        workingSampleView = sampleView
-        return (target, sampleView)
+        return target
     }
 
     func ingestForTesting(pixelBuffer: CVPixelBuffer, drivesFrame: Bool = true) {

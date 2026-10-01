@@ -40,7 +40,7 @@ struct WPETexAnimatedAtlasProvider {
 
     init?(
         payload: WPETexStreamingPayload, device: MTLDevice, label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB
+        colorSpace: WPEMetalColorSpace = .linear
     ) {
         guard let format = payload.info.format,
               (try? WPEMetalTextureFormatMapper.mapping(

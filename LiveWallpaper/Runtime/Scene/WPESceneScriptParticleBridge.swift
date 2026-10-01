@@ -2,16 +2,19 @@
 import Foundation
 import JavaScriptCore
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 
 /// Commands are values crossing the script/render boundary, never simulator references.
 enum WPEParticlePlaybackCommand: Sendable, Equatable {
     case play, pause, stop
     case emit(Int)
+    case modify(WPEParticleInstanceMutation)
 }
 
 struct WPESceneScriptParticleCommand: Sendable, Equatable {
     let objectID: String
     let command: WPEParticlePlaybackCommand
+    var emissionValues: WPEParticleInstanceValues?
 }
 
 struct WPEParticlePlaybackSnapshot: Sendable, Equatable {
@@ -63,7 +66,12 @@ final class WPESceneScriptParticleBridge {
             ))
             return
         }
-        pending.append(.init(objectID: objectID, command: command))
+        let emissionValues: WPEParticleInstanceValues? = if case .emit = command {
+            values(objectID: objectID)
+        } else {
+            nil
+        }
+        pending.append(.init(objectID: objectID, command: command, emissionValues: emissionValues))
     }
 
     private func isPlaying(objectID: String) -> Bool {
@@ -74,13 +82,104 @@ final class WPESceneScriptParticleBridge {
             case .play: snapshot = .init(liveParticleCount: snapshot.liveParticleCount, isEmitting: true)
             case .pause: snapshot = .init(liveParticleCount: snapshot.liveParticleCount, isEmitting: false)
             case .stop: snapshot = .init(liveParticleCount: 0, isEmitting: false)
+            case .modify: break
             case let .emit(count): snapshot = .init(liveParticleCount: max(snapshot.liveParticleCount, count), isEmitting: snapshot.isEmitting)
             }
         }
         return snapshot.isPlaying
     }
 
+    private func values(objectID: String) -> WPEParticleInstanceValues {
+        var values = shared?.particleInstanceValues(objectID: objectID) ?? .init()
+        for event in pending where event.objectID == objectID {
+            if case let .modify(mutation) = event.command {
+                values.apply(mutation)
+            }
+        }
+        return values
+    }
+
+    private func liveVector(property: WPEParticleInstanceProperty, objectID: String, in context: JSContext) -> JSValue? {
+        let value = values(objectID: objectID).value(for: property)
+        guard let vector = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [value.x, value.y, value.z]),
+              let object = context.objectForKeyedSubscript("Object"),
+              let define = object.objectForKeyedSubscript("defineProperty") else { return nil }
+        for (index, component) in ["x", "y", "z"].enumerated() {
+            let get: @convention(block) () -> Double = { [weak self] in
+                self?.values(objectID: objectID).value(for: property)[index] ?? 0
+            }
+            let set: @convention(block) (JSValue) -> Void = { [weak self, weak context] raw in
+                guard let self else { return }
+                guard raw.isNumber, raw.toDouble().isFinite else {
+                    failEvaluation()
+                    if let context {
+                        context.exception = JSValue(newErrorFromMessage: "Particle instance vector component must be finite", in: context)
+                    }
+                    return
+                }
+                var current = values(objectID: objectID).value(for: property)
+                current[index] = raw.toDouble()
+                append(.modify(.init(property: property, value: current)), objectID: objectID)
+            }
+            guard let descriptor = JSValue(newObjectIn: context) else { continue }
+            descriptor.setObject(get, forKeyedSubscript: "get" as NSString)
+            descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
+            descriptor.setObject(true, forKeyedSubscript: "enumerable" as NSString)
+            descriptor.setObject(true, forKeyedSubscript: "configurable" as NSString)
+            define.call(withArguments: [vector, component, descriptor])
+        }
+        return vector
+    }
+
+    private func installInstance(on handle: JSValue, objectID: String, in context: JSContext) {
+        guard let instance = JSValue(newObjectIn: context),
+              let object = context.objectForKeyedSubscript("Object"),
+              let define = object.objectForKeyedSubscript("defineProperty") else { return }
+        for property in WPEParticleInstanceProperty.allCases {
+            let get: @convention(block) () -> JSValue? = { [weak self, weak context] in
+                guard let self, let context else { return nil }
+                let value = values(objectID: objectID).value(for: property)
+                if !property.isVector {
+                    return JSValue(double: value.x, in: context)
+                }
+                return liveVector(property: property, objectID: objectID, in: context)
+            }
+            let set: @convention(block) (JSValue) -> Void = { [weak self, weak context] raw in
+                guard let self else { return }
+                let value: SIMD3<Double>
+                if property.isVector {
+                    let components = ["x", "y", "z"].map { raw.objectForKeyedSubscript($0) }
+                    guard components.allSatisfy({ $0?.isNumber == true && $0?.toDouble().isFinite == true }) else {
+                        failEvaluation()
+                        if let context {
+                            context.exception = JSValue(newErrorFromMessage: "Particle instance vector requires finite x, y, z", in: context)
+                        }
+                        return
+                    }
+                    value = SIMD3(components[0]!.toDouble(), components[1]!.toDouble(), components[2]!.toDouble())
+                } else {
+                    guard raw.isNumber, raw.toDouble().isFinite else {
+                        failEvaluation()
+                        if let context {
+                            context.exception = JSValue(newErrorFromMessage: "Particle instance scalar requires a finite number", in: context)
+                        }
+                        return
+                    }
+                    value = SIMD3(repeating: raw.toDouble())
+                }
+                append(.modify(.init(property: property, value: value)), objectID: objectID)
+            }
+            guard let descriptor = JSValue(newObjectIn: context) else { continue }
+            descriptor.setObject(get, forKeyedSubscript: "get" as NSString)
+            descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
+            descriptor.setObject(true, forKeyedSubscript: "enumerable" as NSString)
+            define.call(withArguments: [instance, property.rawValue, descriptor])
+        }
+        handle.setObject(instance, forKeyedSubscript: "instance" as NSString)
+    }
+
     func install(on handle: JSValue, objectID: String, in context: JSContext) {
+        installInstance(on: handle, objectID: objectID, in: context)
         for (method, command) in [("play", WPEParticlePlaybackCommand.play), ("pause", .pause), ("stop", .stop)] {
             let block: @convention(block) () -> Void = { [weak self] in
                 self?.append(command, objectID: objectID)

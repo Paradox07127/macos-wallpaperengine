@@ -443,6 +443,7 @@ public enum WPESceneDocumentParser {
         return WPESceneDocument(
             sourceJSON: sourceJSON,
             camera: camera,
+            staticCamera: authoredCamera,
             authoredCamera: authoredCameraMetadata,
             authoredCameraObjects: authoredCameraObjects,
             cameraMotion: parseCameraMotion(rawObjects, scriptOrigins: scriptResolvedOrigins),
@@ -1733,14 +1734,30 @@ public enum WPESceneDocumentParser {
         let animation = (entry["origin"] as? [String: Any])?["animation"] as? [String: Any]
         let options = animation?["options"] as? [String: Any]
         let parent = options?["parent"] as? [String: Any]
+        let parsedOriginAnimation = WPEValueParser.animatedValue(entry["origin"])
+        // Unlike other objects' sparse Vec3 tracks, a camera origin animates only when all three channels exist.
+        let originAnimation = parsedOriginAnimation.flatMap { animated in
+            animated.animation.tracks.count == 3 && animated.animation.tracks.allSatisfy { !$0.isEmpty } ? animated : nil
+        }
+        let parsedAnglesAnimation = WPEValueParser.animatedValue(entry["angles"])
+        let anglesAnimation = parsedAnglesAnimation.flatMap { animated in
+            animated.animation.tracks.count == 3 && animated.animation.tracks.allSatisfy { !$0.isEmpty } ? animated : nil
+        }
+        let zoom = entry["zoom"].flatMap(cameraDouble) ?? 1
+        let zoomScript: WPESceneTransformScript? = (entry["zoom"] as? [String: Any]).flatMap { value in
+            guard let script = value["script"] as? String, !script.isEmpty else { return nil }
+            return .init(script: script, scriptProperties: scriptPropertyValues(value["scriptproperties"]), seed: SIMD3(repeating: zoom))
+        }
         return WPESceneCameraMotion(
             objectID: (entry["id"] as? String) ?? String(WPEValueParser.int(entry["id"]) ?? 0),
             origin: localTransform(in: entry, scriptOrigins: scriptOrigins).origin,
-            zoom: entry["zoom"].flatMap(cameraDouble) ?? 1,
-            originAnimation: WPEValueParser.animatedValue(entry["origin"]),
+            zoom: zoom,
+            originAnimation: originAnimation,
             zoomAnimation: WPEValueParser.animatedValue(entry["zoom"]),
             originIsRelative: WPEValueParser.bool(animation?["relative"]) ?? false,
-            originFollowsZoom: parent?["key"] as? String == "zoom"
+            originFollowsZoom: parent?["key"] as? String == "zoom",
+            angles: localTransform(in: entry, scriptOrigins: scriptOrigins).angles,
+            anglesAnimation: anglesAnimation, zoomScript: zoomScript
         )
     }
 
@@ -1767,7 +1784,7 @@ public enum WPESceneDocumentParser {
         if parseVector3(entry["angles"]) != nil {
             diagnostics.append(.init(
                 severity: .warning,
-                message: "Camera object declares angles — not applied (identity orientation assumed)"
+                message: "Camera object orientation is consumed by native 2D geometry; perspective/depth contracts remain unverified"
             ))
         }
         return WPESceneCamera(

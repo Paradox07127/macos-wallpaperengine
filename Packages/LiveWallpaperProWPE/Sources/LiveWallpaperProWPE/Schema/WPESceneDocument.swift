@@ -5,6 +5,8 @@ import LiveWallpaperCore
 public struct WPESceneDocument: Equatable, Sendable {
     public let sourceJSON: WPESceneJSONValue
     public let camera: WPESceneCamera
+    /// Root static camera, distinct from the selected camera object.
+    public let staticCamera: WPESceneCamera
     public let authoredCamera: WPESceneAuthoredCamera
     public let authoredCameraObjects: [WPESceneAuthoredCameraObject]
     public let cameraMotion: WPESceneCameraMotion?
@@ -30,6 +32,7 @@ public struct WPESceneDocument: Equatable, Sendable {
     public init(
         sourceJSON: WPESceneJSONValue = .object([:]),
         camera: WPESceneCamera,
+        staticCamera: WPESceneCamera? = nil,
         authoredCamera: WPESceneAuthoredCamera = .empty,
         authoredCameraObjects: [WPESceneAuthoredCameraObject] = [],
         cameraMotion: WPESceneCameraMotion? = nil,
@@ -49,6 +52,7 @@ public struct WPESceneDocument: Equatable, Sendable {
     ) {
         self.sourceJSON = sourceJSON
         self.camera = camera
+        self.staticCamera = staticCamera ?? camera
         self.authoredCamera = authoredCamera
         self.authoredCameraObjects = authoredCameraObjects
         self.cameraMotion = cameraMotion
@@ -1006,11 +1010,15 @@ public struct WPESceneGeneral: Equatable, Sendable {
     public let lightAmbientColor: SIMD3<Double>
     public let lightSkylightColor: SIMD3<Double>
     public let lightConfiguration: WPESceneLightConfiguration
-    /// WPE `general.hdr`: gates the HDR branches of model materials
-    /// (brightness multiply + emissive overbright in generic4).
+    /// Authored flag retained losslessly. The actual HDR path also requires bloom.
     public let hdr: Bool
     /// Non-nil when the scene enables HDR bloom (`bloom:true` + `hdr:true`).
     public let bloom: WPESceneBloomSettings?
+
+    /// hdr=true with bloom off renders through the ordinary UNORM/g_Color4 path.
+    public var usesHDRRendering: Bool {
+        hdr && bloom != nil
+    }
 
     public init(
         clearColor: SIMD3<Double>,
@@ -1491,13 +1499,13 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
                       x.isFinite, y.isFinite else { return nil }
                 return (endpoint + x * 0.5, y)
             }
-            // Windows WPE 2.8 controls establish the two-enabled-handle case:
-            // x is normalized to HALF the key span, y is an absolute value delta.
-            // `magic` is editor metadata in these controls. One-sided/absent
-            // handles retain the prior linear fallback until independently measured.
-            let front = handle(start.front, endpoint: 0)
-            let back = handle(end.back, endpoint: 1)
-            guard let front, let back else { return start.value + (end.value - start.value) * t }
+            // Handle x is normalized to HALF the key span, y is an absolute value delta; a missing/disabled
+            // handle sits at its endpoint, both missing is linear, and `magic` is editor-only metadata.
+            let frontHandle = handle(start.front, endpoint: 0)
+            let backHandle = handle(end.back, endpoint: 1)
+            guard frontHandle != nil || backHandle != nil else { return start.value + (end.value - start.value) * t }
+            let front = frontHandle ?? (0, 0)
+            let back = backHandle ?? (1, 0)
             let x1 = min(max(front.0, 0), 1)
             let x2 = min(max(back.0, 0), 1)
             let y1 = start.value + front.1

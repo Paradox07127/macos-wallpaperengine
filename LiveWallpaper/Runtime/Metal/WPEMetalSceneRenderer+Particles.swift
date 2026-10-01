@@ -161,8 +161,7 @@ extension WPEMetalSceneRenderer {
         colorSpace: WPEMetalColorSpace? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
-        let colorSpace = colorSpace
-            ?? WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
+        let colorSpace = colorSpace ?? .linear
         let key = ParticleTextureLoadKey(path: relativePath, colorSpace: colorSpace)
         if let cached = particleTextureLoadCache[key] {
             return cached
@@ -185,6 +184,12 @@ extension WPEMetalSceneRenderer {
         from document: WPESceneDocument,
         on actor: isolated WPEDisplayRenderActor
     ) async {
+        particleIndependentSystems.removeAll()
+        particleInstanceCoordinator = nil
+        particleTemplates.removeAll()
+        particleRootTemplates.removeAll()
+        particleTemplateTextures.removeAll()
+        particleTemplateNormals.removeAll()
         particleSystems.removeAll(keepingCapacity: true)
         particleTextures.removeAll(keepingCapacity: true)
         particleNormalTextures.removeAll(keepingCapacity: true)
@@ -206,88 +211,67 @@ extension WPEMetalSceneRenderer {
                 childTransform: .identity,
                 ancestry: [],
                 parentSystem: nil,
-                followFromParent: false,
                 object: object,
                 sortIndex: document.objectPaintOrder[object.id] ?? 0,
                 groupEffect: groupEffect,
                 on: actor
             )
         }
+        func containsEvent(_ template: WPEParticleTemplate) -> Bool {
+            template.children.contains { $0.reference.rollsProbabilityPerEvent || $0.reference.setsParentParticleControlPoints || containsEvent($0.template) }
+        }
+        let eventRoots = particleRootTemplates.filter(containsEvent)
+        var independentIDs: Set<ObjectIdentifier> = []
+        func includeIndependent(_ template: WPEParticleTemplate) {
+            independentIDs.insert(ObjectIdentifier(template.prototype))
+            for child in template.children {
+                if child.reference.probability >= 1 || Double.random(in: 0 ..< 1) < child.reference.probability {
+                    includeIndependent(child.template)
+                }
+            }
+        }
+        for root in particleRootTemplates where !containsEvent(root) {
+            includeIndependent(root)
+        }
+        particleTemplateTextures = particleTextures
+        particleTemplateNormals = particleNormalTextures
+        particleIndependentSystems = particleSystems.filter { independentIDs.contains(ObjectIdentifier($0)) }
+        particleSystems = particleIndependentSystems
+        // An event root must not change unrelated roots' existing warm-up/RNG path.
         prewarmParticleSystems()
+        if !eventRoots.isEmpty {
+            particleInstanceCoordinator = WPEParticleInstanceCoordinator(
+                templates: eventRoots, device: executor.textureSourceDevice,
+                seed: WPEOracleMode.isEnabled
+                    ? WPEParticleSystem.deterministicSeed(workshopID: descriptor.workshopID, objectID: "event-tree", sortIndex: 0)
+                    : UInt64.random(in: .min ... .max)
+            )
+            let oracleReplaySeconds = WPEOracleMode.isEnabled ? WPEOracleMode.loadFrameOverride()?.baseTime : nil
+            let seconds = Dictionary(uniqueKeysWithValues: eventRoots.map { template in
+                (ObjectIdentifier(template.prototype), Self.particlePrewarmSeconds(
+                    for: template.prototype.definition, manualPrewarmEnabled: Self.particlePrewarmEnabled,
+                    oracleReplaySeconds: oracleReplaySeconds
+                ) ?? 0)
+            })
+            particleInstanceCoordinator?.prewarm(secondsByRoot: seconds)
+            synchronizeParticleInstanceBindings()
+        }
     }
 
-    /// `starttime` is a simulation offset. `followParent` chains must prewarm in lockstep with the frame-loop injection rule; independent prewarm would empty `eventfollow` children.
+    /// `starttime` is a simulation offset.
     private func prewarmParticleSystems() {
         guard !particleSystems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
             ? WPEOracleMode.loadFrameOverride()?.baseTime
             : nil
-        let presimulateDelay = true
-        let seconds = particleSystems.map {
-            Self.particlePrewarmSeconds(
-                for: $0.definition,
+        for system in particleSystems {
+            guard let seconds = Self.particlePrewarmSeconds(
+                for: system.definition,
                 manualPrewarmEnabled: Self.particlePrewarmEnabled,
                 oracleReplaySeconds: oracleReplaySeconds
-            )
+            ) else { continue }
+            system.prewarm(simulatedSeconds: seconds, presimulateDelay: true)
         }
-        // DFS registration: a parent precedes its children, so the chain index is already assigned.
-        var chains: [[Int]] = []
-        var chainIndexBySystem: [ObjectIdentifier: Int] = [:]
-        for (index, system) in particleSystems.enumerated() {
-            let chainIndex: Int
-            if let parent = system.followParent,
-               let parentChain = chainIndexBySystem[ObjectIdentifier(parent)] {
-                chainIndex = parentChain
-                chains[parentChain].append(index)
-            } else {
-                chainIndex = chains.count
-                chains.append([index])
-            }
-            chainIndexBySystem[ObjectIdentifier(system)] = chainIndex
-        }
-        for chain in chains {
-            let eligible = chain.compactMap { index in
-                seconds[index].map { (system: particleSystems[index], seconds: $0) }
-            }
-            // One live member keeps the prior spawn sequence (scenes without an eventfollow pair).
-            if eligible.count > 1 {
-                Self.prewarmFollowChain(eligible, presimulateDelay: presimulateDelay)
-            } else if let only = eligible.first {
-                only.system.prewarm(simulatedSeconds: only.seconds,
-                                    presimulateDelay: presimulateDelay)
-            }
-        }
-    }
-
-    /// Shared clock, parents first, so a child spawns at the position its parent reached on the same substep. Windows align by their end (longer `starttime` started earlier).
-    nonisolated static func prewarmFollowChain(
-        _ chain: [(system: WPEParticleSystem, seconds: Double)],
-        presimulateDelay: Bool,
-        step: Double = 1.0 / 60
-    ) {
-        guard step > 0, let longest = chain.map(\.seconds).max(), longest > 0 else { return }
-        // One chain-wide window: a short-lived child must not start before the parent it rides.
-        let convergence = chain.map(\.system.definition.lifetimeMax)
-            .filter(\.isFinite)
-            .max()
-        var members: [(system: WPEParticleSystem, offset: Double, span: ClosedRange<Double>)] = []
-        for member in chain {
-            guard let span = member.system.beginPrewarm(simulatedSeconds: member.seconds,
-                                                        presimulateDelay: presimulateDelay,
-                                                        convergenceSeconds: convergence)
-            else { continue }
-            members.append((member.system, longest - member.seconds, span))
-        }
-        for substep in 0..<Int((longest / step).rounded(.up)) {
-            let wall = min(longest, Double(substep + 1) * step)
-            for member in members {
-                let local = wall - member.offset
-                guard local > member.span.lowerBound else { continue }
-                injectFollowControlPoint(into: member.system)
-                member.system.prewarmStep(to: min(local, member.span.upperBound))
-            }
-        }
-        for member in members { member.system.endPrewarm() }
     }
 
     /// A `composelayer` ancestor's tint + opacity mask must be baked on (particles draw to scene).
@@ -330,14 +314,13 @@ extension WPEMetalSceneRenderer {
         return (maskTexture, tint)
     }
 
-    /// Dedup per ancestry chain so same-path siblings with different `origin` (matrix-rain columns) each instantiate. `renderer: []` expands but does not register.
+    /// Dedup per ancestry chain so same-path siblings with different `origin` (matrix-rain columns) each instantiate.
     private func expandParticleTree(
         path: String,
         parentPath: String?,
         childTransform: WPEParticleChildTransform,
         ancestry: [String],
         parentSystem: WPEParticleSystem?,
-        followFromParent: Bool,
         object: WPESceneParticleObject,
         sortIndex: Int,
         groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>)? = nil,
@@ -359,43 +342,39 @@ extension WPEMetalSceneRenderer {
             debugStage("particle", "skip \(object.name) — particle definition load failed: \(particlePath)")
             return
         }
-        let definition = parsedDefinition.applying(instanceOverride: object.instanceOverride)
-        let registered: WPEParticleSystem?
-        if definition.rendersSprite {
-            registered = await registerParticleSystem(
-                definition: definition,
-                object: object,
-                particlePath: particlePath,
-                followParent: followFromParent ? parentSystem : nil,
-                requiresFollowParent: followFromParent,
-                sortIndex: sortIndex,
-                isNestedChild: !ancestry.isEmpty,
-                childTransform: childTransform,
-                groupEffect: groupEffect,
-                on: actor
-            )
-            // Only eventfollow currently consumes parent births in the pooled simulator.
-            // Spawn/death types are preserved but still lack per-parent child instances.
-            if let registered, let childReference, childReference.isEventFollow {
-                registered.spawnProbability = childReference.probability
-            }
+        // Mutable instance properties are sampled on birth. Only immutable brightness
+        // and the separately authored animation belong in the shared definition.
+        let definition = parsedDefinition.applying(instanceOverride: WPESceneParticleInstanceOverride(
+            brightness: object.instanceOverride?.brightness,
+            alphaAnimation: object.instanceOverride?.alphaAnimation
+        ))
+        // Even renderer:[] parents simulate births/deaths for their child templates.
+        let registered = await registerParticleSystem(
+            definition: definition, object: object, particlePath: particlePath,
+            sortIndex: sortIndex, isNestedChild: !ancestry.isEmpty,
+            childTransform: childTransform, groupEffect: groupEffect, on: actor
+        )
+        guard let registered else { return }
+        let template = WPEParticleTemplate(registered)
+        particleTemplates[ObjectIdentifier(registered)] = template
+        if let parentSystem, let childReference,
+           let parentTemplate = particleTemplates[ObjectIdentifier(parentSystem)] {
+            parentTemplate.children.append(.init(reference: childReference, template: template))
         } else {
-            registered = nil
-            debugStage("particle", "expand-only \(object.name) — renderer disabled: \(particlePath)")
+            particleRootTemplates.append(template)
         }
-        // `renderer:[]` forwards its own parent. A failed rendering parent forwards nil so children stay gated, not silently following the grandparent.
-        let childParentSystem = definition.rendersSprite ? registered : parentSystem
+        let childParentSystem = registered
         let childAncestry = ancestry + [particlePath]
         for child in parsedDefinition.childReferences {
             if case let .unsupported(type) = child.eventKind {
                 debugStage("particle", "skip unsupported child event type \(type): \(child.relativePath)")
                 continue
             }
-            // Event-driven probability belongs in `WPEParticleSystem` (per parent event). Rolling here would freeze the effect for the whole session.
-            // A `static` child's condition is "the system starts", so this is its once-only roll. 0 and 1 are decided outright (corpus is all 1.0).
+            // Probability is rolled when instances are created (per parent event for event children); only a static 0 is pruned here.
             if !child.rollsProbabilityPerEvent {
-                if child.probability <= 0 { continue }
-                if child.probability < 1, Double.random(in: 0..<1) >= child.probability { continue }
+                if child.probability <= 0 {
+                    continue
+                }
             }
             await expandParticleTree(
                 path: child.relativePath,
@@ -403,7 +382,6 @@ extension WPEMetalSceneRenderer {
                 childTransform: childTransform.appending(child),
                 ancestry: childAncestry,
                 parentSystem: childParentSystem,
-                followFromParent: child.isEventFollow,
                 object: object,
                 sortIndex: sortIndex,
                 groupEffect: groupEffect,
@@ -442,8 +420,6 @@ extension WPEMetalSceneRenderer {
         definition: WPEParticleDefinition,
         object: WPESceneParticleObject,
         particlePath: String,
-        followParent: WPEParticleSystem? = nil,
-        requiresFollowParent: Bool = false,
         sortIndex: Int = 0,
         isNestedChild: Bool = false,
         childTransform: WPEParticleChildTransform = .identity,
@@ -454,6 +430,19 @@ extension WPEMetalSceneRenderer {
             .flatMap(parseParticleMaterial(at:))
         let blendMode = material?.blendMode ?? .translucent
         let sceneTransform = makeParticleSceneTransform(for: object, childTransform: childTransform)
+        if !definition.rendersSprite {
+            guard let system = WPEParticleSystem(definition: definition, device: executor.textureSourceDevice,
+                                                 blendMode: blendMode, sceneTransform: sceneTransform,
+                                                 seed: WPEOracleMode.isEnabled ? WPEParticleSystem.deterministicSeed(
+                                                     workshopID: descriptor.workshopID, objectID: object.id, sortIndex: sortIndex
+                                                 ) : nil) else { return nil }
+            system.instanceValues = WPEParticleInstanceValues(override: object.instanceOverride)
+            system.instanceColorBrightnessScale = Float(object.instanceOverride?.brightness ?? 1)
+            system.scriptParticleObjectID = object.id
+            system.sortIndex = sortIndex
+            particleSystems.append(system)
+            return system
+        }
         guard let texturePath = material?.firstTexturePath else {
             debugStage("particle", "skip \(object.name) — material missing texture binding: \(particlePath)")
             return nil
@@ -538,7 +527,7 @@ extension WPEMetalSceneRenderer {
         ) else { return nil }
         #if !LITE_BUILD && DEBUG
         system.traceObjectID = object.id
-        system.traceParticlePath = object.particleRelativePath
+        system.traceParticlePath = particlePath
         #endif
         let parallaxRoot = parallaxRootObjectID(of: object.id)
         system.parallaxDepth = parallaxAuthoredDepthByObjectID[parallaxRoot] ?? object.parallaxDepth
@@ -560,6 +549,8 @@ extension WPEMetalSceneRenderer {
             }
             return chain
         }()
+        system.instanceValues = WPEParticleInstanceValues(override: object.instanceOverride)
+        system.instanceColorBrightnessScale = Float(object.instanceOverride?.brightness ?? 1)
         system.scriptParticleObjectID = object.id
         system.sortIndex = sortIndex
         system.overbright = Self.particleOverbright(
@@ -596,10 +587,6 @@ extension WPEMetalSceneRenderer {
                 system.refractAmount = material?.refractAmount ?? 0.05
                 particleNormalTextures[ObjectIdentifier(system)] = normalTexture
             }
-        }
-        if requiresFollowParent {
-            system.followParent = followParent
-            system.requiresFollowParent = true
         }
         particleSystems.append(system)
         particleTextures[ObjectIdentifier(system)] = resolved

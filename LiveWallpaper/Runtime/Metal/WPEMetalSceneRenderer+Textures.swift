@@ -409,7 +409,7 @@ extension WPEMetalSceneRenderer {
         streamingThreshold: Int,
         maxSourceEdge: Int? = nil
     ) async throws -> WPEParallelTextureResult {
-        let colorSpace = WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
+        let colorSpace = WPEMetalColorSpace.linear
         try Task.checkCancellation()
         var lastError: Error?
         for candidate in candidates {
@@ -636,8 +636,7 @@ extension WPEMetalSceneRenderer {
         maxSourceEdge: Int? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
-        let colorSpace = colorSpace
-            ?? WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
+        let colorSpace = colorSpace ?? .linear
         try Task.checkCancellation()
         var lastError: Error?
         for candidate in textureCandidates(for: relativePath) {

@@ -34,15 +34,21 @@ struct WPESceneCapabilityClassifier: Sendable {
         document: WPESceneDocument,
         resolver: WPEMultiRootResourceResolver
     ) -> SceneCapabilityTier {
-        guard !document.imageObjects.isEmpty else {
-            return .unsupported
-        }
-
         let rendersSomething = document.imageObjects.contains { object in
             isReachable(object.imageRelativePath, through: resolver)
         }
 
-        return rendersSomething ? .imageOnly : .unsupported
+        if rendersSomething {
+            return .imageOnly
+        }
+        // Text produces synthetic glyph layers; particles own their runtime draw path.
+        // Admission is not deep material validation, matching the image path above.
+        if !document.textObjects.isEmpty || document.particleObjects.contains(where: {
+            isReachable($0.particleRelativePath, through: resolver)
+        }) {
+            return .degraded
+        }
+        return .unsupported
     }
 
     private func isReachable(

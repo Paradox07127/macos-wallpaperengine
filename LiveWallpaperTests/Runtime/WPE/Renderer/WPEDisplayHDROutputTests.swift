@@ -8,12 +8,8 @@ import Testing
 struct WPEDisplayHDROutputTests {
     @Test("off keeps the 8-bit sRGB drawable the pre-feature path used")
     func offKeepsLegacyFormat() {
-        #expect(
-            WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: false)
-                == WPEMetalRenderExecutor.outputPixelFormat
-        )
-        // Pin the literal too: outputPixelFormat changing silently would make the
-        // equality above pass while the present path stopped being 8-bit sRGB.
+        // Working attachments and the display attachment have distinct transfer contracts.
+        #expect(WPEMetalRenderExecutor.outputPixelFormat == .rgba8Unorm)
         #expect(WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: false) == .rgba8Unorm_srgb)
     }
 
@@ -55,15 +51,15 @@ struct WPEDisplayHDROutputTests {
         #expect(formats == [.rgba8Unorm_srgb, .rgba16Float, .rgba8Unorm_srgb, .rgba8Unorm_srgb, .rgba8Unorm_srgb])
     }
 
-    @Test("off leaves the layer's colorspace and EDR request untouched")
-    func offLeavesLayerAlone() {
+    @Test("SDR declares the display encoding while keeping EDR disabled")
+    func sdrDeclaresDisplayEncoding() {
         let layer = CAMetalLayer()
         layer.colorspace = nil
         layer.wantsExtendedDynamicRangeContent = false
 
         WPEDisplayHDROutput.apply(to: layer, hdrOutputEnabled: false)
 
-        #expect(layer.colorspace == nil)
+        #expect(layer.colorspace == CGColorSpace(name: CGColorSpace.sRGB))
         #expect(layer.wantsExtendedDynamicRangeContent == false)
     }
 

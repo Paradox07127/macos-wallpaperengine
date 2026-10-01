@@ -23,6 +23,7 @@ extension WPEMetalRenderExecutor {
         case texelSizeHalf
         case screen
         case textureResolution(Int)
+        case textureMipMapInfo(Int)
         case textureRotation(Int)
         case textureTranslation(Int)
     }
@@ -38,6 +39,8 @@ extension WPEMetalRenderExecutor {
         let isScreen: Bool
         /// `g_Texture<N>Resolution` → N. Falls through when slot N is unbound.
         let textureResolutionSlot: Int?
+        /// Canonical scalar mip-level count; arrays and other authored types retain ordinary resolution.
+        let textureMipMapInfoSlot: Int?
         /// Official TEXS globals exist only for sampler slots 0...7. They are
         /// terminal only when this exact binding carries a frame descriptor.
         let textureRotationSlot: Int?
@@ -123,6 +126,7 @@ extension WPEMetalRenderExecutor {
                                          isTexelSizeHalf: uniform.name == Self.texelSizeHalfUniformName,
                                          isScreen: uniform.name == Self.screenUniformName,
                                          textureResolutionSlot: Self.textureResolutionSlotIndex(for: uniform.name),
+                                         textureMipMapInfoSlot: Self.textureMipMapInfoSlotIndex(for: uniform),
                                          textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
                                          textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
                                          effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
@@ -171,12 +175,18 @@ extension WPEMetalRenderExecutor {
             isTexelSizeHalf: uniform.name == Self.texelSizeHalfUniformName,
             isScreen: uniform.name == Self.screenUniformName,
             textureResolutionSlot: Self.textureResolutionSlotIndex(for: uniform.name),
+            textureMipMapInfoSlot: Self.textureMipMapInfoSlotIndex(for: uniform),
             textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
             textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
             effectTextureProjectionInverse: Self.effectTextureProjectionInverse(for: uniform),
             steps: steps,
             defaultValue: uniform.defaultValue
         )
+    }
+
+    private static func textureMipMapInfoSlotIndex(for uniform: WPEUniformSlot) -> Int? {
+        guard uniform.glslType == "float", uniform.arrayLength == nil, uniform.slotCount == 1 else { return nil }
+        return officialTextureSamplingSlotIndex(for: uniform.name, suffix: "MipMapInfo")
     }
 
     private static func effectTextureProjectionInverse(for uniform: WPEUniformSlot) -> Bool? {
@@ -191,6 +201,10 @@ extension WPEMetalRenderExecutor {
     private static func directUniformPacking(for uniform: WPEUniformSlot) -> DirectUniformPacking? {
         guard uniform.arrayLength == nil, uniform.slotCount == 1 else { return nil }
         switch uniform.glslType {
+        case "float":
+            if let slot = textureMipMapInfoSlotIndex(for: uniform) {
+                return .textureMipMapInfo(slot)
+            }
         case "vec2":
             if uniform.name == texelSizeUniformName {
                 return .texelSize
@@ -237,6 +251,9 @@ extension WPEMetalRenderExecutor {
             default:
                 return SIMD4<Float>(Float(width), Float(height), Float(width / height), 0)
             }
+        case let .textureMipMapInfo(slot):
+            guard let texture = texturesBySlot?[slot] else { return nil }
+            return SIMD4<Float>(Float(texture.mipmapLevelCount), 0, 0, 0)
         case let .textureResolution(slot):
             guard let texture = texturesBySlot?[slot] else { return nil }
             let resolution = texturesBySlot?.resolution(at: slot)
@@ -310,6 +327,13 @@ extension WPEMetalRenderExecutor {
             recordUniformSource(.derived(.screen))
             #endif
             return value
+        }
+        if let slot = plan.textureMipMapInfoSlot,
+           let texture = texturesBySlot?[slot] {
+            #if DEBUG
+            recordUniformSource(.derived(.textureMipMapInfo(slot)))
+            #endif
+            return .number(Double(texture.mipmapLevelCount))
         }
         if let slot = plan.textureResolutionSlot,
            let texture = texturesBySlot?[slot] {

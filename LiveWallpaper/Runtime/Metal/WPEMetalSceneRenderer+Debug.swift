@@ -88,8 +88,8 @@ extension WPEMetalSceneRenderer {
             texture = rawTexture
         } else if rawTexture.pixelFormat == .rgba16Float {
             // The sampling fallback below renders HDR float targets black; the
-            // snapshotter's CPU clamp+sRGB conversion is the correct viewer.
-            overrideBytes = WPEMetalTextureSnapshotter.convertRGBA16FloatToSRGB8(rawTexture)
+            // snapshotter's terminal HDR transfer is the matching SDR viewer.
+            overrideBytes = WPEMetalTextureSnapshotter.convertAuthoredHDRToSRGB8(rawTexture)
             texture = rawTexture
         } else if let decoded = executor.debugDecodeToRGBA(rawTexture) {
             texture = decoded

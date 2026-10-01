@@ -71,17 +71,15 @@ enum WPEMetalShaderInputs {
             category: .wpeRender
         )
     }
-    /// WPE scene JSON authors `g_Color` in sRGB perceptual space ("0.5 0.5 0.5" → mid-gray on screen).
+    /// Ordinary material math uses authored channel numbers, like the sampled SRV.
     static func colorVector(for pass: WPEPreparedRenderPass) -> SIMD4<Float> {
         let vector = pass.uniformValues["g_Color"]?.vectorValue
             ?? pass.pass.constants["g_Color"]?.vectorValue
             ?? [1, 1, 1, 1]
-        return SIMD4<Float>(
-            sRGBToLinear(Float(vector[safe: 0] ?? 1)),
-            sRGBToLinear(Float(vector[safe: 1] ?? 1)),
-            sRGBToLinear(Float(vector[safe: 2] ?? 1)),
-            Float(vector[safe: 3] ?? 1)
-        )
+        let rgb = SIMD3<Float>(SIMD3(
+            vector[safe: 0] ?? 1, vector[safe: 1] ?? 1, vector[safe: 2] ?? 1
+        ))
+        return SIMD4(rgb, Float(vector[safe: 3] ?? 1))
     }
 
     static func resolve(
@@ -213,20 +211,8 @@ enum WPEMetalShaderInputs {
         return defaultValue
     }
 
-    static func linearLayerTint(_ rgb: SIMD3<Double>) -> SIMD3<Float> {
-        SIMD3<Float>(
-            sRGBToLinear(Float(rgb.x)),
-            sRGBToLinear(Float(rgb.y)),
-            sRGBToLinear(Float(rgb.z))
-        )
-    }
-
-    private static func sRGBToLinear(_ value: Float) -> Float {
-        let clamped = min(max(value, 0), 1)
-        if clamped <= 0.04045 {
-            return clamped / 12.92
-        }
-        return Float(pow(Double((clamped + 0.055) / 1.055), 2.4))
+    static func layerTint(_ rgb: SIMD3<Double>) -> SIMD3<Float> {
+        SIMD3<Float>(rgb)
     }
 
     private static func scalarFloat(_ value: WPESceneShaderConstantValue?) -> Float? {

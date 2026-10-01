@@ -5,6 +5,7 @@ import LiveWallpaperProWPE
 import Metal
 
 struct WPESceneScriptPresentationSnapshot {
+    var staticCamera: WPEStaticCameraScriptSnapshot?
     let layerVisibility: [String: Bool]
     let textVisibility: [String: Bool]
     let layerAlpha: [String: Double]
@@ -25,6 +26,11 @@ extension WPEMetalSceneRenderer {
     func authoredTransformAnimations(at time: Double) -> LiveScriptTransforms {
         var transforms = LiveScriptTransforms()
         transforms.origins.reserveCapacity(dynamicOriginAnimations.count)
+        // A selected camera owns its first-frame clock and complete-channel admission.
+        // Its children see that same pose without keeping a finished intro active.
+        if let playback = cameraMotionPlayback {
+            transforms.origins[playback.definition.objectID] = cameraUniforms.sceneMotion.origin
+        }
         for (objectID, animation) in dynamicOriginAnimations.sorted(by: { $0.key < $1.key }) {
             guard let value = animation.vector(at: time), value.count >= 3 else { continue }
             transforms.origins[objectID] = SIMD3<Double>(value[0], value[1], value[2])
@@ -34,6 +40,7 @@ extension WPEMetalSceneRenderer {
 
     func captureSceneScriptPresentation() -> WPESceneScriptPresentationSnapshot {
         WPESceneScriptPresentationSnapshot(
+            staticCamera: sceneScriptSharedState?.staticCameraSnapshot(),
             layerVisibility: liveLayerVisibility,
             textVisibility: liveTextVisibility,
             layerAlpha: liveLayerAlpha,
@@ -46,6 +53,9 @@ extension WPEMetalSceneRenderer {
     func restoreSceneScriptPresentation(
         _ snapshot: WPESceneScriptPresentationSnapshot
     ) {
+        if let camera = snapshot.staticCamera {
+            sceneScriptSharedState?.restoreStaticCamera(camera)
+        }
         liveLayerVisibility = snapshot.layerVisibility
         liveTextVisibility = snapshot.textVisibility
         liveLayerAlpha = snapshot.layerAlpha
@@ -139,13 +149,17 @@ extension WPEMetalSceneRenderer {
     /// this after rollback without advancing particle time or emission.
     func updateParticleHostOriginOffsets(using transforms: LiveScriptTransforms) {
         for system in particleSystems {
-            system.hostOriginOffset = .zero
-            guard !system.hostAncestorIDs.isEmpty, !transforms.origins.isEmpty else { continue }
-            for id in system.hostAncestorIDs {
-                guard let now = transforms.origins[id],
-                      let seed = transformHostLocalTransformsByID[id]?.origin else { continue }
-                system.hostOriginOffset += Self.particleHostOriginDelta(now: now, seed: seed)
-            }
+            updateParticleHostOriginOffset(system, using: transforms)
+        }
+    }
+
+    func updateParticleHostOriginOffset(_ system: WPEParticleSystem, using transforms: LiveScriptTransforms) {
+        system.hostOriginOffset = .zero
+        guard !system.hostAncestorIDs.isEmpty, !transforms.origins.isEmpty else { return }
+        for id in system.hostAncestorIDs {
+            guard let now = transforms.origins[id],
+                  let seed = transformHostLocalTransformsByID[id]?.origin else { continue }
+            system.hostOriginOffset += Self.particleHostOriginDelta(now: now, seed: seed)
         }
     }
 
@@ -218,7 +232,11 @@ extension WPEMetalSceneRenderer {
         let committed = authorize {
             let bufferedCommands = sceneScriptVideoCommandBuffer.finish(commit: true)
             let particleCommands = sceneScriptSharedState?.drainParticleCommands() ?? []
-            Self.applyParticlePlaybackCommands(particleCommands, systems: particleSystems)
+            Self.applyParticlePlaybackCommands(particleCommands, systems: particleIndependentSystems)
+            if let coordinator = particleInstanceCoordinator {
+                coordinator.apply(particleCommands)
+                synchronizeParticleInstanceBindings()
+            }
             publishParticlePlaybackSnapshots()
             let shouldAlignIntroPhase = sceneScriptIntroPhaseAlignPending
             sceneScriptIntroPhaseAlignPending = false

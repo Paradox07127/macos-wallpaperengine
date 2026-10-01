@@ -51,7 +51,7 @@ struct WPEVideoHDRAndLegacyOutputTests {
         let frame = try #require(texture, "HDR clip must still publish frames after the BGRA rebuild")
         #expect(frame.width == 64)
         #expect(frame.height == 64)
-        #expect(frame.pixelFormat == .bgra8Unorm_srgb || frame.pixelFormat == .bgra8Unorm)
+        #expect(frame.pixelFormat == .bgra8Unorm)
         #expect(!sawBiPlanarPublish, "PQ frames must never take the NV12 matrix path")
         #expect(source.lastPublishPathForTesting == .bgra)
     }
@@ -82,7 +82,7 @@ struct WPEVideoHDRAndLegacyOutputTests {
         let frame = try #require(texture, "item-level output must publish a frame within 5s")
         #expect(frame.width == 64)
         #expect(frame.height == 64)
-        #expect(frame.pixelFormat == .bgra8Unorm_srgb || frame.pixelFormat == .bgra8Unorm)
+        #expect(frame.pixelFormat == .bgra8Unorm)
         let path = try #require(source.lastPublishPathForTesting)
         #expect(path == .biPlanar || path == .bgra)
     }

@@ -9,6 +9,8 @@ final class WPEInteractiveMTKView: MTKView {
     /// while true does this view consume mouse events.
     var clickCaptureEnabled = false
 
+    private(set) var pointerIsInsideView = false
+
     private(set) var pointerFrame: WPEPointerFrame = .neutral {
         didSet { onPointerFrameChange?(pointerFrame) }
     }
@@ -38,8 +40,12 @@ final class WPEInteractiveMTKView: MTKView {
     /// Top-left-origin normalized UV of an event, matching the scene's UV
     /// convention (same flip as `WPEMetalPointerSampler.normalizedSceneUV`).
     private func uv(for event: NSEvent) -> SIMD2<Double> {
-        guard bounds.width > 0, bounds.height > 0 else { return SIMD2<Double>(0.5, 0.5) }
+        guard bounds.width > 0, bounds.height > 0 else {
+            pointerIsInsideView = false
+            return SIMD2<Double>(0.5, 0.5)
+        }
         let local = convert(event.locationInWindow, from: nil)
+        pointerIsInsideView = bounds.contains(local)
         let x = Double(local.x / bounds.width)
         let y = 1.0 - Double(local.y / bounds.height)
         return SIMD2<Double>(min(max(x, 0), 1), min(max(y, 0), 1))
@@ -71,12 +77,15 @@ final class WPEInteractiveMTKView: MTKView {
 
     override func rightMouseDown(with event: NSEvent) {
         guard clickCaptureEnabled else { super.rightMouseDown(with: event); return }
-        pointerFrame.clickPosition = uv(for: event)
+        let position = uv(for: event)
+        pointerFrame.position = position
+        pointerFrame.clickPosition = position
         pointerFrame.isRightDown = true
     }
 
     override func rightMouseUp(with event: NSEvent) {
         guard clickCaptureEnabled else { super.rightMouseUp(with: event); return }
+        pointerFrame.position = uv(for: event)
         pointerFrame.isRightDown = false
     }
 }

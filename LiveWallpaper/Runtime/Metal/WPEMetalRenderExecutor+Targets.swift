@@ -103,6 +103,7 @@ extension WPEMetalRenderExecutor {
     func releaseRenderScaleDependentResources() {
         targetPool.releaseAll()
         releaseBloomLevels()
+        linearPresentationTexture = nil
         previousFrameHistory = nil
         privateHistoryCandidates.removeAll()
         reflectionSourceTexture = nil

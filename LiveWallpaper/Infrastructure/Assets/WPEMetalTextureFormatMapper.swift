@@ -3,8 +3,8 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 
-/// Color textures request sRGB-encoded pixel formats; data textures (masks,
-/// normal maps, R8/RG8 channels) must stay linear.
+/// Hardware sampling transfer only. WPE defaults to identity transfer for
+/// authored artwork and data; explicit sRGB views remain available to GPU probes.
 enum WPEMetalColorSpace: Equatable, Hashable, Sendable {
     case sRGB
     case linear
@@ -64,40 +64,11 @@ enum WPEMetalTextureLoaderError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
-/// Data namespaces (`effects/`, `masks/`, `util/`) stay linear: a Mac sRGB view would decode authored 0.5 to 0.21.
-/// Prefix match only — substring would catch colour art like `masking tape` / `normalcafe`.
-enum WPEMetalTextureColorSpaceClassifier {
-    private static let dataPrefixes = ["effects/", "masks/", "util/"]
-
-    static func colorSpace(forReference reference: String) -> WPEMetalColorSpace {
-        dataPrefixes.contains(where: normalized(reference).hasPrefix) ? .linear : .sRGB
-    }
-
-    /// Peels `materials/` and `workshop/<id>/` (either order, nestable) so the authored namespace is matched.
-    private static func normalized(_ reference: String) -> String {
-        var path = Substring(reference.lowercased())
-        while true {
-            if path.hasPrefix("materials/") {
-                path = path.dropFirst("materials/".count)
-                continue
-            }
-            if path.hasPrefix("workshop/") {
-                let rest = path.dropFirst("workshop/".count)
-                if let slash = rest.firstIndex(of: "/"), rest[rest.startIndex ..< slash].allSatisfy(\.isNumber) {
-                    path = rest[rest.index(after: slash)...]
-                    continue
-                }
-            }
-            return String(path)
-        }
-    }
-}
-
 enum WPEMetalTextureFormatMapper {
     static func mapping(
         for format: WPETexFormat,
         capabilities: WPEMetalTextureCapabilities,
-        colorSpace: WPEMetalColorSpace = .sRGB
+        colorSpace: WPEMetalColorSpace = .linear
     ) throws -> WPEMetalTextureFormatMapping {
         switch format {
         case .rgba8888:

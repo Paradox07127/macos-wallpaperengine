@@ -116,9 +116,9 @@ extension WPEMetalSceneRenderer {
         return Self.opaqueTextBackground(object.backgroundColor, brightness: object.backgroundBrightness)
     }
 
-    /// Same conversion as the glyphs (`linearLayerTint`): the clear and the text share one target.
+    /// Background and glyphs share the same authored-number target.
     static func opaqueTextBackground(_ color: SIMD3<Double>, brightness: Double) -> SIMD4<Float> {
-        let tint = WPEMetalShaderInputs.linearLayerTint(color)
+        let tint = WPEMetalShaderInputs.layerTint(color)
         let brightness = Float(max(brightness, 0))
         return SIMD4<Float>(tint.x * brightness, tint.y * brightness, tint.z * brightness, 1)
     }
