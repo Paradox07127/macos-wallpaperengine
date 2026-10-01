@@ -728,6 +728,7 @@ final class WPEMetalRenderExecutor {
         diagnostics.solidBatchingEnabled = diagnostics.solidBatchingEnabled && !dumpScenePasses
         diagnostics.sceneQuadBatchingEnabled = diagnostics.sceneQuadBatchingEnabled && !dumpScenePasses
         #endif
+        adoptPrewarmedAuthoredShaders(for: pipeline, camera: cameraUniforms)
         var shaderRuntimeUniforms = runtimeUniforms
         shaderRuntimeUniforms.frameTime = advanceShaderFrameTime(runtimeTime: runtimeUniforms.time)
         let (preparedPipeline, frameUniforms) = pipeline.addingMetalRuntimeUniforms(

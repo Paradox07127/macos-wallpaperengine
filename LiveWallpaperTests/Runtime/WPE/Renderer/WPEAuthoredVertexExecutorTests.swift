@@ -8,10 +8,17 @@ import Testing
 
 @Suite("Authored fullscreen vertex executor contracts", .serialized)
 struct WPEAuthoredVertexExecutorTests {
-    @Test(arguments: [(false, true), (true, true), (true, false)])
-    func dispatcherUsesRealStageOnlyWithItsPrewarmedPipeline(conditions: (Bool, Bool)) throws {
-        let (prewarmed, enabled) = conditions
+    @Test(arguments: [(false, true, false), (true, true, false), (true, false, false),
+                      (false, true, true), (true, true, true), (true, false, true)])
+    func dispatcherUsesRealStageOnlyWithItsPrewarmedPipeline(conditions: (Bool, Bool, Bool)) throws {
+        let (prewarmed, enabled, lookupByContent) = conditions
         let fixture = try fixture(prewarmed: prewarmed)
+        if lookupByContent {
+            let pass = fixture.pipeline.layers[0].passes[0]
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+            fixture.executor.seedTranslatedShaderCache([(key: request.replacingVertexExecution(.authoredFullscreen).translationCacheKey, result: fixture.result)])
+            fixture.executor.authoredShaderResultByPassID.removeAll()
+        }
         fixture.executor.authoredVertexExecutionEnabled = enabled
         let output = try fixture.executor.render(pipeline: fixture.pipeline,
                                                  size: CGSize(width: 4, height: 4), textures: [:])

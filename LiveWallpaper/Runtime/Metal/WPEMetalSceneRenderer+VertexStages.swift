@@ -3,6 +3,32 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
+extension WPEMetalRenderExecutor {
+    /// Runtime-created passes have fresh IDs but may share an already compiled
+    /// stage pair. Adopt only the complete content/execution/PMA cache key;
+    /// dispatch still checks the actual target PSO and all runtime inputs.
+    func adoptPrewarmedAuthoredShaders(for pipeline: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms) {
+        for layer in pipeline.layers {
+            for pass in layer.passes where pass.shader?.isBuiltin == false {
+                guard authoredShaderResultByPassID[pass.id] == nil, authoredVertexFailureByPassID[pass.id] == nil else { continue }
+                let object: Bool = if case .scene = pass.pass.target {
+                    layer.graphLayer.geometry != .identity && Self.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera)
+                } else {
+                    false
+                }
+                guard let request = try? Self.makeCompileRequest(for: pass, recordFailure: false),
+                      let result = translatedShaderCache[request.replacingVertexExecution(object ? .authoredObjectQuad : .authoredFullscreen).translationCacheKey] else {
+                    // Load prewarm is complete before frames. Remember misses so
+                    // an unprepared clone never preprocesses on every frame.
+                    authoredVertexFailureByPassID[pass.id] = "authored-stage-not-prepared"
+                    continue
+                }
+                authoredShaderResultByPassID[pass.id] = result
+            }
+        }
+    }
+}
+
 extension WPEMetalSceneRenderer {
     /// Compile and build authored pairs before any frame encoder is opened.
     /// Failures are retained as explicit admission reasons; the legacy result stays available.
