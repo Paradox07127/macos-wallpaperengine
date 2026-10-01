@@ -4,6 +4,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
 
 @Suite("Authored fullscreen vertex executor contracts", .serialized)
@@ -248,7 +249,7 @@ struct WPEAuthoredVertexExecutorTests {
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
         let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
-        let geometry = WPERenderLayerGeometry(origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(20, 20, 0), scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
                                               size: CGSize(width: 10, height: 10), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
         let layer = WPERenderLayer(objectID: "child", objectName: "child", imagePath: "image", materialPath: nil,
                                    parentObjectID: "parent", geometry: geometry, localGeometry: geometry,
@@ -279,6 +280,8 @@ struct WPEAuthoredVertexExecutorTests {
         let original = fixture.pipeline.layers[0].passes[0]
         let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: original.shader,
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
         let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
                                               alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
                                               color: SIMD3(repeating: 1), brightness: 1)
@@ -324,7 +327,7 @@ struct WPEAuthoredVertexExecutorTests {
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
         let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
         #expect(result.uniformLayout.contains { $0.name == name && $0.materialName == nil })
-        let geometry = WPERenderLayerGeometry(origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(20, 20, 0), scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
                                               size: CGSize(width: 10, height: 10), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
         let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
                                    compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass], parallaxDepth: SIMD2(repeating: 1))
@@ -393,6 +396,10 @@ struct WPEAuthoredVertexExecutorTests {
             : original.shader
         let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: shader,
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
+        if kind == "authored" {
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+            fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        }
         let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, kind == "nonplanar" ? 10 : 0),
                                               scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
                                               alignment: .center, size: CGSize(width: 192, height: 192),
@@ -419,6 +426,121 @@ struct WPEAuthoredVertexExecutorTests {
                                                                     parallax: .init(smoothed: .zero, amount: 0.5, influence: 0),
                                                                     sceneSize: camera.renderSize)
         #expect(context.parallaxDrawMatrixPassIDs.contains(pass.id) == (kind == "authored"))
+    }
+
+    @Test func vertexSkewDoesNotOverwriteAuthoredObjectQuadInputs() throws {
+        func render(skew: Bool) throws -> (pixels: [UInt8], format: MTLPixelFormat) {
+            let fixture = try fixture(prewarmed: true)
+            let original = fixture.pipeline.layers[0].passes[0]
+            let constants: [String: WPESceneShaderConstantValue] = skew
+                ? ["top": .number(0.25), "bottom": .number(0.25), "left": .number(0.25), "right": .number(0.25)] : [:]
+            let authored = WPERenderPass(id: "skew", phase: original.pass.phase, shader: "effects/skew", source: original.pass.source,
+                                         target: .scene, textures: [:], binds: [:], constants: constants, combos: ["MODE": 1],
+                                         blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+            let pass = WPEPreparedRenderPass(pass: authored, shader: original.shader, textureBindings: [:], comboValues: [:], uniformValues: [:])
+            let geometry = WPERenderLayerGeometry(origin: SIMD3(2, 2, 0), scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                                                  size: CGSize(width: 2, height: 2), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+            let layer = WPERenderLayer(objectID: "skew", objectName: "skew", imagePath: "image", materialPath: nil, geometry: geometry,
+                                       compositeA: "a", compositeB: "b", localFBOs: [], passes: [authored])
+            let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [pass])])
+            let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera)
+            #expect(fixture.executor.isVertexSkewPass(pass) == skew)
+            #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+            let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+            fixture.executor.authoredShaderResultByPassID[pass.id] = result
+            let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled")
+            let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
+                                                                              result: result, vertexName: nil, blendMode: "disabled", alphaWritePolicy: alpha,
+                                                                              colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+            let compiled = try #require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))
+            fixture.executor.seedTranslatedPipelines([compiled])
+            let output = try fixture.executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: [:], cameraUniforms: camera)
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: output.pixelFormat, width: 4, height: 4, mipmapped: false)
+            descriptor.storageMode = .shared
+            let staging = try #require(fixture.device.makeTexture(descriptor: descriptor))
+            let command = try #require(fixture.executor.textureSourceCommandQueue.makeCommandBuffer())
+            let blit = try #require(command.makeBlitCommandEncoder())
+            blit.copy(from: output, to: staging)
+            blit.endEncoding(); command.commit(); command.waitUntilCompleted()
+            #expect(command.error == nil)
+            var pixels = [UInt8](repeating: 0, count: 64)
+            pixels.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0) }
+            return (pixels, output.pixelFormat)
+        }
+        let plain = try render(skew: false)
+        let srgb = plain.format == .rgba8Unorm_srgb || plain.format == .bgra8Unorm_srgb
+        let bgra = plain.format == .bgra8Unorm_srgb || plain.format == .bgra8Unorm
+        let band = [0.4375, 0.5625].map { Int((255 * (srgb ? encode($0) : $0)).rounded()) }
+        for (x, y) in [(1, 1), (2, 1), (1, 2), (2, 2)] {
+            let red = Int(plain.pixels[(y * 4 + x) * 4 + (bgra ? 2 : 0)])
+            #expect(band.contains { abs($0 - red) <= 1 })
+        }
+        #expect(try render(skew: true).pixels == plain.pixels)
+    }
+
+    @Test("Object quad admission rejects origins the builtin path treats as scene fractions",
+          arguments: [(SIMD3<Double>(0.5, 0.5, 0), false), (SIMD3<Double>(0, 120, 0), false),
+                      (SIMD3<Double>(1, 1, 0), false), (SIMD3<Double>(208, 84, 0), true)])
+    func objectQuadAdmissionRejectsNormalizedOrigins(origin: SIMD3<Double>, admitted: Bool) {
+        let geometry = WPERenderLayerGeometry(origin: origin, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
+                                              size: CGSize(width: 192, height: 192), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false), sceneCamera: .defaultCamera)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera) == admitted)
+    }
+
+    @Test func parallaxDrawProjectionSkipsPassesWhoseFragmentReadsModelInputs() throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let source = try #require(original.shader)
+        let program = WPEShaderProgram(name: "parallax-fragment-mvp", vertexSource: source.vertexSource,
+                                       fragmentSource: """
+                                       uniform mat4 g_ModelViewProjectionMatrix;
+                                       varying vec4 v_TexCoord;
+                                       void main() {
+                                           gl_FragColor = vec4(v_TexCoord.zw, 0, 1) + g_ModelViewProjectionMatrix[0] * 0.00001;
+                                       }
+                                       """,
+                                       isBuiltin: false)
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: program,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
+                                              color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass], parallaxDepth: SIMD2(repeating: 1))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [pass])])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+        let base = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms
+        var context = base
+        fixture.executor.applyingAuthoredRootParallaxDrawProjection(to: &context, pipeline: pipeline, camera: camera,
+                                                                    parallax: .init(smoothed: .zero, amount: 0.5, influence: 0), sceneSize: camera.renderSize)
+        #expect(context.parallaxDrawMatrixPassIDs.isEmpty)
+        #expect(context.value(named: "g_ModelViewProjectionMatrix", passID: pass.id) == base.value(named: "g_ModelViewProjectionMatrix", passID: pass.id))
+    }
+
+    @Test func effectProjectionRejectsPerspectiveObjects() throws {
+        let fixture = try fixture(prewarmed: true, effectProjection: true)
+        let pass = fixture.pipeline.layers[0].passes[0]
+        let layer = fixture.pipeline.layers[0].graphLayer
+        let texture = try #require(fixture.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)))
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera,
+                                            perspectiveOverrideFOVDegrees: 30, perspectiveObjectIDs: [layer.id])
+        #expect(camera.usesObjectPerspective(objectID: layer.id))
+        let flat = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera,
+                                          perspectiveOverrideFOVDegrees: 30)
+        for (uniforms, expected) in [(flat, nil), (camera, WPEAuthoredVertexRejection.unverifiedEffectProjection3D)] {
+            let frame = WPEMetalFrameState(output: texture, sceneSize: CGSize(width: 4, height: 4), cameraUniforms: uniforms)
+            let rejection = fixture.executor.authoredVertexRejection(for: pass, result: fixture.result, layer: layer, frameState: frame,
+                                                                     effectTextureProjection: { matrix_identity_double4x4 })
+            #expect(rejection == expected)
+        }
     }
 
     private struct Fixture {

@@ -824,8 +824,7 @@ struct WPEMetalShaderDispatcher {
         if result.vertexStage?.execution == .authoredObjectQuad {
             let inputs = WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer)
             inputs.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: 2) }
-        }
-        if usesShapeQuad {
+        } else if usesShapeQuad {
             var shapeUniforms = executor.shapeQuadUniforms(
                 for: layer,
                 sceneSize: executor.objectQuadSceneSize(

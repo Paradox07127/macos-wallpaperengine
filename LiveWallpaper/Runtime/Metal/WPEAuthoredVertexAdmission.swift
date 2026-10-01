@@ -38,6 +38,8 @@ extension WPEMetalRenderExecutor {
               let size = geometry.size, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
               Float(size.width / 2).isFinite, Float(size.height / 2).isFinite,
               geometry.origin.x.isFinite, geometry.origin.y.isFinite, abs(geometry.origin.z) < 0.000001,
+              // centeredOrigin reads 0...1 as a scene fraction; g_ModelMatrix would take it as pixels.
+              !(0 ... 1).contains(geometry.origin.x), !(0 ... 1).contains(geometry.origin.y),
               geometry.scale.x.isFinite, geometry.scale.y.isFinite, geometry.scale.x > 0, geometry.scale.y > 0,
               geometry.angles.z.isFinite, abs(geometry.angles.x) < 0.000001, abs(geometry.angles.y) < 0.000001,
               camera.hasCapturedFlatDrawProjection, !camera.usesPerspectiveProjection,
@@ -74,8 +76,6 @@ extension WPEMetalRenderExecutor {
         for prepared in pipeline.layers {
             let layer = prepared.graphLayer
             guard layer.parentObjectID == nil, layer.parallaxDepth != .zero,
-                  !(layer.geometry.origin.x > 0 && layer.geometry.origin.x <= 1),
-                  !(layer.geometry.origin.y > 0 && layer.geometry.origin.y <= 1),
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: camera) else { continue }
             let center = Self.centeredOrigin(of: layer.geometry, sceneSize: sceneSize)
             let offset = parallax.pixelOffset(objectCenter: parallaxObjectCenter(for: layer, fallback: center),
@@ -86,10 +86,14 @@ extension WPEMetalRenderExecutor {
             translation.columns.3 = SIMD4(Double(offset.x), Double(offset.y), 0, 1)
             let values = WPEMetalObjectUniforms.flattenedColumnMajor(view * translation)
             for pass in prepared.passes where pass.shader?.isBuiltin == false {
-                if case .scene = pass.pass.target {
-                    context.drawViewProjectionMatrixByPassID[pass.id] = .vector(values)
-                    context.parallaxDrawMatrixPassIDs.insert(pass.id)
-                }
+                // The per-pass context also feeds fallback fragments, so only an admissible authored quad may see the offset MVP.
+                guard case .scene = pass.pass.target, let result = authoredShaderResultByPassID[pass.id],
+                      result.vertexStage?.execution == .authoredObjectQuad,
+                      !result.uniformLayout.contains(where: {
+                          $0.materialName == nil && ($0.name.hasPrefix("g_Model") || $0.name.hasPrefix("g_Layer") || $0.name == "g_NormalModelMatrix")
+                      }) else { continue }
+                context.drawViewProjectionMatrixByPassID[pass.id] = .vector(values)
+                context.parallaxDrawMatrixPassIDs.insert(pass.id)
             }
         }
     }
@@ -190,6 +194,7 @@ extension WPEMetalRenderExecutor {
             }
             if plans[index].effectTextureProjectionInverse != nil {
                 guard !frameState.cameraUniforms.usesPerspectiveProjection,
+                      !frameState.cameraUniforms.usesObjectPerspective(objectID: layer.id),
                       abs(frameState.cameraUniforms.sceneMotion.angles.x) < 0.000001,
                       abs(frameState.cameraUniforms.sceneMotion.angles.y) < 0.000001,
                       abs(layer.geometry.angles.x) < 0.000001, abs(layer.geometry.angles.y) < 0.000001 else {
