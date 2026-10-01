@@ -90,6 +90,24 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(declaration + "\n#if UNUSED\nv_Other = gl_Position;\n#endif\nvoid main(){" + position + "}"))
     }
 
+    @Test func fullscreenMVPProofAdmitsReadOnlyPositionAliasesAndRejectsEdits() {
+        let declaration = "attribute vec3 a_Position; uniform mat4 g_ModelViewProjectionMatrix;"
+        let position = "gl_Position = mul(vec4(position, 1.0), g_ModelViewProjectionMatrix);"
+        let prefix = declaration + " void main(){ vec3 position = a_Position;"
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(prefix + position + "}"))
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(
+            declaration + "\n#define MODE 0\nvoid main(){vec3 position=a_Position;\n#if MODE\nposition.xy *= 2.0;\n#endif\n" + position + "}"
+        ))
+        for extra in ["position.xy += vec2(1.0);", "position = vec3(0.0);", "edit(position);", "v_Raw = position.xy;"] {
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(prefix + extra + position + "}"))
+        }
+        for extra in ["a_Position.xy *= 2.0;", "v_Raw = a_Position.xy;"] {
+            #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(
+                declaration + " void main(){" + extra + "gl_Position=mul(vec4(a_Position,1.0),g_ModelViewProjectionMatrix);}"
+            ))
+        }
+    }
+
     @Test func recordedNativeClipMVPDoesNotClaimFullProjectionCoverage() {
         let uniform = WPEUniformSlot(name: "g_ModelViewProjectionMatrix", glslType: "mat4", slot: 0, slotCount: 4,
                                      arrayLength: nil, materialName: nil, defaultValue: nil)

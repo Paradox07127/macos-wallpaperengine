@@ -8,7 +8,23 @@ struct WPEShaderStageLink {
     /// not a proof of WPE's Z projection: depth testing/writes remain separate.
     static func usesMVPOnlyForFullscreenPosition(_ source: String) -> Bool {
         var active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source)
-        active = active.replacingOccurrences(of: #"(?s)/\*.*?\*/|//[^\n]*"#, with: "", options: .regularExpression)
+        active = WPEShaderTranspiler.maskComments(active)
+        if let mainRange = WPEShaderTranspiler.locateMain(in: active),
+           let aliases = try? NSRegularExpression(pattern: #"\b(?:const\s+)?vec3\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*a_Position\s*;"#) {
+            var main = String(active[mainRange])
+            let ns = main as NSString
+            let declarations = aliases.matches(in: main, range: NSRange(main.startIndex..., in: main))
+            for declaration in declarations where declarations.count == 1 {
+                let name = ns.substring(with: declaration.range(at: 1))
+                guard let identifier = try? NSRegularExpression(pattern: "\\b" + NSRegularExpression.escapedPattern(for: name) + "\\b"),
+                      identifier.numberOfMatches(in: main, range: NSRange(main.startIndex..., in: main)) == 2 else { continue }
+                // One declaration and one read: no component writes, helper
+                // arguments, shadowing or additional position-space consumers.
+                main = (main as NSString).replacingCharacters(in: declaration.range, with: "")
+                main = identifier.stringByReplacingMatches(in: main, range: NSRange(main.startIndex..., in: main), withTemplate: "a_Position")
+            }
+            active.replaceSubrange(mainRange, with: main)
+        }
         active = active.replacingOccurrences(of: #"\buniform\s+mat4\s+g_ModelViewProjectionMatrix\s*;"#, with: "", options: .regularExpression)
         let position = #"(?:vec4\s*\(\s*a_Position\s*,\s*1(?:\.0*)?\s*\)|vec4\s*\(\s*a_Position\.xy\s*,\s*0(?:\.0*)?\s*,\s*1(?:\.0*)?\s*\)|a_Position)"#
         let matrix = "g_ModelViewProjectionMatrix"
@@ -19,7 +35,10 @@ struct WPEShaderStageLink {
             + "|" + position + #")\s*;"#
         guard let match = active.range(of: assignment, options: .regularExpression) else { return false }
         active.removeSubrange(match)
-        return !active.contains("g_ModelViewProjectionMatrix") && !active.contains("gl_Position")
+        active = active.replacingOccurrences(of: #"\b(?:attribute|in)\s+(?:vec3|vec4)\s+a_Position\s*;"#, with: "", options: .regularExpression)
+        // The supplied attribute is clip XY. Raw authored position arithmetic
+        // needs its own coordinate producer, even without another matrix read.
+        return !active.contains("g_ModelViewProjectionMatrix") && !active.contains("gl_Position") && !active.contains("a_Position")
     }
 
     struct Varying {
