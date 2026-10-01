@@ -40,8 +40,38 @@ enum WPEShaderInterfaceParser {
             // Include macro bodies and helpers: any additional occurrence keeps the
             // input required, even when a compiler might optimize that read away.
             return identifier.numberOfMatches(in: activeFragment, range: NSRange(activeFragment.startIndex..., in: activeFragment)) == 1
+                || onlyMainLocalReferences(variable.key.name, source: activeFragment)
         }.map(\.key.name)
         return interface
+    }
+
+    /// Prove the simple case: a direct main-scope local shadows the global
+    /// before any read. Nested/loop declarations, macros, helpers and reads in
+    /// the initializer remain required rather than guessing their binding.
+    private static func onlyMainLocalReferences(_ name: String, source: String) -> Bool {
+        guard let mainRange = WPEShaderTranspiler.locateMain(in: source) else { return false }
+        let main = String(source[mainRange])
+        guard let open = main.firstIndex(of: "{") else { return false }
+        let body = String(main[main.index(after: open)...])
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        let word = "\\b" + escaped + "\\b"
+        let declaration = #"\b(?:varying|in)\s+(?:(?:highp|mediump|lowp)\s+)?[A-Za-z_]\w*\s+"# + escaped + #"\s*;"#
+        var outside = source
+        outside.removeSubrange(mainRange)
+        guard let global = try? NSRegularExpression(pattern: declaration),
+              global.numberOfMatches(in: outside, range: NSRange(outside.startIndex..., in: outside)) == 1 else { return false }
+        outside = global.stringByReplacingMatches(in: outside, range: NSRange(outside.startIndex..., in: outside), withTemplate: "")
+        guard outside.range(of: word, options: .regularExpression) == nil else { return false }
+        let localPattern = #"\b(?:const\s+)?(?:float|int|uint|bool|[biu]?vec[234]|mat[234](?:x[234])?)\s+"# + escaped + #"\s*(?==|;)"#
+        guard let match = body.range(of: localPattern, options: .regularExpression) else { return false }
+        let prefix = body[..<match.lowerBound]
+        guard prefix.range(of: word, options: .regularExpression) == nil,
+              prefix.reduce(0, { $0 + ($1 == "{" ? 1 : $1 == "}" ? -1 : 0) }) == 0,
+              prefix.reduce(0, { $0 + ($1 == "(" ? 1 : $1 == ")" ? -1 : 0) }) == 0 else { return false }
+        let preceding = prefix.last { !$0.isWhitespace }
+        guard preceding == nil || preceding == ";" || preceding == "}" else { return false }
+        let initializer = body[match.upperBound...].prefix { $0 != ";" }
+        return initializer.range(of: word, options: .regularExpression) == nil
     }
 
     private static let qualifiers: Set<String> = [

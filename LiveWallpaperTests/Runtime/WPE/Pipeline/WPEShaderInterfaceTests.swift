@@ -68,6 +68,31 @@ struct WPEShaderInterfaceTests {
         #endif
     }
 
+    @Test func mainLocalsShadowMissingGlobalInputsWithoutErasingInventory() throws {
+        let fragment = """
+        varying vec4 timer;
+        varying vec2 rotation;
+        void main() {
+            float timer = 0.625;
+            vec2 rotation = vec2(0.25, 0.75);
+            gl_FragColor = vec4(rotation, timer, 1);
+        }
+        """
+        let interface = WPEShaderInterfaceParser.parse(vertex: "void main() { gl_Position=vec4(0); }", fragment: fragment)
+        #expect(interface.unreferencedFragmentInputs == ["timer", "rotation"])
+        #expect(interface.issues.filter { $0.code == .missingVertexOutput }.count == 2)
+        #expect(try WPEShaderStageLink(vertex: "void main() { gl_Position=vec4(0); }", fragment: fragment).fragmentBindings.isEmpty)
+        for main in ["gl_FragColor=timer; float timer=0.5;", "{ float timer=0.5; } gl_FragColor=timer;",
+                     "for(int timer=0;timer<2;timer++){} gl_FragColor=vec4(timer);", "float timer=timer.x; gl_FragColor=vec4(timer);"] {
+            let parsed = WPEShaderInterfaceParser.parse(vertex: "void main(){}", fragment: "varying vec4 timer; void main(){" + main + "}")
+            #expect(parsed.unreferencedFragmentInputs == [])
+        }
+        for outside in ["vec4 helper(){return timer;}", "#define READ timer\n"] {
+            let parsed = WPEShaderInterfaceParser.parse(vertex: "void main(){}", fragment: "varying vec4 timer;\n" + outside + "void main(){float timer=0.5;gl_FragColor=vec4(timer);}")
+            #expect(parsed.unreferencedFragmentInputs == [])
+        }
+    }
+
     @Test func incompleteDeclarationsArePreservedOrDiagnosed() {
         let interface = WPEShaderInterfaceParser.parse(
             vertex: "uniform mat4 matrices[COUNT][2]; uniform float x; uniform vec2 x; uniform Broken { vec4 value; } block;",

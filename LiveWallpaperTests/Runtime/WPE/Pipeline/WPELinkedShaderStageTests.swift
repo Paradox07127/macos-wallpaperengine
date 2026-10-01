@@ -78,6 +78,34 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func locallyShadowedInputsUseLocalValuesAndRealVertexInterpolation() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_UV;
+        void main() { gl_Position = vec4(a_Position, 1); v_UV = a_TexCoord * 0.25 + 0.375; }
+        """
+        let fragment = """
+        varying vec2 v_UV;
+        varying vec4 timer;
+        varying vec4 rValue;
+        void main() {
+            float timer = 0.625;
+            vec4 rValue = vec4(v_UV, timer, 1);
+            gl_FragColor = rValue;
+        }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let pixel = pixels[y * 4 + x]
+                #expect(abs(pixel.x - (0.375 + (Float(x) + 0.5) / 16)) < 0.00001)
+                #expect(abs(pixel.y - (0.375 + (Float(y) + 0.5) / 16)) < 0.00001)
+                #expect(pixel.z == 0.625 && pixel.w == 1)
+            }
+        }
+    }
+
     @Test func unreferencedOrphanInputsPreserveRealVertexInterpolation() throws {
         let vertex = """
         attribute vec3 a_Position;
