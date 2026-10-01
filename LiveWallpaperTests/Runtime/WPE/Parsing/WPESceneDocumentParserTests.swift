@@ -2189,6 +2189,23 @@ struct WPESceneDocumentParserTests {
         #expect(layer.alpha == 0)
     }
 
+    @Test("Bare shape quad uses canvas height; explicit size overrides it", arguments: [128.0, 192.0])
+    func shapeQuadSizeProducer(height: Double) throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": height]],
+            "objects": [["id": 1, "shape": "quad"],
+                        ["id": 2, "shape": "quad", "size": "160 96"],
+                        ["id": 3, "image": "models/util/solidlayer.json"]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
+        #expect(document.imageObjects[0].isShapeQuad)
+        #expect(document.imageObjects[0].size == CGSize(width: height, height: height))
+        #expect(document.imageObjects[1].size == CGSize(width: 160, height: 96))
+        #expect(!document.imageObjects[2].isShapeQuad)
+        #expect(document.imageObjects[2].size == nil)
+    }
+
     @Test("shape:quad layer with an explicit null image still parses as a quad surface")
     func shapeQuadWithNullImageStillParses() throws {
         let payload: [String: Any] = [

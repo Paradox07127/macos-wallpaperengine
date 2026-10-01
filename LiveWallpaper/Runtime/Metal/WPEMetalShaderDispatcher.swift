@@ -17,9 +17,9 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat,
         fetchSceneColor: Bool = false
-    ) throws {
+    ) throws -> Bool {
         if pass.shader?.isBuiltin == false {
-            try dispatchCustomShader(
+            return try dispatchCustomShader(
                 pass: pass,
                 layer: layer,
                 destination: destination,
@@ -28,11 +28,10 @@ struct WPEMetalShaderDispatcher {
                 encoder: encoder,
                 depthPixelFormat: depthPixelFormat
             )
-            return
         }
 
         guard let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader) else {
-            try dispatchCustomShader(
+            return try dispatchCustomShader(
                 pass: pass,
                 layer: layer,
                 destination: destination,
@@ -41,8 +40,8 @@ struct WPEMetalShaderDispatcher {
                 encoder: encoder,
                 depthPixelFormat: depthPixelFormat
             )
-            return
         }
+        var drawsAuthoredObjectTriangles = false
         switch kind {
         // Force-unwrap is pinned by the snapshot test on `WPEEffectDispatchDescriptor.table` (see `WPEMetalEffectDispatchTable.swift`).
         case .effectColorBalance, .effectBlur, .effectVignette, .effectWater,
@@ -96,7 +95,7 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .genericParticle:
-            try dispatchCustomShader(
+            drawsAuthoredObjectTriangles = try dispatchCustomShader(
                 pass: pass, layer: layer, destination: destination, textures: textures,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
@@ -106,6 +105,7 @@ struct WPEMetalShaderDispatcher {
         recordBuiltinTracePass(kind: kind, pass: pass, layer: layer, destination: destination,
                                textures: textures, frameState: frameState, fetchSceneColor: fetchSceneColor)
         #endif
+        return drawsAuthoredObjectTriangles
     }
 
     /// Whether the route `dispatch` picks for this shader name swaps `$media*` slots (nil kind = custom).
@@ -562,7 +562,7 @@ struct WPEMetalShaderDispatcher {
         frameState: WPEMetalFrameState,
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
-    ) throws {
+    ) throws -> Bool {
         if WPEBuiltinShaderName.isGodraysCombine(pass.pass.shader) {
             try dispatchGodraysCombine(
                 pass: pass,
@@ -573,7 +573,7 @@ struct WPEMetalShaderDispatcher {
                 encoder: encoder,
                 depthPixelFormat: depthPixelFormat
             )
-            return
+            return false
         }
 
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
@@ -592,10 +592,8 @@ struct WPEMetalShaderDispatcher {
         var rejection: WPEAuthoredVertexRejection?
         if !executor.authoredVertexExecutionEnabled {
             rejection = .disabledForIsolation
-        } else if usesShapeQuad {
-            rejection = .geometryUnavailable
         } else if let authored {
-            if (authored.vertexStage?.execution == .authoredObjectQuad) != usesObjectQuad {
+            if (authored.vertexStage?.execution == .authoredObjectQuad) != (usesObjectQuad || usesShapeQuad) {
                 rejection = .geometryUnavailable
             } else if !executor.hasPrewarmedAuthoredPipeline(for: authored, pass: pass, destination: destination, depthPixelFormat: depthPixelFormat) {
                 rejection = .pipelineNotPrewarmed
@@ -812,7 +810,7 @@ struct WPEMetalShaderDispatcher {
             vertexPath: vertexPath,
             vertexUniformSlots: packedVertexUniforms.slotsForTracing(), vertexUniformSources: vertexUniformSources,
             authoredVertexFallback: result.vertexStage == nil ? rejection?.reason : nil,
-            authoredObjectPositionScale: result.vertexStage?.execution == .authoredObjectQuad ? layer.geometry.size.map { SIMD2<Float>(Float($0.width / 2), Float($0.height / 2)) } : nil
+            authoredObjectInputs: result.vertexStage?.execution == .authoredObjectQuad ? WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer) : nil
         )
         #endif
         encoder.setRenderPipelineState(pipelineState)
@@ -821,9 +819,9 @@ struct WPEMetalShaderDispatcher {
             executor.bindTranslatedUniformSlots(packedUniforms, to: encoder)
         }
         if !packedVertexUniforms.isEmpty { executor.bindTranslatedUniformSlots(packedVertexUniforms, to: encoder, stage: .vertex) }
-        if result.vertexStage?.execution == .authoredObjectQuad, let size = layer.geometry.size {
-            var scale = SIMD2<Float>(Float(size.width / 2), Float(size.height / 2))
-            encoder.setVertexBytes(&scale, length: MemoryLayout<SIMD2<Float>>.stride, index: 2)
+        if result.vertexStage?.execution == .authoredObjectQuad {
+            let inputs = WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer)
+            inputs.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: 2) }
         }
         if usesShapeQuad {
             var shapeUniforms = executor.shapeQuadUniforms(
@@ -857,6 +855,7 @@ struct WPEMetalShaderDispatcher {
                 )
             }
         }
+        return result.vertexStage?.execution == .authoredObjectQuad
     }
 
     private func dispatchGodraysCombine(

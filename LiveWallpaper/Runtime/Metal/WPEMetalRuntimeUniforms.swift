@@ -411,7 +411,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.sceneHDR = sceneHDR
         self.bloom = bloom
         hasCapturedOrthographicShaderGlobals = !usesPerspectiveProjection && perspectiveOverrideFOVDegrees <= 0
-            && sceneCamera.nearZ == WPESceneCamera.defaultCamera.nearZ && sceneCamera.farZ == WPESceneCamera.defaultCamera.farZ
+            && Float(sceneCamera.nearZ) == Float(WPESceneCamera.defaultCamera.nearZ) && Float(sceneCamera.farZ) == Float(WPESceneCamera.defaultCamera.farZ)
         self.sceneMotion = usesPerspectiveProjection ? .identity : sceneMotion
         let motion = self.sceneMotion
         var sceneMatrix = usesPerspectiveProjection
@@ -446,6 +446,22 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
 
     func usesObjectPerspective(objectID: String) -> Bool {
         perspectiveOverrideFOVDegrees > 0 && perspectiveObjectIDs.contains(objectID)
+    }
+
+    /// Windows keeps global shader VP separate from a flat scene draw MVP,
+    /// including when a perspective override camera is available.
+    var hasCapturedFlatDrawProjection: Bool {
+        !usesPerspectiveProjection && Float(sceneCamera.nearZ) == Float(WPESceneCamera.defaultCamera.nearZ)
+            && Float(sceneCamera.farZ) == Float(WPESceneCamera.defaultCamera.farZ)
+    }
+
+    func shaderDrawViewProjectionMatrix(objectID: String) -> [Double] {
+        if hasCapturedFlatDrawProjection, !usesObjectPerspective(objectID: objectID) {
+            return WPEMetalObjectUniforms.flattenedColumnMajor(
+                WPECameraMotionProjection.shaderViewProjection(motion: sceneMotion, size: renderSize)
+            )
+        }
+        return objectViewProjectionMatrix(objectID: objectID)
     }
 
     func objectViewProjectionMatrix(objectID: String) -> [Double] {

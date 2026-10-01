@@ -79,7 +79,7 @@ extension WPEShaderTranspiler {
         )
         var parameters = ["uint vertexID [[vertex_id]]"]
         if execution == .authoredObjectQuad {
-            parameters.append("constant float2& positionScale [[buffer(2)]]")
+            parameters.append("constant float4* quadInputs [[buffer(2)]]")
         }
         if !uniforms.isEmpty {
             parameters.append("constant WPEUniforms& u [[buffer(0)]]")
@@ -96,11 +96,12 @@ extension WPEShaderTranspiler {
         out += "    const float2 uvs[4] = {float2(0,1), float2(1,1), float2(0,0), float2(1,0)};\n"
         out += "    WPEStageIn out;\n    float4 gl_Position = {};\n"
         for attribute in link.interface.variables(stage: .vertex, kind: .attribute) {
-            let position = execution == .authoredObjectQuad ? "positions[vertexID] * positionScale" : "positions[vertexID]"
+            let position = execution == .authoredObjectQuad ? "quadInputs[vertexID].xy" : "positions[vertexID]"
+            let uv = execution == .authoredObjectQuad ? "quadInputs[vertexID].zw" : "uvs[vertexID]"
             let value: String = if attribute.key.name == "a_Position" {
                 attribute.glslType == "vec4" ? "float4(\(position), 0, 1)" : "float3(\(position), 0)"
             } else {
-                attribute.glslType == "vec4" ? "float4(uvs[vertexID], 0, 0)" : "uvs[vertexID]"
+                attribute.glslType == "vec4" ? "float4(\(uv), 0, 0)" : uv
             }
             out += "    [[maybe_unused]] \(WPEUniformDecl.mapType(attribute.glslType)) \(attribute.key.name) = \(value);\n"
         }

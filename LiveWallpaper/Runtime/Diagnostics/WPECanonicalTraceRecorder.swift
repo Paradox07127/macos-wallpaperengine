@@ -230,7 +230,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         vertexUniformSlots: [SIMD4<Float>] = [],
         vertexUniformSources: [WPEUniformValueSource]? = nil,
         authoredVertexFallback: String? = nil,
-        authoredObjectPositionScale: SIMD2<Float>? = nil
+        authoredObjectInputs: [SIMD4<Float>]? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -311,8 +311,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
 
         let draw: [String: Any] = [
-            "topology": usesObjectQuad ? "object-quad" : "fullscreen-quad",
-            "vertexCount": 4,
+            "topology": result.vertexStage?.execution == .authoredObjectQuad ? "triangle-list" : (usesObjectQuad ? "object-quad" : "fullscreen-quad"),
+            "vertexCount": result.vertexStage?.execution == .authoredObjectQuad ? 6 : 4,
             "indexCount": NSNull(),
             "instanceCount": 1,
             "viewport": [0, 0, Double(targetTexture.width), Double(targetTexture.height), 0, 1] as [Double],
@@ -384,8 +384,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             vertexContract["bufferValues"] = "recorded-in-constantBuffers"
             let requiredBuffers: [Int] = (vertex.uniformLayout.isEmpty ? [] : [0]) + (vertex.execution == .authoredObjectQuad ? [2] : [])
             vertexContract["requiredVertexBufferIndices"] = requiredBuffers
-            if let scale = authoredObjectPositionScale {
-                vertexContract["geometryInput"] = ["bufferIndex": 2, "byteLength": 8, "positionScale": [scale.x, scale.y], "space": "centered-model-pixels"]
+            if let inputs = authoredObjectInputs {
+                vertexContract["geometryInput"] = ["bufferIndex": 2, "byteLength": inputs.count * MemoryLayout<SIMD4<Float>>.stride,
+                                                   "positionAndUV": inputs.map { [$0.x, $0.y, $0.z, $0.w] }, "space": "centered-model-pixels"]
                 vertexContract["bufferValues"] = "uniforms-in-constantBuffers; geometry-in-geometryInput"
             }
         }

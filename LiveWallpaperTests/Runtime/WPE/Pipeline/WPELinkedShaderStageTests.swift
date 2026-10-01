@@ -61,6 +61,23 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func authoredObjectQuadRetainsWindowsDiagonalForVertexVaryings() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying float v_Corner;
+        void main(){gl_Position=vec4(a_Position,1.0);v_Corner=a_TexCoord.x*a_TexCoord.y;}
+        """
+        let pixels = try replay(vertex: vertex, fragment: "varying float v_Corner; void main(){gl_FragColor=vec4(v_Corner,0.0,0.0,1.0);}",
+                                execution: .authoredObjectQuad)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let expected = min((Float(x) + 0.5) / 4, (Float(y) + 0.5) / 4)
+                #expect(abs(pixels[y * 4 + x].x - expected) < 0.00001)
+            }
+        }
+    }
+
     @Test func unreferencedOrphanInputsPreserveRealVertexInterpolation() throws {
         let vertex = """
         attribute vec3 a_Position;
@@ -547,8 +564,12 @@ struct WPELinkedShaderStageTests {
         let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
         encoder.setRenderPipelineState(pipeline)
         if execution == .authoredObjectQuad {
-            var scale = positionScale
-            encoder.setVertexBytes(&scale, length: MemoryLayout<SIMD2<Float>>.stride, index: 2)
+            let corners: [SIMD4<Float>] = [SIMD4(-positionScale.x, positionScale.y, 0, 0),
+                                           SIMD4(positionScale.x, positionScale.y, 1, 0),
+                                           SIMD4(positionScale.x, -positionScale.y, 1, 1),
+                                           SIMD4(-positionScale.x, -positionScale.y, 0, 1)]
+            let inputs = [0, 2, 1, 0, 3, 2].map { corners[$0] }
+            inputs.withUnsafeBytes { encoder.setVertexBytes($0.baseAddress!, length: $0.count, index: 2) }
         }
         if let sampled {
             let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
@@ -579,7 +600,8 @@ struct WPELinkedShaderStageTests {
                 #expect(binding == .buffer(byteCount: slots.count * 16))
             }
         }
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.drawPrimitives(type: execution == .authoredObjectQuad ? .triangle : .triangleStrip,
+                               vertexStart: 0, vertexCount: execution == .authoredObjectQuad ? 6 : 4)
         encoder.endEncoding(); command.commit(); command.waitUntilCompleted()
         #expect(command.status == .completed && command.error == nil)
         var pixels = [SIMD4<Float>](repeating: .zero, count: 16)

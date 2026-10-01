@@ -2132,7 +2132,7 @@ private struct LayerBuildContext {
         }
 
         // Ordinary effects finish in layer space; promoting the last one to `.scene` changes viewport/texel size. `shape:quad` DIRECTDRAW is already scene geometry — do not warp it a second time.
-        let hasLayerResolutionEffect = object.shapePoints == nil && passes.contains { pass in
+        let hasLayerResolutionEffect = !object.isShapeQuad && passes.contains { pass in
             switch pass.phase {
             case .effect:
                 return true

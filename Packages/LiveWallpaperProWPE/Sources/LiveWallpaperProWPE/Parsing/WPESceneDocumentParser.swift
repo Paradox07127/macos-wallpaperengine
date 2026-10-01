@@ -316,6 +316,7 @@ public enum WPESceneDocumentParser {
                let object = parseImageObject(
                    entry,
                    transform: transform,
+                   canvasHeight: general.orthogonalProjection.height,
                    scriptOrigins: scriptResolvedOrigins,
                    effectiveVisible: effectiveVisible,
                    inheritedAttachment: entryID.flatMap { inheritedAttachments[$0] },
@@ -2042,6 +2043,7 @@ public enum WPESceneDocumentParser {
     private static func parseImageObject(
         _ dict: [String: Any],
         transform: SceneObjectTransform,
+        canvasHeight: Double,
         scriptOrigins: [String: SIMD3<Double>] = [:],
         effectiveVisible: Bool? = nil,
         inheritedAttachment: (name: String, parentID: String)? = nil,
@@ -2091,11 +2093,12 @@ public enum WPESceneDocumentParser {
             : parseImageBlendMode(dict)
         let colorBlendMode = isShapeQuadBeam ? 9 : parseColorBlendMode(dict)
         let alignment = WPESceneAlignment(rawWPEValue: dict["alignment"] as? String)
-        let size: CGSize?
-        if let vec = parseVector3(dict["size"]) {
-            size = CGSize(width: vec.x, height: vec.y)
+        let size: CGSize? = if let vec = parseVector3(dict["size"]) {
+            CGSize(width: vec.x, height: vec.y)
+        } else if isShapeQuad {
+            CGSize(width: canvasHeight, height: canvasHeight)
         } else {
-            size = nil
+            nil
         }
 
         let materialRelativePath = dict["material"] as? String
@@ -2208,7 +2211,8 @@ public enum WPESceneDocumentParser {
             anglesScript: anglesScript,
             colorScript: colorScript,
             scriptProperties: visibleScriptProperties,
-            shapePoints: shapePoints
+            shapePoints: shapePoints,
+            isShapeQuad: isShapeQuad
         )
     }
 

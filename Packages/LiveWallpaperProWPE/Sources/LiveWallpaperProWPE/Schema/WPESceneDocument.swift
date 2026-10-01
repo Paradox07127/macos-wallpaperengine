@@ -1205,6 +1205,8 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
     /// Normalized `point0..3` for a `shape: "quad"` DIRECTDRAW layer. When present the renderer synthesizes a 4-corner quad instead of the axis-aligned object quad. `nil` for ordinary image/model layers.
     public let shapePoints: [SIMD2<Double>]?
+    /// Bare `shape: quad` draws its effect directly in scene geometry.
+    public let isShapeQuad: Bool
 
     public init(
         id: String,
@@ -1247,7 +1249,8 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         anglesScript: WPESceneTransformScript? = nil,
         colorScript: WPESceneTransformScript? = nil,
         scriptProperties: [String: WPESceneScriptPropertyValue] = [:],
-        shapePoints: [SIMD2<Double>]? = nil
+        shapePoints: [SIMD2<Double>]? = nil,
+        isShapeQuad: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -1290,6 +1293,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.colorScript = colorScript
         self.scriptProperties = scriptProperties
         self.shapePoints = shapePoints
+        self.isShapeQuad = isShapeQuad
     }
 }
 

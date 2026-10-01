@@ -31,16 +31,33 @@ extension WPEMetalRenderExecutor {
     static func canSupplyAuthoredObjectQuad(layer: WPERenderLayer, camera: WPEMetalCameraUniforms) -> Bool {
         let geometry = layer.geometry
         guard !layer.isUtilityModelLayer, layer.parentObjectID == nil, layer.groupRenderTarget == nil,
-              layer.puppetPath == nil, geometry.shapePoints == nil, geometry.alignment == .center,
+              layer.puppetPath == nil, geometry.alignment == .center,
               let size = geometry.size, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
               Float(size.width / 2).isFinite, Float(size.height / 2).isFinite,
               geometry.origin.x.isFinite, geometry.origin.y.isFinite, abs(geometry.origin.z) < 0.000001,
               geometry.scale.x.isFinite, geometry.scale.y.isFinite, geometry.scale.x > 0, geometry.scale.y > 0,
               geometry.angles.z.isFinite, abs(geometry.angles.x) < 0.000001, abs(geometry.angles.y) < 0.000001,
-              camera.hasCapturedOrthographicShaderGlobals, !camera.usesPerspectiveProjection,
+              camera.hasCapturedFlatDrawProjection, !camera.usesPerspectiveProjection,
               !camera.usesObjectPerspective(objectID: layer.id),
               abs(camera.sceneMotion.angles.x) < 0.000001, abs(camera.sceneMotion.angles.y) < 0.000001 else { return false }
+        if let points = geometry.shapePoints {
+            guard points.count == 4, points.allSatisfy({
+                Float(($0.x - 0.5) * size.width).isFinite && Float((0.5 - $0.y) * size.height).isFinite
+            }) else { return false }
+        }
         return true
+    }
+
+    /// Captured WPE POSITION/TEXCOORD inputs, expanded in captured Windows triangle-list order.
+    static func authoredObjectQuadInputs(layer: WPERenderLayer) -> [SIMD4<Float>] {
+        guard let size = layer.geometry.size else { return [] }
+        let points = layer.geometry.shapePoints ?? [SIMD2(0, 0), SIMD2(1, 0), SIMD2(1, 1), SIMD2(0, 1)]
+        guard points.count == 4 else { return [] }
+        return [0, 2, 1, 0, 3, 2].map { index in
+            let point = points[index]
+            return SIMD4(Float((point.x - 0.5) * size.width), Float((0.5 - point.y) * size.height),
+                         Float(point.x), Float(point.y))
+        }
     }
 
     func authoredVertexResolvedInputRejection(for pass: WPEPreparedRenderPass, result: WPEShaderCompileResult,
@@ -83,6 +100,13 @@ extension WPEMetalRenderExecutor {
                       WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: values) != nil else { return .invalidMatrix(uniform.name) }
             }
             if vertex.execution == .authoredObjectQuad, uniform.name.hasPrefix("g_Effect") {
+                return .unverifiedObjectQuadSpace
+            }
+            if vertex.execution == .authoredObjectQuad, uniform.materialName == nil,
+               !frameState.cameraUniforms.hasCapturedOrthographicShaderGlobals,
+               uniform.name.hasPrefix("g_View") || uniform.name == "g_EyePosition" {
+                // A measured flat draw MVP does not establish global camera uniforms
+                // when a perspective override camera exists.
                 return .unverifiedObjectQuadSpace
             }
             if uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName {

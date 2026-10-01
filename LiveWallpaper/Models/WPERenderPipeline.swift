@@ -410,6 +410,17 @@ extension WPEPreparedRenderPipeline {
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
+        if camera.hasCapturedFlatDrawProjection {
+            for layer in layers where !layer.graphLayer.isUtilityModelLayer {
+                for pass in layer.passes {
+                    if case .scene = pass.pass.target {
+                        frameUniforms.drawViewProjectionMatrixByPassID[pass.id] = .vector(
+                            camera.shaderDrawViewProjectionMatrix(objectID: layer.id)
+                        )
+                    }
+                }
+            }
+        }
         if camera.sceneMotion != .identity || camera.hasCapturedOrthographicShaderGlobals {
             let localCamera = camera.applyingSceneMotion(.identity).legacyCameraUniformValues
             for layer in layers {

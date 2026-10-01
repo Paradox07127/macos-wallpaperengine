@@ -194,6 +194,53 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(coverage.entries.first { $0.feature == .uniformSupply && $0.stage == .vertex }?.status == .limited)
     }
 
+    @Test func serializedDefaultClipPlanesRetainCapturedProjection() {
+        func camera(near: Double) -> WPEMetalCameraUniforms {
+            .init(orthogonalProjection: .init(width: 7680, height: 4320, auto: false),
+                  sceneCamera: .init(center: SIMD3(0, 0, -1), eye: .zero, up: SIMD3(0, 1, 0),
+                                     nearZ: near, farZ: 10000, fov: 50))
+        }
+        #expect(camera(near: 0.0099999998).hasCapturedFlatDrawProjection)
+        #expect(camera(near: 0.0099999998).hasCapturedOrthographicShaderGlobals)
+        #expect(!camera(near: 0.02).hasCapturedFlatDrawProjection)
+        #expect(!camera(near: .nan).hasCapturedFlatDrawProjection)
+    }
+
+    @Test func rootShapeQuadSuppliesPointPositionsUVAndIndependentDrawMVP() throws {
+        let points = [SIMD2<Double>(0.15, 0.1), SIMD2(0.85, 0.2), SIMD2(0.75, 0.9), SIMD2(0.2, 0.8)]
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1),
+                                              angles: SIMD3(0, 0, 0.17), alignment: .center, size: CGSize(width: 192, height: 192),
+                                              alpha: 1, color: SIMD3(repeating: 1), brightness: 1, shapePoints: points)
+        let layer = WPERenderLayer(objectID: "shape", objectName: "shape", imagePath: "models/util/solidlayer.json",
+                                   materialPath: nil, geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30)
+        #expect(!camera.hasCapturedOrthographicShaderGlobals)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+        let inputs = WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer)
+        for (index, pointIndex) in [0, 2, 1, 0, 3, 2].enumerated() {
+            #expect(abs(inputs[index].x - Float((points[pointIndex].x - 0.5) * 192)) < 0.00001)
+            #expect(abs(inputs[index].y - Float((0.5 - points[pointIndex].y) * 192)) < 0.00001)
+            #expect(inputs[index].z == Float(points[pointIndex].x))
+            #expect(inputs[index].w == Float(points[pointIndex].y))
+        }
+        let model = WPEMetalObjectUniforms.uniformValues(origin: geometry.origin, scale: geometry.scale, angles: geometry.angles)
+        var context = WPEFrameUniformContext(runtimeUniformValues: [:], cameraUniformValues: camera.uniformValues,
+                                             objectUniformValuesByPassID: ["shape.0": model])
+        let globalVP = context.value(named: "g_ViewProjectionMatrix", passID: "shape.0")
+        context.drawViewProjectionMatrixByPassID["shape.0"] = .vector(camera.shaderDrawViewProjectionMatrix(objectID: layer.id))
+        let mvp = try #require(context.value(named: "g_ModelViewProjectionMatrix", passID: "shape.0")?.vectorValue)
+        let expected = [0.0061599053, 0.0021147795, 0, 0, -0.0007049264, 0.0082132071, 0, 0, 0, 0, 0.00025, 0, 0.0833333731, -0.125, 0.5, 1]
+        for (actual, oracle) in zip(mvp, expected) {
+            #expect(abs(actual - oracle) < 0.000001)
+        }
+        #expect(context.value(named: "g_ViewProjectionMatrix", passID: "shape.0") == globalVP)
+        let perspective = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false),
+                                                 sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 30,
+                                                 perspectiveObjectIDs: [layer.id])
+        #expect(!WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: perspective))
+    }
+
     private struct Fixture {
         let device: MTLDevice
         let executor: WPEMetalRenderExecutor

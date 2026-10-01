@@ -1777,8 +1777,9 @@ final class WPEMetalRenderExecutor {
         }
         if !drewSceneModel && !drewPuppetMaterial && !drewPuppetSceneComposite {
             let dispatcher = WPEMetalShaderDispatcher(executor: self)
+            let drawsAuthoredObjectTriangles: Bool
             do {
-                try dispatcher.dispatch(
+                drawsAuthoredObjectTriangles = try dispatcher.dispatch(
                     pass: pass,
                     layer: drawLayer,
                     destination: destination,
@@ -1794,7 +1795,8 @@ final class WPEMetalRenderExecutor {
                 throw error
             }
 
-            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.drawPrimitives(type: drawsAuthoredObjectTriangles ? .triangle : .triangleStrip,
+                                   vertexStart: 0, vertexCount: drawsAuthoredObjectTriangles ? 6 : 4)
             solidRun?.drawCount += 1
             if WPEBuiltinShaderKind(normalizing: pass.pass.shader) != .solidLayer {
                 solidRun?.texturedDrawCount += 1
