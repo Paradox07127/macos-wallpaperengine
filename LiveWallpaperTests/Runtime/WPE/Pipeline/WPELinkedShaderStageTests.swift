@@ -86,6 +86,64 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func floatVaryingPrefixesKeepAuthoredFragmentTypes() throws {
+        let vertex = """
+        attribute vec3 a_Position; attribute vec2 a_TexCoord;
+        varying vec4 v_Result;
+        void main() { gl_Position=vec4(a_Position,1.0); v_Result=vec4(a_TexCoord*a_TexCoord,0.125,0.875); }
+        """
+        let fragment = """
+        varying vec2 v_Result;
+        vec2 shift(vec2 uv) { return uv*0.5+0.25; }
+        void main() { gl_FragColor=vec4(shift(v_Result),0.375,1.0); }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                #expect(abs(pixels[y * 4 + x].x - (0.25 + (Float(x) + 0.5) / 8)) < 0.00001)
+                #expect(abs(pixels[y * 4 + x].y - (0.25 + (Float(y) + 0.5) / 8)) < 0.00001)
+            }
+        }
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.fragmentDeclarations.contains { $0.contains("float2 v_Result = in.wpe_v0_0.xy;") })
+        #expect(link.interface.issues.contains { $0.code == .varyingTypeMismatch })
+        let smaller = vertex.replacingOccurrences(of: "varying vec4 v_Result", with: "varying vec2 v_Result")
+            .replacingOccurrences(of: "vec4(a_TexCoord*a_TexCoord,0.125,0.875)", with: "a_TexCoord*a_TexCoord")
+        let wider = fragment.replacingOccurrences(of: "varying vec2 v_Result", with: "varying vec4 v_Result")
+            .replacingOccurrences(of: "shift(v_Result)", with: "shift(v_Result.xy)")
+        #expect(try replay(vertex: smaller, fragment: wider) == pixels)
+        for read in ["v_Result.zw", "v_Result[2]", "v_Result.xyfoo", "vec2(v_Result)"] {
+            #expect(throws: WPEShaderCompilerError.self) {
+                try WPEShaderStageLink(vertex: smaller, fragment: "varying vec4 v_Result; void main(){gl_FragColor=vec4(" + read + ",0,1);}")
+            }
+        }
+    }
+
+    @Test func unusedWidthMismatchAndLocatedNamesDoNotInventConsumedInputs() throws {
+        let vertex = """
+        attribute vec3 a_Position; attribute vec2 a_TexCoord;
+        varying vec2 unused;
+        layout(location=3) out vec4 producer;
+        void main(){gl_Position=vec4(a_Position,1.0);unused=a_TexCoord;producer=vec4(a_TexCoord,0.2,0.8);}
+        """
+        let fragment = """
+        varying vec4 unused;
+        layout(location=3) in vec2 renamed;
+        void main(){gl_FragColor=vec4(renamed,0.375,1.0);}
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                #expect(abs(pixels[y * 4 + x].x - (Float(x) + 0.5) / 4) < 0.00001)
+                #expect(abs(pixels[y * 4 + x].y - (Float(y) + 0.5) / 4) < 0.00001)
+            }
+        }
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.fragmentDeclarations.count == 1)
+        #expect(link.fragmentDeclarations[0].contains("float2 renamed = in.wpe_v1_0.xy;"))
+        #expect(link.interface.unreferencedFragmentInputs == ["unused"])
+    }
+
     @Test func inversePreludeIsEmittedOnlyInConsumingStages() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

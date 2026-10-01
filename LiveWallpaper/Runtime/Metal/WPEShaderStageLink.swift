@@ -73,11 +73,21 @@ struct WPEShaderStageLink {
     let varyings: [Varying]
 
     init(vertex: String, fragment: String) throws {
-        interface = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
-        let unreferenced = Set(interface.unreferencedFragmentInputs ?? [])
-        let requiredIssues = interface.issues.filter { issue in
-            !(issue.code == .missingVertexOutput && issue.stage == .fragment
-                && issue.name.map(unreferenced.contains) == true)
+        let inventory = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
+        interface = inventory
+        let unreferenced = Set(inventory.unreferencedFragmentInputs ?? [])
+        let requiredIssues = inventory.issues.filter { issue in
+            if issue.stage == .fragment, issue.name.map(unreferenced.contains) == true,
+               [.missingVertexOutput, .varyingTypeMismatch].contains(issue.code) {
+                return false
+            }
+            if issue.code == .varyingTypeMismatch, issue.stage == .fragment,
+               let input = inventory.variables(stage: .fragment, kind: .varyingInput).first(where: { $0.key.name == issue.name }),
+               let output = Self.matchingOutput(for: input, in: inventory.variables(stage: .vertex, kind: .varyingOutput)),
+               Self.canConsumeFloatPrefix(input: input, output: output, fragment: fragment) {
+                return false
+            }
+            return true
         }
         guard interface.hasVertexSource, requiredIssues.isEmpty else {
             throw WPEShaderCompilerError.translationFailed("authored stage interface cannot link: \(requiredIssues.map(\.code.rawValue).joined(separator: ","))")
@@ -127,14 +137,94 @@ struct WPEShaderStageLink {
         return fields.joined(separator: "\n")
     }
 
-    var fragmentDeclarations: [String] {
-        let inputNames = Set(interface.variables(stage: .fragment, kind: .varyingInput).map(\.key.name))
-        return varyings.filter { inputNames.contains($0.name) }.flatMap { v -> [String] in
-            if v.isArray {
-                return ["    [[maybe_unused]] \(v.declaration) = { \((0 ..< v.elementCount).map { "in.\(v.field($0))" }.joined(separator: ", ")) };"]
-            }
-            return ["    [[maybe_unused]] \(v.declaration) = in.\(v.field(0));"]
+    struct FragmentBinding {
+        let input: WPEShaderInterfaceVariable
+        let output: Varying
+
+        var metalType: String {
+            WPEUniformDecl.mapType(input.glslType)
         }
+
+        var declaration: String {
+            metalType + " " + input.key.name + (output.isArray ? "[\(output.elementCount)]" : "")
+        }
+
+        func value(_ element: Int) -> String {
+            let source = "in." + output.field(element)
+            guard let inputWidth = WPEShaderStageLink.floatWidth(input.glslType),
+                  let outputWidth = WPEShaderStageLink.floatWidth(output.variable.glslType), inputWidth != outputWidth else { return source }
+            if inputWidth < outputWidth {
+                return source + "." + String("xyzw".prefix(inputWidth))
+            }
+            // The admission proof excludes every read of these absent channels.
+            // Padding only carries the authored local type through Metal's ABI.
+            let tail = inputWidth - outputWidth
+            return metalType + "(" + source + ", " + (tail == 1 ? "0.0" : "float\(tail)(0.0)") + ")"
+        }
+    }
+
+    var fragmentBindings: [FragmentBinding] {
+        let unreferenced = Set(interface.unreferencedFragmentInputs ?? [])
+        return interface.variables(stage: .fragment, kind: .varyingInput).filter { !unreferenced.contains($0.key.name) }.compactMap { input in
+            varyings.first { output in
+                if let location = input.location {
+                    return output.variable.location == location
+                }
+                return output.variable.location == nil && output.name == input.key.name
+            }.map { FragmentBinding(input: input, output: $0) }
+        }
+    }
+
+    var fragmentDeclarations: [String] {
+        fragmentBindings.map { binding in
+            if binding.output.isArray {
+                return "    [[maybe_unused]] \(binding.declaration) = { \((0 ..< binding.output.elementCount).map { binding.value($0) }.joined(separator: ", ")) };"
+            }
+            return "    [[maybe_unused]] \(binding.declaration) = \(binding.value(0));"
+        }
+    }
+
+    private static func matchingOutput(for input: WPEShaderInterfaceVariable, in outputs: [WPEShaderInterfaceVariable]) -> WPEShaderInterfaceVariable? {
+        outputs.first {
+            if let location = input.location {
+                return $0.location == location
+            }
+            return $0.location == nil && $0.key.name == input.key.name
+        }
+    }
+
+    private static func floatWidth(_ type: String) -> Int? {
+        ["float": 1, "vec2": 2, "vec3": 3, "vec4": 4][type]
+    }
+
+    private static func canConsumeFloatPrefix(input: WPEShaderInterfaceVariable, output: WPEShaderInterfaceVariable, fragment: String) -> Bool {
+        guard input.arrayDimensions.isEmpty, output.arrayDimensions.isEmpty,
+              let inputWidth = floatWidth(input.glslType), let outputWidth = floatWidth(output.glslType) else { return false }
+        if inputWidth < outputWidth {
+            return true
+        }
+        guard inputWidth > outputWidth else { return false }
+        let active = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(
+            in: WPEShaderPreprocessor.normalizeNewlines(fragment)
+        ))
+        let name = NSRegularExpression.escapedPattern(for: input.key.name)
+        guard let declaration = try? NSRegularExpression(pattern: "\\b(?:varying|in)\\s+" + input.glslType + "\\s+(" + name + ")\\s*;"),
+              let declared = declaration.firstMatch(in: active, range: NSRange(active.startIndex..., in: active)),
+              let identifier = try? NSRegularExpression(pattern: "\\b" + name + "\\b") else { return false }
+        let ns = active as NSString
+        for match in identifier.matches(in: active, range: NSRange(active.startIndex..., in: active)) {
+            if match.range == declared.range(at: 1) {
+                continue
+            }
+            let suffix = ns.substring(from: NSMaxRange(match.range))
+            guard let swizzle = suffix.range(of: #"^\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)"#, options: .regularExpression) else { return false }
+            let components = suffix[swizzle].filter { !$0.isWhitespace && $0 != "." }
+            let axes = Array("xyzw"), colors = Array("rgba"), texture = Array("stpq")
+            guard !components.isEmpty, components.allSatisfy({ c in
+                (axes.firstIndex(of: c) ?? colors.firstIndex(of: c) ?? texture.firstIndex(of: c) ?? 4) < outputWidth
+            }) else { return false }
+        }
+        return true
     }
 
     /// Normalize only global stage declarations; uniform metadata stays verbatim.
