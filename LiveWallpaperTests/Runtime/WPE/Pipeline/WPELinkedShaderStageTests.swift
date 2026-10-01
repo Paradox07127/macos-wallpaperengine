@@ -41,6 +41,26 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func authoredObjectQuadReceivesRawModelPixelsAndIndependentMVP() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        uniform mat4 g_ModelViewProjectionMatrix;
+        varying vec2 v_Raw;
+        void main(){gl_Position=mul(vec4(a_Position,1.0),g_ModelViewProjectionMatrix);v_Raw=a_Position.xy/vec2(4.0,8.0)+0.5;}
+        """
+        let fragment = "varying vec2 v_Raw; void main(){gl_FragColor=vec4(v_Raw,0.375,1.0);}"
+        let matrix: [Double] = [0.5, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.00025, 0, 0, 0, 0.5, 1]
+        let pixels = try replay(vertex: vertex, fragment: fragment, vertexValues: ["g_ModelViewProjectionMatrix": .vector(matrix)],
+                                execution: .authoredObjectQuad, positionScale: SIMD2(2, 4))
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                #expect(abs(pixels[y * 4 + x].x - (Float(x) + 0.5) / 4) < 0.00001)
+                #expect(abs(pixels[y * 4 + x].y - (1 - (Float(y) + 0.5) / 4)) < 0.00001)
+            }
+        }
+    }
+
     @Test func unreferencedOrphanInputsPreserveRealVertexInterpolation() throws {
         let vertex = """
         attribute vec3 a_Position;
@@ -475,7 +495,8 @@ struct WPELinkedShaderStageTests {
     private func replay(vertex: String, fragment: String,
                         vertexValues: [String: WPESceneShaderConstantValue] = [:],
                         fragmentValues: [String: WPESceneShaderConstantValue] = [:],
-                        vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = []) throws -> [SIMD4<Float>] {
+                        vertexSample: SIMD4<Float>? = nil, fragmentPixels: [SIMD4<Float>]? = nil, premultipliedInputSlots: Set<Int> = [],
+                        execution: WPEVertexExecution = .authoredFullscreen, positionScale: SIMD2<Float> = SIMD2(1, 1)) throws -> [SIMD4<Float>] {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -494,7 +515,7 @@ struct WPELinkedShaderStageTests {
         let prepared = try #require(WPERenderPipelineBuilder(cacheRootURL: root).build(graph: graph).layers.first?.passes.first)
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: prepared, recordFailure: false))
             .replacingPremultipliedAlphaSettings(inputSlots: premultipliedInputSlots, output: false)
-            .replacingVertexExecution(.authoredFullscreen)
+            .replacingVertexExecution(execution)
         let fs = try compiler.compile(request)
         let vs = try #require(fs.vertexStage)
         let descriptor = MTLRenderPipelineDescriptor()
@@ -525,6 +546,10 @@ struct WPELinkedShaderStageTests {
         pass.colorAttachments[0].storeAction = .store
         let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
         encoder.setRenderPipelineState(pipeline)
+        if execution == .authoredObjectQuad {
+            var scale = positionScale
+            encoder.setVertexBytes(&scale, length: MemoryLayout<SIMD2<Float>>.stride, index: 2)
+        }
         if let sampled {
             let sampler = try #require(device.makeSamplerState(descriptor: MTLSamplerDescriptor()))
             for slot in 0 ..< vs.textureSlotCount {

@@ -592,10 +592,12 @@ struct WPEMetalShaderDispatcher {
         var rejection: WPEAuthoredVertexRejection?
         if !executor.authoredVertexExecutionEnabled {
             rejection = .disabledForIsolation
-        } else if usesShapeQuad || usesObjectQuad {
+        } else if usesShapeQuad {
             rejection = .geometryUnavailable
         } else if let authored {
-            if !executor.hasPrewarmedAuthoredPipeline(for: authored, pass: pass, destination: destination, depthPixelFormat: depthPixelFormat) {
+            if (authored.vertexStage?.execution == .authoredObjectQuad) != usesObjectQuad {
+                rejection = .geometryUnavailable
+            } else if !executor.hasPrewarmedAuthoredPipeline(for: authored, pass: pass, destination: destination, depthPixelFormat: depthPixelFormat) {
                 rejection = .pipelineNotPrewarmed
             } else {
                 rejection = executor.authoredVertexRejection(for: pass, result: authored, layer: layer,
@@ -769,17 +771,17 @@ struct WPEMetalShaderDispatcher {
         ) {
             try executor.packTranslatedUniformsForBinding(for: pass, layout: result.vertexStage?.uniformLayout ?? [],
                 texturesBySlot: resolvedTexturesBySlot, effectTextureProjection: effectTextureProjection,
-                stage: .vertex, vertexExecution: .authoredFullscreen)
+                stage: .vertex, vertexExecution: result.vertexStage?.execution ?? .synthesized)
         }
         #else
         let packedVertexUniforms = try executor.packTranslatedUniformsForBinding(for: pass,
             layout: result.vertexStage?.uniformLayout ?? [], texturesBySlot: resolvedTexturesBySlot,
-            effectTextureProjection: effectTextureProjection, stage: .vertex, vertexExecution: .authoredFullscreen)
+            effectTextureProjection: effectTextureProjection, stage: .vertex, vertexExecution: result.vertexStage?.execution ?? .synthesized)
         #endif
 
         // The selected geometry must name the same VS in the pipeline and trace.
         let usesSkewVertex = usesObjectQuad && executor.isVertexSkewPass(pass)
-        let vertexPath: WPEPassVertexPath = result.vertexStage != nil ? .authoredFullscreen
+        let vertexPath: WPEPassVertexPath = result.vertexStage != nil ? (result.vertexStage?.execution == .authoredObjectQuad ? .authoredObjectQuad : .authoredFullscreen)
             : .select(shape: usesShapeQuad, object: usesObjectQuad, skew: usesSkewVertex)
         let pipelineState = try executor.translatedPipelineState(
             for: result,
@@ -809,7 +811,8 @@ struct WPEMetalShaderDispatcher {
             uniformSources: uniformSources,
             vertexPath: vertexPath,
             vertexUniformSlots: packedVertexUniforms.slotsForTracing(), vertexUniformSources: vertexUniformSources,
-            authoredVertexFallback: result.vertexStage == nil ? rejection?.reason : nil
+            authoredVertexFallback: result.vertexStage == nil ? rejection?.reason : nil,
+            authoredObjectPositionScale: result.vertexStage?.execution == .authoredObjectQuad ? layer.geometry.size.map { SIMD2<Float>(Float($0.width / 2), Float($0.height / 2)) } : nil
         )
         #endif
         encoder.setRenderPipelineState(pipelineState)
@@ -818,6 +821,10 @@ struct WPEMetalShaderDispatcher {
             executor.bindTranslatedUniformSlots(packedUniforms, to: encoder)
         }
         if !packedVertexUniforms.isEmpty { executor.bindTranslatedUniformSlots(packedVertexUniforms, to: encoder, stage: .vertex) }
+        if result.vertexStage?.execution == .authoredObjectQuad, let size = layer.geometry.size {
+            var scale = SIMD2<Float>(Float(size.width / 2), Float(size.height / 2))
+            encoder.setVertexBytes(&scale, length: MemoryLayout<SIMD2<Float>>.stride, index: 2)
+        }
         if usesShapeQuad {
             var shapeUniforms = executor.shapeQuadUniforms(
                 for: layer,

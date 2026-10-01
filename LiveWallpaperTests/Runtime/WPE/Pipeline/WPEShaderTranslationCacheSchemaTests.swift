@@ -37,8 +37,8 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 32
-    static let expectedFingerprint = "beec823b633c3fc6427d157199e280a3ceb0aa49ff96985c4fbd06e3367ff62e"
+    static let expectedSchemaVersion = 33
+    static let expectedFingerprint = "a0206c8067c06e9af272b559aba47d984e979da32cf61ab13cb278bb1237057a"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

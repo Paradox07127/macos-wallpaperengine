@@ -4,7 +4,7 @@ import Foundation
 /// One selection feeds both the PSO and its diagnostic record. These are generated builtin inputs,
 /// separate from the original GLSL attribute declarations and the effect owner's transform.
 enum WPEPassVertexPath: String, Codable, Sendable {
-    case fullscreenQuad, objectQuad, shapeQuad, skewObjectQuad, authoredFullscreen
+    case fullscreenQuad, objectQuad, shapeQuad, skewObjectQuad, authoredFullscreen, authoredObjectQuad
 
     static func select(shape: Bool, object: Bool, skew: Bool) -> Self {
         if shape {
@@ -18,7 +18,7 @@ enum WPEPassVertexPath: String, Codable, Sendable {
 
     var functionOverride: String? {
         switch self {
-        case .fullscreenQuad, .authoredFullscreen: nil
+        case .fullscreenQuad, .authoredFullscreen, .authoredObjectQuad: nil
         case .objectQuad: "wpe_object_quad_vertex"
         case .shapeQuad: "wpe_shape_quad_vertex"
         case .skewObjectQuad: "wpe_skew_object_quad_vertex"
@@ -33,6 +33,7 @@ enum WPEPassVertexPath: String, Codable, Sendable {
         switch self {
         case .fullscreenQuad: []
         case .authoredFullscreen: [0]
+        case .authoredObjectQuad: [0, 2]
         case .objectQuad, .shapeQuad: [1]
         case .skewObjectQuad: [1, 2]
         }
@@ -42,13 +43,13 @@ enum WPEPassVertexPath: String, Codable, Sendable {
         [
             "path": rawValue,
             "function": functionName(default: name),
-            "inputSupply": self == .authoredFullscreen ? "generated-fullscreen-clip-attributes" : "generated-builtin-geometry",
-            "authoredVertexExecuted": self == .authoredFullscreen,
+            "inputSupply": self == .authoredObjectQuad ? "centered-model-pixel-quad" : (self == .authoredFullscreen ? "generated-fullscreen-clip-attributes" : "generated-builtin-geometry"),
+            "authoredVertexExecuted": self == .authoredFullscreen || self == .authoredObjectQuad,
             "requiredVertexBufferIndices": requiredVertexBufferIndices,
             "bufferValues": "unrecorded",
             "projectionContract": self == .authoredFullscreen
                 ? "native-fullscreen-XY; WPE-depth-unverified; MVP-position-only; depth-disabled"
-                : "builtin-geometry",
+                : (self == .authoredObjectQuad ? "root-2D-model-pixel-attributes; depth-disabled" : "builtin-geometry"),
         ]
     }
 }

@@ -6,11 +6,12 @@ import LiveWallpaperProWPE
 import Metal
 
 enum WPEVertexExecution: String, Codable, Hashable, Sendable {
-    case synthesized, authoredFullscreen
+    case synthesized, authoredFullscreen, authoredObjectQuad
 }
 
 struct WPEShaderCompiledVertex: @unchecked Sendable {
     let library: MTLLibrary
+    let execution: WPEVertexExecution
     let mslSource: String
     let uniformLayout: [WPEUniformSlot]
     let samplerNames: [String]
@@ -18,7 +19,8 @@ struct WPEShaderCompiledVertex: @unchecked Sendable {
     /// Resolutions and TEXS metadata need resolved inputs even when no sampler is declared.
     let requiredTextureSlotCount: Int
 
-    init(library: MTLLibrary, mslSource: String, uniformLayout: [WPEUniformSlot], samplerNames: [String], textureSlotCount: Int) {
+    init(library: MTLLibrary, mslSource: String, uniformLayout: [WPEUniformSlot], samplerNames: [String], textureSlotCount: Int, execution: WPEVertexExecution = .authoredFullscreen) {
+        self.execution = execution
         self.library = library; self.mslSource = mslSource; self.uniformLayout = uniformLayout
         self.samplerNames = samplerNames; self.textureSlotCount = textureSlotCount
         requiredTextureSlotCount = max(textureSlotCount, uniformLayout.compactMap {
@@ -139,7 +141,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 32
+    static let schemaVersion = 33
 
     static let shared = WPEShaderTranslationCache()
 

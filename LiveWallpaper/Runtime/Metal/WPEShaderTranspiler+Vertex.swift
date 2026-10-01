@@ -6,7 +6,8 @@ extension WPEShaderTranspiler {
     /// The linked fragment receives these outputs through rasterizer interpolation.
     static func translateFullscreenVertex(
         shaderName: String, preprocessedSource: String, link: WPEShaderStageLink,
-        comboValues: [String: Int] = [:], premultipliedInputSlots: Set<Int> = []
+        comboValues: [String: Int] = [:], premultipliedInputSlots: Set<Int> = [],
+        execution: WPEVertexExecution = .authoredFullscreen
     ) throws -> WPEShaderTranslationResult {
         let active = stripInactivePreprocessorBranches(in: preprocessedSource)
         let source = link.removingStageDeclarations(from: active, stage: .vertex)
@@ -77,6 +78,9 @@ extension WPEShaderTranspiler {
             of: "struct WPEStageIn {\n    float4 position [[position]];\n    float2 uv;\n};", with: link.stageInDeclaration
         )
         var parameters = ["uint vertexID [[vertex_id]]"]
+        if execution == .authoredObjectQuad {
+            parameters.append("constant float2& positionScale [[buffer(2)]]")
+        }
         if !uniforms.isEmpty {
             parameters.append("constant WPEUniforms& u [[buffer(0)]]")
         }
@@ -86,13 +90,15 @@ extension WPEShaderTranspiler {
         for slot in 0 ..< textureSlots {
             parameters.append("sampler wpeSampler\(slot) [[sampler(\(slot))]]")
         }
-        out += "vertex WPEStageIn wpe_authored_fullscreen_vertex(\(parameters.joined(separator: ", "))) {\n"
+        let entry = execution == .authoredObjectQuad ? "wpe_authored_object_quad_vertex" : "wpe_authored_fullscreen_vertex"
+        out += "vertex WPEStageIn \(entry)(\(parameters.joined(separator: ", "))) {\n"
         out += "    const float2 positions[4] = {float2(-1,-1), float2(1,-1), float2(-1,1), float2(1,1)};\n"
         out += "    const float2 uvs[4] = {float2(0,1), float2(1,1), float2(0,0), float2(1,0)};\n"
         out += "    WPEStageIn out;\n    float4 gl_Position = {};\n"
         for attribute in link.interface.variables(stage: .vertex, kind: .attribute) {
+            let position = execution == .authoredObjectQuad ? "positions[vertexID] * positionScale" : "positions[vertexID]"
             let value: String = if attribute.key.name == "a_Position" {
-                attribute.glslType == "vec4" ? "float4(positions[vertexID], 0, 1)" : "float3(positions[vertexID], 0)"
+                attribute.glslType == "vec4" ? "float4(\(position), 0, 1)" : "float3(\(position), 0)"
             } else {
                 attribute.glslType == "vec4" ? "float4(uvs[vertexID], 0, 0)" : "uvs[vertexID]"
             }

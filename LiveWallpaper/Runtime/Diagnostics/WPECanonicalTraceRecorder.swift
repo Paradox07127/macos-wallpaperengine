@@ -229,7 +229,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         vertexPath: WPEPassVertexPath? = nil,
         vertexUniformSlots: [SIMD4<Float>] = [],
         vertexUniformSources: [WPEUniformValueSource]? = nil,
-        authoredVertexFallback: String? = nil
+        authoredVertexFallback: String? = nil,
+        authoredObjectPositionScale: SIMD2<Float>? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -244,7 +245,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             sourceFingerprint: pass.shader?.sourceFingerprint,
             interface: result.shaderInterface, layout: result.uniformLayout, sources: uniformSources,
             vertexLayout: result.vertexStage?.uniformLayout ?? [], vertexSources: vertexUniformSources,
-            authoredVertexExecuted: result.vertexStage != nil, authoredVertexFallback: authoredVertexFallback
+            authoredVertexExecuted: result.vertexStage != nil, authoredVertexFallback: authoredVertexFallback,
+            authoredObjectQuadExecuted: result.vertexStage?.execution == .authoredObjectQuad
         )
         semanticCoverage.append(coverage)
         let ordinal = passes.count
@@ -380,7 +382,12 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
         if let vertex = result.vertexStage {
             vertexContract["bufferValues"] = "recorded-in-constantBuffers"
-            vertexContract["requiredVertexBufferIndices"] = vertex.uniformLayout.isEmpty ? [] : [0]
+            let requiredBuffers: [Int] = (vertex.uniformLayout.isEmpty ? [] : [0]) + (vertex.execution == .authoredObjectQuad ? [2] : [])
+            vertexContract["requiredVertexBufferIndices"] = requiredBuffers
+            if let scale = authoredObjectPositionScale {
+                vertexContract["geometryInput"] = ["bufferIndex": 2, "byteLength": 8, "positionScale": [scale.x, scale.y], "space": "centered-model-pixels"]
+                vertexContract["bufferValues"] = "uniforms-in-constantBuffers; geometry-in-geometryInput"
+            }
         }
         let passRecord: [String: Any] = [
             "ordinal": ordinal,

@@ -15,7 +15,13 @@ extension WPEMetalSceneRenderer {
         for layer in pipeline.layers {
             for pass in layer.passes where pass.shader?.isBuiltin == false {
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false) else { continue }
-                let authored = request.replacingVertexExecution(.authoredFullscreen)
+                let graph = layer.graphLayer
+                let object: Bool = if case .scene = pass.pass.target {
+                    graph.geometry != .identity && WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: graph, camera: cameraUniforms)
+                } else {
+                    false
+                }
+                let authored = request.replacingVertexExecution(object ? .authoredObjectQuad : .authoredFullscreen)
                 requestByKey[authored.translationCacheKey] = authored
                 keyByPassID[pass.id] = authored.translationCacheKey
             }

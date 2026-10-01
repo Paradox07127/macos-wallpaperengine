@@ -8,7 +8,7 @@ import simd
 enum WPEAuthoredVertexRejection: Equatable {
     case disabledForIsolation, geometryUnavailable, pipelineNotPrewarmed, stageUnavailable(String)
     case requiredUniformMissing(String), invalidMatrix(String), unverifiedEffectProjection3D
-    case unverifiedFullscreenDepth, unverifiedFullscreenMVP, unverifiedEffectPositionContext
+    case unverifiedFullscreenDepth, unverifiedFullscreenMVP, unverifiedEffectPositionContext, unverifiedObjectQuadSpace
 
     var reason: String {
         switch self {
@@ -20,6 +20,7 @@ enum WPEAuthoredVertexRejection: Equatable {
         case let .invalidMatrix(name): "invalid-vertex-matrix:\(name)"
         case .unverifiedFullscreenDepth: "fullscreen-depth-projection-unverified"
         case .unverifiedFullscreenMVP: "fullscreen-MVP-non-position-use-unverified"
+        case .unverifiedObjectQuadSpace: "object-quad-position-space-unverified"
         case .unverifiedEffectPositionContext: "effect-position-context-unverified"
         case .unverifiedEffectProjection3D: "effect-projection-3D-unverified"
         }
@@ -27,6 +28,21 @@ enum WPEAuthoredVertexRejection: Equatable {
 }
 
 extension WPEMetalRenderExecutor {
+    static func canSupplyAuthoredObjectQuad(layer: WPERenderLayer, camera: WPEMetalCameraUniforms) -> Bool {
+        let geometry = layer.geometry
+        guard !layer.isUtilityModelLayer, layer.parentObjectID == nil, layer.groupRenderTarget == nil,
+              layer.puppetPath == nil, geometry.shapePoints == nil, geometry.alignment == .center,
+              let size = geometry.size, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+              Float(size.width / 2).isFinite, Float(size.height / 2).isFinite,
+              geometry.origin.x.isFinite, geometry.origin.y.isFinite, abs(geometry.origin.z) < 0.000001,
+              geometry.scale.x.isFinite, geometry.scale.y.isFinite, geometry.scale.x > 0, geometry.scale.y > 0,
+              geometry.angles.z.isFinite, abs(geometry.angles.x) < 0.000001, abs(geometry.angles.y) < 0.000001,
+              camera.hasCapturedOrthographicShaderGlobals, !camera.usesPerspectiveProjection,
+              !camera.usesObjectPerspective(objectID: layer.id),
+              abs(camera.sceneMotion.angles.x) < 0.000001, abs(camera.sceneMotion.angles.y) < 0.000001 else { return false }
+        return true
+    }
+
     func authoredVertexResolvedInputRejection(for pass: WPEPreparedRenderPass, result: WPEShaderCompileResult,
                                               textures: WPEMetalTextureSlotTable) -> WPEAuthoredVertexRejection? {
         guard let vertex = result.vertexStage else { return .stageUnavailable("authored-stage-unavailable") }
@@ -50,12 +66,24 @@ extension WPEMetalRenderExecutor {
         guard pass.pass.depthTest.lowercased() == "disabled", pass.pass.depthWrite.lowercased() == "disabled" else {
             return .unverifiedFullscreenDepth
         }
+        if vertex.execution == .authoredObjectQuad {
+            guard case .scene = pass.pass.target,
+                  Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms),
+                  layer.parallaxDepth == .zero || frameState.cameraParallax.amount == 0 else { return .unverifiedObjectQuadSpace }
+        }
         let plans = uniformPlans(for: pass, layout: vertex.uniformLayout, stage: .vertex)
         for (index, uniform) in vertex.uniformLayout.enumerated() {
             if ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name), uniform.materialName == nil {
                 guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
-                guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
-                continue
+                if vertex.execution == .authoredFullscreen {
+                    guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
+                    continue
+                }
+                guard let values = frameUniformContext.value(named: uniform.name, passID: pass.id)?.vectorValue,
+                      WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: values) != nil else { return .invalidMatrix(uniform.name) }
+            }
+            if vertex.execution == .authoredObjectQuad, uniform.name.hasPrefix("g_Effect") {
+                return .unverifiedObjectQuadSpace
             }
             if uniform.name == WPEMetalObjectUniforms.effectModelViewProjectionMatrixUniformName {
                 guard uniform.materialName == nil else { return .unverifiedEffectPositionContext }
@@ -106,6 +134,9 @@ extension WPEMetalRenderExecutor {
             }
             let value = resolvedUniformValue(plan: plans[index], pass: pass, frame: frameUniformContext,
                                              texturesBySlot: nil, effectTextureProjection: nil)
+            if value == nil, vertex.execution == .authoredObjectQuad, uniform.materialName == nil, uniform.name.hasPrefix("g_") {
+                return .requiredUniformMissing(uniform.name)
+            }
             if value == nil, uniform.materialName == nil,
                uniform.name.hasPrefix("g_Model") || uniform.name.hasPrefix("g_View")
                || uniform.name.hasPrefix("g_Projection") || WPEFrameUniformContext.canonicalNames.contains(uniform.name) {
