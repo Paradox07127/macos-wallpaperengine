@@ -167,11 +167,11 @@ struct WPEMetalSolidSceneRunTests {
     @Test("Particle diagnostic bypass uses independent encoders without readbacks")
     func diagnosticParticleBypass() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 1, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
             "initializer": [["name": "sizerandom", "min": 8, "max": 8],
                             ["name": "lifetimerandom", "min": 10, "max": 10]],
-        ]))
+        ])
         var systems: [WPEParticleSystem] = []
         var textures: [ObjectIdentifier: MTLTexture] = [:]
         for index in 0 ..< 3 {
@@ -827,7 +827,7 @@ struct WPEMetalSolidSceneRunTests {
             released.append(index)
         }
         activeRun = run
-        run.encoder = try #require(command.makeRenderCommandEncoder(descriptor: descriptor))
+        run.encoder = command.makeRenderCommandEncoder(descriptor: descriptor)
         run.deferEndPass(7)
         run.deferEndPass(8)
         #expect(released.isEmpty)

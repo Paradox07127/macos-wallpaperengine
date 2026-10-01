@@ -59,11 +59,11 @@ struct WPESceneScriptQuarantineCompletionTests {
     func droppingReservationDoesNotConfirmCompletion() throws {
         let quarantine = WPESceneScriptQuarantine(limit: 1)
         let failedToken = token(1, quarantine: quarantine)
-        var safety: WPESceneScriptExecutionSafetyReservation? = try #require(
-            WPESceneScriptExecutionSafetyReservation.reserve(sceneToken: failedToken)
+        var safety: WPESceneScriptExecutionSafetyReservation? = WPESceneScriptExecutionSafetyReservation.reserve(
+            sceneToken: failedToken
         )
         var engine: EngineProbe? = EngineProbe()
-        weak var weakEngine = engine
+        weak let weakEngine = engine
         #expect(try safety?.quarantine(#require(engine), operation: .tick) == true)
         engine = nil
         safety = nil

@@ -314,7 +314,7 @@ struct WPEMetalTextureCopyTests {
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].storeAction = .store
         let run = WPEMetalSolidSceneRun()
-        run.encoder = try #require(command.makeRenderCommandEncoder(descriptor: descriptor))
+        run.encoder = command.makeRenderCommandEncoder(descriptor: descriptor)
         run.destinationTexture = scene
         executor.sharedSceneRun = run
         defer { executor.sharedSceneRun = nil }

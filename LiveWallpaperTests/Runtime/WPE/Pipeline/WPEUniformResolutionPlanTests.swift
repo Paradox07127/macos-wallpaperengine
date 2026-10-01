@@ -697,7 +697,7 @@ struct WPEUniformResolutionPlanTests {
         for count in [1, 2, 5] {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
             descriptor.mipmapLevelCount = count
-            textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+            textures[3] = device.makeTexture(descriptor: descriptor)
             for stage in [WPEShaderStage.vertex, .fragment] {
                 for direct in [false, true] {
                     executor.derivedUniformPackingEnabled = direct
@@ -711,7 +711,7 @@ struct WPEUniformResolutionPlanTests {
         #expect(try executor.packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: textures)[0].x == 99)
         let array = WPEUniformSlot(name: "g_Texture3MipMapInfo", glslType: "float", slot: 0, slotCount: 1, arrayLength: 1)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
-        textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+        textures[3] = device.makeTexture(descriptor: descriptor)
         #expect(try executor.packTranslatedUniforms(for: pass, layout: [array], texturesBySlot: textures)[0].x == 99)
     }
 
@@ -733,7 +733,7 @@ struct WPEUniformResolutionPlanTests {
         let pipeline = try device.makeComputePipelineState(function: #require(library.makeFunction(name: "mipProbe")))
         let textures = WPEMetalTextureSlotTable()
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: true)
-        textures[3] = try #require(device.makeTexture(descriptor: descriptor))
+        textures[3] = device.makeTexture(descriptor: descriptor)
         let slots = try executor.packTranslatedUniforms(for: pass, layout: translation.uniformLayout, texturesBySlot: textures)
         let input = try slots.withUnsafeBytes { try #require(device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)) }
         let output = try #require(device.makeBuffer(length: MemoryLayout<Float>.size, options: .storageModeShared))

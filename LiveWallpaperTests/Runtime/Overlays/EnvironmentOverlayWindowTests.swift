@@ -1,7 +1,8 @@
 import AppKit
-import LiveWallpaperCore
-import XCTest
 @testable import LiveWallpaper
+import LiveWallpaperCore
+import os
+import XCTest
 
 /// The particle layer belongs between the wallpaper and the desktop icons.
 /// `NSPanel.isFloatingPanel` rewrites `level` to `.floating` (3), so setting it
@@ -138,7 +139,7 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         configuration.effectConfig.weatherReactive = true
         store.save(configuration)
         let service = WeatherReactiveService(locationProvider: UnresolvedWeatherProvider())
-        var enabled = false
+        let enabled = OSAllocatedUnfairLock(initialState: false)
         let coordinator = WallpaperEffectsCoordinator(
             weatherService: service,
             configurationStore: store,
@@ -147,16 +148,16 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             applyFrameRateLimit: { _, _ in },
             screenRefreshRate: { _ in 60 },
             weatherWidgetPlaced: { true },
-            isGloballyEnabled: { enabled }
+            isGloballyEnabled: { enabled.withLock { $0 } }
         )
         defer { coordinator.shutdown() }
 
         coordinator.startWeatherMonitoring()
         XCTAssertFalse(service.isMonitoringForTesting)
-        enabled = true
+        enabled.withLock { $0 = true }
         coordinator.monitorBoardsDidChange()
         XCTAssertTrue(service.isMonitoringForTesting)
-        enabled = false
+        enabled.withLock { $0 = false }
         // The same entry that ScreenManager.applyGlobalRenderGate now calls.
         coordinator.globalRenderGateDidChange()
         XCTAssertFalse(service.isMonitoringForTesting)
@@ -165,14 +166,14 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
     @MainActor
     func testParticleOverlayLeavesWithItsDisplay() throws {
         let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
-        var live: [Screen] = [screen]
+        let live = OSAllocatedUnfairLock<[Screen]>(initialState: [screen])
         let store = WallpaperConfigurationStore(persistence: InMemoryConfigurationPersistence())
         var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
         configuration.particleEffect = .rain
         store.save(configuration)
         let coordinator = WallpaperEffectsCoordinator(
             configurationStore: store,
-            screensProvider: { live },
+            screensProvider: { live.withLock { $0 } },
             saveConfiguration: { _ in },
             applyFrameRateLimit: { _, _ in },
             screenRefreshRate: { _ in 60 }
@@ -185,7 +186,7 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             "no overlay was built to begin with"
         )
 
-        live = []
+        live.withLock { $0 = [] }
         coordinator.screensDidChange(arrivedScreenIDs: [])
         XCTAssertNil(
             coordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id),

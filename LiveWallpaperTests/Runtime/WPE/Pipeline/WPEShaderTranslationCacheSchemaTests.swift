@@ -95,7 +95,7 @@ struct WPEShaderTranslationCacheSchemaTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let cache = WPEShaderTranslationCache(rootURL: root)
-        let compiler = try WPESwiftShaderCompiler(device: device, translationCache: cache)
+        let compiler = WPESwiftShaderCompiler(device: device, translationCache: cache)
         let request = WPEShaderCompileRequest(
             shaderName: "modulo-precision", processedVertexSource: "",
             processedFragmentSource: "#define RESOLUTION 3\nvoid main() { \(statement) gl_FragColor = vec4(float(bucket) / 2.0, 0.0, 0.0, 1.0); }",
@@ -118,7 +118,7 @@ struct WPEShaderTranslationCacheSchemaTests {
         let fragment = try WPEMetalColorOutput.fragment(
             library: result.library, name: result.fragmentFunctionName, format: .rgba8Unorm
         )
-        descriptor.fragmentFunction = try #require(fragment)
+        descriptor.fragmentFunction = fragment
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
         let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 2, height: 2, mipmapped: false)

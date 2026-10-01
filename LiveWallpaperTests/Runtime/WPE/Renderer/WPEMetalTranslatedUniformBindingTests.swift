@@ -380,8 +380,8 @@ struct WPEMetalBatchedFragmentBindingTests {
         """
         let library = try device.makeLibrary(source: source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = try #require(library.makeFunction(name: "binding_vertex"))
-        descriptor.fragmentFunction = try #require(library.makeFunction(name: "binding_fragment"))
+        descriptor.vertexFunction = library.makeFunction(name: "binding_vertex")
+        descriptor.fragmentFunction = library.makeFunction(name: "binding_fragment")
         descriptor.colorAttachments[0].pixelFormat = format
         return try device.makeRenderPipelineState(descriptor: descriptor)
     }

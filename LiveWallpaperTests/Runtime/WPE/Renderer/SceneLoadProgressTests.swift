@@ -3,6 +3,7 @@ import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import Metal
+import os
 import Testing
 
 @MainActor
@@ -49,23 +50,24 @@ struct SceneLoadProgressTests {
                 presentLayer: WPEPresentLayer(layer: surface.metalLayer),
                 drawableSize: surface.metalLayer.drawableSize, device: device
             )
-            var member: SceneSpanWallpaperSession?
+            let member = OSAllocatedUnfairLock<SceneSpanWallpaperSession?>(initialState: nil)
             if spans {
                 let frames = WPESceneSpanFrames()
                 renderer.spanFrames = frames
                 let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
                 let group = SceneSpanWallpaperGroup(id: UUID(), descriptor: fixture.descriptor, owner: owner,
                                                     frames: frames, density: 1, displayFrames: [screen.id: screen.frame])
-                member = try group.makeMember(for: screen, configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(fixture.descriptor)))
+                let made = try group.makeMember(for: screen, configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .scene(fixture.descriptor)))
+                member.withLock { $0 = made }
             } else {
                 owner.wallpaperWindow?.orderBack(nil)
             }
-            defer { member?.cleanup() }
+            defer { member.withLock { $0 }?.cleanup() }
             let (blocker, release) = await block(actor)
             defer { release.signal() }
             owner.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
             let preparation = Task {
-                if let member {
+                if let member = member.withLock({ $0 }) {
                     return await member.prepareForDisplay(timeout: .seconds(5))
                 }
                 return await owner.prepareForDisplay(timeout: .seconds(5))

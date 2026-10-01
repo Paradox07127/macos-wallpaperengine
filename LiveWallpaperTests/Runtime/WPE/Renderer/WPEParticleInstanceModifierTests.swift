@@ -37,12 +37,12 @@ struct WPEParticleInstanceModifierTests {
     }
 
     @Test func authoredOverrideColornMultipliesTheSampledColorAndKeepsItsVariance() throws {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 8,
             "emitter": [["name": "boxrandom", "rate": 0, "instantaneous": 8]],
             "initializer": [["name": "lifetimerandom", "min": 10, "max": 10],
                             ["name": "colorrandom", "min": "100 100 100", "max": "200 200 200"]],
-        ]))
+        ])
         let device = try #require(MTLCreateSystemDefaultDevice())
         let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 61))
         system.instanceValues = WPEParticleInstanceValues(override: WPESceneParticleInstanceOverride(color: SIMD3(255, 0, 0)))
@@ -90,11 +90,11 @@ struct WPEParticleInstanceModifierTests {
     }
 
     @Test func animatedOverrideAlphaIsNotAlsoAppliedAsTheBirthSeed() throws {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 1,
             "emitter": [["name": "boxrandom", "rate": 0, "instantaneous": 1]],
             "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
-        ]))
+        ])
         let ramp = WPESceneAnimatedValue(
             animation: WPESceneNumericAnimation(
                 tracks: [[.init(frame: 0, value: 0), .init(frame: 15, value: 1), .init(frame: 30, value: 1)]],
@@ -154,7 +154,7 @@ struct WPEParticleInstanceModifierTests {
     }
 
     private func makeSystem() throws -> WPEParticleSystem {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 8,
             "emitter": [["name": "boxrandom", "rate": 1, "instantaneous": 0]],
             "initializer": [["name": "lifetimerandom", "min": 10, "max": 10],
@@ -162,7 +162,7 @@ struct WPEParticleInstanceModifierTests {
                             ["name": "velocityrandom", "min": "16 0 0", "max": "16 0 0"],
                             ["name": "colorrandom", "min": "255 0 0", "max": "255 0 0"]],
             "operator": [["name": "alphafade", "fadeintime": 0, "fadeouttime": 1]],
-        ]))
+        ])
         let device = try #require(MTLCreateSystemDefaultDevice())
         return try #require(WPEParticleSystem(definition: definition, device: device,
                                               sceneTransform: WPEParticleSceneTransform(

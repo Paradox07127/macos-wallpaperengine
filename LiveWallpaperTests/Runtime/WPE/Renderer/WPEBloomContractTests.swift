@@ -44,7 +44,7 @@ struct WPEBloomContractTests {
         let executor = try WPEMetalRenderExecutor(device: device)
         let source = try texture(device, width: 8, height: 5, pixel: SIMD4(0, 0, 0, 0.1))
         let destination = try texture(device, width: 16, height: 10, pixel: .zero)
-        var impulse: [UInt16] = [Float16(4).bitPattern, Float16(2).bitPattern, Float16(1).bitPattern, Float16(0.1).bitPattern]
+        let impulse: [UInt16] = [Float16(4).bitPattern, Float16(2).bitPattern, Float16(1).bitPattern, Float16(0.1).bitPattern]
         impulse.withUnsafeBytes {
             source.replace(region: MTLRegionMake2D(3, 2, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8)
         }

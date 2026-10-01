@@ -9,23 +9,23 @@ import Testing
 struct WPEParticleInstanceAlphaScaleTests {
     @Test("Alpha random uses initializer defaults without changing opaque particles")
     func alphaRandomDefaultsAreLocalToInitializer() throws {
-        let absent = try #require(WPEParticleDefinitionParser.parse(dictionary: [:]))
+        let absent = WPEParticleDefinitionParser.parse(dictionary: [:])
         #expect(abs(absent.alphaMin - 1) < 0.000001)
         #expect(abs(absent.alphaMax - 1) < 0.000001)
-        let random = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let random = WPEParticleDefinitionParser.parse(dictionary: [
             "initializer": [["name": "alpharandom", "max": 1]],
-        ]))
+        ])
         #expect(abs(random.alphaMin - 0.05) < 0.000001)
         #expect(abs(random.alphaMax - 1) < 0.000001)
-        let explicit = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let explicit = WPEParticleDefinitionParser.parse(dictionary: [
             "initializer": [["name": "alpharandom", "min": 0, "max": 0.25]],
-        ]))
+        ])
         #expect(explicit.alphaMin == 0)
         #expect(explicit.alphaMax == 0.25)
     }
 
     private func makeSystem(device: MTLDevice) throws -> WPEParticleSystem {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 8,
             "material": "materials/m.json",
             "emitter": [["name": "boxrandom", "instantaneous": 8, "rate": 0]],
@@ -34,7 +34,7 @@ struct WPEParticleInstanceAlphaScaleTests {
                 ["name": "lifetimerandom", "min": 100, "max": 100],
                 ["name": "sizerandom", "min": 8, "max": 8],
             ],
-        ]))
+        ])
         return try #require(WPEParticleSystem(
             definition: definition, device: device,
             sceneTransform: WPEParticleSceneTransform(

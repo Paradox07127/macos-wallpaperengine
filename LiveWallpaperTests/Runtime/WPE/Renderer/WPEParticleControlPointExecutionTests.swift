@@ -103,7 +103,7 @@ struct WPEParticleControlPointExecutionTests {
 
     private func makeSystem(rate: Double, burst: Int, controlPoint: Int, controlFlags: Int = 0,
                             velocity: String = "0 0 0", lifetime: Double = 10, duration: Double = 0) throws -> WPEParticleSystem {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 32,
             "controlpoint": [["id": 0, "offset": "0 0 0", "flags": 0],
                              ["id": 5, "offset": "30 0 0", "flags": controlFlags],
@@ -112,7 +112,7 @@ struct WPEParticleControlPointExecutionTests {
                          "controlpoint": controlPoint, "duration": duration]],
             "initializer": [["name": "lifetimerandom", "min": lifetime, "max": lifetime],
                             ["name": "velocityrandom", "min": velocity, "max": velocity]],
-        ]))
+        ])
         let device = try #require(MTLCreateSystemDefaultDevice())
         return try #require(WPEParticleSystem(definition: definition, device: device,
                                               sceneTransform: WPEParticleSceneTransform(sceneSize: SIMD2(256, 128),

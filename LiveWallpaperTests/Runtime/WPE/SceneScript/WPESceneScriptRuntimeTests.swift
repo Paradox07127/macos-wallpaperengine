@@ -2006,7 +2006,7 @@ export function init(value) {
             store.setCursorWorldProjection(nil, sceneMotion: motion)
             let expected = SIMD3(128 + (64 - 128) / motion.zoom + motion.origin.x,
                                  64 + (32 - 64) / motion.zoom + motion.origin.y, 0)
-            #expect(try transform.tick(pointerPosition: pointer, runtimeSeconds: Double(frame)) == expected)
+            #expect(transform.tick(pointerPosition: pointer, runtimeSeconds: Double(frame)) == expected)
             let input = WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
             _ = layer.tick(runtimeSeconds: Double(frame), pointerFrame: input)
             #expect(store.get("wx") as? Double == expected.x)

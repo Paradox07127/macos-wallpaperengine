@@ -126,8 +126,8 @@ struct WPEVideoSamplingFailureTests {
         func sampleRed(_ texture: MTLTexture) throws -> Float {
             let library = try #require(device.makeDefaultLibrary())
             let pipelineDescriptor = MTLRenderPipelineDescriptor()
-            pipelineDescriptor.vertexFunction = try #require(library.makeFunction(name: "wpe_fullscreen_vertex"))
-            pipelineDescriptor.fragmentFunction = try #require(try WPEMetalColorOutput.fragment(library: library, name: "wpe_copy_fragment", format: .rgba32Float))
+            pipelineDescriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
+            pipelineDescriptor.fragmentFunction = try WPEMetalColorOutput.fragment(library: library, name: "wpe_copy_fragment", format: .rgba32Float)
             pipelineDescriptor.colorAttachments[0].pixelFormat = .rgba32Float
             let pipeline = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
 

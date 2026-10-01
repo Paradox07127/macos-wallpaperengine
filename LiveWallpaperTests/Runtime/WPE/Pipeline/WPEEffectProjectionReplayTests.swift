@@ -100,8 +100,12 @@ struct WPEEffectProjectionReplayTests {
         )
         let matrixSlot = try #require(result.uniformLayout.first { $0.name == Self.matrixName })
         #expect(matrixSlot.slotCount == 4)
-        let uploaded = slots[matrixSlot.slot ..< matrixSlot.slot + 4].flatMap { [$0.x, $0.y, $0.z, $0.w] }
-        #expect(uploaded == (expectedUpload ?? matrix ?? [Double](repeating: 0, count: 16)).map(Float.init))
+        let uploaded: [Float] = slots[matrixSlot.slot ..< matrixSlot.slot + 4].flatMap { (slot: SIMD4<Float>) -> [Float] in
+            [slot.x, slot.y, slot.z, slot.w]
+        }
+        let expectedMatrix: [Double] = expectedUpload ?? matrix ?? [Double](repeating: 0, count: 16)
+        let expectedFloats: [Float] = expectedMatrix.map { Float($0) }
+        #expect(uploaded == expectedFloats)
 
         let pipeline = try executor.translatedPipelineState(
             for: result, blendMode: "disabled", alphaWritePolicy: .all,

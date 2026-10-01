@@ -397,6 +397,26 @@ struct WPESceneDocumentParserTests {
         ))
         #expect(document.lightObjects.count == 2)
         let point = try #require(document.lightObjects.first { $0.id == "433" })
+        expectPointLightMetadata(point)
+
+        let directional = try #require(document.lightObjects.first { $0.id == "259" })
+        #expect(directional.type == .directional)
+        #expect(directional.type.knownShaderArrayValue == 2)
+        #expect(directional.angles == SIMD3<Double>(7, 8, 9))
+        #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
+        #expect(!directional.visible)
+        #expect(document.propertyBindings["lightRadius"]?.contains {
+            $0.target == .lightObject(id: "433") && $0.kind == .uniform && $0.action == .reload
+        } == true)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("Light object Point") && $0.message.contains("await their L1 gates")
+        })
+        #expect(document.diagnostics.contains {
+            $0.message.contains("general.lightconfig") && $0.message.contains("await their L1 gates")
+        })
+    }
+
+    private func expectPointLightMetadata(_ point: WPESceneLightObject) {
         #expect(point.type == .point)
         #expect(point.type.knownShaderArrayValue == 0)
         #expect(point.authoredType == "lpoint")
@@ -422,22 +442,6 @@ struct WPESceneDocumentParserTests {
         ])
         #expect(point.fieldBindings["origin"]?.script?.contains("update(value)") == true)
         #expect(point.fieldBindings["origin"]?.scriptProperties["offset"] == .number(2.5))
-
-        let directional = try #require(document.lightObjects.first { $0.id == "259" })
-        #expect(directional.type == .directional)
-        #expect(directional.type.knownShaderArrayValue == 2)
-        #expect(directional.angles == SIMD3<Double>(7, 8, 9))
-        #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
-        #expect(!directional.visible)
-        #expect(document.propertyBindings["lightRadius"]?.contains {
-            $0.target == .lightObject(id: "433") && $0.kind == .uniform && $0.action == .reload
-        } == true)
-        #expect(document.diagnostics.contains {
-            $0.message.contains("Light object Point") && $0.message.contains("await their L1 gates")
-        })
-        #expect(document.diagnostics.contains {
-            $0.message.contains("general.lightconfig") && $0.message.contains("await their L1 gates")
-        })
     }
 
     @Test("Unknown light type is preserved without fabricating a point-light value")

@@ -187,7 +187,7 @@ struct WPERenderFidelityRegressionTests {
             sd.magFilter = .nearest
             sd.sAddressMode = .clampToEdge
             sd.tAddressMode = .clampToEdge
-            try encoder.setFragmentSamplerState(#require(device.makeSamplerState(descriptor: sd)), index: 0)
+            encoder.setFragmentSamplerState(device.makeSamplerState(descriptor: sd), index: 0)
         }
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()

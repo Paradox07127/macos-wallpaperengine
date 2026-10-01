@@ -119,12 +119,12 @@ struct WPEParticlePlaybackTests {
     }
 
     private func makeSystem(lifetime: Double = 10, startDelay: Double = 0) throws -> WPEParticleSystem {
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 16, "starttime": startDelay,
             "emitter": [["name": "boxrandom", "rate": 60, "instantaneous": 4]],
             "initializer": [["name": "lifetimerandom", "min": lifetime, "max": lifetime],
                             ["name": "velocityrandom", "min": "10 0 0", "max": "10 0 0"]],
-        ]))
+        ])
         let device = try #require(MTLCreateSystemDefaultDevice())
         return try #require(WPEParticleSystem(definition: definition, device: device, seed: 71))
     }

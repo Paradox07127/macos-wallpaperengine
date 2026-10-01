@@ -228,7 +228,7 @@ struct WPECameraMotionTests {
         let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
         desc.storageMode = .shared
         let white = try #require(device.makeTexture(descriptor: desc))
-        var bytes: [UInt8] = [255, 255, 255, 255]
+        let bytes: [UInt8] = [255, 255, 255, 255]
         bytes.withUnsafeBytes { white.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 4) }
         let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 64, height: 64, auto: false), sceneCamera: .defaultCamera,
                                             sceneMotion: .init(origin: SIMD3(-8, 4, 0), zoom: 2))

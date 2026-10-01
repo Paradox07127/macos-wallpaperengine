@@ -1050,47 +1050,16 @@ struct WPEMetalSceneRendererTests {
         #expect(layers.count == 64)
         #expect(layers.allSatisfy { $0.passes.count == (workshopShader ? 2 : 1) })
         if workshopShader {
-            #expect(layers.allSatisfy { $0.passes[0].uniformValues["g_UserAlpha"] == .number(0.5) })
-            var targets = Set<String>()
-            for layer in layers {
-                guard case let .layerComposite(target) = layer.passes[0].pass.target else {
-                    Issue.record("workshop material lost its independent offscreen target")
-                    continue
-                }
-                #expect(targets.insert(target).inserted)
-                #expect(layer.passes[1].pass.source == .fbo(target))
-                #expect(layer.passes[1].textureReferences.contains(.fbo(target)))
-                #expect(layer.passes[1].pass.target == .scene)
-            }
-            #expect(targets.count == 64)
+            expectIndependentWorkshopTargets(layers)
         }
-        #expect(layers.last?.graphLayer.objectID == "bar")
-        #expect(layers.first?.graphLayer.objectID == "bar.__created_62")
-        #expect(layers.allSatisfy { $0.graphLayer.geometry.alignment == .bottom })
-        #expect(layers.allSatisfy { abs($0.graphLayer.geometry.angles.z - angleDegrees * .pi / 180) < 0.0001 })
-        #expect(layers.allSatisfy { $0.graphLayer.geometry.scale == SIMD3(0.5, 0.25, 0) })
-        #expect(layers.dropLast().allSatisfy { $0.graphLayer.parallaxDepth == .zero })
-        #expect(layers.map(\.graphLayer.sortIndex) == Array(0 ..< 64))
+        expectVisualizerGeometry(layers, angleDegrees: angleDegrees)
         let output = try #require(renderer.outputTexture)
         let source = try #require(renderer.loadedTextures["materials/bar.png"])
         let sourcePixel = try #require(source.readAllPixels()?.first)
         #expect(sourcePixel.r > 250 && sourcePixel.g < 5 && sourcePixel.b < 5 && sourcePixel.a == 255)
         let pixels = try #require(output.readAllPixels())
-        var histogram: [String: Int] = [:]
-        for pixel in pixels {
-            histogram["\(pixel.r),\(pixel.g),\(pixel.b),\(pixel.a)", default: 0] += 1
-        }
-        print("[VisualizerPixels] angle=\(angleDegrees) workshop=\(workshopShader) output=\(output.width)x\(output.height) format=\(output.pixelFormat.rawValue) scene=\(renderer.sceneRenderSize) colors=\(histogram.sorted { $0.value > $1.value }.prefix(8))")
-        for (key, texture) in renderer.loadedTextures.sorted(by: { $0.key < $1.key }) {
-            let pixel = texture.readAllPixels()?.first
-            print("[VisualizerSource] \(key) \(texture.width)x\(texture.height) format=\(texture.pixelFormat.rawValue) pixel=\(String(describing: pixel))")
-        }
-        for layer in [layers[0], layers[layers.count - 1]] {
-            print("[VisualizerLayer] id=\(layer.id) geometry=\(layer.graphLayer.geometry)")
-            for pass in layer.passes {
-                print("[VisualizerPass] id=\(pass.id) shader=\(pass.pass.shader) source=\(pass.pass.source) target=\(pass.pass.target) textures=\(pass.textureBindings) constants=\(pass.uniformValues)")
-            }
-        }
+        printVisualizerDiagnostics(renderer: renderer, output: output, pixels: pixels, layers: layers,
+                                   angleDegrees: angleDegrees, workshopShader: workshopShader)
         let minimumRed: UInt8 = workshopShader ? 80 : 200
         var redPixels = 0, farRightRedPixels = 0
         for y in 0 ..< output.height {
@@ -1117,6 +1086,53 @@ struct WPEMetalSceneRendererTests {
         #expect(renderer.liveCreatedLayers.isEmpty)
         #expect(renderer.liveLayerPresentation.isEmpty)
         #expect(renderer.lastFramePipeline == nil)
+    }
+
+    private func expectIndependentWorkshopTargets(_ layers: [WPEPreparedRenderLayer]) {
+        #expect(layers.allSatisfy { $0.passes[0].uniformValues["g_UserAlpha"] == .number(0.5) })
+        var targets = Set<String>()
+        for layer in layers {
+            guard case let .layerComposite(target) = layer.passes[0].pass.target else {
+                Issue.record("workshop material lost its independent offscreen target")
+                continue
+            }
+            #expect(targets.insert(target).inserted)
+            #expect(layer.passes[1].pass.source == .fbo(target))
+            #expect(layer.passes[1].textureReferences.contains(.fbo(target)))
+            #expect(layer.passes[1].pass.target == .scene)
+        }
+        #expect(targets.count == 64)
+    }
+
+    private func expectVisualizerGeometry(_ layers: [WPEPreparedRenderLayer], angleDegrees: Double) {
+        #expect(layers.last?.graphLayer.objectID == "bar")
+        #expect(layers.first?.graphLayer.objectID == "bar.__created_62")
+        #expect(layers.allSatisfy { $0.graphLayer.geometry.alignment == .bottom })
+        #expect(layers.allSatisfy { abs($0.graphLayer.geometry.angles.z - angleDegrees * .pi / 180) < 0.0001 })
+        #expect(layers.allSatisfy { $0.graphLayer.geometry.scale == SIMD3(0.5, 0.25, 0) })
+        #expect(layers.dropLast().allSatisfy { $0.graphLayer.parallaxDepth == .zero })
+        #expect(layers.map(\.graphLayer.sortIndex) == Array(0 ..< 64))
+    }
+
+    private func printVisualizerDiagnostics(
+        renderer: WPEMetalSceneRenderer, output: MTLTexture, pixels: [MetalPixel],
+        layers: [WPEPreparedRenderLayer], angleDegrees: Double, workshopShader: Bool
+    ) {
+        var histogram: [String: Int] = [:]
+        for pixel in pixels {
+            histogram["\(pixel.r),\(pixel.g),\(pixel.b),\(pixel.a)", default: 0] += 1
+        }
+        print("[VisualizerPixels] angle=\(angleDegrees) workshop=\(workshopShader) output=\(output.width)x\(output.height) format=\(output.pixelFormat.rawValue) scene=\(renderer.sceneRenderSize) colors=\(histogram.sorted { $0.value > $1.value }.prefix(8))")
+        for (key, texture) in renderer.loadedTextures.sorted(by: { $0.key < $1.key }) {
+            let pixel = texture.readAllPixels()?.first
+            print("[VisualizerSource] \(key) \(texture.width)x\(texture.height) format=\(texture.pixelFormat.rawValue) pixel=\(String(describing: pixel))")
+        }
+        for layer in [layers[0], layers[layers.count - 1]] {
+            print("[VisualizerLayer] id=\(layer.id) geometry=\(layer.graphLayer.geometry)")
+            for pass in layer.passes {
+                print("[VisualizerPass] id=\(pass.id) shader=\(pass.pass.shader) source=\(pass.pass.source) target=\(pass.pass.target) textures=\(pass.textureBindings) constants=\(pass.uniformValues)")
+            }
+        }
     }
 
     @Test("Disjoint presentation assignments from separate scripts retain each other's fields")

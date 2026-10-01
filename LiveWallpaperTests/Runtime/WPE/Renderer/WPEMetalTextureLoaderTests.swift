@@ -90,11 +90,11 @@ struct WPEMetalTextureLoaderTests {
     func zeroRefractionPreservesBackground() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 1, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
             "initializer": [["name": "sizerandom", "min": 80, "max": 80],
                             ["name": "lifetimerandom", "min": 10, "max": 10]],
-        ]))
+        ])
         let system = try #require(WPEParticleSystem(definition: definition, device: device, blendMode: .translucent, seed: 133))
         system.isRefract = true
         system.refractAmount = 0

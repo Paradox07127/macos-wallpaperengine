@@ -12,52 +12,7 @@ struct WPERenderGraphBuilderTests {
             .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
-        try writeJSON([
-            "material": "materials/layer.json",
-            "futureDescriptorRoot": [
-                "enabled": true,
-                "ordered": [3.5, false, NSNull(), 1]
-            ]
-        ], to: root.appendingPathComponent("models/layer.json"))
-        try writeJSON([
-            "futureMaterialRoot": ["enabled": true],
-            "passes": [[
-                "shader": "genericimage2",
-                "blending": "translucent",
-                "combos": ["VERSION": 2],
-                "textures": ["layer_albedo"],
-                "futureMaterialPass": ["weights": [0.25, NSNull()]]
-            ]]
-        ], to: root.appendingPathComponent("materials/layer.json"))
-        try writeJSON([
-            "futureEffectRoot": ["revision": 7],
-            "passes": [[
-                "material": "materials/effects/custom.json",
-                "target": "_rt_CustomBuffer",
-                "bind": [["index": 0, "name": "previous"]],
-                "futureEffectPass": ["mode": "oracle"]
-            ]],
-            "fbos": [[
-                "name": "_rt_CustomBuffer",
-                "scale": 4,
-                "fit": 512,
-                "format": "rgba_backbuffer",
-                "unique": true,
-            ]],
-        ], to: root.appendingPathComponent("effects/custom/effect.json"))
-        try writeJSON([
-            "futureEffectMaterialRoot": ["values": [true, false]],
-            "usertextures": [["name": "$effectMaterial", "type": "system"]],
-            "passes": [[
-                "shader": "effects/custom",
-                "textures": [NSNull(), "effects/noise"],
-                "usertextures": ["$effectPass"],
-                "constantshadervalues": ["base": 0.25],
-                "combos": ["LOCAL": 1],
-                "futureEffectMaterialPass": ["nullable": NSNull()]
-            ]]
-        ], to: root.appendingPathComponent("materials/effects/custom.json"))
+        try writeMaterialAndEffectPassAssets(root: root)
 
         let scenePayload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -116,6 +71,72 @@ struct WPERenderGraphBuilderTests {
         #expect(layer.passes[0].authoredJSON.materialPass?["futureMaterialPass"]?["weights"]?[1] == .null)
 
         let effectPass = layer.passes[1]
+        expectCustomEffectPass(effectPass)
+        let metadataOnly = WPEShaderImplementationInventory.graphEntries(
+            graph: graph, substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
+        )
+        #expect(metadataOnly.count == 1)
+        #expect(metadataOnly.first?.stableEffectID == "7:effect:3")
+        #expect(metadataOnly.first?.stablePassID == "7:effect:3:pass:0")
+        #expect(metadataOnly.first?.renderPassID == effectPass.id)
+        #expect(metadataOnly.first?.authoredEffectPath == "effects/custom/effect.json")
+        #expect(metadataOnly.first?.authoredShaderPath == "effects/custom")
+        #expect(metadataOnly.first?.classification == .unsupportedMetadataOnly)
+        #expect(metadataOnly.first?.metadataSources == [
+            "effect-material", "material-pass", "effect-override",
+        ])
+        expectUnknownAuthoredFieldsPreserved(layer)
+    }
+
+    private func writeMaterialAndEffectPassAssets(root: URL) throws {
+        try writeJSON([
+            "material": "materials/layer.json",
+            "futureDescriptorRoot": [
+                "enabled": true,
+                "ordered": [3.5, false, NSNull(), 1],
+            ],
+        ], to: root.appendingPathComponent("models/layer.json"))
+        try writeJSON([
+            "futureMaterialRoot": ["enabled": true],
+            "passes": [[
+                "shader": "genericimage2",
+                "blending": "translucent",
+                "combos": ["VERSION": 2],
+                "textures": ["layer_albedo"],
+                "futureMaterialPass": ["weights": [0.25, NSNull()]],
+            ]],
+        ], to: root.appendingPathComponent("materials/layer.json"))
+        try writeJSON([
+            "futureEffectRoot": ["revision": 7],
+            "passes": [[
+                "material": "materials/effects/custom.json",
+                "target": "_rt_CustomBuffer",
+                "bind": [["index": 0, "name": "previous"]],
+                "futureEffectPass": ["mode": "oracle"],
+            ]],
+            "fbos": [[
+                "name": "_rt_CustomBuffer",
+                "scale": 4,
+                "fit": 512,
+                "format": "rgba_backbuffer",
+                "unique": true,
+            ]],
+        ], to: root.appendingPathComponent("effects/custom/effect.json"))
+        try writeJSON([
+            "futureEffectMaterialRoot": ["values": [true, false]],
+            "usertextures": [["name": "$effectMaterial", "type": "system"]],
+            "passes": [[
+                "shader": "effects/custom",
+                "textures": [NSNull(), "effects/noise"],
+                "usertextures": ["$effectPass"],
+                "constantshadervalues": ["base": 0.25],
+                "combos": ["LOCAL": 1],
+                "futureEffectMaterialPass": ["nullable": NSNull()],
+            ]],
+        ], to: root.appendingPathComponent("materials/effects/custom.json"))
+    }
+
+    private func expectCustomEffectPass(_ effectPass: WPERenderPass) {
         #expect(effectPass.phase == .effect(file: "effects/custom/effect.json"))
         #expect(effectPass.binds[0] == .previous)
         #expect(effectPass.textures[1] == .asset("masks/custom_mask"))
@@ -137,19 +158,9 @@ struct WPERenderGraphBuilderTests {
         ))
         #expect(effectPass.replacingTarget(.scene).authoredJSON.effectIdentity
             == effectPass.authoredJSON.effectIdentity)
-        let metadataOnly = WPEShaderImplementationInventory.graphEntries(
-            graph: graph, substitutesMedia: WPEMetalShaderDispatcher.substitutesMedia(shaderName:)
-        )
-        #expect(metadataOnly.count == 1)
-        #expect(metadataOnly.first?.stableEffectID == "7:effect:3")
-        #expect(metadataOnly.first?.stablePassID == "7:effect:3:pass:0")
-        #expect(metadataOnly.first?.renderPassID == effectPass.id)
-        #expect(metadataOnly.first?.authoredEffectPath == "effects/custom/effect.json")
-        #expect(metadataOnly.first?.authoredShaderPath == "effects/custom")
-        #expect(metadataOnly.first?.classification == .unsupportedMetadataOnly)
-        #expect(metadataOnly.first?.metadataSources == [
-            "effect-material", "material-pass", "effect-override"
-        ])
+    }
+
+    private func expectUnknownAuthoredFieldsPreserved(_ layer: WPERenderLayer) {
         #expect(layer.authoredJSON.sceneObjects.count == 2)
         #expect(layer.authoredJSON.sceneObjects[0]["futureGroupField"]?["ordered"]?[0] == .bool(true))
         #expect(layer.authoredJSON.sceneObjects[0]["futureGroupField"]?["ordered"]?[1] == .number(2.25))
@@ -3608,7 +3619,9 @@ struct WPECanonicalCompositeRotationTests {
         #expect(optimized.graphLayer.compositeA == names.a)
         #expect(optimized.graphLayer.compositeB == names.b)
         #expect(optimized.passes.count == count + 1)
-        #expect(optimized.passes.map(\.id) == (0 ..< count).map { "\(id).\($0)" } + ["\(id).\(count + 1)"])
+        var expectedIDs: [String] = (0 ..< count).map { (index: Int) -> String in "\(id).\(index)" }
+        expectedIDs.append("\(id).\(count + 1)")
+        #expect(optimized.passes.map(\.id) == expectedIDs)
         #expect(optimized.passes[0].pass.target == .layerComposite(name: names.b))
         #expect(optimized.passes[count - 1].pass.target == .layerComposite(name: names.a))
         #expect(optimized.passes[1].textureBindings[0] == .fbo(names.b))

@@ -129,10 +129,10 @@ struct WPEParticleInstanceCoordinatorTests {
     @Test func eventSlotBudgetIsObservableAndReleasedAfterStop() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         func prototype(capacity: Int, burst: Int) throws -> WPEParticleSystem {
-            let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            let definition = WPEParticleDefinitionParser.parse(dictionary: [
                 "maxcount": capacity, "emitter": [["name": "boxrandom", "instantaneous": burst, "rate": 0]],
                 "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
-            ]))
+            ])
             return try #require(WPEParticleSystem(definition: definition, device: device, seed: 29))
         }
         let parent = try prototype(capacity: 10, burst: 10)
@@ -154,12 +154,12 @@ struct WPEParticleInstanceCoordinatorTests {
         -> (WPEParticleInstanceCoordinator, WPEParticleSystem) {
         let device = try #require(MTLCreateSystemDefaultDevice())
         func system(rate: Double, lifetime: Double, velocity: String, duration: Double) throws -> WPEParticleSystem {
-            let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            let definition = WPEParticleDefinitionParser.parse(dictionary: [
                 "maxcount": 32, "starttime": 0,
                 "emitter": [["name": "boxrandom", "rate": rate, "instantaneous": 0, "duration": duration]],
                 "initializer": [["name": "lifetimerandom", "min": lifetime, "max": lifetime],
                                 ["name": "velocityrandom", "min": velocity, "max": velocity]],
-            ]))
+            ])
             return try #require(WPEParticleSystem(definition: definition, device: device, seed: 44))
         }
         let parent = try system(rate: 0.5, lifetime: 3, velocity: "16 0 0", duration: 4.1)

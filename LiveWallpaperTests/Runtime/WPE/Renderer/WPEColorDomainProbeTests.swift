@@ -275,13 +275,13 @@ struct WPEColorDomainProbeTests {
     func additiveParticleKeepsSceneCoverage() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 1, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
             "initializer": [["name": "sizerandom", "min": 8, "max": 8],
                             ["name": "lifetimerandom", "min": 10, "max": 10],
                             ["name": "colorrandom", "min": "128 128 128", "max": "128 128 128"]],
             "operator": [["name": "alphafade", "fadeintime": 0, "fadeouttime": 1]],
-        ]))
+        ])
         let transform = WPEParticleSceneTransform(sceneSize: SIMD2(16, 16), objectOrigin: SIMD3(8, 8, 0),
                                                   objectScale: SIMD3(repeating: 1), objectAngleZ: 0)
         let system = try #require(WPEParticleSystem(definition: definition, device: device, blendMode: .additive,

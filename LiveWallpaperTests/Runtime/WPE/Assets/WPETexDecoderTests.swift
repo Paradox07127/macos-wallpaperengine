@@ -526,12 +526,16 @@ struct WPETexDecoderTests {
         appendInt32(&buffer, 4)
         appendInt32(&buffer, Int32(width))
         appendInt32(&buffer, Int32(height))
-        for (imageID, rect) in [
-            (0, (Float(0), Float(0), Float(width), Float(height / 2))),
-            (0, (Float(width / 2), Float(height / 2), Float(width), Float(height / 2))),
-            (1, (Float(0), Float(0), Float(width), Float(height / 2))),
-            (1, (Float(0), Float(height / 2), Float(width), Float(height / 2)))
-        ] {
+        let fullWidth = Float(width)
+        let halfWidth = Float(width / 2)
+        let halfHeight = Float(height / 2)
+        let regions: [(Int, (Float, Float, Float, Float))] = [
+            (0, (0, 0, fullWidth, halfHeight)),
+            (0, (halfWidth, halfHeight, fullWidth, halfHeight)),
+            (1, (0, 0, fullWidth, halfHeight)),
+            (1, (0, halfHeight, fullWidth, halfHeight)),
+        ]
+        for (imageID, rect) in regions {
             appendInt32(&buffer, Int32(imageID))
             appendFloat32(&buffer, 0.03)
             appendFloat32(&buffer, rect.0)

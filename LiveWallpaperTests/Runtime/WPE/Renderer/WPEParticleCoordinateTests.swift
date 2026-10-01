@@ -10,11 +10,11 @@ struct WPEParticleCoordinateTests {
     @Test("Refractive rain uses the same object size scale as ordinary particles")
     func refractionDoesNotBypassObjectScale() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 4, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
             "initializer": [["name": "sizerandom", "min": 100, "max": 100],
                             ["name": "lifetimerandom", "min": 10, "max": 10]],
-        ]))
+        ])
         let transform = WPEParticleSceneTransform(
             sceneSize: SIMD2(3840, 2160), objectOrigin: .zero,
             objectScale: SIMD3(0.1, 0.2, 1), objectAngleZ: 0
@@ -36,12 +36,12 @@ struct WPEParticleCoordinateTests {
     @Test("Perspective rain preserves its authored two-to-one horizontal emission extent")
     func rainEmissionExtent() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 2048,
             "emitter": [["name": "sphererandom", "instantaneous": 2048, "rate": 0,
                          "directions": "2 1 1", "distancemin": 0, "distancemax": 1024]],
             "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
-        ]))
+        ])
         let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 133))
         system.tick(now: 0)
         let particles = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 2048)
@@ -65,14 +65,14 @@ struct WPEParticleCoordinateTests {
     @Test("Short-lived rain stays stable across render frame intervals", arguments: [15, 30, 60, 0])
     func rainPopulationAcrossFrameIntervals(fps: Int) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
             "maxcount": 4096,
             "emitter": [["name": "boxrandom", "rate": 2000]],
             "initializer": [["name": "lifetimerandom", "min": 0.31, "max": 0.31],
                             ["name": "velocityrandom", "min": "0 -3000 0", "max": "0 -3000 0"],
                             ["name": "alpharandom", "min": 1, "max": 1]],
             "operator": [["name": "alphafade", "fadeintime": 0.15, "fadeouttime": 0.15]],
-        ]))
+        ])
         let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 133))
         system.tick(now: 0)
         var now = 0.0
