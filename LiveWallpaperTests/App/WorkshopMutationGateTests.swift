@@ -110,9 +110,10 @@ struct WorkshopMutationGateTests {
     func dependentSceneIsSuspendedAndReloaded() async {
         let dependencyID = Self.uniqueID()
         let sceneID = Self.uniqueID()
-        await withScreen(configuration: {
+        let configuration: (CGDirectDisplayID) -> ScreenConfiguration = {
             Self.sceneConfiguration(sceneID, dependencies: [dependencyID], for: $0)
-        }) { manager, screen in
+        }
+        await withScreen(configuration: configuration) { manager, screen in
             screen.installRuntimeSession(GateFakeRuntimeSession())
 
             Self.post(.workshopItemWillMutate, dependencyID)
