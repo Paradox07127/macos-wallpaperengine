@@ -16,15 +16,6 @@ struct WallpaperOpeningShaderTests {
         }
     }
 
-    /// Mirrors `WallpaperTransitionUniforms` in the Metal sources (24 bytes).
-    private struct Uniforms {
-        var progress: Float
-        var time: Float
-        var aspect: Float
-        var seed: Float
-        var origin: SIMD2<Float>
-    }
-
     private nonisolated static let width = 256
     private nonisolated static let height = 144
 
@@ -61,7 +52,6 @@ struct WallpaperOpeningShaderTests {
     }
 
     private func render(_ function: String, progress: Float) throws -> AlphaStats {
-        #expect(MemoryLayout<Uniforms>.stride == 24)
         let device = try #require(MTLCreateSystemDefaultDevice())
         let library = try #require(device.makeDefaultLibrary(), "the app bundle has no default Metal library")
         let vertex = try #require(library.makeFunction(name: "wallpaperTransitionVertex"))
@@ -90,7 +80,7 @@ struct WallpaperOpeningShaderTests {
         let queue = try #require(device.makeCommandQueue())
         let commandBuffer = try #require(queue.makeCommandBuffer())
         let encoder = try #require(commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor))
-        var uniforms = Uniforms(
+        var uniforms = WallpaperTransitionUniforms(
             progress: progress,
             time: 0,
             aspect: Float(Self.width) / Float(Self.height),
@@ -98,7 +88,7 @@ struct WallpaperOpeningShaderTests {
             origin: SIMD2(0.5, 0.5)
         )
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WallpaperTransitionUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         commandBuffer.commit()

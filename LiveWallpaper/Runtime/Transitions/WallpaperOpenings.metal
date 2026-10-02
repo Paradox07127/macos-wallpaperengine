@@ -12,6 +12,9 @@ struct WallpaperTransitionUniforms {
     float aspect;
     float seed;
     float2 origin;
+    float2 regionOrigin;
+    float2 regionSize;
+    float canvasAspect;
 };
 
 struct WallpaperTransitionVertexOut {
@@ -49,6 +52,11 @@ static inline float2 openingAspect(float2 uv, constant WallpaperTransitionUnifor
     return float2(uv.x * u.aspect, uv.y);
 }
 
+// Like openingAspect, but on the canvas shared by every display, in canvas heights.
+static inline float2 openingCanvasPoint(float2 uv, constant WallpaperTransitionUniforms &u) {
+    return u.regionOrigin + uv * u.regionSize;
+}
+
 // Screen-blends `light` over the layers below, approximated with one alpha, after darkening them by `darken`.
 static inline float4 openingLight(float3 light, float darken) {
     float3 color = clamp(light, 0.0f, 1.0f);
@@ -64,7 +72,7 @@ constant float loomCenter = 0.5f;
 static inline float loomWarpDistance(float2 q, constant WallpaperTransitionUniforms &u) {
     float p = u.progress;
     float vibration = sin(q.x * 6.0f + p * 90.0f) * 0.012f * exp(-max(p - 0.32f, 0.0f) * 18.0f) * step(0.32f, p);
-    return q.y - loomCenter - vibration * sin(q.x / u.aspect * M_PI_F);
+    return q.y - loomCenter - vibration * sin(q.x / u.canvasAspect * M_PI_F);
 }
 
 static inline float loomHalfHeight(float p) {
@@ -83,15 +91,15 @@ static inline float loomReveal(float2 q, float p) {
 
 [[fragment]] float4 wallpaperOpeningLoomMask(WallpaperTransitionVertexOut in [[stage_in]],
                                              constant WallpaperTransitionUniforms &u [[buffer(0)]]) {
-    return float4(loomReveal(openingAspect(in.uv, u), u.progress));
+    return float4(loomReveal(openingCanvasPoint(in.uv, u), u.progress));
 }
 
 [[fragment]] float4 wallpaperOpeningLoomLight(WallpaperTransitionVertexOut in [[stage_in]],
                                               constant WallpaperTransitionUniforms &u [[buffer(0)]]) {
-    float2 q = openingAspect(in.uv, u);
+    float2 q = openingCanvasPoint(in.uv, u);
     float p = u.progress;
     float dim = openingSmooth(0.0f, 0.12f, p) * (1.0f - openingSmooth(0.55f, 0.8f, p));
-    float headX = mix(-0.1f, u.aspect + 0.1f, openingEaseOut((p - 0.1f) / 0.22f));
+    float headX = mix(-0.1f, u.canvasAspect + 0.1f, openingEaseOut((p - 0.1f) / 0.22f));
     float warp = loomWarpDistance(q, u);
     float started = step(0.1f, p);
     float line = exp(-abs(warp) * 260.0f) * step(q.x, headX) * started * (1.0f - openingSmooth(0.38f, 0.5f, p));

@@ -9,6 +9,22 @@ struct WallpaperTransitionUniforms {
     var aspect: Float
     var seed: Float
     var origin: SIMD2<Float>
+    var regionOrigin: SIMD2<Float>
+    var regionSize: SIMD2<Float>
+    var canvasAspect: Float
+
+    /// nil `region` treats this display as the whole canvas.
+    init(progress: Float, time: Float, aspect: Float, seed: Float, origin: SIMD2<Float>, region: WallpaperCanvasRegion? = nil) {
+        let region = region ?? .identity(aspect: aspect)
+        self.progress = progress
+        self.time = time
+        self.aspect = aspect
+        self.seed = seed
+        self.origin = origin
+        regionOrigin = region.origin
+        regionSize = region.size
+        canvasAspect = region.canvasAspect
+    }
 }
 
 /// Fragment function names for one mask transition; nil `light` draws no overlay.

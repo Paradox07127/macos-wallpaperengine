@@ -12,6 +12,9 @@ struct WallpaperTransitionUniforms {
     float aspect;
     float seed;
     float2 origin;
+    float2 regionOrigin;
+    float2 regionSize;
+    float canvasAspect;
 };
 
 struct WallpaperTransitionVertexOut {
@@ -86,6 +89,11 @@ static inline float2 transitionAspect(float2 uv, constant WallpaperTransitionUni
     return float2(uv.x * u.aspect, uv.y);
 }
 
+// Like transitionAspect, but on the canvas shared by every display, in canvas heights.
+static inline float2 transitionCanvasPoint(float2 uv, constant WallpaperTransitionUniforms &u) {
+    return u.regionOrigin + uv * u.regionSize;
+}
+
 // Screen-blends `light` over whatever is below, approximated with one alpha, then scaled by a
 // start/end envelope so the overlay is fully transparent at progress 0 and 1.
 static inline float4 transitionLight(float3 light, float darken, float progress) {
@@ -113,12 +121,12 @@ constant float meteorHeadTime = 0.3f;
 
 static inline MeteorGeometry meteorGeometry(float2 uv, constant WallpaperTransitionUniforms &u) {
     MeteorGeometry g;
-    g.q = transitionAspect(uv, u);
+    g.q = transitionCanvasPoint(uv, u);
     if (u.origin.x > 0.5f) {
-        g.q.x = u.aspect - g.q.x;
+        g.q.x = u.canvasAspect - g.q.x;
     }
     g.start = float2(-0.2f, 0.98f + (u.seed - 0.5f) * 0.16f);
-    g.end = float2(u.aspect + 0.2f, 0.18f - (u.seed - 0.5f) * 0.16f);
+    g.end = float2(u.canvasAspect + 0.2f, 0.18f - (u.seed - 0.5f) * 0.16f);
     g.distance = transitionSegmentDistance(g.q, g.start, g.end, g.along);
     float pass = meteorHeadTime * (1.0f - sqrt(max(1.0f - g.along, 0.0f)));
     g.age = u.progress - pass;

@@ -99,7 +99,7 @@ WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
 TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitionShaderTests \
     WallpaperOpeningShaderTests WallpaperDistortionShaderTests WallpaperOpeningTransitionTests \
     WallpaperOpeningLaunchTests WallpaperSessionFrameCaptureTests WallpaperDistortionTransitionTests \
-    WallpaperDistortionScreenTests
+    WallpaperDistortionScreenTests WallpaperCanvasRegionTests
 
 # Keep certificate-signed Metal products separate from the ad-hoc fast host.
 test-wpe-metal:
