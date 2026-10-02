@@ -5,9 +5,12 @@ import LiveWallpaperCore
 extension ConfigurationPorter {
     static func currentBundle() -> ConfigurationBundle {
         let manager = SettingsManager.shared
+        var global = manager.loadGlobalSettings()
+        // Paused displays belong to this machine; a backup never carries them.
+        global.pausedDisplayKeys = []
         var bundle = ConfigurationBundle(
             screenConfigurations: manager.loadConfigurations(),
-            globalSettings: manager.loadGlobalSettings(),
+            globalSettings: global,
             wallpaperBookmarks: manager.loadWallpaperBookmarks(),
             screenSchemes: manager.loadScreenSchemes()
         )
@@ -47,7 +50,8 @@ extension ConfigurationPorter {
             manager.replaceAllConfigurations(configurations)
         }
 
-        if let global = bundle.globalSettings {
+        if var global = bundle.globalSettings {
+            global.pausedDisplayKeys = manager.loadGlobalSettings().pausedDisplayKeys
             manager.saveGlobalSettings(global)
             // The imported library may rename or delete presets the cached
             // configurations still carry snapshots of.
