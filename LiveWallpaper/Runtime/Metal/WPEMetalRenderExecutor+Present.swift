@@ -112,13 +112,17 @@ extension WPEMetalRenderExecutor {
             }
             try encodePresentPass(
                 source: source,
-                drawable: drawable,
+                target: drawable.texture,
                 fitMode: fitMode,
                 worldSourceSize: worldSourceSize,
             uniforms: uniforms,
                 into: commandBuffer
             )
         }
+        lastPresentPass = WPEPresentPassRecord(
+            fitMode: fitMode, worldSourceSize: worldSourceSize, uniforms: uniforms,
+            target: drawable.texture, usedMetalFX: encodedByUpscaler
+        )
 
         commandBuffer.present(drawable)
         // The present buffer reads `source` asynchronously; refcount it so the output ring doesn't hand the texture to the next frame's render while this GPU read is still in flight.
@@ -188,16 +192,16 @@ extension WPEMetalRenderExecutor {
         return layer.nextDrawable()
     }
 
-    private func encodePresentPass(
+    func encodePresentPass(
         source: MTLTexture,
-        drawable: CAMetalDrawable,
+        target: MTLTexture,
         fitMode: WPEPresentFitMode,
         worldSourceSize: CGSize?,
         uniforms: WPEPresentUniforms?,
         into commandBuffer: MTLCommandBuffer
     ) throws {
         let descriptor = MTLRenderPassDescriptor()
-        descriptor.colorAttachments[0].texture = drawable.texture
+        descriptor.colorAttachments[0].texture = target
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].storeAction = .store
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -208,7 +212,7 @@ extension WPEMetalRenderExecutor {
             blendMode: "disabled",
             // The wallpaper window is transparent, but its wallpaper content is terminal and opaque. The fragment writes alpha=1 explicitly; do not encode that contract indirectly through a color write mask.
             alphaWritePolicy: .all,
-            colorPixelFormat: drawable.texture.pixelFormat
+            colorPixelFormat: target.pixelFormat
         )
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "present")
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
@@ -222,8 +226,8 @@ extension WPEMetalRenderExecutor {
             fitMode: fitMode,
             sourceWidth: worldSourceSize.map { Int($0.width) } ?? source.width,
             sourceHeight: worldSourceSize.map { Int($0.height) } ?? source.height,
-            targetWidth: drawable.texture.width,
-            targetHeight: drawable.texture.height
+            targetWidth: target.width,
+            targetHeight: target.height
         )
         encoder.setVertexBytes(&presentUniforms, length: MemoryLayout<WPEPresentUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)

@@ -530,6 +530,29 @@ actor WPEDisplayRenderActor {
         }, isolation: self)
     }
 
+    /// Works while running or suspended; nil when nothing was presented, the scene is hibernated, or MetalFX drew the last frame.
+    func captureDisplayedFrame() async -> WPEDisplayedFrameCapture? {
+        let resumer = WPEDisplayedFrameCaptureResumer()
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                self.preconditionIsolated()
+                resumer.install(continuation)
+                guard !Task.isCancelled, let renderer = self.renderer, let source = renderer.outputTexture else {
+                    resumer.resume(returning: nil)
+                    return
+                }
+                renderer.executor.encodeDisplayedFrameCapture(
+                    source: source,
+                    colorSpace: renderer.metalLayer.layer.colorspace
+                ) { capture in
+                    resumer.resume(returning: capture)
+                }
+            }
+        }, onCancel: {
+            resumer.resume(returning: nil)
+        }, isolation: self)
+    }
+
     func loadDiagnostics() -> SceneLoadDiagnostic? {
         renderer?.loadDiagnostics
     }
