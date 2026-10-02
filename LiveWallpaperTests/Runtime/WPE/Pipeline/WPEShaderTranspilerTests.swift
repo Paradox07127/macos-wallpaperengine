@@ -2317,6 +2317,44 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    private func conditionSelectsIfBranch(_ condition: String) -> Bool {
+        let source = """
+        #define A 1
+        #define B 0
+        #if \(condition)
+        float ifBranch;
+        #else
+        float elseBranch;
+        #endif
+        """
+        let active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source)
+        return active.contains("ifBranch")
+    }
+
+    @Test("Ordinary nested `#if` condition still evaluates")
+    func evaluatesOrdinaryNestedPreprocessorCondition() {
+        #expect(conditionSelectsIfBranch("(A && (B || !C))"))
+        #expect(conditionSelectsIfBranch("(A && (B || C))") == false)
+    }
+
+    @Test("`#if` nesting beyond the depth limit fails the condition")
+    func rejectsOverlyNestedPreprocessorCondition() {
+        let depth = 100
+        let parens = String(repeating: "(", count: depth) + "1" + String(repeating: ")", count: depth)
+        #expect(conditionSelectsIfBranch(parens) == false)
+        #expect(conditionSelectsIfBranch(String(repeating: "!", count: depth) + "1") == false)
+        #expect(conditionSelectsIfBranch(String(repeating: "-", count: depth) + "1") == false)
+        #expect(conditionSelectsIfBranch(String(repeating: "~", count: depth) + "1") == false)
+    }
+
+    @Test("Pathologically deep `#if` fails without overflowing the stack")
+    func rejectsPathologicallyNestedPreprocessorCondition() {
+        let depth = 100_000
+        let parens = String(repeating: "(", count: depth) + "1" + String(repeating: ")", count: depth)
+        #expect(conditionSelectsIfBranch(parens) == false)
+        #expect(conditionSelectsIfBranch(String(repeating: "!", count: depth) + "1") == false)
+    }
+
     @Test("Nested regular texture() is fully rewritten (no texture() survives) and compiles")
     func translatesNestedRegularTextureFragment() throws {
         let source = """

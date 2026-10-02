@@ -203,6 +203,8 @@ extension WPEShaderTranspiler {
         let values: [String: Int]
         let definedMacros: Set<String>
         var index = 0
+        private static let maximumNesting = 64
+        private var depth = 0
 
         init(tokens: [PreprocessorToken], values: [String: Int], definedMacros: Set<String>) {
             self.tokens = tokens
@@ -377,7 +379,11 @@ extension WPEShaderTranspiler {
             }
         }
 
+        // Every recursive path (unary ops and `(` via parsePrimary) re-enters here, so this one counter bounds stack depth.
         private mutating func parseUnary() -> Int? {
+            depth += 1
+            defer { depth -= 1 }
+            guard depth <= Self.maximumNesting else { return nil }
             if matchOperator("!") {
                 guard let value = parseUnary() else { return nil }
                 return value == 0 ? 1 : 0
