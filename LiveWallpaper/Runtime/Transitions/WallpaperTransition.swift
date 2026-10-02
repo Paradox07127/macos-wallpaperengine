@@ -142,10 +142,20 @@ final class WallpaperSwitchGroup {
     @TaskLocal static var current: WallpaperSwitchGroup?
 
     let pace: WallpaperTransitionPace
+    let barrier: WallpaperStartBarrier
     private var resolvedPlan: WallpaperTransitionPlan?
 
-    init(pace: WallpaperTransitionPace) {
+    init(pace: WallpaperTransitionPace, barrier: WallpaperStartBarrier = WallpaperStartBarrier()) {
         self.pace = pace
+        self.barrier = barrier
+    }
+
+    /// The enclosing manual group when there is one, so a nested manual entry joins it; otherwise a fresh manual group.
+    static func forManualAction() -> WallpaperSwitchGroup {
+        if let current, current.pace == .manual {
+            return current
+        }
+        return WallpaperSwitchGroup(pace: .manual)
     }
 
     /// The first retiring display resolves; later members reuse that result.
