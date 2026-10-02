@@ -186,6 +186,8 @@ PARALLEL_SUITES=(
   WallpaperAutomationRotationResetTests
   WallpaperAutomationSwitchGroupTests
   VolumeMountReloadTests
+  PersistentUserPauseTests
+  WPEParticleSpawnFailureTests
   WallpaperPolicyEngineThermalTests
   ShelfGridFlightTests
   ApplyRouterTests
