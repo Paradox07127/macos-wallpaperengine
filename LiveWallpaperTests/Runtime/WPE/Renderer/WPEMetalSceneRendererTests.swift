@@ -1092,6 +1092,45 @@ struct WPEMetalSceneRendererTests {
         #expect(mtkView.enableSetNeedsDisplay == false)
     }
 
+    @Test("A text value script alone can hide an image layer in the rendered frame")
+    func textValueScriptAloneHidesImageLayer() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.textScriptCrossLayerScene(
+            initBody: "thisScene.getLayer('B').visible = false;"
+        )
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+
+        let imageLayer = try #require(renderer.lastFramePipeline?.layers.first { $0.graphLayer.objectID == "b" })
+        #expect(imageLayer.graphLayer.visible == false, "text script's hide of B never reached the frame pipeline")
+    }
+
+    @Test("A text value script hiding another text layer reaches that text's draw state")
+    func textValueScriptHidesAnotherTextLayer() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.textScriptCrossLayerScene(
+            initBody: "thisScene.getLayer('TB').visible = false; thisScene.getLayer('TB').alpha = 0.25;"
+        )
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+
+        #expect(renderer.layerObjectIDByName["TB"] == "tb")
+        #expect(renderer.liveLayerVisibilityIncludingText["tb"] == false, "text layer TB still drawn after a script hid it")
+        #expect(renderer.liveTextAlpha["tb"] == 0.25, "text draw ignores the script-set alpha of TB")
+    }
+
     @Test("Renders layers created by SceneScript")
     func rendersSceneScriptCreatedLayers() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2422,6 +2461,50 @@ struct MetalSceneFixture {
               "font": "systemfont_arial", "visible": true,
               "origin": "32 32 0",
               "text": { "value": "0", "script": "\(readerScript)" }
+            }
+          ]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(
+            root: root,
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString,
+                cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json",
+                capabilityTier: .imageOnly
+            ),
+            dependencyRoot: nil
+        )
+    }
+
+    /// Image layer "B" plus text layers "TA" (value script running `initBody` in init) and "TB"; no other scripts.
+    static func textScriptCrossLayerScene(initBody: String) throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let script = "'use strict';\\nexport function init() { \(initBody) }\\nexport function update(value) { return value; }"
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [
+            {
+              "id": "b", "name": "B", "type": "image",
+              "image": "models/util/solidlayer.json",
+              "color": "1 0 0", "alpha": 1
+            },
+            {
+              "id": "ta", "name": "TA", "type": "text",
+              "font": "systemfont_arial", "visible": true,
+              "origin": "32 32 0",
+              "text": { "value": "A", "script": "\(script)" }
+            },
+            {
+              "id": "tb", "name": "TB", "type": "text",
+              "font": "systemfont_arial", "visible": true,
+              "origin": "32 32 0",
+              "text": "B"
             }
           ]
         }

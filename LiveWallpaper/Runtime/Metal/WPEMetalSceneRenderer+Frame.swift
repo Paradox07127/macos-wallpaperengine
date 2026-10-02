@@ -407,7 +407,7 @@ extension WPEMetalSceneRenderer {
     ) -> WPEFrameOverlay {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
-            || !particleAlphaScriptInstances.isEmpty else {
+            || !particleAlphaScriptInstances.isEmpty || !textScriptInstances.isEmpty else {
             return WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a

@@ -939,11 +939,22 @@ extension WPEMetalSceneRenderer {
 
     private func applyLayerScriptState(_ state: WPELayerScriptState, objectID: String) {
         // A hidden ancestor always wins — the script runtime's `getParent()` is an always-visible stub, so a dock script gating on `parent.visible` cannot otherwise hide itself. Walk the chain live so a runtime ancestor toggle is respected, not snapshotted.
+        // Text objects draw from the text maps, which also win the merge over the layer maps.
+        let isText = liveTextVisibility[objectID] != nil
         if state.visibleAssigned {
-            liveLayerVisibility[objectID] = state.visible && ancestorChainVisible(objectID)
+            let visible = state.visible && ancestorChainVisible(objectID)
+            if isText {
+                liveTextVisibility[objectID] = visible
+            } else {
+                liveLayerVisibility[objectID] = visible
+            }
         }
         if state.alphaAssigned {
-            liveLayerAlpha[objectID] = state.alpha
+            if isText {
+                liveTextAlpha[objectID] = state.alpha
+            } else {
+                liveLayerAlpha[objectID] = state.alpha
+            }
         }
         sceneScriptVideoCommandBuffer.enqueue(state.videoCommands, objectID: objectID)
     }
