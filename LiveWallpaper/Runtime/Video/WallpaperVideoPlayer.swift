@@ -174,6 +174,8 @@ final class WallpaperVideoPlayer {
     private var isHibernationEligible = false
     private let hibernationDelay: Duration
     private let hibernationDwell = AbsenceDwell()
+    /// Where the hibernation still was captured, keyed to its source; nil = the next build starts from the top.
+    private var hibernationResumePoint: (url: URL, time: CMTime)?
     /// Latch + generation: detached mmap/property loads may finish after cancel.
     private(set) var isCleanedUp = false
     private var lifecycleGeneration: UInt64 = 0
@@ -718,10 +720,36 @@ final class WallpaperVideoPlayer {
         setupPlaybackObservers()
         installQueueItemMaintenanceObserver()
         applyRequestedFrameRateLimitIfReady()
-        setupPlayerReadyObserver()
         // Held until the rebuilt layer has a picture, else wake flashes black. Having a picture closes out the restore so a later absence starts from `.live`.
         _ = hibernation.didRestore()
-        containerView.clearStillFrameWhenPlayerIsReady()
+        if let resumeTime = hibernationResumePoint?.time {
+            hibernationResumePoint = nil
+            resumePlayback(at: resumeTime, generation: generation)
+        } else {
+            setupPlayerReadyObserver()
+            containerView.clearStillFrameWhenPlayerIsReady()
+        }
+    }
+
+    /// Holds autoplay and the still frame until the rebuilt item is back at the captured position; a seek issued before the item is ready is cancelled for lack of a seekable range.
+    private func resumePlayback(at time: CMTime, generation: UInt64) {
+        guard let player else { return }
+        player.publisher(for: \.currentItem)
+            .compactMap(\.self)
+            .flatMap { $0.publisher(for: \.status) }
+            .first(where: { $0 == .readyToPlay })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak player] _ in
+                guard let self, let player, isLifecycleActive(generation) else { return }
+                player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, isLifecycleActive(generation) else { return }
+                        setupPlayerReadyObserver()
+                        videoView?.clearStillFrameWhenPlayerIsReady()
+                    }
+                }
+            }
+            .store(in: &cleanupTasks)
     }
 
     private func detectFormatInfoIfNeeded(asset: AVURLAsset, generation: UInt64) async throws {
@@ -1428,9 +1456,15 @@ final class WallpaperVideoPlayer {
             return true
         }
         guard hibernation.begin() == .presentCover else { return true }
-        videoView?.showStillFrame(stillFrame)
+        videoView?.showStillFrame(stillFrame.image)
         guard hibernation.coverDidPresent(true, generation: hibernation.generation)
             == .releaseResources else { return true }
+        let stillTime = stillFrame.time
+        hibernationResumePoint = if let url = videoURL, stillTime.isNumeric, stillTime.seconds > 0 {
+            (url, stillTime)
+        } else {
+            nil
+        }
         retirePlaybackState()
         Logger.info(
             "Video wallpaper hibernated: \(videoURL?.lastPathComponent ?? "<unknown>")",
@@ -1444,6 +1478,9 @@ final class WallpaperVideoPlayer {
         // `.rebuild` only from `.hibernated`; `.keepCover` means a rebuild is
         // already running under the still frame and must not be restarted.
         guard hibernation.requestRestore() == .rebuild else { return }
+        if hibernationResumePoint?.url != url {
+            hibernationResumePoint = nil
+        }
         // Armed here, not at the end of the rebuild: a load that fails before `configurePlaybackComponents` never reaches the readiness handoff, so the still frame would stay on screen for the rest of the session.
         videoView?.clearStillFrameNoLaterThan(Self.stillFrameWakeDeadlineSeconds)
         Logger.info(
@@ -1459,7 +1496,7 @@ final class WallpaperVideoPlayer {
     /// frozen fake frame is worse than whatever the player is actually showing.
     private static let stillFrameWakeDeadlineSeconds: TimeInterval = 10
 
-    private func captureStillFrame() async -> CGImage? {
+    private func captureStillFrame() async -> (image: CGImage, time: CMTime)? {
         guard let player, let item = player.currentItem else { return nil }
         let generator = AVAssetImageGenerator(asset: item.asset)
         generator.appliesPreferredTrackTransform = true
@@ -1477,7 +1514,7 @@ final class WallpaperVideoPlayer {
         nonisolated(unsafe) let capture = generator
         do {
             let (image, _) = try await capture.image(at: time)
-            return image
+            return (image, time)
         } catch {
             Logger.debug(
                 "Hibernation still frame unavailable: \(error.localizedDescription)",
@@ -1536,6 +1573,8 @@ final class WallpaperVideoPlayer {
     }
 
     private func reportError(_ error: WallpaperRuntimeError) {
+        // A failed wake rebuild must not hand its position to a later retry.
+        hibernationResumePoint = nil
         runtimeError = error
         onError?(error)
     }

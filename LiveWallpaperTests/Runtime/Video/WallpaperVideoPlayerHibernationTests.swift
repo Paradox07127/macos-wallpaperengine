@@ -226,6 +226,57 @@ struct WallpaperVideoPlayerHibernationTests {
         }
     }
 
+    @Test("Waking from hibernation resumes where the still frame was taken")
+    func wakeResumesAtHibernatedPosition() async throws {
+        let harness = try await Harness.make()
+        defer { harness.cleanup() }
+
+        let pausedAt = try await Self.hibernateAfterPlaying(harness, toSeconds: 1.0)
+        #expect(pausedAt >= 1.0)
+
+        let firstPlayback = try await Self.wakeAndReadFirstPlaybackTime(harness)
+        #expect(abs(firstPlayback - pausedAt) < 0.2, "wake restarted at \(firstPlayback)s instead of \(pausedAt)s")
+    }
+
+    @Test("Waking onto a different source starts it from the top")
+    func wakeOntoNewSourceStartsFromZero() async throws {
+        let harness = try await Harness.make()
+        defer { harness.cleanup() }
+        let otherURL = try await SyntheticDesktopVideoFixture.writeMP4(durationSeconds: 1.5)
+        defer { try? FileManager.default.removeItem(at: otherURL) }
+
+        _ = try await Self.hibernateAfterPlaying(harness, toSeconds: 1.0)
+        harness.player.videoURL = otherURL
+
+        let firstPlayback = try await Self.wakeAndReadFirstPlaybackTime(harness)
+        #expect(firstPlayback < 0.2, "a new source resumed at \(firstPlayback)s from the previous one")
+    }
+
+    private static func hibernateAfterPlaying(
+        _ harness: Harness,
+        toSeconds target: Double
+    ) async throws -> Double {
+        harness.player.play()
+        try await Harness.waitUntil("playback reaches \(target)s") {
+            (harness.player.player?.currentTime().seconds ?? 0) >= target
+        }
+        harness.player.pause()
+        let pausedAt = try #require(harness.player.player?.currentTime().seconds)
+        harness.player.setSuspended(true)
+        harness.player.setHibernationEligible(true)
+        try await Harness.waitUntil("player hibernates") { harness.player.isHibernated }
+        return pausedAt
+    }
+
+    private static func wakeAndReadFirstPlaybackTime(_ harness: Harness) async throws -> Double {
+        harness.player.setSuspended(false)
+        harness.player.play()
+        try await Harness.waitUntil("rebuilt player starts playing") {
+            harness.player.player != nil && harness.player.isPlaying
+        }
+        return try #require(harness.player.player?.currentTime().seconds)
+    }
+
     @Test("Losing eligibility during the dwell cancels hibernation")
     func eligibilityFlipCancelsTheDwell() async throws {
         let harness = try await Harness.make()
