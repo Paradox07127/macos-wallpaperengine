@@ -553,6 +553,8 @@ final class WPESceneScriptTimerScheduler {
     private var entriesByHandle: [UInt64: Entry] = [:]
     private var nextHandle: UInt64 = 1
     private var currentRuntimeSeconds = 0.0
+    /// false until the first advance; timers registered before it are relative to that first runtime, not 0.
+    private var hasRuntimeBase = false
     private var isInvalidated = false
 
     var hasPendingTimers: Bool {
@@ -601,6 +603,15 @@ final class WPESceneScriptTimerScheduler {
         callbackDidThrow: () -> Bool
     ) -> AdvanceResult {
         guard !isInvalidated, proposedRuntimeSeconds.isFinite else { return .completed }
+        if !hasRuntimeBase {
+            hasRuntimeBase = true
+            // A reloaded scene's runtime starts far from 0; catching up from 0 would blow the callback limit.
+            let offset = proposedRuntimeSeconds - currentRuntimeSeconds
+            for entry in heap {
+                entry.deadline += offset
+            }
+            currentRuntimeSeconds = proposedRuntimeSeconds
+        }
         currentRuntimeSeconds = max(currentRuntimeSeconds, proposedRuntimeSeconds)
         var callbackCount = 0
 

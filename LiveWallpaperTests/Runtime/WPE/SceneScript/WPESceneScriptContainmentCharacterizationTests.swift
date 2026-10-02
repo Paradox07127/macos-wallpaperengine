@@ -1133,7 +1133,8 @@ struct WPESceneScriptTimerContainmentTests {
             batchDispatcher: WPESceneScriptBatchDispatcher(width: 1)
         )
 
-        #expect(instance.tickString(runtimeSeconds: 2) == "stable")
+        #expect(instance.tickString(runtimeSeconds: 0) == "0")
+        #expect(instance.tickString(runtimeSeconds: 2) == "0")
         #expect(token.failureReason == .timerCallbackLimitExceeded(
             limit: 1_024
         ))

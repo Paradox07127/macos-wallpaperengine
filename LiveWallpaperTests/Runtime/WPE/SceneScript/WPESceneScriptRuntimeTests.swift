@@ -1428,6 +1428,7 @@ export function init(value) {
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
 
+        #expect(instance.tickString(runtimeSeconds: 0) == "function|function|function|function|function|function:0:0")
         #expect(instance.tickString(runtimeSeconds: 0.099) == "function|function|function|function|function|function:0.099:0")
         #expect(instance.tickString(runtimeSeconds: 0.050) == "function|function|function|function|function|function:0.099:0")
         #expect(instance.tickString(runtimeSeconds: 0.100) == "function|function|function|function|function|function:0.1:1")
@@ -1461,6 +1462,7 @@ export function init(value) {
         export function update(value) { return events; }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        _ = instance.tickString(runtimeSeconds: 0)
         #expect(instance.tickString(runtimeSeconds: 0.1) == "abc")
     }
 
@@ -1478,6 +1480,21 @@ export function init(value) {
         #expect(instance.tickString(runtimeSeconds: 0.35) == "3|1")
     }
 
+    @Test(
+        "Init-registered timers take the first advance as their base instead of catching up from 0",
+        arguments: [0.0, 1800.0]
+    )
+    func timersAnchorToFirstAdvanceRuntime(base: Double) throws {
+        let script = """
+        var fired = 0;
+        setInterval(function () { fired += 1; }, 100);
+        export function update(value) { return String(fired); }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        #expect(instance.tickString(runtimeSeconds: base) == "0")
+        #expect(instance.tickString(runtimeSeconds: base + 0.35) == "3")
+    }
+
     @Test("A throwing interval is tombstoned instead of retried in the same catch-up sweep")
     func throwingIntervalIsCancelled() throws {
         let script = """
@@ -1486,6 +1503,7 @@ export function init(value) {
         export function update(value) { return String(attempts); }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        #expect(instance.tickString(runtimeSeconds: 0) == "0")
         #expect(instance.tickString(runtimeSeconds: 0.5) == "1")
         #expect(instance.tickString(runtimeSeconds: 1.0) == "1")
     }
