@@ -198,6 +198,7 @@ extension WPEMetalSceneRenderer {
             document.imageObjects.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        var expansionBudget = ParticleExpansionBudget()
         for object in document.particleObjects where object.visible {
             let groupEffect = await resolveParticleGroupEffect(
                 for: object,
@@ -214,6 +215,7 @@ extension WPEMetalSceneRenderer {
                 object: object,
                 sortIndex: document.objectPaintOrder[object.id] ?? 0,
                 groupEffect: groupEffect,
+                budget: &expansionBudget,
                 on: actor
             )
         }
@@ -328,6 +330,7 @@ extension WPEMetalSceneRenderer {
         sortIndex: Int,
         groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>)? = nil,
         childReference: WPEParticleChildReference? = nil,
+        budget: inout ParticleExpansionBudget,
         on actor: isolated WPEDisplayRenderActor
     ) async {
         // Reload/cleanup cancels the load task; bail before work or recursion for a dead load.
@@ -345,6 +348,12 @@ extension WPEMetalSceneRenderer {
             debugStage("particle", "skip \(object.name) — particle definition load failed: \(particlePath)")
             return
         }
+        let capacity = max(1, min(parsedDefinition.maxCount, WPEParticleSystem.absoluteCap))
+        guard budget.systems < ParticleExpansionBudget.maxSystems,
+              budget.particles + capacity <= ParticleExpansionBudget.maxParticles else {
+            debugStage("particle", "skip \(object.name) — particle scene budget reached (systems=\(budget.systems) particles=\(budget.particles)): \(particlePath)")
+            return
+        }
         // Mutable instance properties are sampled on birth. Only immutable brightness
         // and the separately authored animation belong in the shared definition.
         let definition = parsedDefinition.applying(instanceOverride: WPESceneParticleInstanceOverride(
@@ -358,6 +367,8 @@ extension WPEMetalSceneRenderer {
             childTransform: childTransform, groupEffect: groupEffect, on: actor
         )
         guard let registered else { return }
+        budget.systems += 1
+        budget.particles += capacity
         let template = WPEParticleTemplate(registered)
         particleTemplates[ObjectIdentifier(registered)] = template
         if let parentSystem, let childReference,
@@ -389,6 +400,7 @@ extension WPEMetalSceneRenderer {
                 sortIndex: sortIndex,
                 groupEffect: groupEffect,
                 childReference: child,
+                budget: &budget,
                 on: actor
             )
         }
@@ -634,5 +646,15 @@ extension WPEMetalSceneRenderer {
         )
         return system
     }
+}
+
+/// Scene-wide load-time totals; shared children referenced by several siblings expand exponentially without it.
+private struct ParticleExpansionBudget {
+    // ~7x the largest expanded system count per scene in the workshop corpus.
+    static let maxSystems = 2048
+    // ~4x the largest per-scene sum of capped maxcount in the workshop corpus.
+    static let maxParticles = 1_048_576
+    var systems = 0
+    var particles = 0
 }
 #endif
