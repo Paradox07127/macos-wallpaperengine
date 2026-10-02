@@ -2391,7 +2391,7 @@ struct WPEShaderTranspilerTests {
     func rejectsPathologicallyNestedCalls(_ call: NestedCall) {
         #expect(throws: WPEShaderCompilerError.self) {
             _ = try WPEShaderTranspiler.translateFragment(
-                shaderName: "nested_call_overflow", preprocessedSource: nestedCallFragment(call, depth: 4_000)
+                shaderName: "nested_call_overflow", preprocessedSource: nestedCallFragment(call, depth: 4000)
             )
         }
     }
