@@ -339,9 +339,11 @@ final class WorkshopDownloadCoordinator {
     /// A library entry holding `itemID` from a still-present folder, when no entry is this item's own Steam folder (which an update refreshes).
     private func libraryCopyBlockingDownload(of itemID: UInt64) -> WPEHistoryEntry? {
         let id = String(itemID)
-        let recent = settings.loadGlobalSettings().recentWPEImports
-        guard !recent.contains(where: { $0.origin.steamFolderItemID == id }) else { return nil }
-        return recent.first { $0.origin.workshopID == id && WorkshopFolderImportCoordinator.originResolves($0.origin) }
+        let holders = settings.loadGlobalSettings().recentWPEImports.filter {
+            [$0.origin.workshopID, $0.origin.steamFolderItemID].contains(id)
+        }
+        guard !holders.contains(where: { $0.origin.steamFolderItemID == id }) else { return nil }
+        return holders.first { WorkshopFolderImportCoordinator.originResolves($0.origin) }
     }
 
     /// Rechecked after the download because the user may have imported a local copy while it ran.
