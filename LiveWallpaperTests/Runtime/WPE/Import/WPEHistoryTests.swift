@@ -122,7 +122,7 @@ struct WPEHistoryTests {
     }
 
     @Test("Keeps every import past 200, newest first")
-    func keepsEveryImportNewestFirst() throws {
+    func keepsEveryImportNewestFirst() {
         withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
             let total = 201
