@@ -196,7 +196,9 @@ enum WPETextLayoutEngine {
         spacingX: Double,
         maxWidth: Double?
     ) -> [String] {
-        let paragraphs = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // "\r\n" is a single Character in Swift and never equals "\n".
+        let paragraphs = text.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" })
+            .map(String.init)
         guard let maxWidth, maxWidth > 0 else { return paragraphs }
         return paragraphs.flatMap { wrapped($0, font: font, spacingX: spacingX, maxWidth: maxWidth) }
     }
