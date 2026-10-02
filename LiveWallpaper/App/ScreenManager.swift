@@ -76,19 +76,40 @@ final class ScreenManager {
 
     func playbackStateMachine(for screenID: CGDirectDisplayID) -> WallpaperPlaybackStateMachine {
         if let machine = playbackStateMachines[screenID] { return machine }
-        let machine = WallpaperPlaybackStateMachine()
+        let fingerprint = screens.first { $0.id == screenID }?.displayFingerprint
+        let machine = WallpaperPlaybackStateMachine(
+            userIntendsToPlay: !isUserPaused(screenID, fingerprint: fingerprint)
+        )
         playbackStateMachines[screenID] = machine
         return machine
     }
 
-    /// Session install/replace/release must not leak the previous session's intent into the machine: drop the entry (lazy rebuild intends to play, matching every fresh session).
+    /// Session install/replace/release must not leak the previous session's intent into the machine: drop the entry; the rebuild starts from the persisted manual pause.
     func resetPlaybackStateMachine(for screen: Screen) {
         playbackStateMachines.removeValue(forKey: screen.id)
         guard let playback = screen.playbackController else { return }
-        let machine = playbackStateMachine(for: screen.id)
+        let paused = isUserPaused(screen.id, fingerprint: screen.displayFingerprint)
+        let machine = WallpaperPlaybackStateMachine(userIntendsToPlay: !paused)
+        playbackStateMachines[screen.id] = machine
         if let adopting = playback as? any WallpaperIntentMachineAdopting {
             adopting.adoptPlaybackStateMachine(machine)
         }
+        // Adoption copies the fresh session's play intent over the machine, and only pause() stops the renderer.
+        if paused, playback.userIntendsToPlay {
+            playback.pause()
+        }
+    }
+
+    static func userPauseKey(screenID: CGDirectDisplayID, fingerprint: String?) -> String {
+        if let fingerprint, !fingerprint.isEmpty, !fingerprint.isUnknownDisplayFingerprint {
+            return fingerprint
+        }
+        return "id:\(screenID)"
+    }
+
+    func isUserPaused(_ screenID: CGDirectDisplayID, fingerprint: String?) -> Bool {
+        SettingsManager.shared.loadGlobalSettings().pausedDisplayKeys
+            .contains(Self.userPauseKey(screenID: screenID, fingerprint: fingerprint))
     }
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
     @ObservationIgnored lazy var playbackCoordinator = PlaybackCoordinator(

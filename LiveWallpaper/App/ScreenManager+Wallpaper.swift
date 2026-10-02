@@ -12,6 +12,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         recordBookmarkDisplayName(bookmarkData, name: url.lastPathComponent)
         playbackCoordinator.setVideo(
             url: url,
@@ -32,6 +33,7 @@ extension ScreenManager {
         }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) ?? ScreenConfiguration(
             screenID: screen.id,
             wallpaper: .scene(descriptor)
@@ -41,6 +43,7 @@ extension ScreenManager {
            screen.runtimeSession?.wallpaperType == .scene,
            configuration.sceneSpanGroupID == nil {
             Logger.info("Scene wallpaper already active for screen \(screen.id); keeping existing scene session", category: .screenManager)
+            playReusedSession(on: screen)
             completion?(.ready, nil)
             return nil
         }
@@ -308,9 +311,11 @@ extension ScreenManager {
                 // Skip the ones policy is already holding down: pausing them would clear an intent nothing restores, so they would stay dead after the suspend lifted.
                 if Self.shouldPauseOnToggle(playback) {
                     playback.pause()
+                    persistUserPause(true, for: screen)
                 }
             } else {
                 playback.play()
+                persistUserPause(false, for: screen)
             }
         }
 
@@ -322,9 +327,33 @@ extension ScreenManager {
         // Per-screen buttons draw intent, so a policy-suspended screen shows Pause and must really pause; unlike `shouldPauseOnToggle` on purpose.
         if playback.userIntendsToPlay {
             playback.pause()
+            persistUserPause(true, for: screen)
         } else {
             playback.play()
+            persistUserPause(false, for: screen)
         }
+        markWallpaperSessionStateChanged()
+        refreshAppNapAssertion()
+    }
+
+    private func persistUserPause(_ paused: Bool, for screen: Screen) {
+        // A display with no saved wallpaper has no session to restore paused. The fingerprint lookup is avoided because it can stamp the row and advance its revision.
+        if paused, configurationStore.get(for: screen.id) == nil { return }
+        let key = Self.userPauseKey(screenID: screen.id, fingerprint: screen.displayFingerprint)
+        var settings = SettingsManager.shared.loadGlobalSettings()
+        guard settings.pausedDisplayKeys.contains(key) != paused else { return }
+        if paused {
+            settings.pausedDisplayKeys.append(key)
+        } else {
+            settings.pausedDisplayKeys.removeAll { $0 == key }
+        }
+        SettingsManager.shared.saveGlobalSettings(settings)
+    }
+
+    /// Re-picking the active wallpaper keeps its session, which would otherwise stay paused until its next rebuild.
+    private func playReusedSession(on screen: Screen) {
+        guard let playback = screen.playbackController, !playback.userIntendsToPlay else { return }
+        playback.play()
         markWallpaperSessionStateChanged()
         refreshAppNapAssertion()
     }
@@ -405,6 +434,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedVideoWallpaper() else { return }
@@ -412,6 +442,7 @@ extension ScreenManager {
         if previousWallpaper == config.activeWallpaper,
            screen.runtimeSession?.wallpaperType == .video {
             Logger.info("Video wallpaper already active for screen \(screen.id); keeping existing player session", category: .screenManager)
+            playReusedSession(on: screen)
             return
         }
 
@@ -422,6 +453,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedHTMLWallpaper() else { return }
@@ -429,6 +461,7 @@ extension ScreenManager {
         if previousWallpaper == config.activeWallpaper,
            screen.runtimeSession?.wallpaperType == .html {
             Logger.info("HTML wallpaper already active for screen \(screen.id); keeping existing WKWebView session", category: .screenManager)
+            playReusedSession(on: screen)
             return
         }
 
@@ -448,6 +481,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         htmlCoordinator.setWallpaper(
             source: source,
             config: config,
@@ -462,6 +496,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
+        persistUserPause(false, for: screen)
         htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen)
     }
 

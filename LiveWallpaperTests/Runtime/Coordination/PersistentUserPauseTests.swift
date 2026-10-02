@@ -1,0 +1,308 @@
+import AppKit
+import Foundation
+@testable import LiveWallpaper
+import LiveWallpaperCore
+import Testing
+
+@MainActor
+@Suite("Persistent per-display user pause")
+struct PersistentUserPauseTests {
+    private static let inlineHTML = HTMLSource.inline("<html></html>")
+
+    private func makeManager() -> ScreenManager {
+        ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+    }
+
+    /// Installs a fresh playing session and runs the same reset the commit paths run.
+    @discardableResult
+    private func commitFreshSession(
+        on screen: Screen,
+        in manager: ScreenManager,
+        type: WallpaperType = .video
+    ) -> PauseFakePlaybackController {
+        let playback = PauseFakePlaybackController(wallpaperType: type)
+        screen.installRuntimeSession(playback)
+        manager.resetPlaybackStateMachine(for: screen)
+        return playback
+    }
+
+    private enum Seed {
+        /// No saved video, so `switchToVideoWallpaper` returns before building a session.
+        case htmlWithoutSavedVideo
+        case video
+        case htmlWithSavedHTML
+    }
+
+    private static func configuration(_ seed: Seed, for screenID: CGDirectDisplayID) -> ScreenConfiguration {
+        switch seed {
+        case .video:
+            return ScreenConfiguration(screenID: screenID, wallpaper: .video(bookmarkData: Data([0xC0, 0xDE])))
+        case .htmlWithoutSavedVideo, .htmlWithSavedHTML:
+            var config = ScreenConfiguration(
+                screenID: screenID,
+                wallpaper: .html(source: inlineHTML, config: .default),
+                savedVideoBookmarkData: nil
+            )
+            if seed == .htmlWithSavedHTML {
+                config.savedHTMLSource = inlineHTML
+                config.savedHTMLConfig = .default
+            }
+            return config
+        }
+    }
+
+    private func withConfiguredScreen(
+        _ seed: Seed = .htmlWithoutSavedVideo,
+        sessionType: WallpaperType = .video,
+        _ body: (ScreenManager, Screen, PauseFakePlaybackController) throws -> Void
+    ) rethrows {
+        guard let nsScreen = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for test")
+            return
+        }
+        let screen = Screen(nsScreen: nsScreen)
+        let original = SettingsManager.shared.loadConfigurations()
+        let originalSettings = SettingsManager.shared.loadGlobalSettings()
+        defer {
+            screen.resetRuntimeSession()
+            SettingsManager.shared.replaceAllConfigurations(original)
+            SettingsManager.shared.saveGlobalSettings(originalSettings)
+        }
+        var cleared = originalSettings
+        cleared.pausedDisplayKeys = []
+        SettingsManager.shared.saveGlobalSettings(cleared)
+        SettingsManager.shared.replaceAllConfigurations([Self.configuration(seed, for: screen.id)])
+        let manager = makeManager()
+        manager.screens = [screen]
+        let session = commitFreshSession(on: screen, in: manager, type: sessionType)
+        try body(manager, screen, session)
+    }
+
+    private func persistedPause(_ manager: ScreenManager, _ screen: Screen) -> Bool {
+        manager.isUserPaused(screen.id, fingerprint: screen.displayFingerprint)
+    }
+
+    @Test("A manual pause survives the session rebuild that property edits and rotation run")
+    func pauseSurvivesSessionRebuild() {
+        withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+            #expect(persistedPause(manager, screen) == true)
+
+            let rebuilt = commitFreshSession(on: screen, in: manager)
+
+            #expect(!rebuilt.userIntendsToPlay)
+            #expect(!rebuilt.isPlaying)
+            #expect(!manager.playbackStateMachine(for: screen.id).userIntendsToPlay)
+        }
+    }
+
+    @Test("A manual pause survives a new ScreenManager reading the same store")
+    func pauseSurvivesRelaunch() {
+        withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+
+            let reconnected = makeManager()
+            reconnected.screens = [screen]
+            let session = commitFreshSession(on: screen, in: reconnected)
+            #expect(!session.userIntendsToPlay)
+            #expect(!reconnected.playbackStateMachine(for: screen.id).userIntendsToPlay)
+        }
+    }
+
+    @Test("A reconnected display finds its pause by fingerprint, not by display ID")
+    func pauseRestoresByFingerprint() throws {
+        try withConfiguredScreen { manager, screen, _ in
+            try #require(!screen.displayFingerprint.isUnknownDisplayFingerprint)
+            manager.togglePlayback(for: screen)
+            #expect(SettingsManager.shared.loadGlobalSettings().pausedDisplayKeys == [screen.displayFingerprint])
+
+            let reconnected = makeManager()
+            reconnected.screens = [screen]
+            #expect(!reconnected.playbackStateMachine(for: screen.id).userIntendsToPlay)
+            #expect(!commitFreshSession(on: screen, in: reconnected).userIntendsToPlay)
+        }
+    }
+
+    @Test("A display without a usable fingerprint is keyed by its ID")
+    func unknownFingerprintFallsBackToID() {
+        #expect(ScreenManager.userPauseKey(screenID: 7, fingerprint: "unknown:0:0:0:Panel") == "id:7")
+        #expect(ScreenManager.userPauseKey(screenID: 7, fingerprint: nil) == "id:7")
+        #expect(ScreenManager.userPauseKey(screenID: 7, fingerprint: "uuid:ABC") == "uuid:ABC")
+    }
+
+    @Test("Legacy global settings decode with no paused displays")
+    func pausedDisplayKeysCodableCompat() throws {
+        var settings = GlobalSettings()
+        settings.pausedDisplayKeys = ["uuid:ABC", "id:7"]
+        let data = try JSONEncoder().encode(settings)
+        #expect(try JSONDecoder().decode(GlobalSettings.self, from: data).pausedDisplayKeys == ["uuid:ABC", "id:7"])
+
+        var object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "pausedDisplayKeys")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        #expect(try JSONDecoder().decode(GlobalSettings.self, from: legacy).pausedDisplayKeys.isEmpty)
+    }
+
+    @Test("Pausing and playing never advance the screen's configuration revision")
+    func pauseKeepsConfigurationRevision() {
+        withConfiguredScreen { manager, screen, _ in
+            let before = manager.configurationStore.revision(for: screen.id)
+
+            manager.togglePlayback(for: screen)
+            #expect(manager.configurationStore.revision(for: screen.id) == before)
+
+            manager.togglePlayback()
+            #expect(manager.configurationStore.revision(for: screen.id) == before)
+        }
+    }
+
+    @Test("Pressing play clears the persisted pause")
+    func playClearsPersistedPause() {
+        withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+            manager.togglePlayback(for: screen)
+
+            #expect(persistedPause(manager, screen) == false)
+            #expect(commitFreshSession(on: screen, in: manager).userIntendsToPlay)
+        }
+    }
+
+    @Test("The global toggle persists and clears the pause")
+    func globalTogglePersistsPause() {
+        withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback()
+            #expect(persistedPause(manager, screen) == true)
+
+            manager.togglePlayback()
+            #expect(persistedPause(manager, screen) == false)
+        }
+    }
+
+    @Test("An explicit wallpaper pick clears the persisted pause")
+    func explicitSelectionClearsPause() {
+        withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+            #expect(persistedPause(manager, screen) == true)
+
+            manager.switchToVideoWallpaper(for: screen)
+
+            #expect(persistedPause(manager, screen) == false)
+            let picked = commitFreshSession(on: screen, in: manager)
+            #expect(picked.userIntendsToPlay)
+            #expect(picked.pauseCount == 0)
+        }
+    }
+
+    @Test("Re-picking the active video keeps the session and starts it playing")
+    func reusedVideoSessionPlaysOnPick() {
+        withConfiguredScreen(.video) { manager, screen, session in
+            manager.togglePlayback(for: screen)
+            #expect(!session.isPlaying)
+
+            manager.switchToVideoWallpaper(for: screen)
+
+            #expect((screen.runtimeSession as AnyObject?) === session)
+            #expect(session.userIntendsToPlay)
+            #expect(session.isPlaying)
+        }
+    }
+
+    @Test("Re-picking the active HTML page keeps the session and starts it playing")
+    func reusedHTMLSessionPlaysOnPick() {
+        withConfiguredScreen(.htmlWithSavedHTML, sessionType: .html) { manager, screen, session in
+            manager.togglePlayback(for: screen)
+            #expect(!session.isPlaying)
+
+            manager.switchToHTMLWallpaper(for: screen)
+
+            #expect((screen.runtimeSession as AnyObject?) === session)
+            #expect(session.userIntendsToPlay)
+            #expect(session.isPlaying)
+        }
+    }
+
+    @Test("A scheme saved from a paused display carries no pause state")
+    func schemeOmitsPauseState() throws {
+        try withConfiguredScreen { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+            let live = try #require(manager.configurationStore.get(for: screen.id))
+
+            let scheme = ScreenScheme(name: "Desk", configuration: live, overlay: .default)
+            let json = try #require(String(data: JSONEncoder().encode(scheme), encoding: .utf8))
+
+            #expect(!json.lowercased().contains("paused"))
+        }
+    }
+
+    @Test("Without a manual pause a rebuilt session keeps playing")
+    func unpausedRebuildKeepsPlaying() {
+        withConfiguredScreen { manager, screen, _ in
+            let rebuilt = commitFreshSession(on: screen, in: manager)
+
+            #expect(rebuilt.userIntendsToPlay)
+            #expect(rebuilt.pauseCount == 0)
+            #expect(manager.playbackStateMachine(for: screen.id).userIntendsToPlay)
+            #expect(persistedPause(manager, screen) == false)
+        }
+    }
+}
+
+private final class PauseFakePlaybackController: WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
+    var playbackMachine = WallpaperPlaybackStateMachine()
+    var userIntendsToPlay: Bool {
+        playbackMachine.userIntendsToPlay
+    }
+
+    let wallpaperType: WallpaperType
+    var isPlaying = true
+    var pauseCount = 0
+
+    init(wallpaperType: WallpaperType) {
+        self.wallpaperType = wallpaperType
+    }
+
+    var summary: WallpaperSessionSummary {
+        WallpaperSessionSummary(
+            wallpaperType: wallpaperType,
+            activity: isPlaying ? .active : .paused,
+            supportsPlaybackControl: true,
+            subtitle: "PauseFake"
+        )
+    }
+
+    var videoPlayer: WallpaperVideoPlayer? {
+        nil
+    }
+
+    var wallpaperWindow: NSWindow? {
+        nil
+    }
+
+    func show() {}
+    func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+    func updateFrame(to _: CGRect) {}
+    func cleanup() {}
+
+    func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult {
+        await WallpaperPreparationWaiter.wait(timeout: timeout) { nil }
+    }
+
+    func play() {
+        playbackMachine.userPlay()
+        isPlaying = true
+    }
+
+    func pause() {
+        pauseCount += 1
+        playbackMachine.userPause()
+        isPlaying = false
+    }
+}

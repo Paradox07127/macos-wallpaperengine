@@ -41,6 +41,10 @@ public struct GlobalSettings: Codable, Sendable {
     /// same reason as `monitorOverlays`: it must outlive a cleared wallpaper.
     public var screenNames: [String: String] = [:]
 
+    /// Displays the user paused by hand: `NSScreen.displayFingerprint`, or `"id:<screenID>"`
+    /// when it is unknown. Not on `ScreenConfiguration`: saving that advances the revision in-flight sessions commit against.
+    public var pausedDisplayKeys: [String] = []
+
     /// Opt-in TCC system-audio capture for audio-reactive Pro wallpapers.
     public var audioResponseEnabled: Bool = false
 
@@ -92,6 +96,7 @@ public struct GlobalSettings: Codable, Sendable {
         displayDefaults: DisplayDefaults = DisplayDefaults(),
         monitorOverlays: [String: MonitorOverlayConfiguration] = [:],
         screenNames: [String: String] = [:],
+        pausedDisplayKeys: [String] = [],
         audioResponseEnabled: Bool = false,
         adaptiveFrameRateEnabled: Bool = false,
         wallpaperVisibleInScreenCapture: Bool = true,
@@ -116,6 +121,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.displayDefaults = displayDefaults
         self.monitorOverlays = monitorOverlays
         self.screenNames = screenNames
+        self.pausedDisplayKeys = pausedDisplayKeys
         self.audioResponseEnabled = audioResponseEnabled
         self.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
         self.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
@@ -155,6 +161,7 @@ public struct GlobalSettings: Codable, Sendable {
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
         monitorOverlays = c.decodeLossyStringDictionary(forKey: .monitorOverlays) ?? [:]
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
+        pausedDisplayKeys = (try? c.decodeIfPresent([String].self, forKey: .pausedDisplayKeys)) ?? []
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
         // Installs that predate the key get the new default (visible), not the old hard-coded behaviour.
