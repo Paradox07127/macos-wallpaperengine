@@ -308,6 +308,71 @@ struct WPEImportTrackerTests {
         #expect(configurationWrites.value == 0)
         #expect(notifications.value == 0)
     }
+
+    @Test("Import-and-apply refuses a folder whose Workshop id the library holds from another folder", .timeLimit(.minutes(1)))
+    func importAndApplyRefusesConflictingFolder() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wpe-apply-conflict-\(UUID())", isDirectory: true)
+        let scratch = try TestScratch.defaultsSuite("WPEImportTrackerTests.applyConflict")
+        let settings = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: scratch.defaults)
+        defer { scratch.discard() }
+        let libraryFolder = root.appendingPathComponent("library-copy", isDirectory: true)
+        let droppedFolder = root.appendingPathComponent("dropped", isDirectory: true)
+        for folder in [libraryFolder, droppedFolder] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"workshopid":"777000777","title":"Manifest","type":"video","file":"video.mp4"}"#.utf8)
+                .write(to: folder.appendingPathComponent("project.json"))
+        }
+        let origin = try WPEOrigin(
+            workshopID: "777000777", title: "Library copy", originalType: .video,
+            sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: libraryFolder)),
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        settings.recordWPEImport(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil))
+
+        let imports = ChangeCounter()
+        let historyWrites = ChangeCounter()
+        let configurationWrites = ChangeCounter()
+        let sessionRestores = ChangeCounter()
+        let coordinator = WPEImportCoordinator(
+            tracker: WPEImportTracker(),
+            configurationStore: WallpaperConfigurationStore(persistence: ImportCustomizationPersistence(
+                configuration: ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("<p>prior</p>"), config: .default))
+            )),
+            saveConfiguration: { _ in configurationWrites.increment() },
+            restoreWallpaperSession: { _, _, _, commit in
+                if commit() {
+                    sessionRestores.increment()
+                }
+            },
+            importOperation: { _ in
+                imports.increment()
+                return .ready(.html(source: .inline("<p>x</p>"), config: .default), origin: origin)
+            },
+            recordImport: { _ in historyWrites.increment() },
+            notifyImportCompleted: { _, _, _ in },
+            conflictingImport: { settings.conflictingWPEImport(workshopID: $0, sourceFolder: $1) }
+        )
+
+        let refused = await coordinator.importProject(at: droppedFolder, for: screen)
+        guard case let .rejected(reason) = refused else {
+            Issue.record("Expected the conflicting folder to be rejected, got \(refused)")
+            await TestScratch.discard(root, flushing: settings)
+            return
+        }
+        #expect(reason.contains("Library copy"))
+        #expect(imports.value == 0)
+        #expect(historyWrites.value == 0)
+        #expect(configurationWrites.value == 0)
+        #expect(sessionRestores.value == 0)
+
+        // Control: re-importing the library entry's own folder is a refresh, not a conflict.
+        let refreshed = await coordinator.importProject(at: libraryFolder, for: screen)
+        #expect(refreshed == .applied(origin: origin))
+        #expect(historyWrites.value == 1)
+        #expect(sessionRestores.value == 1)
+        await TestScratch.discard(root, flushing: settings)
+    }
 }
 
 private final class ChangeCounter: @unchecked Sendable {

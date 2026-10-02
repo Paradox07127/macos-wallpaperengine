@@ -42,6 +42,8 @@ final class WPEImportCoordinator {
     private let persistOriginBookmarkRefresh: @MainActor (WPEOrigin, Data) -> Void
     private let isLifecycleActive: @MainActor () -> Bool
     private let notifyImportCompleted: @MainActor (CGDirectDisplayID, WPEType, String) -> Void
+    /// The library entry holding a Workshop id from a folder other than the given one; nil = importing it is safe.
+    private let conflictingImport: @MainActor (String, URL) -> WPEHistoryEntry?
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
@@ -81,8 +83,12 @@ final class WPEImportCoordinator {
                     "workshopID": workshopID,
                 ]
             )
+        },
+        conflictingImport: @MainActor @escaping (String, URL) -> WPEHistoryEntry? = {
+            SettingsManager.shared.conflictingWPEImport(workshopID: $0, sourceFolder: $1)
         }
     ) {
+        self.conflictingImport = conflictingImport
         self.reportFailure = reportFailure
         self.importOperation = importOperation ?? { [importService] folderURL in
             try await importService.importProject(folder: folderURL)
@@ -129,6 +135,11 @@ final class WPEImportCoordinator {
                 localized: "Loomscreen is quitting.",
                 bundle: .appLanguage, comment: "Scene import refused because the app is shutting down."
             ))
+        }
+        if let project = try? WallpaperEngineProject.read(from: folderURL),
+           let existing = conflictingImport(project.workshopID, folderURL) {
+            Logger.info("Refused to apply a project whose Workshop id is already in the library from another folder", category: .workshop)
+            return .rejected(reason: String(localized: "\(existing.origin.title) is already in your library from another folder.", bundle: .appLanguage, comment: "Folder import failure: the one chosen project has a Workshop id the library already holds from a different folder. Placeholder is the title of the wallpaper already in the library."))
         }
         let generation = tracker.bumpGeneration(for: screen.id)
         return await importProject(

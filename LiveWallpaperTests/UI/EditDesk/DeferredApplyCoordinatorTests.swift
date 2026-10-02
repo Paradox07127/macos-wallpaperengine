@@ -362,6 +362,62 @@ struct DeferredApplyCoordinatorTests {
         #expect(fixture.toasts.lastEvent?.token == 1)
     }
 
+    @Test("Downloading an item the library holds from a local copy fails without downloading", .timeLimit(.minutes(1)))
+    func downloadOfItemHeldByLocalCopyIsRefused() async throws {
+        let fixture = try DownloadAttemptFixture(name: "localCopyConflict", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        fixture.gate.release()
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        await task.value
+        guard case let .failed(reason)? = attempt.outcome else {
+            Issue.record("Expected the conflicting download to fail, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(reason.contains("Local copy"))
+        #expect(fixture.downloader.requestedIDs.isEmpty)
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
+        #expect(fixture.toasts.lastEvent?.isSuccess == false)
+    }
+
+    @Test("Updating the library's own Steam copy of an item still downloads it", .timeLimit(.minutes(1)))
+    func updateOfLibrarySteamCopyDownloads() async throws {
+        let fixture = try DownloadAttemptFixture(name: "steamCopyUpdate", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        try fixture.recordLibraryEntry(in: fixture.itemFolder, title: "Steam copy")
+        fixture.gate.release()
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Steam copy", using: fixture.downloader))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        await task.value
+        guard case .succeeded? = attempt.outcome else {
+            Issue.record("Expected the update to succeed, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(fixture.downloader.requestedIDs == [420_000_042])
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Initial video"])
+    }
+
+    @Test("A local copy imported while the download runs keeps the download out of the library", .timeLimit(.minutes(1)))
+    func localCopyImportedMidDownloadBlocksRecording() async throws {
+        let fixture = try DownloadAttemptFixture(name: "midDownloadConflict", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        let enteredImport = await fixture.waitForReimport()
+        try #require(enteredImport, "\(fixture.diagnostics(for: attempt))")
+        try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        fixture.gate.release()
+        await task.value
+        guard case let .failed(reason)? = attempt.outcome else {
+            Issue.record("Expected the late conflict to fail the download, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(reason.contains("Local copy"))
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
+        #expect(fixture.toasts.lastEvent?.isSuccess == false)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func lookupReturnsTheLiveTicketAndNothingForAnUnknownItem() {
         let owner = owner()
@@ -660,6 +716,20 @@ private final class DownloadAttemptFixture {
             importService: importer, repositoryCoordinator: WorkshopRepositoryCoordinator(),
             settings: settings, toasts: toasts, cancelSteamCMD: { _ in }
         )
+    }
+
+    var itemFolder: URL {
+        downloader.root.appendingPathComponent("420000042", isDirectory: true)
+    }
+
+    func recordLibraryEntry(in folder: URL, title: String) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let origin = try WPEOrigin(
+            workshopID: "420000042", title: title, originalType: .video,
+            sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        settings.recordWPEImport(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil))
     }
 
     func waitForReimport() async -> Bool {
