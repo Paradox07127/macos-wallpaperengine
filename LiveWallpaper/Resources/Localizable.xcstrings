@@ -9855,6 +9855,41 @@
         }
       }
     },
+    "Blinds" : {
+      "comment" : "Wallpaper transition option: vertical slats flip over one after another, with the new wallpaper on their backs.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blinds"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Persianas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブラインド"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "百叶"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "百葉"
+          }
+        }
+      }
+    },
     "Blink Separators" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10114,6 +10149,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "散景"
+          }
+        }
+      }
+    },
+    "Bokeh transition" : {
+      "comment" : "Wallpaper transition option: the old wallpaper blurs out of focus into bokeh, turns into the new one inside the bokeh, then comes back into focus.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bokeh"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bokeh"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ボケ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦外"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦外"
           }
         }
       }
@@ -18718,6 +18788,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "淡入淡出"
+          }
+        }
+      }
+    },
+    "Crystal" : {
+      "comment" : "Wallpaper transition option: the picture cracks into crystal cells that flip over one by one, spreading from a point, to show the new wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crystal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cristal"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリスタル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "碎晶"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "碎晶"
           }
         }
       }
@@ -51747,6 +51852,41 @@
         }
       }
     },
+    "Ripple" : {
+      "comment" : "Wallpaper transition option: a ring of water waves spreads from a point, refracting the picture at its crest.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripple"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onda"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "波紋"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "涟漪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "漣漪"
+          }
+        }
+      }
+    },
     "Ripples" : {
       "comment" : "Now Playing effects switch: concentric rings fired on each beat.",
       "extractionState" : "manual",
@@ -58507,6 +58647,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標準畫質"
+          }
+        }
+      }
+    },
+    "Stardust" : {
+      "comment" : "Wallpaper transition option: the old wallpaper is blown apart by wind into drifting particles.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stardust"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Polvo de estrellas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "星屑"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "星尘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "星塵"
           }
         }
       }

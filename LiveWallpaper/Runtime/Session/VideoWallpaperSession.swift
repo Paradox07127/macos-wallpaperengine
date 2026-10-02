@@ -1,5 +1,6 @@
 import AppKit
 import LiveWallpaperCore
+import Metal
 
 @MainActor
 final class VideoWallpaperSession: WallpaperRuntimeSession,
@@ -153,6 +154,14 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
 
     var wallpaperWindow: NSWindow? {
         nil
+    }
+
+    /// Never EDR: the player declines the capture while it shows extended dynamic range.
+    func captureDisplayedFrame(device: any MTLDevice, pixelFormat: MTLPixelFormat, colorSpace: CGColorSpace) async -> WallpaperFrameCapture? {
+        guard let texture = await player?.captureDisplayedFrame(device: device, pixelFormat: pixelFormat, colorSpace: colorSpace) else {
+            return nil
+        }
+        return WallpaperFrameCapture(texture: texture, colorSpace: colorSpace, isEDR: false)
     }
 
     func applyCapturePolicy(_ sharingType: NSWindow.SharingType) {

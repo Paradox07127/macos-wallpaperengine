@@ -8,6 +8,16 @@ enum WallpaperDistortionEffect: String, CaseIterable, Sendable {
     case bokeh
     case dust
 
+    var duration: TimeInterval {
+        switch self {
+        case .ripple: 1.3
+        case .bokeh: 1.5
+        case .crystal: 1.7
+        case .blinds: 1.3
+        case .dust: 1.8
+        }
+    }
+
     var fragmentFunctionName: String {
         switch self {
         case .ripple: "wallpaperDistortionRipple"

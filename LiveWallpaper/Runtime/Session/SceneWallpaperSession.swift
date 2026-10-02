@@ -2,6 +2,7 @@
 import AppKit
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 
 struct PreparedScenePropertyPatch: Sendable {
     let patch: WPEScenePropertyPatch
@@ -225,6 +226,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     func captureLivePosterFromNextFrame() async -> NSImage? {
         await renderActor.captureLivePoster()
+    }
+
+    /// Ignores the requested format and colour space: a scene can only replay its present pass as it reached the screen.
+    func captureDisplayedFrame(device _: any MTLDevice, pixelFormat _: MTLPixelFormat, colorSpace _: CGColorSpace) async -> WallpaperFrameCapture? {
+        guard let capture = await renderActor.captureDisplayedFrame() else { return nil }
+        return WallpaperFrameCapture(texture: capture.texture, colorSpace: capture.colorSpace, isEDR: capture.isEDR)
     }
 
     /// .quality clears the override; it does not force play over a folded suspension.

@@ -40,6 +40,12 @@ struct WallpaperTransitionSettingRow: View {
         case .leak: "Light Leak"
         case .aurora: "Aurora Curtain"
         case .weave: "Light Weave"
+        case .ripple: "Ripple"
+        // Not "Bokeh": that key already names the particle effect, with its own Chinese name.
+        case .bokeh: "Bokeh transition"
+        case .crystal: "Crystal"
+        case .blinds: "Blinds"
+        case .dust: "Stardust"
         case .random: "Random"
         }
     }

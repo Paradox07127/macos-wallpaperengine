@@ -9,6 +9,11 @@ enum WallpaperTransitionChoice: String, CaseIterable, Identifiable {
     case leak
     case aurora
     case weave
+    case ripple
+    case bokeh
+    case crystal
+    case blinds
+    case dust
     case random
 
     static let defaultsKey = "loomscreen.wallpapers.transition.v1"
@@ -158,8 +163,11 @@ enum WallpaperTransitionPlan: Equatable {
     case none
     case crossfade
     case reveal(WallpaperRevealEffect)
+    case distortion(WallpaperDistortionEffect)
 
-    static let randomPool: [WallpaperTransitionPlan] = [.crossfade] + WallpaperRevealEffect.allCases.map { .reveal($0) }
+    static let randomPool: [WallpaperTransitionPlan] = [.crossfade]
+        + WallpaperRevealEffect.allCases.map { .reveal($0) }
+        + WallpaperDistortionEffect.allCases.map { .distortion($0) }
 
     /// Reduce Motion and Low Power Mode turn every animated choice into the crossfade, which `Screen` then runs at its short duration.
     /// `previous` is the last random pick; random avoids repeating it.
@@ -184,6 +192,11 @@ enum WallpaperTransitionPlan: Equatable {
         case .leak: return .reveal(.leak)
         case .aurora: return .reveal(.aurora)
         case .weave: return .reveal(.weave)
+        case .ripple: return .distortion(.ripple)
+        case .bokeh: return .distortion(.bokeh)
+        case .crystal: return .distortion(.crystal)
+        case .blinds: return .distortion(.blinds)
+        case .dust: return .distortion(.dust)
         case .random:
             let fresh = randomPool.filter { $0 != previous }
             return (fresh.isEmpty ? randomPool : fresh).randomElement(using: &generator) ?? .crossfade

@@ -591,7 +591,7 @@ struct WallpaperTransitionControllerTests {
         }
     }
 
-    @Test("Random draws only from the crossfade and the five reveals, and reaches each of them")
+    @Test("Random draws only from the crossfade, the five reveals and the five distortions, and reaches each of them")
     func randomStaysInsideItsPool() {
         var generator = SystemRandomNumberGenerator()
         var seen: [WallpaperTransitionPlan] = []
@@ -604,8 +604,11 @@ struct WallpaperTransitionControllerTests {
                 seen.append(plan)
             }
         }
-        #expect(seen.count == 6)
-        #expect(WallpaperTransitionPlan.randomPool.count == 6)
+        #expect(seen.count == 11)
+        for effect in WallpaperDistortionEffect.allCases {
+            #expect(seen.contains(.distortion(effect)), "\(effect.rawValue) never drawn")
+        }
+        #expect(WallpaperTransitionPlan.randomPool.count == 11)
         #expect(!WallpaperTransitionPlan.randomPool.contains(.none))
     }
 
@@ -624,7 +627,7 @@ struct WallpaperTransitionControllerTests {
                 seen.append(plan)
             }
         }
-        #expect(seen.count == 6)
+        #expect(seen.count == 11)
     }
 
     @Test("Screen: Low Power Mode shortens the crossfade for manual and automatic switches",
@@ -735,6 +738,34 @@ struct WallpaperTransitionSettingTests {
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(choice.rawValue, forKey: WallpaperTransitionChoice.defaultsKey)
         #expect(WallpaperTransitionChoice.stored(in: defaults) == choice)
+    }
+
+    @Test("The distortion choices are stored and read back", arguments: ["ripple", "bokeh", "crystal", "blinds", "dust"])
+    func distortionChoicePersists(raw: String) throws {
+        let (defaults, name) = try scratchDefaults(variant: ".\(raw)")
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(raw, forKey: WallpaperTransitionChoice.defaultsKey)
+        #expect(WallpaperTransitionChoice.stored(in: defaults).rawValue == raw)
+    }
+
+    @Test(
+        "A distortion choice resolves to its effect, and to the crossfade under Reduce Motion or Low Power Mode",
+        arguments: zip(
+            [WallpaperTransitionChoice.ripple, .bokeh, .crystal, .blinds, .dust],
+            [WallpaperDistortionEffect.ripple, .bokeh, .crystal, .blinds, .dust]
+        )
+    )
+    func distortionChoiceResolves(choice: WallpaperTransitionChoice, effect: WallpaperDistortionEffect) {
+        var generator = SystemRandomNumberGenerator()
+        #expect(WallpaperTransitionPlan.resolve(
+            choice, reduceMotion: false, lowPower: false, avoiding: nil, using: &generator
+        ) == .distortion(effect))
+        #expect(WallpaperTransitionPlan.resolve(
+            choice, reduceMotion: true, lowPower: false, avoiding: nil, using: &generator
+        ) == .crossfade)
+        #expect(WallpaperTransitionPlan.resolve(
+            choice, reduceMotion: false, lowPower: true, avoiding: nil, using: &generator
+        ) == .crossfade)
     }
 
     @Test("Settings search finds the row in Chinese and English", arguments: ["换壁纸动画", "Wallpaper transition", "transition"])
