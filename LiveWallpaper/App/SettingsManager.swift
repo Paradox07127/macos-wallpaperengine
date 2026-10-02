@@ -161,7 +161,12 @@ final class SettingsManager {
 
     func saveConfiguration(_ configuration: ScreenConfiguration) {
         var configs = loadConfigurations()
-        if let index = configs.firstIndex(where: { $0.screenID == configuration.screenID }) {
+        // Several offline panels share the parked screenID; only the fingerprint tells their rows apart.
+        let isParked = configuration.screenID == WallpaperConfigurationStore.parkedScreenID
+        if let index = configs.firstIndex(where: {
+            $0.screenID == configuration.screenID
+                && (!isParked || $0.displayFingerprint == configuration.displayFingerprint)
+        }) {
             configs[index] = configuration
         } else {
             configs.append(configuration)

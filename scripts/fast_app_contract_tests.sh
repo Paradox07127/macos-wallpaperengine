@@ -31,6 +31,7 @@ PARALLEL_SUITES=(
   AudioSpectrumBrokerTests
   AudioSpectrumCadenceTests
   SettingsPersistenceFailureTests
+  SettingsManagerParkedConfigurationTests
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
