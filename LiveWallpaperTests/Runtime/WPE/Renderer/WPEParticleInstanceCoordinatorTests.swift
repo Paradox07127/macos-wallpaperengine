@@ -143,11 +143,20 @@ struct WPEParticleInstanceCoordinatorTests {
         let tree = WPEParticleInstanceCoordinator(templates: [root], device: device, seed: 40)
         tree.tick(now: 0)
         #expect(tree.bindings.count == 9)
+        #expect(tree.createdEventInstances == 8)
+        #expect(tree.rejectedEventInstances == 2)
+        #expect(tree.eventInstanceCount == 8)
         tree.apply([.init(objectID: "budget", command: .stop)])
         #expect(tree.bindings.count == 1)
+        #expect(tree.releasedEventInstances == 8)
+        #expect(tree.eventInstanceCount == 0)
         tree.apply([.init(objectID: "budget", command: .play)])
         tree.tick(now: 0.01)
         #expect(tree.bindings.count == 9)
+        #expect(tree.createdEventInstances == 16)
+        #expect(tree.rejectedEventInstances == 4)
+        #expect(tree.releasedEventInstances == 8)
+        #expect(tree.eventInstanceCount == 8)
     }
 
     private func makeTree(kind: String, maximum: Int = 2, probability: Double = 1) throws

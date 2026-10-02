@@ -217,6 +217,7 @@ extension WPEMetalSceneRenderer {
                 on: actor
             )
         }
+        debugStage("particles.expand.done", "systems=\(particleSystems.count) roots=\(particleRootTemplates.count)")
         func containsEvent(_ template: WPEParticleTemplate) -> Bool {
             template.children.contains { $0.reference.rollsProbabilityPerEvent || $0.reference.setsParentParticleControlPoints || containsEvent($0.template) }
         }
@@ -239,6 +240,7 @@ extension WPEMetalSceneRenderer {
         particleSystems = particleIndependentSystems
         // An event root must not change unrelated roots' existing warm-up/RNG path.
         prewarmParticleSystems()
+        debugStage("particles.prewarm.done", "independent=\(particleIndependentSystems.count)")
         if !eventRoots.isEmpty {
             particleInstanceCoordinator = WPEParticleInstanceCoordinator(
                 templates: eventRoots, device: executor.textureSourceDevice,
@@ -255,6 +257,7 @@ extension WPEMetalSceneRenderer {
             })
             particleInstanceCoordinator?.prewarm(secondsByRoot: seconds)
             synchronizeParticleInstanceBindings()
+            debugStage("particles.eventPrewarm.done", "eventRoots=\(eventRoots.count)")
         }
     }
 

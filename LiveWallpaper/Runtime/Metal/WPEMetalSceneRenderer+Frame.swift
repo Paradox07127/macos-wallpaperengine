@@ -606,33 +606,56 @@ extension WPEMetalSceneRenderer {
             : nil
         updateParticleHostOriginOffsets(using: liveTransforms)
         let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
-        for system in particleIndependentSystems {
-            system.pointerCentered = particlePointer
-            system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
-            if let objectID = system.instanceAlphaScriptObjectID,
-               let alpha = liveParticleInstanceAlpha[objectID] {
-                system.instanceAlphaScale = Float(max(0, min(1, alpha)))
-            }
-            if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
-            system.tick(now: time, frameSlot: frameSlot)
-        }
-        if let coordinator = particleInstanceCoordinator {
-            let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
-            coordinator.tick(now: time, frameSlot: frameSlot) { system in
-                updateParticleHostOriginOffset(system, using: liveTransforms)
-                system.pointerCentered = system.pointerInSimulationFrame(particlePointer)
+        withFrameSignpost("particleIndependent") {
+            for system in particleIndependentSystems {
+                system.pointerCentered = particlePointer
                 system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
                 if let objectID = system.instanceAlphaScriptObjectID,
                    let alpha = liveParticleInstanceAlpha[objectID] {
                     system.instanceAlphaScale = Float(max(0, min(1, alpha)))
                 }
-                if system.isAudioResponsive {
-                    system.audioSpectrum16 = audioSpectrum16
+                if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
+                system.tick(now: time, frameSlot: frameSlot)
+            }
+        }
+        if let coordinator = particleInstanceCoordinator {
+            let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
+            withFrameSignpost("particleEvents") {
+                coordinator.tick(now: time, frameSlot: frameSlot) { system in
+                    updateParticleHostOriginOffset(system, using: liveTransforms)
+                    system.pointerCentered = system.pointerInSimulationFrame(particlePointer)
+                    system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
+                    if let objectID = system.instanceAlphaScriptObjectID,
+                       let alpha = liveParticleInstanceAlpha[objectID] {
+                        system.instanceAlphaScale = Float(max(0, min(1, alpha)))
+                    }
+                    if system.isAudioResponsive {
+                        system.audioSpectrum16 = audioSpectrum16
+                    }
                 }
             }
-            synchronizeParticleInstanceBindings()
+            withFrameSignpost("particleBindings") {
+                synchronizeParticleInstanceBindings()
+            }
         }
-        publishParticlePlaybackSnapshots()
+        withFrameSignpost("particlePublish") {
+            publishParticlePlaybackSnapshots()
+        }
+        if Self.frameSignposter.isEnabled {
+            let coordinator = particleInstanceCoordinator
+            let independent = particleIndependentSystems.count
+            let independentAlive = particleIndependentSystems.reduce(0) { $0 + $1.liveParticleCount }
+            let eventInstances = coordinator?.eventInstanceCount ?? 0
+            let eventSlots = coordinator?.eventParticleSlots ?? 0
+            let eventAlive = coordinator?.liveParticleCount ?? 0
+            let created = coordinator?.createdEventInstances ?? 0
+            let released = coordinator?.releasedEventInstances ?? 0
+            let rejected = coordinator?.rejectedEventInstances ?? 0
+            Self.frameSignposter.emitEvent(
+                "particleCounts", id: Self.frameSignposter.makeSignpostID(),
+                "independent:\(independent, privacy: .public) independentAlive:\(independentAlive, privacy: .public) eventInstances:\(eventInstances, privacy: .public) eventSlots:\(eventSlots, privacy: .public) eventAlive:\(eventAlive, privacy: .public) created:\(created, privacy: .public) released:\(released, privacy: .public) rejected:\(rejected, privacy: .public)"
+            )
+        }
     }
 
     /// A constant keeps its last good value when its script returns nothing, matching how the transform families hold their last value.

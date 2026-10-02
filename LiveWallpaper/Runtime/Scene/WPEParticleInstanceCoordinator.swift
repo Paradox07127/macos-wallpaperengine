@@ -53,8 +53,11 @@ final class WPEParticleInstanceCoordinator {
     static let maximumEventParticleSlots = 65536
     private let device: MTLDevice
     private var roots: [Instance] = []
-    private var eventInstanceCount = 0
-    private var eventParticleSlots = 0
+    private(set) var eventInstanceCount = 0
+    private(set) var eventParticleSlots = 0
+    private(set) var createdEventInstances = 0
+    private(set) var releasedEventInstances = 0
+    private(set) var rejectedEventInstances = 0
     private var creationOrdinal: UInt64 = 0
     private var random: SplitMix64
     private var previousTime: Double?
@@ -82,6 +85,13 @@ final class WPEParticleInstanceCoordinator {
             append(root)
         }
         return result
+    }
+
+    var liveParticleCount: Int {
+        func count(_ instance: Instance) -> Int {
+            instance.children.reduce(instance.system.liveParticleCount) { $0 + count($1) }
+        }
+        return roots.reduce(0) { $0 + count($1) }
     }
 
     /// One substep clock for the entire tree. A follower sees its own parent's
@@ -210,6 +220,7 @@ final class WPEParticleInstanceCoordinator {
         let prototype = child.template.prototype
         guard eventInstanceCount < Self.maximumEventInstances,
               prototype.capacity <= Self.maximumEventParticleSlots - eventParticleSlots else {
+            rejectedEventInstances += 1
             return nil
         }
         creationOrdinal &+= 1
@@ -218,6 +229,7 @@ final class WPEParticleInstanceCoordinator {
         }
         eventInstanceCount += 1
         eventParticleSlots += system.capacity
+        createdEventInstances += 1
         return Instance(system: system, template: child.template, parent: parent, referenceIndex: index)
     }
 
@@ -262,6 +274,7 @@ final class WPEParticleInstanceCoordinator {
         }
         if instance.system !== instance.template.prototype {
             eventInstanceCount -= 1
+            releasedEventInstances += 1
             eventParticleSlots -= instance.system.capacity
         }
     }

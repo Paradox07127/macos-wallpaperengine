@@ -334,6 +334,10 @@ final class WPEParticleSystem {
     private let worldSpaceControlPointIDs: Set<Int>
 
     private var aliveCount: Int = 0
+    var liveParticleCount: Int {
+        aliveCount
+    }
+
     private(set) var lastAttractorAffectedCount = 0
     private var particles: [Particle]
     /// Must stay exactly consistent with the `age` sentinel: every alive/dead
