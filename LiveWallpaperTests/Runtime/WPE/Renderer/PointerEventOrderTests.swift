@@ -224,6 +224,33 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(instance.batchCursorEvents([]) == nil)
     }
 
+    @Test("A burst queued while the previous VM batch is still running is delivered without another frame")
+    func burstQueuedDuringRunningBatchIsDelivered() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { shared.events = ''; shared.go = false; }
+        export function cursorDown() { shared.events += 'd'; for (let i = 0; i < 5000000 && !shared.go; i++) {} }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        """, shared: shared, governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher)
+        defer { _ = instance.destroy() }
+        let lane = dispatcher.reserveLane()
+        let first = try #require(instance.batchCursorEvents([invocation(.down, down: true)]))
+        let completion = try #require(dispatcher.submit([first], trackingCompletion: true))
+        // `shared` reads go through the host store, so 'd' means the batch has taken its burst and is inside cursorDown.
+        let deadline = Date().addingTimeInterval(2)
+        while shared.get("events") as? String != "d", Date() < deadline {
+            usleep(1000)
+        }
+        #expect(shared.get("events") as? String == "d")
+        #expect(instance.batchCursorEvents([invocation(.up, down: false), invocation(.click, down: false)]) == nil)
+        shared.set("go", true)
+        #expect(completion.wait(timeout: .now() + 2))
+        lane.queue.sync {}
+        #expect(shared.get("events") as? String == "duc")
+    }
+
     @Test("Safety admission failure retries pending callbacks instead of consuming input")
     func busySafetyRetriesWholeBurst() throws {
         let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
