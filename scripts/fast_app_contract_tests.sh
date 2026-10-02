@@ -182,6 +182,8 @@ PARALLEL_SUITES=(
   SchedulePolicyTests
   WallpaperAutomationCoordinatorTests
   WallpaperAutomationRotationResetTests
+  VolumeMountReloadTests
+  WallpaperPolicyEngineThermalTests
   ShelfGridFlightTests
   ApplyRouterTests
   LibraryImporterTests
