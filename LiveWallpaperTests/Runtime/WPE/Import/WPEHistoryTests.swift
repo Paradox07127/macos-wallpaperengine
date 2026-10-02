@@ -90,6 +90,39 @@ struct WPEHistoryTests {
         }
     }
 
+    @Test("A local copy whose manifest still names a Steam item is recorded beside that item, not over it")
+    func localCopyIsRecordedBesideSteamOriginal() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("history-local-copy-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func entry(inFolder relativePath: String, importedAt: Double) throws -> WPEHistoryEntry {
+            let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let origin = try WPEOrigin(
+                workshopID: "2585024298", title: "Lunar Tear [4K]", originalType: .video,
+                sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+                cacheRelativePath: "wpe-cache/2585024298", previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: importedAt))
+        }
+
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            try manager.recordWPEImport(entry(inFolder: "steamapps/workshop/content/431960/2585024298", importedAt: 1))
+            try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit", importedAt: 2))
+            let recent = manager.loadGlobalSettings().recentWPEImports
+            #expect(recent.map(\.origin.steamFolderItemID) == [nil, "2585024298"])
+        }
+        // Control: two local copies of one manifest id stay one entry.
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit", importedAt: 1))
+            try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit-again", importedAt: 2))
+            let recent = manager.loadGlobalSettings().recentWPEImports
+            #expect(recent.map(\.importedAt) == [Date(timeIntervalSince1970: 2)])
+        }
+    }
+
     @Test("A folder size measured for one entry is stored on that entry, not on another folder sharing its id", .timeLimit(.minutes(1)))
     func measuredSizeLandsOnMeasuredEntry() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())

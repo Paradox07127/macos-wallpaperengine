@@ -420,14 +420,8 @@ final class SettingsManager {
     ) {
         var settings = loadGlobalSettings()
         var entry = entry
-        let entryWorkshopID = entry.origin.workshopID
-        let entryFolderID = Self.steamFolderItemID(entry.origin)
-        let isSameItem = { (other: WPEHistoryEntry) in
-            if let entryFolderID, let otherFolderID = Self.steamFolderItemID(other.origin) {
-                return entryFolderID == otherFolderID
-            }
-            return entryWorkshopID == other.origin.workshopID
-        }
+        let entryOrigin = entry.origin
+        let isSameItem = { (other: WPEHistoryEntry) in Self.isSameWPEItem(entryOrigin, other.origin) }
         let previous = settings.recentWPEImports.first(where: isSameItem)
         if entry.sizeBytes == nil {
             entry.sizeBytes = previous?.sizeBytes
@@ -452,7 +446,19 @@ final class SettingsManager {
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
     }
 
-    /// When both entries have a Steam folder id it alone decides sameness: a manifest's id can name another folder's item.
+    /// A Steam folder id alone decides sameness (a manifest's id can name another folder's item);
+    /// a local copy whose manifest still names a Steam item is a different entry from that item.
+    static func isSameWPEItem(_ lhs: WPEOrigin, _ rhs: WPEOrigin) -> Bool {
+        switch (steamFolderItemID(lhs), steamFolderItemID(rhs)) {
+        case let (lhsFolderID?, rhsFolderID?):
+            lhsFolderID == rhsFolderID
+        case (nil, nil):
+            lhs.workshopID == rhs.workshopID
+        default:
+            false
+        }
+    }
+
     private static func steamFolderItemID(_ origin: WPEOrigin) -> String? {
         #if LITE_BUILD
         return nil
@@ -525,9 +531,9 @@ final class SettingsManager {
             $0.origin.workshopID == workshopID && $0.importedAt == importedAt
         }) else { return false }
         let removed = settings.recentWPEImports.remove(at: index)
-        if recordingDeleteTombstone {
-            // The download scan checks tombstones against Steam folder names; a manifest's id can name another item.
-            let tombstone = Self.steamFolderItemID(removed.origin) ?? workshopID
+        // The download scan checks tombstones against Steam folder names only, so an entry outside
+        // Steam's layout has no download to suppress; its manifest id may name a Steam item still installed.
+        if recordingDeleteTombstone, let tombstone = Self.steamFolderItemID(removed.origin) {
             _ = Self.insertDeleteTombstone(workshopID: tombstone, into: &settings)
         }
         saveGlobalSettings(settings)

@@ -40,38 +40,56 @@ extension ScreenManager {
 
     func removeWPEImport(workshopID: String) {
         guard !isTerminating else { return }
-        clearActiveWPEWallpaper(workshopID: workshopID)
+        let cacheRelativePath = "wpe-cache/\(workshopID)"
+        clearActiveWPEWallpaper(
+            matchingOrigin: { $0.workshopID == workshopID },
+            matchingScene: { $0.workshopID == workshopID || $0.cacheRelativePath == cacheRelativePath }
+        )
         wpeImportCoordinator.removeWorkshop(workshopID: workshopID)
     }
     /// Installed-page CAS delete: only an exact persisted identity match may
     /// disturb live sessions or scrub configuration references.
     @discardableResult
     func removeWPEImport(workshopID: String, matchingImportedAt importedAt: Date) -> Bool {
+        let removed = SettingsManager.shared.loadGlobalSettings().recentWPEImports.first {
+            $0.origin.workshopID == workshopID && $0.importedAt == importedAt
+        }?.origin
         guard !isTerminating,
+              let removed,
               SettingsManager.shared.removeWPEImport(
                   workshopID: workshopID,
                   matchingImportedAt: importedAt
               ) else { return false }
-        clearActiveWPEWallpaper(workshopID: workshopID)
-        wpeImportCoordinator.clearRemovedWorkshopReferences(workshopID: workshopID)
+        // A local copy keeps its manifest's Workshop id, so the id alone would also match the Steam item it was copied from.
+        let matchesRemoved = { (origin: WPEOrigin) in SettingsManager.isSameWPEItem(origin, removed) }
+        clearActiveWPEWallpaper(
+            matchingOrigin: matchesRemoved,
+            matchingScene: { $0.cacheRelativePath == removed.cacheRelativePath }
+        )
+        for var config in configurationStore.loadAll() where config.wpeOrigin.map(matchesRemoved) == true {
+            config.wpeOrigin = nil
+            saveConfiguration(config)
+        }
         return true
     }
-    private func clearActiveWPEWallpaper(workshopID: String) {
+    private func clearActiveWPEWallpaper(
+        matchingOrigin: (WPEOrigin) -> Bool,
+        matchingScene: (SceneDescriptor) -> Bool
+    ) {
         // If a screen is currently rendering the scene being deleted, switch it away FIRST — otherwise its live renderer keeps reading the cache files that the delete is about to move to the Trash.
-        let cacheRelativePath = "wpe-cache/\(workshopID)"
         WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
             for screen in screens {
-                if wallpaperLoads.attempt(for: screen)?.origin?.workshopID == workshopID {
+                if let origin = wallpaperLoads.attempt(for: screen)?.origin, matchingOrigin(origin) {
                     beginExplicitWallpaperSelection(for: screen)
                 }
                 guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { continue }
                 let matchesScene: Bool
                 if case .scene(let descriptor) = config.activeWallpaper {
-                    matchesScene = descriptor.workshopID == workshopID || descriptor.cacheRelativePath == cacheRelativePath
+                    matchesScene = matchingScene(descriptor)
                 } else {
                     matchesScene = false
                 }
-                guard matchesScene || config.wpeOrigin?.workshopID == workshopID else { continue }
+                guard matchesScene || config.wpeOrigin.map(matchingOrigin) == true else { continue }
                 clearWallpaperOfType(config.activeWallpaper.wallpaperType, for: screen)
             }
         }

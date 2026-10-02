@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -109,6 +110,62 @@ struct WPEDeleteTombstoneTests {
         )
     }
 
+    @Test("Deleting a local copy whose manifest names a Steam item leaves that item in the library and its folder scannable")
+    func deletingLocalCopyKeepsSteamItem() throws {
+        let fixture = try LocalCopyFixture()
+        defer { fixture.discard() }
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            manager.recordWPEImport(fixture.steam)
+            manager.recordWPEImport(fixture.local)
+
+            #expect(manager.removeWPEImport(workshopID: fixture.workshopID, matchingImportedAt: fixture.local.importedAt))
+            var after = manager.loadGlobalSettings()
+            #expect(after.recentWPEImports == [fixture.steam])
+            #expect(!after.deletedWorkshopIDs.contains(fixture.workshopID))
+
+            // Control: deleting the Steam item itself still keeps its folder out of the scan.
+            #expect(manager.removeWPEImport(workshopID: fixture.workshopID, matchingImportedAt: fixture.steam.importedAt))
+            after = manager.loadGlobalSettings()
+            #expect(after.deletedWorkshopIDs == [fixture.workshopID])
+        }
+    }
+
+    @Test("Deleting a local copy leaves a screen playing the Steam item it was copied from")
+    func deletingLocalCopyKeepsScreenPlayingSteamItem() throws {
+        let fixture = try LocalCopyFixture()
+        defer { fixture.discard() }
+        try withIsolatedGlobalSettings {
+            SettingsManager.shared.recordWPEImport(fixture.steam)
+            SettingsManager.shared.recordWPEImport(fixture.local)
+            let screen = Screen(nsScreen: TombstoneTestNSScreen())
+            let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+                restoreSavedWallpapers: false, startAutomation: false,
+                powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+                playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+                featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
+            ))
+            defer {
+                manager.tearDownForTermination()
+                manager.configurationStore.remove(for: screen.id)
+            }
+            var configuration = ScreenConfiguration(
+                screenID: screen.id, wallpaper: .video(bookmarkData: Data("steam-video".utf8), packageEntryName: nil)
+            )
+            configuration.displayFingerprint = screen.displayFingerprint
+            configuration.wpeOrigin = fixture.steam.origin
+            manager.saveConfiguration(configuration)
+            let playing = configuration.activeWallpaper
+
+            #expect(manager.removeWPEImport(workshopID: fixture.workshopID, matchingImportedAt: fixture.local.importedAt))
+            #expect(manager.getConfiguration(for: screen)?.activeWallpaper == playing)
+
+            // Control: deleting the Steam item clears the screen playing it.
+            #expect(manager.removeWPEImport(workshopID: fixture.workshopID, matchingImportedAt: fixture.steam.importedAt))
+            #expect(manager.getConfiguration(for: screen)?.activeWallpaper != playing)
+        }
+    }
+
     private func makeReaddedEntry(_ workshopID: String) -> WPEHistoryEntry {
         WPEHistoryEntry(
             origin: WPEOrigin(
@@ -153,5 +210,52 @@ struct WPEDeleteTombstoneTests {
         }
 
         try body()
+    }
+}
+
+/// A Steam item and a local copy of its folder whose manifest still carries the Steam item's id.
+@MainActor
+private struct LocalCopyFixture {
+    let workshopID = "2585024298"
+    let root: URL
+    let steam: WPEHistoryEntry
+    let local: WPEHistoryEntry
+
+    init() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPELocalCopy-\(UUID().uuidString)", isDirectory: true)
+        self.root = root
+        func entry(inFolder relativePath: String, importedAt: Double) throws -> WPEHistoryEntry {
+            let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return try WPEHistoryEntry(
+                origin: WPEOrigin(
+                    workshopID: "2585024298", title: "Lunar Tear [4K]", originalType: .video,
+                    sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+                    cacheRelativePath: "wpe-cache/2585024298", previewFileName: nil
+                ),
+                importedAt: Date(timeIntervalSince1970: importedAt)
+            )
+        }
+        steam = try entry(inFolder: "steamapps/workshop/content/431960/\(workshopID)", importedAt: 1)
+        local = try entry(inFolder: "Wallpapers/edit", importedAt: 2)
+    }
+
+    func discard() {
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+private final class TombstoneTestNSScreen: NSScreen {
+    override var frame: NSRect {
+        NSRect(x: 0, y: 0, width: 800, height: 600)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): UInt32(0xEDA0_0D17)]
+    }
+
+    override var localizedName: String {
+        "Delete Tombstone Test"
     }
 }
