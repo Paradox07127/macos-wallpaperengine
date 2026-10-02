@@ -388,6 +388,10 @@ public enum DesignTokens {
         public static var exitTiming: CAMediaTimingFunction {
             CAMediaTimingFunction(name: .easeIn)
         }
+
+        public static var wallpaperCrossfadeTiming: CAMediaTimingFunction {
+            CAMediaTimingFunction(name: .easeInEaseOut)
+        }
     }
 
     /// nil when Reduce Motion is on, so the change applies instantly.

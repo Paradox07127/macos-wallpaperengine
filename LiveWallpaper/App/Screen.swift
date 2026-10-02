@@ -129,18 +129,13 @@ final class Screen: Identifiable, Hashable {
         return runtimeSession?.summary ?? .notConfigured
     }
 
-    func installRuntimeSession(_ session: any WallpaperRuntimeSession) {
+    func installRuntimeSession(_ session: any WallpaperRuntimeSession, group: WallpaperSwitchGroup? = nil) {
         guard !isSameSession(runtimeSession, session) else { return }
         let old = runtimeSession
-        let automationPlan = nextAutomationTransitionPlan
-        nextAutomationTransitionPlan = nil
         handleRuntimeSessionTransition(from: old, to: session)
         runtimeSession = session
-        retire(old, automationPlan: automationPlan)
+        retire(old, group: group)
     }
-
-    /// Set only in a successful automation commit; never leaks into a later manual selection.
-    @ObservationIgnored var nextAutomationTransitionPlan: WallpaperTransitionPlan?
 
     /// Swapped by tests to pin the transition and drive it with a manual clock.
     @ObservationIgnored var transitionEnvironment = WallpaperTransitionEnvironment()
@@ -150,31 +145,36 @@ final class Screen: Identifiable, Hashable {
 
     /// Video keeps wallpaperWindow nil, so retirement reaches its window through the player.
     /// A session that never installed a window takes the immediate path below.
-    private func retire(_ old: (any WallpaperRuntimeSession)?, automationPlan: WallpaperTransitionPlan? = nil) {
+    private func retire(_ old: (any WallpaperRuntimeSession)?, group: WallpaperSwitchGroup?) {
         guard let old else { return }
         // A newer swap ends a reveal still in progress rather than stacking a second mask over it.
         finishRevealTransitions()
-        let plan = automationPlan ?? transitionEnvironment.plan(transitionEnvironment.reduceMotion())
+        let environment = transitionEnvironment
+        let reduceMotion = environment.reduceMotion()
+        let lowPower = environment.lowPowerMode()
+        let resolve = { environment.plan(reduceMotion, lowPower) }
+        let plan = group?.plan(resolve) ?? resolve()
+        let pace = group?.pace ?? .manual
         guard let window = old.wallpaperWindow ?? old.videoPlayer?.playbackWindow, plan != .none else {
             old.cleanup()
             return
         }
-        if case let .reveal(effect) = plan, startReveal(effect, retiring: old, window: window) {
+        if case let .reveal(effect) = plan, startReveal(effect, pace: pace, retiring: old, window: window) {
             return
         }
-        crossfade(old, window: window)
+        let duration = reduceMotion || lowPower
+            ? DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
+            : DesignTokens.Motion.wallpaperCrossfadeDuration * pace.durationScale
+        crossfade(old, window: window, duration: duration)
     }
 
-    private func crossfade(_ old: any WallpaperRuntimeSession, window: NSWindow) {
-        let duration = transitionEnvironment.reduceMotion()
-            ? DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
-            : DesignTokens.Motion.wallpaperCrossfadeDuration
+    private func crossfade(_ old: any WallpaperRuntimeSession, window: NSWindow, duration: TimeInterval) {
         old.applyPerformanceProfile(.suspended)
         // The outgoing window outlives this call, so it must stop taking input — otherwise an interactive scene/HTML wallpaper keeps swallowing desktop clicks for the whole fade.
         window.ignoresMouseEvents = true
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
-            context.timingFunction = DesignTokens.Motion.exitTiming
+            context.timingFunction = DesignTokens.Motion.wallpaperCrossfadeTiming
             window.animator().alphaValue = 0
         }
         // Tracked, not fire-and-forget: a display can be removed mid-fade and
@@ -194,12 +194,14 @@ final class Screen: Identifiable, Hashable {
     /// false when the reveal cannot run (no Metal renderer, no content view); the caller crossfades instead.
     private func startReveal(
         _ effect: WallpaperRevealEffect,
+        pace: WallpaperTransitionPace,
         retiring old: any WallpaperRuntimeSession,
         window: NSWindow
     ) -> Bool {
         let token = ObjectIdentifier(old)
         guard let transition = WallpaperRevealTransition(
             effect: effect,
+            pace: pace,
             oldWindow: window,
             newWindow: runtimeSession?.wallpaperWindow ?? runtimeSession?.videoPlayer?.playbackWindow,
             renderer: transitionEnvironment.renderer(),
@@ -236,7 +238,6 @@ final class Screen: Identifiable, Hashable {
     /// Drops every still-fading session immediately. Finishing the fade after the screen goes away would leave a window AppKit can reposition onto a surviving display.
     private func flushRetiringSessions() {
         finishRevealTransitions()
-        nextAutomationTransitionPlan = nil
         let fading = retiringSessions.values
         retiringSessions.removeAll()
         for session in fading {
@@ -248,12 +249,13 @@ final class Screen: Identifiable, Hashable {
     func installRuntimeSession(
         _ session: any WallpaperRuntimeSession,
         replacing expected: (any WallpaperRuntimeSession)?,
+        group: WallpaperSwitchGroup? = nil,
         beforeInstall: () -> Bool = { true }
     ) -> Bool {
         guard isSameSession(runtimeSession, expected) else { return false }
         // Single MainActor CAS turn: check + commit so stale candidates cannot win.
         guard beforeInstall() else { return false }
-        installRuntimeSession(session)
+        installRuntimeSession(session, group: group)
         return true
     }
 

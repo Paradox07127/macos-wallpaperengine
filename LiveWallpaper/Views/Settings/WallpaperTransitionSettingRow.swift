@@ -11,7 +11,7 @@ struct WallpaperTransitionSettingRow: View {
             icon: "sparkles.rectangle.stack",
             iconColor: .purple,
             title: "Wallpaper transition",
-            info: "Plays when a display switches wallpapers. With Reduce Motion on, animated transitions become a short crossfade."
+            info: "Plays when a display switches wallpapers, and more slowly when automation switches them. With Reduce Motion or Low Power Mode on, animated transitions become a short crossfade."
         ) {
             Picker("", selection: selection) {
                 ForEach(WallpaperTransitionChoice.allCases) { choice in

@@ -290,7 +290,9 @@ struct WallpaperTransitionControllerTests {
 
     private func makeScreen(plan: WallpaperTransitionPlan, clock: ManualTransitionClock) throws -> Screen {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
-        screen.transitionEnvironment = WallpaperTransitionEnvironment(plan: { _ in plan }, makeClock: { _ in clock })
+        screen.transitionEnvironment = WallpaperTransitionEnvironment(
+            lowPowerMode: { false }, plan: { _, _ in plan }, makeClock: { _ in clock }
+        )
         return screen
     }
 
@@ -565,11 +567,28 @@ struct WallpaperTransitionControllerTests {
     func reduceMotionFallsBackToCrossfade() {
         var generator = SystemRandomNumberGenerator()
         for choice in WallpaperTransitionChoice.allCases {
-            let plan = WallpaperTransitionPlan.resolve(choice, reduceMotion: true, using: &generator)
+            let plan = WallpaperTransitionPlan.resolve(
+                choice, reduceMotion: true, lowPower: false, avoiding: nil, using: &generator
+            )
             #expect(plan == (choice == .none ? .none : .crossfade), "\(choice.rawValue) → \(plan)")
         }
-        #expect(WallpaperTransitionPlan.resolve(.meteor, reduceMotion: false, using: &generator) == .reveal(.meteor))
-        #expect(WallpaperTransitionPlan.resolve(.crossfade, reduceMotion: false, using: &generator) == .crossfade)
+        #expect(WallpaperTransitionPlan.resolve(
+            .meteor, reduceMotion: false, lowPower: false, avoiding: nil, using: &generator
+        ) == .reveal(.meteor))
+        #expect(WallpaperTransitionPlan.resolve(
+            .crossfade, reduceMotion: false, lowPower: false, avoiding: nil, using: &generator
+        ) == .crossfade)
+    }
+
+    @Test("Low Power Mode turns every animated choice into the crossfade and leaves None alone")
+    func lowPowerFallsBackToCrossfade() {
+        var generator = SystemRandomNumberGenerator()
+        for choice in WallpaperTransitionChoice.allCases {
+            let plan = WallpaperTransitionPlan.resolve(
+                choice, reduceMotion: false, lowPower: true, avoiding: nil, using: &generator
+            )
+            #expect(plan == (choice == .none ? .none : .crossfade), "\(choice.rawValue) → \(plan)")
+        }
     }
 
     @Test("Random draws only from the crossfade and the five reveals, and reaches each of them")
@@ -577,7 +596,9 @@ struct WallpaperTransitionControllerTests {
         var generator = SystemRandomNumberGenerator()
         var seen: [WallpaperTransitionPlan] = []
         for _ in 0 ..< 300 {
-            let plan = WallpaperTransitionPlan.resolve(.random, reduceMotion: false, using: &generator)
+            let plan = WallpaperTransitionPlan.resolve(
+                .random, reduceMotion: false, lowPower: false, avoiding: nil, using: &generator
+            )
             #expect(WallpaperTransitionPlan.randomPool.contains(plan), "\(plan) is outside the random pool")
             if !seen.contains(plan) {
                 seen.append(plan)
@@ -586,6 +607,107 @@ struct WallpaperTransitionControllerTests {
         #expect(seen.count == 6)
         #expect(WallpaperTransitionPlan.randomPool.count == 6)
         #expect(!WallpaperTransitionPlan.randomPool.contains(.none))
+    }
+
+    @Test("Chained random picks never repeat the previous one and still reach the whole pool")
+    func randomAvoidsThePreviousPick() {
+        var generator = SystemRandomNumberGenerator()
+        var previous: WallpaperTransitionPlan?
+        var seen: [WallpaperTransitionPlan] = []
+        for _ in 0 ..< 300 {
+            let plan = WallpaperTransitionPlan.resolve(
+                .random, reduceMotion: false, lowPower: false, avoiding: previous, using: &generator
+            )
+            #expect(plan != previous, "\(plan) repeated back to back")
+            previous = plan
+            if !seen.contains(plan) {
+                seen.append(plan)
+            }
+        }
+        #expect(seen.count == 6)
+    }
+
+    @Test("Screen: Low Power Mode shortens the crossfade for manual and automatic switches",
+          .timeLimit(.minutes(1)), arguments: [false, true])
+    func screenLowPowerCrossfadeIsShort(automatic: Bool) async throws {
+        let screen = try makeScreen(plan: .crossfade, clock: ManualTransitionClock())
+        screen.transitionEnvironment.lowPowerMode = { true }
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new, group: automatic ? WallpaperSwitchGroup(pace: .automatic) : nil)
+
+        #expect(screen.retiringSessions[ObjectIdentifier(old)] != nil)
+        try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration + 0.15))
+        #expect(old.cleanupCallCount == 1 && screen.retiringSessions.isEmpty)
+    }
+
+    @Test("Screens switched by one group resolve the plan once and run the same transition")
+    func groupResolvesThePlanOnce() throws {
+        let nsScreen = try #require(NSScreen.screens.first)
+        var planCalls = 0
+        let screens = [Screen(nsScreen: nsScreen), Screen(nsScreen: nsScreen)]
+        for screen in screens {
+            let clock = ManualTransitionClock()
+            screen.transitionEnvironment = WallpaperTransitionEnvironment(
+                lowPowerMode: { false },
+                plan: { _, _ in
+                    planCalls += 1
+                    return planCalls == 1 ? .reveal(.ink) : .none
+                },
+                makeClock: { _ in clock }
+            )
+        }
+        defer { screens.forEach { $0.resetRuntimeSession() } }
+        let olds = screens.map { _ in TransitionTestSession(window: makeWallpaperWindow()) }
+        for (screen, old) in zip(screens, olds) {
+            screen.installRuntimeSession(old)
+        }
+        let group = WallpaperSwitchGroup(pace: .manual)
+        for screen in screens {
+            screen.installRuntimeSession(TransitionTestSession(window: makeWallpaperWindow()), group: group)
+        }
+
+        #expect(planCalls == 1)
+        #expect(screens.map { $0.revealTransitions.values.first?.effect } == [.ink, .ink])
+        #expect(olds.allSatisfy { $0.cleanupCallCount == 0 })
+    }
+
+    @Test("Screen: an automatic switch runs the reveal one and a half times as long")
+    func automaticRevealRunsSlower() throws {
+        let clock = ManualTransitionClock()
+        let screen = try makeScreen(plan: .reveal(.weave), clock: clock)
+        let duration = WallpaperRevealEffect.weave.duration
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new, group: WallpaperSwitchGroup(pace: .automatic))
+        let transition = try #require(screen.revealTransitions.values.first)
+
+        clock.fire(0)
+        clock.fire(duration)
+        #expect(!transition.isFinished && old.cleanupCallCount == 0)
+
+        clock.fire(duration * 1.5)
+        #expect(transition.isFinished && old.cleanupCallCount == 1)
+        #expect(screen.revealTransitions.isEmpty && new.cleanupCallCount == 0)
+    }
+
+    @Test("Screen: an automatic crossfade lasts one and a half times as long", .timeLimit(.minutes(1)))
+    func automaticCrossfadeRunsSlower() async throws {
+        let screen = try makeScreen(plan: .crossfade, clock: ManualTransitionClock())
+        let old = TransitionTestSession(window: makeWallpaperWindow())
+        let new = TransitionTestSession(window: makeWallpaperWindow())
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new, group: WallpaperSwitchGroup(pace: .automatic))
+
+        try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration + 0.05))
+        #expect(old.cleanupCallCount == 0 && screen.retiringSessions[ObjectIdentifier(old)] != nil)
+        try await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration * 0.5 + 0.25))
+        #expect(old.cleanupCallCount == 1 && screen.retiringSessions.isEmpty)
     }
 }
 

@@ -187,12 +187,6 @@ extension ScreenManager {
             if let source {
                 noteAutomaticSwitch(on: screen, source: source)
             }
-            if WallpaperTransitionChoice.stored() != .none {
-                var generator = SystemRandomNumberGenerator()
-                screen.nextAutomationTransitionPlan = WallpaperTransitionPlan.resolve(
-                    .random, reduceMotion: screen.transitionEnvironment.reduceMotion(), using: &generator
-                )
-            }
             if saves {
                 saveConfiguration(configuration)
             }

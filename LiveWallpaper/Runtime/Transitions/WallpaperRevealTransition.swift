@@ -51,7 +51,11 @@ final class DisplayLinkTransitionClock: WallpaperTransitionClock {
 /// What `Screen` needs to run a transition; tests replace any of its parts.
 struct WallpaperTransitionEnvironment {
     var reduceMotion: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    var plan: @MainActor (_ reduceMotion: Bool) -> WallpaperTransitionPlan = { WallpaperTransitionPlan.current(reduceMotion: $0) }
+    var lowPowerMode: @MainActor () -> Bool = { ProcessInfo.processInfo.isLowPowerModeEnabled }
+    var plan: @MainActor (_ reduceMotion: Bool, _ lowPower: Bool) -> WallpaperTransitionPlan = {
+        WallpaperTransitionPlan.current(reduceMotion: $0, lowPower: $1)
+    }
+
     var makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock = { DisplayLinkTransitionClock(window: $0) }
     var renderer: @MainActor () -> (any WallpaperTransitionRendering)? = { WallpaperTransitionRenderer.shared }
 }
@@ -61,6 +65,7 @@ struct WallpaperTransitionEnvironment {
 @MainActor
 final class WallpaperRevealTransition {
     let effect: WallpaperRevealEffect
+    let duration: TimeInterval
     private let oldWindow: NSWindow
     private let originalOldWindowLevel: NSWindow.Level
     private weak var newWindow: NSWindow?
@@ -81,6 +86,7 @@ final class WallpaperRevealTransition {
     /// nil when there is nothing to mask or no Metal renderer; the caller falls back to the crossfade.
     init?(
         effect: WallpaperRevealEffect,
+        pace: WallpaperTransitionPace = .manual,
         oldWindow: NSWindow,
         newWindow: NSWindow?,
         renderer: (any WallpaperTransitionRendering)? = WallpaperTransitionRenderer.shared,
@@ -92,13 +98,14 @@ final class WallpaperRevealTransition {
             return nil
         }
         self.effect = effect
+        duration = effect.duration * pace.durationScale
         self.oldWindow = oldWindow
         originalOldWindowLevel = oldWindow.level
         self.newWindow = newWindow
         self.renderer = renderer
         clock = makeClock(oldWindow)
         self.onFinish = onFinish
-        self.finishDeadline = finishDeadline ?? .seconds(effect.duration + 0.5)
+        self.finishDeadline = finishDeadline ?? .seconds(duration + 0.5)
         uniforms = WallpaperTransitionUniforms(
             progress: 0,
             time: 0,
@@ -174,7 +181,7 @@ final class WallpaperRevealTransition {
         let start = startTime ?? time
         startTime = start
         let elapsed = time - start
-        uniforms.progress = Float(min(1, elapsed / effect.duration))
+        uniforms.progress = Float(min(1, elapsed / duration))
         uniforms.time = Float(elapsed)
         if let maskLayer, !draw(.mask, in: maskLayer) {
             finish()

@@ -55,6 +55,42 @@ enum WallpaperRevealEffect: String, CaseIterable {
     }
 }
 
+enum WallpaperTransitionPace {
+    case manual
+    case automatic
+
+    var durationScale: Double {
+        switch self {
+        case .manual: 1
+        case .automatic: 1.5
+        }
+    }
+}
+
+/// One user action or automation tick; every display it switches shares one plan and pace.
+@MainActor
+final class WallpaperSwitchGroup {
+    /// Set around automation handlers; tasks they create inherit it up to the commit.
+    @TaskLocal static var current: WallpaperSwitchGroup?
+
+    let pace: WallpaperTransitionPace
+    private var resolvedPlan: WallpaperTransitionPlan?
+
+    init(pace: WallpaperTransitionPace) {
+        self.pace = pace
+    }
+
+    /// The first retiring display resolves; later members reuse that result.
+    func plan(_ resolve: () -> WallpaperTransitionPlan) -> WallpaperTransitionPlan {
+        if let resolvedPlan {
+            return resolvedPlan
+        }
+        let plan = resolve()
+        resolvedPlan = plan
+        return plan
+    }
+}
+
 enum WallpaperTransitionPlan: Equatable {
     case none
     case crossfade
@@ -62,16 +98,19 @@ enum WallpaperTransitionPlan: Equatable {
 
     static let randomPool: [WallpaperTransitionPlan] = [.crossfade] + WallpaperRevealEffect.allCases.map { .reveal($0) }
 
-    /// Reduce Motion turns every animated choice into the crossfade, which `Screen` then runs at its shorter reduced-motion duration.
+    /// Reduce Motion and Low Power Mode turn every animated choice into the crossfade, which `Screen` then runs at its short duration.
+    /// `previous` is the last random pick; random avoids repeating it.
     static func resolve(
         _ choice: WallpaperTransitionChoice,
         reduceMotion: Bool,
+        lowPower: Bool,
+        avoiding previous: WallpaperTransitionPlan?,
         using generator: inout some RandomNumberGenerator
     ) -> WallpaperTransitionPlan {
         if choice == .none {
             return .none
         }
-        if reduceMotion {
+        if reduceMotion || lowPower {
             return .crossfade
         }
         switch choice {
@@ -82,12 +121,22 @@ enum WallpaperTransitionPlan: Equatable {
         case .leak: return .reveal(.leak)
         case .aurora: return .reveal(.aurora)
         case .weave: return .reveal(.weave)
-        case .random: return randomPool.randomElement(using: &generator) ?? .crossfade
+        case .random:
+            let fresh = randomPool.filter { $0 != previous }
+            return (fresh.isEmpty ? randomPool : fresh).randomElement(using: &generator) ?? .crossfade
         }
     }
 
-    static func current(reduceMotion: Bool) -> WallpaperTransitionPlan {
+    @MainActor private static var lastRandomPick: WallpaperTransitionPlan?
+
+    @MainActor
+    static func current(reduceMotion: Bool, lowPower: Bool) -> WallpaperTransitionPlan {
         var generator = SystemRandomNumberGenerator()
-        return resolve(WallpaperTransitionChoice.stored(), reduceMotion: reduceMotion, using: &generator)
+        let choice = WallpaperTransitionChoice.stored()
+        let plan = resolve(choice, reduceMotion: reduceMotion, lowPower: lowPower, avoiding: lastRandomPick, using: &generator)
+        if choice == .random, !reduceMotion, !lowPower {
+            lastRandomPick = plan
+        }
+        return plan
     }
 }

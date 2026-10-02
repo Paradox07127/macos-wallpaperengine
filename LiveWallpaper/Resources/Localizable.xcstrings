@@ -44172,37 +44172,37 @@
         }
       }
     },
-    "Plays when a display switches wallpapers. With Reduce Motion on, animated transitions become a short crossfade." : {
-      "comment" : "Settings › General, info for Wallpaper transition. Reduce Motion is the macOS accessibility setting.",
+    "Plays when a display switches wallpapers, and more slowly when automation switches them. With Reduce Motion or Low Power Mode on, animated transitions become a short crossfade." : {
+      "comment" : "Settings › General, info for Wallpaper transition. Reduce Motion is the macOS accessibility setting; Low Power Mode is the macOS battery setting.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plays when a display switches wallpapers. With Reduce Motion on, animated transitions become a short crossfade."
+            "value" : "Plays when a display switches wallpapers, and more slowly when automation switches them. With Reduce Motion or Low Power Mode on, animated transitions become a short crossfade."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se reproduce cuando una pantalla cambia de fondo. Con Reducir movimiento activado, las transiciones animadas pasan a ser un fundido encadenado breve."
+            "value" : "Se reproduce cuando una pantalla cambia de fondo, y más despacio cuando lo cambia la automatización. Con Reducir movimiento o el modo de bajo consumo activados, las transiciones animadas pasan a ser un fundido encadenado breve."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ディスプレイの壁紙が切り替わるときに再生します。「視差効果を減らす」がオンの間は、アニメーションが短いクロスフェードになります。"
+            "value" : "ディスプレイの壁紙が切り替わるときに再生し、自動切り替えのときはゆっくり再生します。「視差効果を減らす」または低電力モードがオンの間は、アニメーションが短いクロスフェードになります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示器切换壁纸时播放；开启“减弱动态效果”时改为短暂的淡入淡出。"
+            "value" : "显示器切换壁纸时播放，自动轮换时放慢。开启“减弱动态效果”或低电量模式时，动画改为短暂的淡入淡出。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示器切換桌布時播放；開啟「減少動態效果」時改為短暫的淡入淡出。"
+            "value" : "顯示器切換桌布時播放，自動輪換時放慢。開啟「減少動態效果」或低耗電模式時，動畫改為短暫的淡入淡出。"
           }
         }
       }

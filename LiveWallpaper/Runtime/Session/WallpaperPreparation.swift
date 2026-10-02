@@ -216,6 +216,7 @@ enum WallpaperSessionTransaction {
         guard screen.installRuntimeSession(
             candidate,
             replacing: expected,
+            group: WallpaperSwitchGroup.current,
             beforeInstall: {
                 didAttemptCommit = true
                 commitAccepted = beforeCommit()

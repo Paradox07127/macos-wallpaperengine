@@ -94,12 +94,15 @@ WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
     WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
     WPERenderThreadTests WPERenderThreadDrainRuntimeTests
 
+# Wallpaper transitions draw with Metal into real windows, so they also stay out of the headless shard.
+TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitionShaderTests
+
 # Keep certificate-signed Metal products separate from the ad-hoc fast host.
 test-wpe-metal:
 	DERIVED_DATA="$(DERIVED_DATA)Metal" \
 	RESULT_BUNDLE="$(DERIVED_DATA)Metal/WPEMetalContracts-$$(date +%Y%m%d-%H%M%S)-$$$$.xcresult" \
 	TEST_RUNNER_MTL_DEBUG_LAYER=1 TEST_RUNNER_MTL_SHADER_VALIDATION=1 \
-	bash scripts/app_tests.sh suites $(WPE_METAL_SUITES)
+	bash scripts/app_tests.sh suites $(WPE_METAL_SUITES) $(TRANSITION_METAL_SUITES)
 
 # CI's variant. The Lite host asserts on runtime entitlements, so it needs a real
 # signing certificate that hosted runners do not have; Lite's grants stay gated

@@ -52,8 +52,9 @@ final class WallpaperAutomationCoordinator {
     ) {
         let screens = screenProvider()
         if runInitialScheduleCheck {
+            let group = WallpaperSwitchGroup(pace: .automatic)
             for screen in screens {
-                scheduleHandler(screen)
+                WallpaperSwitchGroup.$current.withValue(group) { scheduleHandler(screen) }
             }
         }
 
@@ -108,13 +109,14 @@ final class WallpaperAutomationCoordinator {
                     return false
                 }
 
+                let group = WallpaperSwitchGroup(pace: .automatic)
                 for screen in screens {
                     guard let configuration = configurations[screen.id],
                           configuration.wallpaperMode == .schedule,
                           Self.hasDemand(configuration) else {
                         continue
                     }
-                    scheduleHandler(screen)
+                    WallpaperSwitchGroup.$current.withValue(group) { scheduleHandler(screen) }
                 }
 
                 let liveIDs = Set(screens.map(\.id))
@@ -156,9 +158,9 @@ final class WallpaperAutomationCoordinator {
                         lastRotation[screen.id] = now
                         // Advance deadline clock in schedule mode; rotate only in playlist.
                         if configuration.wallpaperMode == .playlist {
-                            playlistHandler(screen)
+                            WallpaperSwitchGroup.$current.withValue(group) { playlistHandler(screen) }
                         } else if configuration.wallpaperMode == .libraryShuffle {
-                            libraryShuffleHandler(screen)
+                            WallpaperSwitchGroup.$current.withValue(group) { libraryShuffleHandler(screen) }
                         }
                     }
                 }
