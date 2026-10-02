@@ -7,6 +7,7 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import MetalKit
+import os
 import SwiftUI
 import Testing
 import UniformTypeIdentifiers
@@ -1445,6 +1446,32 @@ struct WPEMetalSceneRendererTests {
         #expect(abs(uniforms.daytime - 0.5) < 0.0001)
         #expect(uniforms.brightness == 1)
         #expect(uniforms.pointerPosition == SIMD2<Double>(0.25, 0.75))
+    }
+
+    @Test("A suspended span does not advance the scene runtime after resume")
+    func suspendedSpanDoesNotAdvanceRuntime() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let now = OSAllocatedUnfairLock(initialState: 10.0)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device,
+            frameClock: WPEMetalFrameClock(loadTime: 0, currentMediaTime: { now.withLock { $0 } })
+        )
+        renderer.applyPerformanceProfile(.suspended)
+        now.withLock { $0 = 130 }
+        renderer.applyPerformanceProfile(.quality)
+        now.withLock { $0 = 130.1 }
+
+        let time = renderer.frameClock.runtimeUniforms(
+            profile: .quality,
+            pointerPosition: SIMD2<Double>(0.5, 0.5)
+        ).time
+        #expect(abs(time - 10.1) < 0.0001)
     }
 
     @Test("Loads preview snapshot from Metal offscreen output")

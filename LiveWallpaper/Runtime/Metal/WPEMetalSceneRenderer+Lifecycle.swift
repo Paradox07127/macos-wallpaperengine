@@ -715,6 +715,7 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources.values.forEach { $0.applyPerformanceProfile(profile) }
         switch profile {
         case .quality:
+            frameClock.resume()
             let continuous = needsPacingLoop
             lastAppliedContinuousFrames = continuous
             surfaceControl.applyPacing(WPERenderPacingUpdate(
@@ -724,6 +725,8 @@ extension WPEMetalSceneRenderer {
             ))
             soundRuntime?.resume()
         case .suspended:
+            // Freezes g_Time, particles, camera and engine.runtime alike; they all read this clock.
+            frameClock.suspend()
             cameraMotionPlayback?.suspend()
             cameraPathPlayback?.suspend()
             // Nil, not false: the next `.quality` transition must re-apply the

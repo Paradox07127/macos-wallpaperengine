@@ -1,10 +1,11 @@
 import AppKit
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import os
 import QuartzCore
 import simd
 import Testing
-@testable import LiveWallpaper
 
 @MainActor
 @Suite("WPE Metal runtime uniforms")
@@ -46,6 +47,25 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(uniforms.uniformValues["g_Frametime"]?.numberValue == 0)
         #expect(uniforms.uniformValues["g_Brightness"]?.numberValue == 1)
         #expect(uniforms.uniformValues["g_PointerPosition"]?.vectorValue == [0.25, 0.75])
+    }
+
+    @Test("Frame clock stands still while suspended and resumes without the suspended span")
+    func frameClockExcludesSuspendedSpan() {
+        let now = OSAllocatedUnfairLock(initialState: 10.0)
+        var clock = WPEMetalFrameClock(loadTime: 0, currentMediaTime: { now.withLock { $0 } })
+        func time() -> Double {
+            clock.runtimeUniforms(profile: .quality, pointerPosition: SIMD2<Double>(0.5, 0.5)).time
+        }
+
+        clock.suspend()
+        now.withLock { $0 = 70 }
+        clock.suspend()
+        now.withLock { $0 = 130 }
+        #expect(abs(time() - 10) < 0.0001)
+        clock.resume()
+        clock.resume()
+        now.withLock { $0 = 130.1 }
+        #expect(abs(time() - 10.1) < 0.0001)
     }
 
     @Test("Official shader frametime is a non-negative runtime global")

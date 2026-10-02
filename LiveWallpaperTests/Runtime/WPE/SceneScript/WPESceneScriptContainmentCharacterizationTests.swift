@@ -1116,7 +1116,7 @@ struct WPESceneScriptBatchAutoreleaseTests {
 
 @Suite("SceneScript timer containment", .serialized)
 struct WPESceneScriptTimerContainmentTests {
-    @Test("Timer catch-up overflow explicitly fails the scene closed")
+    @Test("More due timers than the per-advance callback limit explicitly fail the scene closed")
     func callbackLimitFailsClosed() throws {
         let token = WPESceneScriptInstanceLimitToken(generation: 801)
         #expect(token.prepare(.init(text: 1, layer: 0, transform: 0)))
@@ -1124,7 +1124,9 @@ struct WPESceneScriptTimerContainmentTests {
         let instance = try WPESceneScriptInstance(
             script: """
             var callbacks = 0;
-            setInterval(function () { callbacks += 1; }, 1);
+            for (var i = 0; i < 1100; i++) {
+                setTimeout(function () { callbacks += 1; }, 1000);
+            }
             export function update(value) { return String(callbacks); }
             """,
             initialValue: "stable",

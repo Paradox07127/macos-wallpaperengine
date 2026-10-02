@@ -1146,7 +1146,8 @@ final class WPELayerScriptInstance {
                     if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
                 }
             }
-            // A failed init preserves authored visibility and alpha.
+            // A failed init preserves authored own visibility and alpha, but (as in WPE) keeps its
+            // writes to other layers and leaves update() running.
             let media = WPESceneMediaHandlerSet(in: context)
             if didThrow {
                 let authoredAlpha = switch outputMode {
@@ -1155,15 +1156,6 @@ final class WPELayerScriptInstance {
                 }
                 assignedVisible[Self.ownKey] = initialOwnVisible
                 assignedAlpha[Self.ownKey] = authoredAlpha
-                return .ready(
-                    hasUpdate: false,
-                    handlesUserProperties: handlesUserProperties,
-                    media: media,
-                    output: WPELayerScriptOutput(
-                        own: WPELayerScriptState(visible: initialOwnVisible, alpha: authoredAlpha, videoCommands: []),
-                        others: [:]
-                    )
-                )
             }
             return .ready(
                 hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,

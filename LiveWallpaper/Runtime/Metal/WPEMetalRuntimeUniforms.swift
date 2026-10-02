@@ -257,11 +257,28 @@ struct WPEMetalFrameClock: Sendable {
         self.calendar = calendar
     }
 
+    /// nil while running; otherwise the media time at which the scene was suspended.
+    private var suspendedAt: CFTimeInterval?
+    private var suspendedDuration: CFTimeInterval = 0
+
+    /// WPE's scene runtime does not advance while the wallpaper is paused; repeated calls are no-ops.
+    mutating func suspend() {
+        guard suspendedAt == nil else { return }
+        suspendedAt = currentMediaTime()
+    }
+
+    mutating func resume() {
+        guard let suspendedAt else { return }
+        suspendedDuration += max(currentMediaTime() - suspendedAt, 0)
+        self.suspendedAt = nil
+    }
+
     func runtimeUniforms(
         profile: WallpaperPerformanceProfile,
         pointerPosition: SIMD2<Double>
     ) -> WPEMetalRuntimeUniforms {
-        let elapsed = max(currentMediaTime() - loadTime, 0)
+        let now = suspendedAt ?? currentMediaTime()
+        let elapsed = max(now - loadTime - suspendedDuration, 0)
         let date = currentDate()
         let components = calendar.dateComponents([.hour, .minute, .second], from: date)
         let seconds = Double((components.hour ?? 0) * 3600 + (components.minute ?? 0) * 60 + (components.second ?? 0))

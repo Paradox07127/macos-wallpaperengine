@@ -523,7 +523,7 @@ final class WPESceneScriptTimerScheduler {
         case callbackLimitExceeded
     }
 
-    /// Hitting the catch-up limit is a scene fail-close, never a silent callback drop.
+    /// Hitting the per-advance callback limit is a scene fail-close, never a silent callback drop.
     static let maximumCallbacksPerAdvance = 1_024
 
     private final class Entry {
@@ -614,6 +614,8 @@ final class WPESceneScriptTimerScheduler {
         }
         currentRuntimeSeconds = max(currentRuntimeSeconds, proposedRuntimeSeconds)
         var callbackCount = 0
+        // Re-inserted only after the sweep, so an interval fires at most once per advance even when now + interval <= now.
+        var rescheduled: [Entry] = []
 
         while let next = heap.first, next.deadline <= currentRuntimeSeconds {
             guard callbackCount < Self.maximumCallbacksPerAdvance else {
@@ -637,10 +639,11 @@ final class WPESceneScriptTimerScheduler {
                 continue
             }
 
-            // Reschedule from the prior deadline, not from now, matching WPE bounded-drift catch-up.
-            entry.deadline += entry.interval
-            insert(entry)
+            // From now, not the prior deadline: WPE never catches up missed periods, so intervals drift to the frame grid.
+            entry.deadline = currentRuntimeSeconds + entry.interval
+            rescheduled.append(entry)
         }
+        rescheduled.forEach(insert)
         return .completed
     }
 
@@ -1512,12 +1515,19 @@ final class WPESceneScriptInstance {
             return existed
         }
         let storageClear: @convention(block) () -> Void = { storageBacking.removeAllObjects() }
-        storage.setObject(storageGet, forKeyedSubscript: "get" as NSString)
+        // Install order is observable: WPE's Object.keys(localStorage) is exactly set,get,delete,clear.
         storage.setObject(storageSet, forKeyedSubscript: "set" as NSString)
+        storage.setObject(storageGet, forKeyedSubscript: "get" as NSString)
         storage.setObject(storageDelete, forKeyedSubscript: "delete" as NSString)
         storage.setObject(storageClear, forKeyedSubscript: "clear" as NSString)
-        storage.setObject("global", forKeyedSubscript: "LOCATION_GLOBAL" as NSString)
-        storage.setObject("screen", forKeyedSubscript: "LOCATION_SCREEN" as NSString)
+        for (name, value) in [("LOCATION_GLOBAL", "global"), ("LOCATION_SCREEN", "screen")] {
+            storage.defineProperty(name as NSString, descriptor: [
+                JSPropertyDescriptorValueKey: value,
+                JSPropertyDescriptorWritableKey: true,
+                JSPropertyDescriptorConfigurableKey: true,
+                JSPropertyDescriptorEnumerableKey: false,
+            ])
+        }
         context.setObject(storage, forKeyedSubscript: "localStorage" as NSString)
         context.setObject(storage, forKeyedSubscript: "localstorage" as NSString)
 

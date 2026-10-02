@@ -1162,6 +1162,24 @@ export function init(value) {
         #expect(instance.tickString() == "value-set")
     }
 
+    @Test("localStorage exposes WPE's key order and hides its LOCATION constants from Object.keys")
+    func localStorageKeyShapeMatchesWPE() throws {
+        let script = """
+        export function update(value) {
+            var names = Object.getOwnPropertyNames(localStorage);
+            return [
+                Object.keys(localStorage).join(),
+                typeof localStorage.remove,
+                localStorage.LOCATION_GLOBAL,
+                localStorage.LOCATION_SCREEN,
+                names.indexOf('LOCATION_GLOBAL') >= 0 && names.indexOf('LOCATION_SCREEN') >= 0
+            ].join('|');
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "?")
+        #expect(instance.tickString() == "set,get,delete,clear|undefined|global|screen|true")
+    }
+
     // MARK: - WPE 2.8 baseclasses (Vec/Mat math + tolerant globals)
 
     @Test("Vec3 math from the 2.8 baseclasses computes correctly")
@@ -1466,8 +1484,8 @@ export function init(value) {
         #expect(instance.tickString(runtimeSeconds: 0.1) == "abc")
     }
 
-    @Test("Intervals catch up from their prior deadline; nonpositive intervals fire only once")
-    func intervalCatchUpAndZeroPeriodGuard() throws {
+    @Test("An interval fires at most once per advance without catch-up; nonpositive intervals fire only once")
+    func intervalFiresOncePerAdvanceAndZeroPeriodGuard() throws {
         let script = """
         var regular = 0;
         var zero = 0;
@@ -1477,7 +1495,24 @@ export function init(value) {
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
         #expect(instance.tickString(runtimeSeconds: 0) == "0|1")
-        #expect(instance.tickString(runtimeSeconds: 0.35) == "3|1")
+        #expect(instance.tickString(runtimeSeconds: 0.35) == "1|1")
+        #expect(instance.tickString(runtimeSeconds: 10) == "2|1")
+    }
+
+    @Test("A 100 ms interval reschedules from the firing frame, so 25 fps frames drift to ~100 fires in 12 s")
+    func intervalReschedulesFromFiringFrame() throws {
+        let script = """
+        var fired = 0;
+        setInterval(function () { fired += 1; }, 100);
+        export function update(value) { return String(fired); }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        var last = ""
+        for frame in 0 ... 300 {
+            last = instance.tickString(runtimeSeconds: Double(frame) * 0.04)
+        }
+        let fired = try #require(Int(last))
+        #expect((98 ... 101).contains(fired), "fired \(fired) times; deadline += interval would catch up to ~120")
     }
 
     @Test(
@@ -1492,7 +1527,8 @@ export function init(value) {
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
         #expect(instance.tickString(runtimeSeconds: base) == "0")
-        #expect(instance.tickString(runtimeSeconds: base + 0.35) == "3")
+        #expect(instance.tickString(runtimeSeconds: base + 0.35) == "1")
+        #expect(instance.tickString(runtimeSeconds: base + 0.5) == "2")
     }
 
     @Test("A throwing interval is tombstoned instead of retried in the same catch-up sweep")
@@ -2619,6 +2655,21 @@ export function init(value) {
         #expect(other.videoCommands.contains(.stop))
         #expect(other.videoCommands.contains(.seek(0)))
         #expect(instance.initialOutput.own.visible == true)
+    }
+
+    @Test("A layer init that hides another layer and then throws keeps the write and keeps update running")
+    func layerInitThrowKeepsCrossLayerWriteAndUpdate() throws {
+        let script = """
+        export function init() { thisScene.getLayer('B').visible = false; throw 1; }
+        export function update() { thisLayer.alpha = 0.5; }
+        """
+        let instance = try WPELayerScriptInstance(script: script, initialAlpha: 0.8)
+        let hidden = try #require(instance.initialOutput.others["B"])
+        #expect(hidden.visibleAssigned)
+        #expect(hidden.visible == false)
+        #expect(instance.initialOutput.own.alpha == 0.8)
+        let ticked = try #require(instance.tick(runtimeSeconds: 0.1))
+        #expect(ticked.own.alpha == 0.5)
     }
 
     @Test("getLayer transform assignment reaches the caller as a cross-layer mutation")
