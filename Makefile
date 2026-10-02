@@ -83,6 +83,7 @@ WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
     WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
     WPEParticleInstanceCoordinatorTests WPEParticleInstanceModifierTests \
     WPEParticleControlPointExecutionTests WPEParticleExpansionBudgetTests WPETextGlyphAtlasSizeTests \
+    WPESceneClearColorTests WPESceneModelSubmeshMaterialRenderTests \
     WPEUniformStageBindingTests WPEAttachmentPlanTests WPECameraMotionTests \
     WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests \
     WPEColorDomainProbeTests WPEOraclePixelProbeTests WPECanonicalUniformTraceTests \
