@@ -1,8 +1,8 @@
 import AppKit
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import Testing
-@testable import LiveWallpaper
 
 @Suite("Wallpaper automation manual rotation reset")
 @MainActor
@@ -49,12 +49,14 @@ struct WallpaperAutomationRotationResetTests {
         )
         defer { coordinator.stop() }
 
-        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t0 = Date(timeIntervalSince1970: 1000)
         func tick(atMinute minute: Double) async {
             let now = t0.addingTimeInterval(minute * 60)
             ticks.continuation.yield(now)
             // processTick runs synchronously on the main actor, so the handler has run once currentTime moves.
-            while coordinator.currentTime != now { await Task.yield() }
+            while coordinator.currentTime != now {
+                await Task.yield()
+            }
         }
 
         await tick(atMinute: 0)
