@@ -11,6 +11,15 @@ struct LogPrivacySourceAuditTests {
             "self.descriptor.workshopID": 1,
             "self.rendererSignpostID": 1,
             "frameRendered": 1,
+            // particleCounts signpost: Int counters only.
+            "independent": 1,
+            "independentAlive": 1,
+            "eventInstances": 1,
+            "eventSlots": 1,
+            "eventAlive": 1,
+            "created": 1,
+            "released": 1,
+            "rejected": 1,
         ],
         "LiveWallpaper/Monitor/Runtime.swift": [
             "pipelineShape": 1,
