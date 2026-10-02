@@ -705,14 +705,15 @@ struct HTMLWallpaperRuntimeScriptTests {
         config.audioVolume = 0.35
         config.muteAudio = true
         view.apply(config)
-        view.webView.configuration.userContentController.addUserScript(WKUserScript(
+        let fixtureScript = WKUserScript(
             source: """
             window.sample = new Audio(); sample.volume = 0.8;
             window.fixtureInitialMuted = sample.muted;
             window.fixtureInitialVolume = typeof __lwAudioDebugSnapshot__ === 'function' ? __lwAudioDebugSnapshot__().media[0].nativeVolume : sample.volume;
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: false
-        ))
+        )
+        view.webView.configuration.userContentController.addUserScript(fixtureScript)
         view.loadSource(.inline("<body></body>"))
         let deadline = ContinuousClock.now + .seconds(5)
         var ready = false
@@ -768,6 +769,8 @@ struct HTMLWallpaperRuntimeScriptTests {
         config.audioVolume = 0.5
         config.muteAudio = false
         view.apply(config)
+        // An audio change reinstalls the baseline user scripts, dropping the fixture for the late iframe.
+        view.webView.configuration.userContentController.addUserScript(fixtureScript)
         let updated = try await view.webView.callAsyncJavaScript(#"""
         const hot = await frameFixture.wait([child, nested], 0.4, false);
         window.late = await frameFixture.add(window);

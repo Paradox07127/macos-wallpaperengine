@@ -261,6 +261,43 @@ struct HTMLWallpaperFrameLifecycleTests {
         #expect(!allFrameScripts.contains { $0.source.contains("lw-user-css") })
     }
 
+    @MainActor
+    @Test("Mute and volume changes reseed the document-start audio script used by the next reload")
+    func audioSettingChangesReseedDocumentStartScript() {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        defer { view.cleanup() }
+        let controller = view.webView.configuration.userContentController
+        var config = HTMLConfig()
+        view.apply(config)
+
+        config.muteAudio = true
+        view.apply(config)
+        let muted = HTMLWallpaperRuntimeScript.masterAudioController(initialVolume: 1, initialMuted: true)
+        #expect(controller.userScripts.contains { $0.source == muted })
+
+        config.audioVolume = 0.3
+        view.apply(config)
+        let quiet = HTMLWallpaperRuntimeScript.masterAudioController(initialVolume: 0.3, initialMuted: true)
+        #expect(controller.userScripts.contains { $0.source == quiet })
+        #expect(!controller.userScripts.contains { $0.source == muted })
+    }
+
+    @MainActor
+    @Test("A config change outside the document-start inputs leaves the installed user scripts alone")
+    func unrelatedConfigChangeKeepsUserScripts() {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        defer { view.cleanup() }
+        let controller = view.webView.configuration.userContentController
+        var config = HTMLConfig()
+        view.apply(config)
+        let sentinel = WKUserScript(source: "window.__lwSentinel__ = 1;", injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        controller.addUserScript(sentinel)
+
+        config.maxRetries += 1
+        view.apply(config)
+        #expect(controller.userScripts.contains { $0.source == sentinel.source })
+    }
+
     // MARK: - Todo E: WebGL antialias
 
     @Test("Explicit antialias:false survives the MSAA forcer")

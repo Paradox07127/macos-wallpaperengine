@@ -410,6 +410,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             || (previous?.physicalPixelLayout != config.physicalPixelLayout)
             || (previous?.cspEnforcementEnabled != config.cspEnforcementEnabled)
             || (previous?.aggressiveSuspend != config.aggressiveSuspend)
+            || (previous?.muteAudio != config.muteAudio)
+            || (previous?.audioVolume != config.audioVolume)
 
         if needsScriptRebuild {
             installBaselineUserScripts(for: config)
