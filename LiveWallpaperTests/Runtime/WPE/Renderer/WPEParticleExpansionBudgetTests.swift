@@ -7,7 +7,6 @@ import Testing
 @MainActor
 @Suite("WPE particle expansion scene budget", .serialized)
 struct WPEParticleExpansionBudgetTests {
-
     @Test("Shared children fanning out 16 levels stop at the scene system budget with a diagnostic")
     func binaryFanOutIsCappedBySceneBudget() async throws {
         let fixture = try Self.binaryTreeScene(depth: 16)
@@ -55,7 +54,7 @@ struct WPEParticleExpansionBudgetTests {
             .appendingPathComponent("WPEParticleExpansionBudget-\(UUID().uuidString)", isDirectory: true)
         let particles = root.appendingPathComponent("particles", isDirectory: true)
         try FileManager.default.createDirectory(at: particles, withIntermediateDirectories: true)
-        for level in 0..<depth {
+        for level in 0 ..< depth {
             let children = level + 1 < depth
                 ? #"[{"name": "particles/p\#(level + 1).json"}, {"name": "particles/p\#(level + 1).json"}]"#
                 : "[]"
@@ -97,7 +96,7 @@ struct WPEParticleExpansionBudgetTests {
 
     private static func sceneDebugLog(for workshopID: String, containing marker: String) async throws -> String {
         let root = try #require(WPESceneDebugArtifacts.rootURL)
-        for _ in 0..<100 {
+        for _ in 0 ..< 100 {
             let folders = (try? FileManager.default.contentsOfDirectory(
                 at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
             )) ?? []
