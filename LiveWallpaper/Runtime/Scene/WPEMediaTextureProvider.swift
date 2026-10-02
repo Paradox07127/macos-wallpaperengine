@@ -14,9 +14,9 @@ enum WPEMediaTextureDemand {
         var result: [Int: WPEMediaSystemTexture] = [:]
         for locus in [bindings.material, bindings.pass, bindings.override] {
             for binding in locus {
-                guard let slot = binding.slot,
-                      let kind = WPEMediaSystemTexture(bindingName: binding.name) else { continue }
-                result[slot] = kind
+                guard let slot = binding.slot else { continue }
+                // A later ordinary binding must clear the slot, or a lower-precedence $media* would outlive it.
+                result[slot] = WPEMediaSystemTexture(bindingName: binding.name)
             }
         }
         return result
@@ -130,6 +130,16 @@ final class WPEMediaTextureStore: @unchecked Sendable {
     ) -> MTLTexture? {
         guard let kind = declarations[slot] else { return authored }
         return texture(for: kind) ?? authored
+    }
+
+    /// A swapped-in cover is a whole image: the placeholder's TEXS sprite transform would crop/rotate it.
+    /// Explicit identity, not nil: a nil slot descriptor lets the uniform fall through to pass/authored values.
+    static func samplingDescriptor(
+        authored: WPETexSpriteSamplingDescriptor?,
+        authoredTexture: MTLTexture?,
+        boundTexture: MTLTexture?
+    ) -> WPETexSpriteSamplingDescriptor? {
+        boundTexture === authoredTexture ? authored : .identity
     }
 
     // MARK: - Upload

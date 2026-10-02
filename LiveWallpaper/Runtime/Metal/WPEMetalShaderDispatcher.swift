@@ -631,7 +631,7 @@ struct WPEMetalShaderDispatcher {
                 ?? pass.pass.binds[slot]
                 ?? pass.pass.textures[slot]
             var texture: MTLTexture?
-            let samplingDescriptor: WPETexSpriteSamplingDescriptor?
+            var samplingDescriptor: WPETexSpriteSamplingDescriptor?
             let resolvedReference: WPETextureReference?
             let fallbackToPrimary: Bool
             if let reference {
@@ -680,7 +680,13 @@ struct WPEMetalShaderDispatcher {
             }
             // Substitute after authored resolution: a nil store keeps the author's placeholder cover ("nothing is playing"), not a hole.
             if let mediaSlots, let mediaTextureStore {
-                texture = mediaTextureStore.substituting(texture, slot: slot, declarations: mediaSlots)
+                let authoredTexture = texture
+                texture = mediaTextureStore.substituting(authoredTexture, slot: slot, declarations: mediaSlots)
+                samplingDescriptor = WPEMediaTextureStore.samplingDescriptor(
+                    authored: samplingDescriptor,
+                    authoredTexture: authoredTexture,
+                    boundTexture: texture
+                )
             }
             if slot == 0, let texture { primary = texture }
             WPESceneDebugArtifacts.shared.recordTextureBinding(
