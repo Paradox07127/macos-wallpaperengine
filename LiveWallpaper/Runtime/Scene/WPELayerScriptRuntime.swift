@@ -713,7 +713,6 @@ final class WPELayerScriptInstance {
         private let outputMode: WPELayerScriptOutputMode
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
-        let instanceLimitToken: WPESceneScriptInstanceLimitToken?
         let asyncExecutionSafety = WPESceneScriptAsyncExecutionSafety()
         private var lastRuntimeSeconds: Double?
         private var cursorScreenPosition: JSValue?
@@ -751,7 +750,6 @@ final class WPELayerScriptInstance {
             self.outputMode = outputMode
             self.governor = governor
             participant = governor.makeParticipant()
-            instanceLimitToken = shared?.sceneScriptLoadToken
             super.init(
                 shared: shared,
                 initialVisible: initialVisible,
@@ -1502,6 +1500,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate var soundIntent: [String: Bool] = [:]
     fileprivate var assignedSoundVolume: [String: Double] = [:]
     fileprivate let shared: WPESharedScriptState?
+    let instanceLimitToken: WPESceneScriptInstanceLimitToken?
     /// Parsed visible/alpha seeds — fallback when script never assigns.
     fileprivate let initialOwnVisible: Bool
     fileprivate let initialOwnAlpha: Double
@@ -1523,6 +1522,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         createdLayerBridge: WPECreatedLayerBridgeConfiguration?
     ) {
         self.shared = shared
+        instanceLimitToken = shared?.sceneScriptLoadToken
         initialOwnVisible = initialVisible
         initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
         self.ownLayerName = ownLayerName
@@ -1533,7 +1533,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         currentLayerOrder = createdLayerBridge?.orderedLayerNames
             ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
         evaluationResourceBudget = WPESceneScriptEvaluationResourceBudget(
-            sceneToken: shared?.sceneScriptLoadToken
+            sceneToken: instanceLimitToken
         )
     }
 
@@ -1605,7 +1605,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             } else {
                 resolvedImage = requestedImage
             }
-            guard shared?.sceneScriptLoadToken?.admitCreatedLayer() ?? true else {
+            guard instanceLimitToken?.admitCreatedLayer() ?? true else {
                 return neutralLayerStub(in: context)
             }
             let key = "\(Self.createdKeyPrefix)\(createdLayerCounter)"
