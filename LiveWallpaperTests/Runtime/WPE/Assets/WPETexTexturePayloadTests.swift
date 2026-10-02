@@ -1,3 +1,4 @@
+import Compression
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -48,6 +49,50 @@ struct WPETexTexturePayloadTests {
         let firstPixel = Array(mip.bytes.prefix(4))
         #expect(firstPixel[0] >= 0xFE, "R should round-trip near 0xFF (got \(firstPixel[0])); double-premultiply would emit ~0x80")
         #expect(firstPixel[3] == 0x80, "A should preserve 0x80 unchanged")
+    }
+
+    @Test("Rejects encoded PNG larger than the TEXI header before rasterizing")
+    func rejectsEncodedPNGLargerThanTEXIHeader() throws {
+        let png = try makeSolidColorPNG(width: 8, height: 8, red: 255, green: 0, blue: 0, alpha: 255)
+        let tex = makeImage(
+            width: 4,
+            height: 4,
+            formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: png,
+            sourceImageFormatCode: 0
+        )
+
+        let extracted = WPETexDecoder().extractTexturePayload(data: tex)
+        guard case let .failure(.invalidDimensions(width, height)) = extracted else {
+            Issue.record("Expected invalidDimensions for 8x8 PNG in 4x4 TEXI, got \(extracted)")
+            return
+        }
+        #expect(width == 8 && height == 8)
+
+        let decoded = WPETexDecoder().decode(data: tex)
+        guard case .failure(.invalidDimensions) = decoded else {
+            Issue.record("Expected decode() to reject 8x8 PNG in 4x4 TEXI, got \(decoded)")
+            return
+        }
+    }
+
+    @Test("Rejects a small 20000x20000 PNG before allocating its RGBA buffer")
+    func rejectsPNGWithHugeDeclaredDimensions() throws {
+        let png = try blankOneBitPNG(width: 20000, height: 20000)
+        let tex = makeImage(
+            width: 16384,
+            height: 16384,
+            formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: png,
+            sourceImageFormatCode: 0
+        )
+
+        let extracted = WPETexDecoder().extractTexturePayload(data: tex)
+        guard case let .failure(.invalidDimensions(width, height)) = extracted else {
+            Issue.record("Expected invalidDimensions for 20000x20000 PNG (\(png.count) bytes), got \(extracted)")
+            return
+        }
+        #expect(width == 20000 && height == 20000)
     }
 
     @Test("Multi-image encoded TEXB without TEXS synthesises a default-cadence animation track")
@@ -261,6 +306,56 @@ struct WPETexTexturePayloadTests {
             throw NSError(domain: "WPETexTexturePayloadTests", code: 3, userInfo: [NSLocalizedDescriptionKey: "PNG finalisation failed"])
         }
         return output as Data
+    }
+
+    /// Valid all-black 1-bit grayscale PNG; rows are streamed into deflate so the raw image is never held in memory.
+    private func blankOneBitPNG(width: Int, height: Int) throws -> Data {
+        let rowBytes = 1 + (width + 7) / 8
+        var deflated = Data()
+        let filter = try OutputFilter(.compress, using: .zlib) { chunk in
+            if let chunk {
+                deflated.append(chunk)
+            }
+        }
+        let row = Data(count: rowBytes)
+        for _ in 0 ..< height {
+            try filter.write(row)
+        }
+        try filter.finalize()
+
+        // Compression's .zlib is raw deflate; PNG wants the zlib wrapper. All-zero Adler-32: a = 1, b = n mod 65521.
+        let adler = UInt32((rowBytes * height) % 65521) << 16 | 1
+        var idat = Data([0x78, 0x01])
+        idat.append(deflated)
+        idat.append(bigEndian(adler))
+
+        var ihdr = bigEndian(UInt32(width)) + bigEndian(UInt32(height))
+        ihdr.append(contentsOf: [1, 0, 0, 0, 0])
+        var png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        png.append(pngChunk("IHDR", ihdr))
+        png.append(pngChunk("IDAT", idat))
+        png.append(pngChunk("IEND", Data()))
+        return png
+    }
+
+    private func pngChunk(_ type: String, _ body: Data) -> Data {
+        let typed = Data(type.utf8) + body
+        return bigEndian(UInt32(body.count)) + typed + bigEndian(crc32(typed))
+    }
+
+    private func bigEndian(_ value: UInt32) -> Data {
+        withUnsafeBytes(of: value.bigEndian) { Data($0) }
+    }
+
+    private func crc32(_ bytes: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in bytes {
+            crc ^= UInt32(byte)
+            for _ in 0 ..< 8 {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1
+            }
+        }
+        return ~crc
     }
 
     private func mp4HeaderPayload() -> Data {

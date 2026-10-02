@@ -752,7 +752,7 @@ struct WPETexDecoder: Sendable {
                 isCompressed: mip.isCompressed,
                 mipmap: mip.index
             )
-            return try makeEncodedCGImage(from: imageBytes, mipmap: mip.index)
+            return try makeEncodedCGImage(from: imageBytes, mipmap: mip.index, info: parsed.info)
         }
 
         let expected = format.expectedByteCount(width: mip.width, height: mip.height)
@@ -812,10 +812,15 @@ struct WPETexDecoder: Sendable {
             && span.byte(at: 7) == 0x70
     }
 
-    private func makeEncodedCGImage(from data: Data, mipmap: Int) throws -> CGImage {
+    private func makeEncodedCGImage(from data: Data, mipmap: Int, info: WPETexInfo) throws -> CGImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw WPETexDecodeError.decodeFailed(mipmap: mipmap, detail: "ImageIO could not decode encoded mip payload")
+        }
+        // The PNG/JPEG header is untrusted: ImageIO reports its declared size, which would drive a w*h*4 allocation.
+        // TEXI dims already passed `dimensionsLooksValid` (<= 16_384), so this bound also caps the encoded image.
+        guard image.width <= info.width, image.height <= info.height else {
+            throw WPETexDecodeError.invalidDimensions(width: image.width, height: image.height)
         }
         return image
     }
@@ -965,7 +970,7 @@ struct WPETexDecoder: Sendable {
             isCompressed: mip.isCompressed,
             mipmap: mip.index
         )
-        let image = try makeEncodedCGImage(from: payloadBytes, mipmap: mip.index)
+        let image = try makeEncodedCGImage(from: payloadBytes, mipmap: mip.index, info: parsed.info)
         return try rasterizeRGBA8(from: image, mipmap: mip.index)
     }
 
