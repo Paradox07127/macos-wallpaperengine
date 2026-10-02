@@ -35,7 +35,7 @@ extension WPEShaderTranspiler {
         functionDeclarations: String = "",
         stage: WPEShaderStage = .fragment,
         fragmentUVFallbacks: Bool = true
-    ) -> String {
+    ) throws -> String {
         var s = source
 
         for (glsl, msl) in [
@@ -70,8 +70,8 @@ extension WPEShaderTranspiler {
         }
         s = rewriteReservedIdentifiers(s)
         s = canonicalizeTextureSampleAliases(s)
-        s = rewriteTextureLodCalls(s, premultipliedInputSlots: premultipliedInputSlots)
-        s = rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots, vertexStage: stage == .vertex)
+        s = try rewriteTextureLodCalls(s, premultipliedInputSlots: premultipliedInputSlots)
+        s = try rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots, vertexStage: stage == .vertex)
         if stage == .fragment, fragmentUVFallbacks { s = rewriteTexCoordTextureSampleUVFallback(s) }
         s = rewriteTextureSampleNarrowing(s)
         s = rewriteVector4TextureSampleLocalsInSampleCoordinates(s)
@@ -1308,11 +1308,18 @@ extension WPEShaderTranspiler {
         return result
     }
 
+    /// Recursion depth cap for the call-rewriting passes; deeper authored nesting would overflow a 512 KB worker-thread stack.
+    static let maximumCallNesting = 64
+
     /// `level()` is the MSL explicit-LOD specifier. Runs before `rewriteTextureCalls` so the `texture(` pass never sees `textureLod`.
     private static func rewriteTextureLodCalls(
         _ source: String,
-        premultipliedInputSlots: Set<Int> = []
-    ) -> String {
+        premultipliedInputSlots: Set<Int> = [],
+        nesting: Int = 0
+    ) throws -> String {
+        guard nesting <= maximumCallNesting else {
+            throw WPEShaderCompilerError.translationFailed("textureLod() calls nested too deeply")
+        }
         var result = ""
         result.reserveCapacity(source.count)
         var index = source.startIndex
@@ -1349,13 +1356,13 @@ extension WPEShaderTranspiler {
                         // Recurse on uv/lod so a nested textureLod is rewritten; the sampler arg is a plain identifier and cannot nest.
                         let sampler = source[argStart..<firstComma]
                             .trimmingCharacters(in: .whitespacesAndNewlines)
-                        let uv = rewriteTextureLodCalls(
+                        let uv = try rewriteTextureLodCalls(
                             String(source[source.index(after: firstComma)..<lodComma]),
-                            premultipliedInputSlots: premultipliedInputSlots
+                            premultipliedInputSlots: premultipliedInputSlots, nesting: nesting + 1
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
-                        let lod = rewriteTextureLodCalls(
+                        let lod = try rewriteTextureLodCalls(
                             String(source[source.index(after: lodComma)..<cursor]),
-                            premultipliedInputSlots: premultipliedInputSlots
+                            premultipliedInputSlots: premultipliedInputSlots, nesting: nesting + 1
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
                         var sample = "\(sampler).sample(linearSampler, \(uv), level(\(lod)))"
                         if shouldUnpremultiplySample(sampler: sampler, premultipliedInputSlots: premultipliedInputSlots) {
@@ -1376,8 +1383,12 @@ extension WPEShaderTranspiler {
     private static func rewriteTextureCalls(
         _ source: String,
         premultipliedInputSlots: Set<Int> = [],
-        vertexStage: Bool = false
-    ) -> String {
+        vertexStage: Bool = false,
+        nesting: Int = 0
+    ) throws -> String {
+        guard nesting <= maximumCallNesting else {
+            throw WPEShaderCompilerError.translationFailed("texture() calls nested too deeply")
+        }
         var result = ""
         result.reserveCapacity(source.count)
         var index = source.startIndex
@@ -1410,9 +1421,9 @@ extension WPEShaderTranspiler {
                         let argStart = source.index(index, offsetBy: needle.count)
                         let sampler = source[argStart..<comma].trimmingCharacters(in: .whitespacesAndNewlines)
                         // Recurse on the uv arg so a nested `texture(…)` is rewritten; the sampler arg cannot nest.
-                        let uv = rewriteTextureCalls(
+                        let uv = try rewriteTextureCalls(
                             String(source[source.index(after: comma)..<cursor]),
-                            premultipliedInputSlots: premultipliedInputSlots, vertexStage: vertexStage
+                            premultipliedInputSlots: premultipliedInputSlots, vertexStage: vertexStage, nesting: nesting + 1
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
                         let lod = vertexStage ? ", level(0.0)" : ""
                         var sample = "\(sampler).sample(linearSampler, \(uv)\(lod))"

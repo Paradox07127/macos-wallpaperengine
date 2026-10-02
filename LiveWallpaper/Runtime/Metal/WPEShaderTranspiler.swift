@@ -129,14 +129,14 @@ struct WPEShaderTranspiler {
             uniquingKeysWith: { _, last in last }
         )
         let preserveTexCoordZW = stageLink != nil || shouldPreserveTexCoordZW(shaderName: shaderName, comboValues: comboValues)
-        let translatedHelpers = applySubstitutions(
+        let translatedHelpers = try applySubstitutions(
             preMain + "\n" + postMain,
             varyingTypesByName: varyingTypesByName,
             preserveTexCoordZW: preserveTexCoordZW,
             premultipliedInputSlots: premultipliedInputSlots,
             uniforms: uniforms, fragmentUVFallbacks: stageLink == nil
         )
-        let translatedMain = translateMain(
+        let translatedMain = try translateMain(
             mainBody,
             varyingTypesByName: varyingTypesByName,
             preserveTexCoordZW: preserveTexCoordZW,
@@ -150,7 +150,7 @@ struct WPEShaderTranspiler {
         let perSlotHelpers = Self.rewriteSamplersToPerSlot(translatedHelpers)
         let perSlotMain = Self.rewriteSamplersToPerSlot(translatedMain)
         let helperMutableGlobals = extractProgramScopeMutableDeclarations(from: perSlotHelpers)
-        let helperResources = rewriteHelperResourceAccess(
+        let helperResources = try rewriteHelperResourceAccess(
             helpers: helperMutableGlobals.source,
             mainBody: perSlotMain,
             uniforms: uniforms,

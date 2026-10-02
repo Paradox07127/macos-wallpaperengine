@@ -439,8 +439,8 @@ struct WPELinkedShaderStageTests {
             }
         }
         let authored = "float inverse(float x) { return x + 0.25; }"
-        #expect(WPEShaderTranspiler.applySubstitutions(authored).contains("float inverse("))
-        #expect(WPEShaderTranspiler.applySubstitutions("inverse(0.5)", functionDeclarations: authored).contains("inverse(0.5)"))
+        #expect(try WPEShaderTranspiler.applySubstitutions(authored).contains("float inverse("))
+        #expect(try WPEShaderTranspiler.applySubstitutions("inverse(0.5)", functionDeclarations: authored).contains("inverse(0.5)"))
     }
 
     @Test func vertexTextureSamplingUsesLODZeroAndInputAlphaContract() throws {
@@ -476,9 +476,9 @@ struct WPELinkedShaderStageTests {
         #expect(pixels.allSatisfy { $0.x == 0.625 && $0.w == 1 })
     }
 
-    @Test func vertexUVAndDerivativeSemanticsAreNotFragmentRewrites() {
+    @Test func vertexUVAndDerivativeSemanticsAreNotFragmentRewrites() throws {
         let source = "v_TexCoord.zw = vec2(0.2); vec2 p = v_TexCoord.zw; float d = dFdy(p.x);"
-        let translated = WPEShaderTranspiler.applySubstitutions(source, stage: .vertex)
+        let translated = try WPEShaderTranspiler.applySubstitutions(source, stage: .vertex)
         #expect(translated.contains("v_TexCoord.zw") && translated.contains("dFdy("))
         #expect(!translated.contains("dfdy("))
     }

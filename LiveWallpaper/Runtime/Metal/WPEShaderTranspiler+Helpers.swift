@@ -23,7 +23,7 @@ extension WPEShaderTranspiler {
         uniforms: [WPEUniformDecl],
         samplers: [WPESamplerDecl],
         mutableGlobals: [ProgramScopeMutableDecl] = []
-    ) -> (helpers: String, mainBody: String) {
+    ) throws -> (helpers: String, mainBody: String) {
         // Resolve only unshadowed intrinsic calls before by-name resource threading.
         let helpers = routingMixBeforeAuthoredDeclaration(in: helpers)
         let functions = parseHelperFunctions(in: helpers)
@@ -87,7 +87,7 @@ extension WPEShaderTranspiler {
             let originalBody = String(rewrittenHelpers[function.bodyRange])
             rewrittenHelpers.replaceSubrange(
                 function.bodyRange,
-                with: rewriteHelperCalls(
+                with: try rewriteHelperCalls(
                     in: originalBody,
                     dependenciesByFunction: dependenciesByFunction,
                     resourceOrder: resources
@@ -106,7 +106,7 @@ extension WPEShaderTranspiler {
             )
         }
 
-        let rewrittenMain = rewriteHelperCalls(
+        let rewrittenMain = try rewriteHelperCalls(
             in: mainBody,
             dependenciesByFunction: dependenciesByFunction,
             resourceOrder: resources
@@ -232,8 +232,12 @@ extension WPEShaderTranspiler {
     private static func rewriteHelperCalls(
         in source: String,
         dependenciesByFunction: [String: Set<String>],
-        resourceOrder: [HelperResource]
-    ) -> String {
+        resourceOrder: [HelperResource],
+        depth: Int = 0
+    ) throws -> String {
+        guard depth <= maximumCallNesting else {
+            throw WPEShaderCompilerError.translationFailed("helper calls nested too deeply")
+        }
         var result = ""
         result.reserveCapacity(source.count)
         var index = source.startIndex
@@ -265,10 +269,11 @@ extension WPEShaderTranspiler {
                source[cursor] == "(",
                let closeParen = matchingDelimiter(in: source, open: cursor, openChar: "(", closeChar: ")") {
                 let argumentsRange = source.index(after: cursor)..<closeParen
-                let rewrittenArguments = rewriteHelperCalls(
+                let rewrittenArguments = try rewriteHelperCalls(
                     in: String(source[argumentsRange]),
                     dependenciesByFunction: dependenciesByFunction,
-                    resourceOrder: resourceOrder
+                    resourceOrder: resourceOrder,
+                    depth: depth + 1
                 )
                 result += source[identifierStart..<cursor]
                 result += "("

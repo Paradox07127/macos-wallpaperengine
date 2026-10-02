@@ -47,8 +47,8 @@ extension WPEShaderTranspiler {
             $0.key.stage == .vertex && $0.arrayDimensions.isEmpty
                 && [.attribute, .varyingOutput].contains($0.kind)
         }.map { ($0.key.name, WPEUniformDecl.mapType($0.glslType)) }, uniquingKeysWith: { _, last in last })
-        let helpers = rewriteSamplersToPerSlot(applySubstitutions(helperSource, varyingTypesByName: stageTypes, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, stage: .vertex))
-        let inner = rewriteSamplersToPerSlot(applySubstitutions(
+        let helpers = try rewriteSamplersToPerSlot(applySubstitutions(helperSource, varyingTypesByName: stageTypes, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, stage: .vertex))
+        let inner = try rewriteSamplersToPerSlot(applySubstitutions(
             String(main[main.index(after: open) ..< close]), rewriteProgramScopeConsts: false,
             varyingTypesByName: stageTypes, premultipliedInputSlots: premultipliedInputSlots, uniforms: uniforms, functionDeclarations: helperSource, stage: .vertex
         ))
@@ -63,7 +63,7 @@ extension WPEShaderTranspiler {
             ProgramScopeMutableDecl(metalType: $0.metalType, name: $0.name, initializer: "{}")
         }
         resources.append(ProgramScopeMutableDecl(metalType: "float4", name: "gl_Position", initializer: "{}"))
-        let threaded = rewriteHelperResourceAccess(helpers: globals.source, mainBody: inner,
+        let threaded = try rewriteHelperResourceAccess(helpers: globals.source, mainBody: inner,
                                                    uniforms: uniforms, samplers: sortedSamplers, mutableGlobals: resources)
         // Reuse the math/compatibility prelude, without a fragment entry point or varyings.
         let prelude = renderMSL(shaderName: shaderName, uniforms: uniforms, totalUniformSlots: layout.totalSlots,

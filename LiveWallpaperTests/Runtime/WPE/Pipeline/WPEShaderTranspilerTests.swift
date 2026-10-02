@@ -2355,6 +2355,55 @@ struct WPEShaderTranspilerTests {
         #expect(conditionSelectsIfBranch(String(repeating: "!", count: depth) + "1") == false)
     }
 
+    enum NestedCall: CaseIterable {
+        case texture, textureLod, helper
+    }
+
+    private func nestedCallFragment(_ call: NestedCall, depth: Int) -> String {
+        var expression = call == .helper ? "1.0" : "v_TexCoord"
+        for _ in 0 ..< depth {
+            switch call {
+            case .texture: expression = "texture(g_Texture0, \(expression)).xy"
+            case .textureLod: expression = "textureLod(g_Texture0, \(expression), 0.0).xy"
+            case .helper: expression = "scaled(\(expression))"
+            }
+        }
+        let output = call == .helper ? "vec4(\(expression))" : "vec4(\(expression), 0.0, 1.0)"
+        return """
+        uniform sampler2D g_Texture0;
+        uniform float gain;
+        varying vec2 v_TexCoord;
+        float scaled(float x) { return x * gain; }
+        void main() { gl_FragColor = \(output); }
+        """
+    }
+
+    @Test("Call nesting beyond the depth limit fails translation", arguments: NestedCall.allCases)
+    func rejectsOverlyNestedCalls(_ call: NestedCall) {
+        #expect(throws: WPEShaderCompilerError.self) {
+            _ = try WPEShaderTranspiler.translateFragment(
+                shaderName: "nested_call_limit", preprocessedSource: nestedCallFragment(call, depth: 100)
+            )
+        }
+    }
+
+    @Test("Pathologically nested calls fail without overflowing the stack", arguments: NestedCall.allCases)
+    func rejectsPathologicallyNestedCalls(_ call: NestedCall) {
+        #expect(throws: WPEShaderCompilerError.self) {
+            _ = try WPEShaderTranspiler.translateFragment(
+                shaderName: "nested_call_overflow", preprocessedSource: nestedCallFragment(call, depth: 4_000)
+            )
+        }
+    }
+
+    @Test("Shallow nested texture() still rewrites every call")
+    func rewritesShallowNestedTextureCalls() throws {
+        let source = "gl_FragColor = texture(g_Texture0, texture(g_Texture0, texture(g_Texture0, v_TexCoord).xy).xy);"
+        let translated = try WPEShaderTranspiler.applySubstitutions(source, fragmentUVFallbacks: false)
+        let sample = "g_Texture0.sample(linearSampler, "
+        #expect(translated == "gl_FragColor = \(sample)\(sample)\(sample)v_TexCoord).xy).xy);")
+    }
+
     @Test("Nested regular texture() is fully rewritten (no texture() survives) and compiles")
     func translatesNestedRegularTextureFragment() throws {
         let source = """

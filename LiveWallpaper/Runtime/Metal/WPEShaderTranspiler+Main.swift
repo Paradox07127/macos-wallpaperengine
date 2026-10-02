@@ -73,11 +73,11 @@ extension WPEShaderTranspiler {
         uniforms: [WPEUniformDecl] = [],
         functionDeclarations: String = "",
         fragmentUVFallbacks: Bool = true
-    ) -> String {
+    ) throws -> String {
         guard let openBrace = source.range(of: "{") else { return "" }
         guard let closeBrace = source.range(of: "}", options: .backwards) else { return "" }
         var inner = String(source[openBrace.upperBound..<closeBrace.lowerBound])
-        inner = applySubstitutions(
+        inner = try applySubstitutions(
             inner,
             rewriteProgramScopeConsts: false,
             varyingTypesByName: varyingTypesByName,
