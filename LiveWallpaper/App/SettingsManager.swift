@@ -72,6 +72,7 @@ final class SettingsManager {
     private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
     private let screenSchemesStore: AtomicFileStore<[ScreenScheme]>
     let bookmarkResolver: SecurityScopedBookmarkResolver
+    let bookmarkVolumeIsUnavailable: (Data) -> Bool
     private let loginItemController = LoginItemController()
     let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
     private let defaults: UserDefaults
@@ -115,6 +116,7 @@ final class SettingsManager {
         defaults: UserDefaults = .appScoped(),
         fileManager: FileManager = .default,
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
+        bookmarkVolumeIsUnavailable: @escaping (Data) -> Bool = SettingsManager.isBookmarkVolumeUnavailable,
         persistWPEBookmarkOwnerRefresh: @MainActor @escaping (WPEOrigin, Data) -> Void = {
             origin, refreshed in
             _ = BookmarkStore.shared.replaceWPEOriginBookmark(
@@ -141,6 +143,7 @@ final class SettingsManager {
         self.wallpaperBookmarksStore = wallpaperBookmarksStore
         self.screenSchemesStore = screenSchemesStore
         self.bookmarkResolver = bookmarkResolver
+        self.bookmarkVolumeIsUnavailable = bookmarkVolumeIsUnavailable
         self.persistWPEBookmarkOwnerRefresh = persistWPEBookmarkOwnerRefresh
         self.defaults = defaults
         self.configurationPersistenceActor = WallpaperPersistenceActor(

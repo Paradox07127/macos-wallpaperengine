@@ -24,6 +24,22 @@ extension SettingsManager {
         }
     }
 
+    /// True only when the bookmark records a non-root volume that is not currently reachable; unknown volume -> false.
+    nonisolated static func isBookmarkVolumeUnavailable(_ bookmarkData: Data) -> Bool {
+        guard let volumeURL = URL.resourceValues(forKeys: [.volumeURLKey], fromBookmarkData: bookmarkData)?.volume,
+              volumeURL.path(percentEncoded: false) != "/" else { return false }
+        return (try? volumeURL.checkResourceIsReachable()) != true
+    }
+
+    private func keepsConfigurationForUnavailableVolume(_ bookmarkData: Data, for screenID: CGDirectDisplayID) -> Bool {
+        guard bookmarkVolumeIsUnavailable(bookmarkData) else { return false }
+        Logger.warning(
+            "Keeping wallpaper configuration for screen \(screenID): its bookmark's volume is not mounted",
+            category: .fileAccess
+        )
+        return true
+    }
+
     private func validateVideoBookmark(
         _ bookmarkData: Data,
         for screenID: CGDirectDisplayID,
@@ -55,12 +71,14 @@ extension SettingsManager {
                     )
                     return true
                 }
+                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
                 Logger.error("Cannot access file for screen \(screenID)", category: .fileAccess)
                 return false
             }
             return true
 
         case .failure(let failure):
+            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
             Logger.error("Failed to resolve bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
             return false
         }
@@ -107,6 +125,7 @@ extension SettingsManager {
                 }
             }
             guard canAccess || FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
+                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
                 Logger.error("Cannot access local HTML resource for screen \(screenID)", category: .fileAccess)
                 return false
             }
@@ -131,6 +150,7 @@ extension SettingsManager {
                         inside: url
                     )
                     return FileManager.default.fileExists(atPath: indexURL.path(percentEncoded: false))
+                        || keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID)
                 } catch {
                     Logger.error("Failed to resolve HTML folder index for screen \(screenID): \(error.localizedDescription)", category: .fileAccess)
                     return false
@@ -138,8 +158,10 @@ extension SettingsManager {
             }
 
             return FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
+                || keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID)
 
         case .failure(let failure):
+            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
             Logger.error("Failed to resolve local HTML bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
             return false
         }

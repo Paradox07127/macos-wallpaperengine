@@ -313,6 +313,33 @@ struct HTMLBookmarkPersistenceTests {
         await TestScratch.discard(root, flushing: manager)
     }
 
+    @Test("Unresolvable video bookmark is kept only while its volume is unavailable", arguments: [true, false])
+    func unresolvableVideoBookmarkFollowsVolumeAvailability(volumeUnavailable: Bool) async throws {
+        let configuration = ScreenConfiguration(
+            screenID: 980_008,
+            wallpaper: .video(bookmarkData: original)
+        )
+        #expect(try await Self.validateWithUnresolvableBookmark(
+            configuration,
+            volumeUnavailable: volumeUnavailable
+        ) == volumeUnavailable)
+    }
+
+    @Test("Unresolvable HTML folder bookmark is kept only while its volume is unavailable", arguments: [true, false])
+    func unresolvableHTMLFolderBookmarkFollowsVolumeAvailability(volumeUnavailable: Bool) async throws {
+        let configuration = ScreenConfiguration(
+            screenID: 980_009,
+            wallpaper: .html(
+                source: .folder(bookmarkData: original, indexFileName: "index.html"),
+                config: .default
+            )
+        )
+        #expect(try await Self.validateWithUnresolvableBookmark(
+            configuration,
+            volumeUnavailable: volumeUnavailable
+        ) == volumeUnavailable)
+    }
+
     @Test("Settings persistence exposes no executor-unsafe HTML Target")
     func actorSafetySourceContract() throws {
         // The actor-safety contract is on the settings-persistence surface, so both
@@ -418,6 +445,25 @@ struct HTMLBookmarkPersistenceTests {
             .appendingPathComponent("HTMLBookmarkPersistenceTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private static func validateWithUnresolvableBookmark(
+        _ configuration: ScreenConfiguration,
+        volumeUnavailable: Bool
+    ) async throws -> Bool {
+        let root = try makeTempDirectory()
+        let manager = SettingsManager(
+            directory: ConfigurationDirectory(root: root),
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { _ in throw CocoaError(.fileReadNoSuchFile) },
+                refreshData: { _ in Data() }
+            ),
+            bookmarkVolumeIsUnavailable: { _ in volumeUnavailable }
+        )
+        manager.replaceAllConfigurations([configuration])
+        let isValid = manager.validateConfiguration(for: configuration.screenID)
+        await TestScratch.discard(root, flushing: manager)
+        return isValid
     }
 
     private static func makeWPEOrigin(bookmark: Data) -> WPEOrigin {
