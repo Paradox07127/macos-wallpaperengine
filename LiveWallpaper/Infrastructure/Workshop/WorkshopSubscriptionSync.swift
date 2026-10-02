@@ -100,7 +100,11 @@ final class WorkshopSubscriptionSync {
         task = Task { [weak self] in
             for itemID in missing {
                 guard let self, !Task.isCancelled else { return }
-                downloads.download(itemID: itemID, title: title(for: itemID), using: doctor)
+                // download() approves only a local copy, so a Steam holder passed here still refuses.
+                downloads.download(
+                    itemID: itemID, title: title(for: itemID), using: doctor,
+                    replacing: downloads.libraryCopyBlockingDownload(of: itemID)
+                )
                 while downloads.isBusy(itemID) {
                     if Task.isCancelled {
                         return

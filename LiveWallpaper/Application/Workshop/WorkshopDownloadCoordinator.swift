@@ -87,16 +87,19 @@ final class WorkshopDownloadCoordinator {
     }
 
     @discardableResult
-    func download(itemID: UInt64, title: String, using doctor: any WorkshopItemDownloading) -> WorkshopDownloadAttempt? {
+    func download(
+        itemID: UInt64, title: String, using doctor: any WorkshopItemDownloading, replacing: WPEHistoryEntry? = nil
+    ) -> WorkshopDownloadAttempt? {
         guard !isBusy(itemID) else { return activeDownloads[itemID] }
         let attemptID = UUID()
         let attempt = WorkshopDownloadAttempt(id: attemptID, itemID: itemID)
         activeDownloads[itemID] = attempt
         clearProgress(itemID)
         phases[itemID] = .downloading
+        let approved = replacing?.origin.steamFolderItemID == nil ? replacing : nil
         tasks[itemID] = Task { [weak self] in
             await SteamCMDOperationScope.$currentID.withValue(attemptID.uuidString) {
-                await self?.run(itemID: itemID, title: title, doctor: doctor, attemptID: attemptID)
+                await self?.run(itemID: itemID, title: title, doctor: doctor, attemptID: attemptID, approved: approved)
             }
         }
         return attempt
@@ -126,9 +129,12 @@ final class WorkshopDownloadCoordinator {
         !Task.isCancelled && activeDownloads[itemID]?.id == attemptID
     }
 
-    private func run(itemID: UInt64, title: String, doctor: any WorkshopItemDownloading, attemptID: UUID) async {
+    /// `approved`: the one local copy this attempt may land beside; any other conflicting entry still refuses it.
+    private func run(
+        itemID: UInt64, title: String, doctor: any WorkshopItemDownloading, attemptID: UUID, approved: WPEHistoryEntry?
+    ) async {
         let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
-        if let existing = libraryCopyBlockingDownload(of: itemID) {
+        if let existing = libraryCopyBlockingDownload(of: itemID), !Self.isApproved(existing, approved) {
             result = .failed(reason: Self.libraryConflictReason(existing))
         } else {
             do {
@@ -180,7 +186,7 @@ final class WorkshopDownloadCoordinator {
         var outcome: WorkshopDownloadOutcome?
         switch result {
         case let .imported(importResult):
-            outcome = await finishImport(importResult, itemID: itemID, title: title, attemptID: attemptID)
+            outcome = await finishImport(importResult, itemID: itemID, title: title, attemptID: attemptID, approved: approved)
             guard isCurrent(itemID: itemID, attemptID: attemptID) else { return }
             if case .unsupported? = outcome, case let .unsupported(origin)? = importResult, !origin.missingDependencyIDs.isEmpty {
                 fetchingDependencies.insert(itemID)
@@ -189,7 +195,8 @@ final class WorkshopDownloadCoordinator {
                     rootTitle: title,
                     attemptID: attemptID,
                     missingIDs: origin.missingDependencyIDs,
-                    doctor: doctor
+                    doctor: doctor,
+                    approved: approved
                 )
                 // A cancel, or a retry that started after it, owns the item now.
                 if isCurrent(itemID: itemID, attemptID: attemptID) {
@@ -248,7 +255,7 @@ final class WorkshopDownloadCoordinator {
     }
 
     private func finishImport(
-        _ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String, attemptID: UUID
+        _ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String, attemptID: UUID, approved: WPEHistoryEntry?
     ) async -> WorkshopDownloadOutcome {
         guard isCurrent(itemID: itemID, attemptID: attemptID) else { return .cancelled }
         guard let result else {
@@ -258,7 +265,7 @@ final class WorkshopDownloadCoordinator {
         }
         switch result {
         case let .ready(_, origin), let .unsupported(origin):
-            if let existing = libraryConflict(for: origin) {
+            if let existing = libraryConflict(for: origin, approved: approved) {
                 let reason = Self.libraryConflictReason(existing)
                 finish(itemID: itemID, title: title, phase: .failed(reason))
                 return .failed(reason: reason)
@@ -337,7 +344,7 @@ final class WorkshopDownloadCoordinator {
     }
 
     /// A library entry holding `itemID` from a still-present folder, when no entry is this item's own Steam folder (which an update refreshes).
-    private func libraryCopyBlockingDownload(of itemID: UInt64) -> WPEHistoryEntry? {
+    func libraryCopyBlockingDownload(of itemID: UInt64) -> WPEHistoryEntry? {
         let id = String(itemID)
         let holders = settings.loadGlobalSettings().recentWPEImports.filter {
             [$0.origin.workshopID, $0.origin.steamFolderItemID].contains(id)
@@ -347,9 +354,18 @@ final class WorkshopDownloadCoordinator {
     }
 
     /// Rechecked after the download because the user may have imported a local copy while it ran.
-    private func libraryConflict(for origin: WPEOrigin) -> WPEHistoryEntry? {
-        guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: origin.sourceFolderBookmark)?.path else { return nil }
-        return settings.conflictingWPEImport(workshopID: origin.workshopID, sourceFolder: URL(fileURLWithPath: path, isDirectory: true))
+    private func libraryConflict(for origin: WPEOrigin, approved: WPEHistoryEntry?) -> WPEHistoryEntry? {
+        guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: origin.sourceFolderBookmark)?.path,
+              let conflict = settings.conflictingWPEImport(workshopID: origin.workshopID, sourceFolder: URL(fileURLWithPath: path, isDirectory: true)),
+              !Self.isApproved(conflict, approved) else { return nil }
+        return conflict
+    }
+
+    private static func isApproved(_ existing: WPEHistoryEntry, _ approved: WPEHistoryEntry?) -> Bool {
+        guard let approved else { return false }
+        return existing.origin.workshopID == approved.origin.workshopID
+            && existing.importedAt == approved.importedAt
+            && existing.origin.sourceFolderBookmark == approved.origin.sourceFolderBookmark
     }
 
     private static func libraryConflictReason(_ existing: WPEHistoryEntry) -> String {
@@ -388,7 +404,8 @@ final class WorkshopDownloadCoordinator {
         rootTitle: String,
         attemptID: UUID,
         missingIDs: [String],
-        doctor: any WorkshopItemDownloading
+        doctor: any WorkshopItemDownloading,
+        approved: WPEHistoryEntry?
     ) async -> WorkshopDownloadOutcome {
         let report = await WorkshopDependencyResolver.resolve(
             rootWorkshopID: String(rootItemID),
@@ -432,7 +449,7 @@ final class WorkshopDownloadCoordinator {
         }
 
         // Every dependency arrived, but claiming success before the re-read would leave the library entry still saying it needs them.
-        let entry = await reimportRoot(itemID: rootItemID, attemptID: attemptID, doctor: doctor)
+        let entry = await reimportRoot(itemID: rootItemID, attemptID: attemptID, doctor: doctor, approved: approved)
         guard isCurrent(itemID: rootItemID, attemptID: attemptID) else { return .cancelled }
         guard let entry else {
             let reason = String(localized: "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again.", bundle: .appLanguage, comment: "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed.")
@@ -496,7 +513,9 @@ final class WorkshopDownloadCoordinator {
 
     /// Re-read the root now that dependencies are on disk — SteamCMD no-ops on an item that is already current.
     @discardableResult
-    private func reimportRoot(itemID: UInt64, attemptID: UUID, doctor: any WorkshopItemDownloading) async -> WPEHistoryEntry? {
+    private func reimportRoot(
+        itemID: UInt64, attemptID: UUID, doctor: any WorkshopItemDownloading, approved: WPEHistoryEntry?
+    ) async -> WPEHistoryEntry? {
         let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
         do {
             result = try await repositoryCoordinator.withExclusiveMutation(workshopID: String(itemID)) { [weak self] in
@@ -521,7 +540,7 @@ final class WorkshopDownloadCoordinator {
         guard isCurrent(itemID: itemID, attemptID: attemptID),
               case let .imported(importResult) = result,
               case let .ready(_, origin)? = importResult,
-              libraryConflict(for: origin) == nil else { return nil }
+              libraryConflict(for: origin, approved: approved) == nil else { return nil }
         let entry = WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
         settings.recordWPEImport(
             entry,
