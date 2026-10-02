@@ -236,6 +236,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let keepIDs = WPESceneReachability.referencedWorkshopIDs()
                 await WPEVideoTextureDiskCache.shared.collectOrphans(referencedWorkshopIDs: keepIDs)
             }
+            lifecycle.schedule(after: .seconds(2)) { [weak manager] in
+                manager?.supersedeLocalCopiesWithSteam()
+            }
         }
         #endif
 

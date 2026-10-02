@@ -99,4 +99,20 @@ public extension WallpaperQueueEntry {
         }
         return copy
     }
+
+    func repointingWPEOrigin(where matches: (WPEOrigin) -> Bool, to origin: WPEOrigin, content replacement: WallpaperContent) -> Self? {
+        guard let current = self.origin, matches(current) else { return nil }
+        var copy = self
+        copy.origin = origin
+        copy.content = content.repointed(to: replacement)
+        return copy
+    }
+}
+
+extension WallpaperContent {
+    /// `replacement`, keeping this scene's preset layer and property edits when both are scenes.
+    func repointed(to replacement: WallpaperContent) -> WallpaperContent {
+        guard case let .scene(old) = self, case let .scene(new) = replacement else { return replacement }
+        return .scene(new.withPresetLayer(id: old.presetID, snapshot: old.presetSnapshot).withPropertyOverrides(old.propertyOverrides))
+    }
 }
