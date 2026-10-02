@@ -302,6 +302,37 @@ struct ConfigurationPorterTests {
         #expect(SchemeStore.shared.schemes.count == 2, "The observable store must see the import")
     }
 
+    @Test("An export leaves out which displays the user paused")
+    func exportOmitsPausedDisplays() {
+        let manager = SettingsManager.shared
+        let previous = manager.loadGlobalSettings()
+        defer { manager.saveGlobalSettings(previous) }
+        var local = previous
+        local.pausedDisplayKeys = ["A"]
+        manager.saveGlobalSettings(local)
+
+        #expect(ConfigurationPorter.currentBundle().globalSettings?.pausedDisplayKeys == [], "the backup carries this machine's paused displays")
+    }
+
+    @Test("An import keeps this machine's paused displays")
+    func importKeepsLocalPausedDisplays() {
+        let manager = SettingsManager.shared
+        let previous = manager.loadGlobalSettings()
+        defer { manager.saveGlobalSettings(previous) }
+        var local = previous
+        local.pausedDisplayKeys = ["A"]
+        manager.saveGlobalSettings(local)
+        var imported = previous
+        imported.pausedDisplayKeys = ["X"]
+        imported.pauseOnFullScreen = !previous.pauseOnFullScreen
+
+        ConfigurationPorter.apply(ConfigurationBundle(globalSettings: imported))
+
+        let restored = manager.loadGlobalSettings()
+        #expect(restored.pausedDisplayKeys == ["A"], "the backup's paused displays replaced this machine's")
+        #expect(restored.pauseOnFullScreen == imported.pauseOnFullScreen, "the other global settings were not restored")
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default
             .temporaryDirectory

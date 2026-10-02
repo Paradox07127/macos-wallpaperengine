@@ -229,6 +229,45 @@ struct PersistentUserPauseTests {
         }
     }
 
+    @Test("Re-picking the playing video file from the library keeps its player and starts it playing")
+    func reusedVideoPlayerPlaysOnLibraryPick() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LiveWallpaper-pause-repick-\(UUID().uuidString).mp4")
+        try Data([0x00, 0x01]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+
+        try withConfiguredScreen(.video) { manager, screen, session in
+            manager.configurationStore.save(ScreenConfiguration(screenID: screen.id, videoBookmarkData: bookmark))
+            let player = WallpaperVideoPlayer(url: url, frame: screen.frame, loadImmediately: false)
+            defer { player.cleanup() }
+            session.videoPlayer = player
+            manager.togglePlayback(for: screen)
+            try #require(persistedPause(manager, screen) == true)
+
+            manager.setVideo(url: url, bookmarkData: bookmark, for: screen)
+
+            #expect((screen.runtimeSession as AnyObject?) === session)
+            #expect(screen.videoPlayer === player)
+            #expect(persistedPause(manager, screen) == false)
+            #expect(screen.playbackController?.userIntendsToPlay == true)
+        }
+    }
+
+    @Test("Re-picking the playing HTML page from the library keeps its session and starts it playing")
+    func reusedHTMLSessionPlaysOnLibraryPick() throws {
+        try withConfiguredScreen(.htmlWithSavedHTML, sessionType: .html) { manager, screen, session in
+            manager.togglePlayback(for: screen)
+            try #require(persistedPause(manager, screen) == true)
+
+            manager.setHTMLWallpaper(source: Self.inlineHTML, config: .default, for: screen)
+
+            #expect((screen.runtimeSession as AnyObject?) === session)
+            #expect(persistedPause(manager, screen) == false)
+            #expect(screen.playbackController?.userIntendsToPlay == true)
+        }
+    }
+
     @Test("A scheme saved from a paused display carries no pause state")
     func schemeOmitsPauseState() throws {
         try withConfiguredScreen { manager, screen, _ in
@@ -278,9 +317,7 @@ private final class PauseFakePlaybackController: WallpaperPlaybackControllable, 
         )
     }
 
-    var videoPlayer: WallpaperVideoPlayer? {
-        nil
-    }
+    var videoPlayer: WallpaperVideoPlayer?
 
     var wallpaperWindow: NSWindow? {
         nil

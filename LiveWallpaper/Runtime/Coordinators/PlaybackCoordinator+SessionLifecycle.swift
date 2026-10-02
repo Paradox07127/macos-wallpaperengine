@@ -6,8 +6,10 @@ import LiveWallpaperCore
 extension PlaybackCoordinator {
     // MARK: - Video session lifecycle
 
-    func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) {
-        guard isRuntimeInstallationAllowed() else { return }
+    /// Returns true when the screen's existing player was kept; its play state is left untouched.
+    @discardableResult
+    func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) -> Bool {
+        guard isRuntimeInstallationAllowed() else { return false }
         Logger.notice("Setting video for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
 
         let existing = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
@@ -47,7 +49,7 @@ extension PlaybackCoordinator {
                 }
             )
             reportRuntimeError(screen.id, nil)
-            return
+            return true
         }
 
         let screenID = screen.id
@@ -122,6 +124,7 @@ extension PlaybackCoordinator {
             }
         }
         transition.setValidationTask(task, for: screenID)
+        return false
     }
 
     func applyConfiguration(
@@ -334,6 +337,10 @@ extension PlaybackCoordinator {
             Logger.warning("Screen with ID \(screen.id) not found in screens array", category: .screenManager)
             return
         }
+        if let configuration, let deferred = deferDuringWorkshopMutation(liveScreen, configuration, beforeCommit) {
+            completion?(deferred)
+            return
+        }
 
         let player = makeVideoPlayer(
             url, liveScreen.frame, configuration?.fitMode ?? .aspectFill,
@@ -357,6 +364,7 @@ extension PlaybackCoordinator {
         let expected = liveScreen.runtimeSession
         let screenID = liveScreen.id
         var outgoingVideoPlayerAtCommit: WallpaperVideoPlayer?
+        var parkedForWorkshopMutation: WallpaperPreparationResult?
         let session = VideoWallpaperSession(
             player: player,
             effectsWorkRevisionProvider: { [weak self] player in
@@ -478,6 +486,12 @@ extension PlaybackCoordinator {
                     self?.claimOpening(screenID)
                 },
                 beforeCommit: {
+                    // A rewrite that began after this candidate opened its file: park instead of installing; the bump keeps the veto from surfacing as a load error.
+                    if let configuration, let deferred = self.deferDuringWorkshopMutation(liveScreen, configuration, beforeCommit) {
+                        parkedForWorkshopMutation = deferred
+                        self.transition.bumpTransition(for: screenID)
+                        return false
+                    }
                     guard beforeCommit() else { return false }
                     // Capture inside install CAS: in-session retry can replace the player mid-warm.
                     outgoingVideoPlayerAtCommit = expected?.videoPlayer
@@ -531,7 +545,7 @@ extension PlaybackCoordinator {
             if let work {
                 self.transition.clearRuntimePreparationIfMatch(work, for: screenID)
             }
-            completion?(result)
+            completion?(parkedForWorkshopMutation ?? result)
         }
         work.task = task
         transition.setRuntimePreparation(work, for: screenID)

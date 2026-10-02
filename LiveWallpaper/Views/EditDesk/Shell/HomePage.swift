@@ -589,7 +589,7 @@ struct HomePage: View {
             return ModalActions(
                 library: library, screenManager: screenManager, thumbnails: thumbnails, doctor: doctor,
                 installedLibrary: installedLibrary, undo: undo, exportService: exportService,
-                apply: applyFromModal, applyToAll: applyAllFromModal
+                confirm: { pendingDestructive = $0 }, apply: applyFromModal, applyToAll: applyAllFromModal
             )
         }
         return ModalActions(

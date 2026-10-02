@@ -136,6 +136,41 @@ struct WPESceneScriptInitialLayerConfigurationTests {
         _ = text
     }
 
+    @Test("Text configuration queries and cross-layer writes share one scene bridge")
+    func textConfigurationLookupPreservesLayerWrites() throws {
+        let shared = sharedState()
+        let instance = try WPESceneScriptInstance(script: """
+        let target;
+        export function init(value) {
+            target = thisScene.getLayer('source');
+            const named = thisScene.getInitialLayerConfig('source');
+            const indexed = thisScene.getInitialLayerConfig(0);
+            const handled = thisScene.getInitialLayerConfig(target);
+            shared.textConfigurationIdentity = JSON.stringify(named) === JSON.stringify(indexed) &&
+                                               JSON.stringify(indexed) === JSON.stringify(handled) &&
+                                               named !== handled && thisScene.getLayer(0) === target;
+            handled.unknown[2].nested = 99;
+            handled.alpha.value = 0.8;
+            target.visible = false;
+            target.alpha = 0.25;
+            shared.textConfigurationStillAuthored = thisScene.getInitialLayerConfig(target).unknown[2].nested === 7 &&
+                                                   thisScene.getInitialLayerConfig(target).alpha.value === 0.19;
+            return value;
+        }
+        export function update(value) {
+            return thisScene.getInitialLayerConfig(target).unknown[2].nested + ':' + target.visible + ':' + target.alpha;
+        }
+        """, initialValue: "seed", shared: shared)
+        #expect(shared.get("textConfigurationIdentity") as? Bool == true)
+        #expect(shared.get("textConfigurationStillAuthored") as? Bool == true)
+        let initialWrite = try #require(instance.takeLayerOutput()?.others["source"])
+        #expect(initialWrite.visibleAssigned && !initialWrite.visible)
+        #expect(initialWrite.alphaAssigned && initialWrite.alpha == 0.25)
+        #expect(instance.tickString(runtimeSeconds: 0.1) == "7:false:0.25")
+        let tickWrite = try #require(instance.takeLayerOutput()?.others["source"])
+        #expect(!tickWrite.visible && tickWrite.alpha == 0.25)
+    }
+
     @Test("Created configuration is detached and destruction publishes a persistent tombstone")
     func createdConfigurationAndDestructionLifetime() throws {
         let shared = sharedState()

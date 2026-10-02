@@ -6,6 +6,7 @@ public enum DestructiveAction: Identifiable, Equatable {
     case deleteScheme(schemeName: String)
     case applyScheme(schemeName: String, displayName: String)
     case replaceScheme(schemeName: String, displayName: String)
+    case replaceLocalCopy(title: String)
     case removeScheduleSlot(slotLabel: String)
     case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
@@ -33,6 +34,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case let .deleteScheme(n): return "deleteScheme-\(n)"
         case let .applyScheme(n, d): return "applyScheme-\(n)-\(d)"
         case let .replaceScheme(n, d): return "replaceScheme-\(n)-\(d)"
+        case let .replaceLocalCopy(t): return "replaceLocalCopy-\(t)"
         case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
         case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
@@ -59,6 +61,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .deleteScheme: return "Delete this scheme?"
         case .applyScheme: return "Replace this display's entire setup?"
         case .replaceScheme: return "Overwrite this saved scheme?"
+        case .replaceLocalCopy: return "Replace the copy in your library?"
         case .removeScheduleSlot:        return "Remove this schedule slot?"
         case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
@@ -115,6 +118,11 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "'\(schemeName)' is overwritten with what \(displayName) is showing now. The setup saved under that name cannot be recovered.",
                 bundle: .appLanguage, comment: "Confirm message for overwriting a saved scheme with a display's current setup. Placeholders are the scheme name and the source display name."
+            )
+        case let .replaceLocalCopy(title):
+            return String(
+                localized: "'\(title)' is already in your library from another folder. The Steam download takes its place; that folder stays on disk.",
+                bundle: .appLanguage, comment: "Confirm message before a Workshop download replaces a library copy imported from a local folder. Placeholder is the wallpaper title."
             )
         case .removeScheduleSlot(let slotLabel):
             return String(
@@ -208,6 +216,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .deleteScheme: return "Delete"
         case .applyScheme: return "Replace Setup"
         case .replaceScheme: return "Overwrite Scheme"
+        case .replaceLocalCopy: return "Replace"
         case .removeScheduleSlot:        return "Remove Slot"
         case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"

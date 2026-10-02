@@ -480,7 +480,44 @@ final class SettingsManager {
         return conflict
     }
 
-    private func existingSourceFolderPath(of origin: WPEOrigin) -> String? {
+    /// Each local copy paired with a Steam item of the same Workshop id whose folder is still on disk.
+    func localCopiesShadowedBySteam() -> [(local: WPEHistoryEntry, steam: WPEHistoryEntry)] {
+        let recent = loadGlobalSettings().recentWPEImports
+        return recent.compactMap { local in
+            guard Self.steamFolderItemID(local.origin) == nil,
+                  let steam = recent.first(where: {
+                      $0.origin.workshopID == local.origin.workshopID
+                          && Self.steamFolderItemID($0.origin) != nil
+                          && existingSourceFolderPath(of: $0.origin) != nil
+                  }) else { return nil }
+            return (local, steam)
+        }
+    }
+
+    /// Unlike `removeWPEImport`, leaves the delete tombstones alone: the item stays in the library as `replacement`.
+    func replaceWPEImport(_ old: WPEHistoryEntry, with replacement: WPEHistoryEntry) {
+        func isEntry(_ target: WPEHistoryEntry) -> (WPEHistoryEntry) -> Bool {
+            {
+                $0.origin.workshopID == target.origin.workshopID && $0.importedAt == target.importedAt
+                    && $0.origin.sourceFolderBookmark == target.origin.sourceFolderBookmark
+            }
+        }
+        var settings = loadGlobalSettings()
+        guard let oldIndex = settings.recentWPEImports.firstIndex(where: isEntry(old)) else { return }
+        let removed = settings.recentWPEImports.remove(at: oldIndex)
+        if let index = settings.recentWPEImports.firstIndex(where: isEntry(replacement)) {
+            let kept = settings.recentWPEImports[index].lastUsedAt
+            settings.recentWPEImports[index].lastUsedAt = [kept, removed.lastUsedAt].compactMap(\.self).max()
+        } else {
+            var entry = replacement
+            entry.lastUsedAt = [replacement.lastUsedAt, removed.lastUsedAt].compactMap(\.self).max()
+            settings.recentWPEImports.insert(entry, at: oldIndex)
+        }
+        saveGlobalSettings(settings)
+        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+    }
+
+    func existingSourceFolderPath(of origin: WPEOrigin) -> String? {
         guard case let .success(resolved) = bookmarkResolver.resolve(origin.sourceFolderBookmark, target: .transient) else { return nil }
         return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
             FileManager.default.fileExists(atPath: resolved.url.path(percentEncoded: false))

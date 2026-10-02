@@ -2101,6 +2101,87 @@ struct WallpaperAutomationAbsenceTests {
         #expect(commitCount == 0)
         #expect(transitionGeneration == 2)
     }
+
+    @Test("Rotation countdown freezes while the user is away and resumes from the remaining time", .timeLimit(.minutes(1)))
+    func absenceFreezesRotationCountdown() async throws {
+        let rotations = try await Self.rotationsAfterRestart(absent: true)
+        #expect(rotations == [0, 1, 1], "absence time counted toward the countdown, or the elapsed time before absence was lost")
+    }
+
+    @Test("Turning automation off and on restarts the rotation countdown", .timeLimit(.minutes(1)))
+    func plainRestartRestartsRotationCountdown() async throws {
+        let rotations = try await Self.rotationsAfterRestart(absent: false)
+        #expect(rotations == [0, 0, 1], "a plain stop/start carried the earlier countdown over")
+    }
+
+    /// 30-minute playlist ticked at 0 and 18 min, then stopped and restarted 300 min later.
+    /// Returns cumulative rotations at restart+9, restart+13 and restart+31 min.
+    private static func rotationsAfterRestart(absent: Bool) async throws -> [Int] {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = [
+            WallpaperQueueEntry(title: "A", content: .video(bookmarkData: Data([1]))),
+            WallpaperQueueEntry(title: "B", content: .video(bookmarkData: Data([2]))),
+        ]
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        initial.playlistRotationMinutes = 30
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        _ = store.loadAll()
+        let streams = [AsyncStream<Date>.makeStream(), AsyncStream<Date>.makeStream()]
+        var tasksStarted = 0
+        let coordinator = WallpaperAutomationCoordinator(tickStreamFactory: {
+            defer { tasksStarted += 1 }
+            return streams[tasksStarted].stream
+        })
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var clock = t0
+        var rotations = 0
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: coordinator,
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }, now: { clock },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                rotations += 1
+                store.save(proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
+        )
+        func tick(_ stream: Int, atMinute minute: Double) async {
+            clock = t0.addingTimeInterval(minute * 60)
+            streams[stream].continuation.yield(clock)
+            while coordinator.currentTime != clock {
+                await Task.yield()
+            }
+            for _ in 0 ..< 50 {
+                await Task.yield()
+            }
+        }
+
+        orchestrator.startMonitoring()
+        defer { orchestrator.stopMonitoring() }
+        await tick(0, atMinute: 0)
+        await tick(0, atMinute: 18)
+        #expect(rotations == 0)
+        if absent {
+            orchestrator.suspendForUserAbsence()
+            // Wake refreshes screens before the absence ends.
+            orchestrator.refreshMonitoringIfActive()
+            orchestrator.resumeAfterUserAbsence()
+        } else {
+            orchestrator.stopMonitoring()
+            orchestrator.startMonitoring()
+        }
+        var counts: [Int] = []
+        await tick(1, atMinute: 318)
+        for minute in [327.0, 331, 349] {
+            await tick(1, atMinute: minute)
+            counts.append(rotations)
+        }
+        return counts
+    }
 }
 
 private func automationTime(day: Int = 15, _ hour: Int, _ minute: Int = 0, _ second: Int = 0) -> Date {

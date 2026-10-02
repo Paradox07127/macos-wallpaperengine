@@ -133,6 +133,8 @@ final class HTMLWallpaperCoordinator {
 
     // MARK: - Public setters
 
+    /// Returns true when the screen's existing WKWebView session was kept; its play state is left untouched.
+    @discardableResult
     func setWallpaper(
         source: HTMLSource,
         config: HTMLConfig = .default,
@@ -140,7 +142,7 @@ final class HTMLWallpaperCoordinator {
         bookmarkID: UUID? = nil,
         wpeOrigin: WPEOrigin? = nil,
         for screen: Screen
-    ) {
+    ) -> Bool {
         // Resolve stale grants before identity probes — probes can burn the one-shot grace.
         let effectiveSource = prepareSource(source, bookmarkID, wpeOrigin)
         let effectiveOrigin: WPEOrigin? = {
@@ -189,7 +191,7 @@ final class HTMLWallpaperCoordinator {
            existingConfig == persistedConfig,
            screen.runtimeSession?.wallpaperType == .html {
             Logger.info("HTML wallpaper unchanged for screen \(screen.id); keeping existing WKWebView session", category: .screenManager)
-            return
+            return true
         }
 
         configuration.setHTMLWallpaper(source: effectiveSource, config: persistedConfig)
@@ -204,11 +206,13 @@ final class HTMLWallpaperCoordinator {
             self?.saveConfiguration(configuration)
             return self != nil
         }
+        return false
     }
 
-    func setWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
+    @discardableResult
+    func setWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) -> Bool {
         let preserved = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)?.htmlConfig ?? .default
-        setWallpaper(source: source, config: preserved, for: screen)
+        return setWallpaper(source: source, config: preserved, for: screen)
     }
 
     func updateConfig(_ config: HTMLConfig, for screen: Screen) {

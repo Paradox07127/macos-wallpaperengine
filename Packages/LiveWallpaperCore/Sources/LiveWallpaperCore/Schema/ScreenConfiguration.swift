@@ -550,6 +550,49 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         }
         return copy
     }
+
+    /// nil when nothing here references an origin `matches` accepts.
+    public func repointingWPEOrigin(
+        where matches: (WPEOrigin) -> Bool,
+        to origin: WPEOrigin,
+        content replacement: WallpaperContent
+    ) -> ScreenConfiguration? {
+        func repoint(_ entry: WallpaperQueueEntry) -> WallpaperQueueEntry {
+            entry.repointingWPEOrigin(where: matches, to: origin, content: replacement) ?? entry
+        }
+        var copy = self
+        if let current = wpeOrigin, matches(current) {
+            let active = activeWallpaper.repointed(to: replacement)
+            copy.wpeOrigin = origin
+            copy.activeWallpaper = active
+            if let old = activeWallpaper.activeVideoBookmarkData, savedVideoBookmarkData == old,
+               let new = active.activeVideoBookmarkData {
+                copy.savedVideoBookmarkData = new
+                copy.savedVideoPackageEntryName = active.packageVideoEntryName
+            }
+            if let old = activeWallpaper.htmlSource, savedHTMLSource == old, case let .html(source, config) = active {
+                copy.savedHTMLSource = source
+                copy.savedHTMLConfig = config
+            }
+            if let old = activeWallpaper.sceneDescriptor, let saved = savedSceneDescriptor, saved.isSameScene(as: old),
+               case .scene = active {
+                copy.savedSceneDescriptor = WallpaperContent.scene(saved).repointed(to: active).sceneDescriptor
+            }
+        }
+        copy.wallpaperQueue = wallpaperQueue?.map(repoint)
+        copy.scheduleFallback = scheduleFallback.map(repoint)
+        copy.scheduleSlots = scheduleSlots?.map { slot in
+            var slot = slot
+            slot.wallpaper = slot.wallpaper.map(repoint)
+            return slot
+        }
+        copy.automationFailures = automationFailures.mapValues { failure in
+            var failure = failure
+            failure.entry = repoint(failure.entry)
+            return failure
+        }
+        return copy == self ? nil : copy
+    }
 }
 
 public extension ScreenConfiguration {

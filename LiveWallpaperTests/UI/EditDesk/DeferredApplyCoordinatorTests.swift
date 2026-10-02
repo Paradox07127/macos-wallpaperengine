@@ -418,6 +418,86 @@ struct DeferredApplyCoordinatorTests {
         #expect(fixture.toasts.lastEvent?.isSuccess == false)
     }
 
+    @Test("Downloading over an approved local copy records the Steam item beside it", .timeLimit(.minutes(1)))
+    func downloadReplacingApprovedLocalCopyRecordsSteamItem() async throws {
+        let fixture = try DownloadAttemptFixture(name: "approvedLocalCopy", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        let local = try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        fixture.gate.release()
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader, replacing: local))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        await task.value
+        guard case .succeeded? = attempt.outcome else {
+            Issue.record("Expected the approved download to succeed, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(fixture.downloader.requestedIDs == [420_000_042])
+        let history = fixture.settings.loadGlobalSettings().recentWPEImports
+        #expect(history.contains { $0.origin.steamFolderItemID == "420000042" })
+        #expect(history.contains { $0.origin.title == "Local copy" && $0.origin.steamFolderItemID == nil })
+    }
+
+    @Test("Another local copy imported while an approved download runs keeps it out of the library", .timeLimit(.minutes(1)))
+    func otherLocalCopyImportedMidApprovedDownloadBlocksRecording() async throws {
+        let fixture = try DownloadAttemptFixture(name: "approvedMidDownloadConflict", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        let copyA = try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/a", isDirectory: true), title: "Copy A")
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader, replacing: copyA))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        let enteredImport = await fixture.waitForReimport()
+        try #require(enteredImport, "\(fixture.diagnostics(for: attempt))")
+        try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/b", isDirectory: true), title: "Copy B")
+        fixture.gate.release()
+        await task.value
+        guard case let .failed(reason)? = attempt.outcome else {
+            Issue.record("Expected the unapproved copy to fail the download, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(reason.contains("Copy B"))
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Copy B"])
+        #expect(fixture.toasts.lastEvent?.isSuccess == false)
+    }
+
+    @Test("Passing a Steam entry as the replacement does not approve the download", .timeLimit(.minutes(1)))
+    func steamEntryAsReplacementIsRefused() async throws {
+        let fixture = try DownloadAttemptFixture(name: "steamReplacement", startsWithDependencies: false)
+        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        let steamEntry = try fixture.libraryEntry(in: fixture.itemFolder, title: "Steam copy")
+        try #require(steamEntry.origin.steamFolderItemID == "420000042")
+        fixture.gate.release()
+        let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader, replacing: steamEntry))
+        let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
+        await task.value
+        guard case let .failed(reason)? = attempt.outcome else {
+            Issue.record("Expected the download to stay refused, got \(String(describing: attempt.outcome))")
+            return
+        }
+        #expect(reason.contains("Local copy"))
+        #expect(fixture.downloader.requestedIDs.isEmpty)
+        #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
+    }
+
+    @Test("Only a local copy in the library is offered for replacement", .timeLimit(.minutes(1)))
+    func localCopyToReplaceOffersOnlyALocalCopy() async throws {
+        let empty = try DownloadAttemptFixture(name: "replaceNone", startsWithDependencies: false)
+        #expect(empty.downloads.localCopyToReplace(for: 420_000_042) == nil, "nothing in the library means nothing to replace")
+        await empty.discard()
+        empty.defaults.discard()
+
+        let local = try DownloadAttemptFixture(name: "replaceLocal", startsWithDependencies: false)
+        let copy = try local.recordLibraryEntry(in: local.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        #expect(local.downloads.localCopyToReplace(for: 420_000_042) == copy)
+        await local.discard()
+        local.defaults.discard()
+
+        let steam = try DownloadAttemptFixture(name: "replaceSteam", startsWithDependencies: false)
+        defer { steam.defaults.discard() }
+        try steam.recordLibraryEntry(in: steam.itemFolder, title: "Steam copy")
+        #expect(steam.downloads.localCopyToReplace(for: 420_000_042) == nil, "the item's own Steam folder is updated, not replaced")
+        await steam.discard()
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func lookupReturnsTheLiveTicketAndNothingForAnUnknownItem() {
         let owner = owner()
@@ -722,14 +802,21 @@ private final class DownloadAttemptFixture {
         downloader.root.appendingPathComponent("420000042", isDirectory: true)
     }
 
-    func recordLibraryEntry(in folder: URL, title: String) throws {
+    func libraryEntry(in folder: URL, title: String) throws -> WPEHistoryEntry {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let origin = try WPEOrigin(
             workshopID: "420000042", title: title, originalType: .video,
             sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
             cacheRelativePath: nil, previewFileName: nil
         )
-        settings.recordWPEImport(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil))
+        return WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
+    }
+
+    /// Returns the entry as stored, so it can be handed back as a download's approved replacement.
+    @discardableResult
+    func recordLibraryEntry(in folder: URL, title: String) throws -> WPEHistoryEntry {
+        try settings.recordWPEImport(libraryEntry(in: folder, title: title))
+        return try #require(settings.loadGlobalSettings().recentWPEImports.first { $0.origin.title == title })
     }
 
     func waitForReimport() async -> Bool {

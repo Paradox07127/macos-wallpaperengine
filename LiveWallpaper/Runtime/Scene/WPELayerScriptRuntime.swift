@@ -235,11 +235,15 @@ final class WPELayerScriptCursorInbox: Sendable {
         }
     }
 
-    func complete(_ claim: Claim) {
-        state.withLock {
-            if $0.scheduled == claim.id {
-                $0.scheduled = nil
-            }
+    @discardableResult
+    func complete(_ claim: Claim, reclaimPending: Bool = false) -> Claim? {
+        state.withLock { value in
+            guard value.scheduled == claim.id else { return nil }
+            value.scheduled = nil
+            guard reclaimPending, !value.closed, value.needsCancel || !value.pending.isEmpty else { return nil }
+            value.nextID &+= 1
+            value.scheduled = value.nextID
+            return Claim(id: value.nextID, epoch: value.epoch)
         }
     }
 
@@ -283,6 +287,7 @@ final class WPELayerScriptInstance {
     private var isDestroyed = false
     let initialOutput: WPELayerScriptOutput
     private let cursorInbox = WPELayerScriptCursorInbox()
+    private var pendingMediaEvents: [WPESceneMediaEvent] = []
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
         combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
     )
@@ -398,13 +403,14 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil
     ) {
         guard !isPoisoned, !isDestroyed else { return }
-        let handled = events.filter { handles($0) }
-        guard !handled.isEmpty, engine.allows(.event) else { return }
-        _ = engine.dispatchMediaEventsAsync(
-            handled,
-            runtimeSeconds: runtimeSeconds,
-            publishTo: asyncOutcomeSlot
-        )
+        for event in events where handles(event) {
+            pendingMediaEvents.coalesce(event)
+        }
+        guard !pendingMediaEvents.isEmpty, engine.allows(.event) else { return }
+        // A refused batch stays pending; the next frame's drain retries it.
+        if engine.dispatchMediaEventsAsync(pendingMediaEvents, runtimeSeconds: runtimeSeconds, publishTo: asyncOutcomeSlot) {
+            pendingMediaEvents.removeAll(keepingCapacity: true)
+        }
     }
 
     private func handles(_ event: WPESceneMediaEvent) -> Bool {
@@ -684,7 +690,7 @@ final class WPELayerScriptInstance {
         return merged
     }
 
-    private final class LayerEngine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
+    private final class LayerEngine: WPELayerScriptBridge, @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
         enum SetupOutcome {
             case ready(
                 hasUpdate: Bool,
@@ -694,12 +700,6 @@ final class WPELayerScriptInstance {
             )
             case contextUnavailable
         }
-
-        /// Key for `thisLayer` in the per-layer command/handle maps (other layers
-        /// use their `getLayer(name)` name).
-        private static let ownKey = ""
-        /// thisScene.createLayer handles share the getLayer handle shape but must stay out of the cross-layer journal.
-        private static let createdKeyPrefix = "__created_"
 
         fileprivate var queue: DispatchQueue { executionLane.queue }
         fileprivate let executionLane: WPESceneScriptBatchDispatcher.Lane
@@ -711,56 +711,19 @@ final class WPELayerScriptInstance {
         fileprivate var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
         fileprivate var screenResolution: JSValue?
-        private var thisLayer: JSValue?
         /// Set by the context exception handler so `init()` failures can degrade
         /// safely (run on the engine queue, so no synchronization needed).
         fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
         /// One-shot latch for `logFirstThrow` (per instance, not per tick).
         private var hasLoggedThrow = false
-        private var namedLayers: [String: JSValue] = [:]
-        /// Video handles stored here (not captured by getVideoTexture) to avoid a JSC retain cycle.
-        private var videoHandles: [String: JSValue] = [:]
-        /// Layers whose visible/alpha the script explicitly assigned. A getLayer(x) the script only read never lands here, so readOutput won't drive it.
-        private var assignedVisible: [String: Bool] = [:]
-        private var assignedAlpha: [String: Double] = [:]
-        /// Deliberately separate from the JS vector objects so a read or nested-object edit does not masquerade as thisLayer.<field> = value.
-        private var assignedOwnTransform = WPELayerScriptTransformMutation()
-        private var ownOriginValue: JSValue?
-        private var ownScaleValue: JSValue?
-        private var ownAnglesValue: JSValue?
-        private var assignedOtherTransforms: [String: WPELayerScriptTransformMutation] = [:]
-        private var otherTransformValues: [String: [OwnTransformField: JSValue]] = [:]
-        private var createdLayers: [(key: String, handle: JSValue, configuration: WPESceneJSONValue)] = []
-        private var pendingCreatedDestruction: Set<String> = []
-        private var destroyedCreatedKeys: Set<String> = []
-        private var createdLayerCounter = 0
-        private let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
-        private var currentLayerOrder: [String]
-        private var didSortLayers = false
-        private var scriptWorkshopID: String?
-        private var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
-        private var createdAngles: [String: SIMD3<Double>] = [:]
-        private var hasLoggedUnsupportedLayerOperation = false
-        /// Key "" = thisLayer, else the getLayer name. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
-        private var pendingVideo: [String: [WPELayerVideoCommand]] = [:]
-        /// Last play/stop intent per sound layer, so `isPlaying()` answers without
-        /// a read-back channel into the audio graph.
-        private var soundIntent: [String: Bool] = [:]
-        private var assignedSoundVolume: [String: Double] = [:]
         private let nowProviderMillis: (@Sendable () -> Double)?
-        private let shared: WPESharedScriptState?
         fileprivate let canvasSize: SIMD2<Double>
         fileprivate var screenSize: SIMD2<Double>
         private let outputMode: WPELayerScriptOutputMode
-        /// Parsed visible/alpha seeds — fallback when script never assigns.
-        private let initialOwnVisible: Bool
-        private let initialOwnAlpha: Double
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
-        let instanceLimitToken: WPESceneScriptInstanceLimitToken?
         let asyncExecutionSafety = WPESceneScriptAsyncExecutionSafety()
-        private let evaluationResourceBudget: WPESceneScriptEvaluationResourceBudget
         private var lastRuntimeSeconds: Double?
         private var cursorScreenPosition: JSValue?
         private var cursorWorldPosition: JSValue?
@@ -773,13 +736,6 @@ final class WPELayerScriptInstance {
         /// JS booleans are immutable, so identity reuse of the update(value) argument is unobservable.
         private var cachedTrueArgument: JSValue?
         private var cachedFalseArgument: JSValue?
-        private var neutralLayerStubCache: JSValue?
-        private var neutralAnimationStubCache: JSValue?
-        /// ownKey is the empty string, so without this thisLayer.name / .size / .origin and thisScene.getLayerIndex(thisLayer) all miss the layer table.
-        private let ownLayerName: String?
-        private let ownObjectID: String?
-        private let particleBridge: WPESceneScriptParticleBridge
-        private let cameraBridge: WPESceneScriptCameraBridge
 
         init(
             nowProviderMillis: (@Sendable () -> Double)?,
@@ -798,30 +754,19 @@ final class WPELayerScriptInstance {
             let lane = batchDispatcher.reserveLane()
             executionLane = lane
             virtualMachine = lane.virtualMachine
-            self.ownLayerName = ownLayerName
-            self.ownObjectID = ownObjectID
-            particleBridge = WPESceneScriptParticleBridge(shared: shared)
-            cameraBridge = WPESceneScriptCameraBridge(shared: shared)
-            self.createdLayerBridge = createdLayerBridge
-            if let shared, !shared.layers.isEmpty, createdLayerBridge?.allowsSorting != true {
-                currentLayerOrder = shared.layers.sorted { $0.index < $1.index }.map { shared.layerHandleKey($0) }
-            } else {
-                currentLayerOrder = createdLayerBridge?.orderedLayerNames
-                    ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
-            }
             self.nowProviderMillis = nowProviderMillis
-            self.shared = shared
             self.canvasSize = SIMD2<Double>(max(canvasSize.x, 1), max(canvasSize.y, 1))
             self.screenSize = SIMD2<Double>(max(screenSize.x, 1), max(screenSize.y, 1))
             self.outputMode = outputMode
-            self.initialOwnVisible = initialVisible
-            self.initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
             self.governor = governor
-            self.participant = governor.makeParticipant()
-            let instanceLimitToken = shared?.sceneScriptLoadToken
-            self.instanceLimitToken = instanceLimitToken
-            self.evaluationResourceBudget = WPESceneScriptEvaluationResourceBudget(
-                sceneToken: instanceLimitToken
+            participant = governor.makeParticipant()
+            super.init(
+                shared: shared,
+                initialVisible: initialVisible,
+                initialAlpha: initialAlpha,
+                ownLayerName: ownLayerName,
+                ownObjectID: ownObjectID,
+                createdLayerBridge: createdLayerBridge
             )
         }
 
@@ -1035,13 +980,27 @@ final class WPELayerScriptInstance {
             publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
         ) -> @Sendable () -> Void {
             { @Sendable [self] in
-                defer { inbox.complete(claim) }
+                guard allows(.event) else { inbox.complete(claim); return }
                 // Reserve on the VM worker, never while building a frame's jobs.
-                // Failed admission leaves the inbox intact for the next frame.
-                guard allows(.event), let safety = asyncExecutionSafety.begin(
+                guard let safety = asyncExecutionSafety.begin(
                     sceneToken: instanceLimitToken, operation: .event
-                ) else { return }
-                defer { asyncExecutionSafety.complete(safety) }
+                ) else {
+                    // A busy slot keeps the claim so later bursts queue behind this retry; 1 ms so an exhausted reservation pool cannot spin the lane.
+                    if inbox.isCurrent(claim) {
+                        queue.asyncAfter(deadline: .now() + .milliseconds(1),
+                                         execute: makeCursorBatch(claim: claim, inbox: inbox, publishTo: slot))
+                    } else if let next = inbox.complete(claim, reclaimPending: true) {
+                        queue.async(execute: makeCursorBatch(claim: next, inbox: inbox, publishTo: slot))
+                    }
+                    return
+                }
+                defer {
+                    asyncExecutionSafety.complete(safety)
+                    // A burst or cancel arriving while this claim runs is claim()-blocked, so completion re-arms it.
+                    if let next = inbox.complete(claim, reclaimPending: true) {
+                        queue.async(execute: makeCursorBatch(claim: next, inbox: inbox, publishTo: slot))
+                    }
+                }
                 guard let events = inbox.take(claim) else { return }
                 for event in events {
                     guard inbox.isCurrent(claim), acceptsCompletion() else { return }
@@ -1526,710 +1485,816 @@ final class WPELayerScriptInstance {
             guard value.isFinite else { return (lower + upper) * 0.5 }
             return min(max(value, lower), upper)
         }
+    }
+}
 
-        private func setOwnLayerVisible(_ value: Bool) {
-            thisLayer?.setObject(value, forKeyedSubscript: "visible" as NSString)
+/// The thisLayer/thisScene bridge and its output journal. Every member is touched only on the
+/// lane queue of the engine that owns it, which is what makes the unchecked Sendable sound.
+class WPELayerScriptBridge: @unchecked Sendable {
+    /// Key for `thisLayer` in the per-layer command/handle maps (other layers
+    /// use their `getLayer(name)` name).
+    fileprivate static let ownKey = ""
+    /// thisScene.createLayer handles share the getLayer handle shape but must stay out of the cross-layer journal.
+    fileprivate static let createdKeyPrefix = "__created_"
+
+    fileprivate var thisLayer: JSValue?
+    fileprivate var namedLayers: [String: JSValue] = [:]
+    /// Video handles stored here (not captured by getVideoTexture) to avoid a JSC retain cycle.
+    fileprivate var videoHandles: [String: JSValue] = [:]
+    /// Layers whose visible/alpha the script explicitly assigned. A getLayer(x) the script only read never lands here, so readOutput won't drive it.
+    fileprivate var assignedVisible: [String: Bool] = [:]
+    fileprivate var assignedAlpha: [String: Double] = [:]
+    /// Deliberately separate from the JS vector objects so a read or nested-object edit does not masquerade as thisLayer.<field> = value.
+    fileprivate var assignedOwnTransform = WPELayerScriptTransformMutation()
+    fileprivate var ownOriginValue: JSValue?
+    fileprivate var ownScaleValue: JSValue?
+    fileprivate var ownAnglesValue: JSValue?
+    fileprivate var assignedOtherTransforms: [String: WPELayerScriptTransformMutation] = [:]
+    fileprivate var otherTransformValues: [String: [OwnTransformField: JSValue]] = [:]
+    fileprivate var createdLayers: [(key: String, handle: JSValue, configuration: WPESceneJSONValue)] = []
+    fileprivate var pendingCreatedDestruction: Set<String> = []
+    fileprivate var destroyedCreatedKeys: Set<String> = []
+    fileprivate var createdLayerCounter = 0
+    fileprivate let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
+    fileprivate var currentLayerOrder: [String]
+    fileprivate var didSortLayers = false
+    fileprivate var scriptWorkshopID: String?
+    fileprivate var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
+    fileprivate var createdAngles: [String: SIMD3<Double>] = [:]
+    fileprivate var hasLoggedUnsupportedLayerOperation = false
+    /// Key "" = thisLayer, else the getLayer name. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
+    fileprivate var pendingVideo: [String: [WPELayerVideoCommand]] = [:]
+    /// Last play/stop intent per sound layer, so `isPlaying()` answers without
+    /// a read-back channel into the audio graph.
+    fileprivate var soundIntent: [String: Bool] = [:]
+    fileprivate var assignedSoundVolume: [String: Double] = [:]
+    fileprivate let shared: WPESharedScriptState?
+    let instanceLimitToken: WPESceneScriptInstanceLimitToken?
+    /// Parsed visible/alpha seeds — fallback when script never assigns.
+    fileprivate let initialOwnVisible: Bool
+    fileprivate let initialOwnAlpha: Double
+    fileprivate let evaluationResourceBudget: WPESceneScriptEvaluationResourceBudget
+    fileprivate var neutralLayerStubCache: JSValue?
+    fileprivate var neutralAnimationStubCache: JSValue?
+    /// ownKey is the empty string, so without this thisLayer.name / .size / .origin and thisScene.getLayerIndex(thisLayer) all miss the layer table.
+    fileprivate let ownLayerName: String?
+    fileprivate let ownObjectID: String?
+    fileprivate let particleBridge: WPESceneScriptParticleBridge
+    fileprivate let cameraBridge: WPESceneScriptCameraBridge
+
+    init(
+        shared: WPESharedScriptState?,
+        initialVisible: Bool,
+        initialAlpha: Double,
+        ownLayerName: String?,
+        ownObjectID: String?,
+        createdLayerBridge: WPECreatedLayerBridgeConfiguration?
+    ) {
+        self.shared = shared
+        instanceLimitToken = shared?.sceneScriptLoadToken
+        initialOwnVisible = initialVisible
+        initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
+        self.ownLayerName = ownLayerName
+        self.ownObjectID = ownObjectID
+        self.createdLayerBridge = createdLayerBridge
+        particleBridge = WPESceneScriptParticleBridge(shared: shared)
+        cameraBridge = WPESceneScriptCameraBridge(shared: shared)
+        if let shared, !shared.layers.isEmpty, createdLayerBridge?.allowsSorting != true {
+            currentLayerOrder = shared.layers.sorted { $0.index < $1.index }.map { shared.layerHandleKey($0) }
+        } else {
+            currentLayerOrder = createdLayerBridge?.orderedLayerNames
+                ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
         }
+        evaluationResourceBudget = WPESceneScriptEvaluationResourceBudget(
+            sceneToken: instanceLimitToken
+        )
+    }
 
-        private func setOwnLayerAlpha(_ value: Double) {
-            thisLayer?.setObject(value.isFinite ? value : 1, forKeyedSubscript: "alpha" as NSString)
+    /// Brackets one JS entry point by an engine that does not subclass the bridge.
+    func beginEvaluation() {
+        particleBridge.beginEvaluation()
+        cameraBridge.beginEvaluation()
+        evaluationResourceBudget.beginEvaluation()
+    }
+
+    func failEvaluation() {
+        particleBridge.failEvaluation()
+        cameraBridge.failEvaluation()
+    }
+
+    func finishEvaluation(commit: Bool) {
+        particleBridge.finishEvaluation(commit: commit)
+        cameraBridge.finishEvaluation(commit: commit)
+    }
+
+    fileprivate func setOwnLayerVisible(_ value: Bool) {
+        thisLayer?.setObject(value, forKeyedSubscript: "visible" as NSString)
+    }
+
+    fileprivate func setOwnLayerAlpha(_ value: Double) {
+        thisLayer?.setObject(value.isFinite ? value : 1, forKeyedSubscript: "alpha" as NSString)
+    }
+
+    fileprivate func installLayerBridge(in context: JSContext) {
+        let layer = makeLayerHandle(key: Self.ownKey, in: context)
+        context.setObject(layer, forKeyedSubscript: "thisLayer" as NSString)
+        // Same handle under WPE's other name for it. thisObject is a real global rather than one author's invention — and it was undefined, so those scripts threw.
+        context.setObject(layer, forKeyedSubscript: "thisObject" as NSString)
+        thisLayer = layer
+        installScene(in: context)
+    }
+
+    /// Installs thisScene/scene only, leaving the context's thisLayer as it is.
+    func installScene(in context: JSContext) {
+        let scene = JSValue(newObjectIn: context)!
+        let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
+            guard let self, let context, let key = layerKey(value) else { return nil }
+            return handle(forLayerKey: key, in: context)
         }
-
-        private func installLayerBridge(in context: JSContext) {
-            let layer = makeLayerHandle(key: Self.ownKey, in: context)
-            context.setObject(layer, forKeyedSubscript: "thisLayer" as NSString)
-            // Same handle under WPE's other name for it. thisObject is a real global rather than one author's invention — and it was undefined, so those scripts threw.
-            context.setObject(layer, forKeyedSubscript: "thisObject" as NSString)
-            self.thisLayer = layer
-
-            let scene = JSValue(newObjectIn: context)!
-            let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
-                guard let self, let context, let key = layerKey(value) else { return nil }
-                return handle(forLayerKey: key, in: context)
-            }
-            scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
-            wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
-                self?.initialLayerConfiguration(value)
-            }
-            let createLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] spec in
-                guard let self, let context else { return nil }
-                let requestedImage: String?
-                if spec.isString {
-                    requestedImage = spec.toString()
-                } else if spec.isObject {
-                    requestedImage = spec.objectForKeyedSubscript("image")?.isString == true
-                        ? spec.objectForKeyedSubscript("image")?.toString() : nil
-                } else {
-                    reportUnsupportedLayerOperation("createLayer requires an image path or image object")
-                    return nil
-                }
-                if createdLayerBridge != nil, requestedImage == nil {
-                    reportUnsupportedLayerOperation("createLayer supports prepared image assets only")
-                    return nil
-                }
-                let resolvedImage: String?
-                if let requestedImage, let bridge = createdLayerBridge {
-                    guard let resolved = bridge.resolvedImagePath(requestedImage, workshopID: scriptWorkshopID) else {
-                        reportUnsupportedLayerOperation("createLayer image is unavailable, ambiguous, or outside the prepared image subset: \(requestedImage)")
-                        return nil
-                    }
-                    resolvedImage = resolved
-                } else {
-                    resolvedImage = requestedImage
-                }
-                guard let configuration = wpeCreatedInitialLayerConfiguration(spec, in: context) else {
-                    reportUnsupportedLayerOperation("createLayer requires a serializable object or image path")
-                    return nil
-                }
-                guard self.instanceLimitToken?.admitCreatedLayer() ?? true else {
-                    return self.neutralLayerStub(in: context)
-                }
-                let key = "\(Self.createdKeyPrefix)\(self.createdLayerCounter)"
-                let handle = self.makeLayerHandle(key: key, in: context)
-                self.createdLayerCounter += 1
-                createdLayers.append((key, handle, configuration))
-                currentLayerOrder.append(key)
-                if spec.isObject {
-                    if let name = spec.objectForKeyedSubscript("name"), name.isString {
-                        handle.setObject(name, forKeyedSubscript: "name" as NSString)
-                    }
-                    for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth"] {
-                        if let value = spec.objectForKeyedSubscript(property), !value.isUndefined {
-                            handle.setObject(value, forKeyedSubscript: property as NSString)
-                        }
-                    }
-                }
-                if let resolvedImage {
-                    handle.setObject(resolvedImage, forKeyedSubscript: "image" as NSString)
-                }
-                return handle
-            }
-            scene.setObject(createLayer, forKeyedSubscript: "createLayer" as NSString)
-            let destroyLayer: @convention(block) (JSValue) -> Bool = { [weak self] value in
-                guard let self, let key = layerKey(value),
-                      createdLayers.contains(where: { $0.key == key }) else { return false }
-                guard createdLayerBridge != nil else {
-                    reportUnsupportedLayerOperation("destroyLayer supports prepared created image layers only")
-                    return false
-                }
-                if value.isObject, !createdLayers.contains(where: { value.isEqual(to: $0.handle) }) {
-                    return false
-                }
-                pendingCreatedDestruction.insert(key)
-                destroyedCreatedKeys.insert(key)
-                currentLayerOrder.removeAll { $0 == key }
-                return true
-            }
-            scene.setObject(destroyLayer, forKeyedSubscript: "destroyLayer" as NSString)
-            let getLayerIndex: @convention(block) (JSValue) -> Int = { [weak self] value in
-                guard let self, let key = layerKey(value) else { return -1 }
-                return currentLayerOrder.firstIndex(of: key) ?? -1
-            }
-            scene.setObject(getLayerIndex, forKeyedSubscript: "getLayerIndex" as NSString)
-            let sortLayer: @convention(block) (JSValue, JSValue) -> Bool = { [weak self] value, index in
-                guard let self else { return false }
-                guard createdLayerBridge?.allowsSorting == true else {
-                    reportUnsupportedLayerOperation("sortLayer requires a single script owner and independent image passes")
-                    return false
-                }
-                guard let key = layerKey(value), let old = currentLayerOrder.firstIndex(of: key),
-                      index.isNumber else { return false }
-                let number = index.toDouble()
-                guard number.isFinite, number.rounded(.towardZero) == number,
-                      number >= 0, number < Double(currentLayerOrder.count) else { return false }
-                currentLayerOrder.remove(at: old)
-                currentLayerOrder.insert(key, at: Int(number))
-                didSortLayers = true
-                return true
-            }
-            scene.setObject(sortLayer, forKeyedSubscript: "sortLayer" as NSString)
-            let enumerateLayers: @convention(block) () -> JSValue? = { [weak self, weak context] in
-                guard let self, let context else { return nil }
-                return JSValue(object: currentLayerOrder.map { handle(forLayerKey: $0, in: context) }, in: context)
-            }
-            scene.setObject(enumerateLayers, forKeyedSubscript: "enumerateLayers" as NSString)
-            let getLayerCount: @convention(block) () -> Int = { [weak self] in self?.currentLayerOrder.count ?? 0 }
-            scene.setObject(getLayerCount, forKeyedSubscript: "getLayerCount" as NSString)
-            // `scene.on(event, cb)` isn't a real WPE API (some scenes assume it);
-            // a no-op stub keeps such a script from throwing at top-level eval.
-            let on: @convention(block) (JSValue, JSValue) -> Void = { _, _ in }
-            scene.setObject(on, forKeyedSubscript: "on" as NSString)
-            cameraBridge.install(on: scene, in: context)
-            context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
-            context.setObject(scene, forKeyedSubscript: "scene" as NSString)
-
+        scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
+        wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
+            self?.initialLayerConfiguration(value)
         }
-
-        private func layerKey(_ value: JSValue) -> String? {
-            if value.isString {
-                guard let key = value.toString() else { return nil }
-                if let created = createdLayers.first(where: {
-                    !destroyedCreatedKeys.contains($0.key) && ($0.key == key || $0.configuration["name"] == .string(key))
-                }) {
-                    return created.key
-                }
-                if let shared, let info = shared.layers.first(where: { $0.name == key }) {
-                    return shared.layerHandleKey(info)
-                }
-                return key.isEmpty ? nil : key
-            }
-            if value.isNumber {
-                let index = Int(value.toInt32())
-                return currentLayerOrder.indices.contains(index) ? currentLayerOrder[index] : nil
-            }
-            guard value.isObject else { return nil }
-            if let thisLayer, value.isEqual(to: thisLayer), let info = layerInfo(forKey: Self.ownKey) {
-                return shared?.layerHandleKey(info)
-            }
-            if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
-                return created.key
-            }
-            if let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) {
-                return entry.key
-            }
-            return value.objectForKeyedSubscript("name")?.toString()
-        }
-
-        private func initialLayerConfiguration(_ value: JSValue) -> WPESceneJSONValue? {
-            if value.isObject {
-                if let thisLayer, value.isEqual(to: thisLayer) {
-                    if let ownObjectID {
-                        return shared?.layers.first(where: { $0.id == ownObjectID })?.initialConfiguration
-                    }
-                    return shared?.layers.first(where: { $0.name == ownLayerName })?.initialConfiguration
-                }
-                if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
-                    return created.configuration
-                }
-                guard let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) else { return nil }
-                return layerInfo(forKey: entry.key)?.initialConfiguration
-            }
-            if value.isNumber {
-                let index = Int(value.toInt32())
-                guard currentLayerOrder.indices.contains(index) else { return nil }
-                let key = currentLayerOrder[index]
-                if let created = createdLayers.first(where: { $0.key == key }) {
-                    return created.configuration
-                }
-                return layerInfo(forKey: key)?.initialConfiguration
-            }
-            guard value.isString, let name = value.toString() else { return nil }
-            if let created = createdLayers.first(where: {
-                !destroyedCreatedKeys.contains($0.key) && ($0.key == name || $0.configuration["name"] == .string(name))
-            }) {
-                return created.configuration
-            }
-            return shared?.layers.first(where: { $0.name == name })?.initialConfiguration
-        }
-
-        private func finishCreatedLayerDestruction() {
-            guard !pendingCreatedDestruction.isEmpty else { return }
-            createdLayers.removeAll { pendingCreatedDestruction.contains($0.key) }
-            pendingCreatedDestruction.removeAll(keepingCapacity: true)
-        }
-
-        private func handle(forLayerKey key: String, in context: JSContext) -> JSValue {
-            let ownKey = layerInfo(forKey: Self.ownKey).flatMap { shared?.layerHandleKey($0) } ?? ownLayerName
-            if key == ownKey, let thisLayer {
-                return thisLayer
-            }
-            if let created = createdLayers.first(where: { $0.key == key }) {
-                return created.handle
-            }
-            return layerHandle(named: key, in: context)
-        }
-
-        private func reportUnsupportedLayerOperation(_ message: String) {
-            guard !hasLoggedUnsupportedLayerOperation else { return }
-            hasLoggedUnsupportedLayerOperation = true
-            Logger.warning("[SceneScript] unsupported dynamic layer operation: \(message)", category: .wpeRender)
-        }
-
-        /// Ambiguous/empty names use the existing object-ID key, not a second layer registry.
-        private func layerHandle(named name: String, in context: JSContext) -> JSValue {
-            let key = shared?.layerInfo(forHandleKey: name).flatMap { shared?.layerHandleKey($0) } ?? name
-            if let existing = namedLayers[key] {
-                return existing
-            }
-            let handle = makeLayerHandle(key: key, in: context)
-            namedLayers[key] = handle
-            return handle
-        }
-
-        private func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
-            if key == Self.ownKey {
-                return ownObjectID.flatMap { id in shared?.layers.first(where: { $0.id == id }) }
-                    ?? shared?.layers.first(where: { $0.name == ownLayerName })
-            }
-            return shared?.layerInfo(forHandleKey: key)
-        }
-
-        private func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
-            let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            // `key` is "" for the script's own layer, so anything addressed by
-            // SCENE name (the layer table, sound commands) needs the resolved one.
-            let info = layerInfo(forKey: key)
-            let layerName = info?.name ?? (key == Self.ownKey ? (ownLayerName ?? key) : key)
-            // visible/alpha are accessors so explicit assign is distinguishable from a mere read.
-            installAssignmentAccessors(on: handle, key: key, layerName: layerName, in: context)
-            handle.setObject(layerName, forKeyedSubscript: "name" as NSString)
-            // Authored layer size. Zero when the name isn't a scene layer — getLayer mints handles for arbitrary strings.
-            let size = JSValue(newObjectIn: context)!
-            size.setObject(info?.size.x ?? 0, forKeyedSubscript: "x" as NSString)
-            size.setObject(info?.size.y ?? 0, forKeyedSubscript: "y" as NSString)
-            handle.setObject(size, forKeyedSubscript: "size" as NSString)
-            if key == Self.ownKey {
-                installOwnTransformAccessors(on: handle, info: info, in: context)
+        let createLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] spec in
+            guard let self, let context else { return nil }
+            let requestedImage: String?
+            if spec.isString {
+                requestedImage = spec.toString()
+            } else if spec.isObject {
+                requestedImage = spec.objectForKeyedSubscript("image")?.isString == true
+                    ? spec.objectForKeyedSubscript("image")?.toString() : nil
             } else {
-                installOtherTransformAccessors(on: handle, key: key, info: info, in: context)
-            }
-            videoHandles[key] = makeVideoHandle(key: key, in: context)
-            _ = neutralLayerStub(in: context)
-            _ = neutralAnimationStub(in: context)
-            let getVideoTexture: @convention(block) () -> JSValue? = { [weak self] in
-                self?.videoHandles[key]
-            }
-            handle.setObject(getVideoTexture, forKeyedSubscript: "getVideoTexture" as NSString)
-            // Real parent when the document names one; a stub without an origin would throw on currentPos.x every tick.
-            let parentName = info?.parentName
-            let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
-                guard let self else { return nil }
-                guard let parentName, let context else { return self.neutralLayerStubCache }
-                return self.layerHandle(named: parentName, in: context)
-            }
-            handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
-            let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
-                self?.neutralAnimationStubCache
-            }
-            handle.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
-            // The stub already answers setFrame/play/pause/stop; it was not reachable under this name, so thisLayer.getTextureAnimation() threw a TypeError on every tick.
-            let getTextureAnimation: @convention(block) () -> JSValue? = { [weak self] in
-                self?.neutralAnimationStubCache
-            }
-            handle.setObject(getTextureAnimation, forKeyedSubscript: "getTextureAnimation" as NSString)
-            let getAnimation: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
-                self?.neutralAnimationStubCache
-            }
-            handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
-            if let info, info.isParticleSystem {
-                particleBridge.install(on: handle, objectID: info.id, in: context)
-                return handle
-            }
-            let store = shared
-            for (method, command) in [
-                ("play", WPELayerSoundCommand.play),
-                ("stop", .stop),
-                ("pause", .pause)
-            ] {
-                let block: @convention(block) () -> Void = { [weak self] in
-                    self?.soundIntent[layerName] = (command == .play)
-                    store?.enqueueSoundCommand(layer: layerName, command)
-                }
-                handle.setObject(block, forKeyedSubscript: method as NSString)
-            }
-            // Last intent this engine expressed, not a read-back from the audio graph.
-            let isPlaying: @convention(block) () -> Bool = { [weak self] in
-                self?.soundIntent[layerName] ?? false
-            }
-            handle.setObject(isPlaying, forKeyedSubscript: "isPlaying" as NSString)
-            return handle
-        }
-
-        private func installAssignmentAccessors(
-            on handle: JSValue,
-            key: String,
-            layerName: String,
-            in context: JSContext
-        ) {
-            let getVisible: @convention(block) () -> Bool = { [weak self] in
-                guard let self else { return true }
-                return self.assignedVisible[key] ?? self.defaultVisible(forKey: key)
-            }
-            let setVisible: @convention(block) (JSValue) -> Void = { [weak self] value in
-                self?.assignedVisible[key] = value.toBool()
-            }
-            let getAlpha: @convention(block) () -> Double = { [weak self] in
-                guard let self else { return 1 }
-                return self.assignedAlpha[key] ?? self.defaultAlpha(forKey: key)
-            }
-            let setAlpha: @convention(block) (JSValue) -> Void = { [weak self] value in
-                let scalar = value.toDouble()
-                self?.assignedAlpha[key] = scalar.isFinite ? scalar : 1
-            }
-            // `ISoundLayer.volume`. Reads back the last value this engine set
-            // rather than the mixer's, for the same reason `isPlaying` does.
-            let getVolume: @convention(block) () -> Double = { [weak self] in
-                self?.assignedSoundVolume[layerName] ?? 1
-            }
-            let setVolume: @convention(block) (JSValue) -> Void = { [weak self] value in
-                guard let self else { return }
-                let scalar = value.toDouble()
-                guard scalar.isFinite else { return }
-                self.assignedSoundVolume[layerName] = scalar
-                self.shared?.enqueueSoundCommand(layer: layerName, .setVolume(scalar))
-            }
-            defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
-            defineAccessor(on: handle, property: "alpha", get: getAlpha, set: setAlpha, in: context)
-            defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
-            let getAlignment: @convention(block) () -> String = { [weak self] in
-                self?.presentationMutations[key]?.alignment
-                    ?? self?.layerInfo(forKey: key)?.alignment ?? "center"
-            }
-            let setAlignment: @convention(block) (JSValue) -> Void = { [weak self] value in
-                guard value.isString, let text = value.toString(),
-                      ["center", "centre", "top", "bottom", "left", "right", "topleft", "topright", "bottomleft", "bottomright"].contains(text.lowercased()) else { return }
-                self?.presentationMutations[key, default: .init()].alignment = text
-            }
-            let getDepth: @convention(block) () -> JSValue? = { [weak self, weak context] in
-                guard let context else { return nil }
-                let depth = self?.presentationMutations[key]?.parallaxDepth
-                    ?? self?.layerInfo(forKey: key)?.parallaxDepth ?? .zero
-                return context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [depth.x, depth.y])
-            }
-            let setDepth: @convention(block) (JSValue) -> Void = { [weak self] value in
-                guard value.isObject, let x = value.objectForKeyedSubscript("x"), x.isNumber,
-                      let y = value.objectForKeyedSubscript("y"), y.isNumber,
-                      x.toDouble().isFinite, y.toDouble().isFinite else { return }
-                self?.presentationMutations[key, default: .init()].parallaxDepth = SIMD2(x.toDouble(), y.toDouble())
-            }
-            defineAccessor(on: handle, property: "alignment", get: getAlignment, set: setAlignment, in: context)
-            defineAccessor(on: handle, property: "parallaxDepth", get: getDepth, set: setDepth, in: context)
-        }
-
-        /// Reading a vector or mutating only the returned object's x/y/z does not publish a geometry assignment; the script must assign the vector back to thisLayer.origin/scale/angles.
-        private func installOwnTransformAccessors(
-            on handle: JSValue,
-            info: WPESceneScriptLayerInfo?,
-            in context: JSContext
-        ) {
-            let origin = SIMD3<Double>(
-                info?.origin.x ?? 0,
-                info?.origin.y ?? 0,
-                info?.originZ ?? 0
-            )
-            let scale = info?.scale ?? SIMD3<Double>(repeating: 1)
-            let anglesDegrees = (info?.angles ?? .zero) * (180 / .pi)
-            ownOriginValue = Self.vector(origin, in: context)
-            ownScaleValue = Self.vector(scale, in: context)
-            ownAnglesValue = Self.vector(anglesDegrees, in: context)
-
-            let getOrigin: @convention(block) () -> JSValue? = { [weak self] in self?.ownOriginValue }
-            let setOrigin: @convention(block) (JSValue) -> Void = { [weak self] value in
-                self?.setOwnTransformVector(value, field: .origin)
-            }
-            let getScale: @convention(block) () -> JSValue? = { [weak self] in self?.ownScaleValue }
-            let setScale: @convention(block) (JSValue) -> Void = { [weak self] value in
-                self?.setOwnTransformVector(value, field: .scale)
-            }
-            let getAngles: @convention(block) () -> JSValue? = { [weak self] in self?.ownAnglesValue }
-            let setAngles: @convention(block) (JSValue) -> Void = { [weak self] value in
-                self?.setOwnTransformVector(value, field: .angles)
-            }
-            defineAccessor(on: handle, property: "origin", get: getOrigin, set: setOrigin, in: context)
-            defineAccessor(on: handle, property: "scale", get: getScale, set: setScale, in: context)
-            defineAccessor(on: handle, property: "angles", get: getAngles, set: setAngles, in: context)
-        }
-
-        private enum OwnTransformField: Hashable {
-            case origin
-            case scale
-            case angles
-        }
-
-        /// The getLayer(name) counterpart of installOwnTransformAccessors. Assigning one layer's origin onto another silently did nothing while these were plain data properties.
-        private func installOtherTransformAccessors(
-            on handle: JSValue,
-            key: String,
-            info: WPESceneScriptLayerInfo?,
-            in context: JSContext
-        ) {
-            let seeds: [OwnTransformField: SIMD3<Double>] = [
-                .origin: SIMD3<Double>(info?.origin.x ?? 0, info?.origin.y ?? 0, info?.originZ ?? 0),
-                .scale: info?.scale ?? SIMD3<Double>(repeating: 1),
-                .angles: (info?.angles ?? .zero) * (180 / .pi),
-            ]
-            var bridges: [OwnTransformField: JSValue] = [:]
-            for (field, seed) in seeds {
-                bridges[field] = Self.vector(seed, in: context)
-            }
-            otherTransformValues[key] = bridges
-
-            for (field, property) in [
-                (OwnTransformField.origin, "origin"),
-                (OwnTransformField.scale, "scale"),
-                (OwnTransformField.angles, "angles"),
-            ] {
-                let get: @convention(block) () -> JSValue? = { [weak self] in
-                    self?.otherTransformValues[key]?[field]
-                }
-                let set: @convention(block) (JSValue) -> Void = { [weak self] value in
-                    self?.setOtherTransformVector(value, key: key, field: field)
-                }
-                defineAccessor(on: handle, property: property, get: get, set: set, in: context)
-            }
-        }
-
-        private func setOtherTransformVector(_ value: JSValue, key: String, field: OwnTransformField) {
-            guard let vector = finiteVector(value) else { return }
-            // The bridge value updates either way — `createdStateFor` reads the
-            // handle back through it — but only real scene layers are journaled.
-            Self.update(otherTransformValues[key]?[field], with: vector)
-            if key.hasPrefix(Self.createdKeyPrefix) {
-                if field == .angles {
-                    createdAngles[key] = vector
-                }
-                return
-            }
-            var mutation = assignedOtherTransforms[key] ?? .init()
-            switch field {
-            case .origin: mutation.origin = vector
-            case .scale: mutation.scale = vector
-            case .angles: mutation.angles = vector
-            }
-            assignedOtherTransforms[key] = mutation
-        }
-
-        private func setOwnTransformVector(_ value: JSValue, field: OwnTransformField) {
-            guard let vector = finiteVector(value) else { return }
-            let bridgeValue: JSValue?
-            switch field {
-            case .origin:
-                assignedOwnTransform.origin = vector
-                bridgeValue = ownOriginValue
-            case .scale:
-                assignedOwnTransform.scale = vector
-                bridgeValue = ownScaleValue
-            case .angles:
-                assignedOwnTransform.angles = vector
-                bridgeValue = ownAnglesValue
-            }
-            Self.update(bridgeValue, with: vector)
-        }
-
-        private func finiteVector(_ value: JSValue) -> SIMD3<Double>? {
-            guard value.isObject,
-                  let xValue = value.objectForKeyedSubscript("x"), xValue.isNumber,
-                  let yValue = value.objectForKeyedSubscript("y"), yValue.isNumber,
-                  let zValue = value.objectForKeyedSubscript("z"), zValue.isNumber else {
+                reportUnsupportedLayerOperation("createLayer requires an image path or image object")
                 return nil
             }
-            let vector = SIMD3<Double>(xValue.toDouble(), yValue.toDouble(), zValue.toDouble())
-            return vector.x.isFinite && vector.y.isFinite && vector.z.isFinite ? vector : nil
-        }
-
-        private func defineAccessor(
-            on handle: JSValue,
-            property: String,
-            get: Any,
-            set: Any,
-            in context: JSContext
-        ) {
-            guard let objectClass = context.objectForKeyedSubscript("Object"),
-                  let define = objectClass.objectForKeyedSubscript("defineProperty"),
-                  !define.isUndefined,
-                  let descriptor = JSValue(newObjectIn: context) else { return }
-            descriptor.setObject(get, forKeyedSubscript: "get" as NSString)
-            descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
-            descriptor.setObject(true, forKeyedSubscript: "enumerable" as NSString)
-            descriptor.setObject(true, forKeyedSubscript: "configurable" as NSString)
-            define.call(withArguments: [handle, property, descriptor])
-        }
-
-        private static func vector(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
-            let vector = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [value.x, value.y, value.z])
-                ?? JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            update(vector, with: value)
-            return vector
-        }
-
-        private static func update(_ value: JSValue?, with vector: SIMD3<Double>) {
-            value?.setObject(vector.x, forKeyedSubscript: "x" as NSString)
-            value?.setObject(vector.y, forKeyedSubscript: "y" as NSString)
-            value?.setObject(vector.z, forKeyedSubscript: "z" as NSString)
-        }
-
-        private static func unitScale(in context: JSContext) -> JSValue {
-            vector(SIMD3<Double>(repeating: 1), in: context)
-        }
-
-        /// Neutral ancestor for `getParent()`: unit scale, visible, and self-returning
-        /// `getParent()` so a `getParent().getParent()` chain terminates safely.
-        private func neutralLayerStub(in context: JSContext) -> JSValue {
-            if let cached = neutralLayerStubCache { return cached }
-            let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            stub.setObject(true, forKeyedSubscript: "visible" as NSString)
-            stub.setObject(1.0, forKeyedSubscript: "alpha" as NSString)
-            stub.setObject(Self.unitScale(in: context), forKeyedSubscript: "scale" as NSString)
-            // Zeroed but PRESENT: scripts read `.origin.x` / `.size.x` off whatever
-            // getParent()/getLayer() hands them, and undefined there throws.
-            for property in ["origin", "size"] {
-                let vector = JSValue(newObjectIn: context)!
-                vector.setObject(0.0, forKeyedSubscript: "x" as NSString)
-                vector.setObject(0.0, forKeyedSubscript: "y" as NSString)
-                vector.setObject(0.0, forKeyedSubscript: "z" as NSString)
-                stub.setObject(vector, forKeyedSubscript: property as NSString)
+            if createdLayerBridge != nil, requestedImage == nil {
+                reportUnsupportedLayerOperation("createLayer supports prepared image assets only")
+                return nil
             }
-            let getParent: @convention(block) () -> JSValue? = { [weak self] in
-                self?.neutralLayerStubCache
+            let resolvedImage: String?
+            if let requestedImage, let bridge = createdLayerBridge {
+                guard let resolved = bridge.resolvedImagePath(requestedImage, workshopID: scriptWorkshopID) else {
+                    reportUnsupportedLayerOperation("createLayer image is unavailable, ambiguous, or outside the prepared image subset: \(requestedImage)")
+                    return nil
+                }
+                resolvedImage = resolved
+            } else {
+                resolvedImage = requestedImage
             }
-            stub.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
-            _ = neutralAnimationStub(in: context)
-            let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
-                self?.neutralAnimationStubCache
+            guard let configuration = wpeCreatedInitialLayerConfiguration(spec, in: context) else {
+                reportUnsupportedLayerOperation("createLayer requires a serializable object or image path")
+                return nil
             }
-            stub.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
-            neutralLayerStubCache = stub
-            return stub
-        }
-
-        private func neutralAnimationStub(in context: JSContext) -> JSValue {
-            if let cached = neutralAnimationStubCache { return cached }
-            let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let noop: @convention(block) () -> Void = {}
-            let noop1: @convention(block) (JSValue) -> Void = { _ in }
-            // Writable playback rate. We don't drive layer timeline animations, so this stores and does nothing — but an assignment to a property of undefined would throw away the rest of update().
-            stub.setObject(1.0, forKeyedSubscript: "rate" as NSString)
-            for method in ["play", "pause", "stop"] {
-                stub.setObject(noop, forKeyedSubscript: method as NSString)
+            guard instanceLimitToken?.admitCreatedLayer() ?? true else {
+                return neutralLayerStub(in: context)
             }
-            stub.setObject(noop1, forKeyedSubscript: "setFrame" as NSString)
-            // Paired with setFrame. We drive no timeline, so frame 0 is the only answer we can give, and it beats killing the rest of update().
-            let getFrame: @convention(block) () -> Double = { 0 }
-            stub.setObject(getFrame, forKeyedSubscript: "getFrame" as NSString)
-            neutralAnimationStubCache = stub
-            return stub
-        }
-
-        private func makeVideoHandle(key: String, in context: JSContext) -> JSValue {
-            let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let append: @Sendable (WPELayerVideoCommand) -> Void = { [weak self] command in
-                guard let self, self.evaluationResourceBudget.admitVideoCommand() else { return }
-                self.pendingVideo[key, default: []].append(command)
-            }
-            let play: @convention(block) () -> Void = { append(.play) }
-            let pause: @convention(block) () -> Void = { append(.pause) }
-            let stop: @convention(block) () -> Void = { append(.stop) }
-            let setCurrentTime: @convention(block) (JSValue) -> Void = { arg in append(.seek(arg.toDouble())) }
-            let getCurrentTime: @convention(block) () -> Double = { 0 }
-            handle.setObject(play, forKeyedSubscript: "play" as NSString)
-            handle.setObject(pause, forKeyedSubscript: "pause" as NSString)
-            handle.setObject(stop, forKeyedSubscript: "stop" as NSString)
-            handle.setObject(setCurrentTime, forKeyedSubscript: "setCurrentTime" as NSString)
-            handle.setObject(getCurrentTime, forKeyedSubscript: "getCurrentTime" as NSString)
-            return handle
-        }
-
-        private func readOutput() -> WPELayerScriptOutput {
-            let own = stateFor(handle: thisLayer, key: Self.ownKey)
-            var others: [String: WPELayerScriptState] = [:]
-            for (name, _) in namedLayers {
-                let visible = assignedVisible[name]
-                let alpha = assignedAlpha[name]
-                let video = pendingVideo[name] ?? []
-                // A layer the script only READ (never assigned visible/alpha, no
-                // video command) must not be driven — leave its real visibility be.
-                guard visible != nil || alpha != nil || !video.isEmpty else { continue }
-                others[name] = WPELayerScriptState(
-                    visible: visible ?? true,
-                    alpha: alpha ?? 1,
-                    videoCommands: video,
-                    visibleAssigned: visible != nil,
-                    alphaAssigned: alpha != nil
-                )
-            }
-            let created = createdLayers.filter { !destroyedCreatedKeys.contains($0.key) }
-                .map { createdStateFor(handle: $0.handle, key: $0.key) }
-            var presentation = presentationMutations.filter { !$0.key.hasPrefix(Self.createdKeyPrefix) }
-            if didSortLayers {
-                for (index, name) in currentLayerOrder.enumerated() where !name.hasPrefix(Self.createdKeyPrefix) {
-                    let key = name == ownLayerName ? Self.ownKey : name
-                    presentation[key, default: .init()].sortIndex = index
+            let key = "\(Self.createdKeyPrefix)\(createdLayerCounter)"
+            let handle = makeLayerHandle(key: key, in: context)
+            createdLayerCounter += 1
+            createdLayers.append((key, handle, configuration))
+            currentLayerOrder.append(key)
+            if spec.isObject {
+                if let name = spec.objectForKeyedSubscript("name"), name.isString {
+                    handle.setObject(name, forKeyedSubscript: "name" as NSString)
+                }
+                for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth"] {
+                    if let value = spec.objectForKeyedSubscript(property), !value.isUndefined {
+                        handle.setObject(value, forKeyedSubscript: property as NSString)
+                    }
                 }
             }
-            pendingVideo.removeAll(keepingCapacity: true)
-            return WPELayerScriptOutput(
-                own: own,
-                others: others,
-                created: created,
-                destroyedCreatedKeys: destroyedCreatedKeys,
-                presentation: presentation,
-                ownTransform: assignedOwnTransform,
-                otherTransforms: assignedOtherTransforms
-            )
+            if let resolvedImage {
+                handle.setObject(resolvedImage, forKeyedSubscript: "image" as NSString)
+            }
+            return handle
         }
-
-        /// Neutral defaults for a layer the script never assigned: own layer keeps
-        /// its parsed `visible`/`alpha` seeds, other (named) handles stay shown.
-        private func defaultVisible(forKey key: String) -> Bool {
-            key == Self.ownKey ? initialOwnVisible : true
+        scene.setObject(createLayer, forKeyedSubscript: "createLayer" as NSString)
+        let destroyLayer: @convention(block) (JSValue) -> Bool = { [weak self] value in
+            guard let self, let key = layerKey(value),
+                  createdLayers.contains(where: { $0.key == key }) else { return false }
+            guard createdLayerBridge != nil else {
+                reportUnsupportedLayerOperation("destroyLayer supports prepared created image layers only")
+                return false
+            }
+            if value.isObject, !createdLayers.contains(where: { value.isEqual(to: $0.handle) }) {
+                return false
+            }
+            pendingCreatedDestruction.insert(key)
+            destroyedCreatedKeys.insert(key)
+            currentLayerOrder.removeAll { $0 == key }
+            return true
         }
-
-        private func defaultAlpha(forKey key: String) -> Double {
-            key == Self.ownKey ? initialOwnAlpha : 1
+        scene.setObject(destroyLayer, forKeyedSubscript: "destroyLayer" as NSString)
+        let getLayerIndex: @convention(block) (JSValue) -> Int = { [weak self] value in
+            guard let self, let key = layerKey(value) else { return -1 }
+            return currentLayerOrder.firstIndex(of: key) ?? -1
         }
+        scene.setObject(getLayerIndex, forKeyedSubscript: "getLayerIndex" as NSString)
+        let sortLayer: @convention(block) (JSValue, JSValue) -> Bool = { [weak self] value, index in
+            guard let self else { return false }
+            guard createdLayerBridge?.allowsSorting == true else {
+                reportUnsupportedLayerOperation("sortLayer requires a single script owner and independent image passes")
+                return false
+            }
+            guard let key = layerKey(value), let old = currentLayerOrder.firstIndex(of: key),
+                  index.isNumber else { return false }
+            let number = index.toDouble()
+            guard number.isFinite, number.rounded(.towardZero) == number,
+                  number >= 0, number < Double(currentLayerOrder.count) else { return false }
+            currentLayerOrder.remove(at: old)
+            currentLayerOrder.insert(key, at: Int(number))
+            didSortLayers = true
+            return true
+        }
+        scene.setObject(sortLayer, forKeyedSubscript: "sortLayer" as NSString)
+        let enumerateLayers: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let self, let context else { return nil }
+            return JSValue(object: currentLayerOrder.map { handle(forLayerKey: $0, in: context) }, in: context)
+        }
+        scene.setObject(enumerateLayers, forKeyedSubscript: "enumerateLayers" as NSString)
+        let getLayerCount: @convention(block) () -> Int = { [weak self] in self?.currentLayerOrder.count ?? 0 }
+        scene.setObject(getLayerCount, forKeyedSubscript: "getLayerCount" as NSString)
+        // `scene.on(event, cb)` isn't a real WPE API (some scenes assume it);
+        // a no-op stub keeps such a script from throwing at top-level eval.
+        let on: @convention(block) (JSValue, JSValue) -> Void = { _, _ in }
+        scene.setObject(on, forKeyedSubscript: "on" as NSString)
+        cameraBridge.install(on: scene, in: context)
+        context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
+        context.setObject(scene, forKeyedSubscript: "scene" as NSString)
+    }
 
-        private func stateFor(handle _: JSValue?, key: String) -> WPELayerScriptState {
-            // assigned* nil when script only reads — avoids clobbering parsed visible:false seeds.
-            let visible = assignedVisible[key]
-            let alpha = assignedAlpha[key]
-            return WPELayerScriptState(
-                visible: visible ?? defaultVisible(forKey: key),
-                alpha: alpha ?? defaultAlpha(forKey: key),
-                videoCommands: pendingVideo[key] ?? [],
+    fileprivate func layerKey(_ value: JSValue) -> String? {
+        if value.isString {
+            guard let key = value.toString() else { return nil }
+            if let created = createdLayers.first(where: {
+                !destroyedCreatedKeys.contains($0.key) && ($0.key == key || $0.configuration["name"] == .string(key))
+            }) {
+                return created.key
+            }
+            if let shared, let info = shared.layers.first(where: { $0.name == key }) {
+                return shared.layerHandleKey(info)
+            }
+            return key.isEmpty ? nil : key
+        }
+        if value.isNumber {
+            let index = Int(value.toInt32())
+            return currentLayerOrder.indices.contains(index) ? currentLayerOrder[index] : nil
+        }
+        guard value.isObject else { return nil }
+        if let thisLayer, value.isEqual(to: thisLayer), let info = layerInfo(forKey: Self.ownKey) {
+            return shared?.layerHandleKey(info)
+        }
+        if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
+            return created.key
+        }
+        if let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) {
+            return entry.key
+        }
+        return value.objectForKeyedSubscript("name")?.toString()
+    }
+
+    fileprivate func initialLayerConfiguration(_ value: JSValue) -> WPESceneJSONValue? {
+        if value.isObject {
+            if let thisLayer, value.isEqual(to: thisLayer) {
+                if let ownObjectID {
+                    return shared?.layers.first(where: { $0.id == ownObjectID })?.initialConfiguration
+                }
+                return shared?.layers.first(where: { $0.name == ownLayerName })?.initialConfiguration
+            }
+            if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
+                return created.configuration
+            }
+            guard let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) else { return nil }
+            return layerInfo(forKey: entry.key)?.initialConfiguration
+        }
+        if value.isNumber {
+            let index = Int(value.toInt32())
+            guard currentLayerOrder.indices.contains(index) else { return nil }
+            let key = currentLayerOrder[index]
+            if let created = createdLayers.first(where: { $0.key == key }) {
+                return created.configuration
+            }
+            return layerInfo(forKey: key)?.initialConfiguration
+        }
+        guard value.isString, let name = value.toString() else { return nil }
+        if let created = createdLayers.first(where: {
+            !destroyedCreatedKeys.contains($0.key) && ($0.key == name || $0.configuration["name"] == .string(name))
+        }) {
+            return created.configuration
+        }
+        return shared?.layers.first(where: { $0.name == name })?.initialConfiguration
+    }
+
+    fileprivate func finishCreatedLayerDestruction() {
+        guard !pendingCreatedDestruction.isEmpty else { return }
+        createdLayers.removeAll { pendingCreatedDestruction.contains($0.key) }
+        pendingCreatedDestruction.removeAll(keepingCapacity: true)
+    }
+
+    fileprivate func handle(forLayerKey key: String, in context: JSContext) -> JSValue {
+        let ownKey = layerInfo(forKey: Self.ownKey).flatMap { shared?.layerHandleKey($0) } ?? ownLayerName
+        if key == ownKey, let thisLayer {
+            return thisLayer
+        }
+        if let created = createdLayers.first(where: { $0.key == key }) {
+            return created.handle
+        }
+        return layerHandle(named: key, in: context)
+    }
+
+    fileprivate func reportUnsupportedLayerOperation(_ message: String) {
+        guard !hasLoggedUnsupportedLayerOperation else { return }
+        hasLoggedUnsupportedLayerOperation = true
+        Logger.warning("[SceneScript] unsupported dynamic layer operation: \(message)", category: .wpeRender)
+    }
+
+    /// Ambiguous/empty names use the existing object-ID key, not a second layer registry.
+    fileprivate func layerHandle(named name: String, in context: JSContext) -> JSValue {
+        let key = shared?.layerInfo(forHandleKey: name).flatMap { shared?.layerHandleKey($0) } ?? name
+        if let existing = namedLayers[key] {
+            return existing
+        }
+        let handle = makeLayerHandle(key: key, in: context)
+        namedLayers[key] = handle
+        return handle
+    }
+
+    fileprivate func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
+        if key == Self.ownKey {
+            return ownObjectID.flatMap { id in shared?.layers.first(where: { $0.id == id }) }
+                ?? shared?.layers.first(where: { $0.name == ownLayerName })
+        }
+        return shared?.layerInfo(forHandleKey: key)
+    }
+
+    fileprivate func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
+        let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        // `key` is "" for the script's own layer, so anything addressed by
+        // SCENE name (the layer table, sound commands) needs the resolved one.
+        let info = layerInfo(forKey: key)
+        let layerName = info?.name ?? (key == Self.ownKey ? (ownLayerName ?? key) : key)
+        // visible/alpha are accessors so explicit assign is distinguishable from a mere read.
+        installAssignmentAccessors(on: handle, key: key, layerName: layerName, in: context)
+        handle.setObject(layerName, forKeyedSubscript: "name" as NSString)
+        // Authored layer size. Zero when the name isn't a scene layer — getLayer mints handles for arbitrary strings.
+        let size = JSValue(newObjectIn: context)!
+        size.setObject(info?.size.x ?? 0, forKeyedSubscript: "x" as NSString)
+        size.setObject(info?.size.y ?? 0, forKeyedSubscript: "y" as NSString)
+        handle.setObject(size, forKeyedSubscript: "size" as NSString)
+        if key == Self.ownKey {
+            installOwnTransformAccessors(on: handle, info: info, in: context)
+        } else {
+            installOtherTransformAccessors(on: handle, key: key, info: info, in: context)
+        }
+        videoHandles[key] = makeVideoHandle(key: key, in: context)
+        _ = neutralLayerStub(in: context)
+        _ = neutralAnimationStub(in: context)
+        let getVideoTexture: @convention(block) () -> JSValue? = { [weak self] in
+            self?.videoHandles[key]
+        }
+        handle.setObject(getVideoTexture, forKeyedSubscript: "getVideoTexture" as NSString)
+        // Real parent when the document names one; a stub without an origin would throw on currentPos.x every tick.
+        let parentName = info?.parentName
+        let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let self else { return nil }
+            guard let parentName, let context else { return neutralLayerStubCache }
+            return layerHandle(named: parentName, in: context)
+        }
+        handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
+            self?.neutralAnimationStubCache
+        }
+        handle.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
+        // The stub already answers setFrame/play/pause/stop; it was not reachable under this name, so thisLayer.getTextureAnimation() threw a TypeError on every tick.
+        let getTextureAnimation: @convention(block) () -> JSValue? = { [weak self] in
+            self?.neutralAnimationStubCache
+        }
+        handle.setObject(getTextureAnimation, forKeyedSubscript: "getTextureAnimation" as NSString)
+        let getAnimation: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
+            self?.neutralAnimationStubCache
+        }
+        handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
+        if let info, info.isParticleSystem {
+            particleBridge.install(on: handle, objectID: info.id, in: context)
+            return handle
+        }
+        let store = shared
+        for (method, command) in [
+            ("play", WPELayerSoundCommand.play),
+            ("stop", .stop),
+            ("pause", .pause),
+        ] {
+            let block: @convention(block) () -> Void = { [weak self] in
+                self?.soundIntent[layerName] = (command == .play)
+                store?.enqueueSoundCommand(layer: layerName, command)
+            }
+            handle.setObject(block, forKeyedSubscript: method as NSString)
+        }
+        // Last intent this engine expressed, not a read-back from the audio graph.
+        let isPlaying: @convention(block) () -> Bool = { [weak self] in
+            self?.soundIntent[layerName] ?? false
+        }
+        handle.setObject(isPlaying, forKeyedSubscript: "isPlaying" as NSString)
+        return handle
+    }
+
+    fileprivate func installAssignmentAccessors(
+        on handle: JSValue,
+        key: String,
+        layerName: String,
+        in context: JSContext
+    ) {
+        let getVisible: @convention(block) () -> Bool = { [weak self] in
+            guard let self else { return true }
+            return assignedVisible[key] ?? defaultVisible(forKey: key)
+        }
+        let setVisible: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.assignedVisible[key] = value.toBool()
+        }
+        let getAlpha: @convention(block) () -> Double = { [weak self] in
+            guard let self else { return 1 }
+            return assignedAlpha[key] ?? defaultAlpha(forKey: key)
+        }
+        let setAlpha: @convention(block) (JSValue) -> Void = { [weak self] value in
+            let scalar = value.toDouble()
+            self?.assignedAlpha[key] = scalar.isFinite ? scalar : 1
+        }
+        // `ISoundLayer.volume`. Reads back the last value this engine set
+        // rather than the mixer's, for the same reason `isPlaying` does.
+        let getVolume: @convention(block) () -> Double = { [weak self] in
+            self?.assignedSoundVolume[layerName] ?? 1
+        }
+        let setVolume: @convention(block) (JSValue) -> Void = { [weak self] value in
+            guard let self else { return }
+            let scalar = value.toDouble()
+            guard scalar.isFinite else { return }
+            assignedSoundVolume[layerName] = scalar
+            shared?.enqueueSoundCommand(layer: layerName, .setVolume(scalar))
+        }
+        defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
+        defineAccessor(on: handle, property: "alpha", get: getAlpha, set: setAlpha, in: context)
+        defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
+        let getAlignment: @convention(block) () -> String = { [weak self] in
+            self?.presentationMutations[key]?.alignment
+                ?? self?.layerInfo(forKey: key)?.alignment ?? "center"
+        }
+        let setAlignment: @convention(block) (JSValue) -> Void = { [weak self] value in
+            guard value.isString, let text = value.toString(),
+                  ["center", "centre", "top", "bottom", "left", "right", "topleft", "topright", "bottomleft", "bottomright"].contains(text.lowercased()) else { return }
+            self?.presentationMutations[key, default: .init()].alignment = text
+        }
+        let getDepth: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let context else { return nil }
+            let depth = self?.presentationMutations[key]?.parallaxDepth
+                ?? self?.layerInfo(forKey: key)?.parallaxDepth ?? .zero
+            return context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [depth.x, depth.y])
+        }
+        let setDepth: @convention(block) (JSValue) -> Void = { [weak self] value in
+            guard value.isObject, let x = value.objectForKeyedSubscript("x"), x.isNumber,
+                  let y = value.objectForKeyedSubscript("y"), y.isNumber,
+                  x.toDouble().isFinite, y.toDouble().isFinite else { return }
+            self?.presentationMutations[key, default: .init()].parallaxDepth = SIMD2(x.toDouble(), y.toDouble())
+        }
+        defineAccessor(on: handle, property: "alignment", get: getAlignment, set: setAlignment, in: context)
+        defineAccessor(on: handle, property: "parallaxDepth", get: getDepth, set: setDepth, in: context)
+    }
+
+    /// Reading a vector or mutating only the returned object's x/y/z does not publish a geometry assignment; the script must assign the vector back to thisLayer.origin/scale/angles.
+    fileprivate func installOwnTransformAccessors(
+        on handle: JSValue,
+        info: WPESceneScriptLayerInfo?,
+        in context: JSContext
+    ) {
+        let origin = SIMD3<Double>(
+            info?.origin.x ?? 0,
+            info?.origin.y ?? 0,
+            info?.originZ ?? 0
+        )
+        let scale = info?.scale ?? SIMD3<Double>(repeating: 1)
+        let anglesDegrees = (info?.angles ?? .zero) * (180 / .pi)
+        ownOriginValue = Self.vector(origin, in: context)
+        ownScaleValue = Self.vector(scale, in: context)
+        ownAnglesValue = Self.vector(anglesDegrees, in: context)
+
+        let getOrigin: @convention(block) () -> JSValue? = { [weak self] in self?.ownOriginValue }
+        let setOrigin: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.setOwnTransformVector(value, field: .origin)
+        }
+        let getScale: @convention(block) () -> JSValue? = { [weak self] in self?.ownScaleValue }
+        let setScale: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.setOwnTransformVector(value, field: .scale)
+        }
+        let getAngles: @convention(block) () -> JSValue? = { [weak self] in self?.ownAnglesValue }
+        let setAngles: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.setOwnTransformVector(value, field: .angles)
+        }
+        defineAccessor(on: handle, property: "origin", get: getOrigin, set: setOrigin, in: context)
+        defineAccessor(on: handle, property: "scale", get: getScale, set: setScale, in: context)
+        defineAccessor(on: handle, property: "angles", get: getAngles, set: setAngles, in: context)
+    }
+
+    fileprivate enum OwnTransformField: Hashable {
+        case origin
+        case scale
+        case angles
+    }
+
+    /// The getLayer(name) counterpart of installOwnTransformAccessors. Assigning one layer's origin onto another silently did nothing while these were plain data properties.
+    fileprivate func installOtherTransformAccessors(
+        on handle: JSValue,
+        key: String,
+        info: WPESceneScriptLayerInfo?,
+        in context: JSContext
+    ) {
+        let seeds: [OwnTransformField: SIMD3<Double>] = [
+            .origin: SIMD3<Double>(info?.origin.x ?? 0, info?.origin.y ?? 0, info?.originZ ?? 0),
+            .scale: info?.scale ?? SIMD3<Double>(repeating: 1),
+            .angles: (info?.angles ?? .zero) * (180 / .pi),
+        ]
+        var bridges: [OwnTransformField: JSValue] = [:]
+        for (field, seed) in seeds {
+            bridges[field] = Self.vector(seed, in: context)
+        }
+        otherTransformValues[key] = bridges
+
+        for (field, property) in [
+            (OwnTransformField.origin, "origin"),
+            (OwnTransformField.scale, "scale"),
+            (OwnTransformField.angles, "angles"),
+        ] {
+            let get: @convention(block) () -> JSValue? = { [weak self] in
+                self?.otherTransformValues[key]?[field]
+            }
+            let set: @convention(block) (JSValue) -> Void = { [weak self] value in
+                self?.setOtherTransformVector(value, key: key, field: field)
+            }
+            defineAccessor(on: handle, property: property, get: get, set: set, in: context)
+        }
+    }
+
+    fileprivate func setOtherTransformVector(_ value: JSValue, key: String, field: OwnTransformField) {
+        guard let vector = finiteVector(value) else { return }
+        // The bridge value updates either way — `createdStateFor` reads the
+        // handle back through it — but only real scene layers are journaled.
+        Self.update(otherTransformValues[key]?[field], with: vector)
+        if key.hasPrefix(Self.createdKeyPrefix) {
+            if field == .angles {
+                createdAngles[key] = vector
+            }
+            return
+        }
+        var mutation = assignedOtherTransforms[key] ?? .init()
+        switch field {
+        case .origin: mutation.origin = vector
+        case .scale: mutation.scale = vector
+        case .angles: mutation.angles = vector
+        }
+        assignedOtherTransforms[key] = mutation
+    }
+
+    fileprivate func setOwnTransformVector(_ value: JSValue, field: OwnTransformField) {
+        guard let vector = finiteVector(value) else { return }
+        let bridgeValue: JSValue?
+        switch field {
+        case .origin:
+            assignedOwnTransform.origin = vector
+            bridgeValue = ownOriginValue
+        case .scale:
+            assignedOwnTransform.scale = vector
+            bridgeValue = ownScaleValue
+        case .angles:
+            assignedOwnTransform.angles = vector
+            bridgeValue = ownAnglesValue
+        }
+        Self.update(bridgeValue, with: vector)
+    }
+
+    fileprivate func finiteVector(_ value: JSValue) -> SIMD3<Double>? {
+        guard value.isObject,
+              let xValue = value.objectForKeyedSubscript("x"), xValue.isNumber,
+              let yValue = value.objectForKeyedSubscript("y"), yValue.isNumber,
+              let zValue = value.objectForKeyedSubscript("z"), zValue.isNumber else {
+            return nil
+        }
+        let vector = SIMD3<Double>(xValue.toDouble(), yValue.toDouble(), zValue.toDouble())
+        return vector.x.isFinite && vector.y.isFinite && vector.z.isFinite ? vector : nil
+    }
+
+    fileprivate func defineAccessor(
+        on handle: JSValue,
+        property: String,
+        get: Any,
+        set: Any,
+        in context: JSContext
+    ) {
+        guard let objectClass = context.objectForKeyedSubscript("Object"),
+              let define = objectClass.objectForKeyedSubscript("defineProperty"),
+              !define.isUndefined,
+              let descriptor = JSValue(newObjectIn: context) else { return }
+        descriptor.setObject(get, forKeyedSubscript: "get" as NSString)
+        descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
+        descriptor.setObject(true, forKeyedSubscript: "enumerable" as NSString)
+        descriptor.setObject(true, forKeyedSubscript: "configurable" as NSString)
+        define.call(withArguments: [handle, property, descriptor])
+    }
+
+    fileprivate static func vector(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
+        let vector = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [value.x, value.y, value.z])
+            ?? JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        update(vector, with: value)
+        return vector
+    }
+
+    fileprivate static func update(_ value: JSValue?, with vector: SIMD3<Double>) {
+        value?.setObject(vector.x, forKeyedSubscript: "x" as NSString)
+        value?.setObject(vector.y, forKeyedSubscript: "y" as NSString)
+        value?.setObject(vector.z, forKeyedSubscript: "z" as NSString)
+    }
+
+    fileprivate static func unitScale(in context: JSContext) -> JSValue {
+        vector(SIMD3<Double>(repeating: 1), in: context)
+    }
+
+    /// Neutral ancestor for `getParent()`: unit scale, visible, and self-returning
+    /// `getParent()` so a `getParent().getParent()` chain terminates safely.
+    fileprivate func neutralLayerStub(in context: JSContext) -> JSValue {
+        if let cached = neutralLayerStubCache {
+            return cached
+        }
+        let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        stub.setObject(true, forKeyedSubscript: "visible" as NSString)
+        stub.setObject(1.0, forKeyedSubscript: "alpha" as NSString)
+        stub.setObject(Self.unitScale(in: context), forKeyedSubscript: "scale" as NSString)
+        // Zeroed but PRESENT: scripts read `.origin.x` / `.size.x` off whatever
+        // getParent()/getLayer() hands them, and undefined there throws.
+        for property in ["origin", "size"] {
+            let vector = JSValue(newObjectIn: context)!
+            vector.setObject(0.0, forKeyedSubscript: "x" as NSString)
+            vector.setObject(0.0, forKeyedSubscript: "y" as NSString)
+            vector.setObject(0.0, forKeyedSubscript: "z" as NSString)
+            stub.setObject(vector, forKeyedSubscript: property as NSString)
+        }
+        let getParent: @convention(block) () -> JSValue? = { [weak self] in
+            self?.neutralLayerStubCache
+        }
+        stub.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        _ = neutralAnimationStub(in: context)
+        let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
+            self?.neutralAnimationStubCache
+        }
+        stub.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
+        neutralLayerStubCache = stub
+        return stub
+    }
+
+    fileprivate func neutralAnimationStub(in context: JSContext) -> JSValue {
+        if let cached = neutralAnimationStubCache {
+            return cached
+        }
+        let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        let noop: @convention(block) () -> Void = {}
+        let noop1: @convention(block) (JSValue) -> Void = { _ in }
+        // Writable playback rate. We don't drive layer timeline animations, so this stores and does nothing — but an assignment to a property of undefined would throw away the rest of update().
+        stub.setObject(1.0, forKeyedSubscript: "rate" as NSString)
+        for method in ["play", "pause", "stop"] {
+            stub.setObject(noop, forKeyedSubscript: method as NSString)
+        }
+        stub.setObject(noop1, forKeyedSubscript: "setFrame" as NSString)
+        // Paired with setFrame. We drive no timeline, so frame 0 is the only answer we can give, and it beats killing the rest of update().
+        let getFrame: @convention(block) () -> Double = { 0 }
+        stub.setObject(getFrame, forKeyedSubscript: "getFrame" as NSString)
+        neutralAnimationStubCache = stub
+        return stub
+    }
+
+    fileprivate func makeVideoHandle(key: String, in context: JSContext) -> JSValue {
+        let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        let append: @Sendable (WPELayerVideoCommand) -> Void = { [weak self] command in
+            guard let self, evaluationResourceBudget.admitVideoCommand() else { return }
+            pendingVideo[key, default: []].append(command)
+        }
+        let play: @convention(block) () -> Void = { append(.play) }
+        let pause: @convention(block) () -> Void = { append(.pause) }
+        let stop: @convention(block) () -> Void = { append(.stop) }
+        let setCurrentTime: @convention(block) (JSValue) -> Void = { arg in append(.seek(arg.toDouble())) }
+        let getCurrentTime: @convention(block) () -> Double = { 0 }
+        handle.setObject(play, forKeyedSubscript: "play" as NSString)
+        handle.setObject(pause, forKeyedSubscript: "pause" as NSString)
+        handle.setObject(stop, forKeyedSubscript: "stop" as NSString)
+        handle.setObject(setCurrentTime, forKeyedSubscript: "setCurrentTime" as NSString)
+        handle.setObject(getCurrentTime, forKeyedSubscript: "getCurrentTime" as NSString)
+        return handle
+    }
+
+    func readOutput() -> WPELayerScriptOutput {
+        let own = stateFor(handle: thisLayer, key: Self.ownKey)
+        var others: [String: WPELayerScriptState] = [:]
+        for (name, _) in namedLayers {
+            let visible = assignedVisible[name]
+            let alpha = assignedAlpha[name]
+            let video = pendingVideo[name] ?? []
+            // A layer the script only READ (never assigned visible/alpha, no
+            // video command) must not be driven — leave its real visibility be.
+            guard visible != nil || alpha != nil || !video.isEmpty else { continue }
+            others[name] = WPELayerScriptState(
+                visible: visible ?? true,
+                alpha: alpha ?? 1,
+                videoCommands: video,
                 visibleAssigned: visible != nil,
                 alphaAssigned: alpha != nil
             )
         }
-
-        private func createdStateFor(handle: JSValue, key: String) -> WPECreatedLayerScriptState {
-            let imagePath = stringProperty(handle.objectForKeyedSubscript("image"), fallback: "")
-            let origin = vec3(
-                handle.objectForKeyedSubscript("origin"),
-                fallback: SIMD3<Double>(0, 0, 0)
-            )
-            let color = vec3(
-                handle.objectForKeyedSubscript("color"),
-                fallback: SIMD3<Double>(1, 1, 1)
-            )
-            let scale = vec3(
-                handle.objectForKeyedSubscript("scale"),
-                fallback: SIMD3<Double>(1, 1, 1)
-            )
-            let alphaValue = handle.objectForKeyedSubscript("alpha")
-            let alpha = (alphaValue?.isNumber == true) ? (alphaValue?.toDouble() ?? 1) : 1
-            let visible = handle.objectForKeyedSubscript("visible")?.toBool() ?? true
-            return WPECreatedLayerScriptState(
-                key: key,
-                imagePath: imagePath,
-                origin: origin,
-                color: color,
-                scale: scale,
-                alpha: alpha.isFinite ? alpha : 1,
-                visible: visible,
-                angles: createdAngles[key],
-                alignment: presentationMutations[key]?.alignment,
-                parallaxDepth: presentationMutations[key]?.parallaxDepth,
-                sortIndex: didSortLayers ? currentLayerOrder.firstIndex(of: key) : nil
-            )
+        let created = createdLayers.filter { !destroyedCreatedKeys.contains($0.key) }
+            .map { createdStateFor(handle: $0.handle, key: $0.key) }
+        var presentation = presentationMutations.filter { !$0.key.hasPrefix(Self.createdKeyPrefix) }
+        if didSortLayers {
+            for (index, name) in currentLayerOrder.enumerated() where !name.hasPrefix(Self.createdKeyPrefix) {
+                let key = name == ownLayerName ? Self.ownKey : name
+                presentation[key, default: .init()].sortIndex = index
+            }
         }
+        pendingVideo.removeAll(keepingCapacity: true)
+        return WPELayerScriptOutput(
+            own: own,
+            others: others,
+            created: created,
+            destroyedCreatedKeys: destroyedCreatedKeys,
+            presentation: presentation,
+            ownTransform: assignedOwnTransform,
+            otherTransforms: assignedOtherTransforms
+        )
+    }
 
-        private func vec3(_ value: JSValue?, fallback: SIMD3<Double>) -> SIMD3<Double> {
-            guard let value, value.isObject else { return fallback }
-            let x = value.objectForKeyedSubscript("x")?.toDouble() ?? fallback.x
-            let y = value.objectForKeyedSubscript("y")?.toDouble() ?? fallback.y
-            let z = value.objectForKeyedSubscript("z")?.toDouble() ?? fallback.z
-            return SIMD3<Double>(
-                x.isFinite ? x : fallback.x,
-                y.isFinite ? y : fallback.y,
-                z.isFinite ? z : fallback.z
-            )
-        }
+    /// Neutral defaults for a layer the script never assigned: own layer keeps
+    /// its parsed `visible`/`alpha` seeds, other (named) handles stay shown.
+    fileprivate func defaultVisible(forKey key: String) -> Bool {
+        key == Self.ownKey ? initialOwnVisible : true
+    }
 
-        private func stringProperty(_ value: JSValue?, fallback: String) -> String {
-            guard let value, !value.isUndefined, !value.isNull else { return fallback }
-            return value.toString() ?? fallback
-        }
+    fileprivate func defaultAlpha(forKey key: String) -> Double {
+        key == Self.ownKey ? initialOwnAlpha : 1
+    }
 
+    fileprivate func stateFor(handle _: JSValue?, key: String) -> WPELayerScriptState {
+        // assigned* nil when script only reads — avoids clobbering parsed visible:false seeds.
+        let visible = assignedVisible[key]
+        let alpha = assignedAlpha[key]
+        return WPELayerScriptState(
+            visible: visible ?? defaultVisible(forKey: key),
+            alpha: alpha ?? defaultAlpha(forKey: key),
+            videoCommands: pendingVideo[key] ?? [],
+            visibleAssigned: visible != nil,
+            alphaAssigned: alpha != nil
+        )
+    }
+
+    fileprivate func createdStateFor(handle: JSValue, key: String) -> WPECreatedLayerScriptState {
+        let imagePath = stringProperty(handle.objectForKeyedSubscript("image"), fallback: "")
+        let origin = vec3(
+            handle.objectForKeyedSubscript("origin"),
+            fallback: SIMD3<Double>(0, 0, 0)
+        )
+        let color = vec3(
+            handle.objectForKeyedSubscript("color"),
+            fallback: SIMD3<Double>(1, 1, 1)
+        )
+        let scale = vec3(
+            handle.objectForKeyedSubscript("scale"),
+            fallback: SIMD3<Double>(1, 1, 1)
+        )
+        let alphaValue = handle.objectForKeyedSubscript("alpha")
+        let alpha = (alphaValue?.isNumber == true) ? (alphaValue?.toDouble() ?? 1) : 1
+        let visible = handle.objectForKeyedSubscript("visible")?.toBool() ?? true
+        return WPECreatedLayerScriptState(
+            key: key,
+            imagePath: imagePath,
+            origin: origin,
+            color: color,
+            scale: scale,
+            alpha: alpha.isFinite ? alpha : 1,
+            visible: visible,
+            angles: createdAngles[key],
+            alignment: presentationMutations[key]?.alignment,
+            parallaxDepth: presentationMutations[key]?.parallaxDepth,
+            sortIndex: didSortLayers ? currentLayerOrder.firstIndex(of: key) : nil
+        )
+    }
+
+    fileprivate func vec3(_ value: JSValue?, fallback: SIMD3<Double>) -> SIMD3<Double> {
+        guard let value, value.isObject else { return fallback }
+        let x = value.objectForKeyedSubscript("x")?.toDouble() ?? fallback.x
+        let y = value.objectForKeyedSubscript("y")?.toDouble() ?? fallback.y
+        let z = value.objectForKeyedSubscript("z")?.toDouble() ?? fallback.z
+        return SIMD3<Double>(
+            x.isFinite ? x : fallback.x,
+            y.isFinite ? y : fallback.y,
+            z.isFinite ? z : fallback.z
+        )
+    }
+
+    fileprivate func stringProperty(_ value: JSValue?, fallback: String) -> String {
+        guard let value, !value.isUndefined, !value.isNull else { return fallback }
+        return value.toString() ?? fallback
     }
 }
 

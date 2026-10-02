@@ -146,6 +146,28 @@ public final class SchemeStore {
         return changed
     }
 
+    @discardableResult
+    public func repointWPEOrigin(
+        where matches: (WPEOrigin) -> Bool,
+        to origin: WPEOrigin,
+        content replacement: WallpaperContent
+    ) -> Int {
+        var changed = 0
+        for index in schemes.indices {
+            guard let updated = schemes[index].configuration.repointingWPEOrigin(
+                where: matches,
+                to: origin,
+                content: replacement
+            ) else { continue }
+            schemes[index].configuration = updated
+            changed += 1
+        }
+        if changed > 0 {
+            persist()
+        }
+        return changed
+    }
+
     /// Matches a scheme whose active video is the refreshed grant, the same rewrite the screen's own refresh makes.
     @discardableResult
     public func replaceVideoBookmark(matching original: Data, with refreshed: Data) -> Int {

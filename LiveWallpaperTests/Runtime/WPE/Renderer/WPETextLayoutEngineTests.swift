@@ -210,6 +210,17 @@ struct WPETextLayoutEngineTests {
         }
     }
 
+    @Test("CRLF breaks lines exactly like LF, keeping empty paragraphs", arguments: ["Ag\nAg", "a\n\nb", "Hi\nthere\n"])
+    func crlfMatchesLF(lf: String) throws {
+        let crlf = lf.replacingOccurrences(of: "\n", with: "\r\n")
+        let expected = try #require(WPETextLayoutEngine.layout(text: lf, font: font))
+        let actual = try #require(WPETextLayoutEngine.layout(text: crlf, font: font))
+        #expect(actual.lineCount == expected.lineCount)
+        #expect(actual.blockWidth == expected.blockWidth)
+        #expect(actual.quads.map(\.glyph) == expected.quads.map(\.glyph))
+        #expect(actual.quads.map(\.rect) == expected.quads.map(\.rect))
+    }
+
     @Test("Empty and whitespace-only text yields no layout")
     func emptyText() {
         #expect(WPETextLayoutEngine.layout(text: "", font: font) == nil)

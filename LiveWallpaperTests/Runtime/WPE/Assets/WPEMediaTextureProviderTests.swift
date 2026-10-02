@@ -41,6 +41,24 @@ struct WPEMediaTextureProviderTests {
         #expect(WPEMediaTextureDemand.byPassID(in: pipeline).isEmpty)
     }
 
+    @Test("An override binding an ordinary texture on a material $media slot wins")
+    func overrideOrdinaryTextureClearsMaterialMediaSlot() {
+        let bindings = WPERenderUserTextureBindings(
+            material: [WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system", slot: 0)],
+            override: [WPESceneUserTextureBinding(name: "materials/plain.png", type: nil, slot: 0)]
+        )
+        #expect(WPEMediaTextureDemand.slots(in: bindings)[0] == nil)
+    }
+
+    @Test("An override $media binding wins over an ordinary material texture")
+    func overrideMediaBindingWinsOverMaterialTexture() {
+        let bindings = WPERenderUserTextureBindings(
+            material: [WPESceneUserTextureBinding(name: "materials/plain.png", type: nil, slot: 0)],
+            override: [WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system", slot: 0)]
+        )
+        #expect(WPEMediaTextureDemand.slots(in: bindings)[0] == .thumbnail)
+    }
+
     @Test("No $media binding creates neither a subscription nor a texture store")
     func demandGateCreatesNoSubscriptionWithoutBindings() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -186,6 +204,21 @@ struct WPEMediaTextureProviderTests {
         let previous = try #require(store.substituting(placeholder, slot: 1, declarations: declarations))
         #expect(previous === current, "the previous slot must serve the artwork that was just replaced")
         #expect(store.substituting(placeholder, slot: 2, declarations: declarations) !== current)
+    }
+
+    @Test("A substituted cover samples with identity, not the placeholder's sprite transform")
+    func substitutedCoverDropsPlaceholderSpriteTransform() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let placeholder = try Self.placeholderTexture(device)
+        let cover = try Self.placeholderTexture(device)
+        let sprite = WPETexSpriteSamplingDescriptor(rotation: SIMD4(0, 1, -1, 0), translation: SIMD2(0.5, 0.25))
+
+        #expect(WPEMediaTextureStore.samplingDescriptor(
+            authored: sprite, authoredTexture: placeholder, boundTexture: cover
+        ) == .identity)
+        #expect(WPEMediaTextureStore.samplingDescriptor(
+            authored: sprite, authoredTexture: placeholder, boundTexture: placeholder
+        ) == sprite, "no cover: the placeholder keeps its own sprite transform")
     }
 
     // MARK: - Upload cache

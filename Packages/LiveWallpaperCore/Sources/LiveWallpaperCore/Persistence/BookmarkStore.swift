@@ -189,6 +189,26 @@ public final class BookmarkStore {
         return true
     }
 
+    @discardableResult
+    public func repointWPEOrigin(
+        where matches: (WPEOrigin) -> Bool,
+        to origin: WPEOrigin,
+        content replacement: WallpaperContent
+    ) -> Bool {
+        var next = bookmarks
+        var didReplace = false
+        for index in next.indices {
+            guard let current = next[index].wpeOrigin, matches(current) else { continue }
+            next[index].wpeOrigin = origin
+            next[index].content = next[index].content.repointed(to: replacement)
+            didReplace = true
+        }
+        guard didReplace else { return false }
+        bookmarks = next
+        persist()
+        return true
+    }
+
     private func persist() {
         persistence.save(bookmarks)
     }

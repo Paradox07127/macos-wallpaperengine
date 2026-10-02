@@ -39,11 +39,14 @@ struct EditDeskLibraryStateTests {
             try #require(window.makeFirstResponder(field))
             let editor = try #require(field.currentEditor() as? NSTextView)
             editor.insertText("S4b", replacementRange: NSRange(location: NSNotFound, length: 0))
+            // A field editor left active takes real keystrokes typed elsewhere during the awaits below.
+            try #require(window.makeFirstResponder(nil), "control: the search field never ended editing")
             // Select Name through the real native sort menu.
             let picked = await Self.pickSort(row: 1, in: window, rowMidY: field.convert(field.bounds, to: nil).midY)
             try #require(picked, "the native sort menu never delivered the Name selection")
             let filtered = await Self.settle(window) { shelf() == ["S4b Alpha", "S4b Beta"] }
             try #require(filtered, Comment(rawValue: "control: Recent, S4b, by name never showed — the shelf is \(shelf())"))
+            try #require(Self.searchField(in: window)?.stringValue == "S4b", "control: the query must be exactly S4b before leaving the page")
 
             Self.click(Self.navPillCenter(.schemes, in: window, workshop: workshop, bundle: bundle), in: window)
             let left = await Self.settle(window) { Self.stage(in: window) == nil }
@@ -91,6 +94,7 @@ struct EditDeskLibraryStateTests {
             try #require(window.makeFirstResponder(field))
             let editor = try #require(field.currentEditor() as? NSTextView)
             editor.insertText("S4b", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try #require(window.makeFirstResponder(nil), "control: the search field never ended editing")
             let filtered = await Self.settle(window) { shelf() == ["S4b Alpha"] }
             try #require(filtered, Comment(rawValue: "control: the search never filtered — the shelf is \(shelf())"))
 

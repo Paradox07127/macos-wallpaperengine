@@ -407,7 +407,7 @@ extension WPEMetalSceneRenderer {
     ) -> WPEFrameOverlay {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
-            || !particleAlphaScriptInstances.isEmpty else {
+            || !particleAlphaScriptInstances.isEmpty || !textScriptInstances.isEmpty else {
             return WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
@@ -725,6 +725,9 @@ extension WPEMetalSceneRenderer {
         liveTextByID.reserveCapacity(textScriptInstances.count)
         for (id, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
             liveTextByID[id] = tickTextScript(instance, runtimeSeconds: runtimeSeconds)
+            if let output = instance.takeLayerOutput() {
+                applyLayerScriptOutput(output, ownObjectID: id)
+            }
         }
         return liveTextByID
     }

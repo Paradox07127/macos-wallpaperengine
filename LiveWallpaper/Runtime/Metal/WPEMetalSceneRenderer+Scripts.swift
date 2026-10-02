@@ -87,9 +87,10 @@ extension WPEMetalSceneRenderer {
                 + "particleAlpha=\(particleAlphaScripted.count) "
                 + "hostNames=\(scriptHosts.prefix(8).map(\.name).joined(separator: ","))"
         )
+        // Text value scripts are built earlier by loadTextPipeline but still resolve getLayer names here.
         guard (!visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
                 || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
-                || !particleAlphaScripted.isEmpty),
+                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty),
               let pipeline = renderPipeline else { return }
 
         // Index every layer because scripts can control a different layer's video by name.
@@ -338,7 +339,11 @@ extension WPEMetalSceneRenderer {
         }
         // 3. Seed text scripts in object order because later scripts may consume shared state.
         for object in textObjects {
-            textScriptInstances[object.id]?.seedAsyncTick()
+            guard let instance = textScriptInstances[object.id] else { continue }
+            instance.seedAsyncTick()
+            if let output = instance.takeLayerOutput() {
+                applyLayerScriptOutput(output, ownObjectID: object.id)
+            }
         }
         // Effect constants BEFORE visibility gates: a gate reads what a constant script writes into `shared`, so seeding them out of order would leave the gate reading `undefined` and the first frame would render with every arm of the cycle closed.
         for (_, instance) in effectConstantScriptInstances
@@ -940,11 +945,22 @@ extension WPEMetalSceneRenderer {
 
     private func applyLayerScriptState(_ state: WPELayerScriptState, objectID: String) {
         // A hidden ancestor always wins — the script runtime's `getParent()` is an always-visible stub, so a dock script gating on `parent.visible` cannot otherwise hide itself. Walk the chain live so a runtime ancestor toggle is respected, not snapshotted.
+        // Text objects draw from the text maps, which also win the merge over the layer maps.
+        let isText = liveTextVisibility[objectID] != nil
         if state.visibleAssigned {
-            liveLayerVisibility[objectID] = state.visible && ancestorChainVisible(objectID)
+            let visible = state.visible && ancestorChainVisible(objectID)
+            if isText {
+                liveTextVisibility[objectID] = visible
+            } else {
+                liveLayerVisibility[objectID] = visible
+            }
         }
         if state.alphaAssigned {
-            liveLayerAlpha[objectID] = state.alpha
+            if isText {
+                liveTextAlpha[objectID] = state.alpha
+            } else {
+                liveLayerAlpha[objectID] = state.alpha
+            }
         }
         sceneScriptVideoCommandBuffer.enqueue(state.videoCommands, objectID: objectID)
     }

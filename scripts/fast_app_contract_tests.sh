@@ -279,6 +279,8 @@ SERIAL_SUITES=(
   HTMLWallpaperRuntimeScriptTests
   WPEHoverHitRectTests
   WorkshopFolderImportCoordinatorTests
+  WPELocalCopySupersedeTests
+  WorkshopMutationGateTests
   WorkshopDownloadReadinessTests
   WallpaperEnginePackageTests
   # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated

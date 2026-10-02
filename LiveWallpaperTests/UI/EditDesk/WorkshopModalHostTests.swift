@@ -11,13 +11,15 @@ extension DeferredWallpaperApplying: WorkshopApplyTargetSelecting {}
 @MainActor
 private final class FakeWorkshopDownloads {
     private(set) var startCount = 0
+    private(set) var replacements: [WPEHistoryEntry?] = []
     private(set) var cancelledItems: [UInt64] = []
     private var attempts: [UInt64: WorkshopDownloadAttempt] = [:]
 
     /// Mirrors `WorkshopDownloadCoordinator.download`: a second press while one is in flight hands
     /// back the attempt already running.
-    func start(_ itemID: UInt64) -> WorkshopDownloadAttempt? {
+    func start(_ itemID: UInt64, replacing: WPEHistoryEntry?) -> WorkshopDownloadAttempt? {
         startCount += 1
+        replacements.append(replacing)
         if let existing = attempts[itemID] {
             return existing
         }
@@ -36,7 +38,7 @@ private final class FakeWorkshopDownloads {
     }
 
     var services: WorkshopModalWiring.Downloads {
-        .init(start: { [self] in start($0) }, active: { [self] in active($0) }, cancel: { [self] in cancel($0) })
+        .init(start: { [self] in start($0, replacing: $1) }, active: { [self] in active($0) }, cancel: { [self] in cancel($0) })
     }
 }
 
@@ -115,6 +117,15 @@ struct WorkshopModalHostTests {
         #expect(ticket?.state == .invalidated(.cancelled), "Save only drops the queued apply")
         #expect(downloads.cancelledItems.isEmpty, "Save only leaves the download running")
         #expect(downloads.active(42) != nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func approvedLocalCopyReachesTheDownloadItStarts() {
+        let wiring = wiring()
+        wiring.applyWhenDownloaded(itemID: 42, to: manager.first.id, replacing: manager.entry)
+        wiring.saveOnly(itemID: 43, replacing: manager.entry)
+        wiring.saveOnly(itemID: 44)
+        #expect(downloads.replacements == [manager.entry, manager.entry, nil])
     }
 
     @Test(.timeLimit(.minutes(1)))

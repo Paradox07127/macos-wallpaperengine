@@ -261,6 +261,12 @@ extension ScreenManager {
             sceneCompletion?(.ready, nil)
             return nil
         }
+        #if !LITE_BUILD
+        if let deferred = deferSessionDuringWorkshopMutation(for: screen, configuration: configuration, beforeCommit: beforeCommit) {
+            sceneCompletion?(deferred, nil)
+            return nil
+        }
+        #endif
 
         switch definition {
         case .video:

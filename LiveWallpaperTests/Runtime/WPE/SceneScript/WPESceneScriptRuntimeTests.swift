@@ -2672,6 +2672,23 @@ export function init(value) {
         #expect(ticked.own.alpha == 0.5)
     }
 
+    @Test("A text value script init that hides another layer keeps the write and keeps update running", arguments: [
+        "",
+        " throw 1;",
+    ])
+    func textInitHidesAnotherLayer(initTail: String) throws {
+        let script = """
+        export function init() { thisScene.getLayer('B').visible = false;\(initTail) }
+        export function update() { return 'B=' + thisScene.getLayer('B').visible; }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        let hidden = try #require(instance.takeLayerOutput()?.others["B"])
+        #expect(hidden.visibleAssigned)
+        #expect(hidden.visible == false)
+        #expect(instance.tickString(runtimeSeconds: 0.1) == "B=false")
+        #expect(instance.takeLayerOutput()?.others["B"]?.visible == false)
+    }
+
     @Test("getLayer transform assignment reaches the caller as a cross-layer mutation")
     func getLayerTransformAssignmentIsRecorded() throws {
         let script = """

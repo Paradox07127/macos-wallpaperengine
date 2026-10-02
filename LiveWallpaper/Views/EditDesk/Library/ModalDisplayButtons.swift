@@ -144,7 +144,7 @@ struct ModalDisplayButtons: View {
         } else if target.isApplied {
             Text("Applied")
         } else {
-            Text("")
+            Text(verbatim: "")
         }
     }
 }
