@@ -43,20 +43,22 @@ final class WPETextGlyphAtlas {
 
     /// `cell` is the glyph's own integral raster box around its pen — origin is the pen→bearing offset, size the cell size. Placement stays in the mesh.
     func entry(glyph: CGGlyph, font: CTFont, cell: CGRect) -> Entry? {
-        let width = Int(cell.width)
-        let height = Int(cell.height)
-        // +1: the allocator reserves a 1px isolation strip, so the largest representable glyph is pageSize−1.
-        guard width > 0, height > 0, width + 1 <= pageSize, height + 1 <= pageSize else {
-            if width > 0, height > 0, loggedOversizedDrop == false {
+        // Bounded on CGFloat before Int(): pointsize has no upper clamp, so the cell can be NaN/inf/past Int and trap.
+        // < pageSize: the allocator reserves a 1px isolation strip, so the largest representable glyph is pageSize−1.
+        guard cell.width < CGFloat(pageSize), cell.height < CGFloat(pageSize) else {
+            if cell.width >= 1, cell.height >= 1, loggedOversizedDrop == false {
                 loggedOversizedDrop = true
                 Logger.warning(
-                    "Text glyph \(glyph) (\(width)x\(height)px) exceeds the \(pageSize)px atlas page and was dropped",
+                    "Text glyph \(glyph) (\(cell.width)x\(cell.height)px) exceeds the \(pageSize)px atlas page and was dropped",
                     category: .wpeRender
                 )
             }
             return nil
         }
-        let key = Key(fontID: fontIdentifier(font), glyph: glyph, width: width, height: height)
+        let width = Int(cell.width)
+        let height = Int(cell.height)
+        guard width > 0, height > 0, let fontID = fontIdentifier(font) else { return nil }
+        let key = Key(fontID: fontID, glyph: glyph, width: width, height: height)
         if let cached = entries[key] { return cached }
         guard let coverage = rasterize(glyph: glyph, font: font, cell: cell, width: width, height: height),
               let slot = allocate(width: width + 1, height: height + 1) else { return nil }
@@ -184,10 +186,14 @@ final class WPETextGlyphAtlas {
         return true
     }
 
-    private func fontIdentifier(_ font: CTFont) -> String {
-        if let cached = fontIDs[font] { return cached }
+    /// nil = point size is NaN/inf or outside Int range; the glyph is dropped.
+    private func fontIdentifier(_ font: CTFont) -> String? {
+        if let cached = fontIDs[font] {
+            return cached
+        }
+        guard let size = Int(exactly: CTFontGetSize(font).rounded()) else { return nil }
         let psName = CTFontCopyPostScriptName(font) as String
-        let id = "\(psName)|\(Int(CTFontGetSize(font).rounded()))"
+        let id = "\(psName)|\(size)"
         fontIDs[font] = id
         return id
     }
