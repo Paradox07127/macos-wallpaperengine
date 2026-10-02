@@ -6,8 +6,10 @@ import LiveWallpaperCore
 extension PlaybackCoordinator {
     // MARK: - Video session lifecycle
 
-    func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) {
-        guard isRuntimeInstallationAllowed() else { return }
+    /// Returns true when the screen's existing player was kept; its play state is left untouched.
+    @discardableResult
+    func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) -> Bool {
+        guard isRuntimeInstallationAllowed() else { return false }
         Logger.notice("Setting video for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
 
         let existing = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
@@ -47,7 +49,7 @@ extension PlaybackCoordinator {
                 }
             )
             reportRuntimeError(screen.id, nil)
-            return
+            return true
         }
 
         let screenID = screen.id
@@ -122,6 +124,7 @@ extension PlaybackCoordinator {
             }
         }
         transition.setValidationTask(task, for: screenID)
+        return false
     }
 
     func applyConfiguration(

@@ -14,12 +14,13 @@ extension ScreenManager {
         automationCoordinator.resetRotationClock(for: screen.id)
         persistUserPause(false, for: screen)
         recordBookmarkDisplayName(bookmarkData, name: url.lastPathComponent)
-        playbackCoordinator.setVideo(
+        let keptSession = playbackCoordinator.setVideo(
             url: url,
             bookmarkData: bookmarkData,
             packageEntryName: packageEntryName,
             for: screen
         )
+        if keptSession { playReusedSession(on: screen) }
     }
 
     @discardableResult
@@ -482,7 +483,7 @@ extension ScreenManager {
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
         persistUserPause(false, for: screen)
-        htmlCoordinator.setWallpaper(
+        let keptSession = htmlCoordinator.setWallpaper(
             source: source,
             config: config,
             forceReload: forceReload,
@@ -490,6 +491,7 @@ extension ScreenManager {
             wpeOrigin: wpeOrigin,
             for: screen
         )
+        if keptSession { playReusedSession(on: screen) }
     }
 
     func setHTMLWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
@@ -497,7 +499,9 @@ extension ScreenManager {
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
         persistUserPause(false, for: screen)
-        htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen)
+        if htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen) {
+            playReusedSession(on: screen)
+        }
     }
 
     func updateHTMLConfig(_ config: HTMLConfig, for screen: Screen) {
