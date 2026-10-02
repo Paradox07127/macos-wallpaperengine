@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -331,6 +332,23 @@ struct ConfigurationPorterTests {
         let restored = manager.loadGlobalSettings()
         #expect(restored.pausedDisplayKeys == ["A"], "the backup's paused displays replaced this machine's")
         #expect(restored.pauseOnFullScreen == imported.pauseOnFullScreen, "the other global settings were not restored")
+    }
+
+    @Test("Importing global settings announces the Workshop history it brought in")
+    func importAnnouncesWPEHistory() {
+        let manager = SettingsManager.shared
+        let previous = manager.loadGlobalSettings()
+        defer { manager.saveGlobalSettings(previous) }
+        var imported = previous
+        imported.recentWPEImports = []
+        var announcedHistory: [[WPEHistoryEntry]] = []
+        let observer = NotificationCenter.default.publisher(for: .wpeHistoryDidChange)
+            .sink { _ in announcedHistory.append(manager.loadGlobalSettings().recentWPEImports) }
+        defer { observer.cancel() }
+
+        ConfigurationPorter.apply(ConfigurationBundle(globalSettings: imported))
+
+        #expect(announcedHistory.contains([]), "the imported history went unannounced, so nothing re-checks it")
     }
 
     private func makeTempDirectory() throws -> URL {

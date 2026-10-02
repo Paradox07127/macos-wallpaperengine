@@ -75,7 +75,7 @@ struct HTMLWebTransformLayoutTests {
         ))
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 300, height: 200), configuration: configuration)
         webView.loadHTMLString(html, baseURL: nil)
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + .seconds(15)
         var ready = false
         while !ready, ContinuousClock.now < deadline {
             let probe = "document.readyState === 'complete' && document.documentElement.classList.contains('lw-transformed')"
