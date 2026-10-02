@@ -388,6 +388,7 @@ final class ScreenManager {
             }
             .store(in: &cleanupTasks)
 
+        observeVolumeMounts()
         #if !LITE_BUILD
         observeWorkshopRepositoryMutations()
         #endif
