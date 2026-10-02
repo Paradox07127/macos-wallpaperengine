@@ -185,6 +185,41 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(await gate.entries == 1)
     }
 
+    @Test("A rescan of a library past 200 items imports nothing new", .timeLimit(.minutes(1)))
+    func rescanOfLargeLibraryKeepsEveryItem() async throws {
+        let itemCount = 201
+        let steam = try SteamDownloads(itemCount: itemCount)
+        defer { steam.discard() }
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.LargeLibraryScan")
+        defer { defaults.discard() }
+        let root = steam.root.appendingPathComponent("settings")
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults.defaults)
+        defer { await TestScratch.discard(root, flushing: manager) }
+        let toastCenter = WorkshopToastCenter()
+        // Real bookmarks: the scan only counts an item as known when its source bookmark resolves.
+        let coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
+            settings: manager,
+            toastCenter: toastCenter
+        )
+
+        await coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(toastCenter.lastEvent?.message == WorkshopFolderImportCoordinator.syncSummary(added: itemCount, repaired: 0))
+        let firstToast = toastCenter.lastEvent?.token
+        let firstImportedAt = Dictionary(
+            uniqueKeysWithValues: manager.loadGlobalSettings().recentWPEImports.map { ($0.origin.workshopID, $0.importedAt) }
+        )
+
+        await coordinator.ingestExistingDownloads(using: steam.doctor)
+        let recent = manager.loadGlobalSettings().recentWPEImports
+        #expect(toastCenter.lastEvent?.token == firstToast, "the second scan re-imported items it had already imported")
+        #expect(recent.count == itemCount)
+        #expect(firstImportedAt.count == itemCount)
+        for entry in recent {
+            #expect(entry.importedAt == firstImportedAt[entry.origin.workshopID], "item \(entry.origin.workshopID) was re-imported")
+        }
+    }
+
     @Test("Completed wallpaper and preset imports survive the final flush", .timeLimit(.minutes(1)))
     func completedImportsRemainDurable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderSaved-\(UUID())")
@@ -305,21 +340,24 @@ private func writePresetProject(at folder: URL) throws {
     try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
 }
 
-/// A scratch Steam library holding one downloaded video item, and a doctor bound to it.
+/// A scratch Steam library holding downloaded video items, and a doctor bound to it.
 @MainActor
 private struct SteamDownloads {
     let root: URL
     let suite: TestScratch.DefaultsSuite
     let doctor: SteamCMDDoctorService
 
-    init(function: String = #function) throws {
+    init(itemCount: Int = 1, function: String = #function) throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkshopFolderImportCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
-        let itemID = String(UInt64.random(in: 9_000_000_000 ... 9_999_999_999))
-        try writeVideoProject(
-            at: SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(itemID, isDirectory: true),
-            workshopID: itemID
-        )
+        let firstID = UInt64.random(in: 9_000_000_000 ... 9_899_999_999)
+        for offset in 0 ..< UInt64(itemCount) {
+            let itemID = String(firstID + offset)
+            try writeVideoProject(
+                at: SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(itemID, isDirectory: true),
+                workshopID: itemID
+            )
+        }
         suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.WorkshopFolderImportCoordinator", function: function)
         doctor = SteamCMDDoctorService(defaults: suite.defaults)
         doctor.workdirBookmarkData = try root.bookmarkData()

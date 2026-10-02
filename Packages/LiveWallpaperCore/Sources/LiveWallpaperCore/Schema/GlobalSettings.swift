@@ -22,7 +22,7 @@ public struct GlobalSettings: Codable, Sendable {
 
     /// `nil` value = unbound; missing key = platform default binding.
     public var globalShortcuts: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?]
-    /// LRU recent WPE imports (cap `SettingsManager.maxRecentWPEImports`); newest first.
+    /// Imported WPE items; newest first.
     public var recentWPEImports: [WPEHistoryEntry] = []
     /// Workshop IDs excluded from auto re-import after explicit deletion.
     public var deletedWorkshopIDs: [String] = []

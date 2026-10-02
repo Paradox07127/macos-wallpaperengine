@@ -121,20 +121,19 @@ struct WPEHistoryTests {
         #expect(recent.map { $0.sizeBytes != nil } == [false, true])
     }
 
-    @Test("Caps at maxRecentWPEImports, dropping the oldest")
-    func capsAtMaxRecentImports() throws {
+    @Test("Keeps every import past 200, newest first")
+    func keepsEveryImportNewestFirst() throws {
         withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
-            let cap = SettingsManager.maxRecentWPEImports
-            let total = cap + 5
+            let total = 201
             for index in 0..<total {
                 manager.recordWPEImport(makeEntry("\(index)"))
             }
 
             let ids = manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID)
-            #expect(ids.count == cap)
+            #expect(ids.count == total)
             #expect(ids.first == "\(total - 1)")
-            #expect(ids.last == "5")
+            #expect(ids.last == "0")
         }
     }
 

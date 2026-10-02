@@ -410,10 +410,7 @@ final class SettingsManager {
         saveGlobalSettings(settings)
     }
 
-    // MARK: - Wallpaper Engine History (managed library, LRU-bounded)
-
-    /// Upper bound on the managed library.
-    static let maxRecentWPEImports = 200
+    // MARK: - Wallpaper Engine History (managed library)
 
     /// clearsDeleteTombstone: pass true only for an explicit user re-acquire (Browse re-download, a pasted-link download, or picking a library folder with the toolbar's add button).
     func recordWPEImport(
@@ -447,9 +444,6 @@ final class SettingsManager {
         }
         var recent = settings.recentWPEImports.filter { !isSameItem($0) }
         recent.insert(entry, at: 0)
-        if recent.count > Self.maxRecentWPEImports {
-            recent = Array(recent.prefix(Self.maxRecentWPEImports))
-        }
         settings.recentWPEImports = recent
         if clearsDeleteTombstone {
             settings.deletedWorkshopIDs.removeAll { $0 == entry.origin.workshopID }
