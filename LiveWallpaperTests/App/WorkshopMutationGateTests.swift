@@ -6,8 +6,11 @@ import LiveWallpaperCore
 import Testing
 
 @MainActor
-@Suite("Workshop shared-repository mutation gate")
+@Suite("Workshop shared-repository mutation gate", .serialized)
 struct WorkshopMutationGateTests {
+    private let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("gate-\(UUID().uuidString)", isDirectory: true)
+
     private func makeManager() -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
@@ -20,8 +23,19 @@ struct WorkshopMutationGateTests {
         ))
     }
 
+    /// Steam names Workshop folders by a numeric id; `steamFolderItemID` ignores anything else.
     private static func uniqueID() -> String {
-        "gate-\(UUID().uuidString)"
+        String(UInt64.random(in: 1_000_000_000 ... 9_999_999_999))
+    }
+
+    private func folder(_ relativePath: String) throws -> URL {
+        let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    private func steamFolder(_ folderID: String) throws -> URL {
+        try folder("steamapps/workshop/content/431960/\(folderID)")
     }
 
     private static func descriptor(_ workshopID: String) -> SceneDescriptor {
@@ -33,25 +47,27 @@ struct WorkshopMutationGateTests {
         )
     }
 
-    private static func origin(_ workshopID: String, dependencies: [String] = []) -> WPEOrigin {
-        WPEOrigin(
+    /// `source` nil = the item's own Steam Workshop folder.
+    private func origin(
+        _ workshopID: String,
+        source: URL? = nil,
+        type: WPEType = .scene,
+        dependencies: [String] = []
+    ) throws -> WPEOrigin {
+        try WPEOrigin(
             workshopID: workshopID,
             title: workshopID,
-            originalType: .scene,
-            sourceFolderBookmark: Data(),
+            originalType: type,
+            sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: source ?? steamFolder(workshopID))),
             cacheRelativePath: "wpe-cache/\(workshopID)",
             previewFileName: nil,
             dependencyWorkshopIDs: dependencies
         )
     }
 
-    private static func sceneConfiguration(
-        _ workshopID: String,
-        dependencies: [String] = [],
-        for screenID: CGDirectDisplayID
-    ) -> ScreenConfiguration {
-        var configuration = ScreenConfiguration(screenID: screenID, wallpaper: .scene(descriptor(workshopID)))
-        configuration.wpeOrigin = origin(workshopID, dependencies: dependencies)
+    private static func sceneConfiguration(_ origin: WPEOrigin, for screenID: CGDirectDisplayID) -> ScreenConfiguration {
+        var configuration = ScreenConfiguration(screenID: screenID, wallpaper: .scene(descriptor(origin.workshopID)))
+        configuration.wpeOrigin = origin
         return configuration
     }
 
@@ -65,8 +81,9 @@ struct WorkshopMutationGateTests {
         await Task.yield()
     }
 
+    /// `playing` nil = no saved configuration; otherwise the display is saved as showing that scene item.
     private func withScreen(
-        configuration: ((CGDirectDisplayID) -> ScreenConfiguration)?,
+        playing origin: WPEOrigin? = nil,
         _ body: (ScreenManager, Screen) async throws -> Void
     ) async rethrows {
         guard let nsScreen = NSScreen.screens.first else {
@@ -78,21 +95,24 @@ struct WorkshopMutationGateTests {
         defer {
             screen.resetRuntimeSession()
             SettingsManager.shared.replaceAllConfigurations(original)
+            try? FileManager.default.removeItem(at: root)
         }
-        SettingsManager.shared.replaceAllConfigurations(configuration.map { [$0(screen.id)] } ?? [])
+        SettingsManager.shared.replaceAllConfigurations(origin.map { [Self.sceneConfiguration($0, for: screen.id)] } ?? [])
         let manager = makeManager()
         manager.screens = [screen]
         try await body(manager, screen)
+        manager.bumpTransition(for: screen.id)
         await Self.drainMainQueue()
     }
 
     @Test("Applying an item while it is being rewritten saves it, builds no session, and reloads after the rewrite")
-    func applyDuringMutationIsDeferredUntilDidMutate() async {
+    func applyDuringMutationIsDeferredUntilDidMutate() async throws {
         let itemID = Self.uniqueID()
-        await withScreen(configuration: nil) { manager, screen in
+        let origin = try origin(itemID)
+        await withScreen { manager, screen in
             Self.post(.workshopItemWillMutate, itemID)
 
-            manager.setSceneWallpaper(descriptor: Self.descriptor(itemID), origin: Self.origin(itemID), for: screen)
+            manager.setSceneWallpaper(descriptor: Self.descriptor(itemID), origin: origin, for: screen)
 
             #expect(screen.runtimeSession == nil)
             #expect(manager.wallpaperLoads.attempt(for: screen) == nil)
@@ -107,13 +127,10 @@ struct WorkshopMutationGateTests {
     }
 
     @Test("A scene that depends on the rewritten item is suspended and reloaded with it")
-    func dependentSceneIsSuspendedAndReloaded() async {
+    func dependentSceneIsSuspendedAndReloaded() async throws {
         let dependencyID = Self.uniqueID()
-        let sceneID = Self.uniqueID()
-        let configuration: (CGDirectDisplayID) -> ScreenConfiguration = {
-            Self.sceneConfiguration(sceneID, dependencies: [dependencyID], for: $0)
-        }
-        await withScreen(configuration: configuration) { manager, screen in
+        let origin = try origin(Self.uniqueID(), dependencies: [dependencyID])
+        await withScreen(playing: origin) { manager, screen in
             screen.installRuntimeSession(GateFakeRuntimeSession())
 
             Self.post(.workshopItemWillMutate, dependencyID)
@@ -128,11 +145,12 @@ struct WorkshopMutationGateTests {
     }
 
     @Test("A display switched to another wallpaper during the rewrite is not switched back")
-    func switchAwayDuringMutationIsKept() async {
+    func switchAwayDuringMutationIsKept() async throws {
         let itemID = Self.uniqueID()
-        await withScreen(configuration: nil) { manager, screen in
+        let origin = try origin(itemID)
+        await withScreen { manager, screen in
             Self.post(.workshopItemWillMutate, itemID)
-            manager.setSceneWallpaper(descriptor: Self.descriptor(itemID), origin: Self.origin(itemID), for: screen)
+            manager.setSceneWallpaper(descriptor: Self.descriptor(itemID), origin: origin, for: screen)
 
             let replacement = ScreenConfiguration(screenID: screen.id, wallpaper: .video(bookmarkData: Data([0xC0, 0xDE])))
             manager.saveConfiguration(replacement)
@@ -141,6 +159,105 @@ struct WorkshopMutationGateTests {
 
             #expect(manager.wallpaperLoads.attempt(for: screen) == nil)
             #expect(manager.configurationStore.get(for: screen.id)?.activeWallpaper == replacement.activeWallpaper)
+        }
+    }
+
+    @Test("A local copy that shares the rewritten item's manifest id keeps playing")
+    func localCopyIsNotSuspended() async throws {
+        let itemID = Self.uniqueID()
+        let origin = try origin(itemID, source: folder("Wallpapers/\(itemID)"))
+        await withScreen(playing: origin) { manager, screen in
+            screen.installRuntimeSession(GateFakeRuntimeSession())
+
+            Self.post(.workshopItemWillMutate, itemID)
+
+            #expect(screen.runtimeSession != nil)
+            #expect(manager.workshopMutationSuspendedScreenIDs[itemID]?.contains(screen.id) != true)
+
+            Self.post(.workshopItemDidMutate, itemID)
+        }
+    }
+
+    @Test("An item whose Steam folder id differs from its manifest id is suspended when that folder is rewritten")
+    func steamFolderIDIsMatched() async throws {
+        let manifestID = Self.uniqueID()
+        let folderID = Self.uniqueID()
+        let origin = try origin(manifestID, source: steamFolder(folderID))
+        await withScreen(playing: origin) { manager, screen in
+            screen.installRuntimeSession(GateFakeRuntimeSession())
+
+            Self.post(.workshopItemWillMutate, folderID)
+
+            #expect(screen.runtimeSession == nil)
+            #expect(manager.workshopMutationSuspendedScreenIDs[folderID]?.contains(screen.id) == true)
+
+            Self.post(.workshopItemDidMutate, folderID)
+
+            #expect(manager.wallpaperLoads.attempt(for: screen) != nil)
+        }
+    }
+
+    @Test(
+        "An automatic video switch to an item being rewritten builds no player, saves the switch, and reloads after",
+        .timeLimit(.minutes(1))
+    )
+    func videoSwitchDuringMutationIsDeferred() async throws {
+        let itemID = Self.uniqueID()
+        let video = try steamFolder(itemID).appendingPathComponent("video.mp4")
+        try Data([0x00]).write(to: video)
+        let bookmark = try #require(ResourceUtilities.createBookmark(for: video))
+        let origin = try origin(itemID, type: .video)
+        await withScreen { manager, screen in
+            var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: bookmark)
+            configuration.wpeOrigin = origin
+            Self.post(.workshopItemWillMutate, itemID)
+
+            var result: WallpaperPreparationResult?
+            manager.playbackCoordinator.setupVideoPlayback(
+                url: video, screen: screen, proposedConfiguration: configuration, completion: { result = $0 }
+            )
+
+            #expect(result == .ready, "a player was built for a file SteamCMD is rewriting")
+            #expect(screen.runtimeSession == nil)
+            #expect(manager.configurationStore.get(for: screen.id)?.wpeOrigin == origin)
+            #expect(manager.workshopMutationSuspendedScreenIDs[itemID]?.contains(screen.id) == true)
+
+            let parked = manager.bumpTransition(for: screen.id)
+            Self.post(.workshopItemDidMutate, itemID)
+
+            #expect(!manager.isCurrentTransition(parked, for: screen.id), "the parked video was not reloaded")
+        }
+    }
+
+    @Test(
+        "A scene still preparing when its item starts rewriting is cancelled and prepared again after the rewrite",
+        .timeLimit(.minutes(1))
+    )
+    func preparingCandidateIsCancelledAndRetried() async throws {
+        let itemID = Self.uniqueID()
+        let origin = try origin(itemID)
+        await withScreen { manager, screen in
+            let attemptID = manager.wallpaperLoads.begin(for: screen, title: itemID, origin: origin)
+            manager.wallpaperLoads.update(attemptID, for: screen) {
+                $0.configuration = Self.sceneConfiguration(origin, for: screen.id)
+                $0.phase = .preparing
+            }
+            let candidate = Task<Void, Never> { try? await Task.sleep(for: .seconds(30)) }
+            let work = RuntimePreparationWork()
+            work.task = candidate
+            _ = manager.transitionRegistry.setRuntimePreparation(work, for: screen.id)
+
+            Self.post(.workshopItemWillMutate, itemID)
+
+            #expect(candidate.isCancelled)
+            #expect(manager.configurationStore.get(for: screen.id) == nil)
+            #expect(manager.workshopMutationSuspendedScreenIDs[itemID]?.contains(screen.id) == true)
+
+            Self.post(.workshopItemDidMutate, itemID)
+
+            let retried = manager.wallpaperLoads.attempt(for: screen)
+            #expect(retried?.id != attemptID)
+            #expect(retried?.origin?.workshopID == itemID)
         }
     }
 }

@@ -48,6 +48,8 @@ final class PlaybackCoordinator {
     let isGloballyEnabled: @MainActor () -> Bool
     let isRuntimeInstallationAllowed: @MainActor () -> Bool
     let claimOpening: @MainActor (CGDirectDisplayID) -> WallpaperOpeningEffect?
+    /// Commits the configuration and parks the screen when it reads a Workshop item being rewritten; nil = not gated, open the file.
+    let deferDuringWorkshopMutation: @MainActor (Screen, ScreenConfiguration, @MainActor () -> Bool) -> WallpaperPreparationResult?
 
     init(
         configurationStore: WallpaperConfigurationStore,
@@ -94,7 +96,8 @@ final class PlaybackCoordinator {
         originReconciler: any OriginReconciler,
         isGloballyEnabled: @MainActor @escaping () -> Bool = { true },
         isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true },
-        claimOpening: @MainActor @escaping (CGDirectDisplayID) -> WallpaperOpeningEffect? = { _ in nil }
+        claimOpening: @MainActor @escaping (CGDirectDisplayID) -> WallpaperOpeningEffect? = { _ in nil },
+        deferDuringWorkshopMutation: @MainActor @escaping (Screen, ScreenConfiguration, @MainActor () -> Bool) -> WallpaperPreparationResult? = { _, _, _ in nil }
     ) {
         self.configurationStore = configurationStore
         self.configurationCommands = configurationCommands
@@ -121,5 +124,6 @@ final class PlaybackCoordinator {
         self.isGloballyEnabled = isGloballyEnabled
         self.isRuntimeInstallationAllowed = isRuntimeInstallationAllowed
         self.claimOpening = claimOpening
+        self.deferDuringWorkshopMutation = deferDuringWorkshopMutation
     }
 }

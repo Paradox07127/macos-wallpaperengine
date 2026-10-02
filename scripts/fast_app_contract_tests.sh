@@ -188,7 +188,6 @@ PARALLEL_SUITES=(
   WallpaperAutomationSwitchGroupTests
   VolumeMountReloadTests
   PersistentUserPauseTests
-  WorkshopMutationGateTests
   HTMLWebTransformLayoutTests
   WPESceneModelSubmeshMaterialGraphTests
   WPEParticleSpawnFailureTests
@@ -280,6 +279,7 @@ SERIAL_SUITES=(
   WPEHoverHitRectTests
   WorkshopFolderImportCoordinatorTests
   WPELocalCopySupersedeTests
+  WorkshopMutationGateTests
   WorkshopDownloadReadinessTests
   WallpaperEnginePackageTests
   # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated

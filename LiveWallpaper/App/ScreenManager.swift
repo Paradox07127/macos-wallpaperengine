@@ -192,6 +192,13 @@ final class ScreenManager {
         },
         claimOpening: { [weak self] id in
             self?.openingBatch?.claim(id)
+        },
+        deferDuringWorkshopMutation: { [weak self] screen, configuration, beforeCommit in
+            #if LITE_BUILD
+            nil
+            #else
+            self?.deferSessionDuringWorkshopMutation(for: screen, configuration: configuration, beforeCommit: beforeCommit)
+            #endif
         }
     )
     #if !LITE_BUILD
@@ -374,6 +381,8 @@ final class ScreenManager {
     /// Only sessions Loomscreen actually stopped for an in-place Steam update
     /// are eligible for the matching post-update reload.
     @ObservationIgnored var workshopMutationSuspendedScreenIDs: [String: Set<CGDirectDisplayID>] = [:]
+    /// Candidates cancelled mid-preparation by a rewrite; `generation` is the cancelling transition, so a newer selection drops the retry.
+    @ObservationIgnored var workshopMutationParkedProposals: [CGDirectDisplayID: (generation: Int, configuration: ScreenConfiguration)] = [:]
     #endif
 
     // MARK: - Initialization

@@ -213,16 +213,26 @@ extension ScreenManager {
         // Fail closed if config revision advances while this candidate prepares.
         let expectedConfigurationRevision = configurationStore.revision(for: screen.id)
         var outgoingVideoPlayerAtCommit: WallpaperVideoPlayer?
+        var parkedForWorkshopMutation: WallpaperPreparationResult?
         let transactionalBeforeCommit: @MainActor () -> Bool = { [weak self] in
-            guard let self,
-                  self.commitPreparedAmbientConfiguration(
-                proposed: configuration,
-                effective: effectiveCommitConfiguration,
-                screenID: screen.id,
-                ownerCommit: beforeCommit
-            ) else {
+            guard let self else { return false }
+            let commit: @MainActor () -> Bool = {
+                self.commitPreparedAmbientConfiguration(
+                    proposed: configuration,
+                    effective: effectiveCommitConfiguration,
+                    screenID: screen.id,
+                    ownerCommit: beforeCommit
+                )
+            }
+            #if !LITE_BUILD
+            // A rewrite that began after this candidate started reading: park instead of installing; the bump keeps the veto from surfacing as a load error.
+            if let deferred = deferSessionDuringWorkshopMutation(for: screen, configuration: configuration, beforeCommit: commit) {
+                parkedForWorkshopMutation = deferred
+                bumpTransition(for: screen.id)
                 return false
             }
+            #endif
+            guard commit() else { return false }
             // Capture outgoing player in the same installRuntimeSession CAS turn.
             outgoingVideoPlayerAtCommit =
                 (expected as? VideoWallpaperSession)?.videoPlayer
@@ -235,6 +245,9 @@ extension ScreenManager {
             )
             afterCommit()
         }
+        let transactionalCompletion: WallpaperPreparationCompletion = { result, failure in
+            completion?(parkedForWorkshopMutation ?? result, parkedForWorkshopMutation == nil ? failure : nil)
+        }
         return beginPreparedAmbientSession(
             candidate,
             for: screen,
@@ -246,7 +259,7 @@ extension ScreenManager {
             timeout: timeout,
             beforeCommit: transactionalBeforeCommit,
             afterCommit: transactionalAfterCommit,
-            completion: completion
+            completion: transactionalCompletion
         )
     }
 }
