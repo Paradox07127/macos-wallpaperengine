@@ -420,10 +420,15 @@ extension ScreenManager {
             memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             isFrontmostExcludedByRule: frontmostExcluded,
-            // Video is the one session type with no load-shedding knob — for it
-            // the throttle tier must fall back to the pre-throttle suspend.
-            respondsToThermalThrottle: !(screen.runtimeSession is VideoWallpaperSession)
+            respondsToThermalThrottle: Self.respondsToThermalThrottle(screen.runtimeSession)
         )
+    }
+
+    // Only scene renderers consume the throttle tier (`applyAdaptiveFrameRate`); video and
+    // HTML have no frame-rate knob, so for them it must fall back to suspend.
+    static func respondsToThermalThrottle(_ session: (any WallpaperRuntimeSession)?) -> Bool {
+        !(session is VideoWallpaperSession
+            || (session as? AmbientWallpaperSession)?.wallpaperType == .html)
     }
 
     private func currentApplicationRuleActive(_ globalSettings: GlobalSettings) -> Bool {

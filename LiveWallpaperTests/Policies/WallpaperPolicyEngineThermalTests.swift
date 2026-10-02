@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -145,12 +146,66 @@ struct WallpaperPolicyEngineThermalTests {
         #expect(video.profile == .suspended)
         #expect(video.suspendReasons == [.thermal])
 
-        // Scene/HTML: they shed load themselves, so serious stays a throttle.
+        // Scene: it sheds load itself, so serious stays a throttle.
         let scene = WallpaperPolicyEngine.decision(
             inputs: .test(thermalState: .serious, respondsToThermalThrottle: true),
             settings: settings
         )
         #expect(scene.profile == .quality)
         #expect(scene.throttleReasons == [.thermal])
+    }
+
+    @MainActor
+    @Test("Serious heat suspends video and HTML sessions but only throttles a scene")
+    func seriousThermalDecisionPerSessionType() {
+        let settings = GlobalSettings()
+        let player = WallpaperVideoPlayer(
+            url: URL(fileURLWithPath: "/tmp/thermal-policy-\(UUID().uuidString).mov"),
+            frame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            loadImmediately: false
+        )
+        let video = VideoWallpaperSession(player: player)
+        let html = AmbientWallpaperSession(window: NSWindow(), wallpaperType: .html, performanceTarget: nil)
+        let scene = ThermalSceneStubSession()
+        defer {
+            video.cleanup()
+            html.cleanup()
+        }
+
+        func decision(for session: any WallpaperRuntimeSession) -> WallpaperPolicyDecision {
+            WallpaperPolicyEngine.decision(
+                inputs: .test(
+                    thermalState: .serious,
+                    respondsToThermalThrottle: ScreenManager.respondsToThermalThrottle(session)
+                ),
+                settings: settings
+            )
+        }
+
+        for (name, session) in [("video", video), ("html", html)] as [(String, any WallpaperRuntimeSession)] {
+            let result = decision(for: session)
+            #expect(result.profile == .suspended, "\(name) has no frame-rate knob, so serious heat must suspend it")
+            #expect(result.suspendReasons == [.thermal])
+        }
+
+        let sceneResult = decision(for: scene)
+        #expect(sceneResult.profile == .quality, "A scene sheds load by throttling and must keep playing")
+        #expect(sceneResult.throttleReasons == [.thermal])
+    }
+}
+
+@MainActor
+private final class ThermalSceneStubSession: WallpaperRuntimeSession {
+    let wallpaperType: WallpaperType = .scene
+    let summary: WallpaperSessionSummary = .notConfigured
+    let videoPlayer: WallpaperVideoPlayer? = nil
+    let wallpaperWindow: NSWindow? = nil
+    func show() {}
+    func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+    func updateFrame(to _: CGRect) {}
+    func cleanup() {}
+    func retry() async {}
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        .ready
     }
 }
