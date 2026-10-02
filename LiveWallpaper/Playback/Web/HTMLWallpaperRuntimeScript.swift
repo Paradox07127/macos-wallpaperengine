@@ -484,20 +484,28 @@ enum HTMLWallpaperRuntimeScript {
                 };
             };
 
+            // Only contexts we suspended get resumed: a page-suspended context is the page's own mute.
+            var __lwRuntimeSuspendedContexts__ = [];
             window.__lwSuspendAudioContexts__ = function () {
                 pruneAudioContexts();
                 for (var i = 0; i < __lwAudioContexts__.length; i++) {
                     var ctx = __lwAudioContexts__[i];
                     if (ctx && typeof ctx.suspend === 'function' && ctx.state === 'running') {
                         try { ctx.suspend(); } catch (e) {}
+                        if (__lwRuntimeSuspendedContexts__.indexOf(ctx) === -1) {
+                            __lwRuntimeSuspendedContexts__.push(ctx);
+                        }
                     }
                 }
             };
             window.__lwResumeAudioContexts__ = function () {
                 pruneAudioContexts();
-                for (var i = 0; i < __lwAudioContexts__.length; i++) {
-                    var ctx = __lwAudioContexts__[i];
-                    if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+                var owned = __lwRuntimeSuspendedContexts__;
+                __lwRuntimeSuspendedContexts__ = [];
+                for (var i = 0; i < owned.length; i++) {
+                    var ctx = owned[i];
+                    // No state check: suspend() settles async, so state may still read 'running' here.
+                    if (ctx && ctx.state !== 'closed' && typeof ctx.resume === 'function') {
                         try { ctx.resume(); } catch (e) {}
                     }
                 }

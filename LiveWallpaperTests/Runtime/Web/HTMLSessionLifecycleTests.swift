@@ -639,6 +639,44 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(context.evaluateScript("closed.listeners.length")?.toInt32() == 0)
     }
 
+    @Test("Resume leaves contexts the page suspended itself suspended")
+    func resumeSkipsPageSuspendedAudioContexts() throws {
+        let context = try makeAudioControllerContext()
+        context.evaluateScript("""
+        var pageMuted = new AudioContext();
+        pageMuted.destination;
+        var playing = new AudioContext();
+        playing.destination;
+        pageMuted.suspend();
+        window.__lwSuspendAudioContexts__();
+        var playingWhilePaused = playing.state;
+        window.__lwResumeAudioContexts__();
+        """)
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("playingWhilePaused")?.toString() == "suspended")
+        #expect(context.evaluateScript("pageMuted.state")?.toString() == "suspended")
+        #expect(context.evaluateScript("playing.state")?.toString() == "running")
+    }
+
+    @Test("Resume restores a context whose suspend has not settled yet")
+    func resumeRestoresContextBeforeSuspendSettles() throws {
+        let context = try makeAudioControllerContext()
+        context.evaluateScript("""
+        var pending = [];
+        var ctx = new AudioContext();
+        ctx.destination;
+        ctx.suspend = function () { var self = this; pending.push(function () { self.state = 'suspended'; }); };
+        ctx.resume = function () { var self = this; pending.push(function () { self.state = 'running'; }); };
+        window.__lwSuspendAudioContexts__();
+        window.__lwResumeAudioContexts__();
+        pending.forEach(function (settle) { settle(); });
+        """)
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("ctx.state")?.toString() == "running")
+    }
+
     @Test("A missed close notification is pruned while a pending close stays controlled")
     func closedAudioContextsArePrunedWithoutPrematurelyDroppingPendingClose() throws {
         let context = try makeAudioControllerContext()
