@@ -555,7 +555,9 @@ final class WallpaperAutomationOrchestrator {
     }
 
     private func startCoordinator(runInitialScheduleCheck: Bool) {
-        guard !isSuspendedForUserAbsence, automationAllowed() else {
+        // Already stopped by the suspend; a stop() here (wake refreshes screens first) would drop the frozen countdown.
+        guard !isSuspendedForUserAbsence else { return }
+        guard automationAllowed() else {
             cancelValidationTasks()
             automationCoordinator.stop()
             return
@@ -605,7 +607,7 @@ final class WallpaperAutomationOrchestrator {
     func suspendForUserAbsence() {
         guard !isSuspendedForUserAbsence else { return }
         isSuspendedForUserAbsence = true
-        automationCoordinator.stop()
+        automationCoordinator.suspendForUserAbsence(at: now())
         cancelValidationTasks()
         // Invalidate transition generations so in-flight prep handed off before absence is cancelled.
         for screen in screensProvider() {

@@ -13,6 +13,11 @@ final class WallpaperAutomationCoordinator {
     @ObservationIgnored private let tickStreamFactory: (() -> AsyncStream<Date>)?
     /// Manual-apply times per screen, folded into the task's rotation clock on the next tick.
     @ObservationIgnored private var pendingRotationResets: [CGDirectDisplayID: Date] = [:]
+    private typealias RotationSetting = (mode: WallpaperMode, minutes: Int)
+    @ObservationIgnored private var lastRotation: [CGDirectDisplayID: Date] = [:]
+    @ObservationIgnored private var rotationSettings: [CGDirectDisplayID: RotationSetting] = [:]
+    /// Countdown already elapsed per screen when the user went absent; the next task resumes from it. Any `stop()` drops it.
+    @ObservationIgnored private var frozenRotations: [CGDirectDisplayID: (setting: RotationSetting, elapsed: TimeInterval)] = [:]
     #if DEBUG
     private(set) var taskStartCountForTesting = 0
     #endif
@@ -69,6 +74,10 @@ final class WallpaperAutomationCoordinator {
         guard automationTask == nil else { return }
         // A reset recorded while idle predates this task's start time and would make the first tick rotate early.
         pendingRotationResets = [:]
+        lastRotation = [:]
+        rotationSettings = [:]
+        let frozen = frozenRotations
+        frozenRotations = [:]
 
         let generation = taskGeneration
         #if DEBUG
@@ -81,23 +90,30 @@ final class WallpaperAutomationCoordinator {
                 }
             }
 
-            var lastRotation: [CGDirectDisplayID: Date] = [:]
-            var rotationSettings: [CGDirectDisplayID: (mode: WallpaperMode, minutes: Int)] = [:]
+            var carried = frozen
+            func clockBase(for screenID: CGDirectDisplayID, at time: Date, _ setting: RotationSetting) -> Date {
+                guard let frozen = carried.removeValue(forKey: screenID), frozen.setting == setting else { return time }
+                return time.addingTimeInterval(-frozen.elapsed)
+            }
+
             // Real time starts at enable/resume, rather than one minute after the first tick.
-            if self?.tickStreamFactory == nil {
+            if let self, self.tickStreamFactory == nil {
                 let startTime = Date()
                 for screen in screens {
                     guard let config = configurationProvider(screen.id) else { continue }
                     let minutes = config.wallpaperMode == .libraryShuffle
                         ? config.libraryShuffleRotationMinutes : (config.playlistRotationMinutes ?? 0)
-                    lastRotation[screen.id] = startTime
-                    rotationSettings[screen.id] = (config.wallpaperMode, minutes)
+                    let setting = (mode: config.wallpaperMode, minutes: minutes)
+                    self.lastRotation[screen.id] = clockBase(for: screen.id, at: startTime, setting)
+                    self.rotationSettings[screen.id] = setting
                 }
             }
 
             @MainActor
             func processTick(at now: Date) -> Bool {
-                self?.currentTime = now
+                // A tick already resumed when stop() ran would write into the next task's clock.
+                guard let self, !Task.isCancelled else { return false }
+                self.currentTime = now
                 let screens = screenProvider()
                 let configurations = Dictionary(
                     uniqueKeysWithValues: screens.compactMap { screen in
@@ -120,8 +136,8 @@ final class WallpaperAutomationCoordinator {
                 }
 
                 let liveIDs = Set(screens.map(\.id))
-                lastRotation = lastRotation.filter { liveIDs.contains($0.key) }
-                rotationSettings = rotationSettings.filter { liveIDs.contains($0.key) }
+                self.lastRotation = self.lastRotation.filter { liveIDs.contains($0.key) }
+                self.rotationSettings = self.rotationSettings.filter { liveIDs.contains($0.key) }
                 for screen in screens {
                     guard let configuration = configurations[screen.id],
                           configuration.wallpaperMode == .libraryShuffle || configuration.effectiveWallpaperQueue.count > 1 else {
@@ -131,22 +147,23 @@ final class WallpaperAutomationCoordinator {
                     let rotationMinutes = configuration.wallpaperMode == .libraryShuffle
                         ? configuration.libraryShuffleRotationMinutes : (configuration.playlistRotationMinutes ?? 0)
                     guard rotationMinutes > 0 else {
-                        lastRotation[screen.id] = nil
-                        rotationSettings[screen.id] = nil
+                        self.lastRotation[screen.id] = nil
+                        self.rotationSettings[screen.id] = nil
                         continue
                     }
-                    if let resetAt = self?.pendingRotationResets.removeValue(forKey: screen.id) {
-                        lastRotation[screen.id] = resetAt
+                    if let resetAt = self.pendingRotationResets.removeValue(forKey: screen.id) {
+                        self.lastRotation[screen.id] = resetAt
                     }
-                    let previous = rotationSettings[screen.id]
-                    rotationSettings[screen.id] = (configuration.wallpaperMode, rotationMinutes)
+                    let previous = self.rotationSettings[screen.id]
+                    let setting = (mode: configuration.wallpaperMode, minutes: rotationMinutes)
+                    self.rotationSettings[screen.id] = setting
                     if previous?.mode != configuration.wallpaperMode || previous?.minutes != rotationMinutes {
-                        lastRotation[screen.id] = now
+                        self.lastRotation[screen.id] = clockBase(for: screen.id, at: now, setting)
                         continue
                     }
 
-                    guard let lastTime = lastRotation[screen.id] else {
-                        lastRotation[screen.id] = now
+                    guard let lastTime = self.lastRotation[screen.id] else {
+                        self.lastRotation[screen.id] = now
                         continue
                     }
 
@@ -155,7 +172,7 @@ final class WallpaperAutomationCoordinator {
                         lastRotation: lastTime,
                         rotationMinutes: rotationMinutes
                     ) {
-                        lastRotation[screen.id] = now
+                        self.lastRotation[screen.id] = now
                         // Advance deadline clock in schedule mode; rotate only in playlist.
                         if configuration.wallpaperMode == .playlist {
                             WallpaperSwitchGroup.$current.withValue(group) { playlistHandler(screen) }
@@ -189,10 +206,24 @@ final class WallpaperAutomationCoordinator {
         pendingRotationResets[screenID] = now
     }
 
+    /// Stops like `stop()`, but the next `start` resumes each screen's countdown from where it stood at `now`.
+    func suspendForUserAbsence(at now: Date = Date()) {
+        var frozen: [CGDirectDisplayID: (setting: RotationSetting, elapsed: TimeInterval)] = [:]
+        if automationTask != nil {
+            for (screenID, setting) in rotationSettings {
+                guard let base = pendingRotationResets[screenID] ?? lastRotation[screenID] else { continue }
+                frozen[screenID] = (setting, now.timeIntervalSince(base))
+            }
+        }
+        stop()
+        frozenRotations = frozen
+    }
+
     func stop() {
         taskGeneration &+= 1
         automationTask?.cancel()
         automationTask = nil
+        frozenRotations = [:]
     }
 
     deinit {
