@@ -97,15 +97,15 @@ final class WallpaperAutomationCoordinator {
             }
 
             // Real time starts at enable/resume, rather than one minute after the first tick.
-            if let self, self.tickStreamFactory == nil {
+            if let self, tickStreamFactory == nil {
                 let startTime = Date()
                 for screen in screens {
                     guard let config = configurationProvider(screen.id) else { continue }
                     let minutes = config.wallpaperMode == .libraryShuffle
                         ? config.libraryShuffleRotationMinutes : (config.playlistRotationMinutes ?? 0)
                     let setting = (mode: config.wallpaperMode, minutes: minutes)
-                    self.lastRotation[screen.id] = clockBase(for: screen.id, at: startTime, setting)
-                    self.rotationSettings[screen.id] = setting
+                    lastRotation[screen.id] = clockBase(for: screen.id, at: startTime, setting)
+                    rotationSettings[screen.id] = setting
                 }
             }
 
@@ -113,7 +113,7 @@ final class WallpaperAutomationCoordinator {
             func processTick(at now: Date) -> Bool {
                 // A tick already resumed when stop() ran would write into the next task's clock.
                 guard let self, !Task.isCancelled else { return false }
-                self.currentTime = now
+                currentTime = now
                 let screens = screenProvider()
                 let configurations = Dictionary(
                     uniqueKeysWithValues: screens.compactMap { screen in
@@ -136,8 +136,8 @@ final class WallpaperAutomationCoordinator {
                 }
 
                 let liveIDs = Set(screens.map(\.id))
-                self.lastRotation = self.lastRotation.filter { liveIDs.contains($0.key) }
-                self.rotationSettings = self.rotationSettings.filter { liveIDs.contains($0.key) }
+                lastRotation = lastRotation.filter { liveIDs.contains($0.key) }
+                rotationSettings = rotationSettings.filter { liveIDs.contains($0.key) }
                 for screen in screens {
                     guard let configuration = configurations[screen.id],
                           configuration.wallpaperMode == .libraryShuffle || configuration.effectiveWallpaperQueue.count > 1 else {
@@ -147,23 +147,23 @@ final class WallpaperAutomationCoordinator {
                     let rotationMinutes = configuration.wallpaperMode == .libraryShuffle
                         ? configuration.libraryShuffleRotationMinutes : (configuration.playlistRotationMinutes ?? 0)
                     guard rotationMinutes > 0 else {
-                        self.lastRotation[screen.id] = nil
-                        self.rotationSettings[screen.id] = nil
+                        lastRotation[screen.id] = nil
+                        rotationSettings[screen.id] = nil
                         continue
                     }
-                    if let resetAt = self.pendingRotationResets.removeValue(forKey: screen.id) {
-                        self.lastRotation[screen.id] = resetAt
+                    if let resetAt = pendingRotationResets.removeValue(forKey: screen.id) {
+                        lastRotation[screen.id] = resetAt
                     }
-                    let previous = self.rotationSettings[screen.id]
+                    let previous = rotationSettings[screen.id]
                     let setting = (mode: configuration.wallpaperMode, minutes: rotationMinutes)
-                    self.rotationSettings[screen.id] = setting
+                    rotationSettings[screen.id] = setting
                     if previous?.mode != configuration.wallpaperMode || previous?.minutes != rotationMinutes {
-                        self.lastRotation[screen.id] = clockBase(for: screen.id, at: now, setting)
+                        lastRotation[screen.id] = clockBase(for: screen.id, at: now, setting)
                         continue
                     }
 
-                    guard let lastTime = self.lastRotation[screen.id] else {
-                        self.lastRotation[screen.id] = now
+                    guard let lastTime = lastRotation[screen.id] else {
+                        lastRotation[screen.id] = now
                         continue
                     }
 
@@ -172,7 +172,7 @@ final class WallpaperAutomationCoordinator {
                         lastRotation: lastTime,
                         rotationMinutes: rotationMinutes
                     ) {
-                        self.lastRotation[screen.id] = now
+                        lastRotation[screen.id] = now
                         // Advance deadline clock in schedule mode; rotate only in playlist.
                         if configuration.wallpaperMode == .playlist {
                             WallpaperSwitchGroup.$current.withValue(group) { playlistHandler(screen) }
