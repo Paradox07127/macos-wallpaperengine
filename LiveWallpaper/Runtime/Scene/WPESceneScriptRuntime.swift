@@ -1060,7 +1060,7 @@ final class WPESceneScriptInstance {
             canvasSize: SIMD2<Double>?,
             screenSize: SIMD2<Double>?
         ) {
-            self.layerBridge = WPELayerScriptBridge(
+            layerBridge = WPELayerScriptBridge(
                 shared: shared,
                 initialVisible: true,
                 initialAlpha: 1,
@@ -1216,7 +1216,9 @@ final class WPESceneScriptInstance {
             let commit = acceptsCompletion()
             layerBridge.finishEvaluation(commit: commit)
             let output = layerBridge.readOutput()
-            if commit { layerOutputs.publishEvent(output) }
+            if commit {
+                layerOutputs.publishEvent(output)
+            }
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
@@ -1293,10 +1295,10 @@ final class WPESceneScriptInstance {
             if let shared { wpeInstallSharedState(shared, in: context) }
             context.exceptionHandler = { [weak self] _, ex in
                 guard let self else { return }
-                self.didThrow = true
-                self.layerBridge.failEvaluation()
-                guard !self.didLogException else { return }
-                self.didLogException = true
+                didThrow = true
+                layerBridge.failEvaluation()
+                guard !didLogException else { return }
+                didLogException = true
                 Logger.warning(
                     "Text SceneScript raised an uncaught JS exception — keeping last value; retries back off exponentially (logged once): \(ex?.toString() ?? "unknown")",
                     category: .wpeRender

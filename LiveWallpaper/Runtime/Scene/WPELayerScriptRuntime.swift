@@ -750,8 +750,8 @@ final class WPELayerScriptInstance {
             self.screenSize = SIMD2<Double>(max(screenSize.x, 1), max(screenSize.y, 1))
             self.outputMode = outputMode
             self.governor = governor
-            self.participant = governor.makeParticipant()
-            self.instanceLimitToken = shared?.sceneScriptLoadToken
+            participant = governor.makeParticipant()
+            instanceLimitToken = shared?.sceneScriptLoadToken
             super.init(
                 shared: shared,
                 initialVisible: initialVisible,
@@ -1523,8 +1523,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
         createdLayerBridge: WPECreatedLayerBridgeConfiguration?
     ) {
         self.shared = shared
-        self.initialOwnVisible = initialVisible
-        self.initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
+        initialOwnVisible = initialVisible
+        initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
         self.ownLayerName = ownLayerName
         self.ownObjectID = ownObjectID
         self.createdLayerBridge = createdLayerBridge
@@ -1567,7 +1567,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         context.setObject(layer, forKeyedSubscript: "thisLayer" as NSString)
         // Same handle under WPE's other name for it. thisObject is a real global rather than one author's invention — and it was undefined, so those scripts threw.
         context.setObject(layer, forKeyedSubscript: "thisObject" as NSString)
-        self.thisLayer = layer
+        thisLayer = layer
         installScene(in: context)
     }
 
@@ -1605,13 +1605,13 @@ class WPELayerScriptBridge: @unchecked Sendable {
             } else {
                 resolvedImage = requestedImage
             }
-            guard self.shared?.sceneScriptLoadToken?.admitCreatedLayer() ?? true else {
-                return self.neutralLayerStub(in: context)
+            guard shared?.sceneScriptLoadToken?.admitCreatedLayer() ?? true else {
+                return neutralLayerStub(in: context)
             }
-            let key = "\(Self.createdKeyPrefix)\(self.createdLayerCounter)"
-            let handle = self.makeLayerHandle(key: key, in: context)
-            self.createdLayerCounter += 1
-            self.createdLayers.append((key, handle))
+            let key = "\(Self.createdKeyPrefix)\(createdLayerCounter)"
+            let handle = makeLayerHandle(key: key, in: context)
+            createdLayerCounter += 1
+            createdLayers.append((key, handle))
             currentLayerOrder.append(key)
             if spec.isObject {
                 for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth"] {
@@ -1662,7 +1662,6 @@ class WPELayerScriptBridge: @unchecked Sendable {
         cameraBridge.install(on: scene, in: context)
         context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
         context.setObject(scene, forKeyedSubscript: "scene" as NSString)
-
     }
 
     fileprivate func layerKey(_ value: JSValue) -> String? {
@@ -1698,7 +1697,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     /// One handle per layer name for the scene's lifetime, so enumerateLayers and repeated getLayer calls hand back the same object.
     fileprivate func layerHandle(named name: String, in context: JSContext) -> JSValue {
-        if let existing = namedLayers[name] { return existing }
+        if let existing = namedLayers[name] {
+            return existing
+        }
         let handle = makeLayerHandle(key: name, in: context)
         namedLayers[name] = handle
         return handle
@@ -1737,8 +1738,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let parentName = info?.parentName
         let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self else { return nil }
-            guard let parentName, let context else { return self.neutralLayerStubCache }
-            return self.layerHandle(named: parentName, in: context)
+            guard let parentName, let context else { return neutralLayerStubCache }
+            return layerHandle(named: parentName, in: context)
         }
         handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
         let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
@@ -1762,7 +1763,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         for (method, command) in [
             ("play", WPELayerSoundCommand.play),
             ("stop", .stop),
-            ("pause", .pause)
+            ("pause", .pause),
         ] {
             let block: @convention(block) () -> Void = { [weak self] in
                 self?.soundIntent[layerName] = (command == .play)
@@ -1786,14 +1787,14 @@ class WPELayerScriptBridge: @unchecked Sendable {
     ) {
         let getVisible: @convention(block) () -> Bool = { [weak self] in
             guard let self else { return true }
-            return self.assignedVisible[key] ?? self.defaultVisible(forKey: key)
+            return assignedVisible[key] ?? defaultVisible(forKey: key)
         }
         let setVisible: @convention(block) (JSValue) -> Void = { [weak self] value in
             self?.assignedVisible[key] = value.toBool()
         }
         let getAlpha: @convention(block) () -> Double = { [weak self] in
             guard let self else { return 1 }
-            return self.assignedAlpha[key] ?? self.defaultAlpha(forKey: key)
+            return assignedAlpha[key] ?? defaultAlpha(forKey: key)
         }
         let setAlpha: @convention(block) (JSValue) -> Void = { [weak self] value in
             let scalar = value.toDouble()
@@ -1808,8 +1809,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
             guard let self else { return }
             let scalar = value.toDouble()
             guard scalar.isFinite else { return }
-            self.assignedSoundVolume[layerName] = scalar
-            self.shared?.enqueueSoundCommand(layer: layerName, .setVolume(scalar))
+            assignedSoundVolume[layerName] = scalar
+            shared?.enqueueSoundCommand(layer: layerName, .setVolume(scalar))
         }
         defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
         defineAccessor(on: handle, property: "alpha", get: getAlpha, set: setAlpha, in: context)
@@ -1998,7 +1999,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
     /// Neutral ancestor for `getParent()`: unit scale, visible, and self-returning
     /// `getParent()` so a `getParent().getParent()` chain terminates safely.
     fileprivate func neutralLayerStub(in context: JSContext) -> JSValue {
-        if let cached = neutralLayerStubCache { return cached }
+        if let cached = neutralLayerStubCache {
+            return cached
+        }
         let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         stub.setObject(true, forKeyedSubscript: "visible" as NSString)
         stub.setObject(1.0, forKeyedSubscript: "alpha" as NSString)
@@ -2026,7 +2029,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
     }
 
     fileprivate func neutralAnimationStub(in context: JSContext) -> JSValue {
-        if let cached = neutralAnimationStubCache { return cached }
+        if let cached = neutralAnimationStubCache {
+            return cached
+        }
         let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         let noop: @convention(block) () -> Void = {}
         let noop1: @convention(block) (JSValue) -> Void = { _ in }
@@ -2046,8 +2051,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate func makeVideoHandle(key: String, in context: JSContext) -> JSValue {
         let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         let append: @Sendable (WPELayerVideoCommand) -> Void = { [weak self] command in
-            guard let self, self.evaluationResourceBudget.admitVideoCommand() else { return }
-            self.pendingVideo[key, default: []].append(command)
+            guard let self, evaluationResourceBudget.admitVideoCommand() else { return }
+            pendingVideo[key, default: []].append(command)
         }
         let play: @convention(block) () -> Void = { append(.play) }
         let pause: @convention(block) () -> Void = { append(.pause) }
