@@ -162,7 +162,7 @@ final class WallpaperVideoPlayer {
     private var playbackSpeed: Double = 1
     private var hasRequestedPlaybackStart = false
     /// Outputs attached to a player item, owned so suspension/hibernation can release the conversion pool an output pins.
-    private var boundVideoOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
+    private(set) var boundVideoOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
     /// Warm suspend: paused with the decoded last frame still on the layer.
     private(set) var isSuspended = false
     /// Deep hibernation: player/looper/decode pool/`lwmem://` mapping released behind a captured still frame. A phase rather than a bool so a re-absence during a wake is not indistinguishable from "not hibernated".
@@ -1342,7 +1342,7 @@ final class WallpaperVideoPlayer {
         return nil
     }
 
-    private static func preferredTransform(of item: AVPlayerItem) async -> CGAffineTransform {
+    static func preferredTransform(of item: AVPlayerItem) async -> CGAffineTransform {
         guard let track = try? await item.asset.loadTracks(withMediaType: .video).first,
               let transform = try? await track.load(.preferredTransform) else { return .identity }
         return transform
@@ -1362,12 +1362,12 @@ final class WallpaperVideoPlayer {
 
     // MARK: - Video Output Ownership
 
-    private func bindVideoOutput(_ output: AVPlayerItemVideoOutput, to item: AVPlayerItem) {
+    func bindVideoOutput(_ output: AVPlayerItemVideoOutput, to item: AVPlayerItem) {
         item.add(output)
         boundVideoOutputs.append((item, output))
     }
 
-    private func unbindVideoOutput(_ output: AVPlayerItemVideoOutput, from item: AVPlayerItem) {
+    func unbindVideoOutput(_ output: AVPlayerItemVideoOutput, from item: AVPlayerItem) {
         guard let index = boundVideoOutputs.firstIndex(where: { $0.output === output }) else {
             // Already drained — removing twice is what this guard prevents.
             return
