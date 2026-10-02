@@ -106,6 +106,7 @@ extension WPEMetalRenderExecutor {
         linearPresentationTexture = nil
         previousFrameHistory = nil
         privateHistoryCandidates.removeAll()
+        swappedFBOBindings = nil
         reflectionSourceTexture = nil
         reflectionHistoryTexture = nil
         reflectionCaptureCache = nil
@@ -278,7 +279,9 @@ extension WPEMetalRenderExecutor {
         let items: [Item]
         /// Only explicit reads of private FBOs before their first write are temporal feedback.
         let attachmentPlan: WPEAttachmentPlan
-        var historyFBONames: Set<String> { attachmentPlan.historyFBONames }
+        /// Swap pairs persist in place across frames, so they never take the copied private-history path.
+        let historyFBONames: Set<String>
+        let swapFBONames: Set<String>
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
         /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
@@ -305,6 +308,8 @@ extension WPEMetalRenderExecutor {
         ) {
             self.items = items
             attachmentPlan = WPEAttachmentPlan(layers: layers)
+            swapFBONames = Set(attachmentPlan.targetDeclarations.filter { $0.swapPartner != nil }.map(\.name))
+            historyFBONames = attachmentPlan.historyFBONames.subtracting(swapFBONames)
             self.itemIndicesByKeyName = itemIndicesByKeyName
             self.signature = signature
             self.sizingLayerIndices = sizingLayerIndices
@@ -464,8 +469,10 @@ extension WPEMetalRenderExecutor {
             if let key = scratch.keys[index] {
                 touch(key, index)
                 if item.marksSecondary { scratch.secondaryKeys.insert(key) }
-                // History outlives this frame's alias heap. Keep a discrete allocation.
-                if topology.historyFBONames.contains(key.name) { scratch.nonAliasKeys.insert(key) }
+                // History and swap pairs outlive this frame's alias heap. Keep a discrete allocation.
+                if topology.historyFBONames.contains(key.name) || topology.swapFBONames.contains(key.name) {
+                    scratch.nonAliasKeys.insert(key)
+                }
             }
             for name in item.readFBONames {
                 guard let indices = topology.itemIndicesByKeyName[name] else { continue }

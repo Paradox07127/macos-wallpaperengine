@@ -54,7 +54,8 @@ extension WPERenderFBO {
             fit: fit,
             format: wpeNativized(format),
             unique: unique,
-            pixelSize: pixelSize
+            pixelSize: pixelSize,
+            swapPartner: wpeNativized(swapPartner)
         )
     }
 }

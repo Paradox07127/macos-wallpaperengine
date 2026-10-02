@@ -218,6 +218,9 @@ public struct WPERenderFBO: Equatable, Sendable {
     public let format: String
     public let unique: Bool
     public let pixelSize: CGSize?
+    /// FBO whose binding an effect `swap` command exchanges with this one once per frame, after the
+    /// effect's passes; both keep their contents across frames. nil = not swapped.
+    public let swapPartner: String?
 
     public init(
         name: String,
@@ -225,7 +228,8 @@ public struct WPERenderFBO: Equatable, Sendable {
         fit: Double? = nil,
         format: String,
         unique: Bool = false,
-        pixelSize: CGSize? = nil
+        pixelSize: CGSize? = nil,
+        swapPartner: String? = nil
     ) {
         self.name = name
         self.scale = scale
@@ -233,6 +237,7 @@ public struct WPERenderFBO: Equatable, Sendable {
         self.format = format
         self.unique = unique
         self.pixelSize = pixelSize
+        self.swapPartner = swapPartner
     }
 }
 

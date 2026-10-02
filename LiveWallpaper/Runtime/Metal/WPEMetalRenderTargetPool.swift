@@ -488,6 +488,19 @@ final class WPEMetalRenderTargetPool {
         return primary.texture
     }
 
+    /// Exchanges the allocations behind two names, so each name's next write lands in the other's texture.
+    func swapTextures(_ first: String, _ second: String, layer: WPERenderLayer, sceneSize: CGSize) {
+        let keys = [first, second].map { name in
+            let target = WPERenderTarget.fbo(name: name)
+            let spec = targetSpec(for: target, layer: layer)
+            return targetKey(for: target, spec: spec, layer: layer, sceneSize: sceneSize,
+                             pixelFormat: Self.pixelFormat(forFBOFormat: spec.format, promoteLDRToHDR: promotesLDRFormatsToHDR))
+        }
+        let slot = slots[keys[0]]
+        slots[keys[0]] = slots[keys[1]]
+        slots[keys[1]] = slot
+    }
+
     /// `diagnosticSpec` against this pool's own declarations; the executor passes its own.
     private func targetSpec(for target: WPERenderTarget, layer: WPERenderLayer) -> WPERenderFBO {
         diagnosticSpec(for: target, layer: layer, declaredFBOs: declaredFBOs)

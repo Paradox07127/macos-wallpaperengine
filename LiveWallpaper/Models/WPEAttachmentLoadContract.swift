@@ -7,18 +7,22 @@ import Metal
 struct WPEAttachmentLoadContract: Equatable, Sendable {
     enum Reason: String, Sendable {
         case uninitialized, targetFeedback, sceneAccumulation, groupAccumulation
-        case blendDestination, scratchOverwrite, fullOverwrite, transientDepth, persistentDepth
+        case blendDestination, scratchOverwrite, fullOverwrite, transientDepth, persistentDepth, swappedPersistence
     }
 
     let load: MTLLoadAction
     let store: MTLStoreAction
     let reason: Reason
 
+    /// `swapped`: target of an effect `swap` pair, which keeps its previous-frame contents.
     static func color(target: WPEMetalTargetID, initialized: Bool, readsCurrentTarget: Bool,
-                      blendNeedsDestination: Bool) -> Self {
+                      blendNeedsDestination: Bool, swapped: Bool = false) -> Self {
         guard initialized else { return Self(load: .clear, store: .store, reason: .uninitialized) }
         if readsCurrentTarget {
             return Self(load: .load, store: .store, reason: .targetFeedback)
+        }
+        if swapped {
+            return Self(load: .load, store: .store, reason: .swappedPersistence)
         }
         if case .scene = target {
             return Self(load: .load, store: .store, reason: .sceneAccumulation)

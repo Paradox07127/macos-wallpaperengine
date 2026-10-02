@@ -67,6 +67,8 @@ struct WPEMetalFrameState {
     /// Scene-level camera parallax for this frame; object-quad (scene-targeted)
     /// draws translate each layer by `cameraParallax.pixelOffset(depth:…)`.
     var cameraParallax: WPECameraParallaxFrame = .neutral
+    /// FBOs paired by an effect `swap`: their first write this frame loads instead of clearing.
+    var swapFBONames: Set<String> = []
     /// Threaded so `resolve()` can honor a first-frame read of an unwritten but declared local FBO. Optional so hand-built frame states (tests) omit it and keep the strict miss→throw.
     let renderTargetPool: WPEMetalRenderTargetPool?
 

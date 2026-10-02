@@ -868,6 +868,17 @@ struct WPERenderGraphBuilder: Sendable {
         return composeLayerIDs.subtracting(nonEmpty)
     }
 
+    /// Authored FBO name → the FBO a `swap` command pairs it with, both directions.
+    private static func swapPartners(in asset: WPEEffectAsset) -> [String: String] {
+        var partners: [String: String] = [:]
+        for pass in asset.passes {
+            guard case let .command("swap", .fbo(first)?, second?) = pass.kind else { continue }
+            partners[first] = second
+            partners[second] = first
+        }
+        return partners
+    }
+
     private static func isFullFramePassthroughUtilityPath(_ path: String) -> Bool {
         // Exhaustive switch, NOT array-contains: composelayer must stay excluded
         // (it can become a group/particle wrapper; these two cannot).
@@ -951,9 +962,11 @@ struct WPERenderGraphBuilder: Sendable {
                 guard fbo.unique, !WPETextureReference.isSceneAliasName(fbo.name) else { return nil }
                 return (fbo.name, "_rt_unique_\(object.id.utf8.count)_\(object.id)_\(effectIndex)_\(fbo.name)")
             }, uniquingKeysWith: { first, _ in first })
+            let swapPartners = Self.swapPartners(in: asset)
             context.localFBOs.append(contentsOf: asset.fbos.map { fbo in
                 WPERenderFBO(name: uniqueFBONames[fbo.name] ?? fbo.name, scale: fbo.scale,
-                             fit: fbo.fit, format: fbo.format, unique: fbo.unique, pixelSize: fbo.pixelSize)
+                             fit: fbo.fit, format: fbo.format, unique: fbo.unique, pixelSize: fbo.pixelSize,
+                             swapPartner: swapPartners[fbo.name].map { uniqueFBONames[$0] ?? $0 })
             })
             let effectDeclaredFBONames = Set(asset.fbos.map(\.name))
             var overrideIndex = 0
@@ -990,6 +1003,9 @@ struct WPERenderGraphBuilder: Sendable {
                             visibilityGate: visibilityGate,
                         to: &context
                     )
+                case .command("swap", _, _):
+                    // Carried by `WPERenderFBO.swapPartner`; the executor exchanges bindings, nothing is drawn.
+                    break
                 case .command(let command, let source, let target):
                     let virtualPass = WPEMaterialPass(
                         shader: "commands/\(command)",

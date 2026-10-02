@@ -447,6 +447,8 @@ final class WPEMetalRenderExecutor {
     var previousFrameHistory: PreviousFrameHistory?
     /// Detached from scratch targets so rejected frames cannot mutate published feedback.
     var privateHistoryCandidates: [String: MTLTexture] = [:]
+    /// Pool-owned textures bound to `swap` FBO names at the end of the last frame; read in place, never copied.
+    var swappedFBOBindings: (sceneSize: CGSize, textures: [String: MTLTexture])?
     /// Clip-composite role detection depends on the object's animation layers, so cache the resolved
     /// (source→target) part pairs per `objectID` (empty array = clip puppet with no eligible pair).
     var puppetClipPairsCache: [String: [PuppetClipPair]] = [:]
@@ -852,6 +854,7 @@ final class WPEMetalRenderExecutor {
             renderTargetPool: targetPool
         )
         if !sceneClearEnabled { frameState.markInitialized(output) }
+        seedSwappedFBOBindings(sceneSize: size, frameState: &frameState)
         frameState.cameraParallax = runtimeUniforms.cameraParallax
         defer {
             diagnostics.sceneAliasSnapshotBlits = frameState.sceneAliasSnapshotBlits
@@ -1176,6 +1179,7 @@ final class WPEMetalRenderExecutor {
                 }
                 #endif
             }
+            swapFBOBindings(of: graphLayer, frameState: &frameState)
         }
 
         solidRun.end()
@@ -1447,9 +1451,11 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID, destinationTexture: MTLTexture,
         readsCurrentTarget: Bool, frameState: WPEMetalFrameState
     ) -> WPEAttachmentLoadContract {
-        WPEAttachmentLoadContract.color(target: targetID, initialized: frameState.hasInitialized(destinationTexture),
-                                        readsCurrentTarget: readsCurrentTarget,
-                                        blendNeedsDestination: blendFacts(pass.pass.blending).requiresExistingDestination)
+        let swapped = if case let .named(name) = targetID { frameState.swapFBONames.contains(name) } else { false }
+        return WPEAttachmentLoadContract.color(target: targetID, initialized: frameState.hasInitialized(destinationTexture),
+                                               readsCurrentTarget: readsCurrentTarget,
+                                               blendNeedsDestination: blendFacts(pass.pass.blending).requiresExistingDestination,
+                                               swapped: swapped)
     }
 
     static func blendModeRequiresExistingDestination(_ blendMode: String) -> Bool {
