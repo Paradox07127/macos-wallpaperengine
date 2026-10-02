@@ -11,14 +11,20 @@ struct WallpaperTransitionUniforms {
     var origin: SIMD2<Float>
 }
 
+/// Fragment function names for one mask transition; nil `light` draws no overlay.
+struct WallpaperMaskShaders: Equatable {
+    let mask: String
+    let light: String?
+}
+
 /// Narrow submission boundary for failure tests; Screen remains the transition owner.
 @MainActor
 protocol WallpaperTransitionRendering: AnyObject {
     var device: MTLDevice { get }
-    func prepare(_ effect: WallpaperRevealEffect) -> Bool
+    func prepare(_ shaders: WallpaperMaskShaders) -> Bool
     func draw(
         _ pass: WallpaperTransitionRenderer.Pass,
-        effect: WallpaperRevealEffect,
+        shaders: WallpaperMaskShaders,
         uniforms: WallpaperTransitionUniforms,
         in layer: CAMetalLayer,
         onFailure: @escaping @MainActor @Sendable () -> Void
@@ -54,33 +60,48 @@ final class WallpaperTransitionRenderer: WallpaperTransitionRendering {
         self.library = library
     }
 
-    func functionName(for pass: Pass, effect: WallpaperRevealEffect) -> String? {
+    func functionName(for pass: Pass, shaders: WallpaperMaskShaders) -> String? {
         switch pass {
-        case .mask: effect.maskFunctionName
-        case .light: effect.lightFunctionName
+        case .mask: shaders.mask
+        case .light: shaders.light
         }
     }
 
     /// Resolve every required PSO before attaching any mask. A failed immutable
     /// library/PSO stays a known fallback, rather than retrying on every tick.
-    func prepare(_ effect: WallpaperRevealEffect) -> Bool {
-        guard pipeline(named: effect.maskFunctionName) != nil else { return false }
-        if let light = effect.lightFunctionName {
+    func prepare(_ shaders: WallpaperMaskShaders) -> Bool {
+        guard pipeline(named: shaders.mask) != nil else { return false }
+        if let light = shaders.light {
             return pipeline(named: light) != nil
         }
         return true
+    }
+
+    @discardableResult
+    func render(
+        _ pass: Pass,
+        effect: WallpaperRevealEffect,
+        uniforms: WallpaperTransitionUniforms,
+        to texture: MTLTexture
+    ) -> MTLCommandBuffer? {
+        render(
+            pass,
+            shaders: WallpaperMaskShaders(mask: effect.maskFunctionName, light: effect.lightFunctionName),
+            uniforms: uniforms,
+            to: texture
+        )
     }
 
     /// Encodes and commits one full-target draw; the caller decides whether to wait or present.
     @discardableResult
     func render(
         _ pass: Pass,
-        effect: WallpaperRevealEffect,
+        shaders: WallpaperMaskShaders,
         uniforms: WallpaperTransitionUniforms,
         to texture: MTLTexture,
         beforeCommit: (MTLCommandBuffer) -> Void = { _ in }
     ) -> MTLCommandBuffer? {
-        guard let name = functionName(for: pass, effect: effect),
+        guard let name = functionName(for: pass, shaders: shaders),
               let pipeline = pipeline(named: name),
               let commandBuffer = queue.makeCommandBuffer() else {
             return nil
@@ -105,13 +126,13 @@ final class WallpaperTransitionRenderer: WallpaperTransitionRendering {
     @discardableResult
     func draw(
         _ pass: Pass,
-        effect: WallpaperRevealEffect,
+        shaders: WallpaperMaskShaders,
         uniforms: WallpaperTransitionUniforms,
         in layer: CAMetalLayer,
         onFailure: @escaping @MainActor @Sendable () -> Void = {}
     ) -> Bool {
         guard let drawable = layer.nextDrawable() else { return false }
-        let commandBuffer = render(pass, effect: effect, uniforms: uniforms, to: drawable.texture) { buffer in
+        let commandBuffer = render(pass, shaders: shaders, uniforms: uniforms, to: drawable.texture) { buffer in
             buffer.addCompletedHandler { completed in
                 guard completed.status == .error else { return }
                 Logger.warning("Wallpaper transition GPU failure: \(completed.error?.localizedDescription ?? "unknown")", category: .ui)

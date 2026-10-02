@@ -1,5 +1,6 @@
 import AppKit
 import LiveWallpaperCore
+import Metal
 import QuartzCore
 
 @MainActor
@@ -66,6 +67,7 @@ struct WallpaperTransitionEnvironment {
 final class WallpaperRevealTransition {
     let effect: WallpaperRevealEffect
     let duration: TimeInterval
+    private let shaders: WallpaperMaskShaders
     private let oldWindow: NSWindow
     private let originalOldWindowLevel: NSWindow.Level
     private weak var newWindow: NSWindow?
@@ -98,6 +100,7 @@ final class WallpaperRevealTransition {
             return nil
         }
         self.effect = effect
+        shaders = WallpaperMaskShaders(mask: effect.maskFunctionName, light: effect.lightFunctionName)
         duration = effect.duration * pace.durationScale
         self.oldWindow = oldWindow
         originalOldWindowLevel = oldWindow.level
@@ -122,16 +125,14 @@ final class WallpaperRevealTransition {
               let contentView = oldWindow.contentView,
               contentView.bounds.width.isFinite, contentView.bounds.height.isFinite,
               contentView.bounds.width > 0, contentView.bounds.height > 0,
-              renderer.prepare(effect) else { return false }
+              renderer.prepare(shaders) else { return false }
         contentView.wantsLayer = true
         guard let host = contentView.layer else { return false }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        let mask = makeMetalLayer(size: host.bounds.size, scale: oldWindow.backingScaleFactor * 0.5)
-        mask.presentsWithTransaction = true
-        mask.frame = host.bounds
+        let mask = Self.makeMaskLayer(device: renderer.device, host: host, backingScale: oldWindow.backingScaleFactor)
         guard draw(.mask, in: mask) else { return false }
         // Stage both first draws before publishing either owner property.
         if effect.lightFunctionName != nil, !installLightWindow() {
@@ -168,7 +169,7 @@ final class WallpaperRevealTransition {
     }
 
     private func draw(_ pass: WallpaperTransitionRenderer.Pass, in layer: CAMetalLayer) -> Bool {
-        renderer.draw(pass, effect: effect, uniforms: uniforms, in: layer) { [weak self] in
+        renderer.draw(pass, shaders: shaders, uniforms: uniforms, in: layer) { [weak self] in
             // Completion runs later on MainActor; finish is also the cancellation
             // path and is idempotent if another command failed or the deadline won.
             guard let self, maskLayer != nil else { return }
@@ -222,23 +223,11 @@ final class WallpaperRevealTransition {
     }
 
     private func installLightWindow() -> Bool {
-        let frame = oldWindow.frame
-        let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.canHide = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        window.sharingType = WallpaperCapturePolicy.windowSharingType
-        window.level = Self.overlayLevel(above: [oldWindow, newWindow].compactMap(\.self))
-
-        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
-        let layer = makeMetalLayer(size: frame.size, scale: window.backingScaleFactor)
-        view.layer = layer
-        view.wantsLayer = true
-        window.contentView = view
+        let (window, layer) = Self.makeLightWindow(
+            frame: oldWindow.frame,
+            level: Self.overlayLevel(above: [oldWindow, newWindow].compactMap(\.self)),
+            device: renderer.device
+        )
         guard draw(.light, in: layer) else {
             window.close()
             return false
@@ -273,9 +262,38 @@ final class WallpaperRevealTransition {
         return NSWindow.Level(rawValue: windows.map(\.level.rawValue).reduce(desktop, max))
     }
 
-    private func makeMetalLayer(size: CGSize, scale: CGFloat) -> CAMetalLayer {
+    /// Half resolution; presents inside the caller's CATransaction so it lands with the attach.
+    static func makeMaskLayer(device: MTLDevice, host: CALayer, backingScale: CGFloat) -> CAMetalLayer {
+        let mask = makeMetalLayer(device: device, size: host.bounds.size, scale: backingScale * 0.5)
+        mask.presentsWithTransaction = true
+        mask.frame = host.bounds
+        return mask
+    }
+
+    /// A click-through, transparent overlay covering `frame`; not yet ordered in.
+    static func makeLightWindow(frame: NSRect, level: NSWindow.Level, device: MTLDevice) -> (NSWindow, CAMetalLayer) {
+        let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.canHide = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.sharingType = WallpaperCapturePolicy.windowSharingType
+        window.level = level
+
+        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        let layer = makeMetalLayer(device: device, size: frame.size, scale: window.backingScaleFactor)
+        view.layer = layer
+        view.wantsLayer = true
+        window.contentView = view
+        return (window, layer)
+    }
+
+    private static func makeMetalLayer(device: MTLDevice, size: CGSize, scale: CGFloat) -> CAMetalLayer {
         let layer = CAMetalLayer()
-        layer.device = renderer.device
+        layer.device = device
         layer.pixelFormat = WallpaperTransitionRenderer.pixelFormat
         layer.isOpaque = false
         layer.framebufferOnly = true

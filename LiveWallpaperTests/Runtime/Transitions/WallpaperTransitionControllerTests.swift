@@ -65,11 +65,11 @@ private final class FailingTransitionRenderer: WallpaperTransitionRendering {
         device = try #require(MTLCreateSystemDefaultDevice())
     }
 
-    func prepare(_: WallpaperRevealEffect) -> Bool {
+    func prepare(_: WallpaperMaskShaders) -> Bool {
         isPrepared
     }
 
-    func draw(_: WallpaperTransitionRenderer.Pass, effect _: WallpaperRevealEffect,
+    func draw(_: WallpaperTransitionRenderer.Pass, shaders _: WallpaperMaskShaders,
               uniforms _: WallpaperTransitionUniforms, in _: CAMetalLayer,
               onFailure: @escaping @MainActor @Sendable () -> Void) -> Bool {
         drawCount += 1
