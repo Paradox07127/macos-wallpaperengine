@@ -188,6 +188,7 @@ PARALLEL_SUITES=(
   WallpaperAutomationSwitchGroupTests
   VolumeMountReloadTests
   PersistentUserPauseTests
+  WorkshopMutationGateTests
   HTMLWebTransformLayoutTests
   WPESceneModelSubmeshMaterialGraphTests
   WPEParticleSpawnFailureTests
