@@ -363,8 +363,7 @@ final class WorkshopDownloadCoordinator {
 
     private static func isApproved(_ existing: WPEHistoryEntry, _ approved: WPEHistoryEntry?) -> Bool {
         guard let approved else { return false }
-        return existing.origin.workshopID == approved.origin.workshopID
-            && existing.importedAt == approved.importedAt
+        return existing.importedAt == approved.importedAt
             && existing.origin.sourceFolderBookmark == approved.origin.sourceFolderBookmark
     }
 
