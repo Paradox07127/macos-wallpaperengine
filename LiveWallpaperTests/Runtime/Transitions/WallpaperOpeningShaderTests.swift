@@ -1,3 +1,4 @@
+@testable import LiveWallpaper
 import Metal
 import Testing
 
@@ -133,5 +134,14 @@ struct WallpaperOpeningShaderTests {
         #expect(start.max == 0, "\(opening.rawValue) light shows at p=0: \(start)")
         #expect(end.max == 0, "\(opening.rawValue) light shows at p=1: \(end)")
         #expect(darkening.corner.min >= 0.1, "\(opening.rawValue) does not darken the desktop corner: \(darkening.corner)")
+    }
+
+    @Test("Every opening effect names a mask and a light that exist in the app's library",
+          arguments: WallpaperOpeningEffect.allCases)
+    func effectFunctionNamesResolve(effect: WallpaperOpeningEffect) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let library = try #require(device.makeDefaultLibrary(), "the app bundle has no default Metal library")
+        #expect(library.makeFunction(name: effect.maskFunctionName) != nil, "\(effect.maskFunctionName) is missing")
+        #expect(library.makeFunction(name: effect.lightFunctionName) != nil, "\(effect.lightFunctionName) is missing")
     }
 }

@@ -321,13 +321,17 @@ struct SettingsManagerTests {
             defaults: defaults
         )
         defaults.set(WallpaperTransitionChoice.meteor.rawValue, forKey: WallpaperTransitionChoice.defaultsKey)
+        defaults.set(WallpaperOpeningChoice.dawn.rawValue, forKey: WallpaperOpeningChoice.defaultsKey)
         defaults.set("keep", forKey: "test.unrelated.preference")
         #expect(WallpaperTransitionChoice.stored(in: defaults) == .meteor)
+        #expect(WallpaperOpeningChoice.stored(in: defaults) == .dawn)
 
         manager.cleanAllSettings(applyLoginSetting: false)
 
         #expect(defaults.object(forKey: WallpaperTransitionChoice.defaultsKey) == nil)
         #expect(WallpaperTransitionChoice.stored(in: defaults) == .crossfade)
+        #expect(defaults.object(forKey: WallpaperOpeningChoice.defaultsKey) == nil)
+        #expect(WallpaperOpeningChoice.stored(in: defaults) == .loom)
         #expect(defaults.string(forKey: "test.unrelated.preference") == "keep")
         await TestScratch.discard(root, flushing: manager)
     }

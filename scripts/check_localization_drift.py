@@ -129,6 +129,7 @@ EXEMPT = {
     ('display', 'zh-Hant', 'Screen frame'): 'same as above',
     ('library', 'zh-Hans', 'Saved'): 'legacy sidebar page name "已保存"; a page name follows the UI it is on',
     ('library', 'zh-Hant', 'Saved'): 'same as above',
+    ('display', 'zh-Hans', 'Loom Line'): 'product name 一线织屏: 屏 is the picture being woven, not the device',
 }
 
 # zh only

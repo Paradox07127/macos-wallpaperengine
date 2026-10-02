@@ -126,6 +126,8 @@ extension GeneralSettingsView {
                     .accessibilityHint(Text("Applies to screenshots, recording, and sharing, including widgets. When off, shows the macOS desktop picture."))
             }
 
+            WallpaperOpeningSettingRow()
+
             WallpaperTransitionSettingRow()
         } header: {
             SettingsSearchSectionHeader("Wallpaper", anchor: .generalWallpaper)

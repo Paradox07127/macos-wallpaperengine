@@ -639,6 +639,7 @@ final class SettingsManager {
         defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")
         defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1") // no reader left; stale value only
         defaults.removeObject(forKey: WallpaperTransitionChoice.defaultsKey)
+        defaults.removeObject(forKey: WallpaperOpeningChoice.defaultsKey)
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
         defaults.removeObject(forKey: "loomscreen.savedLibrary.selectedTab.v1") // Saved page tab; nothing reads it now

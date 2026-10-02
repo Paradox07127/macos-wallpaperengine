@@ -55,6 +55,69 @@ enum WallpaperRevealEffect: String, CaseIterable {
     }
 }
 
+/// The "Opening animation" setting.
+enum WallpaperOpeningChoice: String, CaseIterable, Identifiable {
+    case off
+    case loom
+    case frame
+    case dawn
+    case random
+
+    static let defaultsKey = "loomscreen.wallpapers.opening.v1"
+    static let defaultChoice: WallpaperOpeningChoice = .loom
+
+    var id: String {
+        rawValue
+    }
+
+    static func stored(in defaults: UserDefaults = .appScoped()) -> WallpaperOpeningChoice {
+        defaults.string(forKey: defaultsKey).flatMap(Self.init(rawValue:)) ?? defaultChoice
+    }
+}
+
+/// Played once per display when the first wallpaper after launch appears.
+enum WallpaperOpeningEffect: String, CaseIterable {
+    case loom
+    case frame
+    case dawn
+
+    var duration: TimeInterval {
+        switch self {
+        case .loom: 2.6
+        case .frame: 2.4
+        case .dawn: 2.8
+        }
+    }
+
+    var maskFunctionName: String {
+        "wallpaperOpening\(shaderStem)Mask"
+    }
+
+    var lightFunctionName: String {
+        "wallpaperOpening\(shaderStem)Light"
+    }
+
+    /// True when the new wallpaper stays on its first frame until the opening finishes.
+    var holdsNewWallpaper: Bool {
+        self == .loom
+    }
+
+    private var shaderStem: String {
+        rawValue.prefix(1).uppercased() + rawValue.dropFirst()
+    }
+
+    /// nil for `.off`.
+    static func resolve(_ choice: WallpaperOpeningChoice, using generator: inout some RandomNumberGenerator) -> WallpaperOpeningEffect? {
+        switch choice {
+        case .off: nil
+        case .loom: .loom
+        case .frame: .frame
+        case .dawn: .dawn
+        case .random: allCases.randomElement(using: &generator)
+        }
+    }
+}
+
 enum WallpaperTransitionPace {
     case manual
     case automatic
