@@ -8,32 +8,32 @@ import Testing
 @Suite("QA control plane defaults tool", .serialized)
 @MainActor
 struct QAControlPlaneDefaultsTests {
-    private func call(_ tool: String, _ arguments: String) -> [String: Any] {
+    private func call(_ tool: String, _ arguments: String) async -> [String: Any] {
         let line = #"{"tool":"\#(tool)","arguments":\#(arguments)}"#
-        let response = QAControlPlane.shared.respond(to: line)
+        let response = await QAControlPlane.shared.respond(to: line)
         return (try? JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any]) ?? [:]
     }
 
     /// `UserDefaults.set(NSNull())` raises an ObjC exception; a JSON null has to mean "remove".
     @Test("A null value removes the key instead of crashing the app")
-    func nullRemovesKey() {
+    func nullRemovesKey() async {
         let key = "loomscreen.qa.test.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: key) }
-        let set = call("defaults.set", #"{"key":"\#(key)","value":1}"#)
+        let set = await call("defaults.set", #"{"key":"\#(key)","value":1}"#)
         #expect(set["ok"] as? Bool == true)
         #expect(UserDefaults.standard.integer(forKey: key) == 1)
 
-        let cleared = call("defaults.set", #"{"key":"\#(key)","value":null}"#)
+        let cleared = await call("defaults.set", #"{"key":"\#(key)","value":null}"#)
         #expect(cleared["ok"] as? Bool == true)
         #expect(UserDefaults.standard.object(forKey: key) == nil)
-        #expect(call("defaults.get", #"{"key":"\#(key)"}"#)["ok"] as? Bool == true)
+        #expect(await call("defaults.get", #"{"key":"\#(key)"}"#)["ok"] as? Bool == true)
     }
 
     @Test("A non-property-list value is refused, not written")
-    func nonPropertyListIsRefused() {
+    func nonPropertyListIsRefused() async {
         let key = "loomscreen.qa.test.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: key) }
-        let refused = call("defaults.set", #"{"key":"\#(key)","value":{"nested":null}}"#)
+        let refused = await call("defaults.set", #"{"key":"\#(key)","value":{"nested":null}}"#)
         #expect(refused["ok"] as? Bool == false)
         #expect(UserDefaults.standard.object(forKey: key) == nil)
     }
@@ -43,7 +43,7 @@ struct QAControlPlaneDefaultsTests {
 @MainActor
 struct QAControlPlaneScreenIdentityTests {
     @Test("Malformed JSON screen identities cannot toggle a real target or change its revision")
-    func invalidIdentitiesDoNotReachPlayback() throws {
+    func invalidIdentitiesDoNotReachPlayback() async throws {
         let fixture = Fixture()
         defer { fixture.manager.tearDownForTermination() }
         let id = UInt64(fixture.screen.id)
@@ -51,7 +51,7 @@ struct QAControlPlaneScreenIdentityTests {
                        "\(id).5", "true", "false", "\"\(id)\"", "null", "1e400"]
         let revision = fixture.manager.configurationStore.revision(for: fixture.screen.id)
         for value in invalid {
-            let result = try fixture.call("wallpaper.togglePlayback", arguments: #"{"screenID":\#(value)}"#)
+            let result = try await fixture.call("wallpaper.togglePlayback", arguments: #"{"screenID":\#(value)}"#)
             #expect(result["ok"] as? Bool == false, "accepted invalid screenID: \(value)")
             #expect(fixture.session.toggleCount == 0, "invalid identity reached the playback setter")
             #expect(fixture.manager.configurationStore.revision(for: fixture.screen.id) == revision)
@@ -74,14 +74,14 @@ struct QAControlPlaneScreenIdentityTests {
     }
 
     @Test("A legal ID still reaches the same target through JSON routing")
-    func validIdentityReachesPlayback() throws {
+    func validIdentityReachesPlayback() async throws {
         let fixture = Fixture()
         defer { fixture.manager.tearDownForTermination() }
-        let result = try fixture.call("wallpaper.togglePlayback", arguments: #"{"screenID":\#(fixture.screen.id)}"#)
+        let result = try await fixture.call("wallpaper.togglePlayback", arguments: #"{"screenID":\#(fixture.screen.id)}"#)
         #expect(result["ok"] as? Bool == true)
         #expect(fixture.session.toggleCount == 1)
         #expect(!fixture.session.userIntendsToPlay)
-        let read = try fixture.call("runtime.state", arguments: #"{"screenID":\#(fixture.screen.id)}"#)
+        let read = try await fixture.call("runtime.state", arguments: #"{"screenID":\#(fixture.screen.id)}"#)
         #expect(read["ok"] as? Bool == true)
     }
 
@@ -103,8 +103,8 @@ struct QAControlPlaneScreenIdentityTests {
             control = QAControlPlane(screenManager: manager)
         }
 
-        func call(_ tool: String, arguments: String) throws -> [String: Any] {
-            let response = control.respond(to: #"{"tool":"\#(tool)","arguments":\#(arguments)}"#)
+        func call(_ tool: String, arguments: String) async throws -> [String: Any] {
+            let response = await control.respond(to: #"{"tool":"\#(tool)","arguments":\#(arguments)}"#)
             return try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
         }
     }

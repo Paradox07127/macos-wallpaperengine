@@ -242,7 +242,7 @@ extension QAControlPlane {
 
     // MARK: - Parsing
 
-    private func resolveScreen(_ arguments: [String: Any]) throws -> Screen {
+    func resolveScreen(_ arguments: [String: Any]) throws -> Screen {
         guard let manager = screenManager else { throw QAError.message("ScreenManager unavailable") }
         guard let raw = arguments["screenID"] else {
             throw QAError.message("Missing screenID; call state.dump for the list")

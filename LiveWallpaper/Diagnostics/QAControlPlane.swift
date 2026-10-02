@@ -1,4 +1,5 @@
 #if DEBUG
+import AppKit
 import Darwin
 import Foundation
 import LiveWallpaperCore
@@ -82,7 +83,7 @@ final class QAControlPlane {
         let box = ResponseBox()
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
-            box.text = QAControlPlane.shared.respond(to: line)
+            box.text = await QAControlPlane.shared.respond(to: line)
             done.signal()
         }
         done.wait()
@@ -244,7 +245,7 @@ final class QAControlPlane {
 
     // MARK: - Dispatch
 
-    func respond(to line: String) -> String {
+    func respond(to line: String) async -> String {
         // A request can be queued before shutdown and run after it; committing then would
         // change settings in an app whose ScreenManager is already torn down.
         guard !isStopped else { return Self.failure("Control plane is shutting down") }
@@ -255,15 +256,18 @@ final class QAControlPlane {
         }
         let arguments = request["arguments"] as? [String: Any] ?? [:]
         do {
-            return try Self.success(route(tool: tool, arguments: arguments))
+            return try await Self.success(route(tool: tool, arguments: arguments))
         } catch {
             return Self.failure("\(error)")
         }
     }
 
-    private func route(tool: String, arguments: [String: Any]) throws -> Any {
+    private func route(tool: String, arguments: [String: Any]) async throws -> Any {
         switch tool {
         case "meta.describe": return Self.describe()
+        case "app.quit": return appQuit()
+        case "scene.properties.get": return try await scenePropertiesGet(arguments)
+        case "scene.properties.patch": return try await scenePropertiesPatch(arguments)
         case "settings.get": return try settingsGet()
         case "settings.patch": return try settingsPatch(arguments)
         case "state.dump": return try stateDump()
@@ -303,7 +307,13 @@ final class QAControlPlane {
                  "arguments": ["<field>": "any GlobalSettings field listed in writableKeys"],
                  "description": "Read-modify-write through the same commit the Settings UI uses, so the apply chain runs."],
                 ["name": "state.dump", "arguments": [:] as [String: Any],
-                 "description": "Live per-screen wallpaper session state: type, activity, subtitle, runtime error."],
+                 "description": "Live per-screen wallpaper session state: type, activity, subtitle, runtime error, wallpaperWindowNumber; plus mainWindowNumber (null when the main window is closed)."],
+                ["name": "app.quit", "arguments": [:] as [String: Any],
+                 "description": "Quit through NSApp.terminate shortly after replying, so the product termination path runs and removes the socket."],
+                ["name": "scene.properties.get", "arguments": ["screenID": "Int"],
+                 "description": "Scene settings of a screen showing a scene wallpaper: schema (type, label, default, range, options), current layered value and whether it is overridden."],
+                ["name": "scene.properties.patch", "arguments": ["screenID": "Int", "values": "Object"],
+                 "description": "Set scene settings ({key: value}, null removes the override) through the same commit the scene settings UI uses. All keys are validated before any change; a value equal to the preset or default drops the override. The scene may hot-patch or rebuild — runtime.state / state.dump is the evidence it took effect."],
                 ["name": "defaults.get", "arguments": ["key": "String"],
                  "description": "Read one UserDefaults-backed setting."],
                 ["name": "defaults.set", "arguments": ["key": "String", "value": "Bool | Double | String"],
@@ -464,6 +474,7 @@ final class QAControlPlane {
                 "supportsPlaybackControl": summary.supportsPlaybackControl,
                 "hasActiveWindow": screen.activeWallpaperWindow != nil,
             ]
+            entry["wallpaperWindowNumber"] = screen.activeWallpaperWindow?.windowNumber ?? NSNull()
             entry["wallpaperType"] = summary.wallpaperType.map { String(describing: $0) } ?? NSNull()
             entry["subtitle"] = summary.subtitle ?? NSNull()
             entry["displayName"] = screenManager.wallpaperDisplayName(for: screen) ?? NSNull()
@@ -490,7 +501,18 @@ final class QAControlPlane {
             }
             return entry
         }
-        return ["screens": screens, "screenCount": screens.count]
+        return [
+            "screens": screens,
+            "screenCount": screens.count,
+            "mainWindowNumber": Self.mainWindow()?.windowNumber ?? NSNull(),
+        ]
+    }
+
+    private func appQuit() -> Any {
+        // A run-loop timer, not a main-queue block: terminate waits for a reply the delegate sends from a
+        // MainActor task, which cannot run while a main-queue block is executing. The delay lets this reply go out first.
+        NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.3)
+        return ["status": "quitting", "pid": ProcessInfo.processInfo.processIdentifier]
     }
 
     private func defaultsGet(_ arguments: [String: Any]) throws -> Any {

@@ -2,9 +2,13 @@
 import AppKit
 
 extension QAControlPlane {
+    static func mainWindow() -> NSWindow? {
+        NSApp.windows.first(where: { $0.identifier?.rawValue == "LiveWallpaperSettingsWindow" || $0.accessibilityIdentifier() == "LiveWallpaperSettingsWindow" })
+    }
+
     /// Read-only hit testing, in window points with a top-left origin. Includes AppKit chrome.
     func uiHitTest(_ arguments: [String: Any]) throws -> Any {
-        guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "LiveWallpaperSettingsWindow" || $0.accessibilityIdentifier() == "LiveWallpaperSettingsWindow" }),
+        guard let window = Self.mainWindow(),
               let root = window.contentView?.superview else {
             throw QAError.message("Open the main window first")
         }
