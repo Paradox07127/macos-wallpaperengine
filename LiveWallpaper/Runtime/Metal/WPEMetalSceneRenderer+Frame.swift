@@ -725,6 +725,9 @@ extension WPEMetalSceneRenderer {
         liveTextByID.reserveCapacity(textScriptInstances.count)
         for (id, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
             liveTextByID[id] = tickTextScript(instance, runtimeSeconds: runtimeSeconds)
+            if let output = instance.takeLayerOutput() {
+                applyLayerScriptOutput(output, ownObjectID: id)
+            }
         }
         return liveTextByID
     }

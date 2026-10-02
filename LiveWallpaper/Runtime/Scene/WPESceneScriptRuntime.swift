@@ -836,6 +836,11 @@ final class WPESceneScriptInstance {
         mediaHandlers.handles(event)
     }
 
+    /// Other-layer writes accumulated since the last call; nil when no evaluation has finished since.
+    func takeLayerOutput() -> WPELayerScriptOutput? {
+        engine.layerOutputs.takeLatest()
+    }
+
     // MARK: Synchronous Oracle (DEBUG only)
     #if DEBUG
     func tickString(
@@ -1042,6 +1047,11 @@ final class WPESceneScriptInstance {
         /// Scene render size, or nil to leave the sandbox's 1920x1080.
         private let canvasSize: SIMD2<Double>?
         private var screenSize: SIMD2<Double>?
+        /// thisScene only: thisLayer stays the baseclass stub, so the text value path is untouched.
+        private let layerBridge: WPELayerScriptBridge
+        fileprivate let layerOutputs = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
+            combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
+        )
 
         init(
             shared: WPESharedScriptState?,
@@ -1050,6 +1060,14 @@ final class WPESceneScriptInstance {
             canvasSize: SIMD2<Double>?,
             screenSize: SIMD2<Double>?
         ) {
+            self.layerBridge = WPELayerScriptBridge(
+                shared: shared,
+                initialVisible: true,
+                initialAlpha: 1,
+                ownLayerName: nil,
+                ownObjectID: nil,
+                createdLayerBridge: nil
+            )
             self.canvasSize = canvasSize
             self.screenSize = screenSize.map { SIMD2(max($0.x, 1), max($0.y, 1)) }
             self.shared = shared
@@ -1193,7 +1211,17 @@ final class WPESceneScriptInstance {
             }
         }
 
+        /// A quarantined evaluation publishes nothing, matching the string outcome's fence.
+        private func publishLayerOutput() {
+            let commit = acceptsCompletion()
+            layerBridge.finishEvaluation(commit: commit)
+            let output = layerBridge.readOutput()
+            if commit { layerOutputs.publishEvent(output) }
+        }
+
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             let size = SIMD2(max(requestedSize.x, 1), max(requestedSize.y, 1))
             guard size != screenSize else { return false }
             screenSize = size
@@ -1211,6 +1239,8 @@ final class WPESceneScriptInstance {
         }
 
         private func applyGeneralSettingsOnQueue(language: String) -> Bool {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             guard let context,
                   let function = context.objectForKeyedSubscript("applyGeneralSettings"),
                   !function.isUndefined, function.hasProperty("call"),
@@ -1222,6 +1252,8 @@ final class WPESceneScriptInstance {
         }
 
         private func destroyOnQueue() -> Bool {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             var invoked = false
             if let context,
                let function = context.objectForKeyedSubscript("destroy"),
@@ -1240,6 +1272,8 @@ final class WPESceneScriptInstance {
             scriptProperties: [String: WPESceneScriptPropertyValue],
             initialValue: String
         ) -> SetupOutcome {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             guard let context = JSContext(virtualMachine: virtualMachine) else {
                 return .contextUnavailable
             }
@@ -1253,12 +1287,14 @@ final class WPESceneScriptInstance {
             )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
+            layerBridge.installScene(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
             _ = updateEngineRuntime(0)
             if let shared { wpeInstallSharedState(shared, in: context) }
             context.exceptionHandler = { [weak self] _, ex in
                 guard let self else { return }
                 self.didThrow = true
+                self.layerBridge.failEvaluation()
                 guard !self.didLogException else { return }
                 self.didLogException = true
                 Logger.warning(
@@ -1304,6 +1340,8 @@ final class WPESceneScriptInstance {
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?
         ) -> Bool {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return false }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
@@ -1327,6 +1365,8 @@ final class WPESceneScriptInstance {
             lastValue: String,
             runtimeSeconds: Double?
         ) -> String? {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let context, let updateFunction else { return nil }

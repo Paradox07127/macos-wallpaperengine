@@ -87,9 +87,10 @@ extension WPEMetalSceneRenderer {
                 + "particleAlpha=\(particleAlphaScripted.count) "
                 + "hostNames=\(scriptHosts.prefix(8).map(\.name).joined(separator: ","))"
         )
+        // Text value scripts are built earlier by loadTextPipeline but still resolve getLayer names here.
         guard (!visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
                 || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
-                || !particleAlphaScripted.isEmpty),
+                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty),
               let pipeline = renderPipeline else { return }
 
         // Index every layer because scripts can control a different layer's video by name.
@@ -338,7 +339,11 @@ extension WPEMetalSceneRenderer {
         }
         // 3. Seed text scripts in object order because later scripts may consume shared state.
         for object in textObjects {
-            textScriptInstances[object.id]?.seedAsyncTick()
+            guard let instance = textScriptInstances[object.id] else { continue }
+            instance.seedAsyncTick()
+            if let output = instance.takeLayerOutput() {
+                applyLayerScriptOutput(output, ownObjectID: object.id)
+            }
         }
         // Effect constants BEFORE visibility gates: a gate reads what a constant script writes into `shared`, so seeding them out of order would leave the gate reading `undefined` and the first frame would render with every arm of the cycle closed.
         for (_, instance) in effectConstantScriptInstances
