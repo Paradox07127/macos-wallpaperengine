@@ -271,6 +271,13 @@ struct WallpaperTransitionControllerTests {
         VideoWallpaperWindow(frame: NSRect(x: 0, y: 0, width: 64, height: 36))
     }
 
+    /// Wallpaper-level windows are not stacked on a full-screen Space; there `orderedIndex` ignores window levels.
+    private func cancelUnlessStackingIsObservable(_ window: NSWindow) throws {
+        guard window.isOnActiveSpace else {
+            try Test.cancel("Window stacking is unobservable while a full-screen Space is active")
+        }
+    }
+
     private func makeTransition(
         _ effect: WallpaperRevealEffect,
         old: NSWindow,
@@ -366,6 +373,7 @@ struct WallpaperTransitionControllerTests {
         defer { transition.finish() }
         transition.start()
         let light = try #require(transition.lightWindow)
+        try cancelUnlessStackingIsObservable(light)
         #expect(light.level == Self.interactiveLevel)
 
         new.orderFrontRegardless()
@@ -381,12 +389,14 @@ struct WallpaperTransitionControllerTests {
         try #require(TestHostWindowParking.isEnabled, "Window-order fixtures must never appear on the user's desktop")
         let old = makeWallpaperWindow()
         let new = makeWallpaperWindow()
+        defer { old.close(); new.close() }
         let passiveLevel = old.level
         old.level = oldIsInteractive ? Self.interactiveLevel : passiveLevel
         new.level = oldIsInteractive ? passiveLevel : Self.interactiveLevel
         let originalOldLevel = old.level
         old.orderFrontRegardless()
         new.orderFrontRegardless()
+        try cancelUnlessStackingIsObservable(old)
         if !oldIsInteractive {
             // Control: this is why a mask alone cannot reveal the incoming wallpaper.
             #expect(new.orderedIndex < old.orderedIndex)
@@ -396,7 +406,7 @@ struct WallpaperTransitionControllerTests {
         widget.level = NSWindow.Level(rawValue: Self.interactiveLevel.rawValue + 1)
         widget.ignoresMouseEvents = true
         widget.orderFrontRegardless()
-        defer { old.close(); new.close(); widget.close() }
+        defer { widget.close() }
         let keyWindow = NSApp.keyWindow
         let wasActive = NSApp.isActive
         let clock = ManualTransitionClock()
