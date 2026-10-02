@@ -199,7 +199,9 @@ extension WPEMetalSceneRenderer {
             uniquingKeysWith: { first, _ in first }
         )
         var expansionBudget = ParticleExpansionBudget()
-        for object in document.particleObjects where object.visible {
+        // Hidden emitters are expanded too: a script can show them later, and they must then emit from that moment.
+        let hiddenObjectIDs = Set(document.particleObjects.filter { !$0.visible }.map(\.id))
+        for object in document.particleObjects {
             let groupEffect = await resolveParticleGroupEffect(
                 for: object,
                 objectParentByID: document.objectParentByID,
@@ -241,7 +243,7 @@ extension WPEMetalSceneRenderer {
         particleIndependentSystems = particleSystems.filter { independentIDs.contains(ObjectIdentifier($0)) }
         particleSystems = particleIndependentSystems
         // An event root must not change unrelated roots' existing warm-up/RNG path.
-        prewarmParticleSystems()
+        prewarmParticleSystems(skippingObjectIDs: hiddenObjectIDs)
         debugStage("particles.prewarm.done", "independent=\(particleIndependentSystems.count)")
         if !eventRoots.isEmpty {
             particleInstanceCoordinator = WPEParticleInstanceCoordinator(
@@ -252,7 +254,8 @@ extension WPEMetalSceneRenderer {
             )
             let oracleReplaySeconds = WPEOracleMode.isEnabled ? WPEOracleMode.loadFrameOverride()?.baseTime : nil
             let seconds = Dictionary(uniqueKeysWithValues: eventRoots.map { template in
-                (ObjectIdentifier(template.prototype), Self.particlePrewarmSeconds(
+                let hidden = template.prototype.scriptParticleObjectID.map(hiddenObjectIDs.contains) ?? false
+                return (ObjectIdentifier(template.prototype), hidden ? 0 : Self.particlePrewarmSeconds(
                     for: template.prototype.definition, manualPrewarmEnabled: Self.particlePrewarmEnabled,
                     oracleReplaySeconds: oracleReplaySeconds
                 ) ?? 0)
@@ -264,12 +267,12 @@ extension WPEMetalSceneRenderer {
     }
 
     /// `starttime` is a simulation offset.
-    private func prewarmParticleSystems() {
+    private func prewarmParticleSystems(skippingObjectIDs hiddenObjectIDs: Set<String>) {
         guard !particleSystems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
             ? WPEOracleMode.loadFrameOverride()?.baseTime
             : nil
-        for system in particleSystems {
+        for system in particleSystems where !(system.scriptParticleObjectID.map(hiddenObjectIDs.contains) ?? false) {
             guard let seconds = Self.particlePrewarmSeconds(
                 for: system.definition,
                 manualPrewarmEnabled: Self.particlePrewarmEnabled,
@@ -277,6 +280,35 @@ extension WPEMetalSceneRenderer {
             ) else { continue }
             system.prewarm(simulatedSeconds: seconds, presimulateDelay: true)
         }
+    }
+
+    /// `layerVisibility` is the live (or pre-script snapshot) override map; an object without an override falls back to its authored `visible`.
+    nonisolated static func particleObjectVisible(
+        _ objectID: String,
+        parentByID: [String: String],
+        layerVisibility: [String: Bool],
+        textVisibility: [String: Bool],
+        ownVisibilityByID: [String: Bool]
+    ) -> Bool {
+        (layerVisibility[objectID] ?? ownVisibilityByID[objectID] ?? true)
+            && ancestorChainVisible(
+                objectID,
+                parentByID: parentByID,
+                liveLayerVisibility: layerVisibility,
+                liveTextVisibility: textVisibility,
+                ownVisibilityByID: ownVisibilityByID
+            )
+    }
+
+    func particleSystemVisible(_ system: WPEParticleSystem) -> Bool {
+        guard let objectID = system.scriptParticleObjectID else { return true }
+        return Self.particleObjectVisible(
+            objectID,
+            parentByID: objectParentByID,
+            layerVisibility: liveLayerVisibility,
+            textVisibility: liveTextVisibility,
+            ownVisibilityByID: ownVisibilityByID
+        )
     }
 
     /// A `composelayer` ancestor's tint + opacity mask must be baked on (particles draw to scene).

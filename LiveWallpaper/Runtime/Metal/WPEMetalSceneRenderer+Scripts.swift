@@ -100,6 +100,10 @@ extension WPEMetalSceneRenderer {
                 layerVideoSourceKey[id] = key
             }
         }
+        // `getLayer(name)` also reaches particle emitters; an image layer keeps a name both share.
+        for object in document.particleObjects where layerObjectIDByName[object.name] == nil {
+            layerObjectIDByName[object.name] = object.id
+        }
 
         // WPE delivers the user-property bag to each script after init(); without this, time-of-day scripts that gate on it (e.g. `timevarying`) never switch.
         let userProperties = currentSceneScriptUserProperties()

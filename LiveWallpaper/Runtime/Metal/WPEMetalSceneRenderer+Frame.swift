@@ -271,6 +271,7 @@ extension WPEMetalSceneRenderer {
                 pointer: frameContext.pointer,
                 liveTransforms: liveTransforms,
                 frameSlot: frameSubmission.slot,
+                presentationBeforeScripts: publicationBeforeFrame.presentation,
                 audioSpectrum16: particleSystems.contains(where: \.isAudioResponsive)
                     ? uniforms.audioSpectrum16Average
                     : nil
@@ -375,7 +376,7 @@ extension WPEMetalSceneRenderer {
                 scriptedConstants: liveEffectConstants,
                 passVisibility: liveEffectVisibility,
                 sceneID: descriptor.workshopID,
-                particleSystems: particleSystems,
+                particleSystems: particleSystems.filter(particleSystemVisible),
                 particleTextures: particleTextures,
                 particleNormalTextures: particleNormalTextures,
                 particleParallax: parallaxFrame,
@@ -594,6 +595,7 @@ extension WPEMetalSceneRenderer {
         pointer: SIMD2<Double>,
         liveTransforms: LiveScriptTransforms,
         frameSlot: Int,
+        presentationBeforeScripts: WPESceneScriptPresentationSnapshot,
         audioSpectrum16: [Float]? = nil
     ) {
         guard !particleSystems.isEmpty else { return }
@@ -607,7 +609,18 @@ extension WPEMetalSceneRenderer {
         updateParticleHostOriginOffsets(using: liveTransforms)
         let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
         withFrameSignpost("particleIndependent") {
-            for system in particleIndependentSystems {
+            for system in particleIndependentSystems where particleSystemVisible(system) {
+                // Shown by this frame's scripts: emission starts now, with no history from the hidden span.
+                if let objectID = system.scriptParticleObjectID,
+                   !Self.particleObjectVisible(
+                       objectID,
+                       parentByID: objectParentByID,
+                       layerVisibility: presentationBeforeScripts.layerVisibility,
+                       textVisibility: presentationBeforeScripts.textVisibility,
+                       ownVisibilityByID: ownVisibilityByID
+                   ) {
+                    system.anchorInstanceClock(at: time)
+                }
                 system.pointerCentered = particlePointer
                 system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
                 if let objectID = system.instanceAlphaScriptObjectID,
