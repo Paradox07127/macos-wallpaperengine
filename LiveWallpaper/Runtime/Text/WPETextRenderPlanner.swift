@@ -106,7 +106,7 @@ enum WPETextRenderPlanner {
             object.text,
             object.fontRelativePath ?? "",
             String(object.pointSize),
-            String(object.letterSpacing),
+            "\(object.spacing.x) \(object.spacing.y)",
             object.horizontalAlignment,
             object.verticalAlignment,
             String(object.maxWidth ?? -1),
@@ -123,7 +123,7 @@ enum WPETextRenderPlanner {
         guard let layout = WPETextLayoutEngine.layout(
             text: object.text,
             font: fonts.font(for: object),
-            letterSpacing: object.letterSpacing,
+            spacing: object.spacing,
             horizontalAlignment: object.horizontalAlignment,
             maxWidth: object.maxWidth,
             maxRows: object.maxRows,
@@ -144,7 +144,7 @@ enum WPETextRenderPlanner {
             horizontalAlignment: object.horizontalAlignment,
             verticalAlignment: object.verticalAlignment
         )
-        let ascender = layout.metrics.ascender.rounded(.up)
+        let ascender = layout.ascent
         let surfaceSize = WPETextLayerSynthesis.targetSize(
             blockSize: blockSize,
             padding: object.padding

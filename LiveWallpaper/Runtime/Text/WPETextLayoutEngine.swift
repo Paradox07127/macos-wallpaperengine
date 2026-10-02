@@ -81,16 +81,24 @@ struct WPETextGlyphQuad {
 /// The placement anchor is the object origin; the authored `size` box does not exist at runtime.
 struct WPETextBlockLayout {
     let quads: [WPETextGlyphQuad]
-    /// Widest line's typographic width — the block's horizontal extent.
+    /// Rightmost glyph ink edge over all lines, measured from the pen start; trailing spacing and spaces are not part of it.
     let blockWidth: Double
     let lineCount: Int
-    /// Primary font metrics at em pixels (line spacing uses these).
+    /// Primary font metrics at em pixels, unrounded.
     let metrics: WPETextLineMetrics
+    /// Baseline-to-baseline step: the rounded font line height plus authored `spacing.y`.
+    let lineAdvance: Double
 
-    /// Baseline-to-baseline step, whole pixels (WPE's FreeType path rounds it).
-    var lineAdvance: Double { metrics.lineHeight.rounded() }
+    /// FreeType ceils the ascender and floors the descender to whole pixels; the line height is rounded separately, so it is not `ascent + descent`.
+    var ascent: Double {
+        metrics.ascender.rounded(.up)
+    }
 
-    /// Widest line by `n × advance`. Its top edge sits `metrics.ascender` above the first baseline.
+    var descent: Double {
+        metrics.descender.rounded(.up)
+    }
+
+    /// Its top edge sits `ascent` above the first baseline.
     var blockSize: CGSize {
         CGSize(width: blockWidth, height: Double(lineCount) * lineAdvance)
     }
@@ -103,12 +111,10 @@ struct WPETextBlockLayout {
         case "right": x = -blockWidth
         default: x = -blockWidth / 2
         }
-        let advance = (metrics.lineHeight).rounded()
-        let y: Double
-        switch verticalAlignment {
-        case "top": y = -metrics.ascender
-        case "bottom": y = metrics.descender + Double(lineCount - 1) * advance
-        default: y = -metrics.ascender / 2 + Double(lineCount - 1) * advance / 2
+        let y: Double = switch verticalAlignment {
+        case "top": -ascent
+        case "bottom": descent + Double(lineCount - 1) * lineAdvance
+        default: -ascent / 2 + Double(lineCount - 1) * lineAdvance / 2
         }
         return SIMD2<Double>(x, y)
     }
@@ -118,11 +124,11 @@ enum WPETextLayoutEngine {
     /// WPE rasterizes `pointsize` at 300 DPI: author-space pixels per point.
     static let pixelsPerPoint = 300.0 / 72.0
 
-    /// `maxWidth` (author px) wraps via CoreText when present; `maxRows` clamps the row count (appending `…` when `ellipsis`). Returns nil for empty text.
+    /// `spacing` is authored canvas px (not scaled by 300/72): x after every glyph advance, y on the line advance. `maxWidth` (author px) wraps when present; `maxRows` clamps the row count (appending `…` when `ellipsis`). Returns nil for empty text.
     static func layout(
         text: String,
         font: CTFont,
-        letterSpacing: Double = 0,
+        spacing: SIMD2<Double> = .zero,
         horizontalAlignment: String = "center",
         maxWidth: Double? = nil,
         maxRows: Int? = nil,
@@ -130,9 +136,9 @@ enum WPETextLayoutEngine {
     ) -> WPETextBlockLayout? {
         guard !text.isEmpty else { return nil }
         let metrics = WPETextFontMetricsReader.metrics(for: font)
-        let lineAdvance = metrics.lineHeight.rounded()
+        let lineAdvance = metrics.lineHeight.rounded() + spacing.y
 
-        var lines = brokenLines(text: text, font: font, letterSpacing: letterSpacing, maxWidth: maxWidth)
+        var lines = brokenLines(text: text, font: font, spacingX: spacing.x, maxWidth: maxWidth)
         if let maxRows, maxRows > 0, lines.count > maxRows {
             lines = Array(lines.prefix(maxRows))
             if ellipsis, var last = lines.last {
@@ -142,27 +148,17 @@ enum WPETextLayoutEngine {
         }
         guard !lines.isEmpty else { return nil }
 
-        var lineLayouts: [(quads: [LineGlyph], width: Double)] = []
-        for line in lines {
-            lineLayouts.append(layoutLine(line, font: font, letterSpacing: letterSpacing))
-        }
-        let blockWidth = lineLayouts.map(\.width).max() ?? 0
+        let lineLayouts = lines.map { layoutLine($0, font: font, spacingX: spacing.x) }
+        let (blockWidth, indents) = lineIndents(
+            inkRights: lineLayouts.map(\.inkRight),
+            horizontalAlignment: horizontalAlignment
+        )
 
         var quads: [WPETextGlyphQuad] = []
         for (index, line) in lineLayouts.enumerated() {
             let baselineY = -Double(index) * lineAdvance
-            // Lines align mutually inside the block with the SAME mode the block anchors with.
-            let indent: Double
-            switch horizontalAlignment {
-            case "left": indent = 0
-            case "right": indent = blockWidth - line.width
-            default: indent = (blockWidth - line.width) / 2
-            }
             for glyph in line.quads {
-                let placed = glyph.cell.offsetBy(
-                    dx: (glyph.penX + indent).rounded(),
-                    dy: baselineY
-                )
+                let placed = glyph.cell.offsetBy(dx: glyph.penX + indents[index], dy: baselineY)
                 quads.append(WPETextGlyphQuad(
                     glyph: glyph.glyph, runFont: glyph.runFont, cell: glyph.cell, rect: placed
                 ))
@@ -173,36 +169,121 @@ enum WPETextLayoutEngine {
             quads: quads,
             blockWidth: blockWidth,
             lineCount: lines.count,
-            metrics: metrics
+            metrics: metrics,
+            lineAdvance: lineAdvance
         )
+    }
+
+    /// `inkRights` are per-line distances from the pen start to the rightmost glyph ink edge. Indents keep half pixels.
+    static func lineIndents(
+        inkRights: [Double],
+        horizontalAlignment: String
+    ) -> (blockWidth: Double, lineIndents: [Double]) {
+        let blockWidth = inkRights.max() ?? 0
+        let indents = inkRights.map { inkRight -> Double in
+            switch horizontalAlignment {
+            case "left": 0
+            case "right": blockWidth - inkRight
+            default: (blockWidth - inkRight) / 2
+            }
+        }
+        return (blockWidth, indents)
     }
 
     private static func brokenLines(
         text: String,
         font: CTFont,
-        letterSpacing: Double,
+        spacingX: Double,
         maxWidth: Double?
     ) -> [String] {
         let paragraphs = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard let maxWidth, maxWidth > 0 else { return paragraphs }
-        var lines: [String] = []
-        for paragraph in paragraphs {
-            guard !paragraph.isEmpty else {
-                lines.append("")
-                continue
+        return paragraphs.flatMap { wrapped($0, font: font, spacingX: spacingX, maxWidth: maxWidth) }
+    }
+
+    /// Greedy by word: a line takes the next word while its width up to the last non-space glyph fits `maxWidth`; a word wider than a fresh line breaks per character. Spaces at a wrap point are dropped.
+    private static func wrapped(_ paragraph: String, font: CTFont, spacingX: Double, maxWidth: Double) -> [String] {
+        let characters = Array(paragraph)
+        guard !characters.isEmpty else { return [""] }
+        var prefixWidth = [0.0]
+        for advance in characterAdvances(paragraph, characters: characters, font: font, spacingX: spacingX) {
+            prefixWidth.append(prefixWidth[prefixWidth.count - 1] + advance)
+        }
+        func fits(_ start: Int, _ end: Int) -> Bool {
+            var last = end
+            while last > start, characters[last - 1].isWhitespace {
+                last -= 1
             }
-            let attributed = attributedLine(paragraph, font: font, letterSpacing: letterSpacing)
-            let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-            let utf16 = Array(paragraph.utf16)
-            var start = 0
-            while start < utf16.count {
-                let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(maxWidth))
-                guard count > 0 else { break }
-                lines.append(String(utf16CodeUnits: Array(utf16[start..<min(start + count, utf16.count)]), count: min(count, utf16.count - start)))
-                start += count
+            guard last > start else { return true }
+            return prefixWidth[last] - prefixWidth[start] - spacingX <= maxWidth
+        }
+
+        var lines: [String] = []
+        // `characters[start ..< end]` is the open line; `end > start` once it holds a whole word.
+        var start = 0
+        var end = 0
+        var cursor = 0
+        while cursor < characters.count {
+            var wordStart = cursor
+            while wordStart < characters.count, characters[wordStart].isWhitespace {
+                wordStart += 1
+            }
+            guard wordStart < characters.count else { break }
+            var wordEnd = wordStart
+            while wordEnd < characters.count, !characters[wordEnd].isWhitespace {
+                wordEnd += 1
+            }
+            if fits(start, wordEnd) {
+                end = wordEnd
+                cursor = wordEnd
+            } else if end > start {
+                lines.append(String(characters[start ..< end]))
+                start = wordStart
+                end = wordStart
+                cursor = wordStart
+            } else {
+                var cut = wordStart + 1
+                while cut < wordEnd, fits(start, cut + 1) {
+                    cut += 1
+                }
+                lines.append(String(characters[start ..< cut]))
+                start = cut
+                end = cut
+                cursor = cut
             }
         }
+        if start < characters.count {
+            lines.append(String(characters[start...]))
+        }
         return lines
+    }
+
+    /// Per character: the advances of the glyphs it shapes to, each plus `spacingX`.
+    private static func characterAdvances(
+        _ paragraph: String,
+        characters: [Character],
+        font: CTFont,
+        spacingX: Double
+    ) -> [Double] {
+        var characterAtUTF16: [Int] = []
+        for (index, character) in characters.enumerated() {
+            characterAtUTF16.append(contentsOf: repeatElement(index, count: character.utf16.count))
+        }
+        var advances = [Double](repeating: 0, count: characters.count)
+        let ctLine = CTLineCreateWithAttributedString(attributedLine(paragraph, font: font))
+        for run in (CTLineGetGlyphRuns(ctLine) as? [CTRun]) ?? [] {
+            let glyphCount = CTRunGetGlyphCount(run)
+            guard glyphCount > 0 else { continue }
+            let range = CFRange(location: 0, length: glyphCount)
+            var glyphAdvances = [CGSize](repeating: .zero, count: glyphCount)
+            var stringIndices = [CFIndex](repeating: 0, count: glyphCount)
+            CTRunGetAdvances(run, range, &glyphAdvances)
+            CTRunGetStringIndices(run, range, &stringIndices)
+            for index in 0 ..< glyphCount where characterAtUTF16.indices.contains(stringIndices[index]) {
+                advances[characterAtUTF16[stringIndices[index]]] += Double(glyphAdvances[index].width) + spacingX
+            }
+        }
+        return advances
     }
 
     private struct LineGlyph {
@@ -214,17 +295,15 @@ enum WPETextLayoutEngine {
         let penX: Double
     }
 
-    /// Pen starts at x=0, baseline y=0, +y up. Cells are integer-aligned the way WPE's FreeType path lands on whole pixels.
+    /// Pen starts at x=0, baseline y=0, +y up; each glyph sits `spacingX` further per glyph left of it. Cells are integer-aligned the way WPE's FreeType path lands on whole pixels.
     private static func layoutLine(
         _ line: String,
         font: CTFont,
-        letterSpacing: Double
-    ) -> (quads: [LineGlyph], width: Double) {
+        spacingX: Double
+    ) -> (quads: [LineGlyph], inkRight: Double) {
         guard !line.isEmpty else { return ([], 0) }
-        let attributed = attributedLine(line, font: font, letterSpacing: letterSpacing)
-        let ctLine = CTLineCreateWithAttributedString(attributed)
-        let width = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
-        var quads: [LineGlyph] = []
+        let ctLine = CTLineCreateWithAttributedString(attributedLine(line, font: font))
+        var shaped: [(x: Double, glyph: CGGlyph, runFont: CTFont, bounds: CGRect)] = []
         for run in (CTLineGetGlyphRuns(ctLine) as? [CTRun]) ?? [] {
             let glyphCount = CTRunGetGlyphCount(run)
             guard glyphCount > 0 else { continue }
@@ -237,35 +316,36 @@ enum WPETextLayoutEngine {
             var bounds = [CGRect](repeating: .zero, count: glyphCount)
             CTFontGetBoundingRectsForGlyphs(runFont, .horizontal, glyphs, &bounds, glyphCount)
             for index in 0..<glyphCount {
-                let bb = bounds[index]
-                guard bb.width > 0, bb.height > 0 else { continue }
-                // Integral raster box in glyph space (floor/ceil around the bearings) — the atlas rasterizes this exact box, so quad and texels stay 1:1.
-                let x0 = Double(bb.minX).rounded(.down)
-                let y0 = Double(bb.minY).rounded(.down)
-                let x1 = Double(bb.maxX).rounded(.up)
-                let y1 = Double(bb.maxY).rounded(.up)
-                quads.append(LineGlyph(
-                    glyph: glyphs[index],
-                    runFont: runFont,
-                    cell: CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0),
-                    penX: Double(positions[index].x)
-                ))
+                shaped.append((Double(positions[index].x), glyphs[index], runFont, bounds[index]))
             }
         }
-        return (quads, width)
+        // Spaces count toward the per-glyph spacing even though they emit no quad.
+        let visualOrder = shaped.indices.sorted { (shaped[$0].x, $0) < (shaped[$1].x, $1) }
+        var quads: [LineGlyph] = []
+        var inkRight = 0.0
+        for (rank, index) in visualOrder.enumerated() {
+            let entry = shaped[index]
+            let bb = entry.bounds
+            guard bb.width > 0, bb.height > 0 else { continue }
+            // Integral raster box in glyph space (floor/ceil around the bearings) — the atlas rasterizes this exact box, so quad and texels stay 1:1.
+            let x0 = Double(bb.minX).rounded(.down)
+            let y0 = Double(bb.minY).rounded(.down)
+            let x1 = Double(bb.maxX).rounded(.up)
+            let y1 = Double(bb.maxY).rounded(.up)
+            let penX = entry.x + Double(rank) * spacingX
+            quads.append(LineGlyph(
+                glyph: entry.glyph,
+                runFont: entry.runFont,
+                cell: CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0),
+                penX: penX
+            ))
+            inkRight = max(inkRight, penX + x1)
+        }
+        return (quads, inkRight)
     }
 
-    private static func attributedLine(
-        _ line: String,
-        font: CTFont,
-        letterSpacing: Double
-    ) -> CFAttributedString {
-        var attributes: [CFString: Any] = [kCTFontAttributeName: font]
-        if letterSpacing != 0 {
-            // Authored in points like `pointsize`.
-            attributes[kCTKernAttributeName] = letterSpacing * pixelsPerPoint
-        }
-        return CFAttributedStringCreate(nil, line as CFString, attributes as CFDictionary)!
+    private static func attributedLine(_ line: String, font: CTFont) -> CFAttributedString {
+        CFAttributedStringCreate(nil, line as CFString, [kCTFontAttributeName: font] as CFDictionary)!
     }
 
     private static func runFont(_ run: CTRun) -> CTFont? {

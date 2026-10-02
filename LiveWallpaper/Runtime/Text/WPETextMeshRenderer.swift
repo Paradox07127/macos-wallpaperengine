@@ -74,7 +74,7 @@ final class WPETextMeshRenderer {
             object.text,
             object.fontRelativePath ?? "",
             "\(object.pointSize)",
-            "\(object.letterSpacing)",
+            "\(object.spacing.x) \(object.spacing.y)",
             object.horizontalAlignment,
             object.verticalAlignment,
             "\(object.maxWidth ?? -1)",
@@ -92,7 +92,7 @@ final class WPETextMeshRenderer {
         guard let layout = WPETextLayoutEngine.layout(
             text: object.text,
             font: font,
-            letterSpacing: object.letterSpacing,
+            spacing: object.spacing,
             horizontalAlignment: object.horizontalAlignment,
             maxWidth: object.maxWidth,
             maxRows: object.maxRows,

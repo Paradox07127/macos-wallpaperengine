@@ -1638,36 +1638,31 @@ struct WPESceneDocumentParserTests {
         #expect(text.resolvedAlpha(at: 4) == 0)
     }
 
-    @Test("Text object parses letter spacing with a neutral default")
-    func textObjectParsesLetterSpacing() throws {
+    @Test("Text object parses vec2 spacing and ignores legacy letterspacing")
+    func textObjectParsesSpacing() throws {
+        func text(_ id: String, _ extra: [String: Any]) -> [String: Any] {
+            ["id": id, "name": id, "type": "text", "text": "HHHH"].merging(extra) { $1 }
+        }
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
             "objects": [
-                [
-                    "id": "effect-text",
-                    "name": "Effect Text",
-                    "type": "text",
-                    "text": "Glow",
-                    "letterspacing": 1.5
-                ],
-                [
-                    "id": "plain-text",
-                    "name": "Plain Text",
-                    "type": "text",
-                    "text": "Plain"
-                ]
+                text("spaced", ["spacing": "20 0"]),
+                text("wrapped", ["spacing": ["value": "0 40"]]),
+                text("legacy", ["letterspacing": 20]),
+                text("plain", [:]),
             ]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
 
         let document = try WPESceneDocumentParser.parse(data: data)
-
-        let effect = try #require(document.textObjects.first { $0.id == "effect-text" })
-        #expect(effect.letterSpacing == 1.5)
-
-        let plain = try #require(document.textObjects.first { $0.id == "plain-text" })
-        #expect(plain.letterSpacing == 0)
+        func spacing(_ id: String) throws -> SIMD2<Double> {
+            try #require(document.textObjects.first { $0.id == id }).spacing
+        }
+        #expect(try spacing("spaced") == SIMD2(20, 0))
+        #expect(try spacing("wrapped") == SIMD2(0, 40))
+        #expect(try spacing("legacy") == .zero)
+        #expect(try spacing("plain") == .zero)
     }
 
     @Test("Image object inherits parent transform from non-renderable group object")

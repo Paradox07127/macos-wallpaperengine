@@ -1260,7 +1260,8 @@ public enum WPESceneDocumentParser {
         let backgroundBrightness = unwrapDouble(dict["backgroundbrightness"]) ?? 1
         // WPE runs a text object's effect chain over the rendered glyphs, as for an image.
         let effects = parseImageEffects(dict["effects"], imageName: name, diagnostics: &diagnostics)
-        let letterSpacing = unwrapDouble(dict["letterspacing"]) ?? unwrapDouble(dict["spacing"]) ?? 0
+        // WPE ignores the legacy scalar `letterspacing` key.
+        let spacing = parseVector3(dict["spacing"]).map { SIMD2<Double>($0.x, $0.y) } ?? .zero
 
         return WPESceneTextObject(
             id: id,
@@ -1291,7 +1292,7 @@ public enum WPESceneDocumentParser {
             backgroundColor: backgroundColor,
             backgroundBrightness: max(0, backgroundBrightness),
             effects: effects,
-            letterSpacing: letterSpacing,
+            spacing: spacing,
             parentObjectID: parentObjectID,
             localOrigin: localOrigin,
             localScale: localScale,

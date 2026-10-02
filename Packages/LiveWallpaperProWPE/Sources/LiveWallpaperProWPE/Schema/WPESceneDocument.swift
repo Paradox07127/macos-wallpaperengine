@@ -558,7 +558,8 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     public let backgroundColor: SIMD3<Double>
     public let backgroundBrightness: Double
     public let effects: [WPESceneImageEffect]
-    public let letterSpacing: Double
+    /// Authored `"spacing": "x y"` in canvas px (not scaled by pointsize): x after every glyph advance, y on the line advance.
+    public let spacing: SIMD2<Double>
     /// `origin` is parse-time WORLD; `localOrigin` is pre-composition LOCAL. When the parent chain moves, re-compose `localOrigin` through live parent transforms.
     public let parentObjectID: String?
     public let localOrigin: SIMD3<Double>?
@@ -606,7 +607,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         backgroundColor: SIMD3<Double> = SIMD3<Double>(0, 0, 0),
         backgroundBrightness: Double = 1,
         effects: [WPESceneImageEffect] = [],
-        letterSpacing: Double = 0,
+        spacing: SIMD2<Double> = .zero,
         parentObjectID: String? = nil,
         localOrigin: SIMD3<Double>? = nil,
         localScale: SIMD3<Double>? = nil,
@@ -647,7 +648,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         self.backgroundColor = backgroundColor
         self.backgroundBrightness = backgroundBrightness
         self.effects = effects
-        self.letterSpacing = letterSpacing
+        self.spacing = spacing
         self.parentObjectID = parentObjectID
         self.localOrigin = localOrigin
         self.localScale = localScale
@@ -700,7 +701,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
             backgroundColor: backgroundColor,
             backgroundBrightness: backgroundBrightness,
             effects: effects,
-            letterSpacing: letterSpacing,
+            spacing: spacing,
             parentObjectID: parentObjectID,
             localOrigin: localOrigin,
             localScale: localScale,
