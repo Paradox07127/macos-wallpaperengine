@@ -239,7 +239,7 @@ final class WPELayerScriptCursorInbox: Sendable {
         state.withLock { value in
             guard value.scheduled == claim.id else { return nil }
             value.scheduled = nil
-            guard reclaimPending, !value.closed, !value.pending.isEmpty else { return nil }
+            guard reclaimPending, !value.closed, value.needsCancel || !value.pending.isEmpty else { return nil }
             value.nextID &+= 1
             value.scheduled = value.nextID
             return Claim(id: value.nextID, epoch: value.epoch)
@@ -974,20 +974,27 @@ final class WPELayerScriptInstance {
             publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
         ) -> @Sendable () -> Void {
             { @Sendable [self] in
-                var admitted = false
-                // A burst appended while this claim runs is claim()-blocked, so completion re-arms it.
+                guard allows(.event) else { inbox.complete(claim); return }
+                // Reserve on the VM worker, never while building a frame's jobs.
+                guard let safety = asyncExecutionSafety.begin(
+                    sceneToken: instanceLimitToken, operation: .event
+                ) else {
+                    // A busy slot keeps the claim so later bursts queue behind this retry; 1 ms so an exhausted reservation pool cannot spin the lane.
+                    if inbox.isCurrent(claim) {
+                        queue.asyncAfter(deadline: .now() + .milliseconds(1),
+                                         execute: makeCursorBatch(claim: claim, inbox: inbox, publishTo: slot))
+                    } else if let next = inbox.complete(claim, reclaimPending: true) {
+                        queue.async(execute: makeCursorBatch(claim: next, inbox: inbox, publishTo: slot))
+                    }
+                    return
+                }
                 defer {
-                    if let next = inbox.complete(claim, reclaimPending: admitted) {
+                    asyncExecutionSafety.complete(safety)
+                    // A burst or cancel arriving while this claim runs is claim()-blocked, so completion re-arms it.
+                    if let next = inbox.complete(claim, reclaimPending: true) {
                         queue.async(execute: makeCursorBatch(claim: next, inbox: inbox, publishTo: slot))
                     }
                 }
-                // Reserve on the VM worker, never while building a frame's jobs.
-                // Failed admission leaves the inbox intact for the next frame.
-                guard allows(.event), let safety = asyncExecutionSafety.begin(
-                    sceneToken: instanceLimitToken, operation: .event
-                ) else { return }
-                defer { asyncExecutionSafety.complete(safety) }
-                admitted = true
                 guard let events = inbox.take(claim) else { return }
                 for event in events {
                     guard inbox.isCurrent(claim), acceptsCompletion() else { return }

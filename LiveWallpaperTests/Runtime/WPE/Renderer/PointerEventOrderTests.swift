@@ -251,7 +251,35 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(shared.get("events") as? String == "duc")
     }
 
-    @Test("Safety admission failure retries pending callbacks instead of consuming input")
+    @Test("A cancel that lands while a press is being delivered releases it without another frame")
+    func cancelDuringRunningPressReleasesIt() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { shared.events = ''; shared.go = false; }
+        export function cursorDown() { shared.events += 'd'; for (let i = 0; i < 5000000 && !shared.go; i++) {} }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        """, shared: shared, governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher)
+        defer { _ = instance.destroy() }
+        let first = try #require(instance.batchCursorEvents([invocation(.down, down: true)]))
+        let completion = try #require(dispatcher.submit([first], trackingCompletion: true))
+        let pressDeadline = Date().addingTimeInterval(2)
+        while shared.get("events") as? String != "d", Date() < pressDeadline {
+            usleep(1000)
+        }
+        instance.cancelPendingCursorEvents()
+        #expect(instance.batchCursorEvents([]) == nil)
+        shared.set("go", true)
+        #expect(completion.wait(timeout: .now() + 2))
+        let deadline = Date().addingTimeInterval(1)
+        while shared.get("events") as? String != "du", Date() < deadline {
+            usleep(1000)
+        }
+        #expect(shared.get("events") as? String == "du")
+    }
+
+    @Test("Safety admission failure retries the whole burst on the VM queue without another frame")
     func busySafetyRetriesWholeBurst() throws {
         let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
         let shared = WPESharedScriptState()
@@ -278,12 +306,12 @@ struct WPEPointerEdgeDeliveryTests {
         instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
         held.signal()
         #expect(completion.wait(timeout: .now() + 1))
-        lane.queue.sync {} // The deliberately reserved media event has completed.
-        #expect(shared.get("events") as? String == "")
-        let retry = try #require(instance.batchCursorEvents([]))
-        let retryCompletion = try #require(dispatcher.submit([retry], trackingCompletion: true))
-        #expect(retryCompletion.wait(timeout: .now() + 1))
+        let deadline = Date().addingTimeInterval(1)
+        while shared.get("events") as? String != "duc", Date() < deadline {
+            usleep(1000)
+        }
         #expect(shared.get("events") as? String == "duc")
+        #expect(instance.batchCursorEvents([]) == nil)
     }
 
     @Test("Release outside the view ends the press without synthesizing click")
@@ -362,6 +390,7 @@ struct WPEPointerEdgeDeliveryTests {
         instance.cancelPendingCursorEvents()
         held.signal()
         #expect(completion.wait(timeout: .now() + 1))
+        lane.queue.sync {}
         #expect(shared.get("events") as? String == "")
         let fresh = try #require(instance.batchCursorEvents([
             invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false),
