@@ -456,6 +456,7 @@ final class WallpaperAutomationOrchestrator {
                     continue
                 }
                 var lastResult = WallpaperPreparationResult.failed
+                var reason = WallpaperAutomationFailure.Reason.loadFailed
                 for _ in 0 ..< 2 {
                     guard intended() else { return }
                     if !dispatched, !isCurrentTransition(initialTransition, screenID) {
@@ -474,8 +475,10 @@ final class WallpaperAutomationOrchestrator {
                         }
                         dispatched = true
                         lastResult = await prepareAutomation(liveScreen, proposed, source, intended)
+                        reason = lastResult == .timedOut ? .timedOut : .loadFailed
                     } else {
                         lastResult = .failed
+                        reason = .sourceMissing
                     }
                     guard intended(), lastResult != .cancelled, configurationStore.get(for: screenID)?.wallpaperMode == expectedMode else { return }
                     if lastResult == .ready {
@@ -486,7 +489,7 @@ final class WallpaperAutomationOrchestrator {
                     }
                 }
                 guard intended(), var current = configurationStore.get(for: screenID), current.wallpaperMode == expectedMode else { return }
-                current.automationFailures[entry.id] = WallpaperAutomationFailure(entry: entry, failedAt: now())
+                current.automationFailures[entry.id] = WallpaperAutomationFailure(entry: entry, failedAt: now(), reason: reason)
                 saveConfiguration(current)
             }
         }

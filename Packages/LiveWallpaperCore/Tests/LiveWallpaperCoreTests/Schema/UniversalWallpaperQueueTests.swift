@@ -18,6 +18,20 @@ struct UniversalWallpaperQueueTests {
         #expect(try JSONDecoder().decode(ScreenConfiguration.self, from: JSONEncoder().encode(decoded)) == decoded)
     }
 
+    @Test("A skip records why it happened, and a skip saved before reasons existed still decodes")
+    func automationFailureReason() throws {
+        let entry = WallpaperQueueEntry(id: "bad", title: "Bad", content: .html(source: .inline("bad"), config: .default))
+        let failure = WallpaperAutomationFailure(entry: entry, failedAt: Date(timeIntervalSinceReferenceDate: 0), reason: .sourceMissing)
+        #expect(try JSONDecoder().decode(WallpaperAutomationFailure.self, from: JSONEncoder().encode(failure)) == failure)
+        var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(failure)) as? [String: Any])
+        legacy["reason"] = nil
+        let decoded = try JSONDecoder().decode(WallpaperAutomationFailure.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(decoded.entry == entry && decoded.reason == nil)
+        legacy["reason"] = "someFutureReason"
+        let future = try JSONDecoder().decode(WallpaperAutomationFailure.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(future.entry == entry && future.reason == nil)
+    }
+
     @Test("Video, packaged video, web and scene entries round-trip and preserve display preferences")
     func mixedQueueRoundTrip() throws {
         let contents: [WallpaperContent] = [

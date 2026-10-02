@@ -17,11 +17,30 @@ public struct WallpaperQueueEntry: Codable, Equatable, Identifiable, Sendable {
 
 /// A source disabled after its initial attempt and one retry both failed.
 public struct WallpaperAutomationFailure: Codable, Equatable, Sendable {
+    public enum Reason: String, Codable, Sendable {
+        case sourceMissing, loadFailed, timedOut
+    }
+
     public var entry: WallpaperQueueEntry
     public var failedAt: Date
-    public init(entry: WallpaperQueueEntry, failedAt: Date) {
+    /// Why the last attempt failed; nil for skips recorded before reasons were kept.
+    public var reason: Reason?
+    public init(entry: WallpaperQueueEntry, failedAt: Date, reason: Reason? = nil) {
         self.entry = entry
         self.failedAt = failedAt
+        self.reason = reason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case entry, failedAt, reason
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entry = try container.decode(WallpaperQueueEntry.self, forKey: .entry)
+        failedAt = try container.decode(Date.self, forKey: .failedAt)
+        // An unknown reason from a newer build must not fail the display's whole configuration.
+        reason = try? container.decodeIfPresent(Reason.self, forKey: .reason)
     }
 }
 

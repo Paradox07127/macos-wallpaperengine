@@ -1154,6 +1154,36 @@ struct WallpaperAutomationCoordinatorTests {
         orchestrator.stopMonitoring()
     }
 
+    @Test("A skipped source records why: missing source, failed load or timeout", arguments: [
+        (true, WallpaperPreparationResult.failed, WallpaperAutomationFailure.Reason.loadFailed),
+        (true, .timedOut, .timedOut),
+        (false, .ready, .sourceMissing),
+    ])
+    func automationSkipRecordsReason(available: Bool, result: WallpaperPreparationResult, reason: WallpaperAutomationFailure.Reason) async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = ["current", "bad"].map {
+            WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
+        }
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, _, _, intended in intended() ? result : .cancelled },
+            libraryEntryAvailable: { _ in available }
+        )
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 200 where store.get(for: screen.id)?.automationFailures["bad"] == nil {
+            await Task.yield()
+        }
+        #expect(store.get(for: screen.id)?.automationFailures["bad"]?.reason == reason)
+        orchestrator.stopMonitoring()
+    }
+
     @Test("A successful retry is not marked, and cancelling a pending load never marks or retries it")
     func automationRetrySuccessAndCancellation() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))

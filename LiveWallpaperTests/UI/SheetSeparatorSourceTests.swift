@@ -31,8 +31,8 @@ struct SheetSeparatorSourceTests {
     static let boundaries: [Boundary] = [
         Boundary(path: "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift", from: "chooseFilesRow\n", to: "body(for: candidates)"),
         Boundary(path: "LiveWallpaper/Views/SystemWallpaper/SystemWallpaperAddSheet.swift", from: "body(for: candidates)", to: "SheetFooterBar("),
-        Boundary(path: "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift", from: ".pickerStyle(.segmented)", to: "queuePage"),
-        Boundary(path: "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift", from: "schedulePage\n", to: #"Button("Cancel")"#),
+        Boundary(path: "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift", from: "GlassSegmentedPicker(", to: "queuePage"),
+        Boundary(path: "LiveWallpaper/Views/Playlist/WallpaperAutomationSheet.swift", from: "schedulePage\n", to: "SheetFooterBar("),
         Boundary(path: "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift", from: "struct DiagnosticLogSheet", to: "private var header"),
         Boundary(path: "LiveWallpaper/Views/Monitor/AgentActivityPanel.swift", from: "sourceHealth\n", to: "HSplitView {"),
         Boundary(path: "LiveWallpaper/Views/Settings/AppExceptionsSheet.swift", from: "var body: some View {", to: "footer\n"),
