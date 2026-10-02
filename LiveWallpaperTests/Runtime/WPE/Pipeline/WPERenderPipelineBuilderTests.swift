@@ -129,7 +129,7 @@ struct WPERenderPipelineBuilderTests {
           arguments: ["direct", "zero", "zero-inverse", "gated", "sampler", "viewport", "texture-metadata", "wide-attribute", "explicit-target", "blend", "layer-blend", "multiple-effects", "depth", "perspective", "hdr", "textured-base", "external-reader"])
     func terminalProceduralPublication(scope: String) throws {
         var material: [String: Any] = ["shader": "procedural", "blending": scope == "blend" ? "normal" : "disabled",
-                                       "depthtest": scope == "depth" ? "enabled" : "disabled"]
+                                       "depthtest": scope == "depth" ? "enabled" : "disabled", "cullmode": "front"]
         material["textures"] = []
         var effectPass: [String: Any] = ["material": "materials/procedural.json"]
         if scope == "explicit-target" {
@@ -218,6 +218,60 @@ struct WPERenderPipelineBuilderTests {
         } else {
             #expect(result == original)
         }
+    }
+
+    @Test("Admitted terminal image effects preserve authored cull provenance while normalizing native semantics",
+          arguments: ["omitted", "nocull", "normal", "inverted", "back", "front", "probe_unknown_cull"], [1.2, -1.2])
+    func terminalEffectCullVocabulary(raw: String, scaleX: Double) throws {
+        var material: [String: Any] = ["shader": "cull-probe", "blending": "disabled"]
+        if raw != "omitted" {
+            material["cullmode"] = raw
+        }
+        func json(_ value: Any) throws -> String {
+            try #require(String(data: JSONSerialization.data(withJSONObject: value), encoding: .utf8))
+        }
+        let fixture = try makeFixture(files: [
+            "models/solid.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": #"{"passes":[{"shader":"solidlayer","blending":"normal","cullmode":"nocull"}]}"#,
+            "materials/probe.json": json(["passes": [material]]),
+            "effects/probe.json": #"{"passes":[{"material":"materials/probe.json"}]}"#,
+            "shaders/cull-probe.vert": """
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            uniform mat4 g_ModelViewProjectionMatrix;
+            varying vec2 uv;
+            void main() { gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1); uv = a_TexCoord; }
+            """,
+            "shaders/cull-probe.frag": "varying vec2 uv; void main() { gl_FragColor = vec4(uv, 0.25, 1); }",
+        ])
+        defer { fixture.cleanup() }
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128]],
+            "objects": [["id": 1, "image": "models/solid.json", "origin": "144 52 0", "size": "160 96",
+                         "scale": "\(scaleX) 0.8 1", "angles": "0 0 0.17",
+                         "effects": [["id": 3, "file": "effects/probe.json"]]]],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+        let original = try builder.build(graph: graph)
+        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let before = try #require(original.layers.first)
+        let after = try #require(result.layers.first)
+        #expect(before.passes.count == 3 && after.passes.count == 2)
+        let terminal = after.passes[1]
+        #expect(terminal.pass.target == .scene)
+        #expect(terminal.pass.cullMode == (raw == "nocull" ? "nocull" : "back"))
+        #expect(terminal.pass.authoredJSON.materialPass?["cullmode"] == (raw == "omitted" ? nil : .string(raw)))
+        #expect(terminal.pass.authoredJSON == before.passes[1].pass.authoredJSON)
+        #expect(terminal.pass.id == before.passes[1].pass.id)
+        #expect(terminal.pass.constants == before.passes[1].pass.constants)
+        #expect(terminal.textureBindings == before.passes[1].textureBindings)
+        #expect(terminal.shader == before.passes[1].shader)
+        #expect(after.passes[0] == before.passes[0])
+        #expect(after.graphLayer.passes == after.passes.map(\.pass))
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: after.graphLayer, camera: camera))
     }
 
     @Test("Official TEXnFORMAT ABI values stay independent from decoder raw values")

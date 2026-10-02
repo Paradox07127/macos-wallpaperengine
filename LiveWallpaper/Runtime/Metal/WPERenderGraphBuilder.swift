@@ -1726,9 +1726,14 @@ extension WPERenderGraphBuilder {
             guard !camera.sceneHDR, graph.parentObjectID == nil,
                   graph.localFBOs.isEmpty, graph.groupCompositeSource == nil,
                   graph.geometry.shapePoints == nil, !graph.geometry.isTimeVarying,
-                  WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: graph, camera: camera),
                   layer.passes.count == 3 else { return layer }
             let base = layer.passes[0], effect = layer.passes[1], copy = layer.passes[2]
+            // Captured terminal image effects disable culling only for literal
+            // nocull; omitted/other authored values use back-face culling.
+            let cullMode = effect.pass.authoredJSON.materialPass?["cullmode"] == .string("nocull") ? "nocull" : "back"
+            let terminal = effect.pass.replacingCullMode(cullMode)
+            let candidateGraph = graph.replacingPasses([base.pass, terminal, copy.pass])
+            guard WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: candidateGraph, camera: camera) else { return layer }
             let solidBase = base.shader?.isBuiltin == true && base.pass.shader.lowercased() == "solidlayer"
             let sourceSize: WPERenderSourceExtent? = if base.pass.shader.lowercased() == "genericimage2", base.comboValues["VERSION"] == nil || base.comboValues["VERSION"] == 2,
                                                         base.pass.blending.lowercased() == "premultiplied", base.pass.cullMode == "nocull",
@@ -1799,7 +1804,7 @@ extension WPERenderGraphBuilder {
                         : WPEShaderAlphaContract(unpremultipliedInputSlots: [], premultipliedOutput: false)
                 )
             }
-            let published = replacing(effect, pass: effect.pass.replacingTarget(.scene).replacingBlending("disabled"))
+            let published = replacing(effect, pass: terminal.replacingTarget(.scene).replacingBlending("disabled"))
             let source = sourceSize == nil ? base : replacing(base, pass: base.pass.replacingBlending("disabled"))
             let passes = [source, published]
             return WPEPreparedRenderLayer(graphLayer: graph.replacingPasses(passes.map(\.pass), compositeSourceExtent: sourceSize),
@@ -2573,6 +2578,16 @@ private extension WPERenderLayer {
 }
 
 private extension WPERenderPass {
+    func replacingCullMode(_ cullMode: String) -> WPERenderPass {
+        WPERenderPass(
+            id: id, phase: phase, shader: shader, source: source, target: target,
+            textures: textures, binds: binds, constants: constants, combos: combos,
+            userTextureBindings: userTextureBindings, authoredJSON: authoredJSON,
+            blending: blending, cullMode: cullMode, depthTest: depthTest, depthWrite: depthWrite,
+            constantScripts: constantScripts, visibilityGate: visibilityGate
+        )
+    }
+
     func replacingSceneAliasReferences(with replacement: WPETextureReference) -> WPERenderPass {
         let newSource = source.replacingSceneAlias(with: replacement)
         let newTextures = textures.mapValues { $0.replacingSceneAlias(with: replacement) }
