@@ -708,7 +708,7 @@ extension WPEMetalSceneRenderer {
         let width = Double(max(sceneSize.width, 1))
         let height = Double(max(sceneSize.height, 1))
         let minHalf = max(height, 1) * 0.02
-        let center: SIMD2<Double>
+        var center: SIMD2<Double>
         var half: SIMD2<Double>
         if let projection {
             center = SIMD2<Double>(
@@ -727,6 +727,14 @@ extension WPEMetalSceneRenderer {
                 Double(size.height) * abs(geometry.scale.y) * 0.5
             )
         }
+        // Same shift the draw path applies; it is Y-up, so its Y flips into pointer space.
+        let alignmentOffset = WPEMetalRenderExecutor.alignmentCenterOffset(
+            alignment: geometry.alignment,
+            width: Float(half.x * 2),
+            height: Float(half.y * 2)
+        )
+        center.x += Double(alignmentOffset.x)
+        center.y -= Double(alignmentOffset.y)
         half.x = max(half.x, minHalf)
         half.y = max(half.y, minHalf)
         return (center, half)

@@ -2750,13 +2750,14 @@ struct WPEHoverHitRectTests {
     private func geometry(
         origin: SIMD3<Double>,
         size: CGSize,
-        scale: SIMD3<Double> = SIMD3<Double>(1, 1, 1)
+        scale: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
+        alignment: WPESceneAlignment = .center
     ) -> WPERenderLayerGeometry {
         WPERenderLayerGeometry(
             origin: origin,
             scale: scale,
             angles: SIMD3<Double>(0, 0, 0),
-            alignment: .center,
+            alignment: alignment,
             size: size,
             alpha: 1,
             color: SIMD3<Double>(1, 1, 1),
@@ -2806,6 +2807,46 @@ struct WPEHoverHitRectTests {
             projection: nil
         ))
         #expect(rect.half == SIMD2<Double>(43.2, 43.2))
+    }
+
+    private func hits(
+        _ alignment: WPESceneAlignment,
+        _ point: SIMD2<Double>,
+        projection: (center: SIMD2<Double>, depthScale: Double)? = nil
+    ) throws -> Bool {
+        let rect = try #require(WPEMetalSceneRenderer.hoverHitRect(
+            geometry: geometry(
+                origin: SIMD3<Double>(500, 500, 0),
+                size: CGSize(width: 100, height: 100),
+                alignment: alignment
+            ),
+            sceneSize: CGSize(width: 1000, height: 1000),
+            projection: projection
+        ))
+        return abs(point.x - rect.center.x) <= rect.half.x && abs(point.y - rect.center.y) <= rect.half.y
+    }
+
+    @Test("Top-left aligned hit box covers the drawn quad, not the area around its origin")
+    func topLeftAlignedHitBoxCoversDrawnQuad() throws {
+        // Drawn quad spans x 500...600 and, Y-down, y 500...600.
+        #expect(try hits(.topLeft, SIMD2<Double>(575, 575)))
+        #expect(try !hits(.topLeft, SIMD2<Double>(475, 475)))
+        #expect(try hits(.left, SIMD2<Double>(575, 500)))
+        #expect(try !hits(.left, SIMD2<Double>(475, 500)))
+    }
+
+    @Test("Centre aligned hit box stays centred on the origin")
+    func centreAlignedHitBoxStaysOnOrigin() throws {
+        #expect(try !hits(.center, SIMD2<Double>(575, 575)))
+        #expect(try hits(.center, SIMD2<Double>(475, 475)))
+    }
+
+    @Test("Perspective hit box applies the alignment offset at the projected size")
+    func perspectiveHitBoxAppliesAlignmentOffset() throws {
+        // Projected centre (0, 0) is scene pixel (500, 500); depth 0.5 draws a 50x50 quad spanning 500...550.
+        let projection = (center: SIMD2<Double>(0, 0), depthScale: 0.5)
+        #expect(try hits(.topLeft, SIMD2<Double>(540, 540), projection: projection))
+        #expect(try !hits(.topLeft, SIMD2<Double>(480, 480), projection: projection))
     }
 }
 
