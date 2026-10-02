@@ -97,7 +97,8 @@ WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
 # Wallpaper transitions draw with Metal into real windows, so they also stay out of the headless shard.
 TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitionShaderTests \
     WallpaperOpeningShaderTests WallpaperDistortionShaderTests WallpaperOpeningTransitionTests \
-    WallpaperOpeningLaunchTests WallpaperSessionFrameCaptureTests WallpaperDistortionTransitionTests
+    WallpaperOpeningLaunchTests WallpaperSessionFrameCaptureTests WallpaperDistortionTransitionTests \
+    WallpaperDistortionScreenTests
 
 # Keep certificate-signed Metal products separate from the ad-hoc fast host.
 test-wpe-metal:

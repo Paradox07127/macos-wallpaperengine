@@ -59,6 +59,7 @@ struct WallpaperTransitionEnvironment {
 
     var makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock = { DisplayLinkTransitionClock(window: $0) }
     var renderer: @MainActor () -> (any WallpaperTransitionRendering)? = { WallpaperTransitionRenderer.shared }
+    var distortionRenderer: @MainActor () -> (any WallpaperDistortionRendering)? = { WallpaperDistortionRenderer.shared }
 }
 
 /// Cuts the outgoing wallpaper window away with a Metal-drawn layer mask while an overlay window

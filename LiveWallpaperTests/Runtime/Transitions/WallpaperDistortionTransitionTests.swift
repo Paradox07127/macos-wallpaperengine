@@ -175,7 +175,7 @@ struct WallpaperDistortionTransitionTests {
         #expect(window.frame == old.frame)
         #expect(!window.isOpaque)
         let layer = try #require(window.contentView?.layer as? CAMetalLayer)
-        #expect(layer.isOpaque)
+        #expect(!layer.isOpaque)
         #expect(layer.pixelFormat == .rgba16Float)
         #expect(layer.colorspace?.name == space.name)
         #expect(layer.drawableSize == CGSize(width: 96, height: 54))

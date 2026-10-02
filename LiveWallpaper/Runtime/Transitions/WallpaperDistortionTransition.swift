@@ -67,6 +67,25 @@ final class WallpaperDistortionTransition {
         self.finishDeadline = finishDeadline ?? .seconds(duration + 0.5)
     }
 
+    /// Scenes ignore the requested format, so the scene side goes first and the other side is asked to match it.
+    /// nil when either side has no frame; the second side is then not asked.
+    static func captureFrames(
+        old: any WallpaperRuntimeSession,
+        incoming: any WallpaperRuntimeSession,
+        device: any MTLDevice
+    ) async -> (from: WallpaperFrameCapture, to: WallpaperFrameCapture)? {
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let oldFirst = old.wallpaperType == .scene || incoming.wallpaperType != .scene
+        let (first, second) = oldFirst ? (old, incoming) : (incoming, old)
+        guard let firstFrame = await first.captureDisplayedFrame(device: device, pixelFormat: .bgra8Unorm, colorSpace: sRGB),
+              let secondFrame = await second.captureDisplayedFrame(
+                  device: device,
+                  pixelFormat: firstFrame.texture.pixelFormat,
+                  colorSpace: firstFrame.colorSpace ?? sRGB
+              ) else { return nil }
+        return oldFirst ? (firstFrame, secondFrame) : (secondFrame, firstFrame)
+    }
+
     /// false orders no window in and changes no other window's state; Screen can crossfade.
     @discardableResult
     func start() -> Bool {
@@ -156,7 +175,7 @@ final class WallpaperDistortionTransition {
         let frame = oldWindow.frame
         let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        // Until the first frame lands the window must show the old wallpaper beneath it, not black.
+        // Neither window nor layer may claim opacity: the old wallpaper must show through until the first frame lands. Frames are always alpha 1.
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -171,7 +190,7 @@ final class WallpaperDistortionTransition {
         layer.pixelFormat = prepared.pixelFormat
         layer.colorspace = from.colorSpace
         layer.wantsExtendedDynamicRangeContent = from.isEDR || to.isEDR
-        layer.isOpaque = true
+        layer.isOpaque = false
         layer.framebufferOnly = true
         layer.presentsWithTransaction = false
         layer.contentsScale = oldWindow.backingScaleFactor

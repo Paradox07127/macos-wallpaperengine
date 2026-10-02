@@ -143,6 +143,18 @@ final class Screen: Identifiable, Hashable {
     /// Reveal transitions still running, keyed like `retiringSessions`.
     @ObservationIgnored private(set) var revealTransitions: [ObjectIdentifier: WallpaperRevealTransition] = [:]
 
+    /// Distortion transitions still running, keyed like `retiringSessions`.
+    @ObservationIgnored private(set) var distortionTransitions: [ObjectIdentifier: WallpaperDistortionTransition] = [:]
+
+    /// A distortion still capturing its two frames; `incoming` is held until it ends.
+    struct PendingDistortion {
+        let incoming: any WallpaperRuntimeSession
+        let task: Task<Void, Never>
+    }
+
+    /// Keyed like `retiringSessions`; an entry gone when the capture returns means the distortion was already ended.
+    @ObservationIgnored private(set) var pendingDistortions: [ObjectIdentifier: PendingDistortion] = [:]
+
     @ObservationIgnored private(set) var openingTransition: WallpaperOpeningTransition?
 
     /// Uncovers the live session's window, which the caller left at alpha 0.
@@ -198,8 +210,8 @@ final class Screen: Identifiable, Hashable {
     private func retire(_ old: (any WallpaperRuntimeSession)?, group: WallpaperSwitchGroup?) {
         finishOpening()
         guard let old else { return }
-        // A newer swap ends a reveal still in progress rather than stacking a second mask over it.
-        finishRevealTransitions()
+        // A newer swap ends a transition still in progress rather than stacking a second one over it.
+        finishTransitions()
         let environment = transitionEnvironment
         let reduceMotion = environment.reduceMotion()
         let lowPower = environment.lowPowerMode()
@@ -210,12 +222,16 @@ final class Screen: Identifiable, Hashable {
             old.cleanup()
             return
         }
-        if case let .reveal(effect) = plan, startReveal(effect, pace: pace, retiring: old, window: window) {
-            return
-        }
         let duration = reduceMotion || lowPower
             ? DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
             : DesignTokens.Motion.wallpaperCrossfadeDuration * pace.durationScale
+        if case let .reveal(effect) = plan, startReveal(effect, pace: pace, retiring: old, window: window) {
+            return
+        }
+        if case let .distortion(effect) = plan,
+           startDistortion(effect, pace: pace, retiring: old, window: window, fallbackDuration: duration) {
+            return
+        }
         crossfade(old, window: window, duration: duration)
     }
 
@@ -280,16 +296,84 @@ final class Screen: Identifiable, Hashable {
         retiringSessions.removeValue(forKey: token)?.cleanup()
     }
 
-    private func finishRevealTransitions() {
+    /// false changes nothing and the caller crossfades. true owns `old` until `completeDistortion` or a crossfade takes it.
+    private func startDistortion(
+        _ effect: WallpaperDistortionEffect,
+        pace: WallpaperTransitionPace,
+        retiring old: any WallpaperRuntimeSession,
+        window: NSWindow,
+        fallbackDuration: TimeInterval
+    ) -> Bool {
+        guard let incoming = runtimeSession,
+              incoming.wallpaperWindow ?? incoming.videoPlayer?.playbackWindow != nil,
+              let renderer = transitionEnvironment.distortionRenderer() else {
+            return false
+        }
+        let token = ObjectIdentifier(old)
+        let makeClock = transitionEnvironment.makeClock
+        window.ignoresMouseEvents = true
+        // Held, not suspended: a suspended video drops the output its frame is captured from.
+        old.setTransitionHold(true)
+        incoming.setTransitionHold(true)
+        retiringSessions[token] = old
+        let task = Task { @MainActor [weak self] in
+            let frames = await WallpaperDistortionTransition.captureFrames(old: old, incoming: incoming, device: renderer.device)
+            guard let self, pendingDistortions.removeValue(forKey: token) != nil else { return }
+            let transition = frames.flatMap { frames in
+                WallpaperDistortionTransition(
+                    effect: effect,
+                    pace: pace,
+                    from: frames.from,
+                    to: frames.to,
+                    oldWindow: window,
+                    newWindow: incoming.wallpaperWindow ?? incoming.videoPlayer?.playbackWindow,
+                    renderer: renderer,
+                    makeClock: makeClock,
+                    onFinish: { [weak self, weak incoming] in self?.completeDistortion(token, incoming: incoming) }
+                )
+            }
+            if let transition {
+                distortionTransitions[token] = transition
+                if transition.start() {
+                    old.applyPerformanceProfile(.suspended)
+                    return
+                }
+                distortionTransitions[token] = nil
+            }
+            incoming.setTransitionHold(false)
+            guard retiringSessions[token] != nil else { return }
+            crossfade(old, window: window, duration: fallbackDuration)
+        }
+        // The task cannot run before this main-actor turn ends, so registering after creating it is not late.
+        pendingDistortions[token] = PendingDistortion(incoming: incoming, task: task)
+        return true
+    }
+
+    private func completeDistortion(_ token: ObjectIdentifier, incoming: (any WallpaperRuntimeSession)?) {
+        distortionTransitions[token] = nil
+        incoming?.setTransitionHold(false)
+        retiringSessions.removeValue(forKey: token)?.cleanup()
+    }
+
+    private func finishTransitions() {
         for transition in Array(revealTransitions.values) {
             transition.finish()
         }
+        for transition in Array(distortionTransitions.values) {
+            transition.finish()
+        }
+        for (token, pending) in pendingDistortions {
+            pending.task.cancel()
+            pending.incoming.setTransitionHold(false)
+            retiringSessions.removeValue(forKey: token)?.cleanup()
+        }
+        pendingDistortions.removeAll()
     }
 
     /// Drops every still-fading session immediately. Finishing the fade after the screen goes away would leave a window AppKit can reposition onto a surviving display.
     private func flushRetiringSessions() {
         finishOpening()
-        finishRevealTransitions()
+        finishTransitions()
         let fading = retiringSessions.values
         retiringSessions.removeAll()
         for session in fading {
