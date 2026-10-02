@@ -286,6 +286,7 @@ final class WPELayerScriptInstance {
     private var isDestroyed = false
     let initialOutput: WPELayerScriptOutput
     private let cursorInbox = WPELayerScriptCursorInbox()
+    private var pendingMediaEvents: [WPESceneMediaEvent] = []
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
         combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
     )
@@ -401,13 +402,14 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil
     ) {
         guard !isPoisoned, !isDestroyed else { return }
-        let handled = events.filter { handles($0) }
-        guard !handled.isEmpty, engine.allows(.event) else { return }
-        _ = engine.dispatchMediaEventsAsync(
-            handled,
-            runtimeSeconds: runtimeSeconds,
-            publishTo: asyncOutcomeSlot
-        )
+        for event in events where handles(event) {
+            pendingMediaEvents.coalesce(event)
+        }
+        guard !pendingMediaEvents.isEmpty, engine.allows(.event) else { return }
+        // A refused batch stays pending; the next frame's drain retries it.
+        if engine.dispatchMediaEventsAsync(pendingMediaEvents, runtimeSeconds: runtimeSeconds, publishTo: asyncOutcomeSlot) {
+            pendingMediaEvents.removeAll(keepingCapacity: true)
+        }
     }
 
     private func handles(_ event: WPESceneMediaEvent) -> Bool {

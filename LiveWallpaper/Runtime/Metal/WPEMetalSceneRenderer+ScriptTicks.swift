@@ -135,7 +135,8 @@ extension WPEMetalSceneRenderer {
     }
 
     func drainMediaEvents(runtimeSeconds: Double) {
-        guard let events = mediaEventMailbox?.drain(), !events.isEmpty else { return }
+        guard let mailbox = mediaEventMailbox else { return }
+        let events = mailbox.drain()
         // The whole drain goes to each instance as one batch: dispatched per event, the single in-flight async slot would admit the first and silently drop the rest of a cold-start burst.
         for instance in layerScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)

@@ -148,6 +148,55 @@ struct WPESceneMediaEventDispatchTests {
         #expect(instance.tickString(runtimeSeconds: 1) == "Current song")
     }
 
+    @Test("A layer media burst refused under capacity pressure reaches the next drain, latest per handler")
+    func layerMediaBurstSurvivesCapacityPressure() async throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
+        let instance = try WPELayerScriptInstance(
+            script: """
+            var calls = 0; var state = -1;
+            export function mediaPlaybackChanged(event) { calls += 1; state = event.state; }
+            export function update() { thisLayer.visible = calls === 1 && state === MediaPlaybackEvent.PLAYBACK_PAUSED; }
+            """,
+            setupBudget: 2, tickBudget: 0.5, initialVisible: false, governor: governor
+        )
+        let blocker = governor.makeParticipant()
+        let permit = try #require(governor.tryAcquireUnreserved(for: blocker))
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
+        instance.liveDispatchMediaEvents([.playbackChanged(.paused)])
+        permit.release()
+        instance.liveDispatchMediaEvents([])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(instance.tick()?.own.visible == true,
+                "the refused events were dropped, or both ran instead of only the latest one")
+    }
+
+    @Test("A dynamic-transform media burst refused under capacity pressure reaches the next drain, latest per handler")
+    func transformMediaBurstSurvivesCapacityPressure() async throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            var calls = 0; var state = -1;
+            export function mediaPlaybackChanged(event) { calls += 1; state = event.state; }
+            export function update(value) { return new Vec3(calls, state, 0); }
+            """,
+            seed: SIMD3<Double>(0, 0, 0),
+            canvasSize: SIMD2<Double>(1920, 1080),
+            setupBudget: 2,
+            tickBudget: 0.5,
+            governor: governor
+        )
+        let blocker = governor.makeParticipant()
+        let permit = try #require(governor.tryAcquireUnreserved(for: blocker))
+        instance.liveDispatchMediaEvents([.playbackChanged(.playing)])
+        instance.liveDispatchMediaEvents([.playbackChanged(.paused)])
+        permit.release()
+        instance.liveDispatchMediaEvents([])
+        try await Task.sleep(for: .milliseconds(200))
+        let value = instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5))
+        #expect(value?.x == 1 && value?.y == 2,
+                "the refused events were dropped, or both ran instead of only the latest one")
+    }
+
     // MARK: - 2. mediaPropertiesChanged reaches a text script
 
     @Test("A text script's mediaPropertiesChanged receives title and artist")

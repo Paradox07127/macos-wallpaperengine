@@ -2470,6 +2470,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// value this tick" contract (caller falls back to the baked transform).
     private var lastAsyncInner: SIMD3<Double>?
     private var hasAsyncOutcome = false
+    private var pendingMediaEvents: [WPESceneMediaEvent] = []
     /// The arity WPE authored for the bound property. Vec3 is the transform
     /// default; shader constants are usually scalars.
     private let valueShape: WPEScriptValueShape
@@ -2584,9 +2585,14 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// entry for why per-event dispatch dropped everything after the first.
     func liveDispatchMediaEvents(_ events: [WPESceneMediaEvent], runtimeSeconds: Double? = nil) {
         guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }
-        let handled = events.filter { mediaHandlers.handles($0) }
-        guard !handled.isEmpty, engine.allows(.event) else { return }
-        _ = engine.dispatchMediaEventsAsync(handled, runtimeSeconds: runtimeSeconds)
+        for event in events where mediaHandlers.handles(event) {
+            pendingMediaEvents.coalesce(event)
+        }
+        guard !pendingMediaEvents.isEmpty, engine.allows(.event) else { return }
+        // A refused batch stays pending; the next frame's drain retries it.
+        if engine.dispatchMediaEventsAsync(pendingMediaEvents, runtimeSeconds: runtimeSeconds) {
+            pendingMediaEvents.removeAll(keepingCapacity: true)
+        }
     }
 
 

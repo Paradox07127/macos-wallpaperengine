@@ -53,22 +53,24 @@ struct PointerEventOrderTests {
 @MainActor
 @Suite("Pointer button edge delivery")
 struct WPEPointerEdgeDeliveryTests {
-    private func fixture() throws -> MetalSceneFixture {
+    private static let buttonEdgeScript = """
+    export function init() { shared.events = ''; }
+    export function update(value) { return value; }
+    export function cursorDown() { shared.events += 'd'; }
+    export function cursorUp() { shared.events += 'u'; }
+    export function cursorClick() { shared.events += 'c'; }
+    export function cursorRightDown() { shared.events += 'r'; }
+    export function cursorRightUp() { shared.events += 'R'; }
+    """
+
+    private func fixture(script: String = Self.buttonEdgeScript) throws -> MetalSceneFixture {
         let fixture = try MetalSceneFixture.solidColorScene()
         let path = fixture.root.appendingPathComponent("scene.json")
         var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         var objects = try #require(scene["objects"] as? [[String: Any]])
         objects[0]["origin"] = "32 32 0"
         objects[0]["size"] = "32 32"
-        objects[0]["visible"] = ["value": true, "script": """
-        export function init() { shared.events = ''; }
-        export function update(value) { return value; }
-        export function cursorDown() { shared.events += 'd'; }
-        export function cursorUp() { shared.events += 'u'; }
-        export function cursorClick() { shared.events += 'c'; }
-        export function cursorRightDown() { shared.events += 'r'; }
-        export function cursorRightUp() { shared.events += 'R'; }
-        """]
+        objects[0]["visible"] = ["value": true, "script": script]
         scene["objects"] = objects
         try JSONSerialization.data(withJSONObject: scene).write(to: path)
         return fixture
@@ -107,6 +109,50 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(renderer.makeFrameInputs().pointerFrame.isDown == false)
         _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
         try await waitForEvents("duc", renderer: renderer)
+    }
+
+    @Test("A media event refused while the VM is busy reaches the script on the next frame without a new player notification")
+    func refusedMediaEventRetriesOnNextFrame() async throws {
+        let scene = try fixture(script: """
+        export function init() { shared.events = ''; shared.go = false; }
+        export function update(value) { return value; }
+        export function cursorDown() { shared.events += 'd'; for (let i = 0; i < 5000000 && !shared.go; i++) {} }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        export function mediaPlaybackChanged() { shared.events += 'p'; }
+        """)
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let mailbox = WPESceneMediaEventMailbox()
+        renderer.mediaEventMailbox = mailbox
+        // load() already delivers the player's current playback state once; start the log after it.
+        renderer.sceneScriptSharedState?.set("events", "")
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        for _ in 0 ..< 1000 where renderer.sharedScriptValueForTesting("events") as? String != "d" {
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        mailbox.post([.playbackChanged(.playing)])
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        renderer.sceneScriptSharedState?.set("go", true)
+        for _ in 0 ..< 1000 where renderer.sharedScriptValueForTesting("events") as? String != "duc" {
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        for _ in 0 ..< 500 where renderer.sharedScriptValueForTesting("events") as? String != "ducp" {
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        #expect(renderer.sharedScriptValueForTesting("events") as? String == "ducp",
+                "the playback event refused while cursorDown held the VM was dropped instead of retried on the next frame")
     }
 
     private func pointer(_ down: Bool, x: Double = 0.5) -> WPEPointerFrame {

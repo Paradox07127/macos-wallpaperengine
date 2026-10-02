@@ -63,6 +63,17 @@ enum WPESceneMediaEvent: Sendable, Equatable {
     }
 }
 
+extension [WPESceneMediaEvent] {
+    /// One pending entry per handler: a newer event replaces the older one in place.
+    mutating func coalesce(_ event: WPESceneMediaEvent) {
+        if let index = firstIndex(where: { $0.handlerName == event.handlerName }) {
+            self[index] = event
+        } else {
+            append(event)
+        }
+    }
+}
+
 struct WPESceneMediaHandlerSet: Sendable, Equatable {
     var playback = false
     var properties = false
