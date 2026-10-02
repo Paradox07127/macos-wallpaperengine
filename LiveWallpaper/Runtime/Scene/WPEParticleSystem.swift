@@ -1394,10 +1394,10 @@ final class WPEParticleSystem {
                     rate *= audioState.emissionScale(spectrum16: spectrum)
                 }
                 spawnAccumulator += Double(dt) * rate
+                // A failed spawn leaves its slot free, so only success or a full pool bounds this loop.
                 while spawnAccumulator >= 1 {
                     spawnAccumulator -= 1
-                    guard let slot = nextFreeSlot() else { break }
-                    spawn(into: slot)
+                    guard let slot = nextFreeSlot(), spawn(into: slot) else { break }
                 }
                 spawnAccumulator = min(spawnAccumulator, 1)
             }
