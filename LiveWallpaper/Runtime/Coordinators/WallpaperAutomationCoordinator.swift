@@ -11,6 +11,8 @@ final class WallpaperAutomationCoordinator {
     /// Deterministic tick seam for behavior tests. Production uses the existing
     /// one-minute clock when this is nil.
     @ObservationIgnored private let tickStreamFactory: (() -> AsyncStream<Date>)?
+    /// Manual-apply times per screen, folded into the task's rotation clock on the next tick.
+    @ObservationIgnored private var pendingRotationResets: [CGDirectDisplayID: Date] = [:]
     #if DEBUG
     private(set) var taskStartCountForTesting = 0
     #endif
@@ -64,6 +66,8 @@ final class WallpaperAutomationCoordinator {
 
         // Restart only on demand edge; keep lastRotation when already active.
         guard automationTask == nil else { return }
+        // A reset recorded while idle predates this task's start time and would make the first tick rotate early.
+        pendingRotationResets = [:]
 
         let generation = taskGeneration
         #if DEBUG
@@ -129,6 +133,9 @@ final class WallpaperAutomationCoordinator {
                         rotationSettings[screen.id] = nil
                         continue
                     }
+                    if let resetAt = self?.pendingRotationResets.removeValue(forKey: screen.id) {
+                        lastRotation[screen.id] = resetAt
+                    }
                     let previous = rotationSettings[screen.id]
                     rotationSettings[screen.id] = (configuration.wallpaperMode, rotationMinutes)
                     if previous?.mode != configuration.wallpaperMode || previous?.minutes != rotationMinutes {
@@ -174,6 +181,10 @@ final class WallpaperAutomationCoordinator {
                 guard processTick(at: Date()) else { return }
             }
         }
+    }
+
+    func resetRotationClock(for screenID: CGDirectDisplayID, at now: Date = Date()) {
+        pendingRotationResets[screenID] = now
     }
 
     func stop() {

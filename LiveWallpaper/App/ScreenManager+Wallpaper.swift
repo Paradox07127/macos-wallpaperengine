@@ -11,6 +11,7 @@ extension ScreenManager {
     func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         recordBookmarkDisplayName(bookmarkData, name: url.lastPathComponent)
         playbackCoordinator.setVideo(
             url: url,
@@ -30,6 +31,7 @@ extension ScreenManager {
             return nil
         }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) ?? ScreenConfiguration(
             screenID: screen.id,
             wallpaper: .scene(descriptor)
@@ -402,6 +404,7 @@ extension ScreenManager {
     func switchToVideoWallpaper(for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedVideoWallpaper() else { return }
@@ -418,6 +421,7 @@ extension ScreenManager {
     func switchToHTMLWallpaper(for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedHTMLWallpaper() else { return }
@@ -443,6 +447,7 @@ extension ScreenManager {
     ) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         htmlCoordinator.setWallpaper(
             source: source,
             config: config,
@@ -456,6 +461,7 @@ extension ScreenManager {
     func setHTMLWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
         htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen)
     }
 

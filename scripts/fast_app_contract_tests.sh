@@ -181,6 +181,7 @@ PARALLEL_SUITES=(
   CodexAgentSourceTests
   SchedulePolicyTests
   WallpaperAutomationCoordinatorTests
+  WallpaperAutomationRotationResetTests
   ShelfGridFlightTests
   ApplyRouterTests
   LibraryImporterTests
