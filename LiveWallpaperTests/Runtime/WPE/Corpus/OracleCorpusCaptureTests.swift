@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import AppKit
 import CoreGraphics
 import CryptoKit
 import Foundation
@@ -38,11 +39,16 @@ struct OracleCorpusCaptureTests {
         /// Test input injection, not a product texture-quality setting.
         var sourceMipLevel: Int?
         var scriptOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
+        /// Test-only SceneScript input injection, not settings UI or property-patch acceptance.
+        var propertySequence: [[String: WallpaperEngineProjectPropertyValue]] = []
+        var sequenceWarmupFrames: Int = 8
+        var sequenceCaptureFrames: Int = 3
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
             case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates, captureStages
             case sourceMipLevel
+            case propertySequence, sequenceWarmupFrames, sequenceCaptureFrames
         }
 
         init(from decoder: Decoder) throws {
@@ -72,6 +78,20 @@ struct OracleCorpusCaptureTests {
             }
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
+            propertySequence = try container.decodeIfPresent([[String: WallpaperEngineProjectPropertyValue]].self, forKey: .propertySequence) ?? []
+            sequenceWarmupFrames = try container.decodeIfPresent(Int.self, forKey: .sequenceWarmupFrames) ?? 8
+            sequenceCaptureFrames = try container.decodeIfPresent(Int.self, forKey: .sequenceCaptureFrames) ?? 3
+            if !propertySequence.isEmpty {
+                guard propertySequence.count <= 16, (1 ... 60).contains(sequenceWarmupFrames),
+                      (2 ... 8).contains(sequenceCaptureFrames), scriptOrder == .parallelWorkers,
+                      propertySequence.allSatisfy({ values in
+                          guard case let .number(stage)? = values["stage"] else { return false }
+                          return stage.isFinite && stage.rounded(.towardZero) == stage && (0 ... 999).contains(stage)
+                      }) else {
+                    throw DecodingError.dataCorruptedError(forKey: .propertySequence, in: container,
+                                                           debugDescription: "Bounded stage sequence requires parallelWorkers and integer stage values")
+                }
+            }
         }
     }
 
@@ -154,6 +174,7 @@ struct OracleCorpusCaptureTests {
         var graphLayers = 0, authoredJSONLayers = 0, authoredSceneObjectNodes = 0
         var authoredImageDescriptors = 0, malformedAuthoredLayerLinks = 0
         var graphPasses = 0, authoredJSONPasses = 0, malformedAuthoredPassLinks = 0
+        var synthesizedPasses = 0, missingAuthoredPasses = 0
         for folder in folders {
             let id = folder.lastPathComponent
             if let filter, !filter.contains(id) {
@@ -260,6 +281,8 @@ struct OracleCorpusCaptureTests {
                 graphPasses += authoredSummary.passes
                 authoredJSONPasses += authoredSummary.authoredPasses
                 malformedAuthoredPassLinks += authoredSummary.malformedPassLinks
+                synthesizedPasses += authoredSummary.synthesizedPasses
+                missingAuthoredPasses += authoredSummary.missingAuthoredPasses
                 Self.printTextEvidence(renderer: renderer, sceneID: id)
                 let advancedFrame = try Self.advanceToTracedFrame(
                     renderer: renderer,
@@ -270,7 +293,7 @@ struct OracleCorpusCaptureTests {
                     stepSeconds: config.frameStepSeconds,
                     perPass: config.perPass || config.dumpPNGs
                 )
-                if config.captureGPU {
+                if config.captureGPU, config.propertySequence.isEmpty {
                     captureManager.stopCapture()
                 }
                 let frameTrace: URL?
@@ -410,6 +433,13 @@ struct OracleCorpusCaptureTests {
                     print("[oracle-capture] [\(id)] loaded but no trace written")
                     failed += 1
                 }
+                if !config.propertySequence.isEmpty {
+                    try Self.capturePropertySequence(renderer: renderer, id: id, entryFile: descriptor.entryFile,
+                                                     stage: stage, outputRoot: outDir, config: config)
+                    if config.captureGPU {
+                        captureManager.stopCapture()
+                    }
+                }
             } catch {
                 print("[oracle-capture] [\(id)] load failed: \(String(describing: error).prefix(200))")
                 failed += 1
@@ -421,7 +451,8 @@ struct OracleCorpusCaptureTests {
         print("=== authored-json: graphLayers=\(graphLayers) authoredLayers=\(authoredJSONLayers) "
             + "sceneObjectNodes=\(authoredSceneObjectNodes) imageDescriptors=\(authoredImageDescriptors) "
             + "malformedLayerLinks=\(malformedAuthoredLayerLinks) graphPasses=\(graphPasses) "
-            + "authoredPasses=\(authoredJSONPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
+            + "authoredPasses=\(authoredJSONPasses) synthesizedPasses=\(synthesizedPasses) "
+            + "missingAuthoredPasses=\(missingAuthoredPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
         #expect(captured > 0, "no scene produced a trace — check corpus root / engine assets")
         #expect(failed == 0, "one or more requested scenes failed")
         if let filter {
@@ -430,7 +461,9 @@ struct OracleCorpusCaptureTests {
         #expect(builtinPassesCaptured > 0, "captured traces contained no hand-authored Metal builtin pass")
         #expect(authoredJSONLayers > 0, "real-scene render graphs exposed no authored scene/model layer JSON")
         #expect(malformedAuthoredLayerLinks == 0, "layer-level authored scene ancestry was lost")
-        #expect(authoredJSONPasses > 0, "real-scene render graphs exposed no material/effect authored JSON")
+        #expect(graphPasses > 0 && authoredJSONPasses + synthesizedPasses == graphPasses,
+                "Every pass must retain authored JSON or match a specific synthesized graph path")
+        #expect(missingAuthoredPasses == 0, "Material/effect pass provenance is missing or incomplete")
         #expect(malformedAuthoredPassLinks == 0, "pass-level authored JSON lost its parent document")
     }
 
@@ -636,6 +669,32 @@ struct OracleCorpusCaptureTests {
         }
     }
 
+    @Test("Property sequence capture is bounded opt-in input injection without oracle ordering override")
+    func configPropertySequence() throws {
+        let ordinary = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp"}"#.utf8))
+        #expect(ordinary.propertySequence.isEmpty)
+        let valid = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","propertySequence":[{"stage":0},{"stage":1},{"stage":2},{"stage":0}]}"#.utf8))
+        #expect(valid.propertySequence.map { $0["stage"] } == [.number(0), .number(1), .number(2), .number(0)])
+        #expect(valid.sequenceWarmupFrames == 8 && valid.sequenceCaptureFrames == 3)
+        for extra in [
+            #""scriptOrder":"submissionOrder""#,
+            #""sequenceWarmupFrames":0"#,
+            #""sequenceWarmupFrames":61"#,
+            #""sequenceCaptureFrames":1"#,
+        ] {
+            let json = "{\"corpusRoot\":\"/tmp\",\"propertySequence\":[{\"stage\":0}],\(extra)}"
+            #expect(throws: (any Error).self) {
+                _ = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+            }
+        }
+        for values in [#"{}"#, #"{"stage":true}"#, #"{"stage":1.5}"#] {
+            let json = "{\"corpusRoot\":\"/tmp\",\"propertySequence\":[\(values)]}"
+            #expect(throws: (any Error).self) {
+                _ = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+            }
+        }
+    }
+
     @Test("Video capture modes are explicit and unknown modes fail")
     func configVideoModes() throws {
         let ordinary = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp"}"#.utf8))
@@ -729,14 +788,16 @@ struct OracleCorpusCaptureTests {
         stage: URL,
         frames: Int,
         stepSeconds: Double,
-        perPass: Bool
+        perPass: Bool,
+        startingFrameOrdinal: Int = 0
     ) throws -> TracedFrame? {
         guard frames > 1 else { return nil }
         var finalFrame: TracedFrame?
         let summary = "\(id) oracle-capture frames=\(frames) step=\(stepSeconds)"
-        for index in 1 ..< frames {
+        for offset in 1 ..< frames {
+            let index = startingFrameOrdinal + offset
             WPEOracleMode.frameAdvanceSeconds = Double(index) * stepSeconds
-            let isLast = index == frames - 1
+            let isLast = offset == frames - 1
             if isLast {
                 _ = WPESceneDebugArtifacts.shared.beginSession(workshopID: id, descriptor: summary)
                 WPECanonicalTraceRecorder.shared.beginScene(
@@ -771,6 +832,111 @@ struct OracleCorpusCaptureTests {
                 + "(t=\(renderer.lastRuntimeUniforms.map { String(format: "%.4f", $0.time) } ?? "?"))")
         }
         return finalFrame
+    }
+
+    @MainActor
+    private static func capturePropertySequence(
+        renderer: WPEMetalSceneRenderer,
+        id: String,
+        entryFile: String,
+        stage: URL,
+        outputRoot: URL,
+        config: Config
+    ) throws {
+        let shared = try #require(renderer.sceneScriptSharedState)
+        let owners = shared.layers.sorted { $0.index < $1.index }.compactMap { layer in
+            renderer.layerScriptInstances[layer.id].map { (layer.id, $0) }
+        }
+        try #require(!owners.isEmpty, "Sequence injection requires visible-script owners")
+        var ordinal = config.frames - 1
+        var records: [[String: Any]] = []
+        for (stepIndex, values) in config.propertySequence.enumerated() {
+            try awaitSceneScriptBatch(renderer)
+            let properties = WPEMetalSceneRenderer.bridgeUserProperties(values)
+            var inputReceipts: [[String: Any]] = []
+            for (objectID, instance) in owners {
+                let readback = instance.injectOracleUserProperties(properties)
+                let receipt = try #require(readback, "Oracle input injection did not complete for \(objectID)")
+                try #require(receipt == properties, "Actual VM inputs differ from the requested sequence step")
+                inputReceipts.append(["objectID": objectID, "properties": receipt.mapValues(\.jsBridged)])
+            }
+            _ = try advanceToTracedFrame(
+                renderer: renderer, id: id, entryFile: entryFile, stage: stage,
+                frames: config.sequenceWarmupFrames + 1, stepSeconds: config.frameStepSeconds,
+                perPass: false, startingFrameOrdinal: ordinal
+            )
+            ordinal += config.sequenceWarmupFrames
+            for sampleIndex in 0 ..< config.sequenceCaptureFrames {
+                let advanced = try advanceToTracedFrame(
+                    renderer: renderer, id: id, entryFile: entryFile, stage: stage,
+                    frames: 2, stepSeconds: config.frameStepSeconds,
+                    perPass: config.perPass || config.dumpPNGs, startingFrameOrdinal: ordinal
+                )
+                let frame = try #require(advanced)
+                ordinal += 1
+                let stem = "\(id)-s\(String(format: "%02d", stepIndex))-n\(sampleIndex)"
+                let traceName = stem + ".json"
+                let pngName = stem + ".png"
+                let traceURL = outputRoot.appendingPathComponent(traceName)
+                let pngURL = outputRoot.appendingPathComponent(pngName)
+                try #require(!FileManager.default.fileExists(atPath: traceURL.path) && !FileManager.default.fileExists(atPath: pngURL.path))
+                let traceData = try #require(frame.trace)
+                let traceObject = try JSONSerialization.jsonObject(with: traceData)
+                var trace = try #require(traceObject as? [String: Any])
+                var capture = trace["capture"] as? [String: Any] ?? [:]
+                capture["jobId"] = config.jobId ?? config.label
+                capture["frameOrdinal"] = ordinal
+                capture["sequenceStepIndex"] = stepIndex
+                capture["sequenceSampleIndex"] = sampleIndex
+                capture["inputScope"] = "test-only-script-user-property-injection"
+                capture["scriptOrder"] = config.scriptOrder.rawValue
+                capture["propertyPatchOrSettingsUIValidated"] = false
+                capture["pixelProbe"] = try WPEOraclePixelProbe.stageEvidence(
+                    stage: "post-color-correction", texture: frame.texture,
+                    coordinates: config.pixelProbeCoordinates ?? [[frame.texture.width / 2, frame.texture.height / 2]],
+                    commandQueue: renderer.executor.commandQueue, frameOrdinal: ordinal,
+                    time: renderer.lastRuntimeUniforms?.time ?? 0
+                )
+                trace["capture"] = capture
+                try JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]).write(to: traceURL, options: .atomic)
+                _ = try validateBuiltinPasses(in: traceURL, sceneID: id)
+                let snapshot = WPEMetalTextureSnapshotter.shared.snapshot(from: frame.texture)
+                let image = try #require(snapshot)
+                let tiff = try #require(image.tiffRepresentation)
+                let representation = NSBitmapImageRep(data: tiff)
+                let bitmap = try #require(representation)
+                let encodedPNG = bitmap.representation(using: .png, properties: [:])
+                let png = try #require(encodedPNG)
+                try png.write(to: pngURL, options: .atomic)
+                let propertyData = try JSONEncoder().encode(values)
+                let propertyObject = try JSONSerialization.jsonObject(with: propertyData)
+                var record: [String: Any] = [
+                    "stepIndex": stepIndex, "sampleIndex": sampleIndex, "frameOrdinal": ordinal,
+                    "properties": propertyObject,
+                    "inputReceipts": inputReceipts,
+                    "traceFile": traceName, "pngFile": pngName,
+                    "renderOrder": (renderer.lastFramePipeline ?? renderer.renderPipeline)?.layers.map(\.graphLayer.objectID) ?? [],
+                    "ownerSourceOrder": owners.map(\.0),
+                    "sharedOrderEnabled": shared.isAuthoredLayerOrderingEnabled,
+                    "payloadSampling": "after-frame-batch-completion; require-stable-consecutive-captures",
+                ]
+                if let payload = shared.get("configProbe") as? String {
+                    record["configProbe"] = payload
+                }
+                if let order = renderer.committedAuthoredLayerOrder {
+                    record["committedOrder"] = ["objectIDs": order.objectIDs, "revision": order.revision, "hasOverride": order.hasOverride]
+                }
+                records.append(record)
+            }
+        }
+        let document: [String: Any] = [
+            "schema": 1, "sceneID": id, "jobId": config.jobId ?? config.label,
+            "sequenceKind": "test-only-script-user-property-injection", "scriptOrder": config.scriptOrder.rawValue,
+            "propertyPatchOrSettingsUIValidated": false, "records": records,
+        ]
+        let outputURL = outputRoot.appendingPathComponent("\(id)-sequence.json")
+        try #require(!FileManager.default.fileExists(atPath: outputURL.path))
+        try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]).write(to: outputURL, options: .atomic)
     }
 
     private static func layerInputSnapshots(_ renderer: WPEMetalSceneRenderer) -> [[String: Any]] {
@@ -868,9 +1034,11 @@ struct OracleCorpusCaptureTests {
         malformedLayerLinks: Int,
         passes: Int,
         authoredPasses: Int,
-        malformedPassLinks: Int
+        malformedPassLinks: Int,
+        synthesizedPasses: Int,
+        missingAuthoredPasses: Int
     ) {
-        guard let graph else { return (0, 0, 0, 0, 0, 0, 0, 0) }
+        guard let graph else { return (0, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
         var authoredLayers = 0
         var sceneObjectNodes = 0
         var imageDescriptors = 0
@@ -878,6 +1046,8 @@ struct OracleCorpusCaptureTests {
         var passes = 0
         var authoredPasses = 0
         var malformedPassLinks = 0
+        var synthesizedPasses = 0
+        var missingAuthoredPasses = 0
         for layer in graph.layers {
             let authored = layer.authoredJSON
             if authored != .empty {
@@ -891,11 +1061,16 @@ struct OracleCorpusCaptureTests {
                 malformedLayerLinks += 1
             }
         }
-        for pass in graph.layers.flatMap(\.passes) {
+        for (layer, pass) in graph.layers.flatMap({ layer in layer.passes.map { (layer, $0) } }) {
             passes += 1
             let authored = pass.authoredJSON
             if authored != .empty {
                 authoredPasses += 1
+            }
+            switch passProvenance(materialPath: layer.materialPath, phase: pass.phase, shader: pass.shader, authored: authored) {
+            case .authored: break
+            case .synthesized: synthesizedPasses += 1
+            case .missing: missingAuthoredPasses += 1
             }
             if authored.materialPass != nil, authored.materialDocument == nil {
                 malformedPassLinks += 1
@@ -912,8 +1087,69 @@ struct OracleCorpusCaptureTests {
             malformedLayerLinks,
             passes,
             authoredPasses,
-            malformedPassLinks
+            malformedPassLinks,
+            synthesizedPasses,
+            missingAuthoredPasses
         )
+    }
+
+    private enum PassProvenance { case authored, synthesized, missing }
+
+    private static func passProvenance(
+        materialPath: String?, phase: WPERenderPassPhase, shader: String,
+        authored: WPERenderPassAuthoredJSON
+    ) -> PassProvenance {
+        if authored == .empty {
+            // Match the builder's synthetic constructors, not shader.isBuiltin: authored
+            // materials also dispatch builtins and must retain their original documents.
+            if phase == .material, let path = materialPath {
+                let solid = ["models/util/solidlayer.json", "models/util/solidlayer_depthtest.json"].contains(path.lowercased())
+                if solid, shader == WPEBuiltinShaderKind.solidLayer.rawValue {
+                    return .synthesized
+                }
+                if WPETextLayerSynthesis.isTargetPath(path), shader == WPETextLayerSynthesis.glyphPassShader {
+                    return .synthesized
+                }
+            }
+            if phase == .command(file: WPERenderPassPhase.sceneCopyCommandFile),
+               shader == WPERenderPassPhase.sceneCopyCommandFile || shader == WPEBuiltinShaderKind.blendComposite.rawValue {
+                return .synthesized
+            }
+            return .missing
+        }
+        let materialComplete = authored.materialDocument != nil && authored.materialPass != nil
+        let effectComplete = authored.effectDocument != nil && authored.effectPass != nil
+        switch phase {
+        case .material: return materialComplete ? .authored : .missing
+        case .effect: return materialComplete && effectComplete ? .authored : .missing
+        case .command: return effectComplete ? .authored : .missing
+        }
+    }
+
+    @Test("Pass provenance exempts only actual synthesized graph paths")
+    func passProvenanceClassification() {
+        let solid = WPEBuiltinShaderKind.solidLayer.rawValue
+        for path in ["models/util/solidlayer.json", "models/util/solidlayer_depthtest.json"] {
+            #expect(Self.passProvenance(materialPath: path, phase: .material, shader: solid, authored: .empty) == .synthesized)
+            #expect(Self.passProvenance(materialPath: path, phase: .effect(file: "effects/test.json"), shader: solid, authored: .empty) == .missing)
+        }
+        #expect(Self.passProvenance(materialPath: "materials/custom.json", phase: .material, shader: solid, authored: .empty) == .missing)
+        #expect(Self.passProvenance(materialPath: "models/util/solidlayer.json", phase: .material, shader: "custom", authored: .empty) == .missing)
+        #expect(Self.passProvenance(materialPath: WPETextLayerSynthesis.renderPath(objectID: "7", mode: .direct),
+                                    phase: .material, shader: WPETextLayerSynthesis.glyphPassShader, authored: .empty) == .synthesized)
+        let copy = WPERenderPassPhase.sceneCopyCommandFile
+        #expect(Self.passProvenance(materialPath: nil, phase: .command(file: copy), shader: copy, authored: .empty) == .synthesized)
+        #expect(Self.passProvenance(materialPath: nil, phase: .command(file: "effects/custom.json"), shader: copy, authored: .empty) == .missing)
+        let document = WPESceneJSONValue.object([:])
+        let material = WPERenderPassAuthoredJSON(materialDocument: document, materialPass: document)
+        #expect(Self.passProvenance(materialPath: "materials/custom.json", phase: .material, shader: solid, authored: material) == .authored)
+        #expect(Self.passProvenance(materialPath: nil, phase: .material, shader: solid,
+                                    authored: .init(materialDocument: document)) == .missing)
+        #expect(Self.passProvenance(materialPath: nil, phase: .effect(file: "effects/test.json"), shader: solid, authored: material) == .missing)
+        let effect = WPERenderPassAuthoredJSON(materialDocument: document, materialPass: document, effectDocument: document, effectPass: document)
+        #expect(Self.passProvenance(materialPath: nil, phase: .effect(file: "effects/test.json"), shader: solid, authored: effect) == .authored)
+        #expect(Self.passProvenance(materialPath: nil, phase: .command(file: "effects/test.json"), shader: "commands/copy",
+                                    authored: .init(effectDocument: document, effectPass: document)) == .authored)
     }
 
     @MainActor

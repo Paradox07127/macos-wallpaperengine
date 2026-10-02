@@ -488,6 +488,24 @@ final class WPELayerScriptInstance {
     #endif
 
     #if DEBUG
+    /// Oracle-only input injection. Does not model the settings UI or invoke script callbacks.
+    func injectOracleUserProperties(
+        _ properties: [String: WPESceneScriptPropertyValue]
+    ) -> [String: WPESceneScriptPropertyValue]? {
+        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
+              engine.allows(.userProperties) else { return nil }
+        switch engine.injectOracleUserProperties(properties, budget: tickBudget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Layer SceneScript oracle input injection exceeded its budget - frozen", category: .wpeRender)
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(receipt):
+            return engine.acceptsCompletion() ? receipt : nil
+        }
+    }
+
     @discardableResult
     func applyUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue],
@@ -929,6 +947,37 @@ final class WPELayerScriptInstance {
                 }
             }
         }
+
+        #if DEBUG
+        func injectOracleUserProperties(
+            _ properties: [String: WPESceneScriptPropertyValue],
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<[String: WPESceneScriptPropertyValue]?> {
+            guard allows(.userProperties) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline) {
+                guard self.acceptsCompletion(), let context = self.context,
+                      let bag = context.objectForKeyedSubscript("engine")?.objectForKeyedSubscript("userProperties"),
+                      bag.isObject else { return nil }
+                for (name, value) in properties {
+                    bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
+                }
+                var receipt: [String: WPESceneScriptPropertyValue] = [:]
+                for name in properties.keys {
+                    guard let value = bag.objectForKeyedSubscript(name) else { return nil }
+                    if value.isBoolean {
+                        receipt[name] = .bool(value.toBool())
+                    } else if value.isNumber {
+                        receipt[name] = .number(value.toDouble())
+                    } else if value.isString, let text = value.toString() {
+                        receipt[name] = .string(text)
+                    } else {
+                        return nil
+                    }
+                }
+                return context.exception == nil && self.acceptsCompletion() ? receipt : nil
+            }
+        }
+        #endif
 
         func applyUserProperties(
             _ properties: [String: WPESceneScriptPropertyValue],

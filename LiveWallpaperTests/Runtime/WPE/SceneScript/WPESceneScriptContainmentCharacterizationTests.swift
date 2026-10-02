@@ -7,10 +7,36 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: four evaluators retain serial queues and bounded engines share global admission")
     func productionEvaluatorsUseGlobalAdmission() throws {
-        let runtime = try RR10ProductionSource.combined([
+        let combinedRuntime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
         ])
+        let oracleBodies = try RR10ProductionSource.engineMethodBodies(named: "injectOracleUserProperties", in: combinedRuntime)
+        try #require(oracleBodies.count == 1)
+        let oracleBody = try #require(oracleBodies.first)
+        for required in [
+            "guard allows(.userProperties) else { return .capacityUnavailable }",
+            "return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline)",
+            "guard self.acceptsCompletion(), let context = self.context",
+            "bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)",
+            "bag.objectForKeyedSubscript(name)",
+            "self.acceptsCompletion() ? receipt : nil",
+        ] {
+            #expect(oracleBody.contains(required), "Oracle input hook must retain its bounded VM input/readback path: \(required)")
+        }
+        #expect(RR10ProductionSource.occurrences(of: "return runWithBudget(", in: oracleBody) == 1)
+        #expect(!oracleBody.contains("queue.async") && !oracleBody.contains("queue.sync"),
+                "The oracle hook must use the shared runner's VM queue, not bypass its admission")
+        // The input injector is DEBUG-only and is not a new production evaluator.
+        // Check its exact boundary separately before retaining the production census.
+        let oracleStart = try #require(combinedRuntime.range(of: "        #if DEBUG\n        func injectOracleUserProperties("))
+        let oracleEnd = try #require(combinedRuntime.range(
+            of: "\n        #endif", range: oracleStart.upperBound ..< combinedRuntime.endIndex
+        ))
+        var runtime = combinedRuntime
+        runtime.removeSubrange(oracleStart.lowerBound ..< oracleEnd.upperBound)
+        let remainingOracleBodies = try RR10ProductionSource.engineMethodBodies(named: "injectOracleUserProperties", in: runtime)
+        #expect(remainingOracleBodies.isEmpty)
 
         // 1 = the parse-time evaluator's own private queue; 3 = the per-object
         // engines taking theirs from the batch dispatcher.

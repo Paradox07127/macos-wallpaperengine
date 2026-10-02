@@ -17,6 +17,48 @@ struct WPESceneScriptSharedLayerOrderTests {
         ])
     }
 
+    @Test("Oracle inputs update the VM bag without callbacks and cannot cross retired loads")
+    func oracleInputBagReceipts() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 40)
+        let shared = state(token: token)
+        let script = """
+        export function update(value) {
+            shared.stage = engine.userProperties.stage;
+            shared.label = engine.userProperties.label;
+            shared.enabled = engine.userProperties.enabled;
+            return value;
+        }
+        """
+        let instance = try WPELayerScriptInstance(script: script, shared: shared, ownLayerName: "A", ownObjectID: "102")
+        #expect(!instance.handlesUserProperties)
+        for stage in [0.0, 1, 2, 0] {
+            let input: [String: WPESceneScriptPropertyValue] = [
+                "stage": .number(stage), "label": .string("step-\(stage)"), "enabled": .bool(stage != 0),
+            ]
+            #expect(instance.injectOracleUserProperties(input) == input)
+            _ = try #require(instance.tick())
+            #expect(shared.get("stage") as? Double == stage)
+            #expect(shared.get("label") as? String == "step-\(stage)")
+            #expect(shared.get("enabled") as? Bool == (stage != 0))
+        }
+        let callbacks = try WPELayerScriptInstance(script: """
+        export function applyUserProperties(properties) { shared.callbackRan = true; }
+        export function update(value) { return value; }
+        """, shared: shared, ownLayerName: "B", ownObjectID: "101")
+        #expect(callbacks.injectOracleUserProperties(["stage": .number(9)]) == ["stage": .number(9)])
+        #expect(shared.get("callbackRan") == nil)
+        token.retire()
+        #expect(instance.injectOracleUserProperties(["stage": .number(99)]) == nil)
+        let replacement = state(token: WPESceneScriptInstanceLimitToken(generation: 41))
+        let fresh = try WPELayerScriptInstance(script: script, shared: replacement, ownLayerName: "A", ownObjectID: "102")
+        #expect(fresh.injectOracleUserProperties(["stage": .number(7)]) == ["stage": .number(7)])
+        _ = try #require(fresh.tick())
+        #expect(replacement.get("stage") as? Double == 7)
+        #expect(shared.get("stage") as? Double == 0)
+        _ = fresh.destroy()
+        #expect(fresh.injectOracleUserProperties(["stage": .number(8)]) == nil)
+    }
+
     @Test("Shared order is an admitted identity projection with isolated rollback")
     func admittedOrderAndRollback() {
         let shared = state()
