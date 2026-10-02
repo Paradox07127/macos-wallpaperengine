@@ -474,6 +474,9 @@ extension PlaybackCoordinator {
                         timeout: timeout
                     )
                 },
+                claimOpening: { [weak self] in
+                    self?.claimOpening(screenID)
+                },
                 beforeCommit: {
                     guard beforeCommit() else { return false }
                     // Capture inside install CAS: in-session retry can replace the player mid-warm.

@@ -105,6 +105,9 @@ extension ScreenManager {
                 replacing: expected,
                 timeout: timeout,
                 isStillCurrent: isCandidateStillCurrent,
+                claimOpening: { [weak self] in
+                    self?.openingBatch?.claim(screenID)
+                },
                 beforeCommit: beforeCommit,
                 afterCommit: { [weak self, weak screen] in
                     guard let self, let screen else { return }

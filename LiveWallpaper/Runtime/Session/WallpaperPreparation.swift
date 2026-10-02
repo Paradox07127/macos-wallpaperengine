@@ -176,10 +176,15 @@ enum WallpaperSessionTransaction {
             any WallpaperRuntimeSession,
             Duration
         ) async -> WallpaperPreparationResult)? = nil,
+        claimOpening: @MainActor () -> WallpaperOpeningEffect? = { nil },
         beforeCommit: @MainActor () -> Bool = { true },
         afterCommit: @MainActor () -> Void = {},
         beforeDiscard: @MainActor (WallpaperPreparationResult) async -> Void = { _ in }
     ) async -> WallpaperPreparationResult {
+        let opening = expected == nil && mayPlayOpening(candidate) ? claimOpening() : nil
+        if opening != nil {
+            candidate.wallpaperWindow?.alphaValue = 0
+        }
         // Candidate windows render behind the live session for first-frame readiness.
         if candidate.wallpaperType != .video {
             candidate.show()
@@ -210,6 +215,10 @@ enum WallpaperSessionTransaction {
             candidate.cleanup()
             return .cancelled
         }
+        if opening != nil {
+            // A video window only exists once prepare has built it.
+            (candidate.wallpaperWindow ?? candidate.videoPlayer?.playbackWindow)?.alphaValue = 0
+        }
         candidate.show()
         var didAttemptCommit = false
         var commitAccepted = false
@@ -232,8 +241,20 @@ enum WallpaperSessionTransaction {
             candidate.cleanup()
             return didAttemptCommit && !commitAccepted ? .failed : .cancelled
         }
+        if let opening {
+            // Before afterCommit, so the policy it applies already sees the opening's hold.
+            screen.startOpening(opening)
+        }
         afterCommit()
         return .ready
+    }
+
+    private static func mayPlayOpening(_ candidate: any WallpaperRuntimeSession) -> Bool {
+        #if LITE_BUILD
+        true
+        #else
+        !(candidate is SceneSpanWallpaperSession)
+        #endif
     }
 }
 

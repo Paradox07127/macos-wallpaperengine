@@ -35,6 +35,7 @@ struct WallpaperSessionState: Equatable {
 struct ScreenManagerStartupOptions: Equatable {
     var restoreSavedWallpapers: Bool = true
     var startAutomation: Bool = true
+    var playsOpening: Bool = false
     var powerMonitor: (any PowerMonitoring)? = nil
     var fullScreenDetector: (any FullScreenDetecting)? = nil
     var playableVideoLoader: (any PlayableVideoLoading)? = nil
@@ -61,6 +62,7 @@ struct ScreenManagerStartupOptions: Equatable {
     static func == (lhs: ScreenManagerStartupOptions, rhs: ScreenManagerStartupOptions) -> Bool {
         lhs.restoreSavedWallpapers == rhs.restoreSavedWallpapers
             && lhs.startAutomation == rhs.startAutomation
+            && lhs.playsOpening == rhs.playsOpening
             && lhs.featureCatalog == rhs.featureCatalog
     }
 }

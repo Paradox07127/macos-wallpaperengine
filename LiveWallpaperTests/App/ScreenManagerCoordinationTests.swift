@@ -63,6 +63,74 @@ struct ScreenManagerCoordinationTests {
         #expect(standard.string(forKey: gateKey) == "sentinel-gate")
     }
 
+    // MARK: - Launch opening
+
+    /// Synchronous on purpose: no other MainActor test can observe the scoped defaults while they are swapped.
+    private static func withOpeningDefaults(globallyEnabled: Bool, _ body: () throws -> Void) rethrows {
+        let scoped = UserDefaults.appScoped()
+        let keys = [ScreenManager.globallyEnabledDefaultsKey, WallpaperOpeningChoice.defaultsKey]
+        let previous = keys.map { scoped.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, previous) {
+                if let value {
+                    scoped.set(value, forKey: key)
+                } else {
+                    scoped.removeObject(forKey: key)
+                }
+            }
+        }
+        scoped.set(globallyEnabled, forKey: ScreenManager.globallyEnabledDefaultsKey)
+        scoped.set(WallpaperOpeningChoice.loom.rawValue, forKey: WallpaperOpeningChoice.defaultsKey)
+        try body()
+    }
+
+    private static func makeOpeningManager(playsOpening: Bool?) -> (ScreenManager, [Screen]) {
+        let screens = NSScreen.screens.map(Screen.init(nsScreen:))
+        var options = ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(screens: screens),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        )
+        if let playsOpening {
+            options.playsOpening = playsOpening
+        }
+        return (ScreenManager(startupOptions: options), screens)
+    }
+
+    @Test("No launch opening batch unless startup asks for one")
+    func openingBatchIsOffByDefault() {
+        Self.withOpeningDefaults(globallyEnabled: true) {
+            let (manager, _) = Self.makeOpeningManager(playsOpening: nil)
+            #expect(manager.openingBatch == nil)
+        }
+    }
+
+    @Test("A launch that plays the opening covers exactly the current displays")
+    func openingBatchCoversCurrentDisplays() throws {
+        try Self.withOpeningDefaults(globallyEnabled: true) {
+            let (manager, screens) = Self.makeOpeningManager(playsOpening: true)
+            try #require(!screens.isEmpty)
+            let batch = try #require(manager.openingBatch)
+            let outsider = (screens.map(\.id).max() ?? 0) &+ 1
+            #expect(batch.claim(outsider) == nil)
+            for screen in screens {
+                #expect(batch.claim(screen.id) == .loom)
+            }
+        }
+    }
+
+    @Test("No launch opening batch while wallpapers are globally off")
+    func openingBatchNeedsWallpapersOn() {
+        Self.withOpeningDefaults(globallyEnabled: false) {
+            let (manager, _) = Self.makeOpeningManager(playsOpening: true)
+            #expect(manager.openingBatch == nil)
+        }
+    }
+
     @Test("A manual selection cancels an automatic retry still waiting on source availability")
     func manualSelectionCancelsPendingAutomaticRetry() async throws {
         let entry = WallpaperQueueEntry(id: "auto", title: "Auto", content: .html(source: .inline("auto"), config: .default))

@@ -64,16 +64,17 @@ final class WallpaperOpeningTransition {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
         let mask = WallpaperRevealTransition.makeMaskLayer(
             device: renderer.device, host: host, backingScale: window.backingScaleFactor
         )
-        guard draw(.mask, in: mask) else { return false }
-        if shaders.light != nil, !installLightWindow() {
-            return false
+        let attached = draw(.mask, in: mask) && (shaders.light == nil || installLightWindow())
+        if attached {
+            host.mask = mask
+            maskLayer = mask
         }
-        host.mask = mask
-        maskLayer = mask
+        CATransaction.commit()
+        guard attached else { return false }
+        // Window alpha does not ride the CA transaction; raised before the commit it can show one unmasked frame.
         window.alphaValue = 1
 
         orderFrontObserver = NotificationCenter.default.addObserver(
@@ -172,5 +173,32 @@ final class WallpaperOpeningTransition {
         guard !isFinished, let lightWindow else { return }
         lightWindow.level = WallpaperRevealTransition.overlayLevel(above: [window])
         lightWindow.orderFrontRegardless()
+    }
+}
+
+/// The displays present at launch, each allowed to play the launch opening once.
+@MainActor
+final class WallpaperOpeningBatch {
+    private let effect: WallpaperOpeningEffect
+    private var unclaimed: Set<CGDirectDisplayID>
+    private let deadline: ContinuousClock.Instant
+    private let now: () -> ContinuousClock.Instant
+
+    init(
+        displayIDs: Set<CGDirectDisplayID>,
+        effect: WallpaperOpeningEffect,
+        lifetime: Duration = .seconds(60),
+        now: @escaping () -> ContinuousClock.Instant = { .now }
+    ) {
+        self.effect = effect
+        unclaimed = displayIDs
+        self.now = now
+        deadline = now().advanced(by: lifetime)
+    }
+
+    /// nil when the display was not present at launch, already claimed, or the lifetime has passed.
+    func claim(_ displayID: CGDirectDisplayID) -> WallpaperOpeningEffect? {
+        guard now() <= deadline, unclaimed.remove(displayID) != nil else { return nil }
+        return effect
     }
 }

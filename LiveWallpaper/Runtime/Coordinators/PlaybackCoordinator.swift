@@ -47,6 +47,7 @@ final class PlaybackCoordinator {
     let originReconciler: any OriginReconciler
     let isGloballyEnabled: @MainActor () -> Bool
     let isRuntimeInstallationAllowed: @MainActor () -> Bool
+    let claimOpening: @MainActor (CGDirectDisplayID) -> WallpaperOpeningEffect?
 
     init(
         configurationStore: WallpaperConfigurationStore,
@@ -92,7 +93,8 @@ final class PlaybackCoordinator {
         reportPreparationFailure: @MainActor @escaping (CGDirectDisplayID, WallpaperRuntimeError, ScreenConfiguration?) -> Void = { _, _, _ in },
         originReconciler: any OriginReconciler,
         isGloballyEnabled: @MainActor @escaping () -> Bool = { true },
-        isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true }
+        isRuntimeInstallationAllowed: @MainActor @escaping () -> Bool = { true },
+        claimOpening: @MainActor @escaping (CGDirectDisplayID) -> WallpaperOpeningEffect? = { _ in nil }
     ) {
         self.configurationStore = configurationStore
         self.configurationCommands = configurationCommands
@@ -118,5 +120,6 @@ final class PlaybackCoordinator {
         self.originReconciler = originReconciler
         self.isGloballyEnabled = isGloballyEnabled
         self.isRuntimeInstallationAllowed = isRuntimeInstallationAllowed
+        self.claimOpening = claimOpening
     }
 }

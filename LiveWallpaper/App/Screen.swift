@@ -143,9 +143,60 @@ final class Screen: Identifiable, Hashable {
     /// Reveal transitions still running, keyed like `retiringSessions`.
     @ObservationIgnored private(set) var revealTransitions: [ObjectIdentifier: WallpaperRevealTransition] = [:]
 
+    @ObservationIgnored private(set) var openingTransition: WallpaperOpeningTransition?
+
+    /// Uncovers the live session's window, which the caller left at alpha 0.
+    func startOpening(_ effect: WallpaperOpeningEffect) {
+        guard let session = runtimeSession,
+              let window = session.wallpaperWindow ?? session.videoPlayer?.playbackWindow else { return }
+        let environment = transitionEnvironment
+        if !environment.reduceMotion(), !environment.lowPowerMode() {
+            let holds = effect.holdsNewWallpaper
+            let opening = WallpaperOpeningTransition(
+                shaders: WallpaperMaskShaders(mask: effect.maskFunctionName, light: effect.lightFunctionName),
+                duration: effect.duration,
+                window: window,
+                renderer: environment.renderer(),
+                makeClock: environment.makeClock,
+                onFinish: { [weak self, weak session] in
+                    if holds {
+                        session?.setTransitionHold(false)
+                    }
+                    if self?.openingTransition?.isFinished == true {
+                        self?.openingTransition = nil
+                    }
+                }
+            )
+            if let opening {
+                if holds {
+                    session.setTransitionHold(true)
+                }
+                openingTransition = opening
+                if opening.start() {
+                    return
+                }
+                openingTransition = nil
+                if holds {
+                    session.setTransitionHold(false)
+                }
+            }
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
+            context.timingFunction = DesignTokens.Motion.wallpaperCrossfadeTiming
+            window.animator().alphaValue = 1
+        }
+    }
+
+    /// Idempotent. The opening's finish shows the window whole and releases its hold.
+    func finishOpening() {
+        openingTransition?.finish()
+    }
+
     /// Video keeps wallpaperWindow nil, so retirement reaches its window through the player.
     /// A session that never installed a window takes the immediate path below.
     private func retire(_ old: (any WallpaperRuntimeSession)?, group: WallpaperSwitchGroup?) {
+        finishOpening()
         guard let old else { return }
         // A newer swap ends a reveal still in progress rather than stacking a second mask over it.
         finishRevealTransitions()
@@ -237,6 +288,7 @@ final class Screen: Identifiable, Hashable {
 
     /// Drops every still-fading session immediately. Finishing the fade after the screen goes away would leave a window AppKit can reposition onto a surviving display.
     private func flushRetiringSessions() {
+        finishOpening()
         finishRevealTransitions()
         let fading = retiringSessions.values
         retiringSessions.removeAll()

@@ -47,6 +47,7 @@ final class ScreenManager {
     @ObservationIgnored private let playableVideoLoader: any PlayableVideoLoading
     @ObservationIgnored let memoryPressureWatcher: any MemoryPressureWatching
     @ObservationIgnored let restoresSavedWallpapersOnScreenRefresh: Bool
+    @ObservationIgnored var openingBatch: WallpaperOpeningBatch?
     @ObservationIgnored var lastScreenSignatures: [CGDirectDisplayID: ScreenConfigurationSignature] = [:]
     let wallpaperLoads = WallpaperLoadState()
     @ObservationIgnored var transientRuntimeErrors: [CGDirectDisplayID: WallpaperRuntimeError] = [:]
@@ -167,6 +168,9 @@ final class ScreenManager {
         isRuntimeInstallationAllowed: { [weak self] in
             guard let self else { return false }
             return !self.isTerminating
+        },
+        claimOpening: { [weak self] id in
+            self?.openingBatch?.claim(id)
         }
     )
     #if !LITE_BUILD
@@ -393,6 +397,11 @@ final class ScreenManager {
         observeWorkshopRepositoryMutations()
         #endif
 
+        var generator = SystemRandomNumberGenerator()
+        if startupOptions.playsOpening, wallpapersGloballyEnabled,
+           let effect = WallpaperOpeningEffect.resolve(WallpaperOpeningChoice.stored(), using: &generator) {
+            openingBatch = WallpaperOpeningBatch(displayIDs: Set(displayRegistry.currentScreens().map(\.id)), effect: effect)
+        }
         refreshScreens()
         if startupOptions.startAutomation {
             if featureCatalog.isEnabled(.playlists) || featureCatalog.isEnabled(.scheduleAutomation) {

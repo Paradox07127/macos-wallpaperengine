@@ -77,21 +77,6 @@ final class WallpaperTransitionRenderer: WallpaperTransitionRendering {
         return true
     }
 
-    @discardableResult
-    func render(
-        _ pass: Pass,
-        effect: WallpaperRevealEffect,
-        uniforms: WallpaperTransitionUniforms,
-        to texture: MTLTexture
-    ) -> MTLCommandBuffer? {
-        render(
-            pass,
-            shaders: WallpaperMaskShaders(mask: effect.maskFunctionName, light: effect.lightFunctionName),
-            uniforms: uniforms,
-            to: texture
-        )
-    }
-
     /// Encodes and commits one full-target draw; the caller decides whether to wait or present.
     @discardableResult
     func render(

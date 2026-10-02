@@ -63,7 +63,8 @@ struct WallpaperTransitionShaderTests {
             seed: variant.seed,
             origin: variant.origin
         )
-        let commandBuffer = try #require(renderer.render(pass, effect: effect, uniforms: uniforms, to: texture))
+        let shaders = WallpaperMaskShaders(mask: effect.maskFunctionName, light: effect.lightFunctionName)
+        let commandBuffer = try #require(renderer.render(pass, shaders: shaders, uniforms: uniforms, to: texture))
         commandBuffer.waitUntilCompleted()
         #expect(commandBuffer.status == .completed)
         var bytes = [UInt8](repeating: 0, count: Self.width * Self.height * 4)

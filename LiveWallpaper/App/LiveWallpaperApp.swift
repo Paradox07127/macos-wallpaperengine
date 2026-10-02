@@ -49,6 +49,7 @@ struct AppStartupPlan: Equatable {
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
             startAutomation: runtimeOptions.shouldStartAutomation,
+            playsOpening: runtimeOptions.shouldRestoreSavedWallpapers,
             memoryPressureWatcher: SystemMemoryPressureWatcher.shared,
             featureCatalog: FeatureCatalog(capabilities: .lite),
             originReconciler: PreservingOriginReconciler()
@@ -58,6 +59,7 @@ struct AppStartupPlan: Equatable {
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
             startAutomation: runtimeOptions.shouldStartAutomation,
+            playsOpening: runtimeOptions.shouldRestoreSavedWallpapers,
             memoryPressureWatcher: SystemMemoryPressureWatcher.shared,
             featureCatalog: FeatureCatalog(capabilities: proCapabilities)
         )
