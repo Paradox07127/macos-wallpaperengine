@@ -478,6 +478,26 @@ struct DeferredApplyCoordinatorTests {
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
     }
 
+    @Test("Only a local copy in the library is offered for replacement", .timeLimit(.minutes(1)))
+    func localCopyToReplaceOffersOnlyALocalCopy() async throws {
+        let empty = try DownloadAttemptFixture(name: "replaceNone", startsWithDependencies: false)
+        #expect(empty.downloads.localCopyToReplace(for: 420_000_042) == nil, "nothing in the library means nothing to replace")
+        await empty.discard()
+        empty.defaults.discard()
+
+        let local = try DownloadAttemptFixture(name: "replaceLocal", startsWithDependencies: false)
+        let copy = try local.recordLibraryEntry(in: local.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
+        #expect(local.downloads.localCopyToReplace(for: 420_000_042) == copy)
+        await local.discard()
+        local.defaults.discard()
+
+        let steam = try DownloadAttemptFixture(name: "replaceSteam", startsWithDependencies: false)
+        defer { steam.defaults.discard() }
+        try steam.recordLibraryEntry(in: steam.itemFolder, title: "Steam copy")
+        #expect(steam.downloads.localCopyToReplace(for: 420_000_042) == nil, "the item's own Steam folder is updated, not replaced")
+        await steam.discard()
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func lookupReturnsTheLiveTicketAndNothingForAnUnknownItem() {
         let owner = owner()

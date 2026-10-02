@@ -8,6 +8,7 @@ struct PasteSheet: View {
     @State private var model = WorkshopPasteQueueModel()
     @State private var downloads = WorkshopDownloadCoordinator.shared
     @State private var toastVisible = false
+    @State private var pendingDestructive: PendingDestructive?
     @FocusState private var textFieldIsFocused: Bool
 
     var body: some View {
@@ -53,6 +54,7 @@ struct PasteSheet: View {
                 .padding(.bottom, 22)
                 .allowsHitTesting(false)
         }
+        .confirmDestructive($pendingDestructive)
         .onAppear { textFieldIsFocused = true }
         .onDisappear { model.removeAll() }
     }
@@ -71,7 +73,9 @@ struct PasteSheet: View {
 
                 if !downloadableRows.isEmpty {
                     Button {
-                        for row in downloadableRows { downloadAction(for: row)?() }
+                        for row in downloadableRows {
+                            downloadAction(for: row, confirmsReplacement: false)?()
+                        }
                     } label: {
                         Label("Download all", systemImage: "arrow.down.circle.fill")
                             .font(DesignTokens.Typography.caption)
@@ -215,10 +219,21 @@ struct PasteSheet: View {
     // MARK: - Helpers
 
     /// `nil` hides the button: no id to download, or SteamCMD is not set up and signed in.
-    private func downloadAction(for row: WorkshopPasteQueueModel.QueueRow) -> (() -> Void)? {
+    /// `confirmsReplacement` false: a row holding a local copy fails as already in the library instead of asking — one alert can't carry several rows.
+    private func downloadAction(
+        for row: WorkshopPasteQueueModel.QueueRow, confirmsReplacement: Bool = true
+    ) -> (() -> Void)? {
         guard let itemID = row.publishedFileID, doctor.isDownloadReady else { return nil }
         let title = row.metadata?.title ?? String(itemID)
-        return { downloads.download(itemID: itemID, title: title, using: doctor) }
+        return {
+            guard confirmsReplacement, let local = downloads.localCopyToReplace(for: itemID) else {
+                downloads.download(itemID: itemID, title: title, using: doctor)
+                return
+            }
+            pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) {
+                downloads.download(itemID: itemID, title: title, using: doctor, replacing: local)
+            }
+        }
     }
 
     private func openInSteam(_ row: WorkshopPasteQueueModel.QueueRow) {

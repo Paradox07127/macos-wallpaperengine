@@ -85,6 +85,7 @@ final class ModalActions {
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
         doctor: SteamCMDDoctorService, installedLibrary: InstalledLibraryModel, undo: EditDeskUndoStack?,
         exportService: WallpaperExportService?,
+        confirm: @escaping @MainActor (PendingDestructive) -> Void,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
@@ -99,7 +100,13 @@ final class ModalActions {
         inputs.fetchingDependencies = { coordinator.fetchingDependencies.contains($0) }
         inputs.update = { entry in
             guard let id = UInt64(entry.origin.workshopID) else { return }
-            coordinator.download(itemID: id, title: entry.origin.title, using: doctor)
+            guard let local = coordinator.localCopyToReplace(for: id) else {
+                coordinator.download(itemID: id, title: entry.origin.title, using: doctor)
+                return
+            }
+            confirm(PendingDestructive(.replaceLocalCopy(title: local.origin.title)) {
+                coordinator.download(itemID: id, title: entry.origin.title, using: doctor, replacing: local)
+            })
         }
         inputs.cancelUpdate = { coordinator.cancel($0) }
         inputs.deleteInstalled = { entry, model in

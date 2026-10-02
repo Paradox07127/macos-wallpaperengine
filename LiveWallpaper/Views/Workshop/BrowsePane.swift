@@ -27,6 +27,7 @@ struct BrowsePane: View {
     @State private var importedAtByWorkshopID: [String: Date] = [:]
     /// Workshop ID → the displays that project is set on.
     @State private var inUseBadges: [String: NowPlayingBadge] = [:]
+    @State private var pendingDestructive: PendingDestructive?
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -86,6 +87,7 @@ struct BrowsePane: View {
             .onChange(of: queryInputs) { _, _ in
                 listing.wrappedValue = .results
             }
+            .confirmDestructive($pendingDestructive)
     }
 
     private var mainColumn: some View {
@@ -286,11 +288,14 @@ struct BrowsePane: View {
             onBookmark: { WorkshopBookmarkActions.toggle(item) },
             onSelect: { onOpenItem?(item) },
             onDownload: {
-                WorkshopDownloadCoordinator.shared.download(
-                    itemID: item.id,
-                    title: item.title,
-                    using: doctor
-                )
+                let downloads = WorkshopDownloadCoordinator.shared
+                guard let local = downloads.localCopyToReplace(for: item.id) else {
+                    downloads.download(itemID: item.id, title: item.title, using: doctor)
+                    return
+                }
+                pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) {
+                    downloads.download(itemID: item.id, title: item.title, using: doctor, replacing: local)
+                }
             }
         )
     }

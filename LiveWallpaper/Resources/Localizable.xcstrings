@@ -2964,6 +2964,42 @@
         }
       }
     },
+    "'%@' is already in your library from another folder. The Steam download takes its place; that folder stays on disk." : {
+      "comment" : "Confirm message before a Workshop download replaces a library copy imported from a local folder. Placeholder is the wallpaper title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' is already in your library from another folder. The Steam download takes its place; that folder stays on disk."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' ya está en la biblioteca desde otra carpeta. La descarga de Steam ocupa su lugar; esa carpeta se queda en el disco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は別のフォルダから壁紙ライブラリに追加済みです。Steam のダウンロードがこれに置き換わります。そのフォルダはディスク上に残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”已从另一个文件夹加入壁纸库。Steam 下载的版本会取代它；那个文件夹仍留在磁盘上。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」已從另一個資料夾加入桌布庫。Steam 下載的版本會取代它；該資料夾仍保留在磁碟上。"
+          }
+        }
+      }
+    },
     "'%@' is overwritten with what %@ is showing now. The setup saved under that name cannot be recovered." : {
       "comment" : "Confirm message for overwriting a saved scheme with a display's current setup. Placeholders are the scheme name and the source display name.",
       "extractionState" : "manual",
@@ -49401,6 +49437,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取代設定"
+          }
+        }
+      }
+    },
+    "Replace the copy in your library?" : {
+      "comment" : "Confirm title before a Workshop download replaces a library copy imported from a local folder.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace the copy in your library?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Reemplazar la copia de la biblioteca?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブラリ内のコピーを置き換えますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换壁纸库里的副本？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代桌布庫中的副本？"
           }
         }
       }

@@ -20,7 +20,8 @@ extension ScreenManager: WorkshopApplyTargetSelecting {}
 struct WorkshopModalWiring {
     /// The download coordinator as this wiring uses it.
     struct Downloads {
-        var start: @MainActor (UInt64) -> WorkshopDownloadAttempt?
+        /// The entry is the local copy the user approved replacing; nil when none was asked about.
+        var start: @MainActor (UInt64, WPEHistoryEntry?) -> WorkshopDownloadAttempt?
         var active: @MainActor (UInt64) -> WorkshopDownloadAttempt?
         var cancel: @MainActor (UInt64) -> Void
     }
@@ -36,9 +37,11 @@ struct WorkshopModalWiring {
     /// Downloads the item if it is not already coming, and queues the apply against the generation
     /// this press stamps on the chosen display: anything the user applies there afterwards wins.
     @discardableResult
-    func applyWhenDownloaded(itemID: UInt64, to screenID: CGDirectDisplayID) -> DeferredApplyCoordinator.Ticket? {
+    func applyWhenDownloaded(
+        itemID: UInt64, to screenID: CGDirectDisplayID, replacing: WPEHistoryEntry? = nil
+    ) -> DeferredApplyCoordinator.Ticket? {
         guard let screen = screens.screens.first(where: { $0.id == screenID }),
-              let attempt = downloads.active(itemID) ?? downloads.start(itemID) else { return nil }
+              let attempt = downloads.active(itemID) ?? downloads.start(itemID, replacing) else { return nil }
         let generation = screens.beginExplicitWallpaperSelection(for: screen)
         return deferredApply.submit(
             attempt: attempt, target: .init(screen: screen, selectionGeneration: generation)
@@ -58,9 +61,9 @@ struct WorkshopModalWiring {
     }
 
     /// Keeps the download and drops the apply: the wallpaper lands in the library and nowhere else.
-    func saveOnly(itemID: UInt64) {
+    func saveOnly(itemID: UInt64, replacing: WPEHistoryEntry? = nil) {
         dropQueuedApply(itemID: itemID)
-        _ = downloads.active(itemID) ?? downloads.start(itemID)
+        _ = downloads.active(itemID) ?? downloads.start(itemID, replacing)
     }
 
     func cancelDownload(itemID: UInt64) {
@@ -102,6 +105,7 @@ struct WorkshopModalHost: View {
     @State private var detachedItem: WorkshopQueryItem?
     @State private var installedEntry: WPEHistoryEntry?
     @State private var rateMeter = WorkshopDownloadRateMeter()
+    @State private var pendingDestructive: PendingDestructive?
 
     private var downloads: WorkshopDownloadCoordinator {
         .shared
@@ -145,6 +149,7 @@ struct WorkshopModalHost: View {
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()
         }
+        .confirmDestructive($pendingDestructive)
     }
 
     // MARK: Opening
@@ -279,9 +284,11 @@ struct WorkshopModalHost: View {
     private var wiring: WorkshopModalWiring {
         WorkshopModalWiring(
             downloads: .init(
-                start: { [doctor, items, detachedItem] itemID in
+                start: { [doctor, items, detachedItem] itemID, replacing in
                     let title = (items.first { $0.id == itemID } ?? detachedItem)?.title ?? String(itemID)
-                    return WorkshopDownloadCoordinator.shared.download(itemID: itemID, title: title, using: doctor)
+                    return WorkshopDownloadCoordinator.shared.download(
+                        itemID: itemID, title: title, using: doctor, replacing: replacing
+                    )
                 },
                 active: { WorkshopDownloadCoordinator.shared.activeAttempt(for: $0) },
                 cancel: { WorkshopDownloadCoordinator.shared.cancel($0) }
@@ -294,7 +301,9 @@ struct WorkshopModalHost: View {
     private func actions(for item: WorkshopQueryItem) -> WorkshopModalActions {
         WorkshopModalActions(
             press: { press($0, for: item) },
-            saveOnly: { wiring.saveOnly(itemID: item.id) },
+            saveOnly: {
+                confirmingReplacement(for: item.id) { [wiring] in wiring.saveOnly(itemID: item.id, replacing: $0) }
+            },
             cancelDownload: { wiring.cancelDownload(itemID: item.id) },
             connectSteam: { onConnectSteam() },
             openInSteam: { openURL(item.steamCommunityURL) },
@@ -329,10 +338,21 @@ struct WorkshopModalHost: View {
         case .retarget:
             wiring.retarget(itemID: item.id, to: screenID)
         case .applyWhenDownloaded:
-            wiring.applyWhenDownloaded(itemID: item.id, to: screenID)
+            confirmingReplacement(for: item.id) { [wiring] in
+                wiring.applyWhenDownloaded(itemID: item.id, to: screenID, replacing: $0)
+            }
         case .ignore:
             break
         }
+    }
+
+    /// Asks first when the download would take a local copy's place; a download already running is not asked about again.
+    private func confirmingReplacement(for itemID: UInt64, download: @escaping @MainActor (WPEHistoryEntry?) -> Void) {
+        guard downloads.activeAttempt(for: itemID) == nil, let local = downloads.localCopyToReplace(for: itemID) else {
+            download(nil)
+            return
+        }
+        pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) { download(local) }
     }
 
     /// Already in the library: the same route the library modal takes, with no download in between.

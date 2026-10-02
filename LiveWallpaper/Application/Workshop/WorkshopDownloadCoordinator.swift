@@ -353,6 +353,11 @@ final class WorkshopDownloadCoordinator {
         return holders.first { WorkshopFolderImportCoordinator.originResolves($0.origin) }
     }
 
+    /// The local copy a manual download must confirm replacing; nil = download without asking.
+    func localCopyToReplace(for itemID: UInt64) -> WPEHistoryEntry? {
+        libraryCopyBlockingDownload(of: itemID).flatMap { $0.origin.steamFolderItemID == nil ? $0 : nil }
+    }
+
     /// Rechecked after the download because the user may have imported a local copy while it ran.
     private func libraryConflict(for origin: WPEOrigin, approved: WPEHistoryEntry?) -> WPEHistoryEntry? {
         guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: origin.sourceFolderBookmark)?.path,
