@@ -38,11 +38,13 @@ extension ScreenManager {
     ) -> WallpaperPreparationResult? {
         guard let origin = configuration.wpeOrigin,
               let workshopID = ([origin.workshopID] + origin.dependencyWorkshopIDs)
-                .first(where: { workshopMutationSuspendedScreenIDs[$0] != nil })
+              .first(where: { workshopMutationSuspendedScreenIDs[$0] != nil })
         else { return nil }
         guard beforeCommit() else { return .failed }
         Logger.info("Deferring Workshop item load until shared-repository mutation finishes", category: .workshop)
-        if screen.runtimeSession != nil { releaseRuntimeSession(screen) }
+        if screen.runtimeSession != nil {
+            releaseRuntimeSession(screen)
+        }
         workshopMutationSuspendedScreenIDs[workshopID, default: []].insert(screen.id)
         notifyWallpaperSessionChanged()
         return .ready

@@ -151,13 +151,21 @@ private final class GateFakeRuntimeSession: WallpaperRuntimeSession {
         WallpaperSessionSummary(wallpaperType: .scene, activity: .active, supportsPlaybackControl: false, subtitle: nil)
     }
 
-    var videoPlayer: WallpaperVideoPlayer? { nil }
-    var wallpaperWindow: NSWindow? { nil }
+    var videoPlayer: WallpaperVideoPlayer? {
+        nil
+    }
+
+    var wallpaperWindow: NSWindow? {
+        nil
+    }
 
     func show() {}
     func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
     func updateFrame(to _: CGRect) {}
-    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult { .ready }
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        .ready
+    }
+
     func cleanup() {}
 }
 #endif
