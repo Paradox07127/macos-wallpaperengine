@@ -558,9 +558,11 @@ enum HTMLWallpaperRuntimeScript {
                     return;
                 }
                 var transform = 'translate(' + tx + 'px,' + ty + 'px) rotate(' + rotation + 'deg) scale(' + scale + ')';
+                // The transformed element becomes the containing block of position:fixed descendants;
+                // min-height keeps it viewport-tall so fixed full-screen canvases don't collapse.
                 style.textContent =
-                    'html.lw-transformed{overflow:hidden!important;}' +
-                    'html.lw-transformed body{transform:' + transform + ';transform-origin:50% 50%;}';
+                    'html.lw-transformed{overflow:hidden!important;min-height:100%;' +
+                    'transform:' + transform + ';transform-origin:50% 50%;}';
                 if (document.documentElement) {
                     document.documentElement.classList.add('lw-transformed');
                 }
