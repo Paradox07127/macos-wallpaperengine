@@ -48,6 +48,13 @@ struct WPEShaderInterface: Codable, Equatable, Sendable {
     /// Declaration-only inputs, proved by no identifier reference in active source.
     /// Optional for older diagnostic trace payloads. This is not GPU reflection.
     var unreferencedFragmentInputs: [String]?
+    /// Uniform declarations with no other identifier occurrence in active GLSL.
+    /// Nil is unknown, not permission to omit a required engine input.
+    var unreferencedVertexUniforms: [String]?
+
+    func isVertexUniformProvenUnreferenced(_ name: String) -> Bool {
+        unreferencedVertexUniforms?.contains(name) == true
+    }
 
     func variables(stage: WPEShaderStage, kind: WPEShaderInterfaceVariable.Kind) -> [WPEShaderInterfaceVariable] {
         variables.filter { $0.key.stage == stage && $0.kind == kind }

@@ -38,8 +38,8 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     static let expectedSchemaVersion = 39
-    /// Pipeline extent/publication metadata changed, not GLSL preprocessing or the cached payload ABI.
-    static let expectedFingerprint = "a16a18e4c42c86ac99a551a93d8741d9a9b5ebf0ef49f68e7e0c8364fee1fa09"
+    /// Uniform-use proof is rebuilt on cache assembly; cached MSL and its ABI are unchanged.
+    static let expectedFingerprint = "5235111c794e1903c75fa7b60ec1faa7381664934ab7682da841e8e8f2d8a126"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {

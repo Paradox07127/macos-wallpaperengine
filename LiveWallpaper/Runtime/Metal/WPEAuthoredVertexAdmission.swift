@@ -4,7 +4,7 @@ import LiveWallpaperProWPE
 import simd
 
 /// A compiled stage pair is usable only when this draw can supply its declared inputs.
-/// Declarations are conservative: unused required engine declarations may still reject admission.
+/// Declarations stay required unless active-source analysis proves they are unused.
 enum WPEAuthoredVertexRejection: Equatable {
     case disabledForIsolation, geometryUnavailable, pipelineNotPrewarmed, stageUnavailable(String)
     case requiredUniformMissing(String), invalidMatrix(String), unverifiedEffectProjection3D
@@ -131,6 +131,9 @@ extension WPEMetalRenderExecutor {
         for (index, uniform) in vertex.uniformLayout.enumerated()
             where plans[index].directPacking != nil || plans[index].textureResolutionSlot != nil
             || plans[index].textureRotationSlot != nil || plans[index].textureTranslationSlot != nil {
+            if result.shaderInterface?.isVertexUniformProvenUnreferenced(uniform.name) == true {
+                continue
+            }
             let value = resolvedUniformValue(plan: plans[index], pass: pass, frame: frameUniformContext,
                                              texturesBySlot: textures, effectTextureProjection: nil)
             if value == nil {
@@ -151,7 +154,9 @@ extension WPEMetalRenderExecutor {
             guard case .scene = pass.pass.target,
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms) else { return .unverifiedObjectQuadSpace }
             if layer.geometry.scale.x == 0 || layer.geometry.scale.y == 0,
-               let inverse = (vertex.uniformLayout + result.uniformLayout).first(where: {
+               let inverse = (vertex.uniformLayout.filter {
+                   result.shaderInterface?.isVertexUniformProvenUnreferenced($0.name) != true
+               } + result.uniformLayout).first(where: {
                    $0.materialName == nil && ($0.name == "g_NormalModelMatrix"
                        || ($0.name.hasSuffix("Inverse") && ($0.name.hasPrefix("g_Model") || $0.name.hasPrefix("g_Layer") || $0.name.hasPrefix("g_Effect"))))
                }) {
@@ -179,6 +184,9 @@ extension WPEMetalRenderExecutor {
         }
         let plans = uniformPlans(for: pass, layout: vertex.uniformLayout, stage: .vertex)
         for (index, uniform) in vertex.uniformLayout.enumerated() {
+            if result.shaderInterface?.isVertexUniformProvenUnreferenced(uniform.name) == true {
+                continue
+            }
             if vertex.execution == .authoredObjectQuad, uniform.materialName == nil,
                frameUniformContext.parallaxDrawMatrixPassIDs.contains(pass.id),
                (uniform.name.hasPrefix("g_Model") && !["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name))

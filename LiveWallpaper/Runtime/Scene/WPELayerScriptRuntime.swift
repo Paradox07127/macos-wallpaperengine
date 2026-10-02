@@ -413,6 +413,24 @@ final class WPELayerScriptInstance {
         }
     }
 
+    /// Keep deferred events coalesced until the renderer admits a complete ordered batch.
+    func batchMediaEvents(
+        _ events: [WPESceneMediaEvent],
+        runtimeSeconds: Double? = nil,
+        allowSubmission: Bool = true
+    ) -> WPESceneScriptBatchDispatcher.Job? {
+        guard !isPoisoned, !isDestroyed else { return nil }
+        for event in events where handles(event) {
+            pendingMediaEvents.coalesce(event)
+        }
+        guard allowSubmission, !pendingMediaEvents.isEmpty,
+              let work = engine.makeMediaEventsBatch(
+                  pendingMediaEvents, runtimeSeconds: runtimeSeconds, publishTo: asyncOutcomeSlot
+              ) else { return nil }
+        pendingMediaEvents.removeAll(keepingCapacity: true)
+        return WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work)
+    }
+
     private func handles(_ event: WPESceneMediaEvent) -> Bool {
         mediaHandlers.handles(event)
     }
@@ -496,22 +514,37 @@ final class WPELayerScriptInstance {
 
     // MARK: Async Tick
 
-    /// See `WPESceneScriptInstance.batchTickString`.
-    func batchTick(
-        runtimeSeconds: Double? = nil,
-        pointerFrame: WPEPointerFrame? = nil
-    ) -> (output: WPELayerScriptOutput?, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard !isPoisoned, !isDestroyed else { return (nil, nil) }
+    var hasFrameUpdate: Bool {
+        hasUpdateFunction
+    }
+
+    /// Renderer-owned ordered batches drain only after every submitted job has settled.
+    func takeCompletedBatchOutput() -> WPELayerScriptOutput? {
+        guard !isPoisoned, !isDestroyed, engine.acceptsCompletion() else { return nil }
+        return asyncOutcomeSlot.takeLatest()
+    }
+
+    func observeBatchTickDeadline() {
+        guard !isPoisoned, !isDestroyed else { return }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
                 "Layer SceneScript \(overrun.operation.rawValue) exceeded \(tickBudget)s — frozen",
                 category: .wpeRender
             )
-            return (nil, nil)
         }
+    }
+
+    /// See `WPESceneScriptInstance.batchTickString`.
+    func batchTick(
+        runtimeSeconds: Double? = nil,
+        pointerFrame: WPEPointerFrame? = nil,
+        consumeOutput: Bool = true
+    ) -> (output: WPELayerScriptOutput?, job: WPESceneScriptBatchDispatcher.Job?) {
+        observeBatchTickDeadline()
+        guard !isPoisoned, !isDestroyed else { return (nil, nil) }
         guard engine.allows(.tick) else { return (nil, nil) }
-        let fresh = asyncOutcomeSlot.takeLatest()
+        let fresh = consumeOutput ? asyncOutcomeSlot.takeLatest() : nil
         guard hasUpdateFunction, let claim = asyncOutcomeSlot.beginTick() else { return (fresh, nil) }
         guard let work = engine.makeBatchTick(
             runtimeSeconds: runtimeSeconds,
@@ -522,18 +555,23 @@ final class WPELayerScriptInstance {
             asyncOutcomeSlot.rejectTick(claim)
             return (fresh, nil)
         }
-        return (fresh, WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work))
+        let slot = asyncOutcomeSlot
+        return (fresh, WPESceneScriptBatchDispatcher.Job(
+            completionIsValid: { slot.didComplete(claim) },
+            queue: engine.queue, work: work
+        ))
     }
 
     func batchCursorEvents(
-        _ events: [WPELayerScriptCursorInvocation]
+        _ events: [WPELayerScriptCursorInvocation],
+        allowSubmission: Bool = true
     ) -> WPESceneScriptBatchDispatcher.Job? {
         guard !isPoisoned, !isDestroyed, engine.allows(.event) else {
             cursorInbox.close()
             return nil
         }
         cursorInbox.append(events)
-        guard let claim = cursorInbox.claim() else { return nil }
+        guard allowSubmission, let claim = cursorInbox.claim() else { return nil }
         let work = engine.makeCursorBatch(claim: claim, inbox: cursorInbox, publishTo: asyncOutcomeSlot)
         return WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work)
     }
@@ -855,30 +893,41 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?,
             publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
         ) -> Bool {
-            guard !events.isEmpty, allows(.event) else { return false }
+            guard let work = makeMediaEventsBatch(events, runtimeSeconds: runtimeSeconds, publishTo: slot) else { return false }
+            queue.async(execute: work)
+            return true
+        }
+
+        /// Preserve host-side admission so a refused job leaves the instance's pending events intact.
+        func makeMediaEventsBatch(
+            _ events: [WPESceneMediaEvent],
+            runtimeSeconds: Double?,
+            publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
+        ) -> (@Sendable () -> Void)? {
+            guard !events.isEmpty, allows(.event) else { return nil }
             guard let safety = asyncExecutionSafety.begin(
                 sceneToken: instanceLimitToken,
                 operation: .event
-            ) else { return false }
+            ) else { return nil }
             guard let permit = governor.tryAcquireUnreserved(for: participant) else {
                 asyncExecutionSafety.complete(safety)
-                return false
+                return nil
             }
-            queue.async {
+            return { @Sendable [self] in
                 defer {
-                    self.asyncExecutionSafety.complete(safety)
+                    asyncExecutionSafety.complete(safety)
                     permit.release()
                 }
                 for event in events {
-                    let outcome = self.dispatchMediaEventOnQueue(
+                    guard acceptsCompletion() else { return }
+                    let outcome = dispatchMediaEventOnQueue(
                         event,
                         runtimeSeconds: runtimeSeconds
                     )
-                    guard self.acceptsCompletion() else { return }
+                    guard acceptsCompletion() else { return }
                     slot.publishEvent(outcome)
                 }
             }
-            return true
         }
 
         func applyUserProperties(
@@ -985,6 +1034,11 @@ final class WPELayerScriptInstance {
                 guard let safety = asyncExecutionSafety.begin(
                     sceneToken: instanceLimitToken, operation: .event
                 ) else {
+                    if shared?.isAuthoredLayerOrderingEnabled == true {
+                        // Pending events stay in the inbox for the next renderer-owned chain.
+                        inbox.complete(claim)
+                        return
+                    }
                     // A busy slot keeps the claim so later bursts queue behind this retry; 1 ms so an exhausted reservation pool cannot spin the lane.
                     if inbox.isCurrent(claim) {
                         queue.asyncAfter(deadline: .now() + .milliseconds(1),
@@ -996,8 +1050,9 @@ final class WPELayerScriptInstance {
                 }
                 defer {
                     asyncExecutionSafety.complete(safety)
-                    // A burst or cancel arriving while this claim runs is claim()-blocked, so completion re-arms it.
-                    if let next = inbox.complete(claim, reclaimPending: true) {
+                    // Ordinary scenes re-arm without another frame; shared-order scenes
+                    // leave new bursts for the next renderer-owned complete chain.
+                    if let next = inbox.complete(claim, reclaimPending: shared?.isAuthoredLayerOrderingEnabled != true) {
                         queue.async(execute: makeCursorBatch(claim: next, inbox: inbox, publishTo: slot))
                     }
                 }
@@ -1108,7 +1163,9 @@ final class WPELayerScriptInstance {
                 // init returns the modified value to be applied, just as update does. Calling with no argument fed init(value) undefined, so return !value showed an authored-visible layer it meant to hide.
                 switch outputMode {
                 case .layerState:
-                    let returned = initFn.call(withArguments: [initialOwnVisible])
+                    let returned = withAuthoredLayerOrderMutation {
+                        initFn.call(withArguments: [initialOwnVisible])
+                    }
                     if let value = Self.coercedVisible(returned) { setOwnLayerVisible(value) }
                 case .returnedAlpha(let initialValue):
                     let returned = initFn.call(withArguments: [initialValue])
@@ -1199,7 +1256,10 @@ final class WPELayerScriptInstance {
                     ?? JSValue(bool: current, in: context)
                     ?? JSValue(nullIn: context)!
                 WPEFrameOccupancyMeter.count(.jscCall)
-                if let value = Self.coercedVisible(updateFunction.call(withArguments: [arg as Any])) {
+                let returned = withAuthoredLayerOrderMutation {
+                    updateFunction.call(withArguments: [arg as Any])
+                }
+                if let value = Self.coercedVisible(returned) {
                     setOwnLayerVisible(value)
                 }
             case .returnedAlpha:
@@ -1518,6 +1578,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
     fileprivate var currentLayerOrder: [String]
     fileprivate var didSortLayers = false
+    private var authoredLayerOrderMutationAllowed = false
     fileprivate var scriptWorkshopID: String?
     fileprivate var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
     fileprivate var createdAngles: [String: SIMD3<Double>] = [:]
@@ -1587,6 +1648,18 @@ class WPELayerScriptBridge: @unchecked Sendable {
         cameraBridge.finishEvaluation(commit: commit)
     }
 
+    fileprivate func withAuthoredLayerOrderMutation<Result>(_ operation: () -> Result) -> Result {
+        let previous = authoredLayerOrderMutationAllowed
+        authoredLayerOrderMutationAllowed = true
+        defer { authoredLayerOrderMutationAllowed = previous }
+        return operation()
+    }
+
+    private var queriedLayerOrder: [String] {
+        guard let shared, shared.isAuthoredLayerOrderingEnabled else { return currentLayerOrder }
+        return shared.orderedLayerInfos().map { shared.layerHandleKey($0) }
+    }
+
     fileprivate func setOwnLayerVisible(_ value: Bool) {
         thisLayer?.setObject(value, forKeyedSubscript: "visible" as NSString)
     }
@@ -1617,6 +1690,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
         let createLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] spec in
             guard let self, let context else { return nil }
+            guard shared?.isAuthoredLayerOrderingEnabled != true else {
+                reportUnsupportedLayerOperation("createLayer is not supported with multi-owner authored-layer ordering")
+                return nil
+            }
             let requestedImage: String?
             if spec.isString {
                 requestedImage = spec.toString()
@@ -1687,11 +1764,23 @@ class WPELayerScriptBridge: @unchecked Sendable {
         scene.setObject(destroyLayer, forKeyedSubscript: "destroyLayer" as NSString)
         let getLayerIndex: @convention(block) (JSValue) -> Int = { [weak self] value in
             guard let self, let key = layerKey(value) else { return -1 }
-            return currentLayerOrder.firstIndex(of: key) ?? -1
+            return queriedLayerOrder.firstIndex(of: key) ?? -1
         }
         scene.setObject(getLayerIndex, forKeyedSubscript: "getLayerIndex" as NSString)
         let sortLayer: @convention(block) (JSValue, JSValue) -> Bool = { [weak self] value, index in
             guard let self else { return false }
+            if let shared, shared.isAuthoredLayerOrderingEnabled {
+                guard authoredLayerOrderMutationAllowed, let ownObjectID else {
+                    reportUnsupportedLayerOperation("shared sortLayer is supported only during visible-script init/update")
+                    return false
+                }
+                guard let key = layerKey(value), let target = layerInfo(forKey: key), index.isNumber else { return false }
+                let number = index.toDouble()
+                let count = shared.orderedLayerInfos().count
+                guard number.isFinite, number.rounded(.towardZero) == number,
+                      number >= 0, number < Double(count) else { return false }
+                return shared.moveAuthoredLayer(objectID: target.id, to: Int(number), ownerID: ownObjectID)
+            }
             guard createdLayerBridge?.allowsSorting == true else {
                 reportUnsupportedLayerOperation("sortLayer requires a single script owner and independent image passes")
                 return false
@@ -1709,10 +1798,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         scene.setObject(sortLayer, forKeyedSubscript: "sortLayer" as NSString)
         let enumerateLayers: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self, let context else { return nil }
-            return JSValue(object: currentLayerOrder.map { handle(forLayerKey: $0, in: context) }, in: context)
+            return JSValue(object: queriedLayerOrder.map { handle(forLayerKey: $0, in: context) }, in: context)
         }
         scene.setObject(enumerateLayers, forKeyedSubscript: "enumerateLayers" as NSString)
-        let getLayerCount: @convention(block) () -> Int = { [weak self] in self?.currentLayerOrder.count ?? 0 }
+        let getLayerCount: @convention(block) () -> Int = { [weak self] in self?.queriedLayerOrder.count ?? 0 }
         scene.setObject(getLayerCount, forKeyedSubscript: "getLayerCount" as NSString)
         // `scene.on(event, cb)` isn't a real WPE API (some scenes assume it);
         // a no-op stub keeps such a script from throwing at top-level eval.
@@ -1738,7 +1827,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
         if value.isNumber {
             let index = Int(value.toInt32())
-            return currentLayerOrder.indices.contains(index) ? currentLayerOrder[index] : nil
+            let order = queriedLayerOrder
+            return order.indices.contains(index) ? order[index] : nil
         }
         guard value.isObject else { return nil }
         if let thisLayer, value.isEqual(to: thisLayer), let info = layerInfo(forKey: Self.ownKey) {
@@ -1769,8 +1859,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
         if value.isNumber {
             let index = Int(value.toInt32())
-            guard currentLayerOrder.indices.contains(index) else { return nil }
-            let key = currentLayerOrder[index]
+            let order = queriedLayerOrder
+            guard order.indices.contains(index) else { return nil }
+            let key = order[index]
             if let created = createdLayers.first(where: { $0.key == key }) {
                 return created.configuration
             }

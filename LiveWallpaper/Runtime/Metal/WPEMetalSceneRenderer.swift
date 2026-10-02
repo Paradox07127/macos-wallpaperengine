@@ -124,6 +124,11 @@ final class WPEMetalSceneRenderer: NSObject {
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )
     var pendingSceneScriptBatchJobs: [WPESceneScriptBatchDispatcher.Job] = []
+    var orderedLayerScriptBatch: WPESceneScriptOrderedLayerBatch?
+    var pendingOrderedLayerScriptBatch: WPESceneScriptOrderedLayerBatchDraft?
+    var committedAuthoredLayerOrder: WPESceneScriptLayerOrderSnapshot?
+    var pendingOrderedLayerResize: SIMD2<Double>?
+    var pendingOrderedLayerProperties: [String: WPESceneScriptDeferredLayerProperties] = [:]
     #if DEBUG
     var lastOracleSceneScriptBatchCompletion: WPESceneScriptBatchDispatcher.Completion?
     var oracleSceneScriptBatchOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers

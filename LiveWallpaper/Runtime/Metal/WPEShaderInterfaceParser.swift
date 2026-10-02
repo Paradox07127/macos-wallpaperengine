@@ -42,6 +42,18 @@ enum WPEShaderInterfaceParser {
             return identifier.numberOfMatches(in: activeFragment, range: NSRange(activeFragment.startIndex..., in: activeFragment)) == 1
                 || onlyMainLocalReferences(variable.key.name, source: activeFragment)
         }.map(\.key.name)
+        let activeVertex = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(
+            in: WPEShaderPreprocessor.normalizeNewlines(vertex)
+        ))
+        if vs.issues.isEmpty {
+            interface.unreferencedVertexUniforms = vs.variables.filter { variable in
+                guard variable.kind == .uniform,
+                      let identifier = try? NSRegularExpression(pattern: "\\b" + NSRegularExpression.escapedPattern(for: variable.key.name) + "\\b") else { return false }
+                // Helpers, macro bodies and shadowing retain the requirement.
+                // Only the declaration itself may contain this identifier.
+                return identifier.numberOfMatches(in: activeVertex, range: NSRange(activeVertex.startIndex..., in: activeVertex)) == 1
+            }.map(\.key.name)
+        }
         return interface
     }
 

@@ -24,6 +24,7 @@ final class WPESceneScriptBatchDispatcher: Sendable {
 
     /// Frame work unit carries the engine's own queue (never a slot index).
     struct Job: Sendable {
+        var completionIsValid: (@Sendable () -> Bool)?
         let queue: DispatchQueue
         let work: @Sendable () -> Void
     }
@@ -209,6 +210,10 @@ final class WPESceneScriptBatchDispatcher: Sendable {
     /// A timed-out wait does not cancel the jobs or release their execution ownership.
     final class Completion: Sendable {
         fileprivate let group = DispatchGroup()
+
+        var isComplete: Bool {
+            group.wait(timeout: .now()) == .success
+        }
 
         func wait(timeout: DispatchTime) -> Bool {
             group.wait(timeout: timeout) == .success

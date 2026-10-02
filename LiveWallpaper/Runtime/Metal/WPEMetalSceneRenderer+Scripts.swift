@@ -114,6 +114,9 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
+        if Self.permitsSharedAuthoredLayerOrdering(document: document, pipeline: pipeline) {
+            sharedState.configureAuthoredLayerOrdering(ownerIDs: Set(visibleScripted.map(\.id)))
+        }
         let scriptCanvasSize = SIMD2<Double>(
             max(Double(sceneRenderSize.width), 1),
             max(Double(sceneRenderSize.height), 1)

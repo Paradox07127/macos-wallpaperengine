@@ -111,21 +111,31 @@ struct WPESceneScriptContainmentCharacterizationTests {
     /// begin() on that engine would be refused.
     @Test("Production post-fix: refused async attempts release the dispatch slot through its owner")
     func productionAsyncRejectionReleasesThroughOwner() throws {
-        let runtime = try RR10ProductionSource.combined([
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
-            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
-        ])
+        let scene = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
+        let layer = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift")
+        let runtime = scene + layer
 
         #expect(RR10ProductionSource.occurrences(
             of: "                safety.complete()\n                return false",
             in: runtime
         ) == 0)
-        // 4 = the two single-event media lanes (layer, transform) and their two batch
-        // variants; every one releases the safety claim on the permit-refused path.
-        #expect(RR10ProductionSource.occurrences(
-            of: "                asyncExecutionSafety.complete(safety)\n                return false",
-            in: runtime
-        ) == 4)
+        // Layer batching now delegates admission to a reusable optional-work factory.
+        // Pin each real admission path instead of counting Boolean-return spellings.
+        for (source, method, refusedValue) in [
+            (layer, "dispatchMediaEventAsync", "false"),
+            (layer, "makeMediaEventsBatch", "nil"),
+            (scene, "dispatchMediaEventAsync", "false"),
+            (scene, "dispatchMediaEventsAsync", "false"),
+        ] {
+            let bodies = try RR10ProductionSource.engineMethodBodies(named: method, in: source)
+            #expect(bodies.count == 1, "\(method) must have one admission implementation per family")
+            let body = try #require(bodies.first)
+            #expect(body.contains("guard let permit = governor.tryAcquireUnreserved(for: participant) else { asyncExecutionSafety.complete(safety) return \(refusedValue) }"), "\(method)")
+            #expect(!body.contains("safety.complete()"), "\(method) must clear the owner, not only the reservation")
+        }
+        let forwarding = try #require(RR10ProductionSource.engineMethodBodies(named: "dispatchMediaEventsAsync", in: layer).first)
+        #expect(forwarding.contains("guard let work = makeMediaEventsBatch(events, runtimeSeconds: runtimeSeconds, publishTo: slot) else { return false }"))
+        #expect(forwarding.contains("queue.async(execute: work)"))
         // The synchronous runner owns its reservation outright and must keep
         // releasing it directly; this pins the two forms apart.
         #expect(RR10ProductionSource.occurrences(
@@ -529,24 +539,37 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: late async completions use the scene publish gate")
     func productionLateCompletionGateIsWiredAcrossRuntimeFamilies() throws {
-        let runtime = try RR10ProductionSource.combined([
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
-            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
-        ])
+        let scene = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
+        let layer = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift")
+        let sceneTicks = try RR10ProductionSource.engineMethodBodies(named: "makeBatchTick", in: scene)
+        let layerTicks = try RR10ProductionSource.engineMethodBodies(named: "makeBatchTick", in: layer)
+        #expect(sceneTicks.count == 2, "text and transform workers must both be checked")
+        #expect(layerTicks.count == 1)
+        for body in sceneTicks + layerTicks {
+            #expect(body.contains("guard acceptsCompletion() else { slot.rejectTick(claim) return } slot.publishTick(outcome, for: claim)"))
+        }
+        let singleMedia = try #require(RR10ProductionSource.engineMethodBodies(named: "dispatchMediaEventAsync", in: layer).first)
+        #expect(singleMedia.contains("guard self.acceptsCompletion() else { return } slot.publishEvent(outcome)"))
+        let mediaBatch = try #require(RR10ProductionSource.engineMethodBodies(named: "makeMediaEventsBatch", in: layer).first)
+        #expect(mediaBatch.contains("guard acceptsCompletion() else { return } slot.publishEvent(outcome)"))
+        let cursorBatch = try #require(RR10ProductionSource.engineMethodBodies(named: "makeCursorBatch", in: layer).first)
+        #expect(cursorBatch.contains("guard inbox.isCurrent(claim), acceptsCompletion() else { return } slot.publishEvent(outcome)"))
 
-        // `self.` in the cursor-event closure, bare in the three batch workers.
-        #expect(RR10ProductionSource.occurrences(
-            of: "guard self.acceptsCompletion() else",
-            in: runtime
-        ) >= 1)
-        #expect(RR10ProductionSource.occurrences(
-            of: "guard acceptsCompletion() else",
-            in: runtime
-        ) == 3)
-        #expect(RR10ProductionSource.occurrences(
-            of: "slot.rejectTick(claim)",
-            in: runtime
-        ) >= 3)
+        // Existing event output is still drainable, but cannot certify a rejected
+        // tick. A stale publish must neither revive that claim nor overwrite output.
+        let slot = WPESceneScriptOutcomeSlot<Int>()
+        slot.publishEvent(7)
+        let rejected = try #require(slot.beginTick())
+        #expect(slot.rejectTick(rejected))
+        #expect(!slot.didComplete(rejected))
+        #expect(slot.takeLatest() == 7)
+        let current = try #require(slot.beginTick())
+        #expect(!slot.publishTick(8, for: rejected))
+        #expect(!slot.didComplete(current))
+        #expect(slot.publishTick(9, for: current))
+        #expect(slot.didComplete(current))
+        #expect(!slot.didComplete(rejected))
+        #expect(slot.takeLatest() == 9)
     }
 
     // MARK: - Production primitive behavior
@@ -969,6 +992,16 @@ private enum RR10ProductionSource {
 
     static func occurrences(of needle: String, in haystack: String) -> Int {
         haystack.components(separatedBy: needle).count - 1
+    }
+
+    /// These engine methods share an eight-space declaration/closing-brace boundary.
+    /// Normalize whitespace so checks describe control flow rather than formatter output.
+    static func engineMethodBodies(named name: String, in source: String) throws -> [String] {
+        let marker = "\n        func \(name)("
+        return try source.components(separatedBy: marker).dropFirst().map { suffix in
+            let end = try #require(suffix.range(of: "\n        }\n"))
+            return suffix[..<end.upperBound].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
     }
 }
 

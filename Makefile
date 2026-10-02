@@ -80,6 +80,7 @@ test-app:
 # GPU execution and temporal feedback cannot be certified by a headless shard.
 # Keep the local gate explicit and require every listed suite to execute.
 WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
+    WPEAuthoredVertexUniformReferenceTests WPEOrderedLayerPublicationTests \
     WPERenderPipelineBuilderTests WPEMetalTextureLoaderTests WPEFrameUniformContextTests \
     WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
     WPEParticleInstanceCoordinatorTests WPEParticleInstanceModifierTests \

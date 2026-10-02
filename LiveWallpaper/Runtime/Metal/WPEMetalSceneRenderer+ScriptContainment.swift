@@ -401,6 +401,11 @@ extension WPEMetalSceneRenderer {
         executor.mediaTextureStore = nil
         textScriptInstances.removeAll(keepingCapacity: false)
         layerScriptInstances.removeAll(keepingCapacity: false)
+        orderedLayerScriptBatch = nil
+        pendingOrderedLayerScriptBatch = nil
+        committedAuthoredLayerOrder = nil
+        pendingOrderedLayerResize = nil
+        pendingOrderedLayerProperties.removeAll()
         layerTransformMutationJournal.removeAll()
         layerAlphaScriptInstances.removeAll(keepingCapacity: false)
         textVisibleScriptInstances.removeAll(keepingCapacity: false)

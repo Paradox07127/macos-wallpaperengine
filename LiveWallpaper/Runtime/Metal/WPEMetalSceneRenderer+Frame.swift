@@ -78,14 +78,7 @@ extension WPEMetalSceneRenderer {
             if !didFinishSceneScriptVideoCommands {
                 discardSceneScriptVideoCommands()
             }
-            #if DEBUG
-            lastOracleSceneScriptBatchCompletion = sceneScriptBatchDispatcher.submit(
-                pendingSceneScriptBatchJobs, trackingCompletion: WPEOracleMode.isEnabled,
-                order: WPEOracleMode.isEnabled ? oracleSceneScriptBatchOrder : .parallelWorkers
-            )
-            #else
-            sceneScriptBatchDispatcher.submit(pendingSceneScriptBatchJobs)
-            #endif
+            submitSceneScriptFrameJobs()
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
         var frameOverlay = tickLayerPresentationScripts(
@@ -197,7 +190,8 @@ extension WPEMetalSceneRenderer {
             previousLayerScriptPointerFrame = frameContext.layerScriptPointerFrame
         }
         forEachCursorScriptInstance { _, instance in
-            if let job = instance.batchCursorEvents(cursorBursts[ObjectIdentifier(instance)] ?? []) {
+            let canSubmit = !hasPendingAuthoredLayerBatch || pendingOrderedLayerScriptBatch?.hasCompleteAdmission == true
+            if let job = instance.batchCursorEvents(cursorBursts[ObjectIdentifier(instance)] ?? [], allowSubmission: canSubmit) {
                 pendingSceneScriptBatchJobs.append(job)
             }
         }
@@ -235,7 +229,7 @@ extension WPEMetalSceneRenderer {
             lastStableScriptTransforms = liveScriptTransforms
             lastStableScriptTextByID = tickedTextByID
             liveTextByID = tickedTextByID
-            framePipeline = framePipeline.applyingScriptLayerPresentation(liveLayerPresentation)
+            framePipeline = framePipeline.applyingScriptLayerPresentation(frameLayerPresentation)
             if !liveCreatedLayers.isEmpty {
                 framePipeline = framePipeline.addingCreatedLayers(
                     liveCreatedLayers,
@@ -413,13 +407,17 @@ extension WPEMetalSceneRenderer {
         // Sorted by objectID: these scripts cross-talk through shared state, so a
         // stable tick order keeps the frame deterministic (oracle) and behaviour
         // reproducible (dictionary order was arbitrary).
-        for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
-            if let output = tickLayerScript(
-                instance,
-                runtimeSeconds: uniforms.time,
-                pointerFrame: layerScriptPointerFrame
-            ) {
-                applyLayerScriptOutput(output, ownObjectID: objectID)
+        if sceneScriptSharedState?.isAuthoredLayerOrderingEnabled == true {
+            tickOrderedLayerScripts(time: uniforms.time, pointerFrame: layerScriptPointerFrame)
+        } else {
+            for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = tickLayerScript(
+                    instance,
+                    runtimeSeconds: uniforms.time,
+                    pointerFrame: layerScriptPointerFrame
+                ) {
+                    applyLayerScriptOutput(output, ownObjectID: objectID)
+                }
             }
         }
         for (objectID, instance) in layerAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {

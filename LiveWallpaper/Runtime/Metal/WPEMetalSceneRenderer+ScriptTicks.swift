@@ -44,6 +44,7 @@ extension WPEMetalSceneRenderer {
 
     /// Subsequent contract: emit only when the language key changed. Every JS call receives a fresh plain object with its own `language` property, so authored `hasOwnProperty('language')` checks behave exactly as in WPE.
     func applySceneScriptGeneralSettingsIfChanged() {
+        guard !hasPendingAuthoredLayerBatch else { return }
         guard let language = sceneScriptGeneralSettings.takeChangedLanguage() else { return }
         dispatchSceneScriptGeneralSettings(language: language)
     }
@@ -135,6 +136,8 @@ extension WPEMetalSceneRenderer {
     }
 
     func drainMediaEvents(runtimeSeconds: Double) {
+        // Ordered scenes consume this same mailbox in their callback chain.
+        guard sceneScriptSharedState?.isAuthoredLayerOrderingEnabled != true else { return }
         guard let mailbox = mediaEventMailbox else { return }
         let events = mailbox.drain()
         // The whole drain goes to each instance as one batch: dispatched per event, the single in-flight async slot would admit the first and silently drop the rest of a cold-start burst.
@@ -183,6 +186,15 @@ extension WPEMetalSceneRenderer {
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
         guard instance.handlesUserProperties else { return nil }
+        if hasPendingAuthoredLayerBatch,
+           let id = layerScriptInstances.first(where: { $0.value === instance })?.key {
+            var pending = pendingOrderedLayerProperties[id]
+                ?? .init(instance: instance, values: [:], runtimeSeconds: runtimeSeconds)
+            pending.values.merge(properties) { _, new in new }
+            pending.runtimeSeconds = runtimeSeconds
+            pendingOrderedLayerProperties[id] = pending
+            return nil
+        }
         return instance.applyUserPropertiesSuperseding(
             properties,
             runtimeSeconds: runtimeSeconds
@@ -191,6 +203,10 @@ extension WPEMetalSceneRenderer {
 
     /// Called only after `updateSurfaceGeometry` accepts a positive changed size; construction merely seeds `engine.screenResolution` and never emits the startup event prohibited by WPE's contract.
     func dispatchSceneScriptResizeScreen(_ size: SIMD2<Double>) {
+        if hasPendingAuthoredLayerBatch {
+            pendingOrderedLayerResize = size
+            return
+        }
         for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let output = instance.resizeScreen(size) {
                 applyLayerScriptOutput(output, ownObjectID: objectID)

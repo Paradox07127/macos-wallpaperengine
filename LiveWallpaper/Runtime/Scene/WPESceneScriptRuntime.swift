@@ -186,6 +186,7 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
         var nextTickGeneration: UInt64 = 0
         var inFlightTickGeneration: UInt64?
         var tickStartedAtUptimeNanos: UInt64?
+        var lastCompletedTickGeneration: UInt64?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -229,6 +230,11 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
         }
     }
 
+    /// A retained event outcome is not proof that this particular tick completed.
+    func didComplete(_ claim: Claim) -> Bool {
+        state.withLock { $0.lastCompletedTickGeneration == claim.generation }
+    }
+
     /// Queue-side tick finish; stale generation discarded.
     @discardableResult
     func publishTick(_ outcome: Outcome, for claim: Claim) -> Bool {
@@ -237,6 +243,7 @@ final class WPESceneScriptOutcomeSlot<Outcome: Sendable>: Sendable {
             s.inFlightTickGeneration = nil
             s.tickStartedAtUptimeNanos = nil
             Self.store(outcome, into: &s, combine: combine)
+            s.lastCompletedTickGeneration = claim.generation
             return true
         }
     }
@@ -1745,6 +1752,13 @@ struct WPESceneScriptLayerInfo: Sendable {
     }
 }
 
+struct WPESceneScriptLayerOrderSnapshot: Sendable, Equatable {
+    fileprivate let stateIdentity: UUID
+    let objectIDs: [String]
+    let revision: UInt64
+    let hasOverride: Bool
+}
+
 final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
     let userProperties: [String: WPESceneScriptPropertyValue]
@@ -1756,6 +1770,94 @@ final class WPESharedScriptState: @unchecked Sendable {
     private var cursorProjectionMatrix: [Double]?
     private var inverseCursorProjection: simd_double4x4?
     private var cursorSceneMotion: WPESceneCameraMotionSample?
+
+    // Kept separate from shared-value storage, whose lock may acquire the load token.
+    // Order mutations always acquire completion permission before this lock.
+    private let layerOrderLock = NSLock()
+    private let layerOrderIdentity = UUID()
+    private var authoredLayerOrder: [String]
+    private var authoredLayerOrderOwners: Set<String> = []
+    private var authoredLayerOrderRevision: UInt64 = 0
+    private var authoredLayerOrderHasOverride = false
+
+    var isAuthoredLayerOrderingEnabled: Bool {
+        layerOrderLock.lock(); defer { layerOrderLock.unlock() }
+        return !authoredLayerOrderOwners.isEmpty
+    }
+
+    /// The renderer must first prove independent authored images and visible-only owners.
+    /// Single-owner created-layer sorting retains its existing bridge admission.
+    @discardableResult
+    func configureAuthoredLayerOrdering(ownerIDs: Set<String>) -> Bool {
+        var configured = false
+        let configure = {
+            self.layerOrderLock.lock(); defer { self.layerOrderLock.unlock() }
+            let identities = Set(self.authoredLayerOrder)
+            guard self.authoredLayerOrderOwners.isEmpty, ownerIDs.count >= 2,
+                  ownerIDs.isSubset(of: identities), identities.count == self.layers.count else { return }
+            self.authoredLayerOrderOwners = ownerIDs
+            configured = true
+        }
+        if let sceneScriptLoadToken {
+            _ = sceneScriptLoadToken.withCompletionPermission(configure)
+        } else {
+            configure()
+        }
+        return configured
+    }
+
+    func authoredLayerOrderSnapshot() -> WPESceneScriptLayerOrderSnapshot {
+        layerOrderLock.lock(); defer { layerOrderLock.unlock() }
+        return .init(stateIdentity: layerOrderIdentity, objectIDs: authoredLayerOrder,
+                     revision: authoredLayerOrderRevision, hasOverride: authoredLayerOrderHasOverride)
+    }
+
+    /// Rollback remains available after fail-close. Snapshots cannot cross load/state identity.
+    @discardableResult
+    func restoreAuthoredLayerOrder(_ snapshot: WPESceneScriptLayerOrderSnapshot) -> Bool {
+        layerOrderLock.lock(); defer { layerOrderLock.unlock() }
+        guard snapshot.stateIdentity == layerOrderIdentity,
+              snapshot.revision <= authoredLayerOrderRevision else { return false }
+        guard authoredLayerOrder != snapshot.objectIDs || authoredLayerOrderHasOverride != snapshot.hasOverride else { return true }
+        authoredLayerOrder = snapshot.objectIDs
+        authoredLayerOrderHasOverride = snapshot.hasOverride
+        authoredLayerOrderRevision &+= 1
+        return true
+    }
+
+    @discardableResult
+    func moveAuthoredLayer(objectID: String, to index: Int, ownerID: String) -> Bool {
+        var moved = false
+        let move = {
+            self.layerOrderLock.lock(); defer { self.layerOrderLock.unlock() }
+            guard self.authoredLayerOrderOwners.contains(ownerID),
+                  self.authoredLayerOrder.indices.contains(index),
+                  let previous = self.authoredLayerOrder.firstIndex(of: objectID) else { return }
+            if previous != index {
+                self.authoredLayerOrder.remove(at: previous)
+                self.authoredLayerOrder.insert(objectID, at: index)
+                self.authoredLayerOrderRevision &+= 1
+                self.authoredLayerOrderHasOverride = true
+            }
+            moved = true
+        }
+        if let sceneScriptLoadToken {
+            _ = sceneScriptLoadToken.withCompletionPermission(move)
+        } else {
+            move()
+        }
+        return moved
+    }
+
+    func orderedLayerInfos() -> [WPESceneScriptLayerInfo] {
+        layerOrderLock.lock()
+        let enabled = !authoredLayerOrderOwners.isEmpty
+        let order = authoredLayerOrder
+        layerOrderLock.unlock()
+        guard enabled else { return layers }
+        let byID = Dictionary(layers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return order.compactMap { byID[$0] }
+    }
 
     private var staticCameraState = WPEStaticCameraScriptSnapshot()
 
@@ -1906,6 +2008,9 @@ final class WPESharedScriptState: @unchecked Sendable {
         self.sceneScriptLoadToken = sceneScriptLoadToken
         self.userProperties = userProperties
         self.layers = layers
+        authoredLayerOrder = layers.enumerated().sorted {
+            $0.element.index == $1.element.index ? $0.offset < $1.offset : $0.element.index < $1.element.index
+        }.map(\.element.id)
         var names: Set<String> = []
         var ambiguous: Set = [""]
         for layer in layers where !names.insert(layer.name).inserted {
@@ -3451,7 +3556,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 if value.isString, let name = value.toString() {
                     return layerHandle(named: name, in: context)
                 }
-                if value.isNumber, let layers = shared?.layers {
+                if value.isNumber, let layers = shared?.orderedLayerInfos() {
                     let index = Int(value.toInt32())
                     guard layers.indices.contains(index) else { return nil }
                     return layerHandle(objectID: layers[index].id, in: context)
@@ -3468,7 +3573,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     }
                     return shared?.layers.first(where: { $0.name == entry.key })?.initialConfiguration
                 }
-                return wpeInitialLayerConfigurationLookup(value, layers: shared?.layers ?? [])
+                return wpeInitialLayerConfigurationLookup(value, shared: shared)
             }
             cameraBridge.install(on: scene, in: context)
             context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)

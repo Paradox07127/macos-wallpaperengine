@@ -647,8 +647,14 @@ struct WPEAuthoredVertexExecutorTests {
         let original = fixture.pipeline.layers[0].passes[0]
         let source = try #require(original.shader)
         let declaration = "uniform \(name == "g_NormalModelMatrix" ? "mat3" : "mat4") \(name);\n"
-        let program = WPEShaderProgram(name: "singular-inverse", vertexSource: (fragment ? "" : declaration) + source.vertexSource,
-                                       fragmentSource: (fragment ? declaration : "") + source.fragmentSource, isBuiltin: false)
+        let vertexSource = fragment ? source.vertexSource : declaration + source.vertexSource.replacingOccurrences(
+            of: "v_TexCoord =", with: "gl_Position.x += \(name)[0][0];\n    v_TexCoord ="
+        )
+        let fragmentSource = fragment ? declaration + source.fragmentSource.replacingOccurrences(
+            of: "gl_FragColor =", with: "gl_FragColor = vec4(\(name)[0][0]) +"
+        ) : source.fragmentSource
+        let program = WPEShaderProgram(name: "singular-inverse", vertexSource: vertexSource,
+                                       fragmentSource: fragmentSource, isBuiltin: false)
         let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: program,
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
@@ -664,6 +670,21 @@ struct WPEAuthoredVertexExecutorTests {
         let frame = WPEMetalFrameState(output: output, sceneSize: camera.renderSize, cameraUniforms: camera)
         #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer,
                                                          frameState: frame, effectTextureProjection: { nil }) == .invalidMatrix(name))
+        if !fragment {
+            #expect(result.shaderInterface?.isVertexUniformProvenUnreferenced(name) == false)
+            let unusedProgram = WPEShaderProgram(name: "singular-unused-inverse", vertexSource: declaration + source.vertexSource,
+                                                 fragmentSource: source.fragmentSource, isBuiltin: false)
+            let unusedPass = WPEPreparedRenderPass(pass: pass.pass, shader: unusedProgram,
+                                                   textureBindings: [:], comboValues: [:], uniformValues: [:])
+            let unusedRequest = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: unusedPass, recordFailure: false))
+            let unusedResult = try fixture.executor.shaderCompiler.compile(unusedRequest.replacingVertexExecution(.authoredObjectQuad))
+            let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [unusedPass])])
+            let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+            fixture.executor.frameUniformContext = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms
+            #expect(unusedResult.shaderInterface?.isVertexUniformProvenUnreferenced(name) == true)
+            #expect(fixture.executor.authoredVertexRejection(for: unusedPass, result: unusedResult, layer: layer,
+                                                             frameState: frame, effectTextureProjection: { nil }) == nil)
+        }
     }
 
     @Test func parallaxDrawProjectionSkipsPassesWhoseFragmentReadsModelInputs() throws {
