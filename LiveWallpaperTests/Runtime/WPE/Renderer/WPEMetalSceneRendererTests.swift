@@ -741,6 +741,83 @@ struct WPEMetalSceneRendererTests {
         #expect(demand.retainCount == demand.releaseCount)
     }
 
+    @Test("Transition hold freezes the scene and its audio without reporting a pause")
+    func transitionHoldFreezesSceneWithoutReportingPause() throws {
+        let demand = RecordingSystemAudioCaptureDemand()
+        let session = try Self.makeTransitionHoldSession(demand: demand)
+        defer { session.cleanup() }
+        session.updateSystemAudioCaptureRequirement(true)
+        #expect(session.isPlaying)
+        #expect(demand.consumerCount == 1)
+
+        session.setTransitionHold(true)
+        #expect(!session.isPlaying)
+        #expect(demand.consumerCount == 0)
+        #expect(session.summary.activity == .active)
+        #expect(session.userIntendsToPlay)
+
+        session.applyPerformanceProfile(.quality)
+        #expect(!session.isPlaying)
+
+        session.setTransitionHold(false)
+        #expect(session.isPlaying)
+        #expect(demand.consumerCount == 1)
+        #expect(session.summary.activity == .active)
+    }
+
+    @Test("A pause pressed during a transition hold survives the release")
+    func transitionHoldReleaseKeepsUserPause() throws {
+        let session = try Self.makeTransitionHoldSession(demand: RecordingSystemAudioCaptureDemand())
+        defer { session.cleanup() }
+
+        session.setTransitionHold(true)
+        #expect(!session.isPlaying)
+        session.pause()
+        session.setTransitionHold(false)
+
+        #expect(!session.isPlaying)
+        #expect(!session.userIntendsToPlay)
+        #expect(session.summary.activity == .paused)
+    }
+
+    @Test("Releasing a transition hold under a suspended policy stays suspended")
+    func transitionHoldReleaseKeepsPolicySuspension() throws {
+        let session = try Self.makeTransitionHoldSession(demand: RecordingSystemAudioCaptureDemand())
+        defer { session.cleanup() }
+
+        session.setTransitionHold(true)
+        session.applyPerformanceProfile(.quality)
+        #expect(!session.isPlaying)
+        session.applyPerformanceProfile(.suspended)
+        #expect(session.summary.activity == .policySuspended)
+        session.setTransitionHold(false)
+
+        #expect(!session.isPlaying)
+        #expect(session.summary.activity == .policySuspended)
+        session.applyPerformanceProfile(.quality)
+        #expect(session.isPlaying)
+    }
+
+    private static func makeTransitionHoldSession(
+        demand: RecordingSystemAudioCaptureDemand
+    ) throws -> SceneWallpaperSession {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        return SceneWallpaperSession(
+            window: window,
+            renderActor: WPEDisplayRenderActor(backing: .main),
+            surface: surface,
+            audioCaptureDemandController: demand
+        )
+    }
+
     @Test("Scene render state is derived from the session's cached renderer state")
     func sceneRenderStateDerivesFromSessionCache() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

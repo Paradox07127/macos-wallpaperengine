@@ -20,6 +20,7 @@ protocol WallpaperRuntimeSession: AnyObject {
     func show()
     func applyCapturePolicy(_ sharingType: NSWindow.SharingType)
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile)
+    func setTransitionHold(_ held: Bool)
     func updateFrame(to frame: CGRect)
     func cleanup()
 
@@ -36,4 +37,7 @@ extension WallpaperRuntimeSession {
     }
 
     func retry() async {}
+
+    /// No-op: web and spanned-scene sessions are not frozen and keep playing through a transition.
+    func setTransitionHold(_: Bool) {}
 }

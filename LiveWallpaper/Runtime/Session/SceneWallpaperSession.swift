@@ -75,6 +75,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var hasRenderer = true
     private var currentProfile: WallpaperPerformanceProfile = .quality
     private var previewProfileOverride: WallpaperPerformanceProfile?
+    private var transitionHold = false
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
     private var requiresSystemAudioCapture = false
     private var lastLoggedAudioDemandInputs = ""
@@ -148,6 +149,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     private var effectivePerformanceProfile: WallpaperPerformanceProfile {
+        transitionHold ? .suspended : unheldPerformanceProfile
+    }
+
+    private var unheldPerformanceProfile: WallpaperPerformanceProfile {
         guard userIntendsToPlay,
               currentProfile == .quality,
               previewProfileOverride != .suspended else {
@@ -157,9 +162,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     var summary: WallpaperSessionSummary {
+        // Ignores the transition hold so a frozen reveal never reads as a pause.
         let activity: WallpaperSessionActivity = if loadError != nil {
             .error
-        } else if effectivePerformanceProfile == .suspended {
+        } else if unheldPerformanceProfile == .suspended {
             // Still intending to play means something else is holding it down.
             userIntendsToPlay ? .policySuspended : .paused
         } else {
@@ -229,6 +235,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     func clearPreviewPerformanceOverride() {
         previewProfileOverride = nil
+        applyEffectivePerformanceProfile()
+    }
+
+    /// Pins the effective profile to `.suspended` over policy, preview and intent until released.
+    func setTransitionHold(_ held: Bool) {
+        transitionHold = held
         applyEffectivePerformanceProfile()
     }
 

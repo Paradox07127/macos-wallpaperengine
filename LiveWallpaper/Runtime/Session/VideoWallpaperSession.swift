@@ -42,6 +42,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
     private var isManualPauseHibernating = false
     /// Held as state, not a one-shot: every eligibility push re-derives from it, so a routine refresh cannot cancel an emergency teardown.
     private var criticalMemoryPressureActive = false
+    private var transitionHold = false
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
             guard oldValue != runtimeError else { return }
@@ -121,7 +122,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         let activity: WallpaperSessionActivity
         if runtimeError != nil {
             activity = .error
-        } else if player.isPlaying {
+        } else if isPlayingIgnoringTransitionHold(player) {
             activity = .active
         } else if player.isRestoringFromHibernation {
             activity = .restoring
@@ -138,6 +139,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
             supportsPlaybackControl: true,
             subtitle: runtimeError.map { LogPrivacyRedactor.scrub($0.userMessage) }
         )
+    }
+
+    /// What `player.isPlaying` would read without the hold, so a held frame never reports a pause; no AVPlayer yet means not playing either way.
+    private func isPlayingIgnoringTransitionHold(_ player: WallpaperVideoPlayer) -> Bool {
+        guard transitionHold else { return player.isPlaying }
+        return userIntendsToPlay && currentProfile == .quality && player.player != nil
     }
 
     var videoPlayer: WallpaperVideoPlayer? {
@@ -178,7 +185,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
-        let shouldPlayVideo = userIntendsToPlay && profile == .quality
+        let shouldPlayVideo = userIntendsToPlay && profile == .quality && !transitionHold
         // Manual play is the wake trigger, so the override has to go before the
         // suspend depth below is recomputed.
         if userIntendsToPlay {
@@ -199,6 +206,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
             player?.pause()
         }
         reconcileManualPauseHibernation()
+    }
+
+    /// Pause only: resources stay warm and suspend depth, particles and hibernation still follow policy.
+    func setTransitionHold(_ held: Bool) {
+        transitionHold = held
+        applyPerformanceProfile(currentProfile)
     }
 
     /// Manual-pause hibernation holds eligibility through an absence-false push; both share one dwell slot.

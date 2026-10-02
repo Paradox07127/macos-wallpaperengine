@@ -1719,6 +1719,82 @@ struct VideoSessionLifecycleTests {
         #expect(player.isShowingHibernationStillFrameForTesting)
     }
 
+    // MARK: - Transition hold
+
+    @Test("Transition hold pauses a warm player without touching intent or summary")
+    func transitionHoldPausesWarmPlayer() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4()
+        let player = WallpaperVideoPlayer(url: url, frame: CGRect(x: 0, y: 0, width: 128, height: 128))
+        let session = VideoWallpaperSession(player: player)
+        defer {
+            session.cleanup()
+            try? FileManager.default.removeItem(at: url)
+        }
+        session.applyPerformanceProfile(.quality)
+        try await Self.waitForCondition("playback starts") {
+            player.player?.timeControlStatus == .playing && player.isPlaying
+        }
+        #expect(session.summary.activity == .active)
+
+        session.setTransitionHold(true)
+        #expect(!player.isPlaying)
+        #expect(!player.isSuspended)
+        #expect(session.userIntendsToPlay)
+        #expect(session.summary.activity == .active)
+
+        session.applyPerformanceProfile(.quality)
+        #expect(!player.isPlaying)
+
+        session.setTransitionHold(false)
+        try await Self.waitForCondition("playback resumes") { player.isPlaying }
+        #expect(session.summary.activity == .active)
+    }
+
+    @Test("A pause pressed during a video transition hold survives the release")
+    func videoTransitionHoldReleaseKeepsUserPause() {
+        let player = WallpaperVideoPlayer(
+            url: URL(fileURLWithPath: "/tmp/transition-hold-pause-\(UUID().uuidString).mov"),
+            frame: CGRect(x: 0, y: 0, width: 32, height: 32),
+            loadImmediately: false
+        )
+        let session = VideoWallpaperSession(player: player)
+        defer { session.cleanup() }
+        session.applyPerformanceProfile(.quality)
+        #expect(player.shouldAutoplayWhenReady)
+
+        session.setTransitionHold(true)
+        #expect(!player.shouldAutoplayWhenReady)
+        session.pause()
+        session.setTransitionHold(false)
+
+        #expect(!player.shouldAutoplayWhenReady)
+        #expect(!session.userIntendsToPlay)
+        #expect(session.summary.activity == .paused)
+    }
+
+    @Test("Releasing a video transition hold under a suspended policy stays suspended")
+    func videoTransitionHoldReleaseKeepsPolicySuspension() {
+        let player = WallpaperVideoPlayer(
+            url: URL(fileURLWithPath: "/tmp/transition-hold-policy-\(UUID().uuidString).mov"),
+            frame: CGRect(x: 0, y: 0, width: 32, height: 32),
+            loadImmediately: false
+        )
+        let session = VideoWallpaperSession(player: player)
+        defer { session.cleanup() }
+
+        session.setTransitionHold(true)
+        session.applyPerformanceProfile(.quality)
+        #expect(!player.shouldAutoplayWhenReady)
+        session.applyPerformanceProfile(.suspended)
+        session.setTransitionHold(false)
+
+        #expect(!player.shouldAutoplayWhenReady)
+        #expect(player.isSuspended)
+        #expect(session.summary.activity == .policySuspended)
+        session.applyPerformanceProfile(.quality)
+        #expect(player.shouldAutoplayWhenReady)
+    }
+
     private static func waitForCondition(
         _ description: String,
         timeout: Duration = .seconds(10),
