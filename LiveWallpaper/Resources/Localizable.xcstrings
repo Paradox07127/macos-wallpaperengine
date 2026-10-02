@@ -3354,6 +3354,18 @@
             "value" : "24-hour schedule"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programación de 24 horas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24時間スケジュール"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3364,18 +3376,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "24 小時排程"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24時間スケジュール"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Programación de 24 horas"
           }
         }
       }
@@ -12921,6 +12921,18 @@
             "value" : "Choose a wallpaper around the clock to edit its hours."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un fondo alrededor del reloj para editar sus horas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時計の周囲の壁紙を選択して時間帯を編集します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12931,18 +12943,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇圓盤周圍的桌布以編輯時段。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時計の周囲の壁紙を選択して時間帯を編集します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un fondo alrededor del reloj para editar sus horas."
           }
         }
       }
@@ -23586,6 +23586,18 @@
             "value" : "Enable Again"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a activar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再び有効にする"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23596,18 +23608,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新啟用"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再び有効にする"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a activar"
           }
         }
       }
@@ -25256,6 +25256,18 @@
             "value" : "Failed sources are retried once, then skipped until you enable them again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si una carga falla, se reintenta una vez. Si vuelve a fallar, se omite hasta que la actives de nuevo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込みに失敗すると1回再試行します。再び失敗すると、再有効化するまでスキップします。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25266,18 +25278,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "載入失敗時會重試一次。再次失敗後會略過，直到你重新啟用。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "読み込みに失敗すると1回再試行します。再び失敗すると、再有効化するまでスキップします。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si una carga falla, se reintenta una vez. Si vuelve a fallar, se omite hasta que la actives de nuevo."
           }
         }
       }
@@ -25291,6 +25291,18 @@
             "value" : "Failed twice. Click to enable this wallpaper again."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carga falló dos veces. Haz clic para volver a activar este fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2回読み込みに失敗しました。クリックしてこの壁紙を再び有効にします。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25301,18 +25313,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連續兩次載入失敗。點按重新啟用此桌布。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "2回読み込みに失敗しました。クリックしてこの壁紙を再び有効にします。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La carga falló dos veces. Haz clic para volver a activar este fondo."
           }
         }
       }
@@ -54379,6 +54379,18 @@
             "value" : "Select a time slot"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un tramo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯を選択"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -54389,18 +54401,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇時段"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯を選択"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un tramo"
           }
         }
       }
@@ -54414,6 +54414,18 @@
             "value" : "Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un fondo alrededor del reloj. Arrastra los extremos del arco para ajustar las horas y haz doble clic en una hora libre para añadir un tramo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時計の周囲の壁紙を選択します。円弧の両端をドラッグして時間を調整し、空いている時間をダブルクリックして時間帯を追加します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -54424,18 +54436,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇圓盤周圍的桌布。拖移圓弧端點調整時間；按兩下空閒時段新增。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時計の周囲の壁紙を選択します。円弧の両端をドラッグして時間を調整し、空いている時間をダブルクリックして時間帯を追加します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un fondo alrededor del reloj. Arrastra los extremos del arco para ajustar las horas y haz doble clic en una hora libre para añadir un tramo."
           }
         }
       }
@@ -57463,6 +57463,18 @@
             "value" : "Skipped"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitido"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップ済み"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -57473,18 +57485,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已略過"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スキップ済み"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Omitido"
           }
         }
       }
@@ -57533,6 +57533,18 @@
             "value" : "Skipped wallpapers"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondos omitidos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップした壁紙"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -57543,18 +57555,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已略過的桌布"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スキップした壁紙"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondos omitidos"
           }
         }
       }
@@ -67925,6 +67925,18 @@
             "value" : "Time Slot"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tramo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -67935,18 +67947,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "時段"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tramo"
           }
         }
       }
@@ -68132,6 +68132,18 @@
             "value" : "Time slots overlap. Choose different hours."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los tramos se superponen. Elige otras horas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間帯が重なっています。別の時間を選択してください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -68142,18 +68154,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "時段重疊，請選擇其他時間。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間帯が重なっています。別の時間を選択してください。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los tramos se superponen. Elige otras horas."
           }
         }
       }
