@@ -303,19 +303,19 @@ extension WPEMetalSceneRenderer {
                 }
                 continue
             }
-            for preparedPass in layer.passes {
-                for role in textureReferenceRoles(for: preparedPass) {
-                    if let path = externalTexturePath(for: role.reference),
-                       // Synthetic text paths are graph routing tokens; the glyph pass has no disk texture.
-                       !WPETextLayerSynthesis.isTargetPath(path),
-                       seen.insert(path).inserted {
-                        jobs.append(WPETextureLoadJob(
-                            path: path,
-                            layerName: layerName,
-                            candidates: textureCandidates(for: path),
-                            isRequired: role.isRequired
-                        ))
-                    }
+            let roles = layer.passes.flatMap { textureReferenceRoles(for: $0) }
+                + meshMaterialTextureRoles(for: layer.graphLayer)
+            for role in roles {
+                if let path = externalTexturePath(for: role.reference),
+                   // Synthetic text paths are graph routing tokens; the glyph pass has no disk texture.
+                   !WPETextLayerSynthesis.isTargetPath(path),
+                   seen.insert(path).inserted {
+                    jobs.append(WPETextureLoadJob(
+                        path: path,
+                        layerName: layerName,
+                        candidates: textureCandidates(for: path),
+                        isRequired: role.isRequired
+                    ))
                 }
             }
         }
@@ -578,6 +578,20 @@ extension WPEMetalSceneRenderer {
 
     func requiredTextureReferences(for pass: WPEPreparedRenderPass) -> [WPETextureReference] {
         textureReferenceRoles(for: pass).map(\.reference)
+    }
+
+    /// The submesh slots the scene-model encoder rebinds per draw: slot 0 albedo, slot 2 component map.
+    /// Optional: a missing submesh texture falls back to the layer's own binding instead of failing the scene.
+    func meshMaterialTextureRoles(
+        for layer: WPERenderLayer
+    ) -> [(reference: WPETextureReference, isRequired: Bool)] {
+        layer.meshMaterialTextures.keys.sorted().flatMap { meshIndex in
+            let textures = layer.meshMaterialTextures[meshIndex] ?? [:]
+            return [textures[0], textures[2]].compactMap { reference in
+                reference.map { (reference: $0, isRequired: false) }
+            }
+        }
+        .filter { $0.reference.isExternalTextureReference }
     }
 
     private func taggedTextureReferences(
@@ -1008,6 +1022,13 @@ extension WPEMetalSceneRenderer {
                 }
                 for reference in requiredTextureReferences(for: pass) {
                     if let path = externalTexturePath(for: reference) {
+                        paths.insert(path)
+                    }
+                }
+            }
+            if layer.graphLayer.visible {
+                for role in meshMaterialTextureRoles(for: layer.graphLayer) {
+                    if let path = externalTexturePath(for: role.reference) {
                         paths.insert(path)
                     }
                 }

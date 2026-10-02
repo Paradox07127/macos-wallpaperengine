@@ -1084,7 +1084,8 @@ struct WPERenderGraphBuilder: Sendable {
                     || object.usesProgrammableBlend
             ),
             parallaxDepth: object.parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: model.meshMaterialTextures
         )
     }
 
@@ -1275,7 +1276,10 @@ struct WPERenderGraphBuilder: Sendable {
                 materialPath: material,
                 puppetPath: object.imageRelativePath,
                 rendersAsSceneModel: true,
-                puppetClipMaskNames: clipMaskNames
+                puppetClipMaskNames: clipMaskNames,
+                meshMaterialTextures: explicitMaterial == nil
+                    ? meshMaterialTextures(of: model, layerMaterial: material)
+                    : [:]
             )
         }
         guard extensionName == "json" else {
@@ -1306,6 +1310,20 @@ struct WPERenderGraphBuilder: Sendable {
             puppetClipMaskNames: clipMaskNames,
             sourceJSON: WPESceneJSONValue(jsonValue: dict)
         )
+    }
+
+    private func meshMaterialTextures(
+        of model: WPEPuppetModel,
+        layerMaterial: String
+    ) -> [Int: [Int: WPETextureReference]] {
+        var result: [Int: [Int: WPETextureReference]] = [:]
+        for (meshIndex, mesh) in model.meshes.enumerated()
+            where !mesh.materialPath.isEmpty && mesh.materialPath != layerMaterial {
+            // An unreadable submesh material leaves that mesh drawing with the layer material.
+            guard let pass = (try? loadMaterial(path: mesh.materialPath))?.passes.first else { continue }
+            result[meshIndex] = pass.textures
+        }
+        return result
     }
 
     private static func parseModelCropOffset(_ raw: Any?) -> SIMD2<Double>? {
@@ -2171,6 +2189,7 @@ private struct WPEModelDescriptor {
     let cropOffset: SIMD2<Double>?
     let puppetClipMaskNames: [String]
     let sourceJSON: WPESceneJSONValue?
+    let meshMaterialTextures: [Int: [Int: WPETextureReference]]
     var requiresFinalSceneComposite: Bool { puppetPath != nil && !rendersAsSceneModel }
 
     init(
@@ -2180,7 +2199,8 @@ private struct WPEModelDescriptor {
         autosize: Bool = false,
         cropOffset: SIMD2<Double>? = nil,
         puppetClipMaskNames: [String] = [],
-        sourceJSON: WPESceneJSONValue? = nil
+        sourceJSON: WPESceneJSONValue? = nil,
+        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:]
     ) {
         self.materialPath = materialPath
         self.puppetPath = puppetPath
@@ -2189,6 +2209,7 @@ private struct WPEModelDescriptor {
         self.cropOffset = cropOffset
         self.puppetClipMaskNames = puppetClipMaskNames
         self.sourceJSON = sourceJSON
+        self.meshMaterialTextures = meshMaterialTextures
     }
 }
 
@@ -2263,7 +2284,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -2290,7 +2312,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -2317,7 +2340,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: localGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -2344,7 +2368,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: source,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -2389,7 +2414,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -2416,7 +2442,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: depth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 }

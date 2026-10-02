@@ -672,7 +672,8 @@ private extension WPERenderLayer {
             passes: passes, groupRenderTarget: groupRenderTarget,
             groupLocalGeometry: groupLocalGeometry, groupCompositeSource: groupCompositeSource,
             parallaxDepth: mutation.parallaxDepth ?? parallaxDepth,
-            sortIndex: mutation.sortIndex ?? sortIndex
+            sortIndex: mutation.sortIndex ?? sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -750,7 +751,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 
@@ -784,7 +786,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry?.resolved(at: time),
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 }

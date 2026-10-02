@@ -569,7 +569,8 @@ extension WPEMetalRenderExecutor {
             groupLocalGeometry: adjustedGroupLocalGeometry,
             groupCompositeSource: layer.groupCompositeSource,
             parallaxDepth: layer.parallaxDepth,
-            sortIndex: layer.sortIndex
+            sortIndex: layer.sortIndex,
+            meshMaterialTextures: layer.meshMaterialTextures
         )
     }
 
@@ -598,7 +599,8 @@ extension WPEMetalRenderExecutor {
               let model = puppetModel else {
             return false
         }
-        let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
+        let drawableMeshes = model.meshes.enumerated().filter { !$0.element.vertices.isEmpty && !$0.element.indices.isEmpty }
+        let meshes = drawableMeshes.map(\.element)
         guard !meshes.isEmpty else { return false }
 
         guard let materialShader = Self.sceneModelMaterialShader(for: pass.pass.shader) else {
@@ -847,11 +849,34 @@ extension WPEMetalRenderExecutor {
         }
         #endif
 
+        func resolve(_ reference: WPETextureReference) throws -> MTLTexture {
+            try WPEMetalShaderInputs.resolve(
+                reference: reference,
+                textures: textures,
+                frameState: frameState,
+                currentTargetID: destination.id
+            )
+        }
         try drawPuppetMeshes(
             meshes,
             modelPath: layer.puppetPath ?? layer.imagePath,
             encoder: encoder
-        )
+        ) { position in
+            guard !layer.meshMaterialTextures.isEmpty else { return }
+            // Every mesh rebinds, so a mesh without its own material does not inherit the previous mesh's textures.
+            let own = layer.meshMaterialTextures[drawableMeshes[position].offset]
+            let meshPrimary = own?[0].flatMap { try? resolve($0) } ?? primary
+            encoder.setFragmentTexture(meshPrimary, index: 0)
+            switch materialShader {
+            case .genericImage4, .chroma4:
+                let componentMap = own == nil ? boundComponentMap : own?[2].flatMap { try? resolve($0) }
+                encoder.setFragmentTexture(componentMap ?? meshPrimary, index: 1)
+            case .genericImage2:
+                encoder.setFragmentTexture(meshPrimary, index: 1)
+            case .generic2:
+                break
+            }
+        }
         return true
     }
 
@@ -2422,12 +2447,14 @@ extension WPEMetalRenderExecutor {
         _ meshes: [WPEPuppetMesh],
         modelPath: String,
         encoder: MTLRenderCommandEncoder,
-        partSelection: PuppetPartSelection = .all
+        partSelection: PuppetPartSelection = .all,
+        beforeMeshDraw: ((Int) throws -> Void)? = nil
     ) throws {
         for (meshIndex, mesh) in meshes.enumerated() {
             let key = PuppetMeshBufferKey(modelPath: modelPath, meshIndex: meshIndex)
             let buffers = try puppetMeshBuffers(for: mesh, key: key)
             encoder.setVertexBuffer(buffers.vertex, offset: 0, index: 0)
+            try beforeMeshDraw?(meshIndex)
 
             let indices = mesh.indices
             let indexBuffer = buffers.index
@@ -2554,7 +2581,8 @@ private extension WPERenderLayer {
             groupLocalGeometry: groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 }

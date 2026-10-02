@@ -60,6 +60,9 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     /// Original scene-object paint index. Earlier indices paint behind later
     /// ones; particles interleave against this in the executor.
     public let sortIndex: Int
+    /// MDLV mesh index → slot → texture from that mesh's own material json, only for meshes whose
+    /// material differs from `materialPath`; absent meshes draw with the material pass bindings.
+    public let meshMaterialTextures: [Int: [Int: WPETextureReference]]
     /// Derived from `imagePath` in `init`, not an init parameter — copies cannot drop it.
     public let utilityModelKind: WPEUtilityModelKind?
 
@@ -85,7 +88,8 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         groupLocalGeometry: WPERenderLayerGeometry? = nil,
         groupCompositeSource: String? = nil,
         parallaxDepth: SIMD2<Double> = SIMD2<Double>(0, 0),
-        sortIndex: Int = 0
+        sortIndex: Int = 0,
+        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:]
     ) {
         self.objectID = objectID
         self.objectName = objectName
@@ -109,6 +113,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.groupCompositeSource = groupCompositeSource
         self.parallaxDepth = parallaxDepth
         self.sortIndex = sortIndex
+        self.meshMaterialTextures = meshMaterialTextures
         utilityModelKind = WPEUtilityModelKind.classify(imagePath)
     }
 

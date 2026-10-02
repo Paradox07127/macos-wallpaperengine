@@ -172,7 +172,8 @@ private extension WPERenderLayer {
                 : groupLocalGeometry,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            meshMaterialTextures: meshMaterialTextures
         )
     }
 }
