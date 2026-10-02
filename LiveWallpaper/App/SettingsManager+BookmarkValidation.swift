@@ -71,14 +71,18 @@ extension SettingsManager {
                     )
                     return true
                 }
-                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
+                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) {
+                    return true
+                }
                 Logger.error("Cannot access file for screen \(screenID)", category: .fileAccess)
                 return false
             }
             return true
 
         case .failure(let failure):
-            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
+            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) {
+                return true
+            }
             Logger.error("Failed to resolve bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
             return false
         }
@@ -125,7 +129,9 @@ extension SettingsManager {
                 }
             }
             guard canAccess || FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
+                if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) {
+                    return true
+                }
                 Logger.error("Cannot access local HTML resource for screen \(screenID)", category: .fileAccess)
                 return false
             }
@@ -161,7 +167,9 @@ extension SettingsManager {
                 || keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID)
 
         case .failure(let failure):
-            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) { return true }
+            if keepsConfigurationForUnavailableVolume(bookmarkData, for: screenID) {
+                return true
+            }
             Logger.error("Failed to resolve local HTML bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
             return false
         }
