@@ -395,9 +395,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             let currentProjectOverrides = config.projectWallpaperEngineProperties(
                 forProjectKey: wallpaperEngineProjectKey
             )
-            if previous?.muteAudio != config.muteAudio
-                || previous?.audioVolume != config.audioVolume
-                || previousProjectOverrides != currentProjectOverrides {
+            if previousProjectOverrides != currentProjectOverrides {
                 updateWallpaperEnginePropertyBridge(
                     for: wallpaperEnginePropertySchemaFolder,
                     config: config
@@ -532,10 +530,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
                previousOverrides: previousProjectOverrides,
                overrides: currentProjectOverrides
         ) {
-            statements.append(script)
-        }
-        if (audioChanged || (projectOverridesChanged && (current.muteAudio || current.audioVolume < 0.999))),
-           let script = wallpaperEngineAudioControlScript(for: current) {
             statements.append(script)
         }
 
@@ -739,17 +733,9 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         let activeConfig = config ?? lastAppliedConfig
         let nextScript: String? = {
             guard let schema = wallpaperEnginePropertySchema else { return nil }
-            var overrides = activeConfig?.projectWallpaperEngineProperties(
+            let overrides = activeConfig?.projectWallpaperEngineProperties(
                 forProjectKey: wallpaperEngineProjectKey
             ) ?? [:]
-            if let activeConfig {
-                overrides.merge(WallpaperEngineWebPropertyBridge.audioBootstrapOverrides(
-                    schema: schema,
-                    projectOverrides: overrides,
-                    volume: activeConfig.audioVolume,
-                    muted: activeConfig.muteAudio
-                )) { _, audioOverride in audioOverride }
-            }
             return WallpaperEngineWebPropertyBridge.bootstrapScript(
                 schema: schema,
                 overrides: overrides
@@ -758,19 +744,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         guard wallpaperEnginePropertyBootstrapScript != nextScript else { return }
         wallpaperEnginePropertyBootstrapScript = nextScript
         installBaselineUserScripts(for: activeConfig)
-    }
-
-    private func wallpaperEngineAudioControlScript(for config: HTMLConfig?) -> String? {
-        guard let config,
-              let schema = wallpaperEnginePropertySchema else { return nil }
-        return WallpaperEngineWebPropertyBridge.audioControlScript(
-            schema: schema,
-            projectOverrides: config.projectWallpaperEngineProperties(
-                forProjectKey: wallpaperEngineProjectKey
-            ),
-            volume: config.audioVolume,
-            muted: config.muteAudio
-        )
     }
 
     func reloadCurrentSource() {
@@ -1065,7 +1038,6 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         completedNavigationGeneration = preparationGeneration
         let volume = HTMLWallpaperRuntimeScript.jsNumber(lastAppliedConfig?.audioVolume ?? 1.0)
         let muted = lastAppliedConfig?.muteAudio == true ? "true" : "false"
-        let wallpaperEngineAudioNudge = wallpaperEngineAudioControlScript(for: lastAppliedConfig) ?? ""
         let nudge = """
         (function() {
             if (typeof window.__lwUpdateAudio__ === 'function') {
@@ -1083,7 +1055,6 @@ extension HTMLWallpaperView: WKNavigationDelegate {
                 }
             });
         })();
-        \(wallpaperEngineAudioNudge)
         """
         webView.evaluateJavaScript(nudge, completionHandler: nil)
         notifyWallpaperEngineGeneralProperties(

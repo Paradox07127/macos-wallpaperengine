@@ -96,93 +96,42 @@ struct WallpaperEngineWebPropertyBridgeTests {
         #expect(!script.contains("modelresolution"))
     }
 
-    @Test("Master audio maps to Wallpaper Engine volume sliders at runtime")
-    func masterAudioMapsToWallpaperEngineVolumeSliders() throws {
+    @Test("A volume slider reaches the page at its own value while master volume is lowered")
+    func volumeSliderIsNotScaledByMasterVolume() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
         {
-          "file": "index.html",
-          "type": "Web",
           "general": {
             "properties": {
-              "music": { "type": "bool", "text": "Music", "value": true },
-              "bgmvolume": { "type": "slider", "text": "BGM Volume", "value": 20, "min": 0, "max": 100, "step": 1 },
-              "dialogx": { "type": "slider", "text": "Dialog X", "value": 33, "min": 0, "max": 100 }
+              "bgmvolume": { "type": "slider", "text": "BGM Volume", "value": 80, "min": 0, "max": 100, "step": 1 }
             }
           }
         }
         """.utf8))
+        let context = try makeBootstrapContext(readyState: "complete")
+        // Master volume (0.35 here) belongs to HTMLWallpaperRuntimeScript only; the bridge takes no volume input.
+        context.evaluateScript(WallpaperEngineWebPropertyBridge.bootstrapScript(schema: schema))
 
-        let script = try #require(WallpaperEngineWebPropertyBridge.audioControlScript(
-            schema: schema,
-            projectOverrides: ["bgmvolume": .number(80)],
-            volume: 0.35,
-            muted: false
-        ))
-
-        #expect(script.contains("applyUserProperties"))
-        #expect(script.contains("\"bgmvolume\":{\"value\":28}"))
-        #expect(!script.contains("\"music\""))
-        #expect(!script.contains("\"dialogx\""))
+        #expect(context.evaluateScript("deliveries[0].bgmvolume.value")?.toDouble() == 80,
+                "master volume was applied to the slider as well as by the runtime script")
     }
 
-    @Test("Master audio restores project volume when returning to full volume")
-    func masterAudioRestoresProjectVolumeAtFullVolume() throws {
+    @Test("A non-volume audio slider reaches the page at its own value while muted")
+    func audioSensitivitySliderIsNotZeroedWhenMuted() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
         {
-          "file": "index.html",
-          "type": "Web",
           "general": {
             "properties": {
-              "bgmvolume": { "type": "slider", "text": "BGM Volume", "value": 20, "min": 0, "max": 100, "step": 1 }
+              "sensitivity": { "type": "slider", "text": "Audio Sensitivity", "value": 50, "min": 0, "max": 100 }
             }
           }
         }
         """.utf8))
+        let context = try makeBootstrapContext(readyState: "complete")
 
-        let script = try #require(WallpaperEngineWebPropertyBridge.audioControlScript(
-            schema: schema,
-            projectOverrides: ["bgmvolume": .number(80)],
-            volume: 1,
-            muted: false
-        ))
+        context.evaluateScript(WallpaperEngineWebPropertyBridge.bootstrapScript(schema: schema))
 
-        #expect(script.contains("\"bgmvolume\":{\"value\":80}"))
-    }
-
-    @Test("Bootstrap audio overrides only when master audio is active")
-    func bootstrapAudioOverridesOnlyWhenMasterAudioIsActive() throws {
-        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
-        {
-          "file": "index.html",
-          "type": "Web",
-          "general": {
-            "properties": {
-              "bgmvolume": { "type": "slider", "text": "BGM Volume", "value": 20, "min": 0, "max": 100, "step": 1 }
-            }
-          }
-        }
-        """.utf8))
-
-        #expect(WallpaperEngineWebPropertyBridge.audioBootstrapOverrides(
-            schema: schema,
-            projectOverrides: ["bgmvolume": .number(80)],
-            volume: 1,
-            muted: false
-        ).isEmpty)
-
-        #expect(WallpaperEngineWebPropertyBridge.audioBootstrapOverrides(
-            schema: schema,
-            projectOverrides: ["bgmvolume": .number(80)],
-            volume: 0.35,
-            muted: false
-        )["bgmvolume"] == .number(28))
-
-        #expect(WallpaperEngineWebPropertyBridge.audioBootstrapOverrides(
-            schema: schema,
-            projectOverrides: [:],
-            volume: 0.35,
-            muted: false
-        )["bgmvolume"] == .number(7))
+        #expect(context.evaluateScript("deliveries[0].sensitivity.value")?.toDouble() == 50,
+                "muting pushed a visualizer sensitivity slider to its minimum")
     }
 
     @Test("Value-less file, directory and textinput rows arrive as empty strings")
