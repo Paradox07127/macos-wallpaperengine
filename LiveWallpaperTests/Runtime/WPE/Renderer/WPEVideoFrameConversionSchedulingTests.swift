@@ -251,11 +251,16 @@ struct WPEVideoFrameConversionSchedulingTests {
             source.range(of: "source.encodeStagedFrameWork(into: commandBuffer)")
         )
         let firstScenePass = try #require(
+            source.range(of: "try copyTexture(preservedScene, to: output")
+        )
+        let initialClear = try #require(
             source.range(of: "try clearTexture(output, color: clearColor(for: .scene)")
         )
         #expect(makeBuffer.upperBound < encode.lowerBound)
         #expect(encode.upperBound < firstScenePass.lowerBound,
                 "a scene pass is encoded before the video conversion it may sample")
+        #expect(encode.upperBound < initialClear.lowerBound,
+                "the initial scene clear is encoded before the video conversion it may sample")
 
         // paired == 2 = the async and the synchronous scene-buffer commit; a publish that ran before the commit
         // would hand `drainRetiredFrames` an uncommitted fence.

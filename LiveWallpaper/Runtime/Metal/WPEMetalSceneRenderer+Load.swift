@@ -384,6 +384,9 @@ extension WPEMetalSceneRenderer {
         executor.parallaxObjectParentByID = document.objectParentByID
         executor.parallaxHostDepthByObjectID = parallaxAuthoredDepthByObjectID
         executor.parallaxHostOriginByObjectID = authoredOrigins
+        let clear = document.general.clearColor
+        executor.sceneClearColor = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: 1)
+        executor.sceneClearEnabled = document.general.clearEnabled.resolvedValue
         // The pipeline scan is the shader-side truth (most scenes never set the authored flag); script audio (`usesAudioAPI`) needs capture too.
         sceneSupportsAudioProcessing = document.general.supportsAudioProcessing
             || Self.pipelineRequiresAudioCapture(pipeline)

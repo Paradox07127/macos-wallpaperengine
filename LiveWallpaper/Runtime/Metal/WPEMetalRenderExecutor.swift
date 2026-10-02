@@ -55,6 +55,10 @@ final class WPEMetalRenderExecutor {
     /// Instance-only A/B seam; there is no persisted user setting.
     var initialSceneClearElisionEnabled = true
     private(set) var lastInitialSceneClearStats = WPEMetalInitialSceneClearStats()
+    /// `general.clearcolor` written as raw UNORM (no sRGB conversion); alpha is always 1.
+    var sceneClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+    /// `general.clearenabled`. False: the scene starts from the previous frame, never a clear.
+    var sceneClearEnabled = true
     var solidSceneBatchingEnabled = true
     var sceneQuadBatchingEnabled = ProcessInfo.processInfo.environment["WPE_SCENE_QUAD_BATCHING"] == "1"
     private(set) var lastSceneQuadBatchStats = WPEMetalSceneQuadBatchStats()
@@ -829,9 +833,14 @@ final class WPEMetalRenderExecutor {
             hasFirstLayerTextPayload: preparedPipeline.layers.first.map { textPayloads[$0.graphLayer.objectID] != nil } ?? false,
             staticCacheEnabled: staticLayerCacheEnabled
         )
+        if !sceneClearEnabled { initialClearStats = WPEMetalInitialSceneClearStats(rejectReason: "clear-disabled") }
         var initialClearPending = initialClearStats.passID != nil
         defer { lastInitialSceneClearStats = initialClearStats }
-        if !initialClearPending {
+        // Outputs rotate through a pool, so "no clear" means carrying the previous frame forward; with no previous frame, clear.
+        let preservedScene = sceneClearEnabled ? nil : reusableHistory?.sceneTexture
+        if let preservedScene {
+            try copyTexture(preservedScene, to: output, commandBuffer: commandBuffer, traceLabel: "scene-preserve")
+        } else if !initialClearPending {
             try clearTexture(output, color: clearColor(for: .scene), commandBuffer: commandBuffer)
         }
         var frameState = WPEMetalFrameState(
@@ -842,6 +851,7 @@ final class WPEMetalRenderExecutor {
             previousNamedTextures: reusableHistory?.namedTextures ?? [:],
             renderTargetPool: targetPool
         )
+        if !sceneClearEnabled { frameState.markInitialized(output) }
         frameState.cameraParallax = runtimeUniforms.cameraParallax
         defer {
             diagnostics.sceneAliasSnapshotBlits = frameState.sceneAliasSnapshotBlits
@@ -2198,7 +2208,9 @@ final class WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].texture = destination.texture
         // Local copies overwrite RGBA. A scene copy overwrites RGB but must
         // initialize the backdrop alpha that its attachment preserves.
-        descriptor.colorAttachments[0].loadAction = destination.id == .scene ? .clear : WPEAttachmentLoadContract.fullOverwrite.load
+        let keepsScene = !sceneClearEnabled && frameState.hasInitialized(destination.texture)
+        descriptor.colorAttachments[0].loadAction = destination.id != .scene ? WPEAttachmentLoadContract.fullOverwrite.load
+            : keepsScene ? .load : .clear
         descriptor.colorAttachments[0].clearColor = clearColor(for: destination.id)
         descriptor.colorAttachments[0].storeAction = WPEAttachmentLoadContract.fullOverwrite.store
 
