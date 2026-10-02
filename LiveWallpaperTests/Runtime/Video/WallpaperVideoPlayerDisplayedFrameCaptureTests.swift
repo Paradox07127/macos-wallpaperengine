@@ -32,26 +32,50 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
         #expect(top.g > 200 && top.r < 40 && top.b < 40, "the green band is the top of the picture, got \(top)")
     }
 
-    @Test("Aspect fit leaves side bars in the window's actual (transparent) background")
-    func aspectFitLeavesTransparentBars() async throws {
+    @Test("Aspect fit that leaves side bars declines the capture")
+    func aspectFitWithBarsReturnsNil() async throws {
+        // 4:3 in a 16:9 window: the picture leaves an eighth of the width uncovered on each side.
         let harness = try await Harness.make(fitMode: .aspectFit)
         defer { harness.cleanup() }
         try await harness.waitUntilPlaying()
-        let window = try #require(harness.player.playbackWindow)
-        #expect(!window.isOpaque && window.backgroundColor == .clear)
+
+        let texture = await harness.player.captureDisplayedFrame(
+            device: harness.device, pixelFormat: .bgra8Unorm, colorSpace: Self.sRGB
+        )
+        #expect(texture == nil)
+    }
+
+    @Test("Aspect fit with the window's own aspect ratio covers the backing store")
+    func aspectFitWithMatchingRatioCaptures() async throws {
+        let harness = try await Harness.make(fitMode: .aspectFit, videoSize: (320, 180))
+        defer { harness.cleanup() }
+        try await harness.waitUntilPlaying()
 
         let pixels = try await harness.capture()
         let backing = try harness.backingPixelSize()
         #expect(pixels.width == backing.width && pixels.height == backing.height)
-
-        // 4:3 in 16:9 fit: the picture spans the middle three quarters of the width.
         let midY = pixels.height * 3 / 4
-        expectColor(pixels.rgba(x: 1, y: midY), (0, 0, 0, 0), "left bar")
-        expectColor(pixels.rgba(x: pixels.width - 2, y: midY), (0, 0, 0, 0), "right bar")
-        expectColor(pixels.rgba(x: pixels.width * 5 / 16, y: midY), (255, 0, 0, 255), "red half")
-        expectColor(pixels.rgba(x: pixels.width * 11 / 16, y: midY), (0, 0, 255, 255), "blue half")
+        expectColor(pixels.rgba(x: 1, y: midY), (255, 0, 0, 255), "left edge is red, no bar")
+        expectColor(pixels.rgba(x: pixels.width - 2, y: midY), (0, 0, 255, 255), "right edge is blue, no bar")
         let top = pixels.rgba(x: pixels.width / 2, y: 1)
         #expect(top.g > 200 && top.r < 40 && top.b < 40, "the green band is the top of the picture, got \(top)")
+    }
+
+    @Test("An sRGB-encoding target stores the same bytes as a plain one")
+    func srgbTargetMatchesPlainTarget() async throws {
+        let harness = try await Harness.make(fitMode: .aspectFill, solidBGRA: [0x40, 0x60, 0xA0, 0xFF])
+        defer { harness.cleanup() }
+        try await harness.waitUntilPlaying()
+
+        let plain = try await harness.capture(pixelFormat: .bgra8Unorm)
+        let encoded = try await harness.capture(pixelFormat: .rgba8Unorm_srgb)
+        #expect(plain.width == encoded.width && plain.height == encoded.height)
+        let points = [(plain.width / 2, plain.height / 2), (2, 2), (plain.width - 3, plain.height - 3)]
+        for (x, y) in points {
+            let expected = plain.rgba(x: x, y: y)
+            #expect(expected.r > 120 && expected.r < 200, "control: the fixture is mid-tone, got \(expected)")
+            expectColor(encoded.rgba(x: x, y: y), (expected.r, expected.g, expected.b, expected.a), "pixel \(x),\(y)")
+        }
     }
 
     @Test("A paused player still yields its current frame and keeps existing outputs bound")
@@ -149,11 +173,14 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
         let width: Int
         let height: Int
         let bytes: [UInt8]
+        /// false = the texture stores RGBA.
+        let isBGRA: Bool
 
-        /// `y` counts from the top row; the texture is BGRA.
+        /// `y` counts from the top row.
         func rgba(x: Int, y: Int) -> (r: Int, g: Int, b: Int, a: Int) {
             let offset = (y * width + x) * 4
-            return (Int(bytes[offset + 2]), Int(bytes[offset + 1]), Int(bytes[offset]), Int(bytes[offset + 3]))
+            let (red, blue) = isBGRA ? (offset + 2, offset) : (offset, offset + 2)
+            return (Int(bytes[red]), Int(bytes[offset + 1]), Int(bytes[blue]), Int(bytes[offset + 3]))
         }
     }
 
@@ -167,10 +194,13 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
             fitMode: VideoFitMode,
             holdPaused: Bool = false,
             videoSize: (width: Int, height: Int) = (192, 144),
-            windowFrame: CGRect = WallpaperVideoPlayerDisplayedFrameCaptureTests.windowFrame
+            windowFrame: CGRect = WallpaperVideoPlayerDisplayedFrameCaptureTests.windowFrame,
+            solidBGRA: [UInt8]? = nil
         ) async throws -> Harness {
             let device = try #require(MTLCreateSystemDefaultDevice())
-            let url = try await SplitColorVideoFixture.writeMP4(width: videoSize.width, height: videoSize.height)
+            let url = try await SplitColorVideoFixture.writeMP4(
+                width: videoSize.width, height: videoSize.height, solidBGRA: solidBGRA
+            )
             let player = WallpaperVideoPlayer(url: url, frame: windowFrame, fitMode: fitMode)
             if holdPaused {
                 player.pause()
@@ -196,15 +226,15 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
             return (Int(backing.width.rounded()), Int(backing.height.rounded()))
         }
 
-        func capture() async throws -> Pixels {
+        func capture(pixelFormat: MTLPixelFormat = .bgra8Unorm) async throws -> Pixels {
             let texture = try #require(
                 await player.captureDisplayedFrame(
                     device: device,
-                    pixelFormat: .bgra8Unorm,
+                    pixelFormat: pixelFormat,
                     colorSpace: WallpaperVideoPlayerDisplayedFrameCaptureTests.sRGB
                 )
             )
-            #expect(texture.pixelFormat == .bgra8Unorm)
+            #expect(texture.pixelFormat == pixelFormat)
             #expect(texture.usage.contains(.shaderRead) && texture.usage.contains(.renderTarget))
             return try read(texture)
         }
@@ -231,7 +261,7 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
             let bytes = Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: length))
-            return Pixels(width: texture.width, height: texture.height, bytes: bytes)
+            return Pixels(width: texture.width, height: texture.height, bytes: bytes, isBGRA: texture.pixelFormat == .bgra8Unorm)
         }
 
         func cleanup() {
@@ -270,7 +300,14 @@ struct WallpaperVideoPlayerDisplayedFrameCaptureTests {
 /// Top quarter green; below it the left half is red and the right half blue. Tagged Rec.709 so the decoded
 /// buffer carries the colour attachments the capture has to honour.
 private enum SplitColorVideoFixture {
-    static func writeMP4(width: Int, height: Int, durationSeconds: TimeInterval = 2, frameRate: Int32 = 30) async throws -> URL {
+    /// `solidBGRA` replaces the split pattern with one colour; nil keeps the pattern.
+    static func writeMP4(
+        width: Int,
+        height: Int,
+        solidBGRA: [UInt8]? = nil,
+        durationSeconds: TimeInterval = 2,
+        frameRate: Int32 = 30
+    ) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("displayed-frame-capture-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
@@ -312,7 +349,7 @@ private enum SplitColorVideoFixture {
         }
         writer.startSession(atSourceTime: .zero)
 
-        let frame = try makePatternBuffer(width: width, height: height)
+        let frame = try makePatternBuffer(width: width, height: height, solidBGRA: solidBGRA)
         let totalFrames = max(2, Int(Double(frameRate) * durationSeconds))
         for index in 0 ..< totalFrames {
             while !input.isReadyForMoreMediaData {
@@ -333,7 +370,7 @@ private enum SplitColorVideoFixture {
         return outputURL
     }
 
-    private static func makePatternBuffer(width: Int, height: Int) throws -> CVPixelBuffer {
+    private static func makePatternBuffer(width: Int, height: Int, solidBGRA: [UInt8]?) throws -> CVPixelBuffer {
         var pixelBuffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
         guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
@@ -342,8 +379,8 @@ private enum SplitColorVideoFixture {
         let green: [UInt8] = [0, 255, 0, 255]
         let red: [UInt8] = [0, 0, 255, 255]
         let blue: [UInt8] = [255, 0, 0, 255]
-        let bandRow = (0 ..< width).flatMap { _ in green }
-        let splitRow = (0 ..< width).flatMap { $0 < width / 2 ? red : blue }
+        let bandRow = (0 ..< width).flatMap { _ in solidBGRA ?? green }
+        let splitRow = (0 ..< width).flatMap { solidBGRA ?? ($0 < width / 2 ? red : blue) }
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let base = CVPixelBufferGetBaseAddress(buffer) else {

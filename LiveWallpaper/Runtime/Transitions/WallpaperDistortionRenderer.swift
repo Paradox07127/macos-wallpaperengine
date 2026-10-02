@@ -1,5 +1,6 @@
 import LiveWallpaperCore
 import Metal
+import QuartzCore
 
 enum WallpaperDistortionEffect: String, CaseIterable, Sendable {
     case ripple
@@ -37,9 +38,30 @@ enum WallpaperDistortionEffect: String, CaseIterable, Sendable {
     }
 }
 
+@MainActor
+protocol WallpaperDistortionRendering: AnyObject {
+    var device: MTLDevice { get }
+    func prepare(
+        _ effect: WallpaperDistortionEffect,
+        from: MTLTexture,
+        to: MTLTexture,
+        seed: Float,
+        origin: SIMD2<Float>,
+        pixelFormat: MTLPixelFormat
+    ) -> WallpaperDistortionRenderer.Prepared?
+    /// `onFailure` runs on MainActor when the GPU reports an error after a true return.
+    func draw(
+        _ prepared: WallpaperDistortionRenderer.Prepared,
+        progress: Float,
+        time: Float,
+        in layer: CAMetalLayer,
+        onFailure: @escaping @MainActor @Sendable () -> Void
+    ) -> Bool
+}
+
 /// Draws distortion transitions that warp both frozen frames into one opaque frame per tick.
 @MainActor
-final class WallpaperDistortionRenderer {
+final class WallpaperDistortionRenderer: WallpaperDistortionRendering {
     /// Everything a transition needs per frame; built once by `prepare`.
     struct Prepared {
         let effect: WallpaperDistortionEffect
@@ -214,6 +236,36 @@ final class WallpaperDistortionRenderer {
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: Int(grid.x * grid.y))
         }
         encoder.endEncoding()
+        return true
+    }
+
+    func draw(
+        _ prepared: Prepared,
+        progress: Float,
+        time: Float,
+        in layer: CAMetalLayer,
+        onFailure: @escaping @MainActor @Sendable () -> Void
+    ) -> Bool {
+        guard let drawable = layer.nextDrawable(),
+              let commandBuffer = queue.makeCommandBuffer(),
+              encode(prepared, progress: progress, time: time, into: commandBuffer, target: drawable.texture) else {
+            return false
+        }
+        commandBuffer.addCompletedHandler { completed in
+            guard completed.status == .error else { return }
+            Logger.warning("Wallpaper distortion GPU failure: \(completed.error?.localizedDescription ?? "unknown")", category: .ui)
+            Task { @MainActor in onFailure() }
+        }
+        if !layer.presentsWithTransaction {
+            commandBuffer.present(drawable)
+        }
+        commandBuffer.commit()
+        if layer.presentsWithTransaction {
+            // Required by CAMetalLayer's transaction presentation contract.
+            commandBuffer.waitUntilScheduled()
+            guard commandBuffer.status != .error else { return false }
+            drawable.present()
+        }
         return true
     }
 

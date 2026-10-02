@@ -7,7 +7,8 @@ import QuartzCore
 
 extension WallpaperVideoPlayer {
     /// The picture the player layer is showing, laid out in the window's backing pixels and converted to
-    /// `colorSpace`. nil = no item, EDR, no frame in time, cleanup/suspension mid-capture, or cancellation.
+    /// `colorSpace`. nil = no item, EDR, the picture not covering the whole window, no frame in time,
+    /// cleanup/suspension mid-capture, or cancellation.
     func captureDisplayedFrame(
         device: any MTLDevice,
         pixelFormat: MTLPixelFormat,
@@ -17,6 +18,14 @@ extension WallpaperVideoPlayer {
               let item = player?.currentItem,
               let contentView = playbackWindow?.contentView,
               let scale = playbackWindow?.backingScaleFactor else { return nil }
+        // `_srgb` targets encode again on write, so Core Image must hand them linear values.
+        let renderColorSpace: CGColorSpace
+        if pixelFormat == .rgba8Unorm_srgb || pixelFormat == .bgra8Unorm_srgb {
+            guard let linear = CGColorSpaceCreateLinearized(colorSpace) else { return nil }
+            renderColorSpace = linear
+        } else {
+            renderColorSpace = colorSpace
+        }
         // Orientation lives in the track transform; a composition already applied it.
         let orientation: CGAffineTransform = item.videoComposition == nil ? await Self.preferredTransform(of: item) : .identity
         let output = AVPlayerItemVideoOutput(
@@ -55,12 +64,11 @@ extension WallpaperVideoPlayer {
             x: layerFrame.minX * scale, y: layerFrame.minY * scale,
             width: layerFrame.width * scale, height: layerFrame.height * scale
         )
-        let image = Self.displayedImage(
-            frame: CIImage(cvPixelBuffer: frame).transformed(by: orientation),
-            layerRect: layerRect,
-            gravity: currentFitMode.avLayerVideoGravity,
-            canvas: canvas
-        )
+        let oriented = CIImage(cvPixelBuffer: frame).transformed(by: orientation)
+        let placement = Self.placement(of: oriented.extent.size, in: layerRect, gravity: currentFitMode.avLayerVideoGravity)
+        // The composite layer is opaque, so any canvas the picture leaves uncovered would show as black.
+        guard placement.insetBy(dx: -0.5, dy: -0.5).contains(canvas) else { return nil }
+        let image = Self.displayedImage(frame: oriented, placement: placement, canvas: canvas)
         // Core Image fills a Metal texture from y = 0 upward; without the flip row 0 would hold the picture's bottom.
         .transformed(by: CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -canvas.height))
 
@@ -77,7 +85,7 @@ extension WallpaperVideoPlayer {
               let queue = device.makeCommandQueue(),
               let commandBuffer = queue.makeCommandBuffer() else { return nil }
         let context = CIContext(mtlCommandQueue: queue, options: [.cacheIntermediates: false])
-        context.render(image, to: texture, commandBuffer: commandBuffer, bounds: canvas, colorSpace: colorSpace)
+        context.render(image, to: texture, commandBuffer: commandBuffer, bounds: canvas, colorSpace: renderColorSpace)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             commandBuffer.addCompletedHandler { _ in continuation.resume() }
             commandBuffer.commit()
@@ -95,17 +103,10 @@ extension WallpaperVideoPlayer {
             && boundVideoOutputs.contains { $0.output === output }
     }
 
-    /// Places `frame` the way `AVPlayerLayer` does for `gravity` inside `layerRect`, over the window's
-    /// background — clear: the window is non-opaque and neither the container nor the player layer paints one.
-    private static func displayedImage(
-        frame: CIImage,
-        layerRect: CGRect,
-        gravity: AVLayerVideoGravity,
-        canvas: CGRect
-    ) -> CIImage {
-        let source = frame.extent
-        var scaleX = layerRect.width / source.width
-        var scaleY = layerRect.height / source.height
+    /// Where `AVPlayerLayer` draws a picture of `size` for `gravity` inside `layerRect`.
+    private static func placement(of size: CGSize, in layerRect: CGRect, gravity: AVLayerVideoGravity) -> CGRect {
+        var scaleX = layerRect.width / size.width
+        var scaleY = layerRect.height / size.height
         switch gravity {
         case .resizeAspect:
             scaleX = min(scaleX, scaleY)
@@ -116,13 +117,19 @@ extension WallpaperVideoPlayer {
         default:
             break
         }
+        let width = size.width * scaleX
+        let height = size.height * scaleY
+        return CGRect(x: layerRect.midX - width / 2, y: layerRect.midY - height / 2, width: width, height: height)
+    }
+
+    /// Stretches `frame` onto `placement` over the window's background — clear: the window is non-opaque
+    /// and neither the container nor the player layer paints one.
+    private static func displayedImage(frame: CIImage, placement: CGRect, canvas: CGRect) -> CIImage {
+        let source = frame.extent
         let placed = frame
             .transformed(by: CGAffineTransform(translationX: -source.minX, y: -source.minY))
-            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-            .transformed(by: CGAffineTransform(
-                translationX: layerRect.midX - source.width * scaleX / 2,
-                y: layerRect.midY - source.height * scaleY / 2
-            ))
+            .transformed(by: CGAffineTransform(scaleX: placement.width / source.width, y: placement.height / source.height))
+            .transformed(by: CGAffineTransform(translationX: placement.minX, y: placement.minY))
         return placed
             .composited(over: CIImage(color: .clear).cropped(to: canvas))
             .cropped(to: canvas)
