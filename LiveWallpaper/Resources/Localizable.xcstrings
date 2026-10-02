@@ -80558,6 +80558,162 @@
           }
         }
       }
+    },
+    "%@ is already in your library from another folder." : {
+      "comment" : "Folder import failure: the one chosen project has a Workshop id the library already holds from a different folder. Placeholder is the title of the wallpaper already in the library.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is already in your library from another folder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya está en la biblioteca de fondos desde otra carpeta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は別のフォルダから壁紙ライブラリに追加済みです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已从其他文件夹加入壁纸库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已從其他資料夾加入桌布庫。"
+          }
+        }
+      }
+    },
+    "%lld skipped: already in your library from another folder." : {
+      "comment" : "Folder import summary sentence appended after the linked/skipped counts. Placeholder is the number of projects whose Workshop id the library already holds from a different folder.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld skipped: already in your library from another folder."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld skipped: already in your library from another folder."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omitido por estar ya en la biblioteca de fondos desde otra carpeta."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omitidos por estar ya en la biblioteca de fondos desde otra carpeta."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をスキップしました（別のフォルダから壁紙ライブラリに追加済み）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过 %lld 个：已从其他文件夹加入壁纸库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "略過 %lld 個：已從其他資料夾加入桌布庫。"
+          }
+        }
+      }
+    },
+    "%lld skipped: already in library from another folder" : {
+      "comment" : "Library-sync summary fragment. Placeholder is the number of downloaded items whose Workshop id the library already holds from a different folder.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld skipped: already in library from another folder"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld skipped: already in library from another folder"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omitido por estar ya en la biblioteca desde otra carpeta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omitidos por estar ya en la biblioteca desde otra carpeta"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をスキップ（別のフォルダから追加済み）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过 %lld 个（已从其他文件夹加入壁纸库）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "略過 %lld 個（已從其他資料夾加入桌布庫）"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

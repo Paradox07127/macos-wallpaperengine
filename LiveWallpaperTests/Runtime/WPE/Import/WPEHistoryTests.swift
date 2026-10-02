@@ -123,6 +123,44 @@ struct WPEHistoryTests {
         }
     }
 
+    @Test("A Workshop id held by another present folder conflicts; the same folder or a vanished one does not")
+    func conflictNeedsAnotherPresentFolder() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("history-conflict-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func folder(_ relativePath: String) throws -> URL {
+            let folder = root.appendingPathComponent(relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return folder
+        }
+        func entry(in folder: URL, importedAt: Double) throws -> WPEHistoryEntry {
+            let origin = try WPEOrigin(
+                workshopID: "2585024298", title: "Lunar Tear [4K]", originalType: .video,
+                sourceFolderBookmark: folder.bookmarkData(),
+                cacheRelativePath: "wpe-cache/2585024298", previewFileName: nil
+            )
+            return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: importedAt))
+        }
+
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            let steam = try folder("steamapps/workshop/content/431960/2585024298")
+            let local = try folder("Wallpapers/edit")
+            try manager.recordWPEImport(entry(in: steam, importedAt: 1))
+            #expect(manager.conflictingWPEImport(workshopID: "2585024298", sourceFolder: steam) == nil, "re-importing the entry's own folder is a refresh")
+            #expect(manager.conflictingWPEImport(workshopID: "2585024298", sourceFolder: local)?.importedAt == Date(timeIntervalSince1970: 1))
+            #expect(manager.conflictingWPEImport(workshopID: "3159206868", sourceFolder: local) == nil)
+            try FileManager.default.removeItem(at: steam)
+            #expect(manager.conflictingWPEImport(workshopID: "2585024298", sourceFolder: local) == nil, "an entry whose folder is gone is relinked, not defended")
+        }
+        try withIsolatedGlobalSettings {
+            let manager = SettingsManager.shared
+            try manager.recordWPEImport(entry(in: folder("Wallpapers/a"), importedAt: 2))
+            let other = try folder("Wallpapers/b")
+            #expect(manager.conflictingWPEImport(workshopID: "2585024298", sourceFolder: other)?.importedAt == Date(timeIntervalSince1970: 2), "two local copies of one id in different folders")
+        }
+    }
+
     @Test("A folder size measured for one entry is stored on that entry, not on another folder sharing its id", .timeLimit(.minutes(1)))
     func measuredSizeLandsOnMeasuredEntry() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())

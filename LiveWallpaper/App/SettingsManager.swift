@@ -459,6 +459,40 @@ final class SettingsManager {
         }
     }
 
+    /// The entry already holding `workshopID` from another folder that still exists; nil when there is none or
+    /// when `sourceFolder` is already some entry's folder (a refresh). An entry whose folder no longer resolves never conflicts.
+    func conflictingWPEImport(workshopID: String, sourceFolder: URL) -> WPEHistoryEntry? {
+        let recent = loadGlobalSettings().recentWPEImports
+        let sameID = recent.filter { $0.origin.workshopID == workshopID }
+        guard !sameID.isEmpty else { return nil }
+        let target = Self.normalizedFolderPath(sourceFolder)
+        var conflict: WPEHistoryEntry?
+        // Same-id entries first so a rescan of an imported item stops at its own entry without resolving the rest.
+        for entry in sameID + recent.filter({ $0.origin.workshopID != workshopID }) {
+            guard let folder = existingSourceFolderPath(of: entry.origin) else { continue }
+            if folder == target {
+                return nil
+            }
+            if conflict == nil, entry.origin.workshopID == workshopID {
+                conflict = entry
+            }
+        }
+        return conflict
+    }
+
+    private func existingSourceFolderPath(of origin: WPEOrigin) -> String? {
+        guard case let .success(resolved) = bookmarkResolver.resolve(origin.sourceFolderBookmark, target: .transient) else { return nil }
+        return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+            FileManager.default.fileExists(atPath: resolved.url.path(percentEncoded: false))
+                ? Self.normalizedFolderPath(resolved.url)
+                : nil
+        }
+    }
+
+    private static func normalizedFolderPath(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     private static func steamFolderItemID(_ origin: WPEOrigin) -> String? {
         #if LITE_BUILD
         return nil

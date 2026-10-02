@@ -37,6 +37,8 @@ final class WorkshopFolderImportCoordinator {
     @ObservationIgnored private let settings: SettingsManager
     @ObservationIgnored private let discoverFolders: @Sendable (URL) -> [URL]?
     @ObservationIgnored private let toastCenter: WorkshopToastCenter
+    /// Ids whose scan conflict was already shown this launch; the scan reruns on every Workshop visit.
+    @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
@@ -136,6 +138,7 @@ final class WorkshopFolderImportCoordinator {
         var imported = 0
         var rejected = 0
         var unreadable = unreadableFolders
+        var conflictTitles: [String] = []
         var wallpaperEntries = 0
         progress = Progress(title: title, completed: 0, total: projectFolders.count)
         for projectFolder in projectFolders {
@@ -146,12 +149,13 @@ final class WorkshopFolderImportCoordinator {
             case .imported: imported += 1
             case .rejected: rejected += 1
             case .unreadable: unreadable += 1
+            case let .conflict(title): conflictTitles.append(title)
             }
             progress?.completed += 1
         }
 
         progress = nil
-        emitSummary(title: title, imported: imported, rejected: rejected, unreadable: unreadable)
+        emitSummary(title: title, imported: imported, rejected: rejected, unreadable: unreadable, conflictTitles: conflictTitles)
         onLocalLibraryImported?(wallpaperEntries)
     }
 
@@ -183,6 +187,7 @@ final class WorkshopFolderImportCoordinator {
         })
         var added = 0
         var repaired = 0
+        var conflicts = 0
         let staleIDs = Set(
             settings.recentWPEImports
                 .filter { !Self.originResolves($0.origin) }
@@ -193,30 +198,51 @@ final class WorkshopFolderImportCoordinator {
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
             guard let self, allowsImport else { return }
             let id = folder.lastPathComponent
-            guard !known.contains(id) else { return }
+            guard !known.contains(id) else {
+                if !settings.deletedWorkshopIDs.contains(id),
+                   self.settings.conflictingWPEImport(workshopID: id, sourceFolder: folder) != nil,
+                   reportedScanConflictIDs.insert(id).inserted {
+                    conflicts += 1
+                }
+                return
+            }
             let isRelink = staleIDs.contains(id)
-            if await importOne(folder, deliberate: false, preservesHistory: isRelink) == .imported {
-                if isRelink { repaired += 1 } else { added += 1 }
+            switch await importOne(folder, deliberate: false, preservesHistory: isRelink) {
+            case .imported:
+                if isRelink {
+                    repaired += 1
+                } else {
+                    added += 1
+                }
                 known.insert(id)
+            case .conflict:
+                if reportedScanConflictIDs.insert(id).inserted {
+                    conflicts += 1
+                }
+            case .rejected, .unreadable:
+                break
             }
         }
 
-        guard allowsImport, added > 0 || repaired > 0 else { return }
+        guard allowsImport, added > 0 || repaired > 0 || conflicts > 0 else { return }
         toastCenter.post(
             headline: String(localized: "Library synced", bundle: .appLanguage, comment: "Toast headline after auto-importing existing SteamCMD downloads."),
             title: String(localized: "SteamCMD downloads", bundle: .appLanguage, comment: "Toast subject for the SteamCMD download sync."),
-            message: Self.syncSummary(added: added, repaired: repaired),
+            message: Self.syncSummary(added: added, repaired: repaired, conflicts: conflicts),
             isSuccess: true
         )
     }
 
-    nonisolated static func syncSummary(added: Int, repaired: Int) -> String {
+    nonisolated static func syncSummary(added: Int, repaired: Int, conflicts: Int = 0) -> String {
         var parts: [String] = []
         if added > 0 {
             parts.append(String(localized: "added \(added)", bundle: .appLanguage, comment: "Library-sync summary fragment. Placeholder is the number of newly imported wallpapers."))
         }
         if repaired > 0 {
             parts.append(String(localized: "relinked \(repaired)", bundle: .appLanguage, comment: "Library-sync summary fragment. Placeholder is the number of wallpapers whose broken folder access was restored."))
+        }
+        if conflicts > 0 {
+            parts.append(String(localized: "\(conflicts) skipped: already in library from another folder", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Library-sync summary fragment. Placeholder is the number of downloaded items whose Workshop id the library already holds from a different folder."))
         }
         return ListFormatter.localizedString(byJoining: parts)
     }
@@ -240,6 +266,8 @@ final class WorkshopFolderImportCoordinator {
         case rejected
         /// Could not be read — a damaged project, a permission fault.
         case unreadable
+        /// Not imported: another folder already holds this Workshop id in the library. `title` is that entry's.
+        case conflict(title: String)
     }
 
     /// Record history entry; deliberate=true lifts delete tombstones (auto-scan does not).
@@ -250,6 +278,11 @@ final class WorkshopFolderImportCoordinator {
         onWallpaperImported: (@MainActor () -> Void)? = nil
     ) async -> ProjectImportOutcome {
         guard allowsImport else { return .unreadable }
+        if let project = try? WallpaperEngineProject.read(from: projectFolder),
+           let existing = settings.conflictingWPEImport(workshopID: project.workshopID, sourceFolder: projectFolder) {
+            Logger.info("Skipped a project whose Workshop id is already in the library from another folder", category: .workshop)
+            return .conflict(title: existing.origin.title)
+        }
         do {
             let result = try await importService.importProject(folder: projectFolder)
             guard allowsImport else { return .unreadable }
@@ -281,12 +314,18 @@ final class WorkshopFolderImportCoordinator {
         }
     }
 
-    private func emitSummary(title: String, imported: Int, rejected: Int, unreadable: Int) {
+    private func emitSummary(title: String, imported: Int, rejected: Int, unreadable: Int, conflictTitles: [String]) {
+        let conflictNote = conflictTitles.isEmpty ? nil : String(localized: "\(conflictTitles.count) skipped: already in your library from another folder.", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Folder import summary sentence appended after the linked/skipped counts. Placeholder is the number of projects whose Workshop id the library already holds from a different folder.")
         guard imported > 0 else {
             // One word here would make a folder of damaged projects read as a folder of the wrong kind of file.
-            let message = unreadable > 0 && rejected == 0
+            let failure = unreadable > 0 && rejected == 0
                 ? String(localized: "None of the projects in that folder could be read.", bundle: .appLanguage, comment: "Folder import failure: every discovered project failed to read.")
                 : String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected.")
+            let message = if conflictTitles.count == 1, rejected == 0, unreadable == 0 {
+                String(localized: "\(conflictTitles[0]) is already in your library from another folder.", bundle: .appLanguage, comment: "Folder import failure: the one chosen project has a Workshop id the library already holds from a different folder. Placeholder is the title of the wallpaper already in the library.")
+            } else {
+                [failure, conflictNote].compactMap(\.self).joined(separator: " ")
+            }
             toastCenter.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: title,
@@ -296,7 +335,7 @@ final class WorkshopFolderImportCoordinator {
             return
         }
 
-        let message = if rejected > 0, unreadable > 0 {
+        let counts = if rejected > 0, unreadable > 0 {
             String(localized: "Linked \(imported), skipped \(rejected), \(unreadable) unreadable.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholders are the linked, skipped and unreadable counts.")
         } else if unreadable > 0 {
             String(localized: "Linked \(imported), \(unreadable) couldn't be read.", bundle: .appLanguage, comment: "Folder-link success summary with unreadable projects. Placeholders are the linked and unreadable counts.")
@@ -308,7 +347,7 @@ final class WorkshopFolderImportCoordinator {
         toastCenter.post(
             headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),
             title: title,
-            message: message,
+            message: [counts, conflictNote].compactMap(\.self).joined(separator: " "),
             isSuccess: true
         )
     }

@@ -309,6 +309,74 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(gate.calls == 1)
     }
 
+    // MARK: - One Workshop id, one library entry
+
+    @Test(
+        "A Workshop id already in the library from another folder is not imported again",
+        .timeLimit(.minutes(1)),
+        arguments: [("local", "steam"), ("steam", "local"), ("local", "local-again")]
+    )
+    func importOfAnIDHeldByAnotherFolderIsAConflict(existing: String, incoming: String) async throws {
+        let library = try ConflictLibrary()
+        defer { await library.discard() }
+        try library.coordinator.importProjects(from: [library.project(existing, title: "Already held")])
+        try await settle { !library.coordinator.isImporting }
+        let before = library.manager.loadGlobalSettings().recentWPEImports
+        #expect(before.count == 1)
+        let imported = ImportBatchLog()
+        library.coordinator.onLocalLibraryImported = { imported.batches += $0 }
+
+        try library.coordinator.importProjects(from: [library.project(incoming, title: "Incoming")])
+        try await settle { !library.coordinator.isImporting }
+
+        #expect(library.manager.loadGlobalSettings().recentWPEImports == before, "a second folder holding the id was imported over or beside the first")
+        #expect(imported.batches == 0)
+        let toast = try #require(library.toastCenter.lastEvent)
+        #expect(!toast.isSuccess)
+        #expect(toast.message.contains("Already held"), "the toast did not name the item already in the library: \(toast.message)")
+    }
+
+    @Test("Re-importing the folder already in the library refreshes it", .timeLimit(.minutes(1)), arguments: ["local", "steam"])
+    func reimportOfTheSameFolderIsNotAConflict(kind: String) async throws {
+        let library = try ConflictLibrary()
+        defer { await library.discard() }
+        let folder = try library.project(kind, title: "Held")
+        library.coordinator.importProjects(from: [folder])
+        try await settle { !library.coordinator.isImporting }
+        let imported = ImportBatchLog()
+        library.coordinator.onLocalLibraryImported = { imported.batches += $0 }
+
+        library.coordinator.importProjects(from: [folder])
+        try await settle { !library.coordinator.isImporting }
+
+        #expect(imported.batches == 1)
+        #expect(library.manager.loadGlobalSettings().recentWPEImports.count == 1)
+        #expect(library.toastCenter.lastEvent?.isSuccess == true)
+    }
+
+    @Test("The download scan skips a Steam item a local copy already holds, and says so once per launch", .timeLimit(.minutes(1)))
+    func downloadScanReportsALocalCopyConflictOnce() async throws {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary()
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let localCopy = library.root.appendingPathComponent("Wallpapers/copy", isDirectory: true)
+        try writeVideoProject(at: localCopy, workshopID: steam.itemFolders[0].lastPathComponent, title: "Local copy")
+        library.coordinator.importProjects(from: [localCopy])
+        try await settle { !library.coordinator.isImporting }
+        let before = library.manager.loadGlobalSettings().recentWPEImports
+
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(library.manager.loadGlobalSettings().recentWPEImports == before)
+        let toast = library.toastCenter.lastEvent
+        #expect(toast?.message == WorkshopFolderImportCoordinator.syncSummary(added: 0, repaired: 0, conflicts: 1))
+
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(library.toastCenter.lastEvent?.token == toast?.token, "the second scan repeated a conflict already shown")
+    }
+
     private func importer(parkingOn gate: ValidationGate) -> WallpaperEngineImportService {
         WallpaperEngineImportService(
             validateVideo: { _ in try await gate.park() },
@@ -327,9 +395,9 @@ struct WorkshopFolderImportCoordinatorTests {
     }
 }
 
-private func writeVideoProject(at folder: URL, workshopID: String) throws {
+private func writeVideoProject(at folder: URL, workshopID: String, title: String = "Held") throws {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let manifest = #"{"workshopid":"\#(workshopID)","title":"Held","type":"video","file":"video.mp4"}"#
+    let manifest = #"{"workshopid":"\#(workshopID)","title":"\#(title)","type":"video","file":"video.mp4"}"#
     try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
     try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
 }
@@ -344,19 +412,20 @@ private func writePresetProject(at folder: URL) throws {
 @MainActor
 private struct SteamDownloads {
     let root: URL
+    let itemFolders: [URL]
     let suite: TestScratch.DefaultsSuite
     let doctor: SteamCMDDoctorService
 
     init(itemCount: Int = 1, function: String = #function) throws {
-        root = FileManager.default.temporaryDirectory
+        let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkshopFolderImportCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
+        self.root = root
         let firstID = UInt64.random(in: 9_000_000_000 ... 9_899_999_999)
-        for offset in 0 ..< UInt64(itemCount) {
-            let itemID = String(firstID + offset)
-            try writeVideoProject(
-                at: SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(itemID, isDirectory: true),
-                workshopID: itemID
-            )
+        itemFolders = (0 ..< UInt64(itemCount)).map {
+            SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(String(firstID + $0), isDirectory: true)
+        }
+        for folder in itemFolders {
+            try writeVideoProject(at: folder, workshopID: folder.lastPathComponent)
         }
         suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.WorkshopFolderImportCoordinator", function: function)
         doctor = SteamCMDDoctorService(defaults: suite.defaults)
@@ -366,6 +435,42 @@ private struct SteamDownloads {
     func discard() {
         suite.discard()
         try? FileManager.default.removeItem(at: root)
+    }
+}
+
+/// A coordinator over a scratch library with real bookmarks: only an entry whose folder still resolves can conflict.
+@MainActor
+private struct ConflictLibrary {
+    static let itemID = "2585024298"
+    let root: URL
+    let suite: TestScratch.DefaultsSuite
+    let manager: SettingsManager
+    let toastCenter = WorkshopToastCenter()
+    let coordinator: WorkshopFolderImportCoordinator
+
+    init(function: String = #function) throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderConflict-\(UUID().uuidString)", isDirectory: true)
+        suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FolderConflict", function: function)
+        manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: suite.defaults)
+        coordinator = WorkshopFolderImportCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
+            settings: manager,
+            toastCenter: toastCenter
+        )
+    }
+
+    /// `steam` is the item's folder in Steam's Workshop layout; any other name is a local folder whose manifest carries the id.
+    func project(_ name: String, title: String) throws -> URL {
+        let folder = name == "steam"
+            ? SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(Self.itemID, isDirectory: true)
+            : root.appendingPathComponent("Wallpapers/\(name)", isDirectory: true)
+        try writeVideoProject(at: folder, workshopID: Self.itemID, title: title)
+        return folder
+    }
+
+    func discard() async {
+        suite.discard()
+        await TestScratch.discard(root, flushing: manager)
     }
 }
 
