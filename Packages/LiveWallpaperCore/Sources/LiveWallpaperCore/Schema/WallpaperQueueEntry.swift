@@ -110,9 +110,18 @@ public extension WallpaperQueueEntry {
 }
 
 extension WallpaperContent {
-    /// `replacement`, keeping this scene's preset layer and property edits when both are scenes.
+    /// `replacement`, keeping a scene's preset layer and property edits, or a page's settings, when both are that kind.
     func repointed(to replacement: WallpaperContent) -> WallpaperContent {
-        guard case let .scene(old) = self, case let .scene(new) = replacement else { return replacement }
-        return .scene(new.withPresetLayer(id: old.presetID, snapshot: old.presetSnapshot).withPropertyOverrides(old.propertyOverrides))
+        switch (self, replacement) {
+        case let (.scene(old), .scene(new)):
+            return .scene(new.withPresetLayer(id: old.presetID, snapshot: old.presetSnapshot).withPropertyOverrides(old.propertyOverrides))
+        case let (.html(_, old), .html(source, new)):
+            var config = old
+            config.physicalPixelLayout = new.physicalPixelLayout
+            config.originKind = new.originKind
+            return .html(source: source, config: config)
+        default:
+            return replacement
+        }
     }
 }

@@ -53,6 +53,7 @@ extension ConfigurationPorter {
         if var global = bundle.globalSettings {
             global.pausedDisplayKeys = manager.loadGlobalSettings().pausedDisplayKeys
             manager.saveGlobalSettings(global)
+            NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
             // The imported library may rename or delete presets the cached
             // configurations still carry snapshots of.
             manager.reconcileScenePresetSnapshots()
