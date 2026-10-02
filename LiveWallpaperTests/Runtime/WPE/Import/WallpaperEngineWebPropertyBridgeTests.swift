@@ -97,7 +97,7 @@ struct WallpaperEngineWebPropertyBridgeTests {
     }
 
     @Test("A volume slider reaches the page at its own value while master volume is lowered")
-    func volumeSliderIsNotScaledByMasterVolume() throws {
+    func volumeSliderIsNotScaledByAppVolume() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
         {
           "general": {
