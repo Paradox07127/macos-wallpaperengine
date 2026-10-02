@@ -268,6 +268,7 @@ SERIAL_SUITES=(
   WPESceneMediaEventDispatchTests
   MountedGIFHostVisibilityTests
   HTMLWallpaperRuntimeScriptTests
+  WPEHoverHitRectTests
   WorkshopFolderImportCoordinatorTests
   WorkshopDownloadReadinessTests
   WallpaperEnginePackageTests
