@@ -354,19 +354,52 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(library.toastCenter.lastEvent?.isSuccess == true)
     }
 
-    @Test("The download scan skips a Steam item a local copy already holds, and says so once per launch", .timeLimit(.minutes(1)))
-    func downloadScanReportsALocalCopyConflictOnce() async throws {
+    @Test("The download scan brings in a Steam item a local copy holds, beside the copy, once", .timeLimit(.minutes(1)))
+    func downloadScanImportsASteamItemOverALocalCopy() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary()
         defer {
             steam.discard()
             await library.discard()
         }
+        let steamFolder = steam.itemFolders[0]
         let localCopy = library.root.appendingPathComponent("Wallpapers/copy", isDirectory: true)
-        try writeVideoProject(at: localCopy, workshopID: steam.itemFolders[0].lastPathComponent, title: "Local copy")
+        try writeVideoProject(at: localCopy, workshopID: steamFolder.lastPathComponent, title: "Local copy")
         library.coordinator.importProjects(from: [localCopy])
         try await settle { !library.coordinator.isImporting }
         let before = library.manager.loadGlobalSettings().recentWPEImports
+        #expect(before.count == 1)
+
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        let after = library.manager.loadGlobalSettings().recentWPEImports
+        #expect(after.count == 2)
+        #expect(after.contains { $0.origin.steamFolderItemID == steamFolder.lastPathComponent }, "the Steam folder was not imported")
+        #expect(after.contains { $0.origin == before[0].origin }, "the scan itself removed the local copy")
+        let toast = library.toastCenter.lastEvent
+        #expect(toast?.message == WorkshopFolderImportCoordinator.syncSummary(added: 1, repaired: 0))
+
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(library.manager.loadGlobalSettings().recentWPEImports == after, "the second scan imported the Steam item again")
+        #expect(library.toastCenter.lastEvent?.token == toast?.token)
+    }
+
+    @Test("The download scan skips a Steam item another Steam folder already holds, and says so once per launch", .timeLimit(.minutes(1)))
+    func downloadScanReportsASteamConflictOnce() async throws {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary()
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let id = steam.itemFolders[0].lastPathComponent
+        let otherSteamFolder = SteamLibraryPaths.workshopContentRoot(steamRoot: library.root.appendingPathComponent("OtherSteam", isDirectory: true))
+            .appendingPathComponent(id, isDirectory: true)
+        try writeVideoProject(at: otherSteamFolder, workshopID: id, title: "Other Steam library")
+        library.coordinator.importProjects(from: [otherSteamFolder])
+        try await settle { !library.coordinator.isImporting }
+        let before = library.manager.loadGlobalSettings().recentWPEImports
+        #expect(before.count == 1)
+        #expect(before.first?.origin.steamFolderItemID == id)
 
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
         #expect(library.manager.loadGlobalSettings().recentWPEImports == before)

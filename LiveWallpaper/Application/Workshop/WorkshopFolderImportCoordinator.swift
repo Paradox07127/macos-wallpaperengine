@@ -199,10 +199,20 @@ final class WorkshopFolderImportCoordinator {
             guard let self, allowsImport else { return }
             let id = folder.lastPathComponent
             guard !known.contains(id) else {
-                if !settings.deletedWorkshopIDs.contains(id),
-                   self.settings.conflictingWPEImport(workshopID: id, sourceFolder: folder) != nil,
-                   reportedScanConflictIDs.insert(id).inserted {
-                    conflicts += 1
+                guard !settings.deletedWorkshopIDs.contains(id),
+                      let existing = self.settings.conflictingWPEImport(workshopID: id, sourceFolder: folder) else { return }
+                let outcome: ProjectImportOutcome = existing.origin.steamFolderItemID == nil
+                    ? await importOne(folder, deliberate: false, supersedesLocalCopy: true)
+                    : .conflict(title: existing.origin.title)
+                switch outcome {
+                case .imported:
+                    added += 1
+                case .conflict:
+                    if reportedScanConflictIDs.insert(id).inserted {
+                        conflicts += 1
+                    }
+                case .rejected, .unreadable:
+                    break
                 }
                 return
             }
@@ -275,11 +285,13 @@ final class WorkshopFolderImportCoordinator {
         _ projectFolder: URL,
         deliberate: Bool,
         preservesHistory: Bool = false,
+        supersedesLocalCopy: Bool = false,
         onWallpaperImported: (@MainActor () -> Void)? = nil
     ) async -> ProjectImportOutcome {
         guard allowsImport else { return .unreadable }
         if let project = try? WallpaperEngineProject.read(from: projectFolder),
-           let existing = settings.conflictingWPEImport(workshopID: project.workshopID, sourceFolder: projectFolder) {
+           let existing = settings.conflictingWPEImport(workshopID: project.workshopID, sourceFolder: projectFolder),
+           !(supersedesLocalCopy && existing.origin.steamFolderItemID == nil) {
             Logger.info("Skipped a project whose Workshop id is already in the library from another folder", category: .workshop)
             return .conflict(title: existing.origin.title)
         }

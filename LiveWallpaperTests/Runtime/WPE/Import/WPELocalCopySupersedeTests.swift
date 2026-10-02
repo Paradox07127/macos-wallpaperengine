@@ -10,10 +10,10 @@ struct WPELocalCopySupersedeTests {
     private static let controlScreenID: CGDirectDisplayID = 0xEDA0_5E02
 
     @Test("Superseding moves every reference to the Steam item and drops only the local copy's history entry")
-    func supersedeRepointsReferences() throws {
+    func supersedeRepointsReferences() async throws {
         let fixture = try SupersedeFixture()
         defer { fixture.discard() }
-        try withHeadlessManager(fixture) { manager, screen in
+        try await withHeadlessManager(fixture) { manager, screen in
             let localEntry = WallpaperQueueEntry(title: "Lunar Tear", content: fixture.localContent, origin: fixture.local.origin)
             var configuration = fixture.configuration(on: screen)
             configuration.wallpaperQueue = [localEntry]
@@ -54,10 +54,10 @@ struct WPELocalCopySupersedeTests {
     }
 
     @Test("Without the Steam item's folder on disk the local copy stays as it is")
-    func missingSteamFolderChangesNothing() throws {
+    func missingSteamFolderChangesNothing() async throws {
         let fixture = try SupersedeFixture()
         defer { fixture.discard() }
-        try withHeadlessManager(fixture) { manager, screen in
+        try await withHeadlessManager(fixture) { manager, screen in
             let configuration = fixture.configuration(on: screen)
             manager.saveConfiguration(configuration)
             try FileManager.default.removeItem(at: fixture.steamFolder)
@@ -73,10 +73,10 @@ struct WPELocalCopySupersedeTests {
     }
 
     @Test("A second pass finds nothing left to supersede and writes nothing")
-    func secondPassIsANoOp() throws {
+    func secondPassIsANoOp() async throws {
         let fixture = try SupersedeFixture()
         defer { fixture.discard() }
-        try withHeadlessManager(fixture) { manager, screen in
+        try await withHeadlessManager(fixture) { manager, screen in
             manager.saveConfiguration(fixture.configuration(on: screen))
             #expect(manager.supersedeLocalCopiesWithSteam() == 1)
             let settings = SettingsManager.shared.loadGlobalSettings().recentWPEImports
@@ -90,10 +90,10 @@ struct WPELocalCopySupersedeTests {
     }
 
     @Test("A display in a scene span keeps its span group when its content moves to the Steam item")
-    func spanGroupSurvives() throws {
+    func spanGroupSurvives() async throws {
         let fixture = try SupersedeFixture()
         defer { fixture.discard() }
-        try withHeadlessManager(fixture) { manager, screen in
+        try await withHeadlessManager(fixture) { manager, screen in
             let spanGroup = UUID()
             var configuration = fixture.configuration(on: screen)
             configuration.sceneSpanGroupID = spanGroup
@@ -107,7 +107,27 @@ struct WPELocalCopySupersedeTests {
         }
     }
 
-    private func withHeadlessManager(_ fixture: SupersedeFixture, _ body: (ScreenManager, Screen) throws -> Void) throws {
+    @Test("A history change supersedes a local copy once the manager observes history", .timeLimit(.minutes(1)))
+    func historyChangeSupersedes() async throws {
+        let fixture = try SupersedeFixture()
+        defer { fixture.discard() }
+        try await withHeadlessManager(fixture) { manager, screen in
+            manager.saveConfiguration(fixture.configuration(on: screen))
+            manager.observeWPEHistoryForSupersede()
+
+            NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+            var polls = 0
+            while SettingsManager.shared.loadGlobalSettings().recentWPEImports.count > 1, polls < 200 {
+                polls += 1
+                try await Task.sleep(for: .milliseconds(10))
+            }
+
+            #expect(SettingsManager.shared.loadGlobalSettings().recentWPEImports.map(\.origin) == [fixture.steam.origin])
+            #expect(manager.configurationStore.get(for: screen.id)?.wpeOrigin == fixture.steam.origin)
+        }
+    }
+
+    private func withHeadlessManager(_ fixture: SupersedeFixture, _ body: (ScreenManager, Screen) async throws -> Void) async throws {
         let defaults = UserDefaults.standard
         let keys = ["screenConfigurations", "globalSettings"]
         let previousValues = keys.reduce(into: [String: Any]()) { result, key in
@@ -139,7 +159,7 @@ struct WPELocalCopySupersedeTests {
             manager.configurationStore.remove(for: screen.id)
             manager.configurationStore.remove(for: Self.controlScreenID)
         }
-        try body(manager, screen)
+        try await body(manager, screen)
     }
 }
 

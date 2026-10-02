@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lifecycle.schedule(after: .seconds(2)) { [weak manager] in
                 manager?.supersedeLocalCopiesWithSteam()
             }
+            manager.observeWPEHistoryForSupersede()
         }
         #endif
 

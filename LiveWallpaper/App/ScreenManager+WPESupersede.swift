@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Combine
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
@@ -14,6 +15,16 @@ extension ScreenManager {
             superseded += 1
         }
         return superseded
+    }
+
+    func observeWPEHistoryForSupersede() {
+        NotificationCenter.default.publisher(for: .wpeHistoryDidChange)
+            // Must stay asynchronous: superseding posts this notification itself and would re-enter.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.supersedeLocalCopiesWithSteam()
+            }
+            .store(in: &cleanupTasks)
     }
 
     /// false, changing nothing, when the Steam item's content can't be rebuilt.
