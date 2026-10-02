@@ -177,6 +177,17 @@ struct EditDeskUndoStackTests {
         #expect(stack.redoSteps.map(Self.fingerprints) == [[manager.left.displayFingerprint]])
     }
 
+    @Test("Undoing a two-display step restores both inside one manual switch group", .timeLimit(.minutes(1)))
+    func twoDisplayUndoSharesOneSwitchGroup() async throws {
+        let stack = stack()
+        apply(Self.page("B"), on: [manager.left, manager.right], in: stack)
+        _ = try #require(await stack.undo())
+        #expect(manager.restoreGroups.count == 2)
+        let group = try #require(manager.restoreGroups.first ?? nil, "the undo restored outside any switch group")
+        #expect(group.pace == .manual)
+        #expect(manager.restoreGroups.allSatisfy { $0 === group })
+    }
+
     @Test("A disconnected display is skipped; a restore that never confirms fails and stays off the redo stack", .timeLimit(.minutes(1)))
     func disconnectedAndUnconfirmed() async throws {
         let stack = stack(timeout: .milliseconds(200))
@@ -530,6 +541,8 @@ final class UndoTestManager: UndoRestoring {
     private var held: [Restore] = []
     private var revisions: [CGDirectDisplayID: UInt64] = [:]
     private(set) var restores: [Restore] = []
+    /// The switch group each restore ran under, in restore order.
+    private(set) var restoreGroups: [WallpaperSwitchGroup?] = []
     var cleared: [CGDirectDisplayID] = []
     /// When false a restore waits in `held` until `commitHeldRestores()`.
     var confirmsRestores = true
@@ -601,6 +614,7 @@ final class UndoTestManager: UndoRestoring {
     ) {
         let restore = Restore(screenID: screen.id, configuration: configuration, overlay: overlay)
         restores.append(restore)
+        restoreGroups.append(WallpaperSwitchGroup.current)
         if confirmsRestores {
             commit(restore)
         } else {

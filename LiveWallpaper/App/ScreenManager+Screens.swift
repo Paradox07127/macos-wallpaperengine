@@ -358,23 +358,25 @@ extension ScreenManager {
             let sourceBookmark = sourceConfiguration.videoBookmarkData
             var changed = false
 
-            for target in screens {
-                guard var targetConfiguration = configurationStore.get(for: target.id, fingerprint: target.displayFingerprint),
-                      targetConfiguration.wallpaperType == .video,
-                      targetConfiguration.videoDisplayMode == .spanAllDisplays else { continue }
+            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+                for target in screens {
+                    guard var targetConfiguration = configurationStore.get(for: target.id, fingerprint: target.displayFingerprint),
+                          targetConfiguration.wallpaperType == .video,
+                          targetConfiguration.videoDisplayMode == .spanAllDisplays else { continue }
 
-                if let sourceBookmark,
-                   targetConfiguration.videoBookmarkData != sourceBookmark {
-                    continue
+                    if let sourceBookmark,
+                       targetConfiguration.videoBookmarkData != sourceBookmark {
+                        continue
+                    }
+
+                    targetConfiguration.videoDisplayMode = .perDisplay
+                    restoreProposedWallpaperSession(
+                        for: target,
+                        configuration: targetConfiguration,
+                        preservingState: true
+                    )
+                    changed = true
                 }
-
-                targetConfiguration.videoDisplayMode = .perDisplay
-                restoreProposedWallpaperSession(
-                    for: target,
-                    configuration: targetConfiguration,
-                    preservingState: true
-                )
-                changed = true
             }
 
             if !changed {
@@ -388,18 +390,20 @@ extension ScreenManager {
             }
 
             sourceConfiguration.videoDisplayMode = .spanAllDisplays
-            for target in screens {
-                let copy = sourceConfiguration.reboundToDisplay(
-                    target.id,
-                    fingerprint: target.displayFingerprint
-                )
+            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+                for target in screens {
+                    let copy = sourceConfiguration.reboundToDisplay(
+                        target.id,
+                        fingerprint: target.displayFingerprint
+                    )
 
-                restoreProposedWallpaperSession(
-                    for: target,
-                    configuration: copy,
-                    preservingState: target.id == screen.id
-                )
-                Logger.info("Span Video: copied configuration from screen \(screen.id) → \(target.id)", category: .screenManager)
+                    restoreProposedWallpaperSession(
+                        for: target,
+                        configuration: copy,
+                        preservingState: target.id == screen.id
+                    )
+                    Logger.info("Span Video: copied configuration from screen \(screen.id) → \(target.id)", category: .screenManager)
+                }
             }
         }
     }
@@ -495,15 +499,17 @@ extension ScreenManager {
               screens.count > 1,
               let template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
 
-        for target in screens where target.id != source.id {
-            // Shared with `applyScheme`: one rebind implementation, so the two
-            // paths cannot drift on which identity fields have to move.
-            let copy = template.reboundToDisplay(
-                target.id,
-                fingerprint: target.displayFingerprint
-            )
-            restoreProposedWallpaperSession(for: target, configuration: copy)
-            Logger.info("Apply to All: copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            for target in screens where target.id != source.id {
+                // Shared with `applyScheme`: one rebind implementation, so the two
+                // paths cannot drift on which identity fields have to move.
+                let copy = template.reboundToDisplay(
+                    target.id,
+                    fingerprint: target.displayFingerprint
+                )
+                restoreProposedWallpaperSession(for: target, configuration: copy)
+                Logger.info("Apply to All: copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
+            }
         }
     }
     
@@ -516,13 +522,15 @@ extension ScreenManager {
         let configurations = configurationStore.loadAll()
         configurations.forEach { primeBookmarkDisplayNames(from: $0) }
 
-        for screen in screens {
-            guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else {
-                releaseRuntimeSession(screen)
-                continue
-            }
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            for screen in screens {
+                guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else {
+                    releaseRuntimeSession(screen)
+                    continue
+                }
 
-            restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false)
+                restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false)
+            }
         }
 
         Logger.notice("All screens reloaded", category: .screenManager)

@@ -113,6 +113,15 @@ struct HomePage: View {
         func cancel(_ displayID: CGDirectDisplayID) {
             cancellations[displayID]?.cancel()
         }
+
+        /// One action on several displays: the group is entered before the tasks are made, so each inherits it.
+        func runEach(_ screens: [Screen], _ work: @escaping @MainActor (Screen, ApplyCancellation) async -> Void) {
+            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+                for screen in screens {
+                    run(for: screen.id) { await work(screen, $0) }
+                }
+            }
+        }
     }
 
     /// The `onChange` fan-out lives in its own modifier: inlined, it slows the body's type-check past the 300 ms warning.
@@ -1589,8 +1598,8 @@ struct HomePage: View {
     private func applyAllFromModal(_ intent: ApplyIntent, to displayIDs: [CGDirectDisplayID]) {
         let screens = displayIDs.compactMap { id in screenManager.screens.first { $0.id == id } }
         let group = undo?.begin(.applyToAllDisplays, displays: screens)
-        for screen in screens {
-            applies.run(for: screen.id) { await apply(intent, to: screen, card: nil, cancellation: $0, group: group) }
+        applies.runEach(screens) { screen, cancellation in
+            await apply(intent, to: screen, card: nil, cancellation: cancellation, group: group)
         }
     }
 

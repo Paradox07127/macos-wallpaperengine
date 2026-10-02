@@ -437,6 +437,21 @@ struct ModalActionsTests {
         #expect(fixture.applied.isEmpty, "each display was also applied on its own")
     }
 
+    @Test("All Displays runs each display's apply task inside one manual switch group", .timeLimit(.minutes(1)))
+    func applyAllTasksShareOneSwitchGroup() async throws {
+        let queue = HomePage.ApplyQueue()
+        let screens = [UndoTestManager.makeScreen("Group Left", x: 0), UndoTestManager.makeScreen("Group Right", x: 800)]
+        var groups: [WallpaperSwitchGroup?] = []
+        queue.runEach(screens) { _, _ in groups.append(WallpaperSwitchGroup.current) }
+        while !queue.isIdle {
+            await Task.yield()
+        }
+        #expect(groups.count == 2)
+        let group = try #require(groups.first ?? nil, "the apply tasks ran outside any switch group")
+        #expect(group.pace == .manual)
+        #expect(groups.allSatisfy { $0 === group })
+    }
+
     @Test("An aerial applies through its own file's bookmark and can show in Finder")
     func aerialAppliesThroughItsBookmark() throws {
         let fixture = Fixture()

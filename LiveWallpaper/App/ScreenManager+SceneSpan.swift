@@ -74,21 +74,23 @@ extension ScreenManager {
         sceneSpanProposals[id] = proposals
         var remaining = targets.count
         var results: [WallpaperPreparationResult] = []
-        for screen in targets {
-            guard let configuration = proposals[screen.id] else { continue }
-            restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false, intent: .proposal,
-                                    beforeCommit: { [weak self] in
-                                        guard let self else { return false }
-                                        saveConfiguration(configuration)
-                                        return true
-                                    }, sceneCompletion: { [weak self] result, _ in
-                                        results.append(result)
-                                        remaining -= 1
-                                        if remaining == 0 {
-                                            self?.sceneSpanProposals[id] = nil
-                                            completion?(results.allSatisfy { $0 == .ready } ? .ready : .failed)
-                                        }
-                                    })
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            for screen in targets {
+                guard let configuration = proposals[screen.id] else { continue }
+                restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false, intent: .proposal,
+                                        beforeCommit: { [weak self] in
+                                            guard let self else { return false }
+                                            saveConfiguration(configuration)
+                                            return true
+                                        }, sceneCompletion: { [weak self] result, _ in
+                                            results.append(result)
+                                            remaining -= 1
+                                            if remaining == 0 {
+                                                self?.sceneSpanProposals[id] = nil
+                                                completion?(results.allSatisfy { $0 == .ready } ? .ready : .failed)
+                                            }
+                                        })
+            }
         }
     }
 
