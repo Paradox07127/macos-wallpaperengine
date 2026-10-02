@@ -627,7 +627,7 @@ private final class DownloadAttemptFixture {
         self.defaults = defaults
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("download-attempt-\(UUID())", isDirectory: true)
         self.root = root
-        let content = root.appendingPathComponent("content", isDirectory: true)
+        let content = SteamLibraryPaths.workshopContentRoot(steamRoot: root)
         let item = content.appendingPathComponent("420000042", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
@@ -654,7 +654,7 @@ private final class DownloadAttemptFixture {
         downloader = DownloadFixtureSource(root: content)
         let importer = WallpaperEngineImportService(
             validateVideo: { _ in await gate.wait() },
-            makeBookmark: { Data($0.path.utf8) }
+            makeBookmark: { try? $0.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) }
         )
         downloads = WorkshopDownloadCoordinator(
             importService: importer, repositoryCoordinator: WorkshopRepositoryCoordinator(),

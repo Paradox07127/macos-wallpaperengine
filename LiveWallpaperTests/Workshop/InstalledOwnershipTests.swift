@@ -29,31 +29,48 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("Settings CAS removes only the exact import and atomically tombstones success")
     @MainActor
-    func settingsIdentityAwareRemoval() async {
+    func settingsIdentityAwareRemoval() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkshopInstalledSettingsCAS-\(UUID().uuidString)", isDirectory: true)
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root))
         manager.saveGlobalSettings(GlobalSettings())
-        let old = entry(id: "same-id", title: "Old", importedAt: 10)
-        let reimported = entry(id: "same-id", title: "New", importedAt: 20)
+        let steamFolder = SteamLibraryPaths.workshopContentRoot(steamRoot: root.appendingPathComponent("steam"))
+            .appendingPathComponent("420000077", isDirectory: true)
+        let localFolder = root.appendingPathComponent("local/420000078", isDirectory: true)
+        try FileManager.default.createDirectory(at: steamFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
+        let steamBookmark = try steamFolder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let old = entry(id: "420000077", title: "Old", importedAt: 10, sourceFolderBookmark: steamBookmark)
+        let reimported = entry(id: "420000077", title: "New", importedAt: 20, sourceFolderBookmark: steamBookmark)
         manager.recordWPEImport(old)
         manager.recordWPEImport(reimported, clearsDeleteTombstone: true)
 
         #expect(!manager.removeWPEImport(
-            workshopID: "same-id",
+            workshopID: "420000077",
             matchingImportedAt: old.importedAt
         ))
         var persisted = manager.loadGlobalSettings()
         #expect(persisted.recentWPEImports == [reimported])
-        #expect(!persisted.deletedWorkshopIDs.contains("same-id"))
+        #expect(!persisted.deletedWorkshopIDs.contains("420000077"))
 
         #expect(manager.removeWPEImport(
-            workshopID: "same-id",
+            workshopID: "420000077",
             matchingImportedAt: reimported.importedAt
         ))
         persisted = manager.loadGlobalSettings()
         #expect(persisted.recentWPEImports.isEmpty)
-        #expect(persisted.deletedWorkshopIDs.first == "same-id")
+        #expect(persisted.deletedWorkshopIDs.first == "420000077")
+
+        let localBookmark = try localFolder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let local = entry(id: "420000078", title: "Local copy", importedAt: 30, sourceFolderBookmark: localBookmark)
+        manager.recordWPEImport(local)
+        #expect(manager.removeWPEImport(
+            workshopID: "420000078",
+            matchingImportedAt: local.importedAt
+        ))
+        persisted = manager.loadGlobalSettings()
+        #expect(persisted.recentWPEImports.isEmpty)
+        #expect(!persisted.deletedWorkshopIDs.contains("420000078"))
         await TestScratch.discard(root, flushing: manager)
     }
 
