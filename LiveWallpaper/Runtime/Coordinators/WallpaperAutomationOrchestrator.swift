@@ -42,6 +42,7 @@ final class WallpaperAutomationOrchestrator {
     private var automaticSelections: [CGDirectDisplayID: Int] = [:]
     private let libraryEntries: @MainActor () -> [WallpaperQueueEntry]
     private let libraryEntryAvailable: @MainActor (WallpaperQueueEntry) async -> Bool
+    private let bookmarkVolumeUnavailable: @MainActor (Data) -> Bool
     private let now: @MainActor () -> Date
     private var isMonitoring = false
     private var isSuspendedForUserAbsence = false
@@ -76,7 +77,8 @@ final class WallpaperAutomationOrchestrator {
         libraryEntries: @MainActor @escaping () -> [WallpaperQueueEntry] = { [] },
         libraryEntryAvailable: @MainActor @escaping (WallpaperQueueEntry) async -> Bool = { entry in
             await LibraryContentLocator.locate(content: entry.content, wpeOrigin: entry.origin).isAvailable
-        }
+        },
+        bookmarkVolumeUnavailable: @MainActor @escaping (Data) -> Bool = SettingsManager.isBookmarkVolumeUnavailable
     ) {
         self.configurationStore = configurationStore
         self.automationCoordinator = automationCoordinator
@@ -93,6 +95,7 @@ final class WallpaperAutomationOrchestrator {
         self.automationAllowed = automationAllowed
         self.libraryEntries = libraryEntries
         self.libraryEntryAvailable = libraryEntryAvailable
+        self.bookmarkVolumeUnavailable = bookmarkVolumeUnavailable
     }
 
     // MARK: - Playlist
@@ -457,6 +460,7 @@ final class WallpaperAutomationOrchestrator {
                 }
                 var lastResult = WallpaperPreparationResult.failed
                 var reason = WallpaperAutomationFailure.Reason.loadFailed
+                var sourceWasFound = false
                 for _ in 0 ..< 2 {
                     guard intended() else { return }
                     if !dispatched, !isCurrentTransition(initialTransition, screenID) {
@@ -469,6 +473,7 @@ final class WallpaperAutomationOrchestrator {
                         return
                     }
                     if available {
+                        sourceWasFound = true
                         var proposed = current.applyingAutomationEntry(entry)
                         if let cursor = candidate.cursor {
                             proposed.playlistCursorIndex = cursor
@@ -487,6 +492,11 @@ final class WallpaperAutomationOrchestrator {
                         }
                         return
                     }
+                }
+                // An unmounted volume is temporary: skip this round instead of disabling the source until "Enable Again".
+                if !sourceWasFound, let bookmark = entry.content.activeVideoBookmarkData ?? entry.content.htmlSource?.localBookmarkData,
+                   bookmarkVolumeUnavailable(bookmark) {
+                    continue
                 }
                 guard intended(), var current = configurationStore.get(for: screenID), current.wallpaperMode == expectedMode else { return }
                 current.automationFailures[entry.id] = WallpaperAutomationFailure(entry: entry, failedAt: now(), reason: reason)

@@ -1184,6 +1184,47 @@ struct WallpaperAutomationCoordinatorTests {
         orchestrator.stopMonitoring()
     }
 
+    @Test("A missing source on an offline volume is skipped this round without being recorded", arguments: [true, false])
+    func automationSkipsOfflineVolumeWithoutRecording(volumeUnavailable: Bool) async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let badBookmark = Data("bad".utf8)
+        let entries = [
+            WallpaperQueueEntry(id: "current", title: "current", content: .html(source: .inline("current"), config: .default)),
+            WallpaperQueueEntry(id: "bad", title: "bad", content: .video(bookmarkData: badBookmark)),
+            WallpaperQueueEntry(id: "good", title: "good", content: .html(source: .inline("good"), config: .default)),
+        ]
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var checkedBookmarks: [Data] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                store.save(proposed)
+                return .ready
+            },
+            libraryEntryAvailable: { $0.id != "bad" },
+            bookmarkVolumeUnavailable: { data in
+                checkedBookmarks.append(data)
+                return volumeUnavailable
+            }
+        )
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 200 where store.get(for: screen.id)?.activeWallpaper != entries[2].content {
+            await Task.yield()
+        }
+        let result = try #require(store.get(for: screen.id))
+        #expect(result.activeWallpaper == entries[2].content)
+        #expect(checkedBookmarks == [badBookmark])
+        #expect(result.automationFailures["bad"]?.reason == (volumeUnavailable ? nil : .sourceMissing))
+        orchestrator.stopMonitoring()
+    }
+
     @Test("A successful retry is not marked, and cancelling a pending load never marks or retries it")
     func automationRetrySuccessAndCancellation() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
