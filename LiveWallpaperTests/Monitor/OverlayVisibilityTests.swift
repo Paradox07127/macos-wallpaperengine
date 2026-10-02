@@ -486,6 +486,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
     func optedInWindowLifecycle() async throws {
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
+        controller.debugPointerIsCaptured = false
         defer { controller.teardownAll() }
         var overlay = MonitorOverlayConfiguration(
             enabled: true, level: .desktop,

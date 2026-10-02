@@ -469,6 +469,9 @@ final class OverlayController: NSObject {
         pointerMoved(screenPoint: point)
     }
 
+    /// nil = read the real mouse buttons.
+    var debugPointerIsCaptured: Bool?
+
     func board(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> MonitorBoardConfiguration? {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.boardConfig
     }
@@ -505,12 +508,20 @@ final class OverlayController: NSObject {
             host.window.setInteractive(false)
             return
         }
-        guard !OverlayPointerGate.pointerIsCaptured else { return }
+        guard !pointerIsCaptured else { return }
         let point = screenPoint ?? NSEvent.mouseLocation
         host.window.setInteractive(OverlayPointerGate.windowTakesMouseEvents(
             scope: scope,
             pointerIsOverLiveArea: scope == .widgetsOnly && hostAcceptsPointer(host, atScreenPoint: point)
         ))
+    }
+
+    private var pointerIsCaptured: Bool {
+        #if DEBUG
+        return debugPointerIsCaptured ?? OverlayPointerGate.pointerIsCaptured
+        #else
+        return OverlayPointerGate.pointerIsCaptured
+        #endif
     }
 
     private func hostAcceptsPointer(_ host: Host, atScreenPoint screenPoint: NSPoint) -> Bool {
