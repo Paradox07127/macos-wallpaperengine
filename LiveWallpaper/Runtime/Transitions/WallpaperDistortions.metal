@@ -24,6 +24,14 @@ constexpr sampler distortionSampler(coord::normalized, address::clamp_to_edge, f
 // Voronoi lattice density: cells per unit of screen height.
 constant float distortionCrystalScale = 9.0f;
 
+constant float3 distortionLuma = float3(0.299f, 0.587f, 0.114f);
+
+// Blur radius, in output pixels, over which the sharp frame hands over to the half-resolution blur.
+constant float distortionBokehHandoverPixels = 4.0f;
+
+// Progress a dust particle stays visible after its block starts dissolving.
+constant float distortionDustLife = 0.45f;
+
 [[vertex]] WallpaperDistortionVertexOut wallpaperDistortionVertex(uint vertexID [[vertex_id]]) {
     float2 corner = float2(float((vertexID << 1) & 2u), float(vertexID & 2u));
     WallpaperDistortionVertexOut out;
@@ -208,4 +216,159 @@ static inline float2 distortionAspect(float2 uv, constant WallpaperDistortionUni
     color = mix(float3(0.05f, 0.05f, 0.07f) + distortionSample(from, in.uv) * 0.14f, color, inside);
     color *= 0.75f + 0.25f * float(cell.z) / 255.0f;
     return float4(color, 1.0f);
+}
+
+// MARK: - Bokeh
+
+// Exactly 0 at both ends, where encode skips the blur pass and texture(2) holds no valid frame.
+static inline float distortionBokehAmount(float p) {
+    return (p > 0.0f && p < 1.0f) ? max(sinpi(p), 0.0f) : 0.0f;
+}
+
+static inline float distortionBokehFocus(float p) {
+    return distortionEaseInOut((p - 0.35f) / 0.3f);
+}
+
+static inline float3 distortionMix(texture2d<float> from, texture2d<float> to, float2 uv, float k) {
+    if (k <= 0.0f) {
+        return distortionSample(from, uv);
+    }
+    if (k >= 1.0f) {
+        return distortionSample(to, uv);
+    }
+    return mix(distortionSample(from, uv), distortionSample(to, uv), k);
+}
+
+// Half resolution: one bilinear tap averages each 2x2 block of the mixed inputs.
+[[fragment]] float4 wallpaperDistortionBokehMix(
+    WallpaperDistortionVertexOut in [[stage_in]],
+    constant WallpaperDistortionUniforms &u [[buffer(0)]],
+    texture2d<float> from [[texture(0)]],
+    texture2d<float> to [[texture(1)]]
+) {
+    return float4(distortionMix(from, to, in.uv, distortionBokehFocus(u.progress)), 1.0f);
+}
+
+// Half resolution, reading the mix pass; its output is the composite's texture(2).
+[[fragment]] float4 wallpaperDistortionBokehBlur(
+    WallpaperDistortionVertexOut in [[stage_in]],
+    constant WallpaperDistortionUniforms &u [[buffer(0)]],
+    texture2d<float> mixed [[texture(0)]]
+) {
+    float radius = distortionBokehAmount(u.progress) * 0.045f;
+    float3 sum = float3(0.0f);
+    float total = 0.0f;
+    for (int i = 0; i < 24; i++) {
+        float fi = float(i);
+        float angle = fi * 2.39996f;
+        float r = sqrt((fi + 0.5f) / 24.0f) * radius;
+        float3 c = distortionSample(mixed, in.uv + float2(cos(angle) / u.aspect, sin(angle)) * r);
+        float lum = max(dot(c, distortionLuma), 0.0f);
+        float weight = 1.0f + 4.0f * lum * lum * lum;
+        sum += c * weight;
+        total += weight;
+    }
+    return float4(sum / total, 1.0f);
+}
+
+[[fragment]] float4 wallpaperDistortionBokeh(
+    WallpaperDistortionVertexOut in [[stage_in]],
+    constant WallpaperDistortionUniforms &u [[buffer(0)]],
+    texture2d<float> from [[texture(0)]],
+    texture2d<float> to [[texture(1)]],
+    texture2d<float> blurred [[texture(2)]],
+    constant float4 *discs [[buffer(1)]],
+    constant uint &discCount [[buffer(2)]]
+) {
+    float b = distortionBokehAmount(u.progress);
+    float k = distortionBokehFocus(u.progress);
+    float3 color = distortionMix(from, to, in.uv, k);
+    if (b <= 0.0f) {
+        return float4(color, 1.0f);
+    }
+    float handover = clamp(b * 0.045f * float(from.get_height()) / distortionBokehHandoverPixels, 0.0f, 1.0f);
+    color = mix(color, distortionSample(blurred, in.uv), handover);
+    float2 q = distortionAspect(in.uv, u);
+    // disc = (centre uv, full-blur radius in screen heights, unused).
+    for (uint i = 0; i < discCount; i++) {
+        float2 center = discs[i].xy;
+        float radius = discs[i].z * b + 0.0005f;
+        float d = length(q - distortionAspect(center, u));
+        if (d < radius) {
+            float3 light = distortionMix(from, to, center, k);
+            float disc = distortionSmooth(radius, radius - 0.004f, d) * (0.18f + 0.25f * distortionSmooth(radius * 0.7f, radius, d));
+            color = distortionScreen(color, light * disc * b * (0.4f + dot(light, distortionLuma)));
+        }
+    }
+    return float4(color + b * 0.04f, 1.0f);
+}
+
+// MARK: - Dust
+
+// particle = (block centre in q units, start hash, drift hash); grid = (columns, rows) of blocks.
+static inline float distortionDustStart(float4 particle, constant WallpaperDistortionUniforms &u) {
+    return particle.x / u.aspect * 0.45f + particle.z * 0.07f;
+}
+
+struct WallpaperDistortionDustVertexOut {
+    float4 position [[position]];
+    float2 offset;
+    float3 color [[flat]];
+    float alpha [[flat]];
+    float radius [[flat]];
+};
+
+// Each block's own particle shows `from` until the block starts, then `to`.
+[[fragment]] float4 wallpaperDistortionDust(
+    WallpaperDistortionVertexOut in [[stage_in]],
+    constant WallpaperDistortionUniforms &u [[buffer(0)]],
+    texture2d<float> from [[texture(0)]],
+    texture2d<float> to [[texture(1)]],
+    device const float4 *particles [[buffer(1)]],
+    constant uint2 &grid [[buffer(2)]]
+) {
+    float2 q = distortionAspect(in.uv, u);
+    uint2 block = min(uint2(q * float(grid.y)), grid - 1u);
+    float4 particle = particles[block.y * grid.x + block.x];
+    bool revealed = u.progress > distortionDustStart(particle, u);
+    return float4(revealed ? distortionSample(to, in.uv) : distortionSample(from, in.uv), 1.0f);
+}
+
+// One instance per block, drawn as a 4-vertex strip; particles outside their lifetime collapse to nothing.
+[[vertex]] WallpaperDistortionDustVertexOut wallpaperDistortionDustParticle(
+    uint vertexID [[vertex_id]],
+    uint instanceID [[instance_id]],
+    constant WallpaperDistortionUniforms &u [[buffer(0)]],
+    device const float4 *particles [[buffer(1)]],
+    constant uint2 &grid [[buffer(2)]],
+    texture2d<float> from [[texture(0)]]
+) {
+    float4 particle = particles[instanceID];
+    float age = u.progress - distortionDustStart(particle, u);
+    WallpaperDistortionDustVertexOut out;
+    out.position = float4(-2.0f, -2.0f, 0.0f, 1.0f);
+    out.offset = float2(0.0f);
+    out.color = float3(0.0f);
+    out.alpha = 0.0f;
+    out.radius = 0.0f;
+    if (age <= 0.0f || age >= distortionDustLife) {
+        return out;
+    }
+    float drift = particle.w;
+    float2 center = particle.xy + float2(1.0f, 0.3f + 0.4f * drift) * age * age * 2.4f
+        + float2(0.0f, sin(age * 6.0f + drift * 6.28f)) * 0.03f * age;
+    float radius = (0.62f - 0.5f * age / distortionDustLife) / float(grid.y);
+    float2 corner = float2(float(vertexID & 1u), float(vertexID >> 1u)) * 2.0f - 1.0f;
+    float2 q = center + corner * radius;
+    out.position = float4(q.x / u.aspect * 2.0f - 1.0f, q.y * 2.0f - 1.0f, 0.0f, 1.0f);
+    out.offset = corner * radius;
+    float2 source = float2(particle.x / u.aspect, 1.0f - particle.y);
+    out.color = from.sample(distortionSampler, source, level(0.0f)).rgb * 1.2f + 0.05f;
+    out.alpha = 1.0f - age / distortionDustLife;
+    out.radius = radius;
+    return out;
+}
+
+[[fragment]] float4 wallpaperDistortionDustSpeck(WallpaperDistortionDustVertexOut in [[stage_in]]) {
+    return float4(in.color, in.alpha * distortionSmooth(in.radius, in.radius * 0.5f, length(in.offset)));
 }

@@ -14,7 +14,7 @@ struct WallpaperDistortionShaderTests {
         (0.81, SIMD2(1.0, 0.0)),
     ]
 
-    private static let pixelFormats: [MTLPixelFormat] = [.bgra8Unorm, .rgba16Float]
+    private static let pixelFormats: [MTLPixelFormat] = [.bgra8Unorm, .rgba8Unorm_srgb, .rgba16Float]
 
     /// Red-green gradient with a 16 px checkerboard.
     private static let fromPixels: [SIMD4<Float>] = pixels { x, y in
@@ -68,8 +68,10 @@ struct WallpaperDistortionShaderTests {
             let halves = pixels.flatMap { [Float16($0.x), Float16($0.y), Float16($0.z), Float16($0.w)] }
             halves.withUnsafeBytes { texture.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: Self.width * 8) }
         } else {
+            let bgra = texture.pixelFormat == .bgra8Unorm
             let bytes = pixels.flatMap { pixel in
-                [pixel.z, pixel.y, pixel.x, pixel.w].map { UInt8((min(max($0, 0), 1) * 255).rounded()) }
+                (bgra ? [pixel.z, pixel.y, pixel.x, pixel.w] : [pixel.x, pixel.y, pixel.z, pixel.w])
+                    .map { UInt8((min(max($0, 0), 1) * 255).rounded()) }
             }
             bytes.withUnsafeBytes { texture.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: Self.width * 4) }
         }
@@ -86,8 +88,10 @@ struct WallpaperDistortionShaderTests {
         }
         var bytes = [UInt8](repeating: 0, count: Self.width * Self.height * 4)
         texture.getBytes(&bytes, bytesPerRow: Self.width * 4, from: region, mipmapLevel: 0)
+        // Compared as stored, so sRGB targets are checked in their encoded values.
+        let (red, blue) = texture.pixelFormat == .bgra8Unorm ? (2, 0) : (0, 2)
         return stride(from: 0, to: bytes.count, by: 4).map {
-            SIMD4(Float(bytes[$0 + 2]), Float(bytes[$0 + 1]), Float(bytes[$0]), Float(bytes[$0 + 3])) / 255
+            SIMD4(Float(bytes[$0 + red]), Float(bytes[$0 + 1]), Float(bytes[$0 + blue]), Float(bytes[$0 + 3])) / 255
         }
     }
 
@@ -153,20 +157,21 @@ struct WallpaperDistortionShaderTests {
         }
     }
 
-    @Test("Crystal reuses one prepared cell map for every frame of a transition")
-    func crystalPreparesOnce() throws {
+    @Test("Effects with per-transition resources reuse one prepare for every frame of a transition",
+          arguments: [WallpaperDistortionEffect.crystal, .bokeh, .dust])
+    func preparesOnce(effect: WallpaperDistortionEffect) throws {
         let renderer = try #require(WallpaperDistortionRenderer.shared, "no Metal device or distortion shaders in the app's library")
         let variant = Self.variants[1]
         for format in Self.pixelFormats {
             let inputs = try makeInputs(renderer, format: format)
             let prepare = {
-                renderer.prepare(.crystal, from: inputs.from, to: inputs.to, seed: variant.seed, origin: variant.origin, pixelFormat: format)
+                renderer.prepare(effect, from: inputs.from, to: inputs.to, seed: variant.seed, origin: variant.origin, pixelFormat: format)
             }
-            let shared = try #require(prepare())
+            let shared = try #require(prepare(), "\(effect.rawValue) format \(format.rawValue) failed to prepare")
             for progress: Float in [0.2, 0.35, 0.5, 0.65, 0.8] {
                 let reused = try render(renderer, shared, progress: progress, queue: inputs.queue)
                 let fresh = try render(renderer, #require(prepare()), progress: progress, queue: inputs.queue)
-                #expect(reused == fresh, "crystal format \(format.rawValue) p=\(progress) differs after re-preparing")
+                #expect(reused == fresh, "\(effect.rawValue) format \(format.rawValue) p=\(progress) differs after re-preparing")
             }
         }
     }
