@@ -20,9 +20,9 @@ struct TileMarkBadge: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(isOn ? tint : DesignTokens.Colors.overlayForeground)
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
