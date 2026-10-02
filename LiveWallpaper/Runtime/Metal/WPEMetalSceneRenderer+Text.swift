@@ -367,6 +367,7 @@ private extension WPERenderLayer {
             localGeometry: adjusted(localGeometry),
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,

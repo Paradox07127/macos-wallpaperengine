@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import CoreGraphics
+import CryptoKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
@@ -33,11 +34,15 @@ struct OracleCorpusCaptureTests {
         var authoredVertexExecution: Bool = true
         var propertyOverridesByScene: [String: [String: WallpaperEngineProjectPropertyValue]] = [:]
         var pixelProbeCoordinates: [[Int]]?
+        var captureStages: Bool = false
+        /// Test input injection, not a product texture-quality setting.
+        var sourceMipLevel: Int?
         var scriptOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
 
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
-            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates
+            case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates, captureStages
+            case sourceMipLevel
         }
 
         init(from decoder: Decoder) throws {
@@ -59,6 +64,12 @@ struct OracleCorpusCaptureTests {
             authoredVertexExecution = try container.decodeIfPresent(Bool.self, forKey: .authoredVertexExecution) ?? true
             propertyOverridesByScene = try container.decodeIfPresent([String: [String: WallpaperEngineProjectPropertyValue]].self, forKey: .propertyOverridesByScene) ?? [:]
             pixelProbeCoordinates = try container.decodeIfPresent([[Int]].self, forKey: .pixelProbeCoordinates)
+            captureStages = try container.decodeIfPresent(Bool.self, forKey: .captureStages) ?? false
+            sourceMipLevel = try container.decodeIfPresent(Int.self, forKey: .sourceMipLevel)
+            if let sourceMipLevel, !(0 ... 14).contains(sourceMipLevel) {
+                throw DecodingError.dataCorruptedError(forKey: .sourceMipLevel, in: container,
+                                                       debugDescription: "sourceMipLevel must be in 0...14")
+            }
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -108,6 +119,8 @@ struct OracleCorpusCaptureTests {
         let size = config.resolution ?? [1920, 1080]
         try #require(size.count == 2 && size.allSatisfy { $0 > 0 && $0 <= 16384 })
         try #require(config.frames > 0 && config.frameStepSeconds.isFinite && config.frameStepSeconds >= 0)
+        try #require(config.sourceMipLevel == nil || config.frames > 1,
+                     "Mip injection occurs after load; capture at least one subsequent frame")
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         defer { defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain) }
         try #require(!config.corpusRoot.isEmpty, "oracle-capture.json corpusRoot must not be empty")
@@ -191,6 +204,7 @@ struct OracleCorpusCaptureTests {
                 capabilityTier: .degraded,
                 propertyOverrides: config.propertyOverridesByScene[id] ?? [:]
             )
+            let renderActor = WPEDisplayRenderActor(backing: .main)
             do {
                 let renderer = try WPEMetalSceneRenderer(
                     descriptor: descriptor,
@@ -209,12 +223,12 @@ struct OracleCorpusCaptureTests {
                 renderer.updateSurfaceGeometry(drawableSize: CGSize(width: size[0], height: size[1]))
                 renderer.oracleSceneScriptBatchOrder = config.scriptOrder
                 renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
+                renderer.executor.oracleSceneStagesEnabled = config.captureStages
                 if config.videoMode == .firstFrameStill {
                     // A zero-ticket local admission uses the existing deterministic
                     // still extraction path; it does not change the process budget.
                     renderer.oracleVideoDecoderAdmission = WPEVideoDecoderAdmission(limit: 0)
                 }
-                let renderActor = WPEDisplayRenderActor(backing: .main)
                 await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
                 let captureManager = MTLCaptureManager.shared()
                 if config.captureGPU {
@@ -232,6 +246,11 @@ struct OracleCorpusCaptureTests {
                 }
                 try await renderActor.load()
                 try Self.awaitSceneScriptBatch(renderer)
+                let mipInjection: [[String: Any]] = if let sourceMipLevel = config.sourceMipLevel {
+                    try await Self.injectSourceMip(level: sourceMipLevel, renderer: renderer)
+                } else {
+                    []
+                }
                 let authoredSummary = Self.authoredJSONSummary(renderer.renderGraph)
                 graphLayers += authoredSummary.layers
                 authoredJSONLayers += authoredSummary.authoredLayers
@@ -281,11 +300,39 @@ struct OracleCorpusCaptureTests {
                     determinism["metalValidationConfiguration"] = Self.metalValidationConfiguration()
                     determinism["videoMode"] = config.videoMode.rawValue
                     determinism["videoPlaybackValidated"] = false
+                    if let sourceMipLevel = config.sourceMipLevel {
+                        determinism["sourceMipInputInjection"] = [
+                            "sourceMipLevel": sourceMipLevel,
+                            "scope": "test-only-closed-static-source-input",
+                            "productQualitySettingValidated": false,
+                            "configSHA256": Self.sha256(data),
+                            "sources": mipInjection,
+                        ]
+                    }
                     capture["determinism"] = determinism
                     if let points = config.pixelProbeCoordinates {
                         let texture = try #require(advancedFrame?.texture ?? renderer.outputTexture)
-                        capture["pixelProbe"] = try WPEOraclePixelProbe.sample(texture: texture, coordinates: points,
-                                                                               commandQueue: renderer.executor.commandQueue)
+                        capture["pixelProbe"] = try WPEOraclePixelProbe.stageEvidence(
+                            stage: "post-color-correction", texture: texture, coordinates: points,
+                            commandQueue: renderer.executor.commandQueue,
+                            frameOrdinal: config.frames - 1, time: renderer.lastRuntimeUniforms?.time ?? 0
+                        )
+                    }
+                    if config.captureStages {
+                        let source = try #require(advancedFrame?.texture ?? renderer.outputTexture)
+                        let terminal = try WPEOraclePixelProbe.terminalLinearTexture(source: source, executor: renderer.executor)
+                        let snapshots = renderer.executor.scenePassDumps.filter { $0.label.hasPrefix("oracle.") }
+                        try #require(snapshots.count == 3, "Missing oracle scene stage snapshots")
+                        let points = config.pixelProbeCoordinates ?? [[source.width / 2, source.height / 2]]
+                        let stages = snapshots.map { (String($0.label.dropFirst("oracle.".count)), $0.texture) }
+                            + [("terminal-linear", terminal)]
+                        capture["stages"] = try stages.map { name, texture in
+                            try WPEOraclePixelProbe.stageEvidence(
+                                stage: name, texture: texture, coordinates: points,
+                                commandQueue: renderer.executor.commandQueue,
+                                frameOrdinal: config.frames - 1, time: renderer.lastRuntimeUniforms?.time ?? 0
+                            )
+                        }
                     }
                     capture["propertyOverrides"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(descriptor.propertyOverrides))
                     capture["propertyOverridesSource"] = config.propertyOverridesByScene[id] == nil ? "project-defaults" : "explicit-capture-config"
@@ -367,6 +414,8 @@ struct OracleCorpusCaptureTests {
                 print("[oracle-capture] [\(id)] load failed: \(String(describing: error).prefix(200))")
                 failed += 1
             }
+            await renderActor.teardownRenderer()
+            _ = await renderActor.shutdown()
         }
         print("=== oracle-capture: captured=\(captured) skipped=\(skipped) failed=\(failed) → \(outDir.path) ===")
         print("=== authored-json: graphLayers=\(graphLayers) authoredLayers=\(authoredJSONLayers) "
@@ -438,6 +487,134 @@ struct OracleCorpusCaptureTests {
         #expect(config.frameStepSeconds == 1.0 / 60.0)
         #expect(config.authoredVertexExecution)
         #expect(config.propertyOverridesByScene.isEmpty)
+        #expect(config.sourceMipLevel == nil)
+    }
+
+    @Test("Oracle source mip injection is explicit and accepts only integer levels 0 through 14")
+    func sourceMipConfigValidation() throws {
+        for value in ["0", "1", "14"] {
+            let config = try JSONDecoder().decode(Config.self, from: Data("{\"corpusRoot\":\"/tmp\",\"sourceMipLevel\":\(value)}".utf8))
+            #expect(config.sourceMipLevel == Int(value))
+        }
+        for value in ["-1", "15", "1.5", "true", "\"1\""] {
+            #expect(throws: (any Error).self) {
+                _ = try JSONDecoder().decode(Config.self, from: Data("{\"corpusRoot\":\"/tmp\",\"sourceMipLevel\":\(value)}".utf8))
+            }
+        }
+    }
+
+    private enum SourceMipInjectionError: Error {
+        case invalidLevel, dynamicSource, missingMip, invalidDimensions
+    }
+
+    private static func sourceMipUpload(_ payload: WPETexTexturePayload, level: Int) throws -> WPETexTexturePayload {
+        guard (0 ... 14).contains(level) else { throw SourceMipInjectionError.invalidLevel }
+        guard !payload.hasAnimationFrames, payload.animationTrack == nil, payload.videoPayload == nil else {
+            throw SourceMipInjectionError.dynamicSource
+        }
+        guard let mip = payload.mipmaps.first(where: { $0.index == level }), !mip.bytes.isEmpty else {
+            throw SourceMipInjectionError.missingMip
+        }
+        let info = payload.info
+        guard info.imageWidth > 0, info.imageHeight > 0,
+              mip.width == max(1, info.width >> level), mip.height == max(1, info.height >> level) else {
+            throw SourceMipInjectionError.invalidDimensions
+        }
+        let uploadInfo = WPETexInfo(
+            containerVersion: info.containerVersion, infoVersion: info.infoVersion,
+            width: mip.width, height: mip.height, textureFormatCode: info.textureFormatCode,
+            format: info.format, mipmapCount: 1, flags: info.flags,
+            imageWidth: max(1, info.imageWidth >> level), imageHeight: max(1, info.imageHeight >> level)
+        )
+        return WPETexTexturePayload(info: uploadInfo,
+                                    mipmaps: [.init(index: 0, width: mip.width, height: mip.height, bytes: mip.bytes)],
+                                    hasAnimationFrames: false)
+    }
+
+    @Test("Oracle mip injection selects actual bytes, floors mapped dimensions and refuses missing/dynamic sources")
+    func sourceMipUploadSelection() throws {
+        let info = WPETexInfo(containerVersion: 5, infoVersion: 1, width: 32, height: 48,
+                              textureFormatCode: WPETexFormat.rgba8888.rawValue, format: .rgba8888,
+                              mipmapCount: 2, flags: 2, imageWidth: 31, imageHeight: 47)
+        let mips = [WPETexTextureMipmap(index: 0, width: 32, height: 48, bytes: Data(repeating: 7, count: 32 * 48 * 4)),
+                    WPETexTextureMipmap(index: 1, width: 16, height: 24, bytes: Data(repeating: 9, count: 16 * 24 * 4))]
+        let payload = WPETexTexturePayload(info: info, mipmaps: mips, hasAnimationFrames: false)
+        let upload = try Self.sourceMipUpload(payload, level: 1)
+        #expect(upload.mipmaps.count == 1)
+        #expect(upload.mipmaps[0].index == 0)
+        #expect(upload.mipmaps[0].bytes == mips[1].bytes)
+        #expect(upload.info.imageWidth == 15 && upload.info.imageHeight == 23)
+        #expect(upload.info.width == 16 && upload.info.height == 24)
+        #expect(upload.info.flags == info.flags)
+        #expect(try Self.sourceMipUpload(payload, level: 0).mipmaps[0].bytes == mips[0].bytes)
+        #expect(throws: SourceMipInjectionError.self) { _ = try Self.sourceMipUpload(payload, level: 2) }
+        let dynamic = WPETexTexturePayload(info: info, mipmaps: mips, hasAnimationFrames: true)
+        #expect(throws: SourceMipInjectionError.self) { _ = try Self.sourceMipUpload(dynamic, level: 1) }
+        let video = WPETexTexturePayload(info: info, mipmaps: mips, hasAnimationFrames: false,
+                                         videoPayload: .init(bytes: Data([0]), fileExtension: "mp4"))
+        #expect(throws: SourceMipInjectionError.self) { _ = try Self.sourceMipUpload(video, level: 1) }
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    @MainActor
+    private static func injectSourceMip(level: Int, renderer: WPEMetalSceneRenderer) async throws -> [[String: Any]] {
+        let pipeline = try #require(renderer.renderPipeline)
+        var evidence: [[String: Any]] = []
+        var injectedPaths = Set<String>()
+        for layer in pipeline.layers {
+            guard let extent = layer.graphLayer.compositeSourceExtent else { continue }
+            let pass = try #require(layer.passes.first)
+            let path = try #require(renderer.externalTexturePath(for: pass.textureBindings[0] ?? pass.pass.source))
+            guard injectedPaths.insert(path).inserted else { continue }
+            try #require(renderer.dynamicTextureSources[path] == nil && renderer.loadedTextures[path] != nil,
+                         "Mip injection requires a resident static texture: \(path)")
+            var probe: SceneResourceResolver.ResolvedTextureFormatProbe?
+            for candidate in renderer.textureCandidates(for: path) {
+                do {
+                    probe = try renderer.resourceResolver.resolveTextureFormatProbe(relativePath: candidate, optional: true)
+                    break
+                } catch SceneResourceResolver.ResolveError.fileMissing {
+                    continue
+                }
+            }
+            let resolved = try #require(probe, "Missing source: \(path)")
+            let span = try #require(resolved.texPayload, "Mip injection requires original TEX bytes: \(path)")
+            let decoder = WPETexDecoder()
+            try #require(try decoder.probeStaticImage(span: span) != nil, "Dynamic/encoded TEX cannot be injected")
+            let payload = try decoder.extractTexturePayload(span: span).get()
+            try #require(extent.textureSize == CGSize(width: payload.info.width, height: payload.info.height)
+                && extent.imageSize == CGSize(width: payload.info.imageWidth, height: payload.info.imageHeight),
+                "Injected asset must match the admitted source extent")
+            let upload = try sourceMipUpload(payload, level: level)
+            let texture = try await renderer.textureLoader.makeTexture(from: upload, label: "oracle-mip-\(level) \(path)")
+            WPEMetalTextureMetadataRegistry.shared.register(
+                texture: texture, imageWidth: upload.info.imageWidth, imageHeight: upload.info.imageHeight,
+                clampUVs: payload.info.clampUVs, noInterpolation: payload.info.noInterpolation,
+                worldWidth: payload.info.width, worldHeight: payload.info.height, sourceMipLevel: level
+            )
+            renderer.recordLoadedStaticTexture(path: path, layerName: layer.graphLayer.objectName,
+                                               candidates: renderer.textureCandidates(for: path), texture: texture)
+            evidence.append([
+                "reference": path, "resolvedPath": resolved.relativePath, "sourceMipLevel": level,
+                "texSHA256": sha256(span.materializedData()), "uploadedBytesSHA256": sha256(upload.mipmaps[0].bytes),
+                "originalPhysicalSize": [payload.info.width, payload.info.height],
+                "originalImageSize": [payload.info.imageWidth, payload.info.imageHeight],
+                "uploadedPhysicalSize": [texture.width, texture.height],
+                "uploadedImageSize": [upload.info.imageWidth, upload.info.imageHeight],
+            ])
+        }
+        try #require(!evidence.isEmpty, "No admitted closed static source for mip injection")
+        renderer.renderPipeline = pipeline.resolvingSourceMipLevels { reference in
+            guard let path = renderer.externalTexturePath(for: reference), injectedPaths.contains(path),
+                  let texture = renderer.loadedTextures[path] else { return nil }
+            return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
+        }
+        renderer.executor.releaseRenderScaleDependentResources()
+        renderer.executor.invalidateUniformPlans()
+        return evidence
     }
 
     @Test("Config decode accepts an explicit multi-frame capture")
@@ -482,6 +659,16 @@ struct OracleCorpusCaptureTests {
         #expect(!disabled.authoredVertexExecution)
         #expect(throws: (any Error).self) {
             _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","authoredVertexExecution":"false"}"#.utf8))
+        }
+    }
+
+    @Test("Stage capture is opt-in and rejects malformed configuration")
+    func configStages() throws {
+        let ordinary = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp"}"#.utf8))
+        let staged = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","captureStages":true}"#.utf8))
+        #expect(!ordinary.captureStages && staged.captureStages)
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(Config.self, from: Data(#"{"corpusRoot":"/tmp","captureStages":"true"}"#.utf8))
         }
     }
 

@@ -448,6 +448,9 @@ struct WPEMetalShaderDispatcher {
             hasMask: false,
             sourceTexture: texture
         )
+        // The closed source-to-terminal contract stores straight RGBA before
+        // the authored effect; other native image paths keep their PMA ABI.
+        uniforms.alphaMaskUV.w = pass.alphaContract?.premultipliedOutput == false ? 1 : 0
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {
             bindObjectQuadVertexUniforms(

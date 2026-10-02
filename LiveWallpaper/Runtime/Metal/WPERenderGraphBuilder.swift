@@ -1714,6 +1714,100 @@ struct WPERenderGraphBuilder: Sendable {
 
 /// Public A stays A: only the closed producer's private A/B roles are permuted.
 extension WPERenderGraphBuilder {
+    /// Windows publishes the terminal effect with the object's raw vertices, not
+    /// a clipped local effect followed by a fixed-geometry copy. Keep the producer
+    /// closed until gates, external readers and multi-effect chains are measured.
+    static func publishingProceduralEffects(
+        in pipeline: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms,
+        staticSourceExtent: (WPETextureReference) -> WPERenderSourceExtent? = { _ in nil }
+    ) -> WPEPreparedRenderPipeline {
+        WPEPreparedRenderPipeline(layers: pipeline.layers.map { layer in
+            let graph = layer.graphLayer
+            guard !camera.sceneHDR, graph.parentObjectID == nil,
+                  graph.localFBOs.isEmpty, graph.groupCompositeSource == nil,
+                  graph.geometry.shapePoints == nil, !graph.geometry.isTimeVarying,
+                  WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: graph, camera: camera),
+                  layer.passes.count == 3 else { return layer }
+            let base = layer.passes[0], effect = layer.passes[1], copy = layer.passes[2]
+            let solidBase = base.shader?.isBuiltin == true && base.pass.shader.lowercased() == "solidlayer"
+            let sourceSize: WPERenderSourceExtent? = if base.pass.shader.lowercased() == "genericimage2", base.comboValues["VERSION"] == nil || base.comboValues["VERSION"] == 2,
+                                                        base.pass.blending.lowercased() == "premultiplied", base.pass.cullMode == "nocull",
+                                                        base.pass.authoredJSON.materialPass?["blending"] == nil || base.pass.authoredJSON.materialPass?["blending"] == .string("normal"),
+                                                        base.textureBindings.keys.allSatisfy({ $0 == 0 }) {
+                staticSourceExtent(base.textureBindings[0] ?? base.pass.source)
+            } else {
+                nil
+            }
+            guard solidBase || sourceSize != nil,
+                  case .material = base.pass.phase,
+                  effect.shader?.isBuiltin == false, case .effect = effect.pass.phase,
+                  case .layerComposite = base.pass.target,
+                  case .layerComposite = effect.pass.target,
+                  case let .string(authoredBlend)? = effect.pass.authoredJSON.materialPass?["blending"],
+                  authoredBlend.lowercased() == "disabled",
+                  effect.pass.authoredJSON.effectPass?["target"] == nil,
+                  effect.pass.authoredJSON.materialPass?["target"] == nil,
+                  copy.pass.target == .scene, copy.pass.source == effect.pass.target.textureReference,
+                  copy.pass.phase == .command(file: WPERenderPassPhase.sceneCopyCommandFile),
+                  copy.pass.shader == WPERenderPassPhase.sceneCopyCommandFile,
+                  copy.pass.authoredJSON == .empty,
+                  copy.pass.blending.lowercased() == "premultiplied",
+                  layer.passes.allSatisfy({
+                      $0.pass.visibilityGate == nil && $0.pass.constantScripts.isEmpty && $0.pass.userTextureBindings.isEmpty
+                          && $0.pass.depthTest == "disabled" && $0.pass.depthWrite == "disabled"
+                  }),
+                  !graph.authoredJSON.sceneObjects.contains(where: containsScript),
+                  graph.authoredJSON.imageDescriptor.map(containsScript) != true else { return layer }
+            // A sampled/public composite must keep its resource and original timing.
+            let privateTargets = [graph.compositeA, graph.compositeB]
+            guard !pipeline.layers.contains(where: { other in
+                other.id != layer.id && other.passes.contains { pass in
+                    privateTargets.contains { name in
+                        pass.textureReferences.contains { canonicalAlias($0, matches: name) }
+                            || canonicalAlias(pass.pass.target.textureReference, matches: name)
+                    }
+                }
+            }), let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false),
+            let link = try? WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource),
+            link.interface.variables.filter({ $0.glslType.hasPrefix("sampler") }).allSatisfy({
+                sourceSize != nil && $0.key.stage == .fragment && $0.key.name == "g_Texture0" && $0.glslType == "sampler2D"
+                    && effect.textureBindings[0] == base.pass.target.textureReference
+                    && effect.textureReferences.allSatisfy { $0 == base.pass.target.textureReference }
+            }),
+            link.interface.variables(stage: .vertex, kind: .attribute).allSatisfy({
+                ($0.key.name == "a_Position" && $0.glslType == "vec3")
+                    || ($0.key.name == "a_TexCoord" && $0.glslType == "vec2")
+            }),
+            link.interface.variables.filter({ $0.kind == .uniform }).allSatisfy({ variable in
+                // Material values are unchanged; viewport/owner-dependent engine
+                // inputs require separate evidence before this lowering can use them.
+                (effect.stageUniformBindings[variable.key].map { $0.materialName != nil }
+                    ?? effect.materialUniformNames.values.contains(variable.key.name))
+                    || (variable.key.stage == .vertex
+                        && ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(variable.key.name)
+                        && (variable.key.name != "g_ModelViewProjectionMatrixInverse"
+                            || (graph.geometry.scale.x != 0 && graph.geometry.scale.y != 0)))
+                    || (sourceSize != nil && ["g_Texture0", "g_Texture0Resolution", "g_TextureReductionScale"].contains(variable.key.name))
+            }) else { return layer }
+            func replacing(_ prepared: WPEPreparedRenderPass, pass: WPERenderPass) -> WPEPreparedRenderPass {
+                WPEPreparedRenderPass(
+                    pass: pass, shader: prepared.shader, textureBindings: prepared.textureBindings,
+                    comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
+                    materialUniformNames: prepared.materialUniformNames, stageUniformBindings: prepared.stageUniformBindings,
+                    layerTintOverride: prepared.layerTintOverride,
+                    alphaContract: sourceSize == nil ? prepared.alphaContract
+                        : WPEShaderAlphaContract(unpremultipliedInputSlots: [], premultipliedOutput: false)
+                )
+            }
+            let published = replacing(effect, pass: effect.pass.replacingTarget(.scene).replacingBlending("disabled"))
+            let source = sourceSize == nil ? base : replacing(base, pass: base.pass.replacingBlending("disabled"))
+            let passes = [source, published]
+            return WPEPreparedRenderLayer(graphLayer: graph.replacingPasses(passes.map(\.pass), compositeSourceExtent: sourceSize),
+                                          puppetModel: layer.puppetModel, passes: passes,
+                                          modelMatrixOverride: layer.modelMatrixOverride)
+        })
+    }
+
     struct CanonicalCompositeRotationResult {
         let pipeline: WPEPreparedRenderPipeline
         /// Candidate object ID -> "rotated" or a conservative rejection reason.
@@ -1770,7 +1864,8 @@ extension WPERenderGraphBuilder {
                     comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
                     materialUniformNames: prepared.materialUniformNames,
                     stageUniformBindings: prepared.stageUniformBindings,
-                    layerTintOverride: prepared.layerTintOverride
+                    layerTintOverride: prepared.layerTintOverride,
+                    alphaContract: prepared.alphaContract
                 )
             }
             decisions[layer.id] = "rotated"
@@ -1972,7 +2067,8 @@ extension WPERenderGraphBuilder {
                     comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
                     materialUniformNames: prepared.materialUniformNames,
                     stageUniformBindings: prepared.stageUniformBindings,
-                    layerTintOverride: prepared.layerTintOverride
+                    layerTintOverride: prepared.layerTintOverride,
+                    alphaContract: prepared.alphaContract
                 )
             }
             decisions[layer.id] = "elided"
@@ -2294,6 +2390,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,
@@ -2305,7 +2402,10 @@ private extension WPERenderLayer {
         )
     }
 
-    func replacingPasses(_ passes: [WPERenderPass]) -> WPERenderLayer {
+}
+
+extension WPERenderLayer {
+    func replacingPasses(_ passes: [WPERenderPass], compositeSourceExtent: WPERenderSourceExtent? = nil) -> WPERenderLayer {
         WPERenderLayer(
             objectID: objectID,
             objectName: objectName,
@@ -2322,6 +2422,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent ?? self.compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,
@@ -2333,6 +2434,9 @@ private extension WPERenderLayer {
         )
     }
 
+}
+
+private extension WPERenderLayer {
     func withGroupRenderTarget(_ target: String, localGeometry: WPERenderLayerGeometry) -> WPERenderLayer {
         WPERenderLayer(
             objectID: objectID,
@@ -2350,6 +2454,7 @@ private extension WPERenderLayer {
             localGeometry: self.localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: target,
@@ -2378,6 +2483,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,
@@ -2424,6 +2530,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,
@@ -2452,6 +2559,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,

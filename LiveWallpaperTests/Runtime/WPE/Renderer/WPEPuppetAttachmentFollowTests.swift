@@ -207,6 +207,18 @@ struct WPEPuppetAttachmentFollowTests {
         #expect(origin == childOrigin)
     }
 
+    @Test("Attachment motion adds pixels without rescaling fractional authored origins",
+          arguments: [-0.5, 0, 0.5, 1, 1.01, 12.375])
+    func attachmentPreservesPixelOrigins(value: Double) throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let parent = layer(id: "rig", origin: SIMD3(value, value, 0), puppetPath: "models/rig.mdl")
+        let child = layer(id: "face", origin: SIMD3(value, value, 3), parentObjectID: "rig", attachment: "head")
+        let moved = executor.layerApplyingAttachmentFollow(child, context: context(parent: parent, boneTranslation: boneDelta))
+        #expect(abs(moved.geometry.origin.x - (value + Double(boneDelta.x))) < 0.001)
+        #expect(abs(moved.geometry.origin.y - (value + Double(boneDelta.y))) < 0.001)
+        #expect(moved.geometry.origin.z == 3)
+    }
+
     @Test("Zero parent scale keeps the GPU's positive sign (uvSignAndPadding: scale < 0 ? -1 : 1)")
     func zeroScaleKeepsPositiveSign() throws {
         let origin = try followedOrigin(parentScale: SIMD3<Double>(0, 1, 1), angleZ: 0, boneTranslation: boneDelta)

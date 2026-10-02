@@ -6,6 +6,22 @@ import simd
 
 struct WPEPreparedRenderPipeline: Equatable, Sendable {
     let layers: [WPEPreparedRenderLayer]
+
+    /// Upload selection happens after shader prewarm starts and before any target allocation.
+    func resolvingSourceMipLevels(_ level: (WPETextureReference) -> Int?) -> Self {
+        Self(layers: layers.map { layer in
+            guard let extent = layer.graphLayer.compositeSourceExtent,
+                  let source = layer.passes.first,
+                  let mip = level(source.textureBindings[0] ?? source.pass.source),
+                  (0 ... 14).contains(mip), mip != extent.sourceMipLevel else { return layer }
+            let resolved = WPERenderSourceExtent(textureSize: extent.textureSize, imageSize: extent.imageSize,
+                                                 sourceMipLevel: mip)
+            return WPEPreparedRenderLayer(
+                graphLayer: layer.graphLayer.replacingPasses(layer.graphLayer.passes, compositeSourceExtent: resolved),
+                puppetModel: layer.puppetModel, passes: layer.passes, modelMatrixOverride: layer.modelMatrixOverride
+            )
+        })
+    }
 }
 
 struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
@@ -59,6 +75,9 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     let hasAnimatedUniformValues: Bool
     /// Set when a script overrode tint of a pass whose g_Color is animated; writing the override into the value would freeze unclaimed components at frame 0.
     let layerTintOverride: WPELayerTintOverride?
+    /// Explicit producer/consumer ABI when graph lowering changes an intermediate
+    /// to straight RGBA. Nil retains the existing FBO/PMA convention.
+    let alphaContract: WPEShaderAlphaContract?
 
     init(
         pass: WPERenderPass,
@@ -69,6 +88,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         materialUniformNames: [String: String] = [:],
         stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:],
         layerTintOverride: WPELayerTintOverride? = nil,
+        alphaContract: WPEShaderAlphaContract? = nil,
         reusingAccess: WPEPreparedPassAccess? = nil
     ) {
         self.pass = pass
@@ -85,6 +105,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         self.stageUniformBindings = stageUniformBindings
         stageUniformBindingKeys = Set(stageUniformBindings.keys)
         self.layerTintOverride = layerTintOverride
+        self.alphaContract = alphaContract
         hasAnimatedUniformValues = uniformValues.values.contains {
             if case .animated = $0 { return true }
             return false
@@ -444,6 +465,12 @@ extension WPEPreparedRenderPipeline {
         frameUniforms.affineModelMatrixPassIDs = Set(layers.filter {
             $0.modelMatrixOverride.flatMap(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor:)) != nil
         }.flatMap { $0.passes.map(\.id) })
+        for layer in layers {
+            guard let extent = layer.graphLayer.compositeSourceExtent else { continue }
+            for pass in layer.passes {
+                frameUniforms.textureReductionScaleByPassID[pass.id] = extent.textureReductionScale
+            }
+        }
         if camera.hasCapturedFlatDrawProjection {
             for layer in layers where WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera) {
                 for pass in layer.passes where pass.shader?.isBuiltin == false {
@@ -535,6 +562,7 @@ extension WPEPreparedRenderPipeline {
                         materialUniformNames: pass.materialUniformNames,
                         stageUniformBindings: WPEUniformStageBinding.resolved(pass.stageUniformBindings, at: runtimeUniforms.time, authoredUpdates: scripted),
                         layerTintOverride: pass.layerTintOverride,
+                        alphaContract: pass.alphaContract,
                         reusingAccess: pass.access
                     )
                 },
@@ -642,6 +670,7 @@ private extension WPEPreparedRenderLayer {
                 materialUniformNames: preparedPass.materialUniformNames,
                 stageUniformBindings: preparedPass.stageUniformBindings,
                 layerTintOverride: preparedPass.layerTintOverride,
+                alphaContract: preparedPass.alphaContract,
                 // The initializer re-derives access when FBO names changed.
                 reusingAccess: preparedPass.access
             )
@@ -668,7 +697,7 @@ private extension WPERenderLayer {
             imagePath: imagePath, materialPath: materialPath, puppetPath: puppetPath,
             parentObjectID: parentObjectID, attachment: attachment, attachmentOriginOffset: attachmentOriginOffset, animationLayers: animationLayers,
             authoredJSON: authoredJSON, geometry: adjusted, localGeometry: localGeometry,
-            compositeA: compositeA, compositeB: compositeB, localFBOs: localFBOs,
+            compositeA: compositeA, compositeB: compositeB, compositeSourceExtent: compositeSourceExtent, localFBOs: localFBOs,
             passes: passes, groupRenderTarget: groupRenderTarget,
             groupLocalGeometry: groupLocalGeometry, groupCompositeSource: groupCompositeSource,
             parallaxDepth: mutation.parallaxDepth ?? parallaxDepth,
@@ -709,6 +738,7 @@ private extension WPERenderLayer {
             localGeometry: dynamicGeometry,
             compositeA: WPERenderTargetNames.CreatedLayerComposite.make(key: state.key).a,
             compositeB: WPERenderTargetNames.CreatedLayerComposite.make(key: state.key).b,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: [],
             passes: passes,
             groupRenderTarget: nil,
@@ -745,6 +775,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,
@@ -780,6 +811,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry?.resolved(at: time),
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,

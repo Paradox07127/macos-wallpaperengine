@@ -327,8 +327,12 @@ actor WPEDisplayRenderActor {
 
     func rebuildOnDemandVideo(key: String, generation: Int) async {
         guard let renderer else { return }
-        defer { renderer.onDemandVideoLoading.remove(key) }
-        guard renderer.loadGeneration == generation else { return }
+        defer {
+            if renderer.loadGeneration == generation {
+                renderer.onDemandVideoTasks.removeValue(forKey: key)
+            }
+        }
+        guard !Task.isCancelled, renderer.loadGeneration == generation else { return }
         let previous = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource
         do {
             // The generation must hold at PUBLICATION time, not just entry: a stale rebuild must not overwrite sources a wake reload just installed.
@@ -338,6 +342,8 @@ actor WPEDisplayRenderActor {
                 publicationAllowed: { renderer.loadGeneration == generation },
                 on: self
             )
+        } catch is CancellationError {
+            return
         } catch {
             Logger.warning("Scene \(renderer.descriptor.workshopID) [OnDemandVideo] rebuild failed for \(key): \(error)", category: .wpeRender)
             // A silent failure here would leave the loop paused forever (released on-demand videos carry no frame demand); kick one frame so reconcileVideoResidency runs again.
@@ -421,11 +427,20 @@ actor WPEDisplayRenderActor {
         return await renderer.hibernate(on: self)
     }
 
-    func teardownRenderer() {
+    func teardownRenderer() async {
         scenePropertyRendererGeneration &+= 1
-        renderer?.cleanup()
+        let retiringRenderer = renderer
         renderer = nil
         spanPresenter = nil
+        if let retiringRenderer {
+            let videoTasks = retiringRenderer.cancelOnDemandVideoLoads()
+            let staticDrain = await retiringRenderer.staticTextureReloadTaskOwner.quiesce()
+            retiringRenderer.cleanup()
+            await staticDrain.wait()
+            for task in videoTasks {
+                await task.value
+            }
+        }
     }
 
     // MARK: - Configuration Forwarders

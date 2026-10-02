@@ -32,10 +32,14 @@ extension WPEMetalSceneRenderer {
     func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async {
         cancelCursorInputRouting()
         didLoad = false
-        let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
         loadGeneration &+= 1
+        let videoTasks = cancelOnDemandVideoLoads()
+        let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
         spanFrames?.reset(generation: loadGeneration)
         await staticTextureReloadDrain.wait()
+        for task in videoTasks {
+            await task.value
+        }
         finishAllPendingLivePosterCaptures(image: nil)
         deferredAudioStartupTask?.cancel()
         deferredAudioStartupTask = nil
@@ -88,7 +92,6 @@ extension WPEMetalSceneRenderer {
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
-        onDemandVideoLoading.removeAll(keepingCapacity: false)
         createdLayerTemplatesByImagePath.removeAll(keepingCapacity: false)
         soundRuntime?.stop()
         soundRuntime = nil
@@ -752,6 +755,16 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Teardown
 
+    @discardableResult
+    func cancelOnDemandVideoLoads() -> [Task<Void, Never>] {
+        let tasks = Array(onDemandVideoTasks.values)
+        onDemandVideoTasks.removeAll()
+        for task in tasks {
+            task.cancel()
+        }
+        return tasks
+    }
+
     func cleanup() {
         cameraMotionPlayback = nil
         cameraPathPlayback = nil
@@ -759,6 +772,7 @@ extension WPEMetalSceneRenderer {
         didLoad = false
         Task { [owner = staticTextureReloadTaskOwner] in _ = await owner.quiesce() }
         loadGeneration &+= 1
+        cancelOnDemandVideoLoads()
         spanFrames?.reset(generation: loadGeneration)
         finishAllPendingLivePosterCaptures(image: nil)
         deferredAudioStartupTask?.cancel()
@@ -805,7 +819,6 @@ extension WPEMetalSceneRenderer {
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
-        onDemandVideoLoading.removeAll(keepingCapacity: false)
         createdLayerTemplatesByImagePath.removeAll(keepingCapacity: false)
         soundRuntime?.stop()
         soundRuntime = nil

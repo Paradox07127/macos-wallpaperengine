@@ -38,7 +38,27 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     static let expectedSchemaVersion = 39
-    static let expectedFingerprint = "1178ff5157fd41576394b786a064fa75327a9bb25cb8b3ea4561b93e39792e21"
+    /// Pipeline extent/publication metadata changed, not GLSL preprocessing or the cached payload ABI.
+    static let expectedFingerprint = "a16a18e4c42c86ac99a551a93d8741d9a9b5ebf0ef49f68e7e0c8364fee1fa09"
+
+    @Test("Publication alpha and authored geometry contracts have distinct translation keys")
+    func publicationContractsDoNotReuseIncompatibleMSL() {
+        var keys = Set<String>()
+        for inputPMA in [false, true] {
+            for outputPMA in [false, true] {
+                for authored in [false, true] {
+                    let request = WPEShaderCompileRequest(
+                        shaderName: "same-source", processedVertexSource: "", processedFragmentSource: "",
+                        sourceHash: "same-source", comboValues: [:], textureBindings: [:],
+                        premultipliedInputSlots: inputPMA ? [0] : [], premultipliedOutput: outputPMA,
+                        vertexExecution: authored ? .authoredObjectQuad : .synthesized
+                    )
+                    #expect(keys.insert(request.translationCacheKey).inserted)
+                }
+            }
+        }
+        #expect(keys.count == 8)
+    }
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

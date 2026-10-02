@@ -9,6 +9,31 @@ import Testing
 struct WPEColorDomainProbeTests {
     private static let encodedPixel: [UInt8] = [192, 128, 64, 128]
 
+    @Test("Closed image producers can store straight RGBA without changing legacy native PMA",
+          arguments: [false, true])
+    func nativeImageOutputAlphaContract(straight: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        descriptor.storageMode = .shared
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let bytes: [UInt8] = [192, 128, 64, 96]
+        bytes.withUnsafeBytes { source.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 4) }
+        let pass = WPERenderPass(id: "image", phase: .material, shader: "genericimage2", source: .asset("source"), target: .scene,
+                                 textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let prepared = WPEPreparedRenderPass(pass: pass, shader: nil, textureBindings: [0: .asset("source")], comboValues: [:], uniformValues: [:],
+                                             alphaContract: straight ? .init(unpremultipliedInputSlots: [], premultipliedOutput: false) : nil)
+        let layer = WPERenderLayer(objectID: "image", objectName: "image", imagePath: "source", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let output = try executor.render(pipeline: .init(layers: [.init(graphLayer: layer, passes: [prepared])]),
+                                         size: CGSize(width: 4, height: 4), textures: ["source": source])
+        let pixel = try rawPixels(output, coordinates: [[2, 2]], executor: executor)[0]
+        for channel in 0 ..< 3 {
+            let expected = Double(bytes[channel]) / 255 * (straight ? 1 : Double(bytes[3]) / 255)
+            #expect(abs(pixel[channel] - expected) <= 1.0 / 255)
+        }
+    }
+
     @Test("UNORM clamps over-range source before blending while float targets retain HDR")
     func attachmentSourceRangeIsAppliedBeforeBlend() throws {
         for blend in ["normal", "additive"] {

@@ -84,7 +84,7 @@ struct WPERendererOwnershipCharacterizationTests {
                     "var loadedTextures: [String: MTLTexture] = [:]",
                     "var dynamicTextureSources: [String: WPEDynamicTextureSource]",
                     "var onDemandVideoKeyByID: [String: Set<String>] = [:]",
-                    "var onDemandVideoLoading: Set<String> = []",
+                    "var onDemandVideoTasks: [String: Task<Void, Never>] = [:]",
                     "var introPhaseSource: WPEVideoTextureSource?",
                     "var staticTextureCacheRecords: [String: StaticTextureCacheRecord]",
                 ]
@@ -295,7 +295,7 @@ struct WPERendererOwnershipCharacterizationTests {
             scriptContainmentSource,
             from: "func clearSceneScriptRuntimeState()"
         )
-        let lazyVideo = try sourceBlock(scriptSource, from: "private func lazyLoadVideo(key:")
+        let lazyVideo = try sourceBlock(scriptSource, from: "func lazyLoadVideo(key:")
         // Both halves: the pixel-keyed releases moved into
         // `releaseRenderScaleDependentResources` (a mid-scene render-scale
         // change needs exactly that subset without dropping shader caches),
@@ -400,7 +400,7 @@ struct WPERendererOwnershipCharacterizationTests {
             lazyVideo,
             owner: "on-demand video task",
             [
-                "onDemandVideoLoading.insert(key)",
+                "onDemandVideoTasks[key] = Task",
                 "let generation = loadGeneration",
                 "Task { [actor] in",
                 "await actor.rebuildOnDemandVideo(key: key, generation: generation)",
@@ -410,8 +410,8 @@ struct WPERendererOwnershipCharacterizationTests {
             rebuildVideo,
             owner: "on-demand video rebuild gating",
             [
-                "defer { renderer.onDemandVideoLoading.remove(key) }",
-                "guard renderer.loadGeneration == generation else { return }",
+                "renderer.onDemandVideoTasks.removeValue(forKey: key)",
+                "guard !Task.isCancelled, renderer.loadGeneration == generation else { return }",
             ]
         )
         #expect(executorSource.contains("previousFrameHistory = PreviousFrameHistory("))
@@ -628,9 +628,11 @@ struct WPERendererOwnershipCharacterizationTests {
         expectOrder(
             [
                 "didLoad = false",
-                "let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()",
                 "loadGeneration &+= 1",
+                "let videoTasks = cancelOnDemandVideoLoads()",
+                "let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()",
                 "await staticTextureReloadDrain.wait()",
+                "await task.value",
                 "releaseDynamicTextureSources()",
             ],
             in: rendererRetire,

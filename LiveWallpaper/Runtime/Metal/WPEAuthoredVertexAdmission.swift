@@ -38,13 +38,19 @@ extension WPEMetalRenderExecutor {
               let size = geometry.size, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
               Float(size.width / 2).isFinite, Float(size.height / 2).isFinite,
               geometry.origin.x.isFinite, geometry.origin.y.isFinite, abs(geometry.origin.z) < 0.000001,
-              // centeredOrigin reads 0...1 as a scene fraction; g_ModelMatrix would take it as pixels.
-              !(0 ... 1).contains(geometry.origin.x), !(0 ... 1).contains(geometry.origin.y),
-              geometry.scale.x.isFinite, geometry.scale.y.isFinite, geometry.scale.x > 0, geometry.scale.y > 0,
+              geometry.scale.x.isFinite, geometry.scale.y.isFinite,
               geometry.angles.z.isFinite, abs(geometry.angles.x) < 0.000001, abs(geometry.angles.y) < 0.000001,
               camera.hasCapturedFlatDrawProjection, !camera.usesPerspectiveProjection,
               !camera.usesObjectPerspective(objectID: layer.id),
               abs(camera.sceneMotion.angles.x) < 0.000001, abs(camera.sceneMotion.angles.y) < 0.000001 else { return false }
+        if geometry.scale.x <= 0 || geometry.scale.y <= 0 {
+            // Signed and singular matrices cover ordinary roots; shader inverse inputs are checked at admission.
+            guard layer.parentObjectID == nil, !usesAuthoredShapeQuadTopology(layer: layer),
+                  Float(geometry.scale.x).isFinite, Float(geometry.scale.y).isFinite,
+                  geometry.scale.x == 0 || Float(geometry.scale.x) != 0,
+                  geometry.scale.y == 0 || Float(geometry.scale.y) != 0,
+                  layer.passes.allSatisfy({ ["nocull", "back"].contains($0.cullMode.lowercased()) }) else { return false }
+        }
         if let points = geometry.shapePoints {
             guard points.count == 4, points.allSatisfy({
                 Float(($0.x - 0.5) * size.width).isFinite && Float((0.5 - $0.y) * size.height).isFinite
@@ -58,11 +64,30 @@ extension WPEMetalRenderExecutor {
         guard let size = layer.geometry.size else { return [] }
         let points = layer.geometry.shapePoints ?? [SIMD2(0, 0), SIMD2(1, 0), SIMD2(1, 1), SIMD2(0, 1)]
         guard points.count == 4 else { return [] }
-        return [0, 2, 1, 0, 3, 2].map { index in
+        // Ordinary image quads and authored four-point shapes use different captured diagonals.
+        let indices = usesAuthoredShapeQuadTopology(layer: layer) ? [0, 2, 1, 0, 3, 2] : [0, 3, 1, 1, 3, 2]
+        return indices.map { index in
             let point = points[index]
+            // Even when the composite strips padding, the captured inset uses
+            // physical source storage. POSITION stays at authored object extent.
+            let inset = layer.compositeSourceExtent.map {
+                SIMD2<Double>(0.15 / $0.textureSize.width, 0.15 / $0.textureSize.height)
+            } ?? .zero
+            let uv = inset + point * (SIMD2<Double>(repeating: 1) - 2 * inset)
             return SIMD4(Float((point.x - 0.5) * size.width), Float((0.5 - point.y) * size.height),
-                         Float(point.x), Float(point.y))
+                         Float(uv.x), Float(uv.y))
         }
+    }
+
+    private static func usesAuthoredShapeQuadTopology(layer: WPERenderLayer) -> Bool {
+        if layer.geometry.shapePoints != nil {
+            return true
+        }
+        // The provenance chain is root-to-leaf; a bare quad need not have active gizmo points.
+        guard let object = layer.authoredJSON.sceneObjects.last,
+              object["image"] == nil, object["model"] == nil,
+              case let .string(shape)? = object["shape"] else { return false }
+        return shape.lowercased() == "quad"
     }
 
     /// The fresh oracle scope is a flat root, identity camera motion and no
@@ -76,6 +101,7 @@ extension WPEMetalRenderExecutor {
         for prepared in pipeline.layers {
             let layer = prepared.graphLayer
             guard layer.parentObjectID == nil, layer.parallaxDepth != .zero,
+                  layer.geometry.scale.x > 0, layer.geometry.scale.y > 0,
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: camera) else { continue }
             let center = Self.centeredOrigin(of: layer.geometry, sceneSize: sceneSize)
             let offset = parallax.pixelOffset(objectCenter: parallaxObjectCenter(for: layer, fallback: center),
@@ -124,6 +150,13 @@ extension WPEMetalRenderExecutor {
         if vertex.execution == .authoredObjectQuad {
             guard case .scene = pass.pass.target,
                   Self.canSupplyAuthoredObjectQuad(layer: layer, camera: frameState.cameraUniforms) else { return .unverifiedObjectQuadSpace }
+            if layer.geometry.scale.x == 0 || layer.geometry.scale.y == 0,
+               let inverse = (vertex.uniformLayout + result.uniformLayout).first(where: {
+                   $0.materialName == nil && ($0.name == "g_NormalModelMatrix"
+                       || ($0.name.hasSuffix("Inverse") && ($0.name.hasPrefix("g_Model") || $0.name.hasPrefix("g_Layer") || $0.name.hasPrefix("g_Effect"))))
+               }) {
+                return .invalidMatrix(inverse.name)
+            }
             if layer.parallaxDepth != .zero, frameState.cameraParallax.amount != 0 {
                 guard frameUniformContext.parallaxDrawMatrixPassIDs.contains(pass.id) else { return .unverifiedObjectQuadSpace }
                 // Only VS draw MVP was measured. Fragment model/layer inputs

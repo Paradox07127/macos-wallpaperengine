@@ -85,6 +85,8 @@ struct WPEPointerEdgeDeliveryTests {
                 break
             }
             try await Task.sleep(nanoseconds: 2_000_000)
+            // A busy VM retains the burst for a later frame; keep the render loop advancing without resending edges.
+            _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
         }
         #expect(renderer.sharedScriptValueForTesting("events") as? String == expected)
     }
@@ -102,7 +104,10 @@ struct WPEPointerEdgeDeliveryTests {
         renderer.setClickCaptureEnabled(true)
         try await renderer.load()
         let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        #expect(view.clickCaptureEnabled)
         try view.mouseDown(with: event(.leftMouseDown))
+        #expect(view.pointerIsInsideView)
+        #expect(renderer.makeFrameInputs().pointerFrame.isDown)
         try view.mouseUp(with: event(.leftMouseUp))
         #expect(renderer.makeFrameInputs().pointerFrame.isDown == false)
         _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())

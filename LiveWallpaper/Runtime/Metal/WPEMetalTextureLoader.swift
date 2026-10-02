@@ -306,7 +306,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             noInterpolation: payload.info.noInterpolation,
             // worldWidth/Height are level-0 physical dims (not authored image dims): the quad path's world fallback historically saw the padded physical size; that exact value keeps scale=1 bit-identical.
             worldWidth: level0.width,
-            worldHeight: level0.height
+            worldHeight: level0.height,
+            sourceMipLevel: mip.index
         )
 
         for (uploadLevel, level) in uploadMipmaps.enumerated() {

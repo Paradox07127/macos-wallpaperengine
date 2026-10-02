@@ -1046,7 +1046,7 @@ struct WPEShakeUniforms {
 
 struct WPEGenericImageUniforms {
     float4 color;        // g_Color (authored channel numbers)
-    float4 alphaMaskUV;  // x=alpha multiplier, y=brightness, z=hasMask, w=mode/padding
+    float4 alphaMaskUV;  // x=alpha multiplier, y=brightness, z=hasMask, w=generic2 straight output / generic4 clip mode
     float4 textureUVScale; // xy=texture0 logical/physical scale, zw=texture1 logical/physical scale
 };
 
@@ -1064,6 +1064,9 @@ static inline half4 wpe_genericimage2_shade(
     float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
     float alpha = sampled.a * uniforms.color.a * uniforms.alphaMaskUV.x;
+    if (uniforms.alphaMaskUV.w > 0.5) {
+        return half4(wpe_attachment_output(float4(rgb, alpha)));
+    }
     // Premultiplied-alpha render target: the layer-FBO / effect-chain passes
     // blend with srcRGB=.one (WPEMetalPipelineCache "premultiplied" mode), so
     // the shader stores rgb*alpha. Opaque texels are unchanged (rgb*1=rgb);

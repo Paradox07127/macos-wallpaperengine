@@ -25,6 +25,30 @@ public struct WPERenderLayerAuthoredJSON: Equatable, Sendable {
     public static let empty = WPERenderLayerAuthoredJSON()
 }
 
+/// A source asset has independent physical storage and mapped image dimensions.
+/// Composite allocation uses the image; terminal UV inset uses source storage.
+public struct WPERenderSourceExtent: Equatable, Sendable {
+    public let textureSize: CGSize
+    public let imageSize: CGSize
+    public let sourceMipLevel: Int
+
+    public init(textureSize: CGSize, imageSize: CGSize, sourceMipLevel: Int = 0) {
+        precondition((0 ... 14).contains(sourceMipLevel))
+        self.textureSize = textureSize
+        self.imageSize = imageSize
+        self.sourceMipLevel = sourceMipLevel
+    }
+
+    public var textureReductionScale: Double {
+        Double(1 << sourceMipLevel)
+    }
+
+    public var compositeSize: CGSize {
+        CGSize(width: max(4, floor(imageSize.width / textureReductionScale)),
+               height: max(4, floor(imageSize.height / textureReductionScale)))
+    }
+}
+
 public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public var id: String { objectID }
 
@@ -49,6 +73,9 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public let localGeometry: WPERenderLayerGeometry?
     public let compositeA: String
     public let compositeB: String
+    /// Original source extents and selected upload mip for a closed static producer.
+    /// Nil retains object/scene sizing for other graph contracts.
+    public let compositeSourceExtent: WPERenderSourceExtent?
     public let localFBOs: [WPERenderFBO]
     public let passes: [WPERenderPass]
     /// Offscreen group target for this layer's final scene pass. Executor uses `groupLocalGeometry` so children sit in the composelayer-local target, not the global scene.
@@ -82,6 +109,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         localGeometry: WPERenderLayerGeometry? = nil,
         compositeA: String,
         compositeB: String,
+        compositeSourceExtent: WPERenderSourceExtent? = nil,
         localFBOs: [WPERenderFBO],
         passes: [WPERenderPass],
         groupRenderTarget: String? = nil,
@@ -106,6 +134,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.localGeometry = localGeometry
         self.compositeA = compositeA
         self.compositeB = compositeB
+        self.compositeSourceExtent = compositeSourceExtent
         self.localFBOs = localFBOs
         self.passes = passes
         self.groupRenderTarget = groupRenderTarget

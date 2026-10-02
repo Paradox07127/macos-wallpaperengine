@@ -101,6 +101,7 @@ extension WPEPreparedRenderPipeline {
                     materialUniformNames: pass.materialUniformNames,
                     stageUniformBindings: pass.stageUniformBindings,
                     layerTintOverride: claim,
+                    alphaContract: pass.alphaContract,
                     reusingAccess: pass.access
                 )
                 continue
@@ -132,6 +133,7 @@ extension WPEPreparedRenderPipeline {
                 materialUniformNames: pass.materialUniformNames,
                 stageUniformBindings: WPEUniformStageBinding.updating(pass.stageUniformBindings, shaderName: "g_Color", value: values["g_Color"]),
                 layerTintOverride: pass.layerTintOverride,
+                alphaContract: pass.alphaContract,
                 reusingAccess: pass.access
             )
         }
@@ -164,6 +166,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,

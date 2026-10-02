@@ -225,8 +225,7 @@ struct WPEMetalRenderExecutorTests {
 
         let followed = executor.replacingGeometryOrigin(
             of: layer,
-            bySceneOffset: SIMD2<Float>(12, -8),
-            sceneSize: CGSize(width: 3840, height: 2160)
+            bySceneOffset: SIMD2<Float>(12, -8)
         )
 
         #expect(followed.geometry.origin == SIMD3<Double>(1012, 1292, 0))
@@ -2908,8 +2907,18 @@ struct WPEMetalRenderExecutorTests {
         #expect(bounds.maxX == 10)
     }
 
-    @Test("Object quad geometry treats 0...1 origins as normalized scene coordinates")
-    func objectQuadGeometryNormalizesUnitOrigins() throws {
+    @Test("Synthetic fullscreen identity keeps a scene-centered object quad")
+    func syntheticIdentityObjectQuadStaysFullscreen() throws {
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        let input = try makeRGBAInputTexture(device: executor.device, bytes: Data(repeating: 255, count: 16))
+        let layer = graphLayer(pass: solidPass(), geometry: .identity)
+        let uniforms = executor.objectQuadUniforms(for: layer, sceneSize: CGSize(width: 256, height: 128), sourceTexture: input)
+        #expect(uniforms.centerAndSize == SIMD4(0, 0, 256, 128))
+        #expect(uniforms.uvSignAndPadding == SIMD4(1, 1, 0, 0))
+    }
+
+    @Test("A synthetic centered object quad specifies its origin in pixels")
+    func objectQuadGeometryUsesPixelCenter() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let input = try makeRGBAInputTexture(
@@ -2934,7 +2943,7 @@ struct WPEMetalRenderExecutorTests {
             depthWrite: "disabled"
         )
         let geometry = WPERenderLayerGeometry(
-            origin: SIMD3<Double>(0.5, 0.5, 0),
+            origin: SIMD3<Double>(8, 8, 0),
             scale: SIMD3<Double>(1, 1, 1),
             angles: SIMD3<Double>(0, 0, 0),
             alignment: .center,

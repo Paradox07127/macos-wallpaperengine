@@ -383,11 +383,13 @@ final class WPEMetalRenderTargetPool {
             )
         }
         if case .layerComposite = target {
-            let localSize = canvas(Self.layerCompositeSize(
+            let sourceSize = Self.layerCompositeSize(
                 for: layer,
                 sceneSize: sceneSize,
                 memo: sceneCaptureGeometryMemo
-            ))
+            )
+            // A resolved source extent is already in uploaded texels, not scene pixels.
+            let localSize = layer.compositeSourceExtent == nil ? canvas(sourceSize) : sourceSize
             if let fitted = wpeFitRenderTargetExtent(localSize, fit: fit) {
                 return fitted
             }
@@ -546,6 +548,9 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize,
         memo: WPESceneCaptureOutputGeometryMemo? = nil
     ) -> CGSize {
+        if let extent = layer.compositeSourceExtent {
+            return extent.compositeSize
+        }
         // Fullscreen compose/project layer-composite targets MUST be scene-sized. Local composelayer boxes use their authored local texture size.
         if layer.isUtilityModelLayer,
            layer.groupCompositeSource == nil,

@@ -661,6 +661,7 @@ final class WPEMetalRenderExecutor {
 
     #if DEBUG
     private(set) var scenePassDumps: [(label: String, texture: MTLTexture)] = []
+    var oracleSceneStagesEnabled = false
     private var dumpLayerPassesID: String?
     private let dumpScenePassesDefaultID: String? =
         UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
@@ -1209,15 +1210,24 @@ final class WPEMetalRenderExecutor {
 
         let nextPrivateHistory = try capturePrivateHistory(frameState: frameState, commandBuffer: commandBuffer)
 
+        #if DEBUG
+        captureScenePassIfDumping(oracleSceneStagesEnabled, label: "oracle.pre-bloom", output: output, commandBuffer: commandBuffer)
+        #endif
         try encodeSceneBloomIfNeeded(
             cameraUniforms: cameraUniforms,
             output: output,
             commandBuffer: commandBuffer
         )
+        #if DEBUG
+        captureScenePassIfDumping(oracleSceneStagesEnabled, label: "oracle.post-bloom", output: output, commandBuffer: commandBuffer)
+        #endif
         // Last, so it grades the finished frame — bloom included — the way Wallpaper Engine's own correction sits after the scene, not inside it.
         let graded = try encodeColorCorrectionIfNeeded(
             colorCorrection, output: output, commandBuffer: commandBuffer
         )
+        #if DEBUG
+        captureScenePassIfDumping(oracleSceneStagesEnabled, label: "oracle.post-color-correction", output: graded, commandBuffer: commandBuffer)
+        #endif
 
         let presentationAccepted: Bool
         if asyncSubmission, let deferredPresent {
@@ -2427,7 +2437,7 @@ final class WPEMetalRenderExecutor {
         return centers
     }
 
-    /// The object-quad anchor: authored origin measured from the scene centre, accepting the normalized 0...1 origin form the parser can emit.
+    /// Authored origins are pixels, including fractional values between zero and one.
     static func centeredOrigin(
         of geometry: WPERenderLayerGeometry,
         sceneSize: CGSize
@@ -2436,9 +2446,7 @@ final class WPEMetalRenderExecutor {
         let sceneHeight = Float(max(sceneSize.height, 1))
         let originX = Float(geometry.origin.x)
         let originY = Float(geometry.origin.y)
-        let originXPixels = (originX >= 0 && originX <= 1) ? originX * sceneWidth : originX
-        let originYPixels = (originY >= 0 && originY <= 1) ? originY * sceneHeight : originY
-        return SIMD2<Float>(originXPixels - sceneWidth * 0.5, originYPixels - sceneHeight * 0.5)
+        return SIMD2<Float>(originX - sceneWidth * 0.5, originY - sceneHeight * 0.5)
     }
 
     /// `objectCenter` for `pixelOffset`: the parallax root's centre for a parented
@@ -2749,6 +2757,7 @@ final class WPEMetalRenderExecutor {
             destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
         )
         blit.endEncoding()
+        snapshot.label = label
         scenePassDumps.append((label: label, texture: snapshot))
     }
 
@@ -2845,7 +2854,15 @@ final class WPEMetalRenderExecutor {
         // material's explicit g_Brightness remains a separate shader input.
         let sceneHDR = (frameUniformContext.frameValue(named: "g_SceneHDREnabled")?.numberValue ?? 0) > 0.5
         let brightness = gBrightness * Float(sceneHDR ? layer.geometry.brightness : 1)
-        let sourceUVScale = Self.logicalUVScale(for: sourceTexture)
+        let sourceUVScale: SIMD2<Float>
+        if let extent = layer.compositeSourceExtent, case .material = pass.pass.phase {
+            // WPE retains the level-0 crop ratio even when an odd logical extent
+            // rounds down at the selected mip (31/32, not 15/16).
+            sourceUVScale = SIMD2(Float(extent.imageSize.width / extent.textureSize.width),
+                                 Float(extent.imageSize.height / extent.textureSize.height))
+        } else {
+            sourceUVScale = Self.logicalUVScale(for: sourceTexture)
+        }
         let maskUVScale = Self.logicalUVScale(for: maskTexture)
         if WPESceneDebugArtifacts.shared.isEnabled {
             WPESceneDebugArtifacts.shared.appendLog(
@@ -3407,8 +3424,8 @@ final class WPEMetalRenderExecutor {
         recordFailure: Bool
     ) throws -> WPEShaderCompileRequest? {
         guard let program = pass.shader, !program.isBuiltin else { return nil }
-        let premultipliedInputSlots = premultipliedInputSlots(for: pass)
-        let premultipliedOutput = usesPremultipliedOutput(blendMode: pass.pass.blending)
+        let premultipliedInputSlots = pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass)
+        let premultipliedOutput = pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending)
         let materialTextureBindings = Dictionary(
             uniqueKeysWithValues: pass.textureBindings.compactMap { (slot, ref) -> (Int, String)? in
                 switch ref {

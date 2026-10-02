@@ -20,6 +20,9 @@ struct WPEFrameUniformContext: Sendable {
     /// Root static parallax whose draw VP includes the measured pixel offset.
     var parallaxDrawMatrixPassIDs: Set<String> = []
 
+    /// Resolved from the same uploaded mip as the closed producer's composite.
+    var textureReductionScaleByPassID: [String: Double] = [:]
+
     static let empty = WPEFrameUniformContext(
         runtimeUniformValues: [:],
         cameraUniformValues: [:],
@@ -33,6 +36,9 @@ struct WPEFrameUniformContext: Sendable {
 
     /// All three key sets are disjoint.
     func value(named name: String, passID: String) -> WPESceneShaderConstantValue? {
+        if name == "g_TextureReductionScale", let reduction = textureReductionScaleByPassID[passID] {
+            return .number(reduction)
+        }
         if let value = objectUniformValuesByPassID[passID]?[name] { return value }
         if WPEMetalObjectUniforms.cameraComposedUniformNames.contains(name),
            let model = objectUniformValuesByPassID[passID]?["g_ModelMatrix"],
@@ -81,6 +87,7 @@ struct WPEFrameUniformContext: Sendable {
                 angles: SIMD3<Double>(0, 0, 0)
             ).keys)
             + WPEMetalObjectUniforms.cameraComposedUniformNames
+            + ["g_TextureReductionScale"]
     }()
 }
 #endif

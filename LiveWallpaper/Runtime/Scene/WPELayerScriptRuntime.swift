@@ -76,6 +76,7 @@ struct WPELayerScriptOutput: Sendable, Equatable {
     var own: WPELayerScriptState
     var others: [String: WPELayerScriptState]
     var created: [WPECreatedLayerScriptState] = []
+    var destroyedCreatedKeys: Set<String> = []
     var presentation: [String: WPELayerScriptPresentationMutation] = [:]
     var ownTransform: WPELayerScriptTransformMutation = .init()
     var otherTransforms: [String: WPELayerScriptTransformMutation] = [:]
@@ -651,6 +652,9 @@ final class WPELayerScriptInstance {
         newer: WPELayerScriptOutput
     ) -> WPELayerScriptOutput {
         var merged = newer
+        merged.destroyedCreatedKeys.formUnion(pending.destroyedCreatedKeys)
+        let destroyedKeys = merged.destroyedCreatedKeys
+        merged.created.removeAll { destroyedKeys.contains($0.key) }
         var transform = pending.ownTransform
         transform.merge(newer.ownTransform)
         merged.ownTransform = transform
@@ -727,7 +731,9 @@ final class WPELayerScriptInstance {
         private var ownAnglesValue: JSValue?
         private var assignedOtherTransforms: [String: WPELayerScriptTransformMutation] = [:]
         private var otherTransformValues: [String: [OwnTransformField: JSValue]] = [:]
-        private var createdLayers: [(key: String, handle: JSValue)] = []
+        private var createdLayers: [(key: String, handle: JSValue, configuration: WPESceneJSONValue)] = []
+        private var pendingCreatedDestruction: Set<String> = []
+        private var destroyedCreatedKeys: Set<String> = []
         private var createdLayerCounter = 0
         private let createdLayerBridge: WPECreatedLayerBridgeConfiguration?
         private var currentLayerOrder: [String]
@@ -797,8 +803,12 @@ final class WPELayerScriptInstance {
             particleBridge = WPESceneScriptParticleBridge(shared: shared)
             cameraBridge = WPESceneScriptCameraBridge(shared: shared)
             self.createdLayerBridge = createdLayerBridge
-            currentLayerOrder = createdLayerBridge?.orderedLayerNames
-                ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
+            if let shared, !shared.layers.isEmpty, createdLayerBridge?.allowsSorting != true {
+                currentLayerOrder = shared.layers.sorted { $0.index < $1.index }.map { shared.layerHandleKey($0) }
+            } else {
+                currentLayerOrder = createdLayerBridge?.orderedLayerNames
+                    ?? (shared?.layers.sorted { $0.index < $1.index }.map(\.name) ?? [])
+            }
             self.nowProviderMillis = nowProviderMillis
             self.shared = shared
             self.canvasSize = SIMD2<Double>(max(canvasSize.x, 1), max(canvasSize.y, 1))
@@ -1204,6 +1214,9 @@ final class WPELayerScriptInstance {
             runtimeSeconds: Double?,
             pointerFrame: WPEPointerFrame?
         ) -> WPELayerScriptOutput {
+            // WPE retains a destroyed handle through the first update after init;
+            // retire it after that frame's callback, not before an unrelated event.
+            defer { finishCreatedLayerDestruction() }
             particleBridge.beginEvaluation()
             cameraBridge.beginEvaluation()
             defer {
@@ -1535,6 +1548,9 @@ final class WPELayerScriptInstance {
                 return handle(forLayerKey: key, in: context)
             }
             scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
+            wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
+                self?.initialLayerConfiguration(value)
+            }
             let createLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] spec in
                 guard let self, let context else { return nil }
                 let requestedImage: String?
@@ -1561,15 +1577,22 @@ final class WPELayerScriptInstance {
                 } else {
                     resolvedImage = requestedImage
                 }
+                guard let configuration = wpeCreatedInitialLayerConfiguration(spec, in: context) else {
+                    reportUnsupportedLayerOperation("createLayer requires a serializable object or image path")
+                    return nil
+                }
                 guard self.instanceLimitToken?.admitCreatedLayer() ?? true else {
                     return self.neutralLayerStub(in: context)
                 }
                 let key = "\(Self.createdKeyPrefix)\(self.createdLayerCounter)"
                 let handle = self.makeLayerHandle(key: key, in: context)
                 self.createdLayerCounter += 1
-                self.createdLayers.append((key, handle))
+                createdLayers.append((key, handle, configuration))
                 currentLayerOrder.append(key)
                 if spec.isObject {
+                    if let name = spec.objectForKeyedSubscript("name"), name.isString {
+                        handle.setObject(name, forKeyedSubscript: "name" as NSString)
+                    }
                     for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth"] {
                         if let value = spec.objectForKeyedSubscript(property), !value.isUndefined {
                             handle.setObject(value, forKeyedSubscript: property as NSString)
@@ -1582,6 +1605,22 @@ final class WPELayerScriptInstance {
                 return handle
             }
             scene.setObject(createLayer, forKeyedSubscript: "createLayer" as NSString)
+            let destroyLayer: @convention(block) (JSValue) -> Bool = { [weak self] value in
+                guard let self, let key = layerKey(value),
+                      createdLayers.contains(where: { $0.key == key }) else { return false }
+                guard createdLayerBridge != nil else {
+                    reportUnsupportedLayerOperation("destroyLayer supports prepared created image layers only")
+                    return false
+                }
+                if value.isObject, !createdLayers.contains(where: { value.isEqual(to: $0.handle) }) {
+                    return false
+                }
+                pendingCreatedDestruction.insert(key)
+                destroyedCreatedKeys.insert(key)
+                currentLayerOrder.removeAll { $0 == key }
+                return true
+            }
+            scene.setObject(destroyLayer, forKeyedSubscript: "destroyLayer" as NSString)
             let getLayerIndex: @convention(block) (JSValue) -> Int = { [weak self] value in
                 guard let self, let key = layerKey(value) else { return -1 }
                 return currentLayerOrder.firstIndex(of: key) ?? -1
@@ -1623,21 +1662,75 @@ final class WPELayerScriptInstance {
 
         private func layerKey(_ value: JSValue) -> String? {
             if value.isString {
-                guard let key = value.toString(), !key.isEmpty else { return nil }
-                return key
+                guard let key = value.toString() else { return nil }
+                if let created = createdLayers.first(where: {
+                    !destroyedCreatedKeys.contains($0.key) && ($0.key == key || $0.configuration["name"] == .string(key))
+                }) {
+                    return created.key
+                }
+                if let shared, let info = shared.layers.first(where: { $0.name == key }) {
+                    return shared.layerHandleKey(info)
+                }
+                return key.isEmpty ? nil : key
             }
             if value.isNumber {
-                let n = value.toDouble()
-                guard n.isFinite, n.rounded(.towardZero) == n, n >= 0,
-                      n < Double(currentLayerOrder.count) else { return nil }
-                return currentLayerOrder[Int(n)]
+                let index = Int(value.toInt32())
+                return currentLayerOrder.indices.contains(index) ? currentLayerOrder[index] : nil
             }
             guard value.isObject else { return nil }
+            if let thisLayer, value.isEqual(to: thisLayer), let info = layerInfo(forKey: Self.ownKey) {
+                return shared?.layerHandleKey(info)
+            }
+            if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
+                return created.key
+            }
+            if let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) {
+                return entry.key
+            }
             return value.objectForKeyedSubscript("name")?.toString()
         }
 
+        private func initialLayerConfiguration(_ value: JSValue) -> WPESceneJSONValue? {
+            if value.isObject {
+                if let thisLayer, value.isEqual(to: thisLayer) {
+                    if let ownObjectID {
+                        return shared?.layers.first(where: { $0.id == ownObjectID })?.initialConfiguration
+                    }
+                    return shared?.layers.first(where: { $0.name == ownLayerName })?.initialConfiguration
+                }
+                if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
+                    return created.configuration
+                }
+                guard let entry = namedLayers.first(where: { value.isEqual(to: $0.value) }) else { return nil }
+                return layerInfo(forKey: entry.key)?.initialConfiguration
+            }
+            if value.isNumber {
+                let index = Int(value.toInt32())
+                guard currentLayerOrder.indices.contains(index) else { return nil }
+                let key = currentLayerOrder[index]
+                if let created = createdLayers.first(where: { $0.key == key }) {
+                    return created.configuration
+                }
+                return layerInfo(forKey: key)?.initialConfiguration
+            }
+            guard value.isString, let name = value.toString() else { return nil }
+            if let created = createdLayers.first(where: {
+                !destroyedCreatedKeys.contains($0.key) && ($0.key == name || $0.configuration["name"] == .string(name))
+            }) {
+                return created.configuration
+            }
+            return shared?.layers.first(where: { $0.name == name })?.initialConfiguration
+        }
+
+        private func finishCreatedLayerDestruction() {
+            guard !pendingCreatedDestruction.isEmpty else { return }
+            createdLayers.removeAll { pendingCreatedDestruction.contains($0.key) }
+            pendingCreatedDestruction.removeAll(keepingCapacity: true)
+        }
+
         private func handle(forLayerKey key: String, in context: JSContext) -> JSValue {
-            if key == ownLayerName, let thisLayer {
+            let ownKey = layerInfo(forKey: Self.ownKey).flatMap { shared?.layerHandleKey($0) } ?? ownLayerName
+            if key == ownKey, let thisLayer {
                 return thisLayer
             }
             if let created = createdLayers.first(where: { $0.key == key }) {
@@ -1652,28 +1745,36 @@ final class WPELayerScriptInstance {
             Logger.warning("[SceneScript] unsupported dynamic layer operation: \(message)", category: .wpeRender)
         }
 
-        /// One handle per layer name for the scene's lifetime, so enumerateLayers and repeated getLayer calls hand back the same object.
+        /// Ambiguous/empty names use the existing object-ID key, not a second layer registry.
         private func layerHandle(named name: String, in context: JSContext) -> JSValue {
-            if let existing = namedLayers[name] { return existing }
-            let handle = makeLayerHandle(key: name, in: context)
-            namedLayers[name] = handle
+            let key = shared?.layerInfo(forHandleKey: name).flatMap { shared?.layerHandleKey($0) } ?? name
+            if let existing = namedLayers[key] {
+                return existing
+            }
+            let handle = makeLayerHandle(key: key, in: context)
+            namedLayers[key] = handle
             return handle
+        }
+
+        private func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
+            if key == Self.ownKey {
+                return ownObjectID.flatMap { id in shared?.layers.first(where: { $0.id == id }) }
+                    ?? shared?.layers.first(where: { $0.name == ownLayerName })
+            }
+            return shared?.layerInfo(forHandleKey: key)
         }
 
         private func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
             let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             // `key` is "" for the script's own layer, so anything addressed by
             // SCENE name (the layer table, sound commands) needs the resolved one.
-            let layerName = key == Self.ownKey ? (ownLayerName ?? key) : key
+            let info = layerInfo(forKey: key)
+            let layerName = info?.name ?? (key == Self.ownKey ? (ownLayerName ?? key) : key)
             // visible/alpha are accessors so explicit assign is distinguishable from a mere read.
             installAssignmentAccessors(on: handle, key: key, layerName: layerName, in: context)
             handle.setObject(layerName, forKeyedSubscript: "name" as NSString)
             // Authored layer size. Zero when the name isn't a scene layer — getLayer mints handles for arbitrary strings.
             let size = JSValue(newObjectIn: context)!
-            let info = key == Self.ownKey
-                ? (ownObjectID.flatMap { id in shared?.layers.first { $0.id == id } }
-                    ?? shared?.layers.first { $0.name == layerName })
-                : shared?.layers.first { $0.name == layerName }
             size.setObject(info?.size.x ?? 0, forKeyedSubscript: "x" as NSString)
             size.setObject(info?.size.y ?? 0, forKeyedSubscript: "y" as NSString)
             handle.setObject(size, forKeyedSubscript: "size" as NSString)
@@ -1772,7 +1873,7 @@ final class WPELayerScriptInstance {
             defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
             let getAlignment: @convention(block) () -> String = { [weak self] in
                 self?.presentationMutations[key]?.alignment
-                    ?? self?.shared?.layers.first(where: { $0.name == layerName })?.alignment ?? "center"
+                    ?? self?.layerInfo(forKey: key)?.alignment ?? "center"
             }
             let setAlignment: @convention(block) (JSValue) -> Void = { [weak self] value in
                 guard value.isString, let text = value.toString(),
@@ -1782,7 +1883,7 @@ final class WPELayerScriptInstance {
             let getDepth: @convention(block) () -> JSValue? = { [weak self, weak context] in
                 guard let context else { return nil }
                 let depth = self?.presentationMutations[key]?.parallaxDepth
-                    ?? self?.shared?.layers.first(where: { $0.name == layerName })?.parallaxDepth ?? .zero
+                    ?? self?.layerInfo(forKey: key)?.parallaxDepth ?? .zero
                 return context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [depth.x, depth.y])
             }
             let setDepth: @convention(block) (JSValue) -> Void = { [weak self] value in
@@ -2036,7 +2137,8 @@ final class WPELayerScriptInstance {
                     alphaAssigned: alpha != nil
                 )
             }
-            let created = createdLayers.map { createdStateFor(handle: $0.handle, key: $0.key) }
+            let created = createdLayers.filter { !destroyedCreatedKeys.contains($0.key) }
+                .map { createdStateFor(handle: $0.handle, key: $0.key) }
             var presentation = presentationMutations.filter { !$0.key.hasPrefix(Self.createdKeyPrefix) }
             if didSortLayers {
                 for (index, name) in currentLayerOrder.enumerated() where !name.hasPrefix(Self.createdKeyPrefix) {
@@ -2049,6 +2151,7 @@ final class WPELayerScriptInstance {
                 own: own,
                 others: others,
                 created: created,
+                destroyedCreatedKeys: destroyedCreatedKeys,
                 presentation: presentation,
                 ownTransform: assignedOwnTransform,
                 otherTransforms: assignedOtherTransforms

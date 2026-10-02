@@ -380,6 +380,25 @@ struct WPECameraParallaxTests {
 
     // MARK: - Static-term anchor (one offset per parallax root)
 
+    @Test("Rendered and host-only parallax roots use the same pixel origin",
+          arguments: [-0.5, 0, 0.5, 1, 1.01, 12.375])
+    func parallaxRootPixelOriginDoesNotDependOnDrawability(value: Double) throws {
+        let origin = SIMD2<Double>(value, value)
+        let scene = CGSize(width: 256, height: 128)
+        let child = layer("child", depth: .zero, parent: "root", origin: SIMD2(64, 32))
+        let rendered = WPEMetalRenderExecutor.parallaxRootCenters(
+            for: [layer("root", depth: SIMD2(repeating: 1), origin: origin), child], sceneSize: scene
+        )
+        let hostOnly = WPEMetalRenderExecutor.parallaxRootCenters(
+            for: [child], sceneSize: scene, objectParentByID: ["child": "root"],
+            hostDepthByObjectID: ["root": SIMD2(repeating: 1)], hostOriginByObjectID: ["root": origin]
+        )
+        let center = try #require(rendered["child"])
+        #expect(hostOnly["child"] == center)
+        #expect(abs(Double(center.x) - (value - 128)) < 0.00001)
+        #expect(abs(Double(center.y) - (value - 64)) < 0.00001)
+    }
+
     /// Cursor dead centre, so only the static `(nodePos - camPos)` term is live.
     private static let rigScene = CGSize(width: 3840, height: 2160)
     private static let rigDepth = SIMD2<Double>(0.41, -0.36)

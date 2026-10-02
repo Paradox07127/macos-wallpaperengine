@@ -553,6 +553,60 @@ struct WPEMetalTextureLoaderTests {
         #expect(singleLevelTexture.mipmapLevelCount == 1)
     }
 
+    @Test("Uploaded source mip metadata follows reduction without changing logical or world dimensions",
+          arguments: [0, 128, 64], [64, 128])
+    func uploadedSourceMipMetadata(maxEdge: Int, height: Int) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let mipmaps = (0 ... 2).map { level in
+            let width = 256 >> level, levelHeight = height >> level
+            return WPETexTextureMipmap(index: level, width: width, height: levelHeight,
+                                       bytes: Data(repeating: UInt8(level), count: width * levelHeight * 4))
+        }
+        for flags in [UInt32(0), UInt32(1)] {
+            let payload = WPETexTexturePayload(
+                info: WPETexInfo(containerVersion: 5, infoVersion: 1, width: 256, height: height,
+                                 textureFormatCode: WPETexFormat.rgba8888.rawValue, format: .rgba8888,
+                                 mipmapCount: mipmaps.count, flags: flags, imageWidth: 240, imageHeight: height - 8),
+                mipmaps: mipmaps, hasAnimationFrames: false
+            )
+            let texture = try await WPEMetalTextureLoader(device: device).makeTexture(
+                from: payload, label: "test-source-mip", maxSourceEdge: maxEdge == 0 ? nil : maxEdge
+            )
+            defer { WPEMetalTextureMetadataRegistry.shared.unregister(texture: texture) }
+            let expectedLevel = maxEdge == 0 || height <= 64 || flags == 1 ? 0 : (maxEdge == 128 ? 1 : 2)
+            let resolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+            #expect(resolution.sourceMipLevel == mipmaps[expectedLevel].index)
+            #expect(texture.width == (256 >> expectedLevel))
+            #expect(texture.height == (height >> expectedLevel))
+            #expect(resolution.imageWidth == (240 >> expectedLevel))
+            #expect(resolution.imageHeight == ((height - 8) >> expectedLevel))
+            #expect(resolution.worldWidth == 256)
+            #expect(resolution.worldHeight == height)
+            #expect(resolution.noInterpolation == (flags == 1))
+        }
+    }
+
+    @Test("Source mip metadata defaults to zero and re-registration replaces the previous value")
+    func sourceMipMetadataDefaultAndReplacement() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 8, height: 4, mipmapped: false)
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let registry = WPEMetalTextureMetadataRegistry.shared
+        defer { registry.unregister(texture: texture) }
+        #expect(WPEMetalTextureResolution(texture: texture).sourceMipLevel == 0)
+        #expect(registry.resolution(for: texture).sourceMipLevel == 0)
+        registry.register(texture: texture, imageWidth: 7, imageHeight: 3, worldWidth: 32, worldHeight: 16, sourceMipLevel: 2)
+        #expect(registry.resolution(for: texture).sourceMipLevel == 2)
+        #expect(registry.resolution(for: texture).shaderValue == .vector([8, 4, 7, 3]))
+        registry.register(texture: texture)
+        #expect(registry.resolution(for: texture).sourceMipLevel == 0)
+        #expect(registry.resolution(for: texture).shaderValue == .vector([8, 4, 8, 4]))
+        registry.register(texture: texture, sourceMipLevel: 1)
+        #expect(registry.resolution(for: texture).sourceMipLevel == 1)
+        registry.unregister(texture: texture)
+        #expect(registry.resolution(for: texture).sourceMipLevel == 0)
+    }
+
     @Test("Upload queue semaphore bounds concurrent upload operations")
     func uploadQueueSemaphoreBoundsConcurrency() async throws {
         let probe = UploadConcurrencyProbe()

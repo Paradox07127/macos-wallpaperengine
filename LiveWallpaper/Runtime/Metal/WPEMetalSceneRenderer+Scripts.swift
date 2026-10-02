@@ -355,7 +355,7 @@ extension WPEMetalSceneRenderer {
     /// The predecessor filter admitted only scene-only layers, so a hidden video that writes an FBO decoded at full rate forever; the consumer graph replaces that proxy, answered per frame by `reconcileVideoResidency`.
     func indexOnDemandVideoLayers(pipeline: WPEPreparedRenderPipeline) {
         onDemandVideoKeyByID = [:]
-        onDemandVideoLoading = []
+        onDemandVideoTasks = [:]
         for layer in pipeline.layers {
             // Every video the layer samples, not just the first: a layer can bind one video as its source and another in a shader slot, and indexing only one of them would drop the other layer's consumer edge.
             let keys = Set(videoTexturePaths(for: layer)
@@ -570,18 +570,17 @@ extension WPEMetalSceneRenderer {
         return !isLiveDecoder && admissionHasVacancy
     }
 
-    private func lazyLoadVideo(key: String) {
+    func lazyLoadVideo(key: String) {
         guard let actor = displayActor,
-              !onDemandVideoLoading.contains(key) else { return }
+              onDemandVideoTasks[key] == nil else { return }
         let source = dynamicTextureSources[key] as? WPEVideoTextureSource
         guard Self.shouldStartOnDemandVideoLoad(
             hasResidentSource: source != nil,
             isLiveDecoder: source?.isLiveDecoder ?? false,
-            admissionHasVacancy: WPEVideoDecoderAdmission.shared.hasVacancy
+            admissionHasVacancy: videoDecoderAdmission.hasVacancy
         ) else { return }
-        onDemandVideoLoading.insert(key)
         let generation = loadGeneration
-        Task { [actor] in
+        onDemandVideoTasks[key] = Task { [actor] in
             await actor.rebuildOnDemandVideo(key: key, generation: generation)
         }
     }
@@ -806,6 +805,10 @@ extension WPEMetalSceneRenderer {
     // MARK: - Script output application
 
     func applyLayerScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        func targetID(_ key: String) -> String? {
+            if let id = wpeScriptLayerObjectID(key), sceneScriptSharedState?.layerTransform(id: id) != nil { return id }
+            return layerObjectIDByName[key]
+        }
         applyLayerScriptState(output.own, objectID: ownObjectID)
         layerTransformMutationJournal.record(
             output.ownTransform,
@@ -813,11 +816,11 @@ extension WPEMetalSceneRenderer {
             generation: loadGeneration
         )
         for (name, state) in output.others {
-            guard let targetID = layerObjectIDByName[name] else { continue }
+            guard let targetID = targetID(name) else { continue }
             applyLayerScriptState(state, objectID: targetID)
         }
         for (name, mutation) in output.otherTransforms {
-            guard let targetID = layerObjectIDByName[name] else { continue }
+            guard let targetID = targetID(name) else { continue }
             layerTransformMutationJournal.record(
                 mutation,
                 objectID: targetID,
@@ -825,7 +828,7 @@ extension WPEMetalSceneRenderer {
             )
         }
         for (name, mutation) in output.presentation {
-            guard let id = name.isEmpty ? ownObjectID : layerObjectIDByName[name] else { continue }
+            guard let id = name.isEmpty ? ownObjectID : targetID(name) else { continue }
             liveLayerPresentation[id, default: .init()].merge(mutation)
         }
         for created in output.created {
@@ -833,6 +836,9 @@ extension WPEMetalSceneRenderer {
             var state = created
             state.key = "\(ownObjectID).\(created.key)"
             liveCreatedLayers[state.key] = state
+        }
+        for key in output.destroyedCreatedKeys {
+            liveCreatedLayers.removeValue(forKey: "\(ownObjectID).\(key)")
         }
     }
 

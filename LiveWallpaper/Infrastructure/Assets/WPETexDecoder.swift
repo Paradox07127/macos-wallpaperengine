@@ -78,6 +78,15 @@ struct WPETexDecoder: Sendable {
         }
     }
 
+    /// Metadata only: no mip inflation or GPU upload. Animated atlases cannot
+    /// establish a fixed composite extent from their container dimensions.
+    func probeStaticImage(span: WPEMappedByteSpan) throws -> WPETexInfo? {
+        let parsed = try parse(span: span)
+        guard !parsed.bitmap.isVideoPayload, parsed.bitmap.frames.count == 1,
+              parsed.frameInfo == nil, !parsed.bitmap.usesEncodedImagePayload else { return nil }
+        return parsed.info
+    }
+
     #if DEBUG
     func decode(data: Data) -> Result<CGImage, WPETexDecodeError> {
         decode(span: WPEMappedByteSpan(data: data))

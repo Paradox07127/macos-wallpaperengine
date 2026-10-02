@@ -448,17 +448,7 @@ extension WPEMetalRenderExecutor {
                 ancestorID = context.objectParentByID[id]
             }
         }
-        return replacingGeometryOrigin(of: layer, bySceneOffset: delta, sceneSize: context.sceneSize, groupGeometry: groupGeometry)
-    }
-
-    /// A WPE origin component in `0...1` is a normalized fraction of the scene; outside that range it
-    /// is already in pixels. Resolve to pixels so an attachment delta (always pixels) can be added.
-    private static func scenePixelOrigin(from origin: SIMD3<Double>, sceneSize: CGSize) -> SIMD2<Double> {
-        let sceneWidth = max(Double(sceneSize.width), 1)
-        let sceneHeight = max(Double(sceneSize.height), 1)
-        let x = (origin.x >= 0 && origin.x <= 1) ? origin.x * sceneWidth : origin.x
-        let y = (origin.y >= 0 && origin.y <= 1) ? origin.y * sceneHeight : origin.y
-        return SIMD2<Double>(x, y)
+        return replacingGeometryOrigin(of: layer, bySceneOffset: delta, groupGeometry: groupGeometry)
     }
 
     private func puppetModelPointToScene(
@@ -467,17 +457,11 @@ extension WPEMetalRenderExecutor {
         sceneSize: CGSize
     ) -> SIMD2<Float> {
         let geometry = layer.geometry
-        let sceneWidth = Float(max(sceneSize.width, 1))
-        let sceneHeight = Float(max(sceneSize.height, 1))
         let scaleX = max(abs(Float(geometry.scale.x)), 0.0001)
         let scaleY = max(abs(Float(geometry.scale.y)), 0.0001)
         let width = max(Float(geometry.size?.width ?? 1) * scaleX, 0.0001)
         let height = max(Float(geometry.size?.height ?? 1) * scaleY, 0.0001)
-        let originX = Float(geometry.origin.x)
-        let originY = Float(geometry.origin.y)
-        let originXPixels = (originX >= 0 && originX <= 1) ? originX * sceneWidth : originX
-        let originYPixels = (originY >= 0 && originY <= 1) ? originY * sceneHeight : originY
-        let anchor = SIMD2<Float>(originXPixels - sceneWidth * 0.5, originYPixels - sceneHeight * 0.5)
+        let anchor = Self.centeredOrigin(of: geometry, sceneSize: sceneSize)
         let center = anchor + Self.alignmentCenterOffset(alignment: geometry.alignment, width: width, height: height)
         let local = SIMD2<Float>(
             (point.x - Float(geometry.puppetMeshCenter.x)) * scaleX * (geometry.scale.x < 0 ? -1 : 1),
@@ -496,11 +480,9 @@ extension WPEMetalRenderExecutor {
     func replacingGeometryOrigin(
         of layer: WPERenderLayer,
         bySceneOffset delta: SIMD2<Float>,
-        sceneSize: CGSize,
         groupGeometry: WPERenderLayerGeometry? = nil
     ) -> WPERenderLayer {
         let geometry = layer.geometry
-        let originPixels = Self.scenePixelOrigin(from: geometry.origin, sceneSize: sceneSize)
         var adjustedGroupLocalGeometry = layer.groupLocalGeometry
         if let group = groupGeometry, let local = layer.groupLocalGeometry {
             // Same inverse group transform as WPERenderGraphBuilder.groupLocalGeometry(for:in:), applied to the scene delta.
@@ -531,8 +513,8 @@ extension WPEMetalRenderExecutor {
         }
         let adjustedGeometry = WPERenderLayerGeometry(
             origin: SIMD3<Double>(
-                originPixels.x + Double(delta.x),
-                originPixels.y + Double(delta.y),
+                geometry.origin.x + Double(delta.x),
+                geometry.origin.y + Double(delta.y),
                 geometry.origin.z
             ),
             scale: geometry.scale,
@@ -563,6 +545,7 @@ extension WPEMetalRenderExecutor {
             localGeometry: layer.localGeometry,
             compositeA: layer.compositeA,
             compositeB: layer.compositeB,
+            compositeSourceExtent: layer.compositeSourceExtent,
             localFBOs: layer.localFBOs,
             passes: layer.passes,
             groupRenderTarget: layer.groupRenderTarget,
@@ -2575,6 +2558,7 @@ private extension WPERenderLayer {
             localGeometry: localGeometry,
             compositeA: compositeA,
             compositeB: compositeB,
+            compositeSourceExtent: compositeSourceExtent,
             localFBOs: localFBOs,
             passes: passes,
             groupRenderTarget: groupRenderTarget,

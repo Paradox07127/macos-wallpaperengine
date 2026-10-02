@@ -129,6 +129,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var oracleSceneScriptBatchOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
     var oracleVideoDecoderAdmission: WPEVideoDecoderAdmission?
     #endif
+    var videoDecoderAdmission: WPEVideoDecoderAdmission {
+        #if DEBUG
+        oracleVideoDecoderAdmission ?? .shared
+        #else
+        .shared
+        #endif
+    }
     let sceneScriptLoadState = WPESceneScriptLoadState()
     /// `applied` is generation-local and makes live notifications changed-only while initial load remains a full delivery.
     var sceneScriptGeneralSettings = WPESceneScriptGeneralSettingsDeliveryState(
@@ -201,7 +208,7 @@ final class WPEMetalSceneRenderer: NSObject {
     /// objectID, absent from the graph above) inherits its template's entry.
     var onDemandVideoKeysByImagePath: [String: Set<String>] = [:]
     /// In-flight rebuilds, so a still-visible layer does not spawn a duplicate Task.
-    var onDemandVideoLoading: Set<String> = []
+    var onDemandVideoTasks: [String: Task<Void, Never>] = [:]
     var liveLayerAlpha: [String: Double] = [:]
     var liveCreatedLayers: [String: WPECreatedLayerScriptState] = [:]
     var liveLayerPresentation: [String: WPELayerScriptPresentationMutation] = [:]

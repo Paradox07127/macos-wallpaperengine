@@ -15,6 +15,126 @@ import UniformTypeIdentifiers
 @MainActor
 @Suite("WPE Metal scene renderer")
 struct WPEMetalSceneRendererTests {
+    @Test("Created destruction and ambiguous-name writes preserve object ownership")
+    func rendererAppliesOwnedDestructionAndMergedOutputs() throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        let created = WPECreatedLayerScriptState(
+            key: "__created_0", imagePath: "models/bar.json", origin: .zero,
+            color: SIMD3(repeating: 1), scale: SIMD3(repeating: 1), alpha: 1, visible: true
+        )
+        let initial = WPELayerScriptOutput(own: .init(visible: true, alpha: 1, videoCommands: []), others: [:], created: [created])
+        renderer.applyLayerScriptOutput(initial, ownObjectID: "ownerA")
+        renderer.applyLayerScriptOutput(initial, ownObjectID: "ownerB")
+        let deletion = WPELayerScriptOutput(own: initial.own, others: [:], destroyedCreatedKeys: ["__created_0"])
+        let merged = WPELayerScriptInstance.mergedOutputs(pending: deletion, newer: initial)
+        #expect(merged.created.isEmpty)
+        renderer.applyLayerScriptOutput(merged, ownObjectID: "ownerA")
+        #expect(renderer.liveCreatedLayers["ownerA.__created_0"] == nil)
+        #expect(renderer.liveCreatedLayers["ownerB.__created_0"] != nil)
+        renderer.applyLayerScriptOutput(deletion, ownObjectID: "ownerA")
+        #expect(renderer.liveCreatedLayers.count == 1)
+
+        renderer.sceneScriptSharedState = WPESharedScriptState(layers: [
+            .init(id: "A", name: "dup", size: .zero, origin: .zero, index: 0, parentName: nil),
+            .init(id: "B", name: "dup", size: .zero, origin: .zero, index: 1, parentName: nil),
+        ])
+        let mutation = WPELayerScriptOutput(own: initial.own, others: [
+            wpeScriptLayerIDKey("B"): .init(visible: false, alpha: 0.25, videoCommands: []),
+        ])
+        renderer.applyLayerScriptOutput(mutation, ownObjectID: "ownerA")
+        #expect(renderer.liveLayerAlpha["B"] == 0.25)
+        #expect(renderer.liveLayerAlpha["A"] == nil)
+    }
+
+    @Test("Oracle stage copies retain frame boundaries without changing the scene output")
+    func oracleStageSnapshots() async throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        renderer.executor.oracleSceneStagesEnabled = true
+        try await renderer.load()
+        let stages = renderer.executor.scenePassDumps.filter { $0.label.hasPrefix("oracle.") }
+        #expect(stages.map(\.label) == ["oracle.pre-bloom", "oracle.post-bloom", "oracle.post-color-correction"])
+        let output = try #require(renderer.outputTexture)
+        let expected = try WPEOraclePixelProbe.sample(texture: output, coordinates: [[32, 32]], commandQueue: renderer.executor.commandQueue)
+        for stage in stages {
+            #expect(stage.texture !== output)
+            #expect(stage.texture.width == output.width && stage.texture.height == output.height)
+            let actual = try WPEOraclePixelProbe.sample(texture: stage.texture, coordinates: [[32, 32]], commandQueue: renderer.executor.commandQueue)
+            #expect(NSDictionary(dictionary: actual).isEqual(to: expected))
+        }
+        renderer.executor.oracleSceneStagesEnabled = false
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        #expect(renderer.executor.scenePassDumps.allSatisfy { !$0.label.hasPrefix("oracle.") })
+    }
+
+    @Test("Terminal procedural geometry and disabled alpha match Windows storage pixels", arguments: [1.0, 0.375])
+    func terminalProceduralEffectPublishesAuthoredVertices(alpha: Double) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let files = [
+            "scene.json": """
+            {"camera":{"eye":"0 0 0","center":"0 0 -1","up":"0 1 0"},
+             "general":{"orthogonalprojection":{"width":256,"height":128},"clearcolor":"0.15 0.25 0.35","cameraparallax":false},
+             "objects":[{"id":1,"image":"models/procedural.json","origin":"144 52 0","size":"160 96",
+                         "scale":"1.2 0.8 1","angles":"0 0 0.17","effects":[{"id":3,"file":"effects/procedural.json"}]}]}
+            """,
+            "models/procedural.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": #"{"passes":[{"shader":"solidlayer","blending":"normal"}]}"#,
+            "effects/procedural.json": #"{"passes":[{"material":"materials/procedural.json"}]}"#,
+            "materials/procedural.json": #"{"passes":[{"shader":"procedural","blending":"disabled","depthtest":"disabled","depthwrite":"disabled","cullmode":"nocull"}]}"#,
+            "shaders/procedural.vert": """
+            uniform mat4 g_ModelViewProjectionMatrix;
+            uniform vec2 g_Offset; // {"material":"offset","default":"0.13 -0.09"}
+            uniform vec2 g_Scale; // {"material":"scale","default":"0.75 1.2"}
+            uniform float g_Direction; // {"material":"angle","default":0.3}
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 uv;
+            void main() {
+                vec2 p = a_Position.xy - vec2(0.5);
+                vec2 cs = vec2(cos(-g_Direction), sin(-g_Direction));
+                p = vec2(p.x*cs.x-p.y*cs.y, p.x*cs.y+p.y*cs.x);
+                p = (p+g_Offset)*g_Scale+vec2(0.5);
+                gl_Position = g_ModelViewProjectionMatrix*vec4(p,0,1);
+                uv = a_TexCoord;
+            }
+            """,
+            "shaders/procedural.frag": "varying vec2 uv; void main(){gl_FragColor=vec4(uv,0.25,\(alpha));}",
+        ]
+        for (path, source) in files {
+            let url = fixture.root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(source.utf8).write(to: url)
+        }
+        let renderer = try WPEMetalSceneRenderer(descriptor: fixture.descriptor, cacheRootURL: fixture.root,
+                                                 dependencyMounts: [], frame: CGRect(x: 0, y: 0, width: 256, height: 128), device: device)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let passes = try #require(renderer.renderPipeline?.layers.first?.passes)
+        #expect(passes.count == 2)
+        let published = try #require(passes.last)
+        #expect(published.pass.target == .scene && published.pass.blending == "disabled")
+        #expect(renderer.executor.authoredShaderResultByPassID[published.id]?.vertexStage?.execution == .authoredObjectQuad)
+        let pixels = try #require(renderer.outputTexture?.readAllPixels())
+        // WPE 2.8.42 controls 9000270/9000276, 256x128 UNORM scene RT.
+        for (x, y, rgb) in [(97, 118, [38, 64, 89]), (128, 64, [98, 102, 64]), (96, 80, [45, 159, 64])] {
+            let pixel = pixels[y * 256 + x]
+            #expect(abs(Int(pixel.r) - rgb[0]) <= 1 && abs(Int(pixel.g) - rgb[1]) <= 1 && abs(Int(pixel.b) - rgb[2]) <= 1)
+            #expect(pixel.a == 255)
+        }
+    }
 
     @Test("Text and particles render without an authored image layer", arguments: [false, true])
     func nonImageSceneHasVisibleOutput(particle: Bool) async throws {
@@ -2293,7 +2413,7 @@ struct MetalSceneFixture {
         export function init() {
             thisScene.createLayer({
                 image: "models/base.json",
-                origin: new Vec3(0.5, 0.5, 0),
+                origin: new Vec3(32, 32, 0),
                 color: new Vec3(1, 1, 1),
                 alpha: 1,
                 scale: new Vec3(1, 1, 1),
@@ -2371,7 +2491,7 @@ struct MetalSceneFixture {
             "name": "Bar",
             "type": "image",
             "image": "models/base.json",
-            "origin": "0.5 0.5 0",
+            "origin": "32 32 0",
             "size": "48 10",
             "scale": "1 1 1",
             "alpha": 1,
@@ -2671,7 +2791,7 @@ struct MetalSceneFixture {
             "name": "Image",
             "type": "image",
             "image": "\(imagePath)",
-            "origin": "0.5 0.5 0",
+            "origin": "32 32 0",
             "scale": "1 1 1",
             "alpha": 1
           }]

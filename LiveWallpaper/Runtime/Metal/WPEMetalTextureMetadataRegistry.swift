@@ -15,6 +15,8 @@ struct WPEMetalTextureResolution: Equatable, Sendable {
     /// Authored image size in world pixels (unlike `imageWidth`/`imageHeight`, which follow the uploaded level). World-layout must use this, never the texture's own dimensions; shader UV math keeps `imageWidth`/`textureWidth`.
     let worldWidth: Int
     let worldHeight: Int
+    /// Original asset mip uploaded as Metal level zero; unregistered/raster textures default to zero.
+    let sourceMipLevel: Int
 
     init(
         texture: MTLTexture,
@@ -23,7 +25,8 @@ struct WPEMetalTextureResolution: Equatable, Sendable {
         clampUVs: Bool = true,
         noInterpolation: Bool = false,
         worldWidth: Int? = nil,
-        worldHeight: Int? = nil
+        worldHeight: Int? = nil,
+        sourceMipLevel: Int = 0
     ) {
         textureWidth = max(texture.width, 1)
         textureHeight = max(texture.height, 1)
@@ -35,6 +38,7 @@ struct WPEMetalTextureResolution: Equatable, Sendable {
         self.noInterpolation = noInterpolation
         self.worldWidth = max(Self.validLogicalSize(worldWidth) ?? imageWidth, 1)
         self.worldHeight = max(Self.validLogicalSize(worldHeight) ?? imageHeight, 1)
+        self.sourceMipLevel = sourceMipLevel
     }
 
     var shaderValue: WPESceneShaderConstantValue {
@@ -82,7 +86,8 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         clampUVs: Bool = true,
         noInterpolation: Bool = false,
         worldWidth: Int? = nil,
-        worldHeight: Int? = nil
+        worldHeight: Int? = nil,
+        sourceMipLevel: Int = 0
     ) {
         let key = ObjectIdentifier(texture as AnyObject)
         let resolution = WPEMetalTextureResolution(
@@ -92,7 +97,8 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
             clampUVs: clampUVs,
             noInterpolation: noInterpolation,
             worldWidth: worldWidth,
-            worldHeight: worldHeight
+            worldHeight: worldHeight,
+            sourceMipLevel: sourceMipLevel
         )
         lock.lock()
         resolutions[key] = Entry(texture: texture, resolution: resolution)

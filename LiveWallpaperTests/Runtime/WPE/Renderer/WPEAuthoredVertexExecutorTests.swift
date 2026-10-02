@@ -479,16 +479,191 @@ struct WPEAuthoredVertexExecutorTests {
         #expect(try render(skew: true).pixels == plain.pixels)
     }
 
-    @Test("Object quad admission rejects origins the builtin path treats as scene fractions",
-          arguments: [(SIMD3<Double>(0.5, 0.5, 0), false), (SIMD3<Double>(0, 120, 0), false),
-                      (SIMD3<Double>(1, 1, 0), false), (SIMD3<Double>(208, 84, 0), true)])
-    func objectQuadAdmissionRejectsNormalizedOrigins(origin: SIMD3<Double>, admitted: Bool) {
+    @Test("Object quad admission accepts finite authored pixel origins at unit boundaries",
+          arguments: [SIMD3<Double>(-0.5, 120, 0), SIMD3<Double>(0.5, 0.5, 0), SIMD3<Double>(0, 120, 0),
+                      SIMD3<Double>(1, 1, 0), SIMD3<Double>(1.01, 12.375, 0), SIMD3<Double>(208, 84, 0)])
+    func objectQuadAdmissionAcceptsPixelOrigins(origin: SIMD3<Double>) {
         let geometry = WPERenderLayerGeometry(origin: origin, scale: SIMD3(repeating: 1), angles: .zero, alignment: .center,
                                               size: CGSize(width: 192, height: 192), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
         let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil, geometry: geometry,
                                    compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
         let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 384, height: 192, auto: false), sceneCamera: .defaultCamera)
-        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera) == admitted)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+    }
+
+    @Test("Fallback, model matrix and hit testing share authored pixel origins",
+          arguments: [-0.5, 0, 0.5, 1, 1.01, 12.375])
+    func pixelOriginConsumersAgree(value: Double) throws {
+        let scene = CGSize(width: 256, height: 128)
+        let origin = SIMD3<Double>(value, value, 0)
+        let geometry = WPERenderLayerGeometry(origin: origin, scale: SIMD3(repeating: 1), angles: .zero,
+                                              alignment: .center, size: CGSize(width: 32, height: 32),
+                                              alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let centered = WPEMetalRenderExecutor.centeredOrigin(of: geometry, sceneSize: scene)
+        #expect(abs(Double(centered.x) - (value - 128)) < 0.00001)
+        #expect(abs(Double(centered.y) - (value - 64)) < 0.00001)
+        let model = WPEMetalObjectUniforms.modelMatrix(origin: origin, scale: geometry.scale, angles: geometry.angles)
+        #expect(model.columns.3 == SIMD4(value, value, 0, 1))
+        let hit = try #require(WPEMetalSceneRenderer.hoverHitRect(geometry: geometry, sceneSize: scene, projection: nil))
+        #expect(hit.center == SIMD2(value, 128 - value))
+    }
+
+    @Test("A singular root still supplies its raw geometry for shader execution",
+          arguments: [SIMD3<Double>(0, 1, 1), SIMD3<Double>(1, 0, 1)])
+    func singularRootSuppliesRawGeometry(scale: SIMD3<Double>) {
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(0.5, 0.5, 0), scale: scale, angles: .zero,
+                                              alignment: .center, size: CGSize(width: 32, height: 32),
+                                              alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil,
+                                   geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 256, height: 128, auto: false), sceneCamera: .defaultCamera)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+    }
+
+    @Test("Signed root inputs retain authored coordinates and captured ordinary-quad topology",
+          arguments: [SIMD3<Double>(-1.2, 0.8, 1), SIMD3<Double>(1.2, -0.8, 1), SIMD3<Double>(-1.2, -0.8, 1),
+                      SIMD3<Double>(-0.00001, 0.8, 1), SIMD3<Double>(0.00001, 0.8, 1)])
+    func signedRootQuadMatchesCapturedMatrixAndInputs(scale: SIMD3<Double>) throws {
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(144, 52, 0), scale: scale, angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 160, height: 96),
+                                              alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil,
+                                   geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 256, height: 128, auto: false), sceneCamera: .defaultCamera)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+        #expect(WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer) == [
+            SIMD4<Float>(-80, 48, 0, 0), SIMD4(-80, -48, 0, 1), SIMD4(80, 48, 1, 0),
+            SIMD4(80, 48, 1, 0), SIMD4(-80, -48, 0, 1), SIMD4(80, -48, 1, 1),
+        ])
+        var context = WPEFrameUniformContext(runtimeUniformValues: [:], cameraUniformValues: camera.uniformValues,
+                                             objectUniformValuesByPassID: ["root.0": WPEMetalObjectUniforms.uniformValues(origin: geometry.origin, scale: scale, angles: geometry.angles)])
+        context.drawViewProjectionMatrixByPassID["root.0"] = .vector(camera.shaderDrawViewProjectionMatrix(objectID: layer.id))
+        let matrix = try #require(context.value(named: "g_ModelViewProjectionMatrix", passID: "root.0")?.vectorValue)
+        let captured = [0.009239858016371727 * scale.x / 1.2, 0.003172169206663966 * scale.x / 1.2, 0, 0,
+                        -0.0010573896579444408 * scale.y / 0.8, 0.012319809757173061 * scale.y / 0.8, 0, 0,
+                        0, 0, 0.0002500000118743628, 0, 0.125, -0.1875, 0.5, 1]
+        for (actual, expected) in zip(matrix, captured) {
+            #expect(abs(actual - expected) < 0.00000001)
+        }
+    }
+
+    @Test("Signed admission stays bounded to measured root rectangles and cull modes",
+          arguments: ["shape", "bare-shape", "parent", "front", "normal", "zero-parent", "zero-shape", "nonfinite", "underflow"])
+    func signedRootAdmissionKeepsUnmeasuredContextsGuarded(scope: String) {
+        let scale = scope.hasPrefix("zero") ? SIMD3<Double>(0, 1, 1)
+            : scope == "nonfinite" ? SIMD3<Double>(-.infinity, 1, 1)
+            : scope == "underflow" ? SIMD3<Double>(-Double.leastNonzeroMagnitude, 1, 1) : SIMD3<Double>(-1, 1, 1)
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(144, 52, 0), scale: scale, angles: .zero,
+                                              alignment: .center, size: CGSize(width: 160, height: 96), alpha: 1, color: SIMD3(repeating: 1), brightness: 1,
+                                              shapePoints: ["shape", "zero-shape"].contains(scope) ? [SIMD2(0, 0), SIMD2(1, 0), SIMD2(1, 1), SIMD2(0, 1)] : nil)
+        let pass = WPERenderPass(id: "draw", phase: .material, shader: "probe", source: .asset("unused"), target: .scene,
+                                 textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                 cullMode: ["front", "normal"].contains(scope) ? scope : "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let layer = WPERenderLayer(objectID: "root", objectName: "root", imagePath: "image", materialPath: nil,
+                                   parentObjectID: ["parent", "zero-parent"].contains(scope) ? "parent" : nil,
+                                   authoredJSON: scope == "bare-shape" ? .init(sceneObjects: [.object(["shape": .string("quad")])]) : .empty,
+                                   geometry: geometry, localGeometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 256, height: 128, auto: false), sceneCamera: .defaultCamera)
+        #expect(!WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+    }
+
+    @Test("Bare authored shapes retain their captured diagonal without active gizmo points")
+    func bareShapeQuadKeepsShapeTopology() {
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(144, 52, 0), scale: SIMD3(repeating: 1), angles: .zero,
+                                              alignment: .center, size: CGSize(width: 160, height: 96), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "shape", objectName: "shape", imagePath: "models/util/solidlayer.json", materialPath: nil,
+                                   authoredJSON: .init(sceneObjects: [.object(["shape": .string("quad")])]), geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [])
+        #expect(WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer) == [
+            SIMD4<Float>(-80, 48, 0, 0), SIMD4(80, -48, 1, 1), SIMD4(80, 48, 1, 0),
+            SIMD4(-80, 48, 0, 0), SIMD4(-80, -48, 0, 1), SIMD4(80, -48, 1, 1),
+        ])
+    }
+
+    @Test("Signed and singular rotated roots execute the shader with fixed counterclockwise culling",
+          arguments: [(1.0, 1.0, "back", 4), (-1.0, 1.0, "back", 0), (1.0, -1.0, "back", 0),
+                      (-1.0, -1.0, "back", 4), (-1.0, 1.0, "nocull", 4), (1.0, -1.0, "nocull", 4),
+                      (-0.00001, 1.0, "nocull", 0), (0.0, 1.0, "nocull", 0), (1.0, 0.0, "nocull", 0),
+                      (0.0, 0.0, "nocull", 4)])
+    func signedRootRasterizationKeepsCapturedCulling(scaleX: Double, scaleY: Double, cull: String, visiblePixels: Int) throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let authored = WPERenderPass(id: "signed", phase: .material, shader: "signed-probe", source: .asset("unused"), target: .scene,
+                                     textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled", cullMode: cull,
+                                     depthTest: "disabled", depthWrite: "disabled")
+        let source = try #require(original.shader)
+        // A shader may restore area after the singular MVP, so zero scale must not skip the draw.
+        let vertex = scaleX == 0 && scaleY == 0 ? source.vertexSource.replacingOccurrences(
+            of: "v_TexCoord = vec4", with: "gl_Position.xy += 0.5 * a_Position.xy; v_TexCoord = vec4"
+        ) : source.vertexSource
+        let shader = WPEShaderProgram(name: source.name, vertexSource: vertex, fragmentSource: source.fragmentSource, isBuiltin: false)
+        let pass = WPEPreparedRenderPass(pass: authored, shader: shader, textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(2, 2, 0), scale: SIMD3(scaleX, scaleY, 1), angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 2, height: 2), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "signed", objectName: "signed", imagePath: "image", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: [authored], parallaxDepth: SIMD2(repeating: 1))
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [pass])])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer, camera: camera))
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        fixture.executor.authoredShaderResultByPassID[pass.id] = result
+        let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
+                                                                          result: result, vertexName: nil, blendMode: "disabled",
+                                                                          alphaWritePolicy: WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled"),
+                                                                          colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+        try fixture.executor.seedTranslatedPipelines([#require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))])
+        let output = try fixture.executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: [:], cameraUniforms: camera)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: output.pixelFormat, width: 4, height: 4, mipmapped: false)
+        descriptor.storageMode = .shared
+        let staging = try #require(fixture.device.makeTexture(descriptor: descriptor))
+        let command = try #require(fixture.executor.textureSourceCommandQueue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: output, to: staging)
+        blit.endEncoding(); command.commit(); command.waitUntilCompleted()
+        #expect(command.error == nil)
+        var pixels = [UInt8](repeating: 0, count: 64)
+        pixels.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0) }
+        #expect(stride(from: 0, to: 64, by: 4).filter { pixels[$0 + 1] > 0 }.count == visiblePixels)
+        if scaleX <= 0 || scaleY <= 0 {
+            let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+            var context = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera).frameUniforms
+            fixture.executor.applyingAuthoredRootParallaxDrawProjection(to: &context, pipeline: pipeline, camera: camera,
+                                                                        parallax: .init(smoothed: .zero, amount: 0.5, influence: 0), sceneSize: camera.renderSize)
+            #expect(context.parallaxDrawMatrixPassIDs.isEmpty)
+            fixture.executor.frameUniformContext = context
+            var activeParallax = WPEMetalFrameState(output: output, sceneSize: camera.renderSize, cameraUniforms: camera)
+            activeParallax.cameraParallax = .init(smoothed: .zero, amount: 0.5, influence: 0)
+            #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer,
+                                                             frameState: activeParallax, effectTextureProjection: { nil }) == .unverifiedObjectQuadSpace)
+        }
+    }
+
+    @Test("Singular authored roots reject unverified inverse and normal inputs in either stage",
+          arguments: ["g_ModelMatrixInverse", "g_ModelViewProjectionMatrixInverse", "g_NormalModelMatrix"], [false, true])
+    func singularRootRejectsInverseConsumers(name: String, fragment: Bool) throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let source = try #require(original.shader)
+        let declaration = "uniform \(name == "g_NormalModelMatrix" ? "mat3" : "mat4") \(name);\n"
+        let program = WPEShaderProgram(name: "singular-inverse", vertexSource: (fragment ? "" : declaration) + source.vertexSource,
+                                       fragmentSource: (fragment ? declaration : "") + source.fragmentSource, isBuiltin: false)
+        let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: program,
+                                         textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        let vertex = try #require(result.vertexStage)
+        #expect((fragment ? result.uniformLayout : vertex.uniformLayout).contains { $0.name == name && $0.materialName == nil })
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(2, 2, 0), scale: SIMD3(1, 0, 1), angles: SIMD3(0, 0, 0.17),
+                                              alignment: .center, size: CGSize(width: 2, height: 2), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let layer = WPERenderLayer(objectID: "singular", objectName: "singular", imagePath: "image", materialPath: nil,
+                                   geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass.pass])
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera)
+        let output = try #require(fixture.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)))
+        let frame = WPEMetalFrameState(output: output, sceneSize: camera.renderSize, cameraUniforms: camera)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: layer,
+                                                         frameState: frame, effectTextureProjection: { nil }) == .invalidMatrix(name))
     }
 
     @Test func parallaxDrawProjectionSkipsPassesWhoseFragmentReadsModelInputs() throws {

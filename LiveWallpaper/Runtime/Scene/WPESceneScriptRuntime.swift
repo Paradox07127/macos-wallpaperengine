@@ -1255,7 +1255,15 @@ final class WPESceneScriptInstance {
             installCanvasSize(in: context)
             engineClockWriter = WPEEngineClockWriter(context: context)
             _ = updateEngineRuntime(0)
-            if let shared { wpeInstallSharedState(shared, in: context) }
+            if let shared {
+                wpeInstallSharedState(shared, in: context)
+            }
+            let scene = JSValue(newObjectIn: context)!
+            wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
+                wpeInitialLayerConfigurationLookup(value, layers: self?.shared?.layers ?? [])
+            }
+            context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
+            context.setObject(scene, forKeyedSubscript: "scene" as NSString)
             context.exceptionHandler = { [weak self] _, ex in
                 guard let self else { return }
                 self.didThrow = true
@@ -1665,6 +1673,8 @@ struct WPESceneScriptLayerInfo: Sendable {
     let parallaxDepth: SIMD2<Double>
     let isParticleSystem: Bool
     let particleInstanceSeed: WPEParticleInstanceValues
+    /// Complete load-time configuration, never synthesized from mutable layer state.
+    let initialConfiguration: WPESceneJSONValue?
 
     init(
         id: String,
@@ -1679,7 +1689,8 @@ struct WPESceneScriptLayerInfo: Sendable {
         alignment: String = "center",
         parallaxDepth: SIMD2<Double> = .zero,
         isParticleSystem: Bool = false,
-        particleInstanceSeed: WPEParticleInstanceValues = .init()
+        particleInstanceSeed: WPEParticleInstanceValues = .init(),
+        initialConfiguration: WPESceneJSONValue? = nil
     ) {
         self.id = id
         self.name = name
@@ -1694,6 +1705,7 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.parallaxDepth = parallaxDepth
         self.isParticleSystem = isParticleSystem
         self.particleInstanceSeed = particleInstanceSeed
+        self.initialConfiguration = initialConfiguration
     }
 }
 
@@ -1701,6 +1713,7 @@ final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
     let userProperties: [String: WPESceneScriptPropertyValue]
     let layers: [WPESceneScriptLayerInfo]
+    private let ambiguousLayerNames: Set<String>
     private let lock = NSLock()
     private var storage: [String: Any] = [:]
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
@@ -1857,6 +1870,23 @@ final class WPESharedScriptState: @unchecked Sendable {
         self.sceneScriptLoadToken = sceneScriptLoadToken
         self.userProperties = userProperties
         self.layers = layers
+        var names: Set<String> = []
+        var ambiguous: Set = [""]
+        for layer in layers where !names.insert(layer.name).inserted {
+            ambiguous.insert(layer.name)
+        }
+        ambiguousLayerNames = ambiguous
+    }
+
+    func layerHandleKey(_ info: WPESceneScriptLayerInfo) -> String {
+        ambiguousLayerNames.contains(info.name) ? wpeScriptLayerIDKey(info.id) : info.name
+    }
+
+    func layerInfo(forHandleKey key: String) -> WPESceneScriptLayerInfo? {
+        if let id = wpeScriptLayerObjectID(key) {
+            return layers.first(where: { $0.id == id })
+        }
+        return layers.first(where: { $0.name == key })
     }
 
     func get(_ key: String) -> Any? {
@@ -3375,19 +3405,42 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
             let scene = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
-                guard let self, let context, value.isString,
-                      let name = value.toString(), !name.isEmpty else { return nil }
-                return self.layerHandle(named: name, in: context)
+                guard let self, let context else { return nil }
+                if value.isString, let name = value.toString() {
+                    return layerHandle(named: name, in: context)
+                }
+                if value.isNumber, let layers = shared?.layers {
+                    let index = Int(value.toInt32())
+                    guard layers.indices.contains(index) else { return nil }
+                    return layerHandle(objectID: layers[index].id, in: context)
+                }
+                return nil
             }
             scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
+            wpeInstallInitialLayerConfiguration(on: scene, in: context) { [weak self] value in
+                guard let self else { return nil }
+                if value.isObject {
+                    guard let entry = layerHandles.first(where: { value.isEqual(to: $0.value) }) else { return nil }
+                    if let id = wpeScriptLayerObjectID(entry.key) {
+                        return shared?.layers.first(where: { $0.id == id })?.initialConfiguration
+                    }
+                    return shared?.layers.first(where: { $0.name == entry.key })?.initialConfiguration
+                }
+                return wpeInitialLayerConfigurationLookup(value, layers: shared?.layers ?? [])
+            }
             cameraBridge.install(on: scene, in: context)
             context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
             context.setObject(scene, forKeyedSubscript: "scene" as NSString)
         }
 
         private func layerHandle(named name: String, in context: JSContext) -> JSValue {
-            layerHandle(cacheKey: name, in: context) { [weak self] in
-                self?.shared?.layerTransform(named: name)
+            guard let info = shared?.layers.first(where: { $0.name == name }) else { return neutralLayer(in: context) }
+            return layerHandle(objectID: info.id, in: context)
+        }
+
+        private func layerHandle(objectID: String, in context: JSContext) -> JSValue {
+            layerHandle(cacheKey: wpeScriptLayerIDKey(objectID), in: context) { [weak self] in
+                self?.shared?.layerTransform(id: objectID)
             }
         }
 

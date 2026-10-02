@@ -6,6 +6,219 @@ import Testing
 
 @Suite("WPE render pipeline builder")
 struct WPERenderPipelineBuilderTests {
+    @Test("Static sampled terminal publication separates source extent from object geometry",
+          arguments: ["square", "padded", "default-base", "missing", "animated", "oversize", "gated", "extra-sampler"])
+    func sampledTerminalExtent(scope: String) throws {
+        let width = scope == "square" ? 32 : 31
+        let height = scope == "square" ? 32 : 47
+        let physicalHeight = scope == "square" ? 32 : 48
+        var tex = Data()
+        tex.appendCString("TEXV0005")
+        tex.appendCString("TEXI0001")
+        for value in [0, 0, 32, physicalHeight, scope == "oversize" ? 33 : width, height, 0] {
+            tex.appendLE(UInt32(value))
+        }
+        tex.appendCString("TEXB0001")
+        let frames = scope == "animated" ? 2 : 1
+        tex.appendLE(UInt32(frames))
+        for _ in 0 ..< frames {
+            for value in [1, 32, physicalHeight, 32 * physicalHeight * 4] {
+                tex.appendLE(UInt32(value))
+            }
+            tex.append(Data(repeating: 255, count: 32 * physicalHeight * 4))
+        }
+        let fragment = """
+        #include "common.h"
+        uniform sampler2D g_Texture0;
+        varying vec2 uv;
+        varying vec3 facts;
+        void main(){ gl_FragColor=vec4(texSample2D(g_Texture0,uv).rg,facts.z,1.0); }
+        """ + (scope == "extra-sampler" ? "\nuniform sampler2D g_Texture1;" : "")
+        let fixture = try makeFixture(files: [
+            "models/image.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": scope == "default-base"
+                ? #"{"passes":[{"shader":"genericimage2","textures":["source"],"cullmode":"nocull"}]}"#
+                : #"{"passes":[{"shader":"genericimage2","combos":{"VERSION":2},"textures":["source"],"blending":"normal","cullmode":"nocull"}]}"#,
+            "materials/probe.json": #"{"passes":[{"shader":"probe","textures":[null],"blending":"disabled","cullmode":"nocull"}]}"#,
+            "effects/probe.json": #"{"passes":[{"material":"materials/probe.json"}]}"#,
+            "shaders/probe.vert": """
+            attribute vec3 a_Position;
+            attribute vec2 a_TexCoord;
+            uniform mat4 g_ModelViewProjectionMatrix;
+            uniform vec4 g_Texture0Resolution;
+            uniform float g_TextureReductionScale;
+            varying vec2 uv;
+            varying vec3 facts;
+            void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position.xy*0.75,0,1);
+              uv=a_TexCoord; facts=vec3(g_Texture0Resolution.zw,g_TextureReductionScale);}
+            """,
+            "shaders/probe.frag": fragment,
+        ], dataFiles: scope == "missing" ? [:] : ["materials/source.tex": tex])
+        defer { fixture.cleanup() }
+        var effect: [String: Any] = ["id": 2, "file": "effects/probe.json"]
+        if scope == "gated" {
+            effect["visible"] = ["value": true, "script": "export function update(v){return v;}"]
+        }
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128]],
+            "objects": [["id": 1, "image": "models/image.json", "origin": "144 52 0", "size": "160 96", "effects": [effect]]],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+        let original = try builder.build(graph: graph)
+        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        guard ["square", "padded", "default-base"].contains(scope) else {
+            #expect(result == original)
+            return
+        }
+        let layer = try #require(result.layers.first)
+        #expect(layer.passes.count == 2)
+        #expect(layer.passes.last?.pass.target == .scene)
+        #expect(layer.passes[0].pass.blending == "disabled")
+        #expect(layer.passes.allSatisfy { $0.alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false) })
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: layer.passes[1], recordFailure: false))
+        #expect(request.premultipliedInputSlots.isEmpty && !request.premultipliedOutput)
+        #expect(layer.graphLayer.compositeSourceExtent?.imageSize == CGSize(width: width, height: height))
+        #expect(layer.graphLayer.compositeSourceExtent?.textureSize == CGSize(width: 32, height: physicalHeight))
+        #expect(layer.graphLayer.geometry.size == CGSize(width: 160, height: 96))
+        let inputs = WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: layer.graphLayer)
+        #expect(inputs[0].x == -80 && inputs[0].y == 48)
+        #expect(abs(inputs[0].z - Float(0.15 / 32)) < 0.000001)
+        #expect(abs(inputs[0].w - Float(0.15 / Double(physicalHeight))) < 0.000001)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pool = WPEMetalRenderTargetPool(device: device)
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let key = pool.diagnosticKey(for: layer.passes[0].pass.target, layer: layer.graphLayer,
+                                     sceneSize: CGSize(width: 256, height: 128), declaredFBOs: [:])
+        #expect(key.width == width && key.height == height)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0, brightness: 1,
+                                              pointerPosition: .zero, audioSpectrumLeft: [], audioSpectrumRight: [])
+        let (_, frame) = result.addingMetalRuntimeUniforms(runtime, camera: camera)
+        #expect(frame.value(named: "g_TextureReductionScale", passID: layer.passes[1].id) == .number(1))
+        #expect(frame.value(named: "g_TextureReductionScale", passID: "unrelated") == nil)
+        #expect(result.resolvingSourceMipLevels { _ in nil } == result)
+        #expect(result.resolvingSourceMipLevels { _ in -1 } == result)
+        #expect(result.resolvingSourceMipLevels { _ in 15 } == result)
+        for mip in [0, 1, 2] {
+            let reduced = result.resolvingSourceMipLevels { reference in
+                #expect(reference == layer.passes[0].textureBindings[0])
+                return mip
+            }
+            let reducedLayer = try #require(reduced.layers.first)
+            #expect(reducedLayer.passes == layer.passes)
+            #expect(reducedLayer.graphLayer.geometry == layer.graphLayer.geometry)
+            let imageUniforms = executor.genericImageUniforms(for: reducedLayer.passes[0], layer: reducedLayer.graphLayer, hasMask: false)
+            #expect(imageUniforms.textureUVScale.x == Float(width) / 32)
+            #expect(imageUniforms.textureUVScale.y == Float(height) / Float(physicalHeight))
+            #expect(WPEMetalRenderExecutor.authoredObjectQuadInputs(layer: reducedLayer.graphLayer) == inputs)
+            let (_, reducedFrame) = reduced.addingMetalRuntimeUniforms(runtime, camera: camera)
+            #expect(reducedFrame.value(named: "g_TextureReductionScale", passID: layer.passes[1].id) == .number(Double(1 << mip)))
+            for pixelScale in [1.0, 0.5] {
+                pool.pixelScale = pixelScale
+                let reducedKey = pool.diagnosticKey(for: layer.passes[0].pass.target, layer: reducedLayer.graphLayer,
+                                                    sceneSize: CGSize(width: 256, height: 128), declaredFBOs: [:])
+                #expect(reducedKey.width == max(4, width >> mip))
+                #expect(reducedKey.height == max(4, height >> mip))
+            }
+        }
+    }
+
+    @Test("Terminal procedural effects retain authored geometry and disabled blend at scene publication",
+          arguments: ["direct", "zero", "zero-inverse", "gated", "sampler", "viewport", "texture-metadata", "wide-attribute", "explicit-target", "blend", "layer-blend", "multiple-effects", "depth", "perspective", "hdr", "textured-base", "external-reader"])
+    func terminalProceduralPublication(scope: String) throws {
+        var material: [String: Any] = ["shader": "procedural", "blending": scope == "blend" ? "normal" : "disabled",
+                                       "depthtest": scope == "depth" ? "enabled" : "disabled"]
+        material["textures"] = []
+        var effectPass: [String: Any] = ["material": "materials/procedural.json"]
+        if scope == "explicit-target" {
+            effectPass["target"] = "scratch"
+        }
+        var effect: [String: Any] = ["id": 3, "file": "effects/procedural.json"]
+        if scope == "gated" {
+            effect["visible"] = ["value": true, "script": "export function update(v){return v;}"]
+        }
+        var vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        uniform mat4 g_ModelViewProjectionMatrix;
+        uniform float g_Scale; // {"material":"scale","default":0.75}
+        varying vec2 uv;
+        void main() { gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position.xy*vec2(g_Scale,1.2),0,1); uv=a_TexCoord; }
+        """
+        if scope == "texture-metadata" {
+            vertex += "\nuniform float g_TextureReductionScale;"
+        }
+        if scope == "zero-inverse" {
+            vertex += "\nuniform mat4 g_ModelViewProjectionMatrixInverse;"
+        }
+        if scope == "wide-attribute" {
+            vertex = vertex.replacingOccurrences(of: "attribute vec2", with: "attribute vec4")
+        }
+        let extra = scope == "sampler" ? "uniform sampler2D g_Texture0;\n" : (scope == "viewport" ? "uniform vec4 g_Resolution;\n" : "")
+        func json(_ value: Any) throws -> String {
+            let data = try JSONSerialization.data(withJSONObject: value)
+            return try #require(String(data: data, encoding: .utf8))
+        }
+        let fixture = try makeFixture(files: [
+            "models/solid.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": json(["passes": [["shader": scope == "textured-base" ? "genericimage2" : "solidlayer",
+                                                     "blending": scope == "layer-blend" ? "additive" : "normal"]]]),
+            "materials/procedural.json": json(["passes": [material]]),
+            "effects/procedural.json": json(["passes": [effectPass]]),
+            "shaders/procedural.vert": vertex,
+            "shaders/procedural.frag": extra + "varying vec2 uv; void main(){gl_FragColor=vec4(uv,0.25,0.375);}",
+        ])
+        defer { fixture.cleanup() }
+        var effects = [effect]
+        if scope == "multiple-effects" {
+            effects.append(["id": 4, "file": "effects/procedural.json"])
+        }
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128]],
+            "objects": [["id": 1, "image": "models/solid.json", "origin": "128 64 0", "size": "160 96",
+                         "scale": scope.hasPrefix("zero") ? "1.2 0 1" : "1 1 1", "effects": effects]],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection,
+                                            sceneCamera: document.camera, usesPerspectiveProjection: scope == "perspective",
+                                            sceneHDR: scope == "hdr")
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+        let original = try builder.build(graph: graph)
+        if scope == "external-reader" {
+            let producer = try #require(original.layers.first)
+            let copy = try #require(producer.passes.last)
+            let consumer = WPERenderLayer(objectID: "consumer", objectName: "consumer", imagePath: "models/solid.json",
+                                          materialPath: nil, geometry: .identity, compositeA: "consumer-a", compositeB: "consumer-b",
+                                          localFBOs: [], passes: [copy.pass])
+            let shared = WPEPreparedRenderPipeline(layers: original.layers + [WPEPreparedRenderLayer(graphLayer: consumer, passes: [copy])])
+            #expect(WPERenderGraphBuilder.publishingProceduralEffects(in: shared, camera: camera) == shared)
+            return
+        }
+        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        if scope == "direct" || scope == "zero" {
+            let before = try #require(original.layers.first)
+            let after = try #require(result.layers.first)
+            #expect(before.passes.count == 3 && after.passes.count == 2)
+            #expect(after.passes[1].pass.target == .scene)
+            #expect(after.passes[1].pass.blending == "disabled")
+            #expect(after.passes[1].pass.id == before.passes[1].pass.id)
+            #expect(after.passes[1].pass.authoredJSON == before.passes[1].pass.authoredJSON)
+            #expect(after.passes[1].shader == before.passes[1].shader)
+            #expect(after.passes[1].stageUniformBindings == before.passes[1].stageUniformBindings)
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: after.passes[1], recordFailure: false))
+            let originalRequest = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: before.passes[1], recordFailure: false))
+            #expect(!request.premultipliedOutput)
+            #expect(originalRequest.premultipliedOutput)
+            #expect(request.translationCacheKey != originalRequest.translationCacheKey)
+            #expect(request.processedVertexSource == originalRequest.processedVertexSource)
+            #expect(request.processedFragmentSource == originalRequest.processedFragmentSource)
+        } else {
+            #expect(result == original)
+        }
+    }
 
     @Test("Official TEXnFORMAT ABI values stay independent from decoder raw values")
     func officialTextureFormatABIValues() {

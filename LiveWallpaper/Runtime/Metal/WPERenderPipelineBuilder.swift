@@ -66,17 +66,20 @@ struct WPERenderPipelineBuilder: Sendable {
 
     func build(
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
-        fullFramePassthroughElisionEnabled: Bool? = nil
+        fullFramePassthroughElisionEnabled: Bool? = nil,
+        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil
     ) throws -> WPEPreparedRenderPipeline {
         try buildReportingCanonicalRotation(
             graph: graph, canonicalCompositeRotationEnabled: canonicalCompositeRotationEnabled, sceneHDR: sceneHDR,
-            fullFramePassthroughElisionEnabled: fullFramePassthroughElisionEnabled
+            fullFramePassthroughElisionEnabled: fullFramePassthroughElisionEnabled,
+            proceduralPublicationCamera: proceduralPublicationCamera
         ).pipeline
     }
 
     func buildReportingCanonicalRotation(
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
-        fullFramePassthroughElisionEnabled: Bool? = nil
+        fullFramePassthroughElisionEnabled: Bool? = nil,
+        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil
     ) throws -> (
         pipeline: WPEPreparedRenderPipeline,
         canonicalRotation: WPECanonicalCompositeRotationReport,
@@ -99,6 +102,11 @@ struct WPERenderPipelineBuilder: Sendable {
             )
         }
         var pipeline = WPEPreparedRenderPipeline(layers: layers)
+        if let camera = proceduralPublicationCamera, !sceneHDR {
+            pipeline = WPERenderGraphBuilder.publishingProceduralEffects(
+                in: pipeline, camera: camera, staticSourceExtent: staticCompositeSourceExtent
+            )
+        }
         let environment = ProcessInfo.processInfo.environment
         // Both on by default; `WPE_CANONICAL_COMPOSITE_ROTATION=0` /
         // `WPE_FULLFRAME_PASSTHROUGH_ELISION=0` are the kill switches.
@@ -122,6 +130,32 @@ struct WPERenderPipelineBuilder: Sendable {
             elisionReport = WPEFullFramePassthroughElisionReport(enabled: true, decisions: elision.decisions)
         }
         return (pipeline, rotationReport, elisionReport)
+    }
+
+    private func staticCompositeSourceExtent(_ reference: WPETextureReference) -> WPERenderSourceExtent? {
+        let path: String
+        switch reference {
+        case let .image(value), let .asset(value): path = value
+        default: return nil
+        }
+        for candidate in shaderLoader.textureFormatProbeCandidates(for: path) {
+            do {
+                let probe = try resolver.resolveTextureFormatProbe(relativePath: candidate, optional: true)
+                guard let payload = probe.texPayload,
+                      let info = try WPETexDecoder().probeStaticImage(span: payload),
+                      let format = info.format, [WPETexFormat.rgba8888, .dxt1, .dxt3, .dxt5].contains(format),
+                      info.dimensionsLooksValid,
+                      info.imageWidth > 0, info.imageHeight > 0,
+                      info.imageWidth <= info.width, info.imageHeight <= info.height else { return nil }
+                return WPERenderSourceExtent(textureSize: CGSize(width: info.width, height: info.height),
+                                             imageSize: CGSize(width: info.imageWidth, height: info.imageHeight))
+            } catch SceneResourceResolver.ResolveError.fileMissing {
+                continue
+            } catch {
+                return nil
+            }
+        }
+        return nil
     }
 
     private func loadPuppetModel(for layer: WPERenderLayer) throws -> WPEPuppetModel? {
@@ -553,7 +587,7 @@ private struct WPEShaderSourceLoader: Sendable {
         return .rgbaFallback("texture '\(path)' has no resolvable format metadata")
     }
 
-    private func textureFormatProbeCandidates(for path: String) -> [String] {
+    fileprivate func textureFormatProbeCandidates(for path: String) -> [String] {
         let ext = (path as NSString).pathExtension.lowercased()
         let rawImageExtensions: Set<String> = ["png", "jpg", "jpeg", "tga", "dds", "bmp", "gif", "webp"]
         if path.hasPrefix("../") {

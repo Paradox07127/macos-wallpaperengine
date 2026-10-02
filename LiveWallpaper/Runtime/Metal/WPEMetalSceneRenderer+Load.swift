@@ -262,11 +262,30 @@ extension WPEMetalSceneRenderer {
 
         debugStage("pipeline.build", "begin")
         onProgress?(String(localized: "Preparing render pipeline", bundle: .appLanguage, comment: "Scene load progress: compiling Metal pipeline state."))
+        // Geometry-dependent lowering uses the same camera contract as admission.
+        let perspectiveObjectIDs = Set(document.imageObjects.filter(\.usesPerspectiveProjection).map(\.id))
+        cameraUniforms = WPEMetalCameraUniforms(
+            orthogonalProjection: document.general.orthogonalProjection,
+            sceneCamera: document.camera,
+            usesPerspectiveProjection: document.general.usesPerspectiveProjection,
+            perspectiveOverrideFOVDegrees: document.general.perspectiveOverrideFOV.resolvedValue,
+            perspectiveObjectIDs: perspectiveObjectIDs,
+            lightAmbientColor: document.general.lightAmbientColor,
+            lightSkylightColor: document.general.lightSkylightColor,
+            sceneHDR: document.general.usesHDRRendering,
+            bloom: document.general.bloom
+        )
+        let publicationCamera = scriptInventory.total == 0 && document.propertyBindings.isEmpty
+            && document.cameraMotion == nil && cameraPaths.isEmpty && !document.general.cameraParallax.enabled
+            ? cameraUniforms : nil
         let (pipeline, canonicalRotation, passthroughElision) = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.buildReportingCanonicalRotation(graph: graph, sceneHDR: document.general.usesHDRRendering)
+            return try builder.buildReportingCanonicalRotation(
+                graph: graph, sceneHDR: document.general.usesHDRRendering,
+                proceduralPublicationCamera: publicationCamera
+            )
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         lastCanonicalRotation = canonicalRotation
@@ -319,22 +338,6 @@ extension WPEMetalSceneRenderer {
         liveTextVisibility = Dictionary(
             document.textObjects.map { ($0.id, $0.visible) },
             uniquingKeysWith: { first, _ in first }
-        )
-        // A 2D scene can still carry a perspective camera for the objects that opt in
-        // (`perspective: true`); the scene itself stays orthographic.
-        let perspectiveObjectIDs = Set(
-            document.imageObjects.filter(\.usesPerspectiveProjection).map(\.id)
-        )
-        cameraUniforms = WPEMetalCameraUniforms(
-            orthogonalProjection: document.general.orthogonalProjection,
-            sceneCamera: document.camera,
-            usesPerspectiveProjection: document.general.usesPerspectiveProjection,
-            perspectiveOverrideFOVDegrees: document.general.perspectiveOverrideFOV.resolvedValue,
-            perspectiveObjectIDs: perspectiveObjectIDs,
-            lightAmbientColor: document.general.lightAmbientColor,
-            lightSkylightColor: document.general.lightSkylightColor,
-            sceneHDR: document.general.usesHDRRendering,
-            bloom: document.general.bloom
         )
         // Perspective has no authored pixel canvas. Render at drawable size (4K cap, never below authored) so HUD text stays 1:1. Kill switch: WPEMetalPerspectiveNativeResolution -bool NO.
         if document.general.usesPerspectiveProjection,
@@ -451,6 +454,10 @@ extension WPEMetalSceneRenderer {
         onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
         try await loadTextures(for: pipeline, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        renderPipeline = pipeline.resolvingSourceMipLevels { reference in
+            guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
+            return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
+        }
         indexOnDemandVideoLayers(pipeline: pipeline)
         debugStage("textures.load.done", "loaded=\(loadedTextures.count) dynamic=\(dynamicTextureSources.count)")
         dumpLoadedTexturesIfRequested()
@@ -576,6 +583,16 @@ extension WPEMetalSceneRenderer {
     }
 
     static func scriptLayerTable(for document: WPESceneDocument) -> [WPESceneScriptLayerInfo] {
+        let authoredObjects: [WPESceneJSONValue]
+        if case let .array(objects) = document.sourceJSON["objects"] {
+            authoredObjects = objects.filter { if case .object = $0 { return true }; return false }
+        } else {
+            authoredObjects = []
+        }
+        func initialConfiguration(_ id: String) -> WPESceneJSONValue? {
+            guard let index = document.objectPaintOrder[id], authoredObjects.indices.contains(index) else { return nil }
+            return wpeInitialLayerConfiguration(from: authoredObjects[index])
+        }
         var nameByID: [String: String] = [:]
         for object in document.imageObjects { nameByID[object.id] = object.name }
         for object in document.transformHostObjects { nameByID[object.id] = object.name }
@@ -592,10 +609,11 @@ extension WPEMetalSceneRenderer {
                 originZ: object.origin.z,
                 scale: object.scale,
                 angles: object.angles,
-                index: layers.count,
+                index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
                 alignment: object.alignment.rawValue,
-                parallaxDepth: object.parallaxDepth
+                parallaxDepth: object.parallaxDepth,
+                initialConfiguration: initialConfiguration(object.id)
             ))
         }
         for object in document.transformHostObjects {
@@ -607,8 +625,9 @@ extension WPEMetalSceneRenderer {
                 originZ: object.origin.z,
                 scale: object.scale,
                 angles: object.angles,
-                index: layers.count,
-                parentName: object.parentObjectID.flatMap { nameByID[$0] }
+                index: document.objectPaintOrder[object.id] ?? layers.count,
+                parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                initialConfiguration: initialConfiguration(object.id)
             ))
         }
         for object in document.textObjects {
@@ -620,21 +639,32 @@ extension WPEMetalSceneRenderer {
                 originZ: object.origin.z,
                 scale: object.scale,
                 angles: object.angles,
-                index: layers.count,
-                parentName: object.parentObjectID.flatMap { nameByID[$0] }
+                index: document.objectPaintOrder[object.id] ?? layers.count,
+                parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                initialConfiguration: initialConfiguration(object.id)
             ))
         }
         for object in document.particleObjects {
             layers.append(WPESceneScriptLayerInfo(
                 id: object.id, name: object.name, size: .zero,
                 origin: SIMD2(object.origin.x, object.origin.y), originZ: object.origin.z,
-                scale: object.scale, angles: object.angles, index: layers.count,
+                scale: object.scale, angles: object.angles, index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
                 parallaxDepth: object.parallaxDepth, isParticleSystem: true,
-                particleInstanceSeed: WPEParticleInstanceValues(override: object.instanceOverride)
+                particleInstanceSeed: WPEParticleInstanceValues(override: object.instanceOverride),
+                initialConfiguration: initialConfiguration(object.id)
             ))
         }
-        return layers
+        for object in document.soundObjects {
+            layers.append(WPESceneScriptLayerInfo(
+                id: object.id, name: object.name, size: .zero, origin: .zero,
+                index: document.objectPaintOrder[object.id] ?? layers.count, parentName: nil,
+                initialConfiguration: initialConfiguration(object.id)
+            ))
+        }
+        // Text's synthetic render image and logical text object share one identity.
+        var seen: Set<String> = []
+        return layers.filter { seen.insert($0.id).inserted }.sorted { $0.index < $1.index }
     }
 
     /// `defaults write com.loomscreen.pro WPEMemoryAuditLog -bool YES`. Census is registry-owned textures only; `device allocated` is the only true total.

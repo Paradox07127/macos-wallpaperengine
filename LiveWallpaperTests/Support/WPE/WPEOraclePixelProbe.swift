@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+@testable import LiveWallpaper
 import Metal
 import Testing
 
@@ -51,8 +52,40 @@ enum WPEOraclePixelProbe {
                 samples.append(["x": point[0], "y": point[1], "storageRGBA": rgba])
             }
         }
-        return ["source": "final-offscreen-composite", "interpretation": "storage-no-transfer-or-unpremultiply",
+        return ["interpretation": "storage-no-transfer-or-unpremultiply",
                 "format": format, "width": texture.width, "height": texture.height, "samples": samples]
+    }
+
+    static func terminalLinearTexture(source: MTLTexture, executor: WPEMetalRenderExecutor) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .renderTarget]
+        descriptor.storageMode = .private
+        let target = try #require(source.device.makeTexture(descriptor: descriptor))
+        target.label = "oracle.terminal-linear"
+        let command = try #require(executor.commandQueue.makeCommandBuffer())
+        try executor.encodePresentPass(source: source, target: target, fitMode: .stretch,
+                                       worldSourceSize: nil, uniforms: nil, into: command)
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed, "Oracle terminal present failed")
+        return target
+    }
+
+    static func stageEvidence(
+        stage: String, texture: MTLTexture, coordinates: [[Int]], commandQueue: MTLCommandQueue,
+        frameOrdinal: Int, time: Double
+    ) throws -> [String: Any] {
+        var evidence = try sample(texture: texture, coordinates: coordinates, commandQueue: commandQueue)
+        evidence["stage"] = stage
+        evidence["frameOrdinal"] = frameOrdinal
+        evidence["time"] = time
+        evidence["resource"] = texture.label ?? "unlabeled"
+        evidence["transfer"] = stage == "terminal-linear" ? "linear" : "authored-encoded"
+        evidence["alpha"] = stage == "terminal-linear" ? "opaque-one" : "scene-coverage"
+        evidence["scope"] = "offscreen-native-storage-probes-not-display-capture-or-whole-frame-hash"
+        return evidence
     }
 }
 #endif
