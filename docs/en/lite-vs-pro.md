@@ -12,8 +12,9 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | Web wallpapers (JS toggle, tracker blocking, custom CSS, auto-refresh) | ✅ | ✅ |
 | Apple Aerials | ✅ | ✅ |
 | Per-display wallpapers, copy-to-all | ✅ | ✅ |
-| Playlists, shuffle, rotation | ✅ | ✅ |
+| Playlists, shuffle, rotation, Library Shuffle | ✅ | ✅ |
 | Time-of-day schedule automation | ✅ | ✅ |
+| Wallpaper transitions and opening animation | ✅ | ✅ |
 | Saved wallpapers, display schemes and configuration backup | ✅ | ✅ |
 | Particle & weather-reactive overlays | ✅ | ✅ |
 | Monitor board (ten widget types, including Weather and Agent Session) | ✅ | ✅ |
@@ -25,7 +26,8 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | Sparkle update checks, download and installation | ✅ | ✅ |
 | **Wallpaper Engine scene rendering** (Metal) | — | ✅ |
 | **Scene project import** (linked local folders, read in place) | — | ✅ |
-| **Steam Workshop browse & download** | — | ✅ |
+| **Scenes spanned across displays** | — | ✅ |
+| **Steam Workshop browse & download** (one library entry per Workshop item) | — | ✅ |
 | **Scene presets** (Workshop presets + your own saved values) | — | ✅ |
 | **System audio capture** (scene and music visual effects) | — | ✅ |
 | **Adaptive frame rate under occlusion** | — | ✅ |

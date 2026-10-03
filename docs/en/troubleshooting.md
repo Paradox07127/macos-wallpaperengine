@@ -19,13 +19,16 @@
 | Second display stays blank | Does the source's file permission cover that display's config? | Re-open the display's detail panel and re-assign the source explicitly |
 | Large video stutters | Source resolution/codec, overlays and resource pressure | Try a lower-resolution source, adjust the frame-rate target and disable overlays to isolate; changing preload trades RAM for disk/decoder work |
 | Desktop clicks feel blocked (scenes) | Scene **click interaction** captures mouse clicks | Disable click interaction for that display and reload |
+| Wallpaper vanished after an external drive was ejected | Is the video or web wallpaper stored on that drive? | The display keeps its configuration while the drive is away. Reconnect the drive; the display reloads on its own. Use **Reload display** if it does not |
+| Wallpaper stays paused after relaunch or replugging | Did you pause that display, or use the global toggle, before? | A manual pause persists. Press play, or pick a wallpaper for that display |
 
 ## Playlists & schedule
 
 | Problem | Check | Fix |
 |---|---|---|
 | Schedule doesn't switch | Overlapping slots? Bookmark still valid? App paused at that time? | Fix highlighted conflicts; re-save the slot; note that automation sleeps while the screen is locked or asleep and reconciles **once** on wake — missed slots don't fire retroactively |
-| Playlist interval ignored | At least two valid entries? Playlist mode on? | Reset the interval and re-save; after sleep/unlock the countdown restarts rather than resuming |
+| Playlist interval ignored | At least two valid entries? Playlist mode on? | Reset the interval and re-save. Picking a wallpaper yourself, applying a scheme or applying a Workshop item restarts the countdown. While you are away the countdown freezes, then continues from what was left |
+| A wallpaper is marked **Skipped** | It failed to load twice. **Skipped wallpapers** in **Wallpaper Automation** shows the reason | Fix the source, then click **Enable Again** |
 
 ## Import
 
@@ -42,6 +45,7 @@
 | **Set up SteamCMD** (or **Install SteamCMD** in onboarding) fails | The failure message identifies manifest, download, checksum or signature validation | Retry; a mismatch can be an incomplete download or trust failure, not proof of a specific cause. Do not bypass verification; use a verified existing install if needed |
 | A SteamCMD you picked stops working | It's re-verified on **every** run, not only when you chose it — an upgrade that changed its signature will be rejected | Re-pick it with **Choose SteamCMD**, or switch to a managed install |
 | Browse shows nothing | Filters, connectivity, and API-key status for API-only features | Clear restrictive filters and retry. Public browsing can work without a key; creator/preset/API queries may require one. Presets are hidden from general browse by default |
+| Import says an item "is already in your library from another folder" | The library keeps one entry per Workshop item | Use the entry already in the library. A Steam download of the same item asks before it replaces a local copy |
 | Preset list on a wallpaper is empty | Presets need a Steam Web API key to list, and SteamCMD to download | Add the key first; "No presets have been published for this wallpaper" means exactly that |
 
 ## Overlays, backup and updates

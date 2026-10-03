@@ -21,7 +21,7 @@ and the app target's build gates.
 
 | Settings page | Edition | Contents |
 |---|---|---|
-| General | both | Language, appearance, library tile size, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility |
+| General | both | Language, appearance, library tile size, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility, opening animation, wallpaper transition |
 | Display Defaults | both | Display arrangement and renaming; playback, frame rate, fit, color and interaction defaults |
 | Shortcuts | both | Master switch and eight bindable actions |
 | Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate, render threads and, on supported hardware, MetalFX upscaling and HDR output |
@@ -84,6 +84,35 @@ follow Loomscreen's video controls rather than claiming exact WPE parity.
 Preset volume multiplies the display's volume. These engine settings are kept
 separate from identically named project properties.
 
+**Span All Displays** also works for scenes and stretches one scene across
+displays. When a display joins or leaves, the scene is laid out again over the
+displays that remain. Switching one of those displays to video or web takes it
+out of the span. Applying a scheme never adds a display to a span. Fit, mute
+and volume changes also reach span displays that are disconnected.
+
+## Wallpaper transitions — both editions
+
+**Settings → General → Wallpaper** holds two settings.
+
+- **Wallpaper transition** plays when a display switches wallpapers. Choices
+  are None, Crossfade, Meteor, Ink Bloom, Light Leak, Aurora Curtain, Light
+  Weave, Ripple, Bokeh transition, Crystal, Blinds, Stardust and Random. The
+  default is Crossfade.
+- Ripple, Bokeh transition, Crystal, Blinds and Stardust distort a frame of the
+  old wallpaper into a frame of the new one. Video and scenes can supply that
+  frame. Web wallpapers and scenes spanned across displays cannot, so those
+  switches use a crossfade instead.
+- Automation switches use the same transition, played more slowly.
+- **Opening animation** plays once on each display when launch restores your
+  wallpapers. Choices are Off, Loom Line, Frame Unfold, Daybreak and Random.
+  The default is Loom Line.
+- When one action switches several displays, their transitions and openings
+  start together.
+- With Reduce Motion or Low Power Mode on, transitions become a short crossfade
+  and the opening becomes a short fade-in.
+- **Show wallpaper in screen captures** also applies to transition windows.
+  When it is off, transitions stay out of screenshots, recordings and sharing.
+
 ## Bookmarks, schemes and automation
 
 - **Bookmarks**: mark wallpapers you use often with the yellow bookmark, then
@@ -93,9 +122,27 @@ separate from identically named project properties.
 - **Schemes**: a full display setup, including wallpaper, overlays,
   playback, effects, playlist and schedule. Applying a scheme replaces that
   display's setup after confirmation. Positions adapt to the target display.
-- **Playlists**: videos, drag-reordering, shuffle and 1–1440 minute rotation.
+- **Wallpaper Automation**: a sheet opened from the display's top bar, with
+  three modes — Playlist, Daily Schedule and Library Shuffle.
+- **Playlists**: videos, web pages and (Pro) scenes, drag-reordering, shuffle,
+  and rotation every 1, 5, 15, 30, 60 or 120 minutes, or manual.
 - **Schedules**: time slots, conflict checks and fallback to the primary
   wallpaper. Automation pauses during lock/sleep and reconciles once on wake.
+  Slots sit on a **24-hour schedule** dial. Drag the ends of a slot's arc to
+  change its hours; double-click an empty hour to add a slot. **Unscheduled
+  Hours** sets the wallpaper for hours no slot covers.
+- **Library Shuffle**: picks a random wallpaper from the whole library at the
+  chosen interval. New imports join automatically. The same wallpaper never
+  plays twice in a row. **Next Random Wallpaper** skips ahead.
+- **Skipped wallpapers**: a wallpaper that fails to load is retried once, then
+  skipped. The sheet lists each one with its reason — missing file, failed
+  load or load timeout — and **Enable Again** brings it back.
+- The rotation countdown starts over when you pick a wallpaper yourself, apply
+  a scheme or apply a Workshop item (Pro). While you are away (lock or display
+  sleep), playlist and shuffle countdowns freeze and later continue from what
+  was left.
+- A wallpaper on an unmounted volume is passed over for that turn. It is not
+  marked skipped.
 - **Shortcuts**: play/pause, next, previous, mute, mouse interaction, global
   wallpaper visibility, reload and settings — eight configurable actions.
 - **Backup**: `.lwconfig` carries configurations, global settings, bookmarks
@@ -161,6 +208,15 @@ A manual pause retains a still frame and enters deeper resource hibernation
 after the dwell period. Pro adds adaptive scene frame rates and per-display
 render actors. Display configuration persists.
 
+A manual pause, from a display or the global toggle, persists. It holds through
+property edits, automatic rotation, unplugging and reconnecting the display,
+and relaunch. Pressing play, or picking a wallpaper for that display, clears
+it. Configuration backups do not carry the pause.
+
+Video and local web wallpapers can live on an external drive. When that volume
+is unmounted, the display keeps its configuration. When the volume mounts
+again, the affected displays reload on their own.
+
 ## Workshop — Pro
 
 - Browse with paging, cache, maturity/type/resolution/genre/Miscellaneous
@@ -189,6 +245,15 @@ render actors. Display configuration persists.
 - Downloads are revalidated inside the authorized library before import;
   app-managed deletion and download mutations share repository coordination.
 - Shared Wallpaper Engine assets can be linked or installed, with update checks.
+- The library keeps one entry per Workshop item. If a scene imported from a
+  local folder is also present as a Steam download, the Steam item takes its
+  place at launch and after the download. Displays, bookmarks and schemes that
+  used the local copy switch to the Steam item. The local folder stays on disk.
+- Downloading such an item yourself first asks **Replace the copy in your
+  library?**
+- Importing a folder whose Workshop item is already in the library from another
+  folder is refused. Folder imports report how many items they skipped for
+  this reason.
 
 ## System Wallpaper — both editions, macOS 26+
 

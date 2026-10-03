@@ -33,11 +33,12 @@ Closing the management window keeps Loomscreen and its wallpapers running. Use t
 
    With widget interaction enabled, only visible widget areas receive clicks; empty desktop areas stay click-through. Selecting and moving objects in the overlay editor remains interactive.
 
-6. Ordinary property edits save as you interact. **Playlist & Schedule** is a separate draft editor with **Save** and **Cancel**.
+6. Ordinary property edits save as you interact. **Wallpaper Automation** is a separate draft editor with **Save** and **Cancel**.
 
 ## 4) Playlists and rotation
 
-Open **Playlist & Schedule** from the display toolbar or inspector:
+Open **Wallpaper Automation** from the display's top bar. Its modes are
+**Playlist**, **Daily Schedule** and **Library Shuffle**. In **Playlist**:
 
 - Add wallpapers from the library, including video, web and scene entries supported by your edition.
 - Use each row's arrows to reorder, its play button to try it on this display, and its remove button to remove it from the queue.
@@ -46,12 +47,21 @@ Open **Playlist & Schedule** from the display toolbar or inspector:
 
 Prev/next also appear in the menu bar for displays running a playlist.
 
+**Library Shuffle** needs no list: it picks a random wallpaper from your whole
+library at the interval you choose. **Next Random Wallpaper** skips ahead.
+
+Picking a wallpaper yourself, applying a scheme or applying a Workshop item
+(Pro) restarts the countdown. A wallpaper that fails to load twice moves to
+**Skipped wallpapers** with its reason; **Enable Again** brings it back.
+
 ## 5) Time-of-day schedule
 
-Switch the same editor to **Daily Schedule**. Assign wallpapers to time ranges;
-overlapping ranges show an error and prevent saving. A range can cross midnight.
-**Save and Use Daily Schedule** switches the display to that mode. Configure the
-fallback wallpaper for uncovered hours. Automation pauses while you're away
+Switch the same editor to **Daily Schedule**. Slots sit on a **24-hour
+schedule** dial. Select a slot to pick its wallpaper and hours; drag the ends of
+its arc to change the hours; double-click an empty hour to add a slot.
+Overlapping ranges show an error and prevent saving. A range can cross midnight.
+**Save and Use Daily Schedule** switches the display to that mode. **Unscheduled
+Hours** sets the wallpaper for hours no slot covers. Automation pauses while you're away
 (lock or display sleep), then reconciles on wake rather than replaying missed slots.
 
 ## 6) Bookmarks and schemes
@@ -141,6 +151,7 @@ preset keeps your changes.
 ## 11) After the first day
 
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
+- Choose a **Wallpaper transition** and an **Opening animation** in **Settings → General → Wallpaper**.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug** pre-fills diagnostics.
 
