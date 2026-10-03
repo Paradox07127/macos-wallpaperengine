@@ -2054,6 +2054,12 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(moved.map { [$0.startHour, $0.endHour] } == [[6, 12], [13, 19]])
     }
 
+    @Test("A drag that leaves a slot with no hours is dropped")
+    func retimingRejectsEmptySlots() {
+        let slots = Self.morningAndAfternoon
+        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[0].id, start: 6, end: 6) == nil, "a zero-length drag was kept")
+    }
+
     @Test("A double-click inserts two hours, or one where two do not fit")
     func insertFallsBackToOneHour() throws {
         let slots = [ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"), ScheduleSlot(startHour: 13, endHour: 18, label: "Afternoon")]

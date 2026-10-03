@@ -20,6 +20,27 @@ struct ScheduleDialTests {
         #expect(ScheduleDialGeometry.span(ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")) == 0)
     }
 
+    @Test("An edge drag keeps at least one hour and never crosses the other edge or flips across midnight")
+    func edgeDragClamp() {
+        func drag(_ start: Int, _ end: Int, movingEnd: Bool, to hour: Int) -> [Int] {
+            let hours = ScheduleDialGeometry.draggedHours(ScheduleSlot(startHour: start, endHour: end, label: "Slot"), movingEnd: movingEnd, to: hour)
+            return [hours.start, hours.end]
+        }
+        #expect(drag(6, 12, movingEnd: true, to: 6) == [6, 7], "the end landed on the start")
+        #expect(drag(10, 18, movingEnd: true, to: 9) == [10, 11], "the end crossed the start into a 23-hour wrap")
+        #expect(drag(10, 18, movingEnd: true, to: 0) == [10, 24])
+        #expect(drag(10, 18, movingEnd: true, to: 2) == [10, 24], "a drag just past midnight snapped back to the start")
+        #expect(drag(10, 18, movingEnd: true, to: 14) == [10, 14])
+        #expect(drag(10, 18, movingEnd: false, to: 18) == [17, 18])
+        #expect(drag(10, 18, movingEnd: false, to: 20) == [17, 18])
+        #expect(drag(10, 18, movingEnd: false, to: 23) == [0, 18])
+        #expect(drag(22, 6, movingEnd: true, to: 23) == [22, 24], "a wrapping slot's end crossed its start")
+        #expect(drag(22, 6, movingEnd: true, to: 3) == [22, 3])
+        #expect(drag(22, 6, movingEnd: false, to: 5) == [7, 6], "a wrapping slot's start crossed its end")
+        #expect(drag(22, 6, movingEnd: false, to: 0) == [23, 6], "a wrapping slot's start flipped across midnight")
+        #expect(drag(18, 0, movingEnd: false, to: 20) == [20, 24])
+    }
+
     @Test("Callout lanes never overlap or clip, including clustered sections and compact overflow selection")
     func calloutPacking() {
         for size in [CGSize(width: 650, height: 460), CGSize(width: 420, height: 360)] {

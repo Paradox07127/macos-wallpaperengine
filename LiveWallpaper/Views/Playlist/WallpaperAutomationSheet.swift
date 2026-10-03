@@ -182,12 +182,13 @@ struct WallpaperAutomationSheet: View {
         preset.conflicts(with: slots) ? nil : preset.makeSlot()
     }
 
-    /// nil when the new hours overlap another slot: the timeline then drops the drag.
+    /// nil when the new hours are empty or overlap another slot: the timeline then drops the drag.
     static func retimed(_ slots: [ScheduleSlot], id: UUID, start: Int, end: Int) -> [ScheduleSlot]? {
         guard let index = slots.firstIndex(where: { $0.id == id }) else { return nil }
         var retimed = slots
         retimed[index].startHour = start
         retimed[index].endHour = end
+        guard !SchedulePolicy.hourRanges(for: retimed[index]).isEmpty else { return nil }
         return SchedulePolicy.conflicts(slot: retimed[index], against: retimed).isEmpty ? retimed : nil
     }
 
@@ -556,6 +557,7 @@ struct WallpaperAutomationSheet: View {
                             QueueEntryLabel(entry: entry, isPlaying: false, thumbnails: thumbnails) {
                                 thumbnailRequest(for: entry)
                             }
+                            .id(entry.id)
                         } else {
                             Label("Choose Wallpaper", systemImage: "plus")
                         }
@@ -633,8 +635,14 @@ struct WallpaperAutomationSheet: View {
     }
 
     private var timeline: some View {
+        TimelineView(.everyMinute) { context in
+            dial(now: context.date)
+        }
+    }
+
+    private func dial(now: Date) -> some View {
         ScheduleDial(
-            slots: slots, now: max(openedAt, manager.automationTime), palette: Self.slotPalette, selectedID: $selectedSlotID,
+            slots: slots, now: now, palette: Self.slotPalette, selectedID: $selectedSlotID,
             onRetimed: { id, start, end in
                 if let retimed = Self.retimed(slots, id: id, start: start, end: end) {
                     slots = retimed

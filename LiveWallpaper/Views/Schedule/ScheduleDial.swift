@@ -24,6 +24,29 @@ enum ScheduleDialGeometry {
         return Double(slot.endHour > slot.startHour ? slot.endHour - slot.startHour : slot.endHour + 24 - slot.startHour)
     }
 
+    /// Hours after dragging one edge to `hour`: at least one hour long, never past the other edge, and wrapping only if it already wrapped.
+    static func draggedHours(_ slot: ScheduleSlot, movingEnd: Bool, to hour: Int) -> (start: Int, end: Int) {
+        let start = slot.startHour
+        let end = slot.endHour == 0 ? 24 : slot.endHour
+        let wraps = start > end
+        let bounds = switch (movingEnd, wraps) {
+        case (false, false): (0, end - 1)
+        case (false, true): (end + 1, 23)
+        case (true, false): (start + 1, 24)
+        case (true, true): (0, start - 1)
+        }
+        // The dial reports an angle, not a delta: outside the range, snap to whichever bound is nearer around the circle.
+        let distance = { (bound: Int) in min(abs(hour - bound) % 24, 24 - abs(hour - bound) % 24) }
+        let clamped = if (bounds.0 ... bounds.1).contains(hour) {
+            hour
+        } else if (bounds.0 ... bounds.1).contains(hour + 24) {
+            hour + 24
+        } else {
+            distance(bounds.0) <= distance(bounds.1) ? bounds.0 : bounds.1
+        }
+        return movingEnd ? (start, clamped == 0 ? 24 : clamped) : (clamped, end)
+    }
+
     static func midpoint(_ slot: ScheduleSlot) -> Double {
         (Double(slot.startHour) + span(slot) / 2).truncatingRemainder(dividingBy: 24)
     }
@@ -162,6 +185,16 @@ struct ScheduleDial: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("24-hour schedule"))
+        // Callouts drop slots that do not fit, so every slot stays selectable from here.
+        .accessibilityActions {
+            ForEach(slots.sorted { $0.startHour < $1.startHour }) { slot in
+                Button { selectedID = slot.id } label: { Text(verbatim: accessibilityName(slot)) }
+            }
+        }
+    }
+
+    private func accessibilityName(_ slot: ScheduleSlot) -> String {
+        "\(ScheduleDialStyle.number(slot, in: slots)) · \(range(slot)) · \(slot.wallpaper?.displayTitle ?? slot.localizedLabel)"
     }
 
     private func select(at point: CGPoint, center: CGPoint, radius: Double) {
@@ -320,7 +353,7 @@ struct ScheduleDial: View {
         }
         .buttonStyle(.plain)
         .help(Text(verbatim: slot.wallpaper?.displayTitle ?? slot.localizedLabel))
-        .accessibilityLabel(Text(verbatim: "\(ScheduleDialStyle.number(slot, in: slots)) · \(range(slot)) · \(slot.wallpaper?.displayTitle ?? slot.localizedLabel)"))
+        .accessibilityLabel(Text(verbatim: accessibilityName(slot)))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -331,8 +364,8 @@ struct ScheduleDial: View {
             .frame(width: 28, height: 28).contentShape(Circle())
             .position(ScheduleDialGeometry.point(hour: Double(end ? visible.endHour : visible.startHour), radius: radius, center: center))
             .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("schedule-dial")).onChanged { value in
-                let hour = ScheduleDialGeometry.hour(at: value.location, center: center)
-                draggedHours = (slot.id, end ? slot.startHour : hour, end ? (hour == 0 ? 24 : hour) : slot.endHour)
+                let hours = ScheduleDialGeometry.draggedHours(slot, movingEnd: end, to: ScheduleDialGeometry.hour(at: value.location, center: center))
+                draggedHours = (slot.id, hours.start, hours.end)
             }.onEnded { _ in
                 if let drag = draggedHours {
                     onRetimed(drag.id, drag.start, drag.end)
