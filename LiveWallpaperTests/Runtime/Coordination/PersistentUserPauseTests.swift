@@ -9,13 +9,13 @@ import Testing
 struct PersistentUserPauseTests {
     private static let inlineHTML = HTMLSource.inline("<html></html>")
 
-    private func makeManager(videoLoader: FakePlayableVideoLoader = FakePlayableVideoLoader()) -> ScreenManager {
+    private func makeManager() -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
             powerMonitor: FakePowerMonitor(),
             fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: videoLoader,
+            playableVideoLoader: FakePlayableVideoLoader(),
             displayRegistry: FakeDisplayRegistry(),
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
@@ -293,44 +293,6 @@ struct PersistentUserPauseTests {
         }
     }
 
-    /// A video display manually paused before `body`, with a fresh session installed.
-    private func withPausedVideoScreen(
-        videoLoader: FakePlayableVideoLoader,
-        _ body: (ScreenManager, Screen) async throws -> Void
-    ) async throws {
-        guard let nsScreen = NSScreen.screens.first else {
-            Issue.record("No NSScreen available for test")
-            return
-        }
-        let screen = Screen(nsScreen: nsScreen)
-        let original = SettingsManager.shared.loadConfigurations()
-        let originalSettings = SettingsManager.shared.loadGlobalSettings()
-        defer {
-            screen.resetRuntimeSession()
-            SettingsManager.shared.replaceAllConfigurations(original)
-            SettingsManager.shared.saveGlobalSettings(originalSettings)
-        }
-        var cleared = originalSettings
-        cleared.pausedDisplayKeys = []
-        SettingsManager.shared.saveGlobalSettings(cleared)
-        SettingsManager.shared.replaceAllConfigurations([Self.configuration(.video, for: screen.id)])
-        let manager = makeManager(videoLoader: videoLoader)
-        manager.screens = [screen]
-        commitFreshSession(on: screen, in: manager)
-        manager.togglePlayback(for: screen)
-        try #require(persistedPause(manager, screen) == true)
-        try await body(manager, screen)
-        manager.bumpTransition(for: screen.id)
-    }
-
-    private static func waitUntil(_ condition: () async -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(2)
-        while await !condition(), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try await Task.sleep(for: .milliseconds(50))
-    }
-
     private static func temporaryVideo() throws -> (url: URL, bookmark: Data) {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("LiveWallpaper-pause-pick-\(UUID().uuidString).mp4")
@@ -338,33 +300,93 @@ struct PersistentUserPauseTests {
         return try (url, url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil))
     }
 
-    @Test("A library pick whose new video fails to prepare leaves the old wallpaper manually paused", .timeLimit(.minutes(1)))
-    func failedLibraryPickKeepsPause() async throws {
+    /// Synchronous on purpose: the pause key and saved rows are process-wide, and an await would let parallel suites rewrite them.
+    @Test("A library pick for a new video leaves the manual pause in place until the pick commits")
+    func newVideoPickKeepsPauseUntilCommit() throws {
         let video = try Self.temporaryVideo()
         defer { try? FileManager.default.removeItem(at: video.url) }
-        let loader = FakePlayableVideoLoader(validationError: .validationFailed)
-        try await withPausedVideoScreen(videoLoader: loader) { manager, screen in
-            manager.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen)
-            try await Self.waitUntil { await loader.completedValidationCount >= 1 }
+        try withConfiguredScreen(.video) { manager, screen, _ in
+            defer { manager.bumpTransition(for: screen.id) }
+            manager.togglePlayback(for: screen)
+            try #require(persistedPause(manager, screen) == true)
 
-            #expect(persistedPause(manager, screen) == true, "a failed pick cleared the pause, so the old wallpaper resumes on its next rebuild")
-            #expect(!commitFreshSession(on: screen, in: manager).userIntendsToPlay)
+            manager.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen)
+
+            #expect(persistedPause(manager, screen) == true, "the pause is cleared before the new video is prepared, so a failed pick resumes the old wallpaper")
         }
     }
 
-    @Test("A library pick that commits clears the manual pause", .timeLimit(.minutes(1)))
-    func committedLibraryPickClearsPause() async throws {
+    /// Picks a video through a coordinator over a private store; returns how often its commit hook ran.
+    private func commitHookRuns(validationFails: Bool) async throws -> Int {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let store = WallpaperConfigurationStore(persistence: PauseConfigurationMemory())
+        var previous = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x11]))
+        previous.displayFingerprint = screen.displayFingerprint
+        store.save(previous)
         let video = try Self.temporaryVideo()
         defer { try? FileManager.default.removeItem(at: video.url) }
-        try await withPausedVideoScreen(videoLoader: FakePlayableVideoLoader()) { manager, screen in
+        var commits = 0
+        var failures = 0
+        let coordinator = PlaybackCoordinator(
+            configurationStore: store,
+            configurationCommands: DisplayConfigurationTestSupport.commands(for: store),
+            playableVideoLoader: FakePlayableVideoLoader(validationError: validationFails ? .validationFailed : nil),
+            validateSavedVideoConfiguration: { _ in true },
+            applyPolicy: { _ in }, applyVideoEffects: { _, _ in },
+            refreshRateLookup: { _ in 60 }, screensProvider: { [screen] },
+            markSessionStateChanged: {}, releaseRuntimeSession: { $0.resetRuntimeSession() },
+            notifyWallpaperSessionChanged: {},
+            reportPreparationFailure: { _, _, _ in failures += 1 },
+            originReconciler: PreservingOriginReconciler(),
             // Rendering off commits the pick without building a player the fake file could not feed.
-            manager.wallpapersGloballyEnabled = false
-            manager.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen)
-            try await Self.waitUntil { manager.configurationStore.get(for: screen.id)?.videoBookmarkData == video.bookmark }
+            isGloballyEnabled: { false }
+        )
+        defer { coordinator.transition.bumpTransition(for: screen.id) }
 
-            #expect(manager.configurationStore.get(for: screen.id)?.videoBookmarkData == video.bookmark)
-            #expect(persistedPause(manager, screen) == false)
+        coordinator.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen, onCommit: { commits += 1 })
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while commits + failures == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
         }
+        #expect(commits + failures == 1)
+        #expect((store.get(for: screen.id)?.videoBookmarkData == video.bookmark) == !validationFails)
+        return commits
+    }
+
+    @Test("A video pick whose candidate fails never runs the commit hook that clears the pause", .timeLimit(.minutes(1)))
+    func failedVideoPickSkipsCommitHook() async throws {
+        #expect(try await commitHookRuns(validationFails: true) == 0)
+    }
+
+    @Test("A video pick that commits runs the commit hook once", .timeLimit(.minutes(1)))
+    func committedVideoPickRunsCommitHook() async throws {
+        #expect(try await commitHookRuns(validationFails: false) == 1)
+    }
+}
+
+@MainActor
+private final class PauseConfigurationMemory: ScreenConfigurationPersisting {
+    private var configurations: [CGDirectDisplayID: ScreenConfiguration] = [:]
+
+    func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
+        configurations[screenID]
+    }
+
+    func saveConfiguration(_ configuration: ScreenConfiguration) {
+        configurations[configuration.screenID] = configuration
+    }
+
+    func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
+        configurations[screenID] = nil
+    }
+
+    func loadConfigurations() -> [ScreenConfiguration] {
+        Array(configurations.values)
+    }
+
+    func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
+        self.configurations = Dictionary(uniqueKeysWithValues: configurations.map { ($0.screenID, $0) })
     }
 }
 
