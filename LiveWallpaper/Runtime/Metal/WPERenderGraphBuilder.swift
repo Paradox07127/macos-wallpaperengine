@@ -2669,7 +2669,6 @@ extension WPERenderPass {
             constantScripts: constantScripts, visibilityGate: visibilityGate
         )
     }
-
 }
 
 private extension WPERenderPass {
