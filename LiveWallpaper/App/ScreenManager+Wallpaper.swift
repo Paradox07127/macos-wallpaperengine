@@ -12,15 +12,19 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
         recordBookmarkDisplayName(bookmarkData, name: url.lastPathComponent)
+        // A candidate that fails leaves the old wallpaper running, so its manual pause must survive until the pick commits.
         let keptSession = playbackCoordinator.setVideo(
             url: url,
             bookmarkData: bookmarkData,
             packageEntryName: packageEntryName,
-            for: screen
+            for: screen,
+            onCommit: { [weak self] in self?.persistUserPause(false, for: screen) }
         )
-        if keptSession { playReusedSession(on: screen) }
+        if keptSession {
+            persistUserPause(false, for: screen)
+            playReusedSession(on: screen)
+        }
     }
 
     @discardableResult

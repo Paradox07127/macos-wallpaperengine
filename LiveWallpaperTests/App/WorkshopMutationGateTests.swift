@@ -260,6 +260,64 @@ struct WorkshopMutationGateTests {
             #expect(retried?.origin?.workshopID == itemID)
         }
     }
+
+    private static func parkPreparingCandidate(
+        _ configuration: ScreenConfiguration,
+        origin: WPEOrigin,
+        on screen: Screen,
+        in manager: ScreenManager
+    ) {
+        let attemptID = manager.wallpaperLoads.begin(for: screen, title: origin.workshopID, origin: origin)
+        manager.wallpaperLoads.update(attemptID, for: screen) {
+            $0.configuration = configuration
+            $0.phase = .preparing
+        }
+    }
+
+    @Test(
+        "A playing display whose parked candidate went stale reloads its saved wallpaper after the rewrite",
+        .timeLimit(.minutes(1))
+    )
+    func staleParkedCandidateReloadsSavedWallpaper() async throws {
+        let itemID = Self.uniqueID()
+        let origin = try origin(itemID)
+        await withScreen(playing: origin) { manager, screen in
+            screen.installRuntimeSession(GateFakeRuntimeSession())
+            Self.parkPreparingCandidate(Self.sceneConfiguration(origin, for: screen.id), origin: origin, on: screen, in: manager)
+
+            Self.post(.workshopItemWillMutate, itemID)
+            #expect(screen.runtimeSession == nil)
+
+            Self.post(.workshopItemDidMutate, itemID)
+
+            #expect(manager.wallpaperLoads.attempt(for: screen) != nil, "the display stays blank after the Steam update")
+        }
+    }
+
+    @Test(
+        "A setting changed while a parked candidate waits for the rewrite is not overwritten by the parked snapshot",
+        .timeLimit(.minutes(1))
+    )
+    func parkedSnapshotDoesNotOverwriteEditsDuringRewrite() async throws {
+        let itemID = Self.uniqueID()
+        let origin = try origin(itemID)
+        await withScreen(playing: origin) { manager, screen in
+            let snapshot = Self.sceneConfiguration(origin, for: screen.id)
+            Self.parkPreparingCandidate(snapshot, origin: origin, on: screen, in: manager)
+            Self.post(.workshopItemWillMutate, itemID)
+
+            let edited = snapshot.videoVolume == 0.2 ? 0.3 : 0.2
+            manager.updateVideoVolume(edited, for: screen)
+            #expect(manager.configurationStore.get(for: screen.id)?.videoVolume == edited)
+
+            Self.post(.workshopItemDidMutate, itemID)
+
+            #expect(
+                manager.wallpaperLoads.attempt(for: screen)?.configuration?.videoVolume == edited,
+                "the volume set during the download is reverted by the parked snapshot"
+            )
+        }
+    }
 }
 
 private final class GateFakeRuntimeSession: WallpaperRuntimeSession {

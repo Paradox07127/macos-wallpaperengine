@@ -67,7 +67,9 @@ extension ScreenManager {
                let proposal = attempt.configuration, reads(attempt.origin, workshopID) {
                 Logger.info("Cancelling a Workshop item candidate before shared-repository mutation", category: .workshop)
                 wallpaperLoads.clear(for: screen)
-                workshopMutationParkedProposals[screen.id] = (bumpTransition(for: screen.id), proposal)
+                workshopMutationParkedProposals[screen.id] = (
+                    bumpTransition(for: screen.id), configurationStore.revision(for: screen.id), proposal
+                )
                 suspended.insert(screen.id)
             }
             guard screen.runtimeSession != nil, readsWorkshopItem(screen, workshopID) else { continue }
@@ -84,10 +86,11 @@ extension ScreenManager {
     private func reloadWorkshopItemAfterMutation(_ workshopID: String) {
         let suspended = workshopMutationSuspendedScreenIDs.removeValue(forKey: workshopID) ?? []
         for screen in screens where suspended.contains(screen.id) {
-            if let parked = workshopMutationParkedProposals.removeValue(forKey: screen.id) {
-                if isCurrentTransition(parked.generation, for: screen.id) {
-                    restoreProposedWallpaperSession(for: screen, configuration: parked.configuration)
-                }
+            // Edits saved during the rewrite advance the revision but not the generation; either going stale retires the snapshot for what is saved.
+            if let parked = workshopMutationParkedProposals.removeValue(forKey: screen.id),
+               isCurrentTransition(parked.generation, for: screen.id),
+               configurationStore.revision(for: screen.id) == parked.revision {
+                restoreProposedWallpaperSession(for: screen, configuration: parked.configuration)
                 continue
             }
             guard screen.runtimeSession == nil, readsWorkshopItem(screen, workshopID) else { continue }

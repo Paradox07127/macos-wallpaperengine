@@ -381,8 +381,8 @@ final class ScreenManager {
     /// Only sessions Loomscreen actually stopped for an in-place Steam update
     /// are eligible for the matching post-update reload.
     @ObservationIgnored var workshopMutationSuspendedScreenIDs: [String: Set<CGDirectDisplayID>] = [:]
-    /// Candidates cancelled mid-preparation by a rewrite; `generation` is the cancelling transition, so a newer selection drops the retry.
-    @ObservationIgnored var workshopMutationParkedProposals: [CGDirectDisplayID: (generation: Int, configuration: ScreenConfiguration)] = [:]
+    /// Candidates cancelled mid-preparation by a rewrite; `generation` is the cancelling transition, `revision` the saved configuration's at parking.
+    @ObservationIgnored var workshopMutationParkedProposals: [CGDirectDisplayID: (generation: Int, revision: UInt64, configuration: ScreenConfiguration)] = [:]
     #endif
 
     // MARK: - Initialization

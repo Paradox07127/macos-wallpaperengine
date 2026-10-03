@@ -7,8 +7,15 @@ extension PlaybackCoordinator {
     // MARK: - Video session lifecycle
 
     /// Returns true when the screen's existing player was kept; its play state is left untouched.
+    /// `onCommit` runs only when a new video's configuration is committed, never for a kept player.
     @discardableResult
-    func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) -> Bool {
+    func setVideo(
+        url: URL,
+        bookmarkData: Data,
+        packageEntryName: String? = nil,
+        for screen: Screen,
+        onCommit: @MainActor @escaping () -> Void = {}
+    ) -> Bool {
         guard isRuntimeInstallationAllowed() else { return false }
         Logger.notice("Setting video for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
 
@@ -87,6 +94,7 @@ extension PlaybackCoordinator {
                             }
                             return false
                         }
+                        onCommit()
                         return true
                     }
                     // A disabled renderer still accepts the user's saved selection, but must not allocate a player or first-frame candidate.
@@ -133,7 +141,8 @@ extension PlaybackCoordinator {
         preservingState: Bool = false,
         forceReplacement: Bool = false,
         intent: WallpaperSessionRestoreIntent = .persistedConfiguration,
-        beforeCommit: @MainActor @escaping () -> Bool = { true }
+        beforeCommit: @MainActor @escaping () -> Bool = { true },
+        bookmarkVolumeIsUnavailable: (Data) -> Bool = SettingsManager.isBookmarkVolumeUnavailable
     ) {
         guard isRuntimeInstallationAllowed() else { return }
         let expectedConfigurationRevision = configurationStore.revision(for: screen.id)
@@ -154,11 +163,19 @@ extension PlaybackCoordinator {
                     category: .screenManager
                 )
                 if intent == .persistedConfiguration {
-                    Logger.warning(
-                        "Clearing unresolvable persisted bookmark for screen \(screen.id); user must re-pick the source.",
-                        category: .screenManager
-                    )
-                    removeConfiguration(for: screen.id)
+                    if bookmarkVolumeIsUnavailable(bookmarkData) {
+                        // The volume-mount reload can only restore a row that still exists.
+                        Logger.warning(
+                            "Keeping persisted bookmark for screen \(screen.id): its volume is not mounted",
+                            category: .screenManager
+                        )
+                    } else {
+                        Logger.warning(
+                            "Clearing unresolvable persisted bookmark for screen \(screen.id); user must re-pick the source.",
+                            category: .screenManager
+                        )
+                        removeConfiguration(for: screen.id)
+                    }
                     releaseRuntimeSession(screen)
                     // After the release, not before: releaseRuntimeSession calls setTransientRuntimeError(nil), so a report made above it is wiped before anything can render it.
                     switch failure {
