@@ -141,7 +141,8 @@ final class HTMLWallpaperCoordinator {
         forceReload: Bool = false,
         bookmarkID: UUID? = nil,
         wpeOrigin: WPEOrigin? = nil,
-        for screen: Screen
+        for screen: Screen,
+        onCommit: @MainActor @escaping () -> Void = {}
     ) -> Bool {
         // Resolve stale grants before identity probes — probes can burn the one-shot grace.
         let effectiveSource = prepareSource(source, bookmarkID, wpeOrigin)
@@ -203,16 +204,22 @@ final class HTMLWallpaperCoordinator {
             event: .userReplacedActiveWallpaper(previous: previousContent)
         )
         restoreWallpaperSession(screen, configuration, false) { [weak self] in
-            self?.saveConfiguration(configuration)
-            return self != nil
+            guard let self else { return false }
+            saveConfiguration(configuration)
+            onCommit()
+            return true
         }
         return false
     }
 
     @discardableResult
-    func setWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) -> Bool {
+    func setWallpaperPreservingConfig(
+        source: HTMLSource,
+        for screen: Screen,
+        onCommit: @MainActor @escaping () -> Void = {}
+    ) -> Bool {
         let preserved = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)?.htmlConfig ?? .default
-        return setWallpaper(source: source, config: preserved, for: screen)
+        return setWallpaper(source: source, config: preserved, for: screen, onCommit: onCommit)
     }
 
     func updateConfig(_ config: HTMLConfig, for screen: Screen) {

@@ -186,11 +186,13 @@ struct PersistentUserPauseTests {
         }
     }
 
-    @Test("An explicit wallpaper pick clears the persisted pause")
+    @Test("An explicit wallpaper pick clears the persisted pause once it commits")
     func explicitSelectionClearsPause() {
-        withConfiguredScreen { manager, screen, _ in
+        withConfiguredScreen(.video, sessionType: .html) { manager, screen, _ in
             manager.togglePlayback(for: screen)
             #expect(persistedPause(manager, screen) == true)
+            // Rendering off commits the pick synchronously, without preparing a session.
+            manager.wallpapersGloballyEnabled = false
 
             manager.switchToVideoWallpaper(for: screen)
 
@@ -314,6 +316,86 @@ struct PersistentUserPauseTests {
 
             #expect(persistedPause(manager, screen) == true, "the pause is cleared before the new video is prepared, so a failed pick resumes the old wallpaper")
         }
+    }
+
+    enum NewPick: CaseIterable {
+        case scene, htmlTypeSwitch, videoTypeSwitch, htmlPage, htmlPagePreservingConfig
+    }
+
+    /// Seeds a running wallpaper that the pick must replace rather than reuse.
+    private static func seed(for pick: NewPick) -> (Seed, WallpaperType) {
+        switch pick {
+        case .scene, .htmlPage, .htmlPagePreservingConfig: (.video, .video)
+        case .htmlTypeSwitch: (.htmlWithSavedHTML, .video)
+        case .videoTypeSwitch: (.video, .html)
+        }
+    }
+
+    private func perform(_ pick: NewPick, on screen: Screen, in manager: ScreenManager) {
+        switch pick {
+        case .scene:
+            let scene = SceneDescriptor(workshopID: "pause-pick", cacheRelativePath: "pause-pick", entryFile: "scene.json", capabilityTier: .imageOnly)
+            manager.setSceneWallpaper(descriptor: scene, origin: nil, for: screen)
+        case .htmlTypeSwitch:
+            manager.switchToHTMLWallpaper(for: screen)
+        case .videoTypeSwitch:
+            manager.switchToVideoWallpaper(for: screen)
+        case .htmlPage:
+            manager.setHTMLWallpaper(source: Self.inlineHTML, for: screen)
+        case .htmlPagePreservingConfig:
+            manager.setHTMLWallpaperPreservingConfig(source: Self.inlineHTML, for: screen)
+        }
+    }
+
+    /// Synchronous on purpose: the pause key and saved rows are process-wide, and an await would let parallel suites rewrite them.
+    @Test("A pick for a new wallpaper leaves the manual pause in place until the pick commits", arguments: NewPick.allCases)
+    func newPickKeepsPauseUntilCommit(_ pick: NewPick) throws {
+        let (seed, sessionType) = Self.seed(for: pick)
+        try withConfiguredScreen(seed, sessionType: sessionType) { manager, screen, _ in
+            defer { manager.bumpTransition(for: screen.id) }
+            manager.togglePlayback(for: screen)
+            try #require(persistedPause(manager, screen) == true)
+
+            perform(pick, on: screen, in: manager)
+
+            #expect(persistedPause(manager, screen) == true, "the pause is cleared before the new wallpaper is prepared, so a failed pick resumes the old wallpaper")
+        }
+    }
+
+    @Test("A pick for a new wallpaper clears the manual pause when it commits", arguments: NewPick.allCases)
+    func committedPickClearsPause(_ pick: NewPick) throws {
+        let (seed, sessionType) = Self.seed(for: pick)
+        try withConfiguredScreen(seed, sessionType: sessionType) { manager, screen, _ in
+            manager.togglePlayback(for: screen)
+            try #require(persistedPause(manager, screen) == true)
+            manager.wallpapersGloballyEnabled = false
+
+            perform(pick, on: screen, in: manager)
+
+            #expect(persistedPause(manager, screen) == false)
+            #expect(commitFreshSession(on: screen, in: manager).userIntendsToPlay)
+        }
+    }
+
+    @Test("An HTML page pick runs its commit hook only when the new page commits", arguments: [false, true])
+    func htmlPickCommitHookFollowsCommit(commits: Bool) throws {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let store = WallpaperConfigurationStore(persistence: PauseConfigurationMemory())
+        var hookRuns = 0
+        let coordinator = HTMLWallpaperCoordinator(
+            configurationStore: store, screensProvider: { [screen] }, saveConfiguration: { store.save($0) },
+            restoreWallpaperSession: { _, _, _, beforeCommit in
+                if commits {
+                    _ = beforeCommit()
+                }
+            },
+            notifyWallpaperSessionChanged: {}, originReconciler: PreservingOriginReconciler()
+        )
+
+        coordinator.setWallpaper(source: Self.inlineHTML, for: screen, onCommit: { hookRuns += 1 })
+        coordinator.setWallpaperPreservingConfig(source: .inline("<html>next</html>"), for: screen, onCommit: { hookRuns += 1 })
+
+        #expect(hookRuns == (commits ? 2 : 0))
     }
 
     /// Picks a video through a coordinator over a private store; returns how often its commit hook ran.

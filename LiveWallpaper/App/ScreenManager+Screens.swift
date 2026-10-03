@@ -302,7 +302,8 @@ extension ScreenManager {
     func restoreProposedWallpaperSession(
         for screen: Screen,
         configuration: ScreenConfiguration,
-        preservingState: Bool = false
+        preservingState: Bool = false,
+        onCommit: @MainActor @escaping () -> Void = {}
     ) {
         restoreWallpaperSession(
             for: screen,
@@ -312,6 +313,7 @@ extension ScreenManager {
             beforeCommit: { [weak self] in
                 guard let self else { return false }
                 self.saveConfiguration(configuration)
+                onCommit()
                 return true
             }
         )

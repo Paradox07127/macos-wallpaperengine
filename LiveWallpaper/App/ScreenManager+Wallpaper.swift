@@ -38,7 +38,6 @@ extension ScreenManager {
         }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
         var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) ?? ScreenConfiguration(
             screenID: screen.id,
             wallpaper: .scene(descriptor)
@@ -48,6 +47,7 @@ extension ScreenManager {
            screen.runtimeSession?.wallpaperType == .scene,
            configuration.sceneSpanGroupID == nil {
             Logger.info("Scene wallpaper already active for screen \(screen.id); keeping existing scene session", category: .screenManager)
+            persistUserPause(false, for: screen)
             playReusedSession(on: screen)
             completion?(.ready, nil)
             return nil
@@ -60,8 +60,10 @@ extension ScreenManager {
             preservingState: false,
             intent: .proposal,
             beforeCommit: { [weak self] in
-                self?.saveConfiguration(configuration)
-                return self != nil
+                guard let self else { return false }
+                self.saveConfiguration(configuration)
+                self.persistUserPause(false, for: screen)
+                return true
             },
             sceneCompletion: completion
         )
@@ -439,7 +441,6 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedVideoWallpaper() else { return }
@@ -447,18 +448,20 @@ extension ScreenManager {
         if previousWallpaper == config.activeWallpaper,
            screen.runtimeSession?.wallpaperType == .video {
             Logger.info("Video wallpaper already active for screen \(screen.id); keeping existing player session", category: .screenManager)
+            persistUserPause(false, for: screen)
             playReusedSession(on: screen)
             return
         }
 
-        restoreProposedWallpaperSession(for: screen, configuration: config)
+        restoreProposedWallpaperSession(for: screen, configuration: config) { [weak self] in
+            self?.persistUserPause(false, for: screen)
+        }
     }
 
     func switchToHTMLWallpaper(for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         let previousWallpaper = config.activeWallpaper
         guard config.activateSavedHTMLWallpaper() else { return }
@@ -466,11 +469,14 @@ extension ScreenManager {
         if previousWallpaper == config.activeWallpaper,
            screen.runtimeSession?.wallpaperType == .html {
             Logger.info("HTML wallpaper already active for screen \(screen.id); keeping existing WKWebView session", category: .screenManager)
+            persistUserPause(false, for: screen)
             playReusedSession(on: screen)
             return
         }
 
-        restoreProposedWallpaperSession(for: screen, configuration: config)
+        restoreProposedWallpaperSession(for: screen, configuration: config) { [weak self] in
+            self?.persistUserPause(false, for: screen)
+        }
     }
 
     // MARK: - HTML Wallpaper (delegates to HTMLWallpaperCoordinator)
@@ -486,24 +492,32 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
         let keptSession = htmlCoordinator.setWallpaper(
             source: source,
             config: config,
             forceReload: forceReload,
             bookmarkID: bookmarkID,
             wpeOrigin: wpeOrigin,
-            for: screen
+            for: screen,
+            onCommit: { [weak self] in self?.persistUserPause(false, for: screen) }
         )
-        if keptSession { playReusedSession(on: screen) }
+        if keptSession {
+            persistUserPause(false, for: screen)
+            playReusedSession(on: screen)
+        }
     }
 
     func setHTMLWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationCoordinator.resetRotationClock(for: screen.id)
-        persistUserPause(false, for: screen)
-        if htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen) {
+        let keptSession = htmlCoordinator.setWallpaperPreservingConfig(
+            source: source,
+            for: screen,
+            onCommit: { [weak self] in self?.persistUserPause(false, for: screen) }
+        )
+        if keptSession {
+            persistUserPause(false, for: screen)
             playReusedSession(on: screen)
         }
     }
