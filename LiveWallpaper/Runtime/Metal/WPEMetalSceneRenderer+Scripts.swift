@@ -770,11 +770,11 @@ extension WPEMetalSceneRenderer {
             )
         } else {
             // Authored origins are Y-up (`origin.y - sceneHeight/2`, no negation); the pointer arrives Y-down (`pointerSample` returns `1 - y`). Comparing the two raw would invert every hover.
-            let drawn = camera.transformScenePoint(
-                WPEMetalRenderExecutor.centeredOrigin(of: geometry, sceneSize: sceneSize)
-            )
+            // Only the camera's shift goes through Float, so an identity camera keeps the Double origin exact.
+            let authored = WPEMetalRenderExecutor.centeredOrigin(of: geometry, sceneSize: sceneSize)
+            let shift = camera.transformScenePoint(authored) - authored
             let zoom = camera.sceneMotion.zoom
-            center = SIMD2<Double>(width * 0.5 + Double(drawn.x), height * 0.5 - Double(drawn.y))
+            center = SIMD2<Double>(geometry.origin.x + Double(shift.x), height - geometry.origin.y - Double(shift.y))
             half = SIMD2<Double>(
                 Double(size.width) * abs(geometry.scale.x) * zoom * 0.5,
                 Double(size.height) * abs(geometry.scale.y) * zoom * 0.5
