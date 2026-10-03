@@ -172,11 +172,16 @@ final class WorkshopFolderImportCoordinator {
 
         let settings = settings.loadGlobalSettings()
         // Re-import when the stored source bookmark no longer resolves.
-        var known = Set(
-            settings.recentWPEImports
-                .filter { Self.originResolves($0.origin) }
-                .map(\.origin.workshopID)
-        )
+        var known = Set<String>()
+        var staleIDs = Set<String>()
+        // One resolve per entry: each resolve is a ScopedBookmarkAgent request.
+        for entry in settings.recentWPEImports {
+            if Self.originResolves(entry.origin) {
+                known.insert(entry.origin.workshopID)
+            } else {
+                staleIDs.insert(entry.origin.workshopID)
+            }
+        }
         // Skip items the user explicitly deleted so a still-present Steam item
         // does not silently reappear after removal from the Loomscreen library.
         known.formUnion(settings.deletedWorkshopIDs)
@@ -188,11 +193,6 @@ final class WorkshopFolderImportCoordinator {
         var added = 0
         var repaired = 0
         var conflicts = 0
-        let staleIDs = Set(
-            settings.recentWPEImports
-                .filter { !Self.originResolves($0.origin) }
-                .map(\.origin.workshopID)
-        )
 
         // Scan adds/relinks only; never prune on absence (unplugged drive ≠ deleted).
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
