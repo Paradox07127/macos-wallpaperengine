@@ -129,12 +129,16 @@ final class Screen: Identifiable, Hashable {
         return runtimeSession?.summary ?? .notConfigured
     }
 
-    func installRuntimeSession(_ session: any WallpaperRuntimeSession, group: WallpaperSwitchGroup? = nil) {
+    func installRuntimeSession(
+        _ session: any WallpaperRuntimeSession,
+        group: WallpaperSwitchGroup? = nil,
+        span: WallpaperSpanStart? = nil
+    ) {
         guard !isSameSession(runtimeSession, session) else { return }
         let old = runtimeSession
         handleRuntimeSessionTransition(from: old, to: session)
         runtimeSession = session
-        retire(old, group: group)
+        retire(old, group: group, span: span)
     }
 
     /// Swapped by tests to pin the transition and drive it with a manual clock.
@@ -158,7 +162,7 @@ final class Screen: Identifiable, Hashable {
     @ObservationIgnored private(set) var openingTransition: WallpaperOpeningTransition?
 
     /// Uncovers the live session's window, which the caller left at alpha 0.
-    func startOpening(_ effect: WallpaperOpeningEffect) {
+    func startOpening(_ effect: WallpaperOpeningEffect, span: WallpaperSpanStart? = nil) {
         guard let session = runtimeSession,
               let window = session.wallpaperWindow ?? session.videoPlayer?.playbackWindow else { return }
         let environment = transitionEnvironment
@@ -169,6 +173,8 @@ final class Screen: Identifiable, Hashable {
                 duration: effect.duration,
                 window: window,
                 renderer: environment.renderer(),
+                span: span,
+                region: canvasRegion(span, spansCanvas: effect == .loom),
                 makeClock: environment.makeClock,
                 onFinish: { [weak self, weak session] in
                     if holds {
@@ -207,7 +213,7 @@ final class Screen: Identifiable, Hashable {
 
     /// Video keeps wallpaperWindow nil, so retirement reaches its window through the player.
     /// A session that never installed a window takes the immediate path below.
-    private func retire(_ old: (any WallpaperRuntimeSession)?, group: WallpaperSwitchGroup?) {
+    private func retire(_ old: (any WallpaperRuntimeSession)?, group: WallpaperSwitchGroup?, span: WallpaperSpanStart?) {
         finishOpening()
         guard let old else { return }
         // A newer swap ends a transition still in progress rather than stacking a second one over it.
@@ -225,7 +231,7 @@ final class Screen: Identifiable, Hashable {
         let duration = reduceMotion || lowPower
             ? DesignTokens.Motion.wallpaperCrossfadeReducedMotionDuration
             : DesignTokens.Motion.wallpaperCrossfadeDuration * pace.durationScale
-        if case let .reveal(effect) = plan, startReveal(effect, pace: pace, retiring: old, window: window) {
+        if case let .reveal(effect) = plan, startReveal(effect, pace: pace, span: span, retiring: old, window: window) {
             return
         }
         if case let .distortion(effect) = plan,
@@ -262,6 +268,7 @@ final class Screen: Identifiable, Hashable {
     private func startReveal(
         _ effect: WallpaperRevealEffect,
         pace: WallpaperTransitionPace,
+        span: WallpaperSpanStart?,
         retiring old: any WallpaperRuntimeSession,
         window: NSWindow
     ) -> Bool {
@@ -272,6 +279,8 @@ final class Screen: Identifiable, Hashable {
             oldWindow: window,
             newWindow: runtimeSession?.wallpaperWindow ?? runtimeSession?.videoPlayer?.playbackWindow,
             renderer: transitionEnvironment.renderer(),
+            span: span,
+            region: canvasRegion(span, spansCanvas: effect == .meteor),
             makeClock: transitionEnvironment.makeClock,
             onFinish: { [weak self] in self?.completeReveal(token) }
         ) else {
@@ -289,6 +298,12 @@ final class Screen: Identifiable, Hashable {
             return false
         }
         return true
+    }
+
+    /// nil draws the effect on this display alone.
+    private func canvasRegion(_ span: WallpaperSpanStart?, spansCanvas: Bool) -> WallpaperCanvasRegion? {
+        guard spansCanvas, let span, span.sharesGeometry else { return nil }
+        return WallpaperCanvasRegion(frame: frame, canvas: span.canvas)
     }
 
     private func completeReveal(_ token: ObjectIdentifier) {
@@ -386,12 +401,13 @@ final class Screen: Identifiable, Hashable {
         _ session: any WallpaperRuntimeSession,
         replacing expected: (any WallpaperRuntimeSession)?,
         group: WallpaperSwitchGroup? = nil,
+        span: WallpaperSpanStart? = nil,
         beforeInstall: () -> Bool = { true }
     ) -> Bool {
         guard isSameSession(runtimeSession, expected) else { return false }
         // Single MainActor CAS turn: check + commit so stale candidates cannot win.
         guard beforeInstall() else { return false }
-        installRuntimeSession(session, group: group)
+        installRuntimeSession(session, group: group, span: span)
         return true
     }
 

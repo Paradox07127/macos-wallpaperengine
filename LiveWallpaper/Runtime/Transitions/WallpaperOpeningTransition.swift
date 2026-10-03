@@ -13,7 +13,7 @@ final class WallpaperOpeningTransition {
     private let makeClock: @MainActor (NSWindow) -> any WallpaperTransitionClock
     private var clock: (any WallpaperTransitionClock)?
     private let onFinish: @MainActor () -> Void
-    private var uniforms: WallpaperTransitionUniforms
+    private(set) var uniforms: WallpaperTransitionUniforms
     private var startTime: CFTimeInterval?
     private let finishDeadline: Duration
     private var deadlineTask: Task<Void, Never>?
@@ -30,6 +30,8 @@ final class WallpaperOpeningTransition {
         duration: TimeInterval,
         window: NSWindow,
         renderer: (any WallpaperTransitionRendering)?,
+        span: WallpaperSpanStart? = nil,
+        region: WallpaperCanvasRegion? = nil,
         makeClock: @escaping @MainActor (NSWindow) -> any WallpaperTransitionClock,
         finishDeadline: Duration? = nil,
         onFinish: @escaping @MainActor () -> Void
@@ -47,9 +49,11 @@ final class WallpaperOpeningTransition {
             progress: 0,
             time: 0,
             aspect: Float(contentView.bounds.width / contentView.bounds.height),
-            seed: Float.random(in: 0 ..< 1),
-            origin: SIMD2(Float.random(in: 0.15 ... 0.85), Float.random(in: 0.15 ... 0.85))
+            seed: span?.seed ?? Float.random(in: 0 ..< 1),
+            origin: span?.origin ?? SIMD2(Float.random(in: 0.15 ... 0.85), Float.random(in: 0.15 ... 0.85)),
+            region: region
         )
+        startTime = span?.hostTime
     }
 
     /// false attaches no mask or light window and leaves `alphaValue` untouched.

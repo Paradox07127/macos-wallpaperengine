@@ -78,6 +78,21 @@ private final class FailingTransitionRenderer: WallpaperTransitionRendering {
     }
 }
 
+private final class SpanTestNSScreen: NSScreen {
+    var displayID: UInt32 = 1
+    override var frame: NSRect {
+        NSRect(x: CGFloat(displayID) * 800, y: 0, width: 800, height: 600)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
+    }
+
+    override var localizedName: String {
+        "Span Test"
+    }
+}
+
 @Suite("Wallpaper reveal transition controller", .serialized)
 @MainActor
 struct WallpaperTransitionControllerTests {
@@ -685,6 +700,96 @@ struct WallpaperTransitionControllerTests {
         #expect(planCalls == 1)
         #expect(screens.map { $0.revealTransitions.values.first?.effect } == [.ink, .ink])
         #expect(olds.allSatisfy { $0.cleanupCallCount == 0 })
+    }
+
+    private struct SpanRun {
+        let span: WallpaperSpanStart
+        let frames: [CGRect]
+        let uniforms: [WallpaperTransitionUniforms]
+    }
+
+    /// Switches two side-by-side displays in one group and ticks each once, half a duration after `hostTime`.
+    /// nil `sharesGeometry` installs without a span.
+    private func runSpanReveal(_ effect: WallpaperRevealEffect, sharesGeometry: Bool?) throws -> SpanRun {
+        let clocks = [ManualTransitionClock(), ManualTransitionClock()]
+        let screens = zip([UInt32(71), 72], clocks).map { id, clock in
+            let nsScreen = SpanTestNSScreen()
+            nsScreen.displayID = id
+            let screen = Screen(nsScreen: nsScreen)
+            screen.transitionEnvironment = WallpaperTransitionEnvironment(
+                lowPowerMode: { false }, plan: { _, _ in .reveal(effect) }, makeClock: { _ in clock }
+            )
+            return screen
+        }
+        defer { screens.forEach { $0.resetRuntimeSession() } }
+        let span = WallpaperSpanStart(
+            hostTime: 100,
+            canvas: screens[0].frame.union(screens[1].frame),
+            seed: 0.25,
+            origin: SIMD2(0.3, 0.7),
+            sharesGeometry: sharesGeometry ?? true
+        )
+        let group = WallpaperSwitchGroup(pace: .manual)
+        for screen in screens {
+            screen.installRuntimeSession(TransitionTestSession(window: makeWallpaperWindow()))
+            screen.installRuntimeSession(
+                TransitionTestSession(window: makeWallpaperWindow()),
+                group: group,
+                span: sharesGeometry == nil ? nil : span
+            )
+        }
+        let transitions = try screens.map { try #require($0.revealTransitions.values.first) }
+        for (transition, clock) in zip(transitions, clocks) {
+            clock.fire(100 + transition.duration / 2)
+        }
+        return SpanRun(span: span, frames: screens.map(\.frame), uniforms: transitions.map(\.uniforms))
+    }
+
+    @Test("Meteor runs from the span's release time with its seed and origin, on the shared canvas")
+    func meteorFollowsTheSpanStart() throws {
+        let run = try runSpanReveal(.meteor, sharesGeometry: true)
+
+        #expect(run.uniforms.count == 2)
+        for (uniforms, frame) in zip(run.uniforms, run.frames) {
+            let region = WallpaperCanvasRegion(frame: frame, canvas: run.span.canvas)
+            #expect(abs(uniforms.progress - 0.5) < 1e-4)
+            #expect(uniforms.seed == run.span.seed && uniforms.origin == run.span.origin)
+            #expect(uniforms.regionOrigin == region.origin && uniforms.regionSize == region.size)
+            #expect(uniforms.canvasAspect == region.canvasAspect)
+        }
+    }
+
+    @Test("Meteor draws on each display alone when the displays share no geometry")
+    func meteorWithoutSharedGeometryDrawsAlone() throws {
+        let run = try runSpanReveal(.meteor, sharesGeometry: false)
+
+        #expect(run.uniforms.count == 2)
+        for uniforms in run.uniforms {
+            let identity = WallpaperCanvasRegion.identity(aspect: uniforms.aspect)
+            #expect(abs(uniforms.progress - 0.5) < 1e-4)
+            #expect(uniforms.seed == run.span.seed && uniforms.origin == run.span.origin)
+            #expect(uniforms.regionOrigin == .zero && uniforms.regionSize == identity.size)
+            #expect(uniforms.canvasAspect == uniforms.aspect)
+        }
+    }
+
+    @Test("Only Meteor reads the canvas; Ink still starts from the span's release time")
+    func inkIgnoresTheCanvas() throws {
+        let run = try runSpanReveal(.ink, sharesGeometry: true)
+
+        #expect(run.uniforms.count == 2)
+        for uniforms in run.uniforms {
+            #expect(abs(uniforms.progress - 0.5) < 1e-4)
+            #expect(uniforms.seed == run.span.seed)
+            #expect(uniforms.regionOrigin == .zero && uniforms.canvasAspect == uniforms.aspect)
+        }
+    }
+
+    @Test("Without a span start the reveal starts on its first tick")
+    func noSpanStartsOnFirstTick() throws {
+        let run = try runSpanReveal(.meteor, sharesGeometry: nil)
+
+        #expect(run.uniforms.map(\.progress) == [0, 0])
     }
 
     @Test("Screen: an automatic switch runs the reveal one and a half times as long")

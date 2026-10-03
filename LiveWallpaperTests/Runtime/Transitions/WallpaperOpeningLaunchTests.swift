@@ -72,6 +72,21 @@ private final class OpeningTestSession: WallpaperRuntimeSession {
     }
 }
 
+private final class OpeningLaunchTestNSScreen: NSScreen {
+    var displayID: UInt32 = 1
+    override var frame: NSRect {
+        NSRect(x: CGFloat(displayID) * 800, y: 0, width: 800, height: 600)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
+    }
+
+    override var localizedName: String {
+        "Opening Launch Test"
+    }
+}
+
 @MainActor
 private final class DecliningRenderer: WallpaperTransitionRendering {
     let device: MTLDevice
@@ -105,6 +120,34 @@ struct WallpaperOpeningLaunchTests {
             reduceMotion: { false }, lowPowerMode: { false }, plan: { _, _ in plan }, makeClock: { _ in clocks.make() }
         )
         return screen
+    }
+
+    private func makeScreen(id: UInt32, _ clocks: LaunchClockFactory, plan: WallpaperTransitionPlan = .crossfade) -> Screen {
+        let nsScreen = OpeningLaunchTestNSScreen()
+        nsScreen.displayID = id
+        let screen = Screen(nsScreen: nsScreen)
+        screen.transitionEnvironment = WallpaperTransitionEnvironment(
+            reduceMotion: { false }, lowPowerMode: { false }, plan: { _, _ in plan }, makeClock: { _ in clocks.make() }
+        )
+        return screen
+    }
+
+    private func commitTask(
+        _ candidate: any WallpaperRuntimeSession,
+        to screen: Screen,
+        replacing expected: (any WallpaperRuntimeSession)? = nil,
+        claim: @escaping @MainActor () -> WallpaperOpeningClaim? = { nil }
+    ) -> Task<WallpaperPreparationResult, Never> {
+        Task { @MainActor in
+            await WallpaperSessionTransaction.prepareAndCommit(
+                candidate,
+                to: screen,
+                replacing: expected,
+                timeout: .seconds(5),
+                isStillCurrent: { true },
+                claimOpening: claim
+            )
+        }
     }
 
     private func makeVideoPlayer() -> WallpaperVideoPlayer {
@@ -385,5 +428,91 @@ struct WallpaperOpeningLaunchTests {
         #expect(window.contentView?.layer?.mask == nil && opening.lightWindow == nil)
         #expect(window.alphaValue == 1)
         #expect(session.holds == [true, false])
+    }
+
+    /// Commits a fresh candidate on every display at once, each claiming from the batch at the same index.
+    private func commitOpenings(on screens: [Screen], from batches: [WallpaperOpeningBatch]) async throws
+        -> [WallpaperOpeningTransition] {
+        var tasks: [Task<WallpaperPreparationResult, Never>] = []
+        for (screen, batch) in zip(screens, batches) {
+            batch.barrier.expect(screen.id)
+            tasks.append(commitTask(OpeningTestSession(window: makeWallpaperWindow()), to: screen) { batch.claim(screen.id) })
+        }
+        for task in tasks {
+            #expect(await task.value == .ready)
+        }
+        return try screens.map { try #require($0.openingTransition) }
+    }
+
+    @Test("Displays opening from one launch batch share the seed, the start time and the canvas",
+          .timeLimit(.minutes(1)))
+    func batchOpeningsStartTogether() async throws {
+        let clocks = [LaunchClockFactory(), LaunchClockFactory()]
+        let screens = [makeScreen(id: 81, clocks[0]), makeScreen(id: 82, clocks[1])]
+        defer { screens.forEach { $0.resetRuntimeSession() } }
+        let batch = WallpaperOpeningBatch(displayIDs: Set(screens.map(\.id)), effect: .loom)
+
+        let openings = try await commitOpenings(on: screens, from: [batch, batch])
+
+        #expect(openings[0].uniforms.seed == openings[1].uniforms.seed)
+        let time = CACurrentMediaTime() + 0.2
+        for factory in clocks {
+            try #require(factory.made.last).fire(time)
+        }
+        let progress = openings.map(\.uniforms.progress)
+        #expect(progress[0] == progress[1] && progress[0] > 0)
+        let canvas = screens[0].frame.union(screens[1].frame)
+        for (opening, screen) in zip(openings, screens) {
+            let region = WallpaperCanvasRegion(frame: screen.frame, canvas: canvas)
+            #expect(opening.uniforms.regionOrigin == region.origin && opening.uniforms.regionSize == region.size)
+            #expect(opening.uniforms.canvasAspect == region.canvasAspect)
+        }
+    }
+
+    @Test("Displays switched by one group start the reveal together with one seed", .timeLimit(.minutes(1)))
+    func groupedRevealsStartTogether() async throws {
+        let clocks = [LaunchClockFactory(), LaunchClockFactory()]
+        let screens = [makeScreen(id: 83, clocks[0], plan: .reveal(.meteor)),
+                       makeScreen(id: 84, clocks[1], plan: .reveal(.meteor))]
+        defer { screens.forEach { $0.resetRuntimeSession() } }
+        let olds = screens.map { _ in OpeningTestSession(window: makeWallpaperWindow()) }
+        for (screen, old) in zip(screens, olds) {
+            screen.installRuntimeSession(old)
+        }
+        let group = WallpaperSwitchGroup(pace: .manual, barrier: WallpaperStartBarrier(timeout: .seconds(30)))
+        var tasks: [Task<WallpaperPreparationResult, Never>] = []
+        for (screen, old) in zip(screens, olds) {
+            group.barrier.expect(screen.id)
+            let candidate = OpeningTestSession(window: makeWallpaperWindow())
+            tasks.append(WallpaperSwitchGroup.$current.withValue(group) { commitTask(candidate, to: screen, replacing: old) })
+        }
+        for task in tasks {
+            #expect(await task.value == .ready)
+        }
+
+        let reveals = try screens.map { try #require($0.revealTransitions.values.first) }
+        #expect(reveals[0].uniforms.seed == reveals[1].uniforms.seed)
+        let time = CACurrentMediaTime() + 0.2
+        for factory in clocks {
+            try #require(factory.made.last).fire(time)
+        }
+        let progress = reveals.map(\.uniforms.progress)
+        #expect(progress[0] == progress[1] && progress[0] > 0)
+    }
+
+    @Test("Openings claimed from separate batches each start on their first tick", .timeLimit(.minutes(1)))
+    func separateBatchesStartOnFirstTick() async throws {
+        let clocks = [LaunchClockFactory(), LaunchClockFactory()]
+        let screens = [makeScreen(id: 85, clocks[0]), makeScreen(id: 86, clocks[1])]
+        defer { screens.forEach { $0.resetRuntimeSession() } }
+        let batches = screens.map { WallpaperOpeningBatch(displayIDs: [$0.id], effect: .loom) }
+
+        let openings = try await commitOpenings(on: screens, from: batches)
+
+        let time = CACurrentMediaTime() + 0.2
+        for factory in clocks {
+            try #require(factory.made.last).fire(time)
+        }
+        #expect(openings.map(\.uniforms.progress) == [0, 0])
     }
 }

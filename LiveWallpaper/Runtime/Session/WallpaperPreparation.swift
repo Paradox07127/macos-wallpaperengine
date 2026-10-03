@@ -226,8 +226,9 @@ enum WallpaperSessionTransaction {
             (candidate.wallpaperWindow ?? candidate.videoPlayer?.playbackWindow)?.alphaValue = 0
         }
         candidate.show()
+        var span: WallpaperSpanStart?
         if let barrier {
-            _ = await barrier.arrive(screen.id, attempt: attempt, frame: screen.frame)
+            span = await barrier.arrive(screen.id, attempt: attempt, frame: screen.frame)
             guard !Task.isCancelled, isStillCurrent() else {
                 Logger.notice(
                     Task.isCancelled
@@ -245,6 +246,7 @@ enum WallpaperSessionTransaction {
             candidate,
             replacing: expected,
             group: WallpaperSwitchGroup.current,
+            span: span,
             beforeInstall: {
                 didAttemptCommit = true
                 commitAccepted = beforeCommit()
@@ -262,7 +264,7 @@ enum WallpaperSessionTransaction {
         }
         if let opening {
             // Before afterCommit, so the policy it applies already sees the opening's hold.
-            screen.startOpening(opening.effect)
+            screen.startOpening(opening.effect, span: span)
         }
         afterCommit()
         return .ready
