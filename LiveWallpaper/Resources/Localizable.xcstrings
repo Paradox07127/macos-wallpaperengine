@@ -14965,41 +14965,6 @@
         }
       }
     },
-    "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic en una pantalla para abrir su configuración y superposiciones. Arrastra un archivo para aplicarlo solo allí; su menú contextual permite pausar o cambiar el fondo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイをクリックして設定とオーバーレイを開きます。ファイルをドロップするとそのディスプレイだけに適用します。右クリックで一時停止や変更ができます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击显示器打开配置层和叠加层。将文件拖到某台显示器上只会应用到该显示器；右键菜单可暂停或更换壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點按顯示器開啟設定層和疊加層。將檔案拖到某台顯示器上只會套用至該顯示器；右鍵選單可暫停或更換桌布。"
-          }
-        }
-      }
-    },
     "Click a wallpaper to see its details and choose a target display, or drag it onto a display. Bookmark keeps the source; a scheme also keeps a display's settings and overlays." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28602,41 +28567,6 @@
         }
       }
     },
-    "Failed sources are retried once, then skipped until you enable them again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Failed sources are retried once, then skipped until you enable them again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si una carga falla, se reintenta una vez. Si vuelve a fallar, se omite hasta que la actives de nuevo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "読み込みに失敗すると1回再試行します。再び失敗すると、再有効化するまでスキップします。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载失败时会重试一次。再次失败后会跳过，直到你重新启用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "載入失敗時會重試一次。再次失敗後會略過，直到你重新啟用。"
-          }
-        }
-      }
-    },
     "Failed twice. Click to enable this wallpaper again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30491,41 +30421,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "一般"
-          }
-        }
-      }
-    },
-    "General controls language, appearance, login startup and the Dock. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General controls language, appearance, login startup and the Dock. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General gestiona idioma, apariencia, inicio y Dock. Los valores predeterminados se usan en el primer fondo; ajusta uno existente en la configuración de su pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定では言語・外観・ログイン時の起動・Dock を管理します。既定値はディスプレイの最初の壁紙用です。既存の壁紙はそのディスプレイの設定レイヤーで調整します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通用设置管理语言、外观、登录启动与 Dock。显示器默认值用于首次设置壁纸；现有壁纸请在该显示器的配置层调整。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定管理語言、外觀、登入啟動與 Dock。顯示器預設值用於首次設定桌布；現有桌布請在該顯示器的設定層調整。"
           }
         }
       }
@@ -48883,41 +48778,6 @@
         }
       }
     },
-    "Playlist & Schedule controls automatic changes. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playlist & Schedule controls automatic changes. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playlist y programación controla cambios automáticos; Marcador guarda la fuente; Esquema, toda la configuración. Aplicar a todas las pantallas afecta a todas las conectadas: comprueba el destino."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストとスケジュールは自動変更、ブックマークは素材保存、構成はディスプレイ全体の保存を行います。全ディスプレイに適用は接続中の全ディスプレイに作用します。対象を確認してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表与计划管理自动切换；书签保存来源；方案保存完整显示器配置。“应用到所有显示器”会影响每台已连接的显示器，使用前请核对目标。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表與排程管理自動切換；書籤儲存來源；方案儲存完整顯示器設定。「套用至所有顯示器」會影響每台已連接的顯示器，使用前請核對目標。"
-          }
-        }
-      }
-    },
     "Plays in order, then repeats" : {
       "localizations" : {
         "en" : {
@@ -59429,41 +59289,6 @@
         }
       }
     },
-    "Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un fondo alrededor del reloj. Arrastra los extremos del arco para ajustar las horas y haz doble clic en una hora libre para añadir un tramo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時計の周囲の壁紙を選択します。円弧の両端をドラッグして時間を調整し、空いている時間をダブルクリックして時間帯を追加します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择圆盘周围的壁纸。拖动圆弧端点调整时间；双击空闲时段添加。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇圓盤周圍的桌布。拖移圓弧端點調整時間；按兩下空閒時段新增。"
-          }
-        }
-      }
-    },
     "Select SteamCMD before checking the connection." : {
       "comment" : "Steam sign-in diagnostic when no SteamCMD binary is bound.",
       "extractionState" : "manual",
@@ -63769,41 +63594,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟動"
-          }
-        }
-      }
-    },
-    "Startup and display defaults" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Startup and display defaults"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicio y valores predeterminados"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起動とディスプレイの既定値"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动与显示器默认值"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動與顯示器預設值"
           }
         }
       }
@@ -80783,6 +80573,391 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 密碼與 Steam 令牌驗證碼只會交給 SteamCMD。Loomscreen 既不儲存，也不會傳往別處。"
+          }
+        }
+      }
+    },
+    "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una pantalla para abrir su configuración y superposiciones. Arrastra un archivo para aplicarlo solo allí; su menú contextual permite pausar o cambiar el fondo. Con una playlist en curso, Fondo anterior y Fondo siguiente aparecen al pasar el puntero sobre la pantalla y en la barra de menús."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイをクリックして設定とオーバーレイを開きます。ファイルをドロップするとそのディスプレイだけに適用します。右クリックで一時停止や変更ができます。プレイリストの再生中は、ディスプレイにポインタを重ねるかメニューバーから「前の壁紙」「次の壁紙」を選べます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击显示器打开配置层和叠加层。将文件拖到某台显示器上只会应用到该显示器；右键菜单可暂停或更换壁纸。播放列表运行时，将指针移到显示器上即可看到“上一张”和“下一张”，菜单栏中也提供这两项。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點按顯示器開啟設定層和疊加層。將檔案拖到某台顯示器上只會套用至該顯示器；右鍵選單可暫停或更換桌布。播放列表執行時，將指標移到顯示器上即可看到「上一張」和「下一張」，選單列中也提供這兩項。"
+          }
+        }
+      }
+    },
+    "Wallpaper Automation changes this display's wallpaper by playlist, daily schedule or library shuffle. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Automation changes this display's wallpaper by playlist, daily schedule or library shuffle. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambio automático de fondo cambia el fondo de esta pantalla con una playlist, una programación diaria o el aleatorio de toda la biblioteca. Marcador guarda la fuente; Esquema, toda la configuración. Aplicar a todas las pantallas afecta a todas las conectadas: comprueba el destino."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「壁紙の自動切り替え」は、プレイリスト、1日のスケジュール、ライブラリ全体をランダム再生のいずれかでこのディスプレイの壁紙を変更します。「ブックマーク」は素材を、「構成」はディスプレイ全体の設定を保存します。「すべてのディスプレイに適用」は接続中の全ディスプレイに作用するため、対象を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“壁纸自动切换”可按播放列表、每日计划或壁纸库随机更换此显示器的壁纸。“添加书签”保存来源；“方案”保存完整的显示器配置。“应用到所有显示器”会影响每台已连接的显示器，使用前请核对目标。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「桌布自動切換」可依播放列表、每日排程或桌布庫隨機更換此顯示器的桌布。「加入書籤」儲存來源；「方案」儲存完整的顯示器設定。「套用到所有顯示器」會影響每台已連接的顯示器，使用前請核對目標。"
+          }
+        }
+      }
+    },
+    "Startup, transitions and defaults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup, transitions and defaults"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio, transiciones y valores predeterminados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動・切り替え効果・既定値"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动、换壁纸动画与默认值"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動、換桌布動畫與預設值"
+          }
+        }
+      }
+    },
+    "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General gestiona idioma, apariencia, inicio, Dock, la transición de fondo y la animación de apertura. Los valores predeterminados se usan en el primer fondo; ajusta uno existente en la configuración de su pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定では言語・外観・ログイン時の起動・Dock に加え、壁紙の切り替え効果とオープニングアニメーションを管理します。既定値はディスプレイの最初の壁紙用です。既存の壁紙はそのディスプレイの設定レイヤーで調整します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用设置管理语言、外观、登录启动、Dock，以及换壁纸动画和开场动画。显示器默认值用于首次设置壁纸；现有壁纸请在该显示器的配置层调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定管理語言、外觀、登入啟動、Dock，以及換桌布動畫和開場動畫。顯示器預設值用於首次設定桌布；現有桌布請在該顯示器的設定層調整。"
+          }
+        }
+      }
+    },
+    "Choose an automation mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an automation mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un modo de automatización"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動切り替えのモードを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择自动切换方式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇自動切換方式"
+          }
+        }
+      }
+    },
+    "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playlist reproduce los fondos que añadas en orden o en modo aleatorio, a mano o con un temporizador. Programación diaria asigna fondos a las horas del día. Aleatorio de toda la biblioteca elige un fondo al azar de toda tu biblioteca en cada intervalo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「プレイリスト」は追加した壁紙を順番またはシャッフルで、手動またはタイマーで切り替えます。「1日のスケジュール」は時間帯ごとに壁紙を割り当てます。「ライブラリ全体をランダム再生」は一定間隔でライブラリ全体から壁紙をランダムに選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“播放列表”按顺序或随机播放你添加的壁纸，可手动或定时切换。“每日计划”为一天中的各个时段指定壁纸。“壁纸库随机”在每个间隔从整个壁纸库中随机选择一张壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「播放列表」依順序或隨機播放你加入的桌布，可手動或定時切換。「每日排程」為一天中的各個時段指定桌布。「桌布庫隨機」在每個間隔從整個桌布庫中隨機選擇一張桌布。"
+          }
+        }
+      }
+    },
+    "Edit the list or the dial" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit the list or the dial"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edita la lista o el reloj"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストまたは時計を編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑列表或圆盘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯列表或圓盤"
+          }
+        }
+      }
+    },
+    "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Playlist, arrastra las filas para reordenarlas y usa Previsualizar en esta pantalla para probar una. En Programación diaria, selecciona un tramo para elegir su fondo y horas, arrastra los extremos del arco o haz doble clic en una hora libre para añadir un tramo. Horas sin programar cubre el resto del día."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「プレイリスト」では行をドラッグして並べ替え、「このディスプレイでプレビュー」で試せます。「1日のスケジュール」では時間帯を選択して壁紙と時間を設定し、円弧の両端をドラッグするか、空いている時間をダブルクリックして時間帯を追加します。「未設定の時間帯」は残りの時間に適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“播放列表”中，拖动各行可调整顺序，使用“在此显示器上试播”可试播某张壁纸。在“每日计划”中，选择时段可设置其壁纸和时间，也可拖动圆弧端点调整，或双击空闲时段添加新时段。“未安排的时段”涵盖一天中的其余时间。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「播放列表」中，拖移各列可調整順序，使用「在此顯示器上試播」可試播某張桌布。在「每日排程」中，選擇時段可設定其桌布和時間，也可拖移圓弧端點調整，或按兩下空閒時段新增時段。「未排程的時段」涵蓋一天中的其餘時間。"
+          }
+        }
+      }
+    },
+    "A wallpaper that fails to load is retried once, then marked Skipped. Choose Enable Again to include it again. Automation pauses while the screen is locked or the display sleeps, and does not replay changes it missed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A wallpaper that fails to load is retried once, then marked Skipped. Choose Enable Again to include it again. Automation pauses while the screen is locked or the display sleeps, and does not replay changes it missed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si un fondo no se carga, se reintenta una vez y luego se marca como Omitido. Elige Volver a activar para incluirlo de nuevo. La automatización se pausa con la pantalla bloqueada o en reposo, y no recupera los cambios perdidos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込みに失敗した壁紙は1回再試行され、再び失敗すると「スキップ済み」になります。「再び有効にする」を選ぶと再び対象に含めます。画面のロック中やディスプレイのスリープ中は自動切り替えが一時停止し、見逃した切り替えは再生しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸加载失败时会重试一次，再次失败后标记为“已跳过”。选择“重新启用”可将其重新纳入。屏幕锁定或显示器睡眠期间，自动切换会暂停，且不会补播错过的切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布載入失敗時會重試一次，再次失敗後標記為「已略過」。選擇「重新啟用」可將其重新納入。螢幕鎖定或顯示器睡眠期間，自動切換會暫停，且不會補播錯過的切換。"
+          }
+        }
+      }
+    },
+    "Save to apply" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save to apply"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda para aplicar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存して適用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存后生效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存後生效"
+          }
+        }
+      }
+    },
+    "Changes here stay a draft until you save. The Save button switches this display to the selected mode; Cancel discards the draft and restores the wallpaper shown before any preview." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes here stay a draft until you save. The Save button switches this display to the selected mode; Cancel discards the draft and restores the wallpaper shown before any preview."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los cambios aquí son un borrador hasta que guardes. El botón Guardar cambia esta pantalla al modo seleccionado; Cancelar descarta el borrador y restaura el fondo que se mostraba antes de cualquier previsualización."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここでの変更は保存するまで下書きのままです。「保存」ボタンでこのディスプレイを選択したモードに切り替えます。「キャンセル」は下書きを破棄し、プレビュー前に表示していた壁紙に戻します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此处的更改在保存前仅为草稿。“保存”按钮会将此显示器切换到所选方式；“取消”会放弃草稿，并恢复试播前显示的壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此處的變更在儲存前僅為草稿。「儲存」按鈕會將此顯示器切換為所選方式；「取消」會捨棄草稿，並恢復試播前顯示的桌布。"
           }
         }
       }

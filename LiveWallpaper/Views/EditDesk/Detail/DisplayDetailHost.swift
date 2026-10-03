@@ -183,7 +183,7 @@ struct DisplayDetailHost: View {
             .sheet(isPresented: $showAutomation) {
                 if let library {
                     AppLanguageScope(defaults: .appScoped()) {
-                        WallpaperAutomationSheet(screen: screen, library: library, initialConfiguration: screenManager.getConfiguration(for: screen))
+                        WallpaperAutomationSheet(screen: screen, library: library, size: ModalGeometry.panelFrame(in: stage.stageSize).size, initialConfiguration: screenManager.getConfiguration(for: screen))
                             .environment(screenManager)
                     }
                 }

@@ -58,6 +58,21 @@ struct OnboardingUITests {
         }
     }
 
+    @Test("Guides name Wallpaper Automation and its three modes")
+    func guidesNameWallpaperAutomation() {
+        func text(_ context: PageGuideContext) -> String {
+            context.steps.flatMap { [$0.title.probeKey, $0.message.probeKey] }.joined(separator: " ")
+        }
+        let configuration = text(.configuration)
+        #expect(configuration.contains("Wallpaper Automation"))
+        #expect(!configuration.contains("Playlist & Schedule"))
+        let automation = text(.automation)
+        for term in ["Playlist", "Daily Schedule", "Library Shuffle", "Enable Again"] {
+            #expect(automation.contains(term), Comment(rawValue: term))
+        }
+        #expect(text(.settings).contains("opening animation"))
+    }
+
     @Test("Guide panels stay in the window and avoid controls on all four edges")
     func floatingPanelPlacement() {
         for size in [CGSize(width: 1040, height: 640), CGSize(width: 1280, height: 800), CGSize(width: 1600, height: 1000)] {

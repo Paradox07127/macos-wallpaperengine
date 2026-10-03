@@ -120,11 +120,11 @@ final class PageGuideSession {
 }
 
 enum PageGuideTarget: Hashable {
-    case navigation, page, status, inspector, playback, overlayCanvas, overlayAdd, settingsSidebar, display, shelfHandle, libraryTools, steamMenu, detailLayers, detailActions, detailShared
+    case navigation, page, status, inspector, playback, overlayCanvas, overlayAdd, settingsSidebar, display, shelfHandle, libraryTools, steamMenu, detailLayers, detailActions, detailShared, automationModes, automationFooter
 }
 
 enum PageGuideContext: CaseIterable {
-    case overview, library, saved, systemWallpaper, workshop, settings, configuration, overlays
+    case overview, library, saved, systemWallpaper, workshop, settings, configuration, overlays, automation
 
     static func page(_ page: EditDeskRouter.Page) -> Self {
         switch page {
@@ -162,7 +162,7 @@ enum PageGuideContext: CaseIterable {
             [
                 .init(.navigation, "Loomscreen stays in the menu bar", "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
                 .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."),
-                .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper.", footnote: Self.importHint),
+                .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar.", footnote: Self.importHint),
                 .init(.shelfHandle, "Open the wallpaper shelf", "Click Wallpaper Library at the bottom, or scroll upward, to reveal the shelf. Continue upward for the full library. You can also use the top navigation."),
                 .init(.status, "Understand playback", "The status capsule describes system load. If a wallpaper stops, check its display status and Settings › Performance for automatic pause rules. Closing this window keeps wallpapers running; the menu bar opens it again."),
             ]
@@ -196,7 +196,7 @@ enum PageGuideContext: CaseIterable {
         case .settings:
             [
                 .init(.settingsSidebar, "Search for a setting", "The sidebar groups settings by task. Search finds both pages and individual settings; the information buttons explain their scope and effects."),
-                .init(.page, "Startup and display defaults", "General controls language, appearance, login startup and the Dock. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."),
+                .init(.page, "Startup, transitions and defaults", "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."),
                 .init(.page, "Performance and permissions", "Performance controls automatic pausing. Integrations controls weather location and supported audio response. Shortcuts configures keyboard actions; Overlays changes shared widget appearance."),
                 .init(.page, "Keep and recover your setup", "Backup & Restore saves settings without wallpaper files. Advanced provides diagnostics and reset. About contains Welcome Tour. Review each confirmation before replacing settings or deleting content."),
             ]
@@ -206,7 +206,7 @@ enum PageGuideContext: CaseIterable {
                 .init(.playback, "Audio, scaling and frame rate", "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Interaction sends desktop clicks to the wallpaper; turn it off to use desktop icons again. Available controls depend on the wallpaper type."),
                 .init(.inspector, "Wallpaper properties", "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display."),
                 .init(.detailActions, "Change, reload or clear", "Change Wallpaper selects another source. Reload restarts this display's content. Clear removes its wallpaper configuration without deleting the source file."),
-                .init(.detailShared, "Save, automate or share", "Playlist & Schedule controls automatic changes. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."),
+                .init(.detailShared, "Save, automate or share", "Wallpaper Automation changes this display's wallpaper by playlist, daily schedule or library shuffle. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."),
             ]
         case .overlays:
             [
@@ -215,6 +215,13 @@ enum PageGuideContext: CaseIterable {
                 .init(.overlayCanvas, "Arrange and configure", "Drag an object to move it. Select it and open Settings to adjust its appearance. The layer list shows or hides individual objects; Alignment Snapping helps position them."),
                 .init(.overlayCanvas, "Preview and desktop", "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations; music needs a supported player."),
                 .init(.detailShared, "Copy or remove overlays", "Copy to Other Displays opens a target chooser. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."),
+            ]
+        case .automation:
+            [
+                .init(.automationModes, "Choose an automation mode", "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval."),
+                .init(.page, "Edit the list or the dial", "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day."),
+                .init(.page, "Skipped wallpapers", "A wallpaper that fails to load is retried once, then marked Skipped. Choose Enable Again to include it again. Automation pauses while the screen is locked or the display sleeps, and does not replay changes it missed."),
+                .init(.automationFooter, "Save to apply", "Changes here stay a draft until you save. The Save button switches this display to the selected mode; Cancel discards the draft and restores the wallpaper shown before any preview."),
             ]
         }
     }

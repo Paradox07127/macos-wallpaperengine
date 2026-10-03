@@ -55,6 +55,7 @@ extension WallpaperQueueEntry {
 struct WallpaperAutomationSheet: View {
     let screen: Screen
     let library: SavedLibraryModel
+    let size: CGSize
     private let initialConfiguration: ScreenConfiguration?
     @Environment(ScreenManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
@@ -82,10 +83,12 @@ struct WallpaperAutomationSheet: View {
     /// The row "Preview on This Display" put on screen, and the display's automatic-switch serial at that moment.
     @State private var preview: (entryID: WallpaperQueueEntry.ID, switchSerial: Int?)?
     @State private var thumbnails = ShelfThumbnailCache()
+    @State private var guide = PageGuideSession()
 
-    init(screen: Screen, library: SavedLibraryModel, initialConfiguration: ScreenConfiguration? = nil) {
+    init(screen: Screen, library: SavedLibraryModel, size: CGSize, initialConfiguration: ScreenConfiguration? = nil) {
         self.screen = screen
         self.library = library
+        self.size = size
         self.initialConfiguration = initialConfiguration
         _mode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
         _savedMode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
@@ -222,12 +225,15 @@ struct WallpaperAutomationSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SteamSheetHeader(
-                icon: "clock.arrow.circlepath",
-                title: "Wallpaper Automation",
-                iconTint: DesignTokens.Colors.accent,
-                subtitle: headerSubtitle
-            )
+            HStack(alignment: .top) {
+                SteamSheetHeader(
+                    icon: "clock.arrow.circlepath",
+                    title: "Wallpaper Automation",
+                    iconTint: DesignTokens.Colors.accent,
+                    subtitle: headerSubtitle
+                )
+                PageGuideButton(context: .automation)
+            }
             .padding(.horizontal, DesignTokens.Spacing.xl)
             .padding(.top, DesignTokens.Spacing.xl)
             .padding(.bottom, DesignTokens.Spacing.lg)
@@ -251,6 +257,7 @@ struct WallpaperAutomationSheet: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Playback Mode"))
+            .pageGuideTarget(.automationModes)
             .padding(.horizontal, DesignTokens.Spacing.xl)
             .padding(.bottom, DesignTokens.Spacing.lg)
 
@@ -283,11 +290,13 @@ struct WallpaperAutomationSheet: View {
                     }
                 }
             )
+            .pageGuideTarget(.automationFooter)
+            // The guide panel's Return / Escape shortcuts would otherwise compete with Save / Cancel.
+            .disabled(guide.context != nil)
         }
-        .frame(
-            width: min(1040, max(760, (NSScreen.main?.visibleFrame.width ?? 1200) - 80)),
-            height: min(720, max(540, (NSScreen.main?.visibleFrame.height ?? 900) - 80))
-        )
+        .environment(guide)
+        .frame(width: size.width, height: size.height)
+        .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
         .onAppear(perform: load)
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
@@ -354,8 +363,6 @@ struct WallpaperAutomationSheet: View {
             }
             GroupBox {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                    Text("Failed sources are retried once, then skipped until you enable them again.")
-                        .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                     if failures.count > 6 {
                         ScrollView { rows }.frame(maxHeight: 280)
                     } else {
@@ -491,8 +498,6 @@ struct WallpaperAutomationSheet: View {
                     .onMove { from, to in queue.move(fromOffsets: from, toOffset: to) }
                 }
                 .listStyle(.plain).scrollContentBackground(.hidden)
-                Text("Failed sources are retried once, then skipped until you enable them again.")
-                    .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, DesignTokens.Spacing.xl)
@@ -517,8 +522,6 @@ struct WallpaperAutomationSheet: View {
                     .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
                 }
                 timeline.frame(maxWidth: .infinity, maxHeight: .infinity)
-                Text("Select a wallpaper around the clock. Drag the ends of its arc to adjust the time; double-click an empty hour to add a slot.")
-                    .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
             }
             scheduleInspector
         }
