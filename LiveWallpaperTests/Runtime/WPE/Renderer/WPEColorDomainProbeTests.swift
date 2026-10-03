@@ -1,9 +1,12 @@
 #if !LITE_BUILD && DEBUG
+import CoreGraphics
 import Foundation
+import ImageIO
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
 import Testing
+import UniformTypeIdentifiers
 
 @Suite("WPE color and alpha GPU contracts", .serialized)
 struct WPEColorDomainProbeTests {
@@ -337,6 +340,53 @@ struct WPEColorDomainProbeTests {
         let sample = try rawPixels(output, coordinates: [[8, 8]], executor: executor)[0]
         #expect(abs(sample[0] - pow(128.0 / 255, 2)) < 0.001)
         #expect(sample[3] == 1, "Fresh Windows particle scene draws use writeMask=7")
+    }
+
+    @Test("A media cover samples back at its encoded sRGB byte value")
+    func mediaCoverSamplesBackEncodedBytes() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let gray = [UInt8](repeating: 128, count: 8 * 8 * 4).enumerated().map { $0.offset % 4 == 3 ? 255 : $0.element }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb, width: 8, height: 8, mipmapped: false)
+        descriptor.usage = .shaderRead
+        let decodedOnSample = try #require(device.makeTexture(descriptor: descriptor))
+        decodedOnSample.replace(region: MTLRegionMake2D(0, 0, 8, 8), mipmapLevel: 0, withBytes: gray, bytesPerRow: 8 * 4)
+        let pass = WPERenderPass(id: "cover.0", phase: .material, shader: "genericimage2", source: .image("cover"), target: .scene,
+                                 textures: [0: .image("cover")], binds: [:], constants: [:], combos: [:],
+                                 userTextureBindings: .init(material: [.init(name: "$mediaThumbnail", type: "system", slot: 0)]),
+                                 blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let layer = WPERenderLayer(objectID: "cover", objectName: "cover", imagePath: "cover", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [
+            .init(pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:]),
+        ])])
+        func sampledBytes(_ store: WPEMediaTextureStore) throws -> [Int] {
+            executor.mediaTextureStore = store
+            let output = try executor.render(pipeline: pipeline, size: CGSize(width: 8, height: 8), textures: ["cover": decodedOnSample])
+            #expect(output.pixelFormat == WPEMetalRenderExecutor.outputPixelFormat)
+            return try rawPixels(output, coordinates: [[4, 4]], executor: executor)[0].prefix(3).map { Int(($0 * 255).rounded()) }
+        }
+
+        let coverStore = WPEMediaTextureStore(device: device, slotsByPassID: ["cover.0": [0: .thumbnail]])
+        try #require(coverStore.ingest(artwork: Self.png(rgba: gray, width: 8, height: 8)))
+        let cover = try sampledBytes(coverStore)
+        #expect(cover.allSatisfy { abs($0 - 128) <= 2 }, "cover sampled back as \(cover), decoded once too often")
+        let control = try sampledBytes(WPEMediaTextureStore(device: device, slotsByPassID: ["cover.0": [0: .thumbnail]]))
+        // 55 is 128 after one sRGB decode: 255 * ((128/255 + 0.055) / 1.055)^2.4.
+        #expect(control.allSatisfy { abs($0 - 55) <= 3 }, "_srgb control sampled back as \(control)")
+    }
+
+    private static func png(rgba: [UInt8], width: Int, height: Int) throws -> Data {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let provider = try #require(CGDataProvider(data: Data(rgba) as CFData))
+        let image = try #require(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                                         space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let output = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        try #require(CGImageDestinationFinalize(destination))
+        return output as Data
     }
 
     private func rawPixels(_ texture: MTLTexture, coordinates: [[Int]], executor: WPEMetalRenderExecutor) throws -> [[Double]] {
