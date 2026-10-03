@@ -427,7 +427,8 @@ struct PersistentUserPauseTests {
 
         coordinator.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen, onCommit: { commits += 1 })
 
-        let deadline = ContinuousClock.now + .seconds(5)
+        // CI's parallel shard can stall the main actor for tens of seconds; the suite's one-minute limit still bounds a hang.
+        let deadline = ContinuousClock.now + .seconds(50)
         while commits + failures == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

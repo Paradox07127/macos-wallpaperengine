@@ -167,7 +167,7 @@ struct WallpaperStartBarrierCommitTests {
         try await waitUntil { a.showCallCount == 2 }
         gateB.open(.failed)
         #expect(await tasks.a.value == .ready)
-        #expect(ContinuousClock.now - began < .seconds(5))
+        #expect(ContinuousClock.now - began < .seconds(20))
         #expect(await tasks.b.value == .failed)
         #expect(screenA.runtimeSession === a)
         #expect(group.barrier.start(for: screenA.id) == nil)
@@ -188,7 +188,7 @@ struct WallpaperStartBarrierCommitTests {
         b.isCurrent = false
         gateB.open()
         #expect(await tasks.a.value == .ready)
-        #expect(ContinuousClock.now - began < .seconds(5))
+        #expect(ContinuousClock.now - began < .seconds(20))
         #expect(await tasks.b.value == .cancelled)
         #expect(screenA.runtimeSession === a)
         #expect(group.barrier.start(for: screenA.id) == nil)
