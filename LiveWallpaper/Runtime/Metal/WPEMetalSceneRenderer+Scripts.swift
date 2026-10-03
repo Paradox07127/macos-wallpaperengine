@@ -84,6 +84,7 @@ extension WPEMetalSceneRenderer {
         layerPressStates = [:]
         lastHoverPointerPixels = nil
         layerVideoSourceKey = [:]
+        sceneScriptVideoCommandBuffer.forgetTransports()
         layerObjectIDByName = [:]
         liveLayerAlpha = [:]
         invalidateIntroPhaseAlign()
@@ -317,6 +318,10 @@ extension WPEMetalSceneRenderer {
         for (name, state) in output.others {
             guard let targetID = layerObjectIDByName[name] else { continue }
             applyLayerScriptState(state, objectID: targetID)
+        }
+        for call in output.videoCalls where !call.layerKey.isEmpty {
+            guard let targetID = layerObjectIDByName[call.layerKey] else { continue }
+            sceneScriptVideoCommandBuffer.enqueue([call.command], objectID: targetID)
         }
         for (name, mutation) in output.otherTransforms {
             guard let targetID = layerObjectIDByName[name] else { continue }
@@ -847,6 +852,10 @@ extension WPEMetalSceneRenderer {
             guard let targetID = targetID(name) else { continue }
             applyLayerScriptState(state, objectID: targetID)
         }
+        for call in output.videoCalls {
+            guard let id = call.layerKey.isEmpty ? ownObjectID : targetID(call.layerKey) else { continue }
+            sceneScriptVideoCommandBuffer.enqueue([call.command], objectID: id)
+        }
         for (name, mutation) in output.otherTransforms {
             guard let targetID = targetID(name) else { continue }
             layerTransformMutationJournal.record(
@@ -989,7 +998,6 @@ extension WPEMetalSceneRenderer {
                 liveLayerAlpha[objectID] = state.alpha
             }
         }
-        sceneScriptVideoCommandBuffer.enqueue(state.videoCommands, objectID: objectID)
     }
 
     private func videoTexturePaths(for layer: WPEPreparedRenderLayer) -> [String] {

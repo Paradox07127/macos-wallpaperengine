@@ -248,8 +248,9 @@ extension WPEMetalSceneRenderer {
             sceneScriptIntroPhaseAlignPending = false
 
             for buffered in bufferedCommands {
-                guard let key = layerVideoSourceKey[buffered.objectID],
-                      let video = dynamicTextureSources[key] as? WPEVideoTextureSource else { continue }
+                guard let key = layerVideoSourceKey[buffered.objectID] else { continue }
+                sceneScriptVideoCommandBuffer.recordTransport(buffered.command, sourceKey: key)
+                guard let video = dynamicTextureSources[key] as? WPEVideoTextureSource else { continue }
                 switch buffered.command {
                 case .play: video.scriptPlay()
                 case .pause: video.scriptPause()

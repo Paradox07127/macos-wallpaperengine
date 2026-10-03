@@ -355,6 +355,10 @@ actor WPEDisplayRenderActor {
         if let previous, previous !== source {
             previous.invalidate()
         }
+        renderer.sceneScriptVideoCommandBuffer.transportBySourceKey[key]?.apply(
+            to: source,
+            automaticPlayback: renderer.currentProfile == .quality
+        )
         source.applyPerformanceProfile(renderer.currentProfile)
         renderer.surfaceControl.setNeedsRedraw()
     }

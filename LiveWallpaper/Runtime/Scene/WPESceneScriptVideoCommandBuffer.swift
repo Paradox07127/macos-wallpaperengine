@@ -9,6 +9,16 @@
     struct WPESceneScriptVideoCommandBuffer: Sendable {
         private(set) var isTransactionActive = false
         private(set) var pending: [WPESceneScriptBufferedVideoCommand] = []
+        /// Committed transport per video source key; outlives transactions so a rebuilt decoder resumes it.
+        private(set) var transportBySourceKey: [String: WPEVideoScriptTransport] = [:]
+
+        mutating func recordTransport(_ command: WPELayerVideoCommand, sourceKey: String) {
+            transportBySourceKey[sourceKey, default: .init()].record(command)
+        }
+
+        mutating func forgetTransports() {
+            transportBySourceKey.removeAll()
+        }
 
         mutating func begin() {
             pending.removeAll(keepingCapacity: true)

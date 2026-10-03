@@ -24,6 +24,12 @@ enum WPELayerVideoCommand: Sendable, Equatable {
     case setLoop(Bool)
 }
 
+/// `layerKey` "" = thisLayer, else the getLayer name.
+struct WPELayerScriptVideoCall: Sendable, Equatable {
+    var layerKey: String
+    var command: WPELayerVideoCommand
+}
+
 /// Scalar vs Vec2/Vec3 shape for property init/update (wrong shape is a silent undefined).
 enum WPEScriptValueShape: Sendable {
     case scalar
@@ -84,6 +90,9 @@ struct WPELayerScriptOutput: Sendable, Equatable {
     var otherTransforms: [String: WPELayerScriptTransformMutation] = [:]
     /// Explicit `.text` assignments; key "" = thisLayer, else the getLayer name.
     var texts: [String: String] = [:]
+    /// Every handle's video commands in call order; the renderer replays this, not the per-layer
+    /// `videoCommands`, so handles sharing one source keep their interleaving.
+    var videoCalls: [WPELayerScriptVideoCall] = []
 }
 
 enum WPELayerScriptOutputMode: Sendable, Equatable {
@@ -738,6 +747,7 @@ final class WPELayerScriptInstance {
             }
             merged.presentation[name] = accumulated
         }
+        merged.videoCalls = pending.videoCalls + newer.videoCalls
         merged.own.videoCommands = pending.own.videoCommands + newer.own.videoCommands
         for (name, pendingState) in pending.others {
             if var newerState = merged.others[name] {
@@ -1621,9 +1631,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate var presentationMutations: [String: WPELayerScriptPresentationMutation] = [:]
     fileprivate var createdAngles: [String: SIMD3<Double>] = [:]
     fileprivate var hasLoggedUnsupportedLayerOperation = false
-    /// Key "" = thisLayer, else the getLayer name. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
-    fileprivate var pendingVideo: [String: [WPELayerVideoCommand]] = [:]
-    private var pendingVideoIntents: [(sourceKey: String, command: WPELayerVideoCommand)] = []
+    /// Call order across all handles; `sourceKey` nil = no published source. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
+    fileprivate var pendingVideo: [(call: WPELayerScriptVideoCall, sourceKey: String?)] = []
     /// Last play/stop intent per sound layer, so `isPlaying()` answers without
     /// a read-back channel into the audio graph.
     fileprivate var soundIntent: [String: Bool] = [:]
@@ -2324,11 +2333,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         let append: @Sendable (WPELayerVideoCommand) -> Void = { [weak self] command in
             guard let self, evaluationResourceBudget.admitVideoCommand() else { return }
-            pendingVideo[key, default: []].append(command)
-            if let objectID = layerInfo(forKey: key)?.id,
-               let sourceKey = shared?.videoSourceKey(objectID: objectID) {
-                pendingVideoIntents.append((sourceKey, command))
-            }
+            let sourceKey = layerInfo(forKey: key).flatMap { shared?.videoSourceKey(objectID: $0.id) }
+            pendingVideo.append((WPELayerScriptVideoCall(layerKey: key, command: command), sourceKey))
         }
         let play: @convention(block) () -> Void = { append(.play) }
         let pause: @convention(block) () -> Void = { append(.pause) }
@@ -2406,9 +2412,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
     private func videoSnapshot(forKey key: String) -> WPEVideoPlaybackSnapshot? {
         guard let objectID = layerInfo(forKey: key)?.id,
               var snapshot = shared?.videoPlaybackSnapshot(objectID: objectID) else { return nil }
-        let sourceKey = shared?.videoSourceKey(objectID: objectID)
-        for intent in pendingVideoIntents where intent.sourceKey == sourceKey {
-            snapshot.applyEvaluationIntent(intent.command)
+        guard let sourceKey = shared?.videoSourceKey(objectID: objectID) else { return snapshot }
+        for pending in pendingVideo where pending.sourceKey == sourceKey {
+            snapshot.applyEvaluationIntent(pending.call.command)
         }
         return snapshot
     }
@@ -2419,7 +2425,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         for (name, _) in namedLayers {
             let visible = assignedVisible[name]
             let alpha = assignedAlpha[name]
-            let video = pendingVideo[name] ?? []
+            let video = videoCommands(forKey: name)
             // A layer the script only READ (never assigned visible/alpha, no
             // video command) must not be driven — leave its real visibility be.
             guard visible != nil || alpha != nil || !video.isEmpty else { continue }
@@ -2440,8 +2446,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
                 presentation[key, default: .init()].sortIndex = index
             }
         }
+        let videoCalls = pendingVideo.map(\.call)
         pendingVideo.removeAll(keepingCapacity: true)
-        pendingVideoIntents.removeAll(keepingCapacity: true)
         return WPELayerScriptOutput(
             own: own,
             others: others,
@@ -2450,8 +2456,13 @@ class WPELayerScriptBridge: @unchecked Sendable {
             presentation: presentation,
             ownTransform: assignedOwnTransform,
             otherTransforms: assignedOtherTransforms,
-            texts: assignedText
+            texts: assignedText,
+            videoCalls: videoCalls
         )
+    }
+
+    private func videoCommands(forKey key: String) -> [WPELayerVideoCommand] {
+        pendingVideo.filter { $0.call.layerKey == key }.map(\.call.command)
     }
 
     /// Neutral defaults for a layer the script never assigned: own layer keeps
@@ -2471,7 +2482,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         return WPELayerScriptState(
             visible: visible ?? defaultVisible(forKey: key),
             alpha: alpha ?? defaultAlpha(forKey: key),
-            videoCommands: pendingVideo[key] ?? [],
+            videoCommands: videoCommands(forKey: key),
             visibleAssigned: visible != nil,
             alphaAssigned: alpha != nil
         )

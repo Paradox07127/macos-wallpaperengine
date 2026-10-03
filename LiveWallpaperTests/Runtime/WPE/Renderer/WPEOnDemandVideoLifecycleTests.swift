@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
 import Metal
 import Testing
 
@@ -86,6 +87,77 @@ struct WPEOnDemandVideoLifecycleTests {
             #expect(handoff.renderer.onDemandVideoTasks.isEmpty)
         }
         #expect(await actor.shutdown())
+    }
+
+    @Test("A rate committed before release is restored on the rebuilt source")
+    func rateBeforeReleaseSurvivesRebuild() async throws {
+        let rebuilt = try await rebuiltSourceSnapshot(afterRelease: [])
+        #expect(rebuilt.rate == 0.5)
+        #expect(rebuilt.loop == false)
+        #expect(rebuilt.isPlaying)
+    }
+
+    @Test("Commands committed while the source is released apply to the rebuilt source")
+    func commandsDuringReleaseSurviveRebuild() async throws {
+        let rebuilt = try await rebuiltSourceSnapshot(afterRelease: [.setRate(2), .pause, .seek(0.5)])
+        #expect(rebuilt.rate == 2)
+        #expect(rebuilt.loop == false)
+        #expect(!rebuilt.isPlaying)
+    }
+
+    private func rebuiltSourceSnapshot(
+        afterRelease: [WPELayerVideoCommand]
+    ) async throws -> WPEVideoPlaybackSnapshot {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let key = "materials/clip.tex"
+        let url = fixture.root.appendingPathComponent(key)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Self.videoTex().write(to: url)
+        let renderer = try makeRenderer(fixture)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        await actor.adopt(WPERendererHandoff(renderer: renderer).renderer)
+        renderer.oracleVideoDecoderAdmission = WPEVideoDecoderAdmission(limit: 4)
+        renderer.layerVideoSourceKey["video"] = key
+        _ = renderer.sceneScriptLoadState.begin(generation: renderer.loadGeneration)
+        func commit(_ commands: [WPELayerVideoCommand]) {
+            renderer.beginSceneScriptVideoCommands()
+            renderer.sceneScriptVideoCommandBuffer.enqueue(commands, objectID: "video")
+            #expect(renderer.finishCurrentSceneScriptVideoCommands())
+        }
+        await actor.rebuildOnDemandVideo(key: key, generation: renderer.loadGeneration)
+        let first = try #require(renderer.dynamicTextureSources[key] as? WPEVideoTextureSource)
+        commit([.setRate(0.5), .setLoop(false)])
+        #expect(first.scriptPlaybackSnapshot?.rate == 0.5)
+        // Same release reconcileVideoResidency performs for a hidden consumer.
+        first.invalidate()
+        renderer.dynamicTextureSources.removeValue(forKey: key)
+        commit(afterRelease)
+        await actor.rebuildOnDemandVideo(key: key, generation: renderer.loadGeneration)
+        let rebuilt = try #require(renderer.dynamicTextureSources[key] as? WPEVideoTextureSource)
+        #expect(rebuilt !== first)
+        let snapshot = try #require(rebuilt.scriptPlaybackSnapshot)
+        await actor.teardownRenderer()
+        #expect(await actor.shutdown())
+        return snapshot
+    }
+
+    /// A video `.tex` whose MP4 payload is only an `ftyp` box: enough for a live player, no frames needed.
+    private static func videoTex() -> Data {
+        var data = Data()
+        func magic(_ value: String) { data.append(contentsOf: value.utf8); data.append(0) }
+        func int32(_ value: Int32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        let mp4 = Data([
+            0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32,
+            0x00, 0x00, 0x00, 0x00, 0x6d, 0x70, 0x34, 0x32, 0x69, 0x73, 0x6f, 0x6d,
+        ])
+        magic("TEXV0005")
+        magic("TEXI0001")
+        for value in [Int32(WPETexFormat.rgba8888.rawValue), 0, 4, 4, 4, 4, 0] { int32(value) }
+        magic("TEXB0003")
+        for value: Int32 in [1, -1, 1, 4, 4, 0, Int32(mp4.count), Int32(mp4.count)] { int32(value) }
+        data.append(mp4)
+        return data
     }
 
     private func makeRenderer(_ fixture: MetalSceneFixture) throws -> WPEMetalSceneRenderer {

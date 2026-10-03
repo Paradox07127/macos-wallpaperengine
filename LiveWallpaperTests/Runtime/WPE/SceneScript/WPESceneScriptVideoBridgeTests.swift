@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import Metal
 import Testing
 
 @Suite("SceneScript detached video bridge")
@@ -60,6 +61,42 @@ struct WPESceneScriptVideoBridgeTests {
         #expect(instance.initialOutput.others["B"]?.videoCommands == [
             .setRate(0.5), .setLoop(false),
         ])
+    }
+
+    @MainActor
+    @Test("Interleaved commands on same-source handles commit in call order", arguments: [
+        "a.rate = 0.5; b.rate = 2; a.rate = 1;",
+        "a.play(); b.pause(); a.play();",
+    ])
+    func interleavedAliasesCommitInCallOrder(_ body: String) throws {
+        let generation = UUID()
+        let shared = WPESharedScriptState(layers: [layer("a", "A"), layer("b", "B", index: 1)])
+        shared.publishVideoPlayback(["a": snapshot(generation), "b": snapshot(generation)],
+                                    sourceKeys: ["a": "video.tex", "b": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const a = thisLayer.getVideoTexture();
+            const b = thisScene.getLayer('B').getVideoTexture();
+            \(body)
+            shared.rate = a.rate; shared.playing = a.isPlaying();
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        renderer.layerObjectIDByName["B"] = "b"
+        renderer.beginSceneScriptVideoCommands()
+        renderer.applyLayerScriptOutput(instance.initialOutput, ownObjectID: "a")
+        var committed = snapshot(generation)
+        for buffered in renderer.sceneScriptVideoCommandBuffer.pending {
+            committed.applyEvaluationIntent(buffered.command)
+        }
+        renderer.discardSceneScriptVideoCommands()
+        #expect(committed.rate == shared.get("rate") as? Double)
+        #expect(committed.isPlaying == shared.get("playing") as? Bool)
     }
 
     @Test("Stop rewinds local readback; the next evaluation reads the committed source")
