@@ -7,39 +7,43 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.1</title>
-      <pubDate>Wed, 30 Sep 2026 04:27:15 +0000</pubDate>
-      <sparkle:version>0.8.1</sparkle:version>
-      <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
+      <title>Version 0.8.2</title>
+      <pubDate>Sat, 03 Oct 2026 16:04:21 +0000</pubDate>
+      <sparkle:version>0.8.2</sparkle:version>
+      <sparkle:shortVersionString>0.8.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Mark Wallpaper Library entries with a yellow bookmark and filter the library down to them</li>
-<li>Pro: like Workshop items with the pink heart, then turn on Liked in the filter bar to list them</li>
+<li>Wallpaper transitions: Ripple, Bokeh, Crystal, Blinds and Stardust when a display switches wallpapers, and a Loom Line, Frame Unfold or Daybreak opening at launch</li>
+<li>All displays switched by one action start their transition together</li>
+<li>Wallpaper Automation sheet with Playlist, Daily Schedule on a 24-hour dial, and Library Shuffle; skipped wallpapers show why</li>
+<li>A manual pause now holds through property edits, rotation, replugging and relaunch</li>
+<li>Pro: a Workshop item lives in the library once — the Steam copy takes over a local copy, and a manual download asks before replacing it</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>The welcome tour is now a set of spotlight guides you can dismiss at any step</li>
-<li>Saved becomes Schemes and holds saved display setups only; bookmarks moved into the Wallpaper Library</li>
-<li>Pro: the Steam account menu is a glass capsule</li>
+<li>Wallpapers on an external drive keep their setup while the drive is ejected and come back when it mounts; automation skips them meanwhile</li>
+<li>Rotation countdowns freeze while you are away and restart when you pick, apply a scheme or apply a Workshop item by hand</li>
+<li>Web wallpapers pause on serious thermal pressure, like video</li>
+<li>Pro: scenes spanned across displays relayout when a display joins or leaves, and settings reach displays that are disconnected</li>
+<li>Pro: many more scenes render like Windows — authored vertex shaders, camera intros, scene text layout, clear color, per-submesh model textures and the effect swap command</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: unliking a Workshop item no longer deletes its saved scenes</li>
-<li>Pro: attached scene layers keep their offset, and Gaussian blurs and multiply blending over transparent areas render correctly again</li>
-<li>Pro: effect histories no longer leak between layers, and scenes that declare the same history buffer twice load</li>
-<li>Very long log lines no longer slow down bug reports</li>
-<li>Pro: scene parallax matches Windows — layers without a set depth follow the pointer, and a group moves as one</li>
-<li>Pro: cursor-following iris and depth-parallax effects line up with their layer again</li>
-<li>Pro: more scene shaders compile, and vertical Gaussian blurs no longer blur sideways</li>
-<li>Pro: layers pinned to a puppet bone inside a group follow the bone</li>
-<li>A welcome tour finished in 0.8.0 stays finished</li>
-<li>Unreadable saved bookmarks are reported, with a Reset for just that file</li>
+<li>Picking a new wallpaper for a paused display no longer resumes the old one if the new one fails to load</li>
+<li>Switching a spanned display to video or web takes it out of the span</li>
+<li>Schedule dial edges can no longer collapse or wrap a slot, and every slot is reachable with VoiceOver</li>
+<li>Pro: hover and click hits follow the scene camera, and scripts on particles and text target the right layer</li>
+<li>Pro: scripts that set only loop or rate on a video now play it</li>
+<li>Pro: album covers in media scenes are no longer too dark</li>
+<li>Pro: scripts that create and destroy layers repeatedly no longer fail the scene</li>
+<li>Pro: malformed shaders, textures and script values no longer crash or hang the app</li>
+<li>Backups no longer carry per-display pause state</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.1">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.2">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.1/Loomscreen-Pro-0.8.1.dmg" type="application/octet-stream" sparkle:edSignature="HCU/ajajCqivi32fMIr0BqhRJfCBHHtyHYruK+zcMndYCc+20Sri6Gr1Tr4zAdTiaUuuAfq3q0d9f7xrws8zCg==" length="16519866" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.2/Loomscreen-Pro-0.8.2.dmg" type="application/octet-stream" sparkle:edSignature="siIelai/NnZJPCLu58doqlMACo+bDbK3I5ZlbCXXk5h6gsslTIu9droY1j2OPf9h7V39GDflyDq70e4M+leDCw==" length="17149139" />
     </item>
   </channel>
 </rss>
