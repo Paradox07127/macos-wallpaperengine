@@ -399,6 +399,9 @@ extension WPEMetalSceneRenderer {
             Task { @MainActor in subscription.stop() }
         }
         executor.mediaTextureStore = nil
+        #if DEBUG
+        oracleMediaInputReceipt = nil
+        #endif
         textScriptInstances.removeAll(keepingCapacity: false)
         layerScriptInstances.removeAll(keepingCapacity: false)
         orderedLayerScriptBatch = nil

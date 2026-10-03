@@ -44,6 +44,67 @@ final class FakeNowPlayingSource: WPENowPlayingEventSource {
 struct WPESceneMediaEventDispatchTests {
     private let isolatedGovernor = WPESceneScriptExecutionGovernor(limit: 4)
 
+    #if DEBUG
+    @Test("Oracle private sources replay safe empty and controlled titles without live input")
+    func oracleFrozenMediaReachesTextAndStops() throws {
+        let instance = try textInstance(script: """
+        var title = "stale title";
+        export function update() { return title; }
+        export function mediaPropertiesChanged(event) { title = event.title; }
+        """)
+        let empty = MonitorNowPlayingState(phase: .noPlayer, title: "")
+        let state = MonitorNowPlayingState(phase: .playing, title: "Oracle title", duration: 120,
+                                           position: 42, positionSampledAt: 17)
+        for input in [empty, state] {
+            try WPEOracleFrozenNowPlayingSource.validate(input)
+            let source = WPEOracleFrozenNowPlayingSource(state: input)
+            let dispatcher = WPESceneMediaEventDispatcher(source: source, now: { source.interpolationNow })
+            dispatcher.start()
+            dispatcher.start()
+            #expect(source.replayCount == 1)
+            let events = dispatcher.mailbox.drain()
+            #expect(events.contains(.propertiesChanged(.init(title: input.title))))
+            for event in events {
+                instance.dispatchMediaEvent(event)
+            }
+            #expect(instance.tickString(runtimeSeconds: 900) == input.title)
+            if input.phase == .playing {
+                #expect(events.contains(.timelineChanged(.init(position: 42, duration: 120))))
+            }
+            let receipt = source.receipt(generation: 7, scripts: true, textures: false)
+            #expect(receipt.sourceOrdinal == 1 && receipt.state == input)
+            #expect(receipt.scope == "source-subscription-replay-not-vm-completion")
+            dispatcher.stop()
+            #expect(source.subscriberCount == 0)
+            #expect(dispatcher.mailbox.drain().isEmpty)
+        }
+    }
+
+    @Test("Oracle media rejects waiting, stale empty, unbounded and nonfinite snapshots")
+    func oracleFrozenMediaValidation() throws {
+        let invalid: [MonitorNowPlayingState] = [
+            .init(phase: .awaitingFirstEvent, title: ""),
+            .init(phase: .noPlayer, title: "stale"),
+            .init(phase: .noPlayer, title: "", artwork: Data([1])),
+            .init(phase: .playing, title: ""),
+            .init(phase: .playing, title: String(repeating: "x", count: 4097)),
+            .init(phase: .playing, title: "t", duration: .infinity, position: 1),
+            .init(phase: .playing, title: "t", duration: 10, position: -1),
+            .init(phase: .playing, title: "t", duration: 10, position: 11),
+            .init(phase: .playing, title: "t", position: 1),
+            .init(phase: .playing, title: "t", positionSampledAt: 1),
+            .init(phase: .playing, title: "t", duration: 10, position: 1, positionSampledAt: .nan),
+        ]
+        for input in invalid {
+            #expect(throws: WPEOracleMediaSnapshotError.invalidSnapshot) {
+                try WPEOracleFrozenNowPlayingSource.validate(input)
+            }
+        }
+        try WPEOracleFrozenNowPlayingSource.validate(.init(phase: .noPlayer, title: ""))
+        try WPEOracleFrozenNowPlayingSource.validate(.init(phase: .paused, title: "fixed"))
+    }
+    #endif
+
     private func textInstance(script: String) throws -> LiveWallpaper.WPESceneScriptInstance {
         try LiveWallpaper.WPESceneScriptInstance(
             script: script,

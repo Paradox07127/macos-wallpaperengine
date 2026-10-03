@@ -133,6 +133,14 @@ final class WPEMetalSceneRenderer: NSObject {
     var lastOracleSceneScriptBatchCompletion: WPESceneScriptBatchDispatcher.Completion?
     var oracleSceneScriptBatchOrder: WPESceneScriptBatchDispatcher.SubmissionOrder = .parallelWorkers
     var oracleVideoDecoderAdmission: WPEVideoDecoderAdmission?
+    private(set) var oracleMediaSnapshot: MonitorNowPlayingState?
+    var oracleMediaInputReceipt: WPEOracleMediaInputReceipt?
+
+    func configureOracleMediaSnapshot(_ snapshot: MonitorNowPlayingState) throws {
+        guard loadGeneration == 0, !didLoad else { throw WPEOracleMediaSnapshotError.loadAlreadyStarted }
+        try WPEOracleFrozenNowPlayingSource.validate(snapshot)
+        oracleMediaSnapshot = snapshot
+    }
     #endif
     var videoDecoderAdmission: WPEVideoDecoderAdmission {
         #if DEBUG

@@ -19,6 +19,9 @@ extension WPEMetalSceneRenderer {
         transforms: LiveScriptTransforms,
         parallaxFrame: WPECameraParallaxFrame
     ) -> WPETextFrameState {
+        #if DEBUG
+        WPECanonicalTraceRecorder.shared.recordOracleMediaInput(oracleMediaInputReceipt)
+        #endif
         guard let textMeshRenderer, let fonts = textFontResolver, !textRenderPlans.isEmpty else {
             return WPETextFrameState(pipeline: pipeline, payloads: [:], obsoleteTargetNames: [])
         }
@@ -59,6 +62,15 @@ extension WPEMetalSceneRenderer {
 
             let isVisible = (liveTextVisibility[plan.object.id] ?? plan.object.visible)
                 && ancestorChainVisible(plan.object.id)
+            #if DEBUG
+            defer {
+                WPECanonicalTraceRecorder.shared.recordTextInput(
+                    layerID: plan.object.id, resolvedText: resolvedText, mode: plan.mode, layoutKey: key,
+                    surfaceSize: layout.surfaceSize, visible: isVisible, alpha: resolvedAlpha,
+                    hasMesh: payloads[plan.object.id]?.mesh != nil
+                )
+            }
+            #endif
             guard isVisible, resolvedAlpha > 0 else {
                 // Offscreen effects must receive a cleared empty surface; Direct
                 // has no target and a nil mesh is simply a no-op on the scene.

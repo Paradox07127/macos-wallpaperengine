@@ -397,36 +397,71 @@ extension WPEMetalSceneRenderer {
         sceneSupportsAudioProcessing = document.general.supportsAudioProcessing
             || Self.pipelineRequiresAudioCapture(pipeline)
             || WPESceneScriptInstanceInventory.usesAudioAPI(in: document)
-        if WPESceneMediaEventDispatcher.isNeeded(by: document) {
-            let dispatcher = await MainActor.run {
-                let dispatcher = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
-                dispatcher.start()
-                return dispatcher
-            }
-            mediaEventDispatcher = dispatcher
-            mediaEventMailbox = dispatcher.mailbox
-        }
+        let needsMediaScripts = WPESceneMediaEventDispatcher.isNeeded(by: document)
         let mediaTextureSlots = WPEMediaTextureDemand.byPassID(in: pipeline)
-        if !mediaTextureSlots.isEmpty {
-            let store = WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
-            // Hoisted: capturing it inside the closure reads it off `self`, which
-            // region isolation counts as sending the whole renderer to the main actor.
-            let surfaceControl = surfaceControl
-            mediaTextureSubscription = await MainActor.run {
-                let subscription = WPEMediaTextureSubscription(
-                    store: store,
-                    source: WPEEnrichedNowPlayingFeed.shared
-                )
-                // A cover change must render even on a fully static scene whose
-                // loop is parked — one frame, same wake the pointer-enter path uses.
-                subscription.onTextureChange = { [surfaceControl] in
-                    surfaceControl.setNeedsRedraw()
+        let mediaStore = mediaTextureSlots.isEmpty ? nil
+            : WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
+        let surfaceControl = surfaceControl
+        #if DEBUG
+        let mediaSnapshot = oracleMediaSnapshot
+        #endif
+        try checkCurrentSceneScriptLoad(scriptLoadToken)
+        let mediaSubscriptions = await MainActor.run {
+            #if DEBUG
+            let frozenSource = needsMediaScripts || mediaStore != nil
+                ? mediaSnapshot.map { WPEOracleFrozenNowPlayingSource(state: $0) } : nil
+            #endif
+            var dispatcher: WPESceneMediaEventDispatcher?
+            var subscription: WPEMediaTextureSubscription?
+            if needsMediaScripts || mediaStore != nil {
+                let source: any WPENowPlayingEventSource
+                let now: @MainActor () -> Double
+                #if DEBUG
+                if let frozenSource {
+                    source = frozenSource
+                    now = { frozenSource.interpolationNow }
+                } else {
+                    source = WPEEnrichedNowPlayingFeed.shared
+                    now = { Date().timeIntervalSince1970 }
                 }
-                subscription.start()
-                return subscription
+                #else
+                source = WPEEnrichedNowPlayingFeed.shared
+                now = { Date().timeIntervalSince1970 }
+                #endif
+                if needsMediaScripts {
+                    let candidate = WPESceneMediaEventDispatcher(source: source, now: now)
+                    candidate.start()
+                    dispatcher = candidate
+                }
+                if let mediaStore {
+                    let candidate = WPEMediaTextureSubscription(store: mediaStore, source: source)
+                    candidate.onTextureChange = { [surfaceControl] in surfaceControl.setNeedsRedraw() }
+                    candidate.start()
+                    subscription = candidate
+                }
             }
-            executor.mediaTextureStore = store
+            #if DEBUG
+            return (dispatcher, subscription, frozenSource?.receipt(
+                generation: scriptLoadToken.generation, scripts: dispatcher != nil, textures: subscription != nil
+            ))
+            #else
+            return (dispatcher, subscription)
+            #endif
         }
+        guard isCurrentSceneScriptLoad(scriptLoadToken) else {
+            await MainActor.run {
+                mediaSubscriptions.0?.stop()
+                mediaSubscriptions.1?.stop()
+            }
+            throw CancellationError()
+        }
+        mediaEventDispatcher = mediaSubscriptions.0
+        mediaEventMailbox = mediaSubscriptions.0?.mailbox
+        mediaTextureSubscription = mediaSubscriptions.1
+        executor.mediaTextureStore = mediaStore
+        #if DEBUG
+        oracleMediaInputReceipt = mediaSubscriptions.2
+        #endif
         cameraParallaxSmoother.reset()
         sceneRenderSize = cameraUniforms.renderSize
         debugStage("camera", "renderSize=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height))")

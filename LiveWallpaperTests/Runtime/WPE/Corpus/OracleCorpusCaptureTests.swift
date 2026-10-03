@@ -32,6 +32,7 @@ struct OracleCorpusCaptureTests {
         var resolution: [Int]?
         var captureGPU: Bool = false
         var videoMode: VideoMode = .liveWallClock
+        var mediaSnapshot: MonitorNowPlayingState?
         var authoredVertexExecution: Bool = true
         var propertyOverridesByScene: [String: [String: WallpaperEngineProjectPropertyValue]] = [:]
         var pixelProbeCoordinates: [[Int]]?
@@ -47,7 +48,7 @@ struct OracleCorpusCaptureTests {
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
             case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates, captureStages
-            case sourceMipLevel
+            case sourceMipLevel, mediaSnapshot
             case propertySequence, sequenceWarmupFrames, sequenceCaptureFrames
         }
 
@@ -66,6 +67,7 @@ struct OracleCorpusCaptureTests {
             resolution = try container.decodeIfPresent([Int].self, forKey: .resolution)
             captureGPU = try container.decodeIfPresent(Bool.self, forKey: .captureGPU) ?? false
             videoMode = try container.decodeIfPresent(VideoMode.self, forKey: .videoMode) ?? .liveWallClock
+            mediaSnapshot = try container.decodeIfPresent(MonitorNowPlayingState.self, forKey: .mediaSnapshot)
             scriptOrder = try container.decodeIfPresent(WPESceneScriptBatchDispatcher.SubmissionOrder.self, forKey: .scriptOrder) ?? .parallelWorkers
             authoredVertexExecution = try container.decodeIfPresent(Bool.self, forKey: .authoredVertexExecution) ?? true
             propertyOverridesByScene = try container.decodeIfPresent([String: [String: WallpaperEngineProjectPropertyValue]].self, forKey: .propertyOverridesByScene) ?? [:]
@@ -92,6 +94,28 @@ struct OracleCorpusCaptureTests {
                                                            debugDescription: "Bounded stage sequence requires parallelWorkers and integer stage values")
                 }
             }
+        }
+    }
+
+    @Test("Media snapshot selection is explicit and survives config round trips")
+    func mediaSnapshotConfiguration() throws {
+        let decoder = JSONDecoder()
+        let omitted = try decoder.decode(Config.self, from: Data(#"{"corpusRoot":"fixture"}"#.utf8))
+        #expect(omitted.mediaSnapshot == nil)
+        #expect(omitted.videoMode == .liveWallClock)
+        #expect(omitted.propertySequence.isEmpty)
+        for json in [
+            #"{"corpusRoot":"fixture","mediaSnapshot":{"phase":"noPlayer","title":""}}"#,
+            #"{"corpusRoot":"fixture","mediaSnapshot":{"phase":"paused","title":"Oracle title","artist":"Fixture","position":5,"duration":10,"positionSampledAt":100}}"#,
+        ] {
+            let config = try decoder.decode(Config.self, from: Data(json.utf8))
+            let snapshot = try #require(config.mediaSnapshot)
+            let roundTrip = try decoder.decode(Config.self, from: JSONEncoder().encode(config))
+            #expect(roundTrip.mediaSnapshot == snapshot)
+            #expect(snapshot.artwork == nil)
+        }
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode(Config.self, from: Data(#"{"corpusRoot":"fixture","mediaSnapshot":{"phase":"unknown","title":""}}"#.utf8))
         }
     }
 
@@ -245,6 +269,9 @@ struct OracleCorpusCaptureTests {
                 renderer.oracleSceneScriptBatchOrder = config.scriptOrder
                 renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
                 renderer.executor.oracleSceneStagesEnabled = config.captureStages
+                if let mediaSnapshot = config.mediaSnapshot {
+                    try renderer.configureOracleMediaSnapshot(mediaSnapshot)
+                }
                 if config.videoMode == .firstFrameStill {
                     // A zero-ticket local admission uses the existing deterministic
                     // still extraction path; it does not change the process budget.
@@ -323,6 +350,16 @@ struct OracleCorpusCaptureTests {
                     determinism["metalValidationConfiguration"] = Self.metalValidationConfiguration()
                     determinism["videoMode"] = config.videoMode.rawValue
                     determinism["videoPlaybackValidated"] = false
+                    determinism["mediaInputPolicy"] = config.mediaSnapshot == nil ? "live" : "explicit-frozen-snapshot"
+                    if let mediaSnapshot = config.mediaSnapshot {
+                        determinism["requestedMediaSnapshot"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(mediaSnapshot))
+                        determinism["mediaInputConfigSHA256"] = Self.sha256(data)
+                        if let receipt = renderer.oracleMediaInputReceipt {
+                            try #require(receipt.state == mediaSnapshot, "Actual media source replay differs from requested snapshot")
+                            try #require(receipt.replayCount > 0, "Frozen media source was not subscribed")
+                            try #require(document["oracleMediaInput"] is [String: Any], "Missing actual media input trace")
+                        }
+                    }
                     if let sourceMipLevel = config.sourceMipLevel {
                         determinism["sourceMipInputInjection"] = [
                             "sourceMipLevel": sourceMipLevel,

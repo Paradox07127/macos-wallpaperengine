@@ -7,6 +7,44 @@ import Testing
 
 @Suite("Canonical typed uniform trace")
 struct WPECanonicalUniformTraceTests {
+    @Test func oracleMediaAndTextReceiptsFlushAndResetWithoutClaimingVMCompletion() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        descriptor.storageMode = .shared
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        [UInt8](repeating: 0, count: 4).withUnsafeBytes {
+            texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 4)
+        }
+        let artifacts = WPESceneDebugArtifacts()
+        artifacts.setEnabledForTesting(true)
+        let recorder = WPECanonicalTraceRecorder(artifacts: artifacts)
+        let receipt = WPEOracleMediaInputReceipt(
+            generation: 2, sourceOrdinal: 1, replayCount: 1,
+            scriptSubscriptionCreated: true, textureSubscriptionCreated: false, interpolationNow: 0,
+            state: .init(phase: .paused, title: "Controlled")
+        )
+        recorder.beginScene(workshopID: "media", projectJsonPath: nil, descriptor: "regression")
+        recorder.recordOracleMediaInput(receipt)
+        recorder.recordTextInput(layerID: "515", resolvedText: "", mode: .direct, layoutKey: "empty",
+                                 surfaceSize: CGSize(width: 1, height: 1), visible: true, alpha: 1, hasMesh: false)
+        let first = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
+                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
+        let trace = try #require(JSONSerialization.jsonObject(with: first) as? [String: Any])
+        let media = try #require(trace["oracleMediaInput"] as? [String: Any])
+        #expect(media["scope"] as? String == "source-subscription-replay-not-vm-completion")
+        #expect((media["state"] as? [String: Any])?["title"] as? String == "Controlled")
+        let text = try #require((trace["textInputs"] as? [[String: Any]])?.first)
+        #expect(text["resolvedText"] as? String == "", "source title is not silently substituted for actual resolved text")
+        #expect(text["textUTF8SHA256"] as? String == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        #expect(text["hasMesh"] as? Bool == false)
+        recorder.beginScene(workshopID: "next", projectJsonPath: nil, descriptor: "regression")
+        let second = try #require(recorder.finishFrame(outputTexture: texture, runtimeUniforms: nil,
+                                                       firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
+        let next = try #require(JSONSerialization.jsonObject(with: second) as? [String: Any])
+        #expect(next["oracleMediaInput"] is NSNull)
+        #expect((next["textInputs"] as? [[String: Any]])?.isEmpty == true)
+    }
+
     @Test(arguments: ["float", "vec2", "vec3", "vec4", "int", "ivec2", "ivec3", "ivec4",
                       "uint", "uvec2", "uvec3", "uvec4", "bool", "bvec2", "bvec3", "bvec4",
                       "mat2", "mat3", "mat4"])

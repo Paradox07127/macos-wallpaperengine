@@ -67,6 +67,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var resources: ResourceTables = ResourceTables()
     private var semanticCoverage: [WPEShaderSemanticCoverage] = []
     private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
+    private var oracleMediaInput: [String: Any]?
+    private var textInputs: [[String: Any]] = []
 
     private let artifacts: WPESceneDebugArtifacts
 
@@ -200,8 +202,67 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         physicalAttachmentRevisions.removeAll(keepingCapacity: true)
         semanticCoverage.removeAll(keepingCapacity: true)
         resources = ResourceTables()
+        oracleMediaInput = nil
+        textInputs.removeAll(keepingCapacity: true)
         self.shaderImplementationInventory = shaderImplementationInventory
         lock.unlock()
+    }
+
+    func recordOracleMediaInput(_ receipt: WPEOracleMediaInputReceipt?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        oracleMediaInput = receipt.map(Self.oracleMediaInputRecord)
+    }
+
+    static func oracleMediaInputRecord(_ receipt: WPEOracleMediaInputReceipt) -> [String: Any] {
+        let state = receipt.state
+        return [
+            "mode": receipt.mode, "source": receipt.source, "scope": receipt.scope,
+            "generation": receipt.generation, "sourceOrdinal": receipt.sourceOrdinal.map { $0 as Any } ?? NSNull(),
+            "replayCount": receipt.replayCount, "scriptSubscriptionCreated": receipt.scriptSubscriptionCreated,
+            "textureSubscriptionCreated": receipt.textureSubscriptionCreated, "interpolationNow": receipt.interpolationNow,
+            "state": [
+                "phase": state.phase.rawValue, "title": state.title,
+                "titleUTF8SHA256": textSHA256(state.title), "titleUTF8Bytes": state.title.utf8.count,
+                "artist": state.artist as Any? ?? NSNull(), "album": state.album as Any? ?? NSNull(),
+                "trackID": state.trackID as Any? ?? NSNull(), "playerBundleID": state.playerBundleID as Any? ?? NSNull(),
+                "duration": state.duration as Any? ?? NSNull(), "position": state.position as Any? ?? NSNull(),
+                "positionSampledAt": state.positionSampledAt as Any? ?? NSNull(),
+                "artworkSHA256": state.artwork.map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() } as Any? ?? NSNull(),
+                "artworkBytes": state.artwork?.count ?? 0,
+            ] as [String: Any],
+        ]
+    }
+
+    func recordTextInput(
+        layerID: String, resolvedText: String, mode: WPETextRenderMode, layoutKey: String,
+        surfaceSize: CGSize, visible: Bool, alpha: Double, hasMesh: Bool
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        textInputs.append(Self.textInputRecord(
+            layerID: layerID, resolvedText: resolvedText, mode: mode, layoutKey: layoutKey,
+            surfaceSize: surfaceSize, visible: visible, alpha: alpha, hasMesh: hasMesh
+        ))
+    }
+
+    static func textInputRecord(
+        layerID: String, resolvedText: String, mode: WPETextRenderMode, layoutKey: String,
+        surfaceSize: CGSize, visible: Bool, alpha: Double, hasMesh: Bool
+    ) -> [String: Any] {
+        [
+            "layerID": layerID, "resolvedText": resolvedText, "textUTF8SHA256": textSHA256(resolvedText),
+            "textUTF8Bytes": resolvedText.utf8.count, "mode": mode == .direct ? "direct" : "offscreen",
+            "layoutKey": layoutKey, "surfaceSize": ["width": surfaceSize.width, "height": surfaceSize.height],
+            "visible": visible, "alpha": alpha.isFinite ? alpha as Any : NSNull(), "hasMesh": hasMesh,
+            "scope": "resolved-text-layout-input-not-glyph-pixel-proof",
+        ]
+    }
+
+    private static func textSHA256(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     func recordShaderImplementationInventory(
@@ -885,6 +946,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         let semanticCoverageSnapshot = semanticCoverage
         let resourceSnapshot = resources
         let shaderImplementationInventorySnapshot = shaderImplementationInventory
+        let oracleMediaInputSnapshot = oracleMediaInput
+        let textInputSnapshot = textInputs
         lock.unlock()
 
         // Everything below runs WITHOUT the lock: the final-texture readback and
@@ -960,6 +1023,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "capture": capture,
             "resources": resourceBlock,
             "passes": passSnapshot,
+            "oracleMediaInput": oracleMediaInputSnapshot ?? NSNull(),
+            "textInputs": textInputSnapshot,
             "attachmentOperations": ["schema": "wpe.attachment-operations.v1", "events": attachmentOperationSnapshot],
             "attachmentPlan": attachmentPlanSnapshot ?? NSNull(),
             "semanticCoverage": WPEShaderSemanticCoverage.jsonObject(WPEShaderSemanticCoverage.Summary(semanticCoverageSnapshot)),

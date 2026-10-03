@@ -15,6 +15,32 @@ import UniformTypeIdentifiers
 @MainActor
 @Suite("WPE Metal scene renderer")
 struct WPEMetalSceneRendererTests {
+    #if DEBUG
+    @Test("Oracle media configuration is renderer-local and immutable once loading starts")
+    func oracleMediaConfigurationIsLoadScoped() async throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+        )
+        defer { renderer.cleanup() }
+        #expect(renderer.oracleMediaSnapshot == nil && renderer.oracleMediaInputReceipt == nil)
+        let empty = MonitorNowPlayingState(phase: .noPlayer, title: "")
+        try renderer.configureOracleMediaSnapshot(empty)
+        #expect(renderer.oracleMediaSnapshot == empty)
+        try await renderer.load()
+        #expect(renderer.loadGeneration == 1)
+        #expect(renderer.mediaEventDispatcher == nil && renderer.mediaTextureSubscription == nil)
+        #expect(throws: WPEOracleMediaSnapshotError.loadAlreadyStarted) {
+            try renderer.configureOracleMediaSnapshot(.init(phase: .paused, title: "late"))
+        }
+        #expect(renderer.oracleMediaSnapshot == empty)
+        #expect(renderer.oracleMediaInputReceipt == nil, "a scene with no media demand has no source replay")
+    }
+    #endif
+
     @Test("Created destruction and ambiguous-name writes preserve object ownership")
     func rendererAppliesOwnedDestructionAndMergedOutputs() throws {
         let fixture = try MetalSceneFixture.solidColorScene()

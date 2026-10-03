@@ -3,6 +3,88 @@ import Foundation
 import JavaScriptCore
 import LiveWallpaperProWPE
 
+#if DEBUG
+enum WPEOracleMediaSnapshotError: Error, Equatable {
+    case loadAlreadyStarted
+    case invalidSnapshot
+}
+
+struct WPEOracleMediaInputReceipt: Encodable, Sendable, Equatable {
+    let mode = "oracle-frozen"
+    let source = "per-renderer-frozen-source"
+    let scope = "source-subscription-replay-not-vm-completion"
+    let generation: Int
+    let sourceOrdinal: UInt64?
+    let replayCount: Int
+    let scriptSubscriptionCreated: Bool
+    let textureSubscriptionCreated: Bool
+    let interpolationNow: Double
+    let state: MonitorNowPlayingState
+}
+
+@MainActor
+final class WPEOracleFrozenNowPlayingSource: WPENowPlayingEventSource {
+    let state: MonitorNowPlayingState
+    private(set) var replayCount = 0
+    private var subscribers: Set<UUID> = []
+    var subscriberCount: Int {
+        subscribers.count
+    }
+
+    var interpolationNow: Double {
+        state.positionSampledAt ?? 0
+    }
+
+    init(state: MonitorNowPlayingState) {
+        self.state = state
+    }
+
+    nonisolated static func validate(_ state: MonitorNowPlayingState) throws {
+        let strings = [state.title, state.artist, state.album, state.trackID, state.playerBundleID]
+        guard state.phase != .awaitingFirstEvent,
+              strings.compactMap(\.self).allSatisfy({ $0.utf8.count <= 4096 }),
+              (state.artwork?.count ?? 0) <= 1_048_576 else {
+            throw WPEOracleMediaSnapshotError.invalidSnapshot
+        }
+        if state.phase == .noPlayer {
+            guard state.title.isEmpty, (state.artist ?? "").isEmpty, (state.album ?? "").isEmpty,
+                  state.duration == nil, state.position == nil, state.positionSampledAt == nil,
+                  state.artwork == nil else { throw WPEOracleMediaSnapshotError.invalidSnapshot }
+        } else if state.title.isEmpty {
+            throw WPEOracleMediaSnapshotError.invalidSnapshot
+        }
+        switch (state.duration, state.position) {
+        case (nil, nil):
+            guard state.positionSampledAt == nil else { throw WPEOracleMediaSnapshotError.invalidSnapshot }
+        case let (duration?, position?):
+            guard duration.isFinite, position.isFinite, duration >= 0, position >= 0,
+                  position <= duration, state.positionSampledAt?.isFinite != false else {
+                throw WPEOracleMediaSnapshotError.invalidSnapshot
+            }
+        default: throw WPEOracleMediaSnapshotError.invalidSnapshot
+        }
+    }
+
+    func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
+        subscribers.insert(id)
+        replayCount += 1
+        handler(1, state)
+    }
+
+    func unsubscribe(id: UUID) {
+        subscribers.remove(id)
+    }
+
+    func receipt(generation: Int, scripts: Bool, textures: Bool) -> WPEOracleMediaInputReceipt {
+        WPEOracleMediaInputReceipt(
+            generation: generation, sourceOrdinal: replayCount > 0 ? 1 : nil, replayCount: replayCount,
+            scriptSubscriptionCreated: scripts, textureSubscriptionCreated: textures,
+            interpolationNow: interpolationNow, state: state
+        )
+    }
+}
+#endif
+
 
 /// The frozen `MediaPlaybackEvent` constants installed by
 /// `WPESceneScriptBaseclasses`. Raw values are the contract, not an enum order.

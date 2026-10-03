@@ -12,6 +12,40 @@ import UniformTypeIdentifiers
 @Suite("WPE $mediaThumbnail system texture", .serialized)
 @MainActor
 struct WPEMediaTextureProviderTests {
+    #if DEBUG
+    @Test("Oracle scripts and texture subscriptions share one private source; a fresh empty store has no old cover")
+    func oracleSourceFeedsScriptsAndTextures() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let artwork = try Self.artwork(red: 0.9)
+        let state = MonitorNowPlayingState(phase: .paused, title: "Controlled", artwork: artwork)
+        try WPEOracleFrozenNowPlayingSource.validate(state)
+        let source = WPEOracleFrozenNowPlayingSource(state: state)
+        let dispatcher = WPESceneMediaEventDispatcher(source: source)
+        let store = WPEMediaTextureStore(device: device)
+        let subscription = WPEMediaTextureSubscription(store: store, source: source)
+        dispatcher.start()
+        subscription.start()
+        defer { dispatcher.stop(); subscription.stop() }
+        #expect(source.subscriberCount == 2)
+        #expect(source.replayCount == 2)
+        #expect(dispatcher.mailbox.drain().contains(.propertiesChanged(.init(title: "Controlled"))))
+        #expect(store.uploadCount == 1)
+        #expect(store.texture(for: .thumbnail) != nil)
+        let receipt = source.receipt(generation: 1, scripts: true, textures: true)
+        #expect(receipt.state.artwork == artwork && receipt.replayCount == 2)
+
+        let empty = WPEOracleFrozenNowPlayingSource(state: .init(phase: .noPlayer, title: ""))
+        let freshStore = WPEMediaTextureStore(device: device)
+        let freshSubscription = WPEMediaTextureSubscription(store: freshStore, source: empty)
+        freshSubscription.start()
+        defer { freshSubscription.stop() }
+        #expect(freshStore.texture(for: .thumbnail) == nil)
+        #expect(freshStore.texture(for: .previousThumbnail) == nil)
+        #expect(freshStore.uploadCount == 0)
+        #expect(source.state.title == "Controlled")
+    }
+    #endif
+
     // MARK: - Demand gate
 
     @Test("A pipeline with no $media user texture declares no demand")
