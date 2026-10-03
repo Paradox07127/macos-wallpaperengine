@@ -464,7 +464,7 @@ final class EditDeskUndoStack {
     }
 
     private func restore(_ displays: [Display]) async -> Ran {
-        let group = displays.count > 1 ? WallpaperSwitchGroup(pace: .manual) : nil
+        let group = displays.count > 1 ? WallpaperSwitchGroup.forManualAction() : nil
         return await WallpaperSwitchGroup.$current.withValue(group) {
             await restoreEach(displays)
         }

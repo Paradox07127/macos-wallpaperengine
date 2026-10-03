@@ -439,6 +439,9 @@ final class WallpaperAutomationOrchestrator {
         let serial = automaticSelectionSerial
         automaticSelections[screenID] = serial
         let initialTransition = bumpTransition(screenID)
+        // The selection awaits before it dispatches, so the barrier has to expect this display.
+        let barrier = WallpaperSwitchGroup.current?.barrier
+        barrier?.expect(screenID)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -446,6 +449,7 @@ final class WallpaperAutomationOrchestrator {
                     automaticSelections[screenID] = nil
                     validationTasksByScreen[screenID] = nil
                 }
+                barrier?.abandon(screenID)
             }
             let intended: @MainActor () -> Bool = { [weak self] in
                 self?.automaticSelections[screenID] == serial && self?.isSuspendedForUserAbsence == false && !Task.isCancelled

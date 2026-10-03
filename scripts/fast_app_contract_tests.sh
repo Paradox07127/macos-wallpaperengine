@@ -189,6 +189,7 @@ PARALLEL_SUITES=(
   WallpaperAutomationCoordinatorTests
   WallpaperAutomationRotationResetTests
   WallpaperAutomationSwitchGroupTests
+  WallpaperManualSwitchGroupTests
   VolumeMountReloadTests
   PersistentUserPauseTests
   HTMLWebTransformLayoutTests

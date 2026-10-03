@@ -77,7 +77,7 @@ extension ScreenManager {
         matchingScene: (SceneDescriptor) -> Bool
     ) {
         // If a screen is currently rendering the scene being deleted, switch it away FIRST — otherwise its live renderer keeps reading the cache files that the delete is about to move to the Trash.
-        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             for screen in screens {
                 if let origin = wallpaperLoads.attempt(for: screen)?.origin, matchingOrigin(origin) {
                     beginExplicitWallpaperSelection(for: screen)
