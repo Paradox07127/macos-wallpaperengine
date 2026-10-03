@@ -389,6 +389,7 @@ private struct WPELocalEffectPositionProof {
     private let uniforms: Set<String>
     private let outputs: Set<String>
     private let macros: [String: (parameters: Set<String>, expression: [String])]
+    private static let expansionDepthLimit = 32
     private static let pureBuiltins: Set<String> = [
         "float", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4", "CAST2", "CAST3", "CAST4",
         "sin", "cos", "tan", "abs", "min", "max", "clamp", "mix", "dot", "length", "normalize", "sqrt", "pow", "frac", "fract",
@@ -491,6 +492,7 @@ private struct WPELocalEffectPositionProof {
               main.body.flatMap(\.self).filter({ $0 == "gl_Position" }).count == 1 else { return false }
         var position: String?
         var projected = false
+        var memo: [String: Bool] = [:]
         for statement in main.body {
             if statement.count == 4, statement[0] == "vec3", Self.identifier(statement[1]),
                statement[2] == "=", statement[3] == "a_Position" {
@@ -514,16 +516,29 @@ private struct WPELocalEffectPositionProof {
             }
             if let position, statement.count > 4, statement[0] == position, statement[1] == ".", statement[2] == "xy",
                ["=", "+=", "-=", "*=", "/="].contains(statement[3]) {
-                guard !projected, pureExpression(Array(statement.dropFirst(4)), locals: [], position: position, visiting: []) else { return false }
+                guard !projected, pureExpression(Array(statement.dropFirst(4)), locals: [], position: position, visiting: [], memo: &memo) else { return false }
                 continue
             }
             guard statement.count > 2, outputs.contains(statement[0]), statement[1] == "=",
-                  pureExpression(Array(statement.dropFirst(2)), locals: ["a_TexCoord"], position: nil, visiting: []) else { return false }
+                  pureExpression(Array(statement.dropFirst(2)), locals: ["a_TexCoord"], position: nil, visiting: [], memo: &memo) else { return false }
         }
         return position != nil && projected
     }
 
-    private func pureExpression(_ expression: [String], locals: Set<String>, position: String?, visiting: Set<String>) -> Bool {
+    /// Purity of a named macro/helper is context-free, so one result per name is reused across the analysis.
+    /// A cycle or an expansion deeper than `expansionDepthLimit` counts as impure, which bounds stack use.
+    private func memoizedPurity(of name: String, visiting: Set<String>, memo: inout [String: Bool],
+                                _ evaluate: (Set<String>, inout [String: Bool]) -> Bool) -> Bool {
+        if let known = memo[name] {
+            return known
+        }
+        guard !visiting.contains(name), visiting.count < Self.expansionDepthLimit else { return false }
+        let pure = evaluate(visiting.union([name]), &memo)
+        memo[name] = pure
+        return pure
+    }
+
+    private func pureExpression(_ expression: [String], locals: Set<String>, position: String?, visiting: Set<String>, memo: inout [String: Bool]) -> Bool {
         guard !expression.isEmpty else { return false }
         var index = 0
         var depth = 0
@@ -545,9 +560,11 @@ private struct WPELocalEffectPositionProof {
                 if index > 0, expression[index - 1] == "." {
                     guard token.allSatisfy({ "xyzwrgba".contains($0) }) else { return false }
                 } else if let macro = macros[token] {
-                    guard !visiting.contains(token), pureExpression(macro.expression, locals: macro.parameters, position: nil, visiting: visiting.union([token])) else { return false }
+                    guard memoizedPurity(of: token, visiting: visiting, memo: &memo, { visiting, memo in
+                        pureExpression(macro.expression, locals: macro.parameters, position: nil, visiting: visiting, memo: &memo)
+                    }) else { return false }
                 } else if index + 1 < expression.count, expression[index + 1] == "(" {
-                    guard functions[token] != nil ? pureFunction(token, visiting: visiting) : Self.pureBuiltins.contains(token) else { return false }
+                    guard functions[token] != nil ? pureFunction(token, visiting: visiting, memo: &memo) : Self.pureBuiltins.contains(token) else { return false }
                 } else {
                     guard locals.contains(token) || uniforms.contains(token) else { return false }
                 }
@@ -559,26 +576,28 @@ private struct WPELocalEffectPositionProof {
         return depth == 0
     }
 
-    private func pureFunction(_ name: String, visiting: Set<String>) -> Bool {
-        guard !visiting.contains(name), let function = functions[name], let parameters = function.parameters else { return false }
-        var locals = parameters
-        var returned = false
-        for statement in function.body {
-            guard !returned else { return false }
-            if statement.first == "return" {
-                guard pureExpression(Array(statement.dropFirst()), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
-                returned = true
-            } else if statement.count > 3, ["float", "vec2", "vec3", "vec4"].contains(statement[0]),
-                      Self.identifier(statement[1]), statement[2] == "=" {
-                guard !locals.contains(statement[1]), !uniforms.contains(statement[1]),
-                      pureExpression(Array(statement.dropFirst(3)), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
-                locals.insert(statement[1])
-            } else {
-                guard statement.count > 2, locals.contains(statement[0]), statement[1] == "=",
-                      pureExpression(Array(statement.dropFirst(2)), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
+    private func pureFunction(_ name: String, visiting: Set<String>, memo: inout [String: Bool]) -> Bool {
+        memoizedPurity(of: name, visiting: visiting, memo: &memo) { visiting, memo in
+            guard let function = functions[name], let parameters = function.parameters else { return false }
+            var locals = parameters
+            var returned = false
+            for statement in function.body {
+                guard !returned else { return false }
+                if statement.first == "return" {
+                    guard pureExpression(Array(statement.dropFirst()), locals: locals, position: nil, visiting: visiting, memo: &memo) else { return false }
+                    returned = true
+                } else if statement.count > 3, ["float", "vec2", "vec3", "vec4"].contains(statement[0]),
+                          Self.identifier(statement[1]), statement[2] == "=" {
+                    guard !locals.contains(statement[1]), !uniforms.contains(statement[1]),
+                          pureExpression(Array(statement.dropFirst(3)), locals: locals, position: nil, visiting: visiting, memo: &memo) else { return false }
+                    locals.insert(statement[1])
+                } else {
+                    guard statement.count > 2, locals.contains(statement[0]), statement[1] == "=",
+                          pureExpression(Array(statement.dropFirst(2)), locals: locals, position: nil, visiting: visiting, memo: &memo) else { return false }
+                }
             }
+            return returned
         }
-        return returned
     }
 
     private static func positionAssignment(_ statement: [String], alias: String) -> Bool {

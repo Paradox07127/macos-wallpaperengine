@@ -30,6 +30,10 @@ extension WPEShaderTranspiler {
         }
         let layout = try validatedUniformLayout(uniforms, shaderName: shaderName)
         let sortedSamplers = samplers.sorted { (textureSlot(for: $0.name) ?? .max) < (textureSlot(for: $1.name) ?? .max) }
+        // Must precede `textureSlotCount`, whose `maxSlot + 1` traps on `g_Texture<Int.max>`.
+        if let maxSlot = sortedSamplers.compactMap({ textureSlot(for: $0.name) }).max(), maxSlot >= customTextureSlotLimit {
+            throw WPEShaderCompilerError.translationFailed("authored vertex binds texture slot \(maxSlot) beyond slot budget")
+        }
         let textureSlots = textureSlotCount(for: sortedSamplers)
         guard textureSlots <= customTextureSlotLimit else {
             throw WPEShaderCompilerError.translationFailed("authored vertex texture interface exceeds slot budget")
