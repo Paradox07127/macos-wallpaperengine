@@ -74,7 +74,7 @@ extension ScreenManager {
         sceneSpanProposals[id] = proposals
         var remaining = targets.count
         var results: [WallpaperPreparationResult] = []
-        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             for screen in targets {
                 guard let configuration = proposals[screen.id] else { continue }
                 restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false, intent: .proposal,

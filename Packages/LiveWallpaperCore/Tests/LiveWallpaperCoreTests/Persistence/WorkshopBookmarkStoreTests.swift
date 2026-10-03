@@ -5,8 +5,9 @@ import Testing
 @MainActor
 struct WorkshopBookmarkStoreTests {
     @Test func savesUndownloadedWallpaperAcrossRelaunch() throws {
-        let suite = "WorkshopBookmarkStoreTests.\(UUID().uuidString)"
+        let suite = "WorkshopBookmarkStoreTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = WorkshopBookmarkStore(defaults: defaults)
         let bookmark = WorkshopBookmark(
@@ -24,8 +25,9 @@ struct WorkshopBookmarkStoreTests {
     }
 
     @Test func removalPreservesOtherSavedWallpapers() throws {
-        let suite = "WorkshopBookmarkStoreTests.\(UUID().uuidString)"
+        let suite = "WorkshopBookmarkStoreTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = WorkshopBookmarkStore(defaults: defaults)
         store.add(WorkshopBookmark(id: 1, rawTitle: "One", previewImageURL: nil, tags: []))
@@ -35,8 +37,9 @@ struct WorkshopBookmarkStoreTests {
     }
 
     @Test func unreadableArchiveIsNotOverwritten() throws {
-        let suite = "WorkshopBookmarkStoreTests.\(UUID().uuidString)"
+        let suite = "WorkshopBookmarkStoreTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let original = Data("invalid archive".utf8)
         defaults.set(original, forKey: WorkshopBookmarkStore.preferencesKey)
@@ -56,8 +59,9 @@ struct WorkshopBookmarkStoreTests {
     }
 
     @Test func nonDataValueIsUnreadableNotAbsent() throws {
-        let suite = "WorkshopBookmarkStoreTests.\(UUID().uuidString)"
+        let suite = "WorkshopBookmarkStoreTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("not an archive", forKey: WorkshopBookmarkStore.preferencesKey)
 
@@ -69,8 +73,9 @@ struct WorkshopBookmarkStoreTests {
     }
 
     @Test func resettingAnUnreadableArchiveClearsOnlyItsKey() throws {
-        let suite = "WorkshopBookmarkStoreTests.\(UUID().uuidString)"
+        let suite = "WorkshopBookmarkStoreTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(Data("invalid archive".utf8), forKey: WorkshopBookmarkStore.preferencesKey)
         defaults.set(true, forKey: "neighbour")

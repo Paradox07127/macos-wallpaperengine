@@ -5,7 +5,7 @@ import Testing
 
 @Suite("GlobalSettings partial update preserves WPE history", .serialized) @MainActor
 struct GeneralSettingsRegressionTests {
-    @Test("Saving with only pause/login flags preserved must keep recentWPEImports")
+    @Test("Saving with only pause/lock flags preserved must keep recentWPEImports")
     func savingPartialFieldsPreservesWPEHistory() throws {
         withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
@@ -27,7 +27,7 @@ struct GeneralSettingsRegressionTests {
 
             var settings = manager.loadGlobalSettings()
             settings.globalPauseOnBattery = true
-            settings.startOnLogin = true
+            settings.preservePlaybackOnLock = true
             settings.pauseOnFullScreen = false
             manager.saveGlobalSettings(settings)
 

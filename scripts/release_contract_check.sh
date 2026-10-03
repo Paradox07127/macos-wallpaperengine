@@ -361,4 +361,21 @@ if [[ -n "$screen_readers" ]]; then
   exit 1
 fi
 
+# A UUID-named defaults suite leaves one more plist in ~/Library/Preferences every run.
+uuid_suites=$(grep -rnE 'suiteName:[^)]*UUID\(\)|[Ss]uite[A-Za-z]* *= *"[^"]*\\\(UUID\(\)' \
+                LiveWallpaperTests Packages/*/Tests --include='*.swift' || true)
+if [[ -n "$uuid_suites" ]]; then
+  echo "ERROR: tests name UserDefaults suites with UUID(); suffix with #function instead:" >&2
+  echo "$uuid_suites" >&2
+  exit 1
+fi
+
+# Assigning startOnLogin = true in an app test registers the real login item via SMAppService.
+login_item_writes=$(grep -rnE '\.startOnLogin *= *true' LiveWallpaperTests --include='*.swift' || true)
+if [[ -n "$login_item_writes" ]]; then
+  echo "ERROR: tests set startOnLogin = true, which registers the user's real login item:" >&2
+  echo "$login_item_writes" >&2
+  exit 1
+fi
+
 echo "Release tooling contract passed for Lite and Pro."

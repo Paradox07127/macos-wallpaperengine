@@ -82,6 +82,8 @@ struct WPELayerScriptOutput: Sendable, Equatable {
     var presentation: [String: WPELayerScriptPresentationMutation] = [:]
     var ownTransform: WPELayerScriptTransformMutation = .init()
     var otherTransforms: [String: WPELayerScriptTransformMutation] = [:]
+    /// Explicit `.text` assignments; key "" = thisLayer, else the getLayer name.
+    var texts: [String: String] = [:]
 }
 
 enum WPELayerScriptOutputMode: Sendable, Equatable {
@@ -1216,6 +1218,7 @@ final class WPELayerScriptInstance {
                 }
                 assignedVisible[Self.ownKey] = initialOwnVisible
                 assignedAlpha[Self.ownKey] = authoredAlpha
+                assignedText[Self.ownKey] = nil
             }
             return .ready(
                 hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,
@@ -1598,6 +1601,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     /// Layers whose visible/alpha the script explicitly assigned. A getLayer(x) the script only read never lands here, so readOutput won't drive it.
     fileprivate var assignedVisible: [String: Bool] = [:]
     fileprivate var assignedAlpha: [String: Double] = [:]
+    fileprivate var assignedText: [String: String] = [:]
     /// Deliberately separate from the JS vector objects so a read or nested-object edit does not masquerade as thisLayer.<field> = value.
     fileprivate var assignedOwnTransform = WPELayerScriptTransformMutation()
     fileprivate var ownOriginValue: JSValue?
@@ -1953,6 +1957,20 @@ class WPELayerScriptBridge: @unchecked Sendable {
         return shared?.layerInfo(forHandleKey: key)
     }
 
+    /// Authored `text` is either a plain string or a `{value, script}` object.
+    fileprivate func authoredText(forKey key: String) -> String? {
+        guard case let .object(configuration)? = layerInfo(forKey: key)?.initialConfiguration else { return nil }
+        switch configuration["text"] {
+        case let .string(text)?: return text
+        case let .object(field)?:
+            guard case let .string(text)? = field["value"] else {
+                return nil
+            }
+            return text
+        default: return nil
+        }
+    }
+
     fileprivate func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
         let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         // `key` is "" for the script's own layer, so anything addressed by
@@ -2060,6 +2078,15 @@ class WPELayerScriptBridge: @unchecked Sendable {
         defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
         defineAccessor(on: handle, property: "alpha", get: getAlpha, set: setAlpha, in: context)
         defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
+        let getText: @convention(block) () -> String = { [weak self] in
+            guard let self else { return "" }
+            return assignedText[key] ?? authoredText(forKey: key) ?? ""
+        }
+        let setText: @convention(block) (JSValue) -> Void = { [weak self] value in
+            guard !value.isUndefined, !value.isNull, let text = value.toString() else { return }
+            self?.assignedText[key] = text
+        }
+        defineAccessor(on: handle, property: "text", get: getText, set: setText, in: context)
         let getAlignment: @convention(block) () -> String = { [weak self] in
             self?.presentationMutations[key]?.alignment
                 ?? self?.layerInfo(forKey: key)?.alignment ?? "center"
@@ -2422,7 +2449,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
             destroyedCreatedKeys: destroyedCreatedKeys,
             presentation: presentation,
             ownTransform: assignedOwnTransform,
-            otherTransforms: assignedOtherTransforms
+            otherTransforms: assignedOtherTransforms,
+            texts: assignedText
         )
     }
 

@@ -4,10 +4,6 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.automation.startup-items</key>
-	<true/>
-	<key>com.apple.security.device.power</key>
-	<true/>
 	<!-- AVPlayer contacts this system service during ordinary video playback. -->
 	<key>com.apple.security.exception.mach-lookup.global-name</key>
 	<array>

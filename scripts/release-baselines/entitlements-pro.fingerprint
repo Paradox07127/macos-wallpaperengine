@@ -9,9 +9,7 @@ array-string	com.apple.security.temporary-exception.sbpl	(allow process-info-pid
 array-string	com.apple.security.temporary-exception.sbpl	(allow process-info-rusage)
 bool	com.apple.security.app-sandbox	true
 bool	com.apple.security.automation.apple-events	true
-bool	com.apple.security.automation.startup-items	true
 bool	com.apple.security.device.audio-input	true
-bool	com.apple.security.device.power	true
 bool	com.apple.security.files.bookmarks.app-scope	true
 bool	com.apple.security.files.user-selected.read-write	true
 bool	com.apple.security.network.client	true

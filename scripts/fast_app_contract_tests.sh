@@ -41,6 +41,7 @@ PARALLEL_SUITES=(
   QAControlPlaneScreenIdentityTests
   WallpaperOpeningBatchTests
   WallpaperStartBarrierTests
+  WallpaperStartBarrierCommitTests
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
@@ -189,6 +190,7 @@ PARALLEL_SUITES=(
   WallpaperAutomationCoordinatorTests
   WallpaperAutomationRotationResetTests
   WallpaperAutomationSwitchGroupTests
+  WallpaperManualSwitchGroupTests
   VolumeMountReloadTests
   PersistentUserPauseTests
   HTMLWebTransformLayoutTests

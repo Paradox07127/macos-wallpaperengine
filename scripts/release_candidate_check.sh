@@ -233,6 +233,8 @@ LITE_ARCHIVED_APP="$LITE_ARCHIVE_PATH/Products/Applications/Loomscreen.app"
 LITE_RELEASE_BIN="$LITE_ARCHIVED_APP/Contents/MacOS/Loomscreen"
 [[ -x "$LITE_RELEASE_BIN" ]] || fail_with_log "Lite Release archive did not produce Loomscreen.app."
 assert_universal_binary "$LITE_RELEASE_BIN" "Lite Release archive"
+assert_universal_binary "$LITE_ARCHIVED_APP/Contents/Extensions/SystemWallpaperProviderLite.appex/Contents/MacOS/SystemWallpaperProviderLite" "Lite system wallpaper extension"
+assert_universal_binary "$LITE_ARCHIVED_APP/Contents/XPCServices/WallpaperMaintenance.xpc/Contents/MacOS/WallpaperMaintenance" "Lite WallpaperMaintenance service"
 codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
 assert_no_removed_dynamic_links "$LITE_RELEASE_BIN" "Lite Release archive"
 

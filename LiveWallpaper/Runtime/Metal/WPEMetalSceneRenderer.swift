@@ -108,6 +108,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var textVisibleScriptInstances: [String: WPELayerScriptInstance] = [:]
     var textAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
     var liveTextAlpha: [String: Double] = [:]
+    /// Keyed by objectID; a text object's own text script still overrides it each frame.
+    var liveScriptAssignedText: [String: String] = [:]
     var mediaEventDispatcher: WPESceneMediaEventDispatcher?
     var mediaEventMailbox: WPESceneMediaEventMailbox?
     /// Separate from `mediaEventDispatcher`: `$mediaThumbnail` is declared in the

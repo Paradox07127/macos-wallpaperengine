@@ -116,9 +116,17 @@ struct HomePage: View {
 
         /// One action on several displays: the group is entered before the tasks are made, so each inherits it.
         func runEach(_ screens: [Screen], _ work: @escaping @MainActor (Screen, ApplyCancellation) async -> Void) {
-            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            let group = WallpaperSwitchGroup.forManualAction()
+            // Each apply awaits before it dispatches, so the barrier has to know every display up front.
+            for screen in screens {
+                group.barrier.expect(screen.id)
+            }
+            WallpaperSwitchGroup.$current.withValue(group) {
                 for screen in screens {
-                    run(for: screen.id) { await work(screen, $0) }
+                    run(for: screen.id) { cancellation in
+                        await work(screen, cancellation)
+                        group.barrier.abandon(screen.id)
+                    }
                 }
             }
         }

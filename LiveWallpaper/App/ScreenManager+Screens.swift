@@ -364,7 +364,7 @@ extension ScreenManager {
             let sourceBookmark = sourceConfiguration.videoBookmarkData
             var changed = false
 
-            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
                 for target in screens {
                     guard var targetConfiguration = configurationStore.get(for: target.id, fingerprint: target.displayFingerprint),
                           targetConfiguration.wallpaperType == .video,
@@ -396,7 +396,7 @@ extension ScreenManager {
             }
 
             sourceConfiguration.videoDisplayMode = .spanAllDisplays
-            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+            WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
                 for target in screens {
                     let copy = sourceConfiguration.reboundToDisplay(
                         target.id,
@@ -505,7 +505,7 @@ extension ScreenManager {
               screens.count > 1,
               let template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
 
-        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             for target in screens where target.id != source.id {
                 // Shared with `applyScheme`: one rebind implementation, so the two
                 // paths cannot drift on which identity fields have to move.
@@ -528,7 +528,7 @@ extension ScreenManager {
         let configurations = configurationStore.loadAll()
         configurations.forEach { primeBookmarkDisplayNames(from: $0) }
 
-        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup(pace: .manual)) {
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             for screen in screens {
                 guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else {
                     releaseRuntimeSession(screen)

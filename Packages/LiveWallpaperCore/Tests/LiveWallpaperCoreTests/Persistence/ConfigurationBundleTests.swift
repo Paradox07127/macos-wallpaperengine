@@ -30,8 +30,9 @@ struct ConfigurationBundleTests {
 
     @Test("Restoring a backup adds its new Workshop bookmarks and keeps the ones already saved")
     func restoreMergesByWorkshopID() throws {
-        let suite = "ConfigurationBundleTests.\(UUID().uuidString)"
+        let suite = "ConfigurationBundleTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = WorkshopBookmarkStore(defaults: defaults)
         store.add(Self.bookmark(1, "Mine"))
@@ -55,8 +56,9 @@ struct ConfigurationBundleTests {
         let restored = try Self.decode(ConfigurationPorter.encode(ConfigurationBundle(libraryBookmarks: marks)))
         #expect(restored.libraryBookmarks == marks)
 
-        let suite = "ConfigurationBundleTests.\(UUID().uuidString)"
+        let suite = "ConfigurationBundleTests.\(#function)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryBookmarkStore(defaults: defaults)
         store.add("bookmark:A")

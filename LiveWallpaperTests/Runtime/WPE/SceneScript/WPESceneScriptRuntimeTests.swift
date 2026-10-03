@@ -2689,6 +2689,34 @@ export function init(value) {
         #expect(instance.takeLayerOutput()?.others["B"]?.visible == false)
     }
 
+    @Test("getLayer text assignment reaches the caller; a read-only handle does not")
+    func getLayerTextAssignmentIsRecorded() throws {
+        let shared = WPESharedScriptState(layers: [
+            .init(id: "1", name: "Day", size: .zero, origin: .zero, index: 0, parentName: nil,
+                  initialConfiguration: .object(["text": .string("Day")])),
+            .init(id: "2", name: "Date", size: .zero, origin: .zero, index: 1, parentName: nil,
+                  initialConfiguration: .object(["text": .object(["value": .string("Date"), "script": .string("")])])),
+        ])
+        let script = """
+        export function update(value) {
+            shared.dayBefore = thisScene.getLayer('Day').text;
+            thisScene.getLayer('Day').text = 'Monday';
+            thisScene.getLayer('Ghost').text = 'x';
+            shared.dayAfter = thisScene.getLayer('Day').text;
+            shared.dateRead = thisScene.getLayer('Date').text;
+            return value;
+        }
+        """
+        let instance = try WPELayerScriptInstance(script: script, shared: shared)
+        let output = try #require(instance.tick(runtimeSeconds: 0.1))
+        #expect(output.texts["Day"] == "Monday")
+        #expect(output.texts["Ghost"] == "x")
+        #expect(output.texts["Date"] == nil, "a handle the script only read must not drive the layer's text")
+        #expect(shared.get("dayBefore") as? String == "Day")
+        #expect(shared.get("dayAfter") as? String == "Monday")
+        #expect(shared.get("dateRead") as? String == "Date")
+    }
+
     @Test("getLayer transform assignment reaches the caller as a cross-layer mutation")
     func getLayerTransformAssignmentIsRecorded() throws {
         let script = """
