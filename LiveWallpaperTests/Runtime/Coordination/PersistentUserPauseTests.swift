@@ -325,7 +325,7 @@ struct PersistentUserPauseTests {
 
     private static func waitUntil(_ condition: () async -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(2)
-        while !(await condition()), ContinuousClock.now < deadline {
+        while await !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         try await Task.sleep(for: .milliseconds(50))
