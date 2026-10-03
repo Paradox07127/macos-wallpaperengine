@@ -6,10 +6,22 @@ import Metal
 
 @MainActor
 final class SceneSpanWallpaperGroup {
+    @MainActor
     private final class Member {
         weak var session: SceneSpanWallpaperSession?
-        init(_ session: SceneSpanWallpaperSession) {
+        /// The still-live member a candidate displaced on the same display; nil once none is left.
+        var replaced: Member?
+        init(_ session: SceneSpanWallpaperSession, replacing replaced: Member?) {
             self.session = session
+            self.replaced = replaced
+        }
+
+        /// First live member in the chain, with stopped links pruned so the chain cannot grow across commits.
+        static func live(_ member: Member?) -> Member? {
+            guard let member else { return nil }
+            guard let session = member.session, !session.stopped else { return live(member.replaced) }
+            member.replaced = live(member.replaced)
+            return member
         }
     }
 
@@ -20,6 +32,7 @@ final class SceneSpanWallpaperGroup {
     let density: CGFloat
     private var members: [CGDirectDisplayID: Member] = [:]
     private var displayFrames: [CGDirectDisplayID: CGRect]
+    private var recovery: Task<Void, Never>?
     var onEmpty: (() -> Void)?
 
     init(id: UUID, descriptor: SceneDescriptor, owner: SceneWallpaperSession,
@@ -49,9 +62,20 @@ final class SceneSpanWallpaperGroup {
     func makeMember(for screen: Screen, configuration: ScreenConfiguration) throws -> SceneSpanWallpaperSession {
         displayFrames[screen.id] = screen.frame
         let session = try SceneSpanWallpaperSession(group: self, screen: screen, configuration: configuration)
-        members[screen.id] = Member(session)
-        reconcile()
+        members[screen.id] = Member(session, replacing: Member.live(members[screen.id]))
+        updateLayout()
         return session
+    }
+
+    /// Joiners share one recovery: a second reload would cancel the first and fail the member awaiting it.
+    func recoverFailedLoad() async {
+        guard owner.loadError != nil else { return }
+        let task = recovery ?? Task { await owner.retry() }
+        recovery = task
+        await task.value
+        if recovery == task {
+            recovery = nil
+        }
     }
 
     func discardUnattachedMember(for id: CGDirectDisplayID) {
@@ -72,9 +96,14 @@ final class SceneSpanWallpaperGroup {
     }
 
     func remove(_ session: SceneSpanWallpaperSession) {
-        guard members[session.screenID]?.session === session else { return }
-        members[session.screenID] = nil
-        displayFrames[session.screenID] = nil
+        guard let member = members[session.screenID], member.session === session else { return }
+        if let restored = Member.live(member.replaced), let survivor = restored.session {
+            members[session.screenID] = restored
+            displayFrames[session.screenID] = survivor.displayFrame
+        } else {
+            members[session.screenID] = nil
+            displayFrames[session.screenID] = nil
+        }
         if sessions.isEmpty {
             discardIfUnused()
         } else {
@@ -142,7 +171,8 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     private let actor: WPEDisplayRenderActor
     private let presented = WPESceneSpanPresentationState()
     private var startup: Task<Void, Never>?
-    private var stopped = false
+    private(set) var stopped = false
+    private(set) var presentation: VideoSpanRenderConfiguration
     private var profile: WallpaperPerformanceProfile = .quality
     private var preview: WallpaperPerformanceProfile?
     var playbackMachine = WallpaperPlaybackStateMachine()
@@ -171,9 +201,11 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         surface = WPERenderSurface(frame: CGRect(origin: .zero, size: screen.frame.size), device: device, targetScreen: screen.nsScreen, allowsHDR: false)
         window.contentView = surface.mtkView
         actor = WPEDisplayRenderActor(label: "com.loomscreen.scene-span.present.\(screen.id)")
+        let presentation = VideoSpanRenderConfiguration(canvasFrame: group.canvasFrame, screenFrame: screen.frame)
+        self.presentation = presentation
         let presenter = try WPESceneSpanPresenter(device: device, layer: WPEPresentLayer(layer: surface.metalLayer),
                                                   frames: group.frames, state: presented, producer: group.owner.spanRenderActor,
-                                                  configuration: .init(canvasFrame: group.canvasFrame, screenFrame: screen.frame), density: group.density)
+                                                  configuration: presentation, density: group.density)
         surface.attach(client: WPERenderSurfaceClientShim(renderActor: actor, backing: .renderThread), monitorsPointer: false)
         surface.mtkView.onPointerFrameChange = { [weak self] frame in
             guard let self else { return }
@@ -333,6 +365,7 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     func updatePresentation(_ configuration: VideoSpanRenderConfiguration) {
+        presentation = configuration
         Task { await actor.updateSpanPresentation(configuration) }
     }
 
@@ -354,7 +387,8 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
     }
 
     func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult {
-        await WallpaperPreparationWaiter.wait(timeout: timeout, pollInterval: .milliseconds(25)) { [weak self] in
+        await group.recoverFailedLoad()
+        return await WallpaperPreparationWaiter.wait(timeout: timeout, pollInterval: .milliseconds(25)) { [weak self] in
             guard let self, !stopped else { return .cancelled }
             await group.owner.pollRendererState()
             if loadError != nil {

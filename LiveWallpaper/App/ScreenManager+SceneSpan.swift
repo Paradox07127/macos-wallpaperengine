@@ -96,9 +96,10 @@ extension ScreenManager {
 
     func persistSceneSpanDescriptor(_ descriptor: SceneDescriptor, groupID: UUID?, excluding screenID: CGDirectDisplayID) {
         guard let groupID else { return }
-        for screen in screens where screen.id != screenID {
-            guard var configuration = getConfiguration(for: screen), configuration.sceneSpanGroupID == groupID,
-                  case let .scene(current) = configuration.activeWallpaper, current.isSameScene(as: descriptor) else { continue }
+        // Disconnected members too, or their stale descriptor fails the group reuse check on reconnect.
+        for var configuration in configurationStore.loadAll()
+            where configuration.screenID != screenID && configuration.sceneSpanGroupID == groupID {
+            guard case let .scene(current) = configuration.activeWallpaper, current.isSameScene(as: descriptor) else { continue }
             configuration.activeWallpaper = .scene(descriptor)
             configuration.savedSceneDescriptor = descriptor
             saveConfiguration(configuration)
