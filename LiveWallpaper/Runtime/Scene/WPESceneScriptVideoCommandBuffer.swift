@@ -1,52 +1,52 @@
 #if !LITE_BUILD
-    import Foundation
+import Foundation
 
-    struct WPESceneScriptBufferedVideoCommand: Sendable, Equatable {
-        let objectID: String
-        let command: WPELayerVideoCommand
+struct WPESceneScriptBufferedVideoCommand: Sendable, Equatable {
+    let objectID: String
+    let command: WPELayerVideoCommand
+}
+
+struct WPESceneScriptVideoCommandBuffer: Sendable {
+    private(set) var isTransactionActive = false
+    private(set) var pending: [WPESceneScriptBufferedVideoCommand] = []
+    /// Committed transport per video source key; outlives transactions so a rebuilt decoder resumes it.
+    private(set) var transportBySourceKey: [String: WPEVideoScriptTransport] = [:]
+
+    mutating func recordTransport(_ command: WPELayerVideoCommand, sourceKey: String) {
+        transportBySourceKey[sourceKey, default: .init()].record(command)
     }
 
-    struct WPESceneScriptVideoCommandBuffer: Sendable {
-        private(set) var isTransactionActive = false
-        private(set) var pending: [WPESceneScriptBufferedVideoCommand] = []
-        /// Committed transport per video source key; outlives transactions so a rebuilt decoder resumes it.
-        private(set) var transportBySourceKey: [String: WPEVideoScriptTransport] = [:]
-
-        mutating func recordTransport(_ command: WPELayerVideoCommand, sourceKey: String) {
-            transportBySourceKey[sourceKey, default: .init()].record(command)
-        }
-
-        mutating func forgetTransports() {
-            transportBySourceKey.removeAll()
-        }
-
-        mutating func begin() {
-            pending.removeAll(keepingCapacity: true)
-            isTransactionActive = true
-        }
-
-        mutating func enqueue(
-            _ commands: [WPELayerVideoCommand],
-            objectID: String
-        ) {
-            guard isTransactionActive, !commands.isEmpty else { return }
-            pending.append(contentsOf: commands.map {
-                WPESceneScriptBufferedVideoCommand(objectID: objectID, command: $0)
-            })
-        }
-
-        /// Returns commands only for a successful traversal. Ending an inactive
-        /// or failed transaction is deliberately inert and always drains storage.
-        mutating func finish(commit: Bool) -> [WPESceneScriptBufferedVideoCommand] {
-            guard isTransactionActive else { return [] }
-            let committed = commit ? pending : []
-            pending.removeAll(keepingCapacity: true)
-            isTransactionActive = false
-            return committed
-        }
-
-        mutating func discard() {
-            _ = finish(commit: false)
-        }
+    mutating func forgetTransports() {
+        transportBySourceKey.removeAll()
     }
+
+    mutating func begin() {
+        pending.removeAll(keepingCapacity: true)
+        isTransactionActive = true
+    }
+
+    mutating func enqueue(
+        _ commands: [WPELayerVideoCommand],
+        objectID: String
+    ) {
+        guard isTransactionActive, !commands.isEmpty else { return }
+        pending.append(contentsOf: commands.map {
+            WPESceneScriptBufferedVideoCommand(objectID: objectID, command: $0)
+        })
+    }
+
+    /// Returns commands only for a successful traversal. Ending an inactive
+    /// or failed transaction is deliberately inert and always drains storage.
+    mutating func finish(commit: Bool) -> [WPESceneScriptBufferedVideoCommand] {
+        guard isTransactionActive else { return [] }
+        let committed = commit ? pending : []
+        pending.removeAll(keepingCapacity: true)
+        isTransactionActive = false
+        return committed
+    }
+
+    mutating func discard() {
+        _ = finish(commit: false)
+    }
+}
 #endif

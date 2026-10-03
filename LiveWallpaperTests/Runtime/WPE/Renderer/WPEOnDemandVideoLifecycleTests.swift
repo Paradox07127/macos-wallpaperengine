@@ -145,17 +145,24 @@ struct WPEOnDemandVideoLifecycleTests {
     /// A video `.tex` whose MP4 payload is only an `ftyp` box: enough for a live player, no frames needed.
     private static func videoTex() -> Data {
         var data = Data()
-        func magic(_ value: String) { data.append(contentsOf: value.utf8); data.append(0) }
-        func int32(_ value: Int32) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-        let mp4 = Data([
-            0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32,
-            0x00, 0x00, 0x00, 0x00, 0x6d, 0x70, 0x34, 0x32, 0x69, 0x73, 0x6f, 0x6d,
-        ])
+        func magic(_ value: String) {
+            data.append(contentsOf: value.utf8)
+            data.append(0)
+        }
+        func int32(_ value: Int32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        // ISO BMFF `ftyp` box: size 24, major brand mp42, minor 0, compatible mp42/isom.
+        let mp4 = Data("\u{0}\u{0}\u{0}\u{18}ftypmp42\u{0}\u{0}\u{0}\u{0}mp42isom".utf8)
         magic("TEXV0005")
         magic("TEXI0001")
-        for value in [Int32(WPETexFormat.rgba8888.rawValue), 0, 4, 4, 4, 4, 0] { int32(value) }
+        for value in [Int32(WPETexFormat.rgba8888.rawValue), 0, 4, 4, 4, 4, 0] {
+            int32(value)
+        }
         magic("TEXB0003")
-        for value: Int32 in [1, -1, 1, 4, 4, 0, Int32(mp4.count), Int32(mp4.count)] { int32(value) }
+        for value: Int32 in [1, -1, 1, 4, 4, 0, Int32(mp4.count), Int32(mp4.count)] {
+            int32(value)
+        }
         data.append(mp4)
         return data
     }

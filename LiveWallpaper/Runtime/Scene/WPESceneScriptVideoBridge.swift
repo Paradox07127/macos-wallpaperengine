@@ -47,8 +47,12 @@ struct WPEVideoScriptTransport: Sendable, Equatable {
     /// `automaticPlayback`: whether a fresh source would auto-start. Script control disables
     /// auto-start, so a rate/loop-only history must request that playback itself.
     func apply(to source: WPEVideoTextureSource, automaticPlayback: Bool) {
-        if let loop { source.scriptSetLoop(loop) }
-        if let rate { source.scriptSetRate(rate) }
+        if let loop {
+            source.scriptSetLoop(loop)
+        }
+        if let rate {
+            source.scriptSetRate(rate)
+        }
         switch playback {
         case .play: source.scriptPlay()
         case .pause: source.scriptPause()

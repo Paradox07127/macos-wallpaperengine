@@ -639,7 +639,7 @@ struct OracleCorpusCaptureTests {
         for index in passes.indices {
             guard var output = passes[index]["output"] as? [String: Any],
                   var receipt = output["raw"] as? [String: Any] else { continue }
-            let source = URL(fileURLWithPath: try #require(receipt["path"] as? String))
+            let source = try URL(fileURLWithPath: #require(receipt["path"] as? String))
             let expected = try #require(receipt["rawStorageSHA256"] as? String)
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
             let destination = folder.appendingPathComponent(source.lastPathComponent)
