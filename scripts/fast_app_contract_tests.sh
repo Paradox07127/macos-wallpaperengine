@@ -112,6 +112,7 @@ PARALLEL_SUITES=(
   WPESceneScriptB2bResourceLimitTests
   WPESceneScriptInitialLayerConfigurationTests
   WPESceneScriptSharedLayerOrderTests
+  WPESceneScriptVideoBridgeTests
   WPEUploadCancellationOracleTests
   InstalledOwnershipCharacterizationTests
   # Persistence/config/storage correctness. Deterministic, hardware-free, and
