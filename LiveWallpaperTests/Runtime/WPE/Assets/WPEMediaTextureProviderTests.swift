@@ -300,6 +300,31 @@ struct WPEMediaTextureProviderTests {
         #expect(texture.height <= WPEMediaTextureStore.maximumEdge)
     }
 
+    @Test("Cover bytes stay sRGB-encoded in a raw UNORM texture, like authored and video textures")
+    func coverTextureKeepsEncodedBytesUndecoded() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let store = WPEMediaTextureStore(device: device)
+
+        store.ingest(artwork: try Self.artwork(red: 128.0 / 255, green: 128, blue: 128))
+
+        let texture = try #require(store.texture(for: .thumbnail))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        texture.getBytes(
+            &pixel,
+            bytesPerRow: texture.width * 4,
+            from: MTLRegionMake2D(texture.width / 2, texture.height / 2, 1, 1),
+            mipmapLevel: 0
+        )
+        #expect(
+            texture.pixelFormat == .rgba8Unorm,
+            "an _srgb cover (bytes \(pixel)) is decoded on sample and again at present"
+        )
+        for channel in pixel.prefix(3) {
+            #expect(abs(Int(channel) - 128) <= 1, "cover byte \(channel) is not the sRGB-encoded 128")
+        }
+        #expect(pixel[3] == 255)
+    }
+
     @Test("Undecodable artwork bytes leave the placeholder in place")
     func undecodableArtworkKeepsPlaceholder() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -566,12 +591,12 @@ struct WPEMediaTextureProviderTests {
     }
 
     /// 按 `red` 取值不同,使两张封面字节级不相同。
-    private static func artwork(red: Double, size: Int = 64) throws -> Data {
+    private static func artwork(red: Double, green: UInt8 = 40, blue: UInt8 = 40, size: Int = 64) throws -> Data {
         var bytes = [UInt8](repeating: 255, count: size * size * 4)
         for index in stride(from: 0, to: bytes.count, by: 4) {
             bytes[index] = UInt8((red * 255).rounded())
-            bytes[index + 1] = 40
-            bytes[index + 2] = 40
+            bytes[index + 1] = green
+            bytes[index + 2] = blue
             bytes[index + 3] = 255
         }
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))

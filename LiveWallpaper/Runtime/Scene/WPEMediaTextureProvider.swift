@@ -144,7 +144,7 @@ final class WPEMediaTextureStore: @unchecked Sendable {
 
     // MARK: - Upload
 
-    /// sRGB to match how authored scene albedo textures are sampled.
+    /// sRGB-encoded bytes in a raw UNORM texture, like authored and video textures: shaders get encoded values and present decodes once.
     private static func makeTexture(from artwork: Data, device: MTLDevice) -> MTLTexture? {
         guard let source = CGImageSourceCreateWithData(artwork as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -179,7 +179,7 @@ final class WPEMediaTextureStore: @unchecked Sendable {
         guard drawn else { return nil }
 
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm_srgb,
+            pixelFormat: .rgba8Unorm,
             width: width,
             height: height,
             mipmapped: false
