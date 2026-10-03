@@ -27,7 +27,7 @@ struct WPESceneScriptVideoBridgeTests {
             shared.time = video.getCurrentTime(); shared.duration = video.duration;
             shared.playing = video.isPlaying(); shared.rate = video.rate; shared.loop = video.loop;
         }
-        """, shared: shared, ownLayerName: "video", ownObjectID: "video")
+        """, shared: shared, ownLayerName: "video", ownObjectID: "video", governor: WPESceneScriptExecutionGovernor(limit: 1))
         #expect(instance.initialOutput.own.videoCommands.isEmpty)
         #expect(shared.get("time") as? Double == 2.005)
         #expect(shared.get("duration") as? Double == 2)
@@ -50,7 +50,7 @@ struct WPESceneScriptVideoBridgeTests {
             shared.time = b.getCurrentTime(); shared.playing = b.isPlaying();
             shared.rate = a.rate; shared.loop = a.loop;
         }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         #expect(shared.get("time") as? Double == 1.5)
         #expect(shared.get("playing") as? Bool == true)
         #expect(shared.get("rate") as? Double == 0.5)
@@ -80,7 +80,7 @@ struct WPESceneScriptVideoBridgeTests {
             \(body)
             shared.rate = a.rate; shared.playing = a.isPlaying();
         }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         let fixture = try MetalSceneFixture.solidColorScene()
         defer { fixture.cleanup() }
         let renderer = try WPEMetalSceneRenderer(
@@ -110,7 +110,7 @@ struct WPESceneScriptVideoBridgeTests {
             shared.stoppedTime = video.getCurrentTime(); shared.stoppedPlaying = video.isPlaying();
         }
         export function update() { shared.nextTime = thisLayer.getVideoTexture().getCurrentTime(); }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         #expect(shared.get("stoppedTime") as? Double == 0)
         #expect(shared.get("stoppedPlaying") as? Bool == false)
         shared.publishVideoPlayback(["a": snapshot(generation, time: 0.04)])
@@ -125,7 +125,7 @@ struct WPESceneScriptVideoBridgeTests {
         let instance = try WPELayerScriptInstance(script: """
         export function init() { thisLayer.getVideoTexture().play(); }
         export function update() { thisLayer.getVideoTexture().pause(); }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         let initial = instance.initialOutput.own.videoCommands
         shared.publishVideoPlayback(["a": snapshot(UUID())], sourceKeys: ["a": "video.tex"])
         var buffer = WPESceneScriptVideoCommandBuffer()
@@ -145,7 +145,7 @@ struct WPESceneScriptVideoBridgeTests {
             shared.unavailable = video.getCurrentTime() === undefined;
             video.play(); video.pause(); video.setCurrentTime(0.25);
         }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         #expect(shared.get("unavailable") as? Bool == true)
         #expect(instance.initialOutput.own.videoCommands == [.play, .pause, .seek(0.25)])
     }
@@ -178,7 +178,7 @@ struct WPESceneScriptVideoBridgeTests {
         shared.publishVideoPlayback(["a": snapshot(UUID(), time: 0.25), "b": snapshot(UUID(), time: 1.5)])
         let instance = try WPELayerScriptInstance(script: """
         export function init() { shared.time = thisLayer.getVideoTexture().getCurrentTime(); }
-        """, shared: shared, ownLayerName: "", ownObjectID: "b")
+        """, shared: shared, ownLayerName: "", ownObjectID: "b", governor: WPESceneScriptExecutionGovernor(limit: 1))
         #expect(instance.initialOutput.own.videoCommands.isEmpty)
         #expect(shared.get("time") as? Double == 1.5)
     }
@@ -192,7 +192,7 @@ struct WPESceneScriptVideoBridgeTests {
             const video = thisLayer.getVideoTexture();
             shared.missing = video.getCurrentTime() === undefined && video.duration === undefined && video.isPlaying() === undefined;
         }
-        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
         shared.publishVideoPlayback([:])
         _ = try #require(instance.tick())
         #expect(shared.get("missing") as? Bool == true)
