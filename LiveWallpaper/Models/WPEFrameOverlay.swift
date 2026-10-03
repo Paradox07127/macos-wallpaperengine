@@ -56,9 +56,8 @@ extension WPEPreparedRenderPipeline {
             if changedLayers == nil {
                 changedLayers = layers
             }
-            changedLayers![index] = WPEPreparedRenderLayer(
+            changedLayers![index] = layer.replacing(
                 graphLayer: updatedGraph,
-                puppetModel: layer.puppetModel,
                 passes: updatedPasses
             )
         }

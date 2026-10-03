@@ -1,11 +1,301 @@
+import Darwin
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
-@testable import LiveWallpaper
 
 @Suite("WPE render pipeline builder")
 struct WPERenderPipelineBuilderTests {
+    @Test("Static positive flat parent publication preserves full hierarchy shear and rejects incomplete or mutable ancestry",
+          arguments: ["identity", "combined", "deep", "missing", "cycle", "parent-link", "negative", "zero", "zero-z", "3d", "overflow", "animation", "leaf-animation", "shape", "effect-script", "cross-layer-script", "text-parent", "parallax"])
+    func staticParentPublication(scope: String) throws {
+        let fixture = try makeFixture(files: [
+            "models/solid.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": #"{"passes":[{"shader":"solidlayer","blending":"normal"}]}"#,
+            "materials/procedural.json": #"{"passes":[{"shader":"parent-probe","blending":"disabled","cullmode":"nocull"}]}"#,
+            "effects/procedural.json": #"{"passes":[{"material":"materials/procedural.json"}]}"#,
+            "shaders/parent-probe.vert": """
+            attribute vec3 a_Position; attribute vec2 a_TexCoord;
+            uniform mat4 g_ModelViewProjectionMatrix;
+            varying vec2 uv;
+            void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position.xy*vec2(0.75,1.2),0,1);uv=a_TexCoord;}
+            """,
+            "shaders/parent-probe.frag": "varying vec2 uv; void main(){gl_FragColor=vec4(uv,0.25,1.0);}",
+        ])
+        defer { fixture.cleanup() }
+        var parent: [String: Any] = ["id": 2, "name": "parent", "origin": "40 24 0", "scale": "1.1 0.9 1", "angles": "0 0 0.25"]
+        if scope == "identity" {
+            parent.merge(["origin": "0 0 0", "scale": "1 1 1", "angles": "0 0 0"]) { _, new in new }
+        }
+        if scope == "negative" {
+            parent["scale"] = "-1.1 0.9 1"
+        }
+        if scope == "zero" {
+            parent["scale"] = "1.1 0 1"
+        }
+        if scope == "zero-z" {
+            parent["scale"] = "1.1 0.9 0"
+        }
+        if scope == "3d" {
+            parent["angles"] = "0.2 0 0.25"
+        }
+        if scope == "overflow" {
+            parent["scale"] = "1e40 0.9 1"
+        }
+        if scope == "cycle" {
+            parent["parent"] = 1
+        }
+        let animatedOrigin: [String: Any] = ["value": "40 24 0", "animation": [
+            "c0": [["frame": 0, "value": 40], ["frame": 30, "value": 50]],
+            "c1": [["frame": 0, "value": 24], ["frame": 30, "value": 24]],
+            "c2": [["frame": 0, "value": 0], ["frame": 30, "value": 0]],
+            "options": ["fps": 30, "length": 30, "mode": "loop"],
+        ]]
+        if scope == "animation" {
+            parent["origin"] = animatedOrigin
+        }
+        if scope == "text-parent" {
+            parent["text"] = "parent"
+        }
+        var effect: [String: Any] = ["id": 3, "file": "effects/procedural.json"]
+        if scope == "effect-script" {
+            effect["visible"] = ["value": true, "script": "export function update(v){return v;}"]
+        }
+        var child: [String: Any] = ["id": 1, "name": "child", "image": "models/solid.json", "parent": 2,
+                                    "origin": "144 52 0", "scale": "1.2 0.8 1", "angles": "0 0 0.17",
+                                    "size": "160 96", "effects": [effect]]
+        if scope == "leaf-animation" {
+            child["origin"] = animatedOrigin
+        }
+        if scope == "shape" {
+            child["shape"] = "quad"
+        }
+        var objects = [parent, child]
+        if scope == "deep" {
+            objects[0]["parent"] = 4
+            objects.insert(["id": 4, "name": "grandparent", "origin": "5 6 0", "scale": "0.8 1.3 1", "angles": "0 0 -0.2"], at: 0)
+        }
+        if scope == "cross-layer-script" {
+            objects.append(["id": 5, "name": "writer", "visible": ["value": true, "script": "export function update(v){return v;}"]])
+        }
+        func document(_ objects: [[String: Any]]) throws -> WPESceneDocument {
+            try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 256, "height": 128], "cameraparallax": scope == "parallax"], "objects": objects,
+            ]))
+        }
+        let scene = try document(objects)
+        if scope == "animation" {
+            #expect(scene.transformHostObjects.first?.originAnimation != nil)
+        }
+        var contextObjects = objects
+        if scope == "parent-link" {
+            contextObjects[1]["parent"] = 99
+        }
+        let contextDocument = try document(contextObjects)
+        var transforms = WPEMetalSceneRenderer.ancestorLocalTransforms(in: contextDocument)
+        if scope == "missing" {
+            transforms.removeValue(forKey: "2")
+        }
+        let context = WPEStaticParentHierarchyContext(document: contextDocument, localTransforms: transforms)
+        if ["effect-script", "cross-layer-script", "parallax"].contains(scope) {
+            #expect(context == nil)
+        }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: scene)
+        if ["identity", "combined", "deep"].contains(scope) {
+            let admitted = try #require(context)
+            let childGraph = try #require(graph.layers.first { $0.id == "1" })
+            #expect(childGraph.parallaxDepth == SIMD2<Double>(1, 1))
+            #expect(!scene.general.cameraParallax.enabled)
+            let model = try #require(admitted.modelMatrix(for: childGraph))
+            #expect(model.count == 16)
+        }
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: scene.general.orthogonalProjection, sceneCamera: scene.camera)
+        let original = try builder.build(graph: graph)
+        let pipeline = try builder.build(graph: graph, proceduralPublicationCamera: camera, proceduralParentHierarchy: context)
+        guard ["identity", "combined", "deep"].contains(scope) else {
+            #expect(pipeline == original)
+            return
+        }
+        let layer = try #require(pipeline.layers.first { $0.id == "1" })
+        #expect(layer.passes.count == 2 && layer.passes.last?.pass.target == .scene)
+        #expect(layer.hasStaticParentModel)
+        #expect(layer.graphLayer.parentObjectID == "2" && layer.graphLayer.localGeometry != nil)
+        #expect(WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera))
+        var resolver = WPEObjectModelMatrixResolver(localTransforms: transforms, parentByID: scene.objectParentByID)
+        let resolved = resolver.resolve("1", requiringCompleteHierarchy: true)
+        let expected = try #require(resolved)
+        #expect(layer.modelMatrixOverride == WPEMetalObjectUniforms.flattenedColumnMajor(expected))
+        if scope != "identity" {
+            let g = layer.graphLayer.geometry
+            let flattened = WPEMetalObjectUniforms.modelMatrix(origin: g.origin, scale: g.scale, angles: g.angles)
+            let actualMatrix = try #require(layer.modelMatrixOverride)
+            #expect(zip(actualMatrix, WPEMetalObjectUniforms.flattenedColumnMajor(flattened)).contains { abs($0 - $1) > 0.001 })
+        }
+        let immutable = pipeline.applyingLayerTransforms(origins: ["1": .zero, "2": .zero], scales: [:], angles: [:])
+            .resolvingSceneModelMatrices(origins: [:], scales: [:], angles: [:], parentByID: [:], hostTransforms: [:], camera: camera)
+        #expect(immutable == pipeline)
+        let overlay = pipeline.applyingFrameOverlay(.init(visibility: ["1": false], alpha: ["1": 0.5], colors: [:]))
+        #expect(overlay.layers.first { $0.id == "1" }?.modelMatrix == layer.modelMatrix)
+        let presentation = pipeline.applyingScriptLayerPresentation(["1": .init(sortIndex: 9)])
+        #expect(presentation.layers.first { $0.id == "1" }?.modelMatrix == layer.modelMatrix)
+        let sourceExtent = WPERenderSourceExtent(textureSize: CGSize(width: 32, height: 32), imageSize: CGSize(width: 32, height: 32))
+        let sized = WPEPreparedRenderPipeline(layers: [layer.replacing(
+            graphLayer: layer.graphLayer.replacingPasses(layer.graphLayer.passes, compositeSourceExtent: sourceExtent)
+        )]).resolvingSourceMipLevels { _ in 1 }
+        #expect(sized.layers[0].graphLayer.compositeSourceExtent?.sourceMipLevel == 1)
+        #expect(sized.layers[0].modelMatrix == layer.modelMatrix)
+        let runtime = WPEMetalRuntimeUniforms(time: 0, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(repeating: 0.5))
+        let frame = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera)
+        let rebuilt = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera, scriptedConstants: [layer.passes[1].id: ["probe": .number(1)]])
+        #expect(rebuilt.pipeline.layers.first { $0.id == "1" }?.modelMatrix == layer.modelMatrix)
+        #expect(frame.frameUniforms.affineModelMatrixPassIDs.contains(layer.passes[1].id))
+        #expect(frame.frameUniforms.value(named: "g_ModelMatrix", passID: layer.passes[1].id)?.vectorValue == layer.modelMatrixOverride)
+        guard scope == "combined" else { return }
+        let mvp = try #require(frame.frameUniforms.value(named: "g_ModelViewProjectionMatrix", passID: layer.passes[1].id)?.vectorValue)
+        // Windows parent-r2 9000808, terminal event 48; column-major bound VS MVP.
+        let captured = [0.009494711644947529, 0.007795349694788456, 0, 0,
+                        -0.0024985559284687042, 0.010167608968913555, 0, 0,
+                        0, 0, 0.0002500000118743628, 0,
+                        0.42107200622558594, 0.6958420276641846, 0.5, 1]
+        for (actual, oracle) in zip(mvp, captured) {
+            #expect(abs(actual - oracle) < 0.000001)
+        }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let pass = layer.passes[1]
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
+        let compiled = try executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        executor.authoredShaderResultByPassID[pass.id] = compiled
+        let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(
+            device: device, defaultLibrary: executor.defaultLibrary, result: compiled, vertexName: nil,
+            blendMode: "disabled", alphaWritePolicy: WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled"),
+            colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid
+        )
+        let built = try #require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))
+        executor.seedTranslatedPipelines([built])
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 256, height: 128), textures: [:], cameraUniforms: camera)
+        executor.frameUniformContext = frame.frameUniforms
+        #expect(executor.authoredVertexRejection(for: pass, result: compiled, layer: layer.graphLayer,
+                                                 frameState: WPEMetalFrameState(output: output, sceneSize: camera.renderSize, cameraUniforms: camera),
+                                                 effectTextureProjection: { nil }) == nil)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: output.pixelFormat, width: 256, height: 128, mipmapped: false)
+        descriptor.storageMode = .shared
+        let staging = try #require(device.makeTexture(descriptor: descriptor))
+        let command = try #require(executor.textureSourceCommandQueue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: output, to: staging)
+        blit.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.error == nil)
+        var bytes = [UInt8](repeating: 0, count: 256 * 128 * 4)
+        bytes.withUnsafeMutableBytes {
+            staging.getBytes($0.baseAddress!, bytesPerRow: 256 * 4, from: MTLRegionMake2D(0, 0, 256, 128), mipmapLevel: 0)
+        }
+        let green = stride(from: 1, to: bytes.count, by: 4).map { bytes[$0] }
+        #expect(green.filter { $0 > 0 }.count > 1000)
+        #expect(Set(green).count > 32)
+    }
+
+    @Test("Static publication eligibility excludes every runtime script family and property binding",
+          arguments: ["none", "image-visible", "image-alpha", "image-origin", "image-scale", "image-angles", "image-color",
+                      "text", "text-visible", "text-alpha", "host", "transform-host", "effect-visible", "effect-constant", "particle-alpha", "property"])
+    func staticPublicationScriptEligibility(scope: String) throws {
+        let script = "export function update(v){return v;}"
+        let envelope: [String: Any] = ["value": "0 0 0", "script": "export function update(v){v.x += engine.runtime; return v;}"]
+        var object: [String: Any] = ["id": 1, "name": "probe", "image": "models/image.json"]
+        switch scope {
+        case "image-visible": object["visible"] = ["value": true, "script": script]
+        case "image-alpha": object["alpha"] = ["value": 1, "script": script]
+        case "image-origin": object["origin"] = envelope
+        case "image-scale": object["scale"] = envelope
+        case "image-angles": object["angles"] = envelope
+        case "image-color": object["color"] = envelope
+        case "text", "text-visible", "text-alpha":
+            object.removeValue(forKey: "image")
+            object["text"] = scope == "text" ? ["value": "probe", "script": script] as Any : "probe"
+            if scope == "text-visible" {
+                object["visible"] = ["value": true, "script": script]
+            }
+            if scope == "text-alpha" {
+                object["alpha"] = ["value": 1, "script": script]
+            }
+        case "host":
+            object.removeValue(forKey: "image")
+            object["visible"] = ["value": true, "script": script]
+        case "transform-host":
+            object.removeValue(forKey: "image")
+            object["origin"] = envelope
+        case "effect-visible":
+            object["effects"] = [["id": 2, "file": "effects/probe.json", "visible": ["value": true, "script": script]]]
+        case "effect-constant":
+            object["effects"] = [["id": 2, "file": "effects/probe.json", "passes": [["constantshadervalues": ["amount": ["value": 1, "script": script]]]]]]
+        case "particle-alpha":
+            object.removeValue(forKey: "image")
+            object["particle"] = "particles/probe.json"
+            object["instanceoverride"] = ["alpha": ["value": 1, "script": script]]
+        case "property": object["visible"] = ["value": true, "user": "toggle"]
+        default: break
+        }
+        let scene = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 0"], "general": ["orthogonalprojection": ["width": 64, "height": 64]], "objects": [object],
+        ]))
+        if scope == "image-origin" {
+            _ = try #require(scene.imageObjects.first?.originScript)
+        }
+        if scope == "transform-host" {
+            _ = try #require(scene.transformHostObjects.first?.originScript)
+        }
+        #expect(WPEStaticParentHierarchyContext.permitsScriptFreePublication(in: scene) == (scope == "none"))
+    }
+
+    @Test("Complete matrix resolution cannot reuse truncated legacy ancestry and accepts the bounded full chain")
+    func completeMatrixResolutionKeepsIndependentMemo() throws {
+        print("Parent matrix resolver test worker stack bytes: \(pthread_get_stacksize_np(pthread_self()))")
+        var locals: [String: WPERenderObjectTransform] = [:]
+        var parents: [String: String] = [:]
+        for index in 0 ..< 103 {
+            locals[String(index)] = .init(origin: SIMD3(1, 0, 0), scale: SIMD3(repeating: 1), angles: .zero)
+            if index < 102 {
+                parents[String(index)] = String(index + 1)
+            }
+        }
+        var resolver = WPEObjectModelMatrixResolver(localTransforms: locals, parentByID: parents)
+        let legacy = resolver.resolve("0", requiringCompleteHierarchy: false)
+        let truncated = try #require(legacy)
+        #expect(truncated.columns.3.x == 101)
+        let tooDeep = resolver.resolve("2", requiringCompleteHierarchy: true)
+        #expect(tooDeep == nil)
+        let resolved = resolver.resolve("3", requiringCompleteHierarchy: true)
+        let complete = try #require(resolved)
+        #expect(resolver.completeChain(for: "3")?.count == 100)
+        #expect(complete.columns.3.x == 100)
+        let missing = resolver.resolve("missing", requiringCompleteHierarchy: true)
+        #expect(missing == nil)
+        parents["102"] = "3"
+        var cyclic = WPEObjectModelMatrixResolver(localTransforms: locals, parentByID: parents)
+        let cycle = cyclic.resolve("3", requiringCompleteHierarchy: true)
+        #expect(cycle == nil)
+        parents["102"] = "102"
+        var selfCycle = WPEObjectModelMatrixResolver(localTransforms: locals, parentByID: parents)
+        let legacySelf = selfCycle.resolve("102", requiringCompleteHierarchy: false)
+        let localOnly = try #require(legacySelf)
+        #expect(localOnly.columns.3.x == 1)
+        let strictSelf = selfCycle.resolve("102", requiringCompleteHierarchy: true)
+        #expect(strictSelf == nil)
+        parents["102"] = "missing"
+        var orphan = WPEObjectModelMatrixResolver(localTransforms: locals, parentByID: parents)
+        let legacyOrphan = orphan.resolve("101", requiringCompleteHierarchy: false)
+        let partial = try #require(legacyOrphan)
+        #expect(partial.columns.3.x == 2)
+        let strictOrphan = orphan.resolve("101", requiringCompleteHierarchy: true)
+        #expect(strictOrphan == nil)
+    }
+
     @Test("Static sampled terminal publication separates source extent from object geometry",
           arguments: ["square", "padded", "default-base", "missing", "animated", "oversize", "gated", "extra-sampler"])
     func sampledTerminalExtent(scope: String) throws {

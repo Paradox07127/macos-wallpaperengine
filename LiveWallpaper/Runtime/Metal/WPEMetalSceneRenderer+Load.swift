@@ -275,16 +275,19 @@ extension WPEMetalSceneRenderer {
             sceneHDR: document.general.usesHDRRendering,
             bloom: document.general.bloom
         )
-        let publicationCamera = scriptInventory.total == 0 && document.propertyBindings.isEmpty
+        let publicationCamera = WPEStaticParentHierarchyContext.permitsScriptFreePublication(in: document)
             && document.cameraMotion == nil && cameraPaths.isEmpty && !document.general.cameraParallax.enabled
             ? cameraUniforms : nil
+        let publicationParents = publicationCamera.flatMap { _ in
+            WPEStaticParentHierarchyContext(document: document, localTransforms: Self.ancestorLocalTransforms(in: document))
+        }
         let (pipeline, canonicalRotation, passthroughElision) = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             return try builder.buildReportingCanonicalRotation(
                 graph: graph, sceneHDR: document.general.usesHDRRendering,
-                proceduralPublicationCamera: publicationCamera
+                proceduralPublicationCamera: publicationCamera, proceduralParentHierarchy: publicationParents
             )
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)

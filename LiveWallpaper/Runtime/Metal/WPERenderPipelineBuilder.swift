@@ -67,19 +67,22 @@ struct WPERenderPipelineBuilder: Sendable {
     func build(
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
         fullFramePassthroughElisionEnabled: Bool? = nil,
-        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil
+        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil,
+        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil
     ) throws -> WPEPreparedRenderPipeline {
         try buildReportingCanonicalRotation(
             graph: graph, canonicalCompositeRotationEnabled: canonicalCompositeRotationEnabled, sceneHDR: sceneHDR,
             fullFramePassthroughElisionEnabled: fullFramePassthroughElisionEnabled,
-            proceduralPublicationCamera: proceduralPublicationCamera
+            proceduralPublicationCamera: proceduralPublicationCamera,
+            proceduralParentHierarchy: proceduralParentHierarchy
         ).pipeline
     }
 
     func buildReportingCanonicalRotation(
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
         fullFramePassthroughElisionEnabled: Bool? = nil,
-        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil
+        proceduralPublicationCamera: WPEMetalCameraUniforms? = nil,
+        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil
     ) throws -> (
         pipeline: WPEPreparedRenderPipeline,
         canonicalRotation: WPECanonicalCompositeRotationReport,
@@ -104,7 +107,8 @@ struct WPERenderPipelineBuilder: Sendable {
         var pipeline = WPEPreparedRenderPipeline(layers: layers)
         if let camera = proceduralPublicationCamera, !sceneHDR {
             pipeline = WPERenderGraphBuilder.publishingProceduralEffects(
-                in: pipeline, camera: camera, staticSourceExtent: staticCompositeSourceExtent
+                in: pipeline, camera: camera, parentHierarchy: proceduralParentHierarchy,
+                staticSourceExtent: staticCompositeSourceExtent
             )
         }
         let environment = ProcessInfo.processInfo.environment

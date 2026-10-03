@@ -1719,11 +1719,13 @@ extension WPERenderGraphBuilder {
     /// closed until gates, external readers and multi-effect chains are measured.
     static func publishingProceduralEffects(
         in pipeline: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms,
+        parentHierarchy: WPEStaticParentHierarchyContext? = nil,
         staticSourceExtent: (WPETextureReference) -> WPERenderSourceExtent? = { _ in nil }
     ) -> WPEPreparedRenderPipeline {
         WPEPreparedRenderPipeline(layers: pipeline.layers.map { layer in
             let graph = layer.graphLayer
-            guard !camera.sceneHDR, graph.parentObjectID == nil,
+            let parentModel = graph.parentObjectID == nil ? nil : parentHierarchy?.modelMatrix(for: graph)
+            guard !camera.sceneHDR, graph.parentObjectID == nil || parentModel != nil,
                   graph.localFBOs.isEmpty, graph.groupCompositeSource == nil,
                   graph.geometry.shapePoints == nil, !graph.geometry.isTimeVarying,
                   layer.passes.count == 3 else { return layer }
@@ -1809,7 +1811,7 @@ extension WPERenderGraphBuilder {
             let passes = [source, published]
             return WPEPreparedRenderLayer(graphLayer: graph.replacingPasses(passes.map(\.pass), compositeSourceExtent: sourceSize),
                                           puppetModel: layer.puppetModel, passes: passes,
-                                          modelMatrixOverride: layer.modelMatrixOverride)
+                                          modelMatrix: parentModel.map(WPEPreparedModelMatrix.staticParent) ?? layer.modelMatrix)
         })
     }
 
@@ -1874,9 +1876,9 @@ extension WPERenderGraphBuilder {
                 )
             }
             decisions[layer.id] = "rotated"
-            return WPEPreparedRenderLayer(
+            return layer.replacing(
                 graphLayer: graph.replacingPasses(passes.map(\.pass)),
-                puppetModel: layer.puppetModel, passes: passes
+                passes: passes
             )
         }
         return CanonicalCompositeRotationResult(
@@ -2077,9 +2079,9 @@ extension WPERenderGraphBuilder {
                 )
             }
             decisions[layer.id] = "elided"
-            return WPEPreparedRenderLayer(
+            return layer.replacing(
                 graphLayer: graph.replacingPasses(passes.map(\.pass)),
-                puppetModel: layer.puppetModel, passes: passes
+                passes: passes
             )
         }
         return FullFramePassthroughElisionResult(

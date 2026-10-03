@@ -16,9 +16,9 @@ struct WPEPreparedRenderPipeline: Equatable, Sendable {
                   (0 ... 14).contains(mip), mip != extent.sourceMipLevel else { return layer }
             let resolved = WPERenderSourceExtent(textureSize: extent.textureSize, imageSize: extent.imageSize,
                                                  sourceMipLevel: mip)
-            return WPEPreparedRenderLayer(
+            return layer.replacing(
                 graphLayer: layer.graphLayer.replacingPasses(layer.graphLayer.passes, compositeSourceExtent: resolved),
-                puppetModel: layer.puppetModel, passes: layer.passes, modelMatrixOverride: layer.modelMatrixOverride
+                passes: layer.passes
             )
         })
     }
@@ -32,7 +32,17 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
     let passes: [WPEPreparedRenderPass]
     /// Full affine model transform, retained through mesh submission. A rotated
     /// child under non-uniform parent scale cannot be represented by Euler sums.
-    let modelMatrixOverride: [Double]?
+    let modelMatrix: WPEPreparedModelMatrix?
+    var modelMatrixOverride: [Double]? {
+        modelMatrix?.values
+    }
+
+    var hasStaticParentModel: Bool {
+        if case .staticParent? = modelMatrix {
+            return true
+        }
+        return false
+    }
 
     init(
         graphLayer: WPERenderLayer,
@@ -40,10 +50,33 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
         passes: [WPEPreparedRenderPass],
         modelMatrixOverride: [Double]? = nil
     ) {
+        self.init(graphLayer: graphLayer, puppetModel: puppetModel, passes: passes,
+                  modelMatrix: modelMatrixOverride.map(WPEPreparedModelMatrix.runtime))
+    }
+
+    init(graphLayer: WPERenderLayer, puppetModel: WPEPuppetModel? = nil,
+         passes: [WPEPreparedRenderPass], modelMatrix: WPEPreparedModelMatrix?) {
         self.graphLayer = graphLayer
         self.puppetModel = puppetModel
         self.passes = passes
-        self.modelMatrixOverride = modelMatrixOverride
+        self.modelMatrix = modelMatrix
+    }
+
+    func replacing(graphLayer: WPERenderLayer? = nil, passes: [WPEPreparedRenderPass]? = nil) -> Self {
+        Self(graphLayer: graphLayer ?? self.graphLayer, puppetModel: puppetModel,
+             passes: passes ?? self.passes, modelMatrix: modelMatrix)
+    }
+}
+
+enum WPEPreparedModelMatrix: Equatable, Sendable {
+    case runtime([Double])
+    /// Created only after static hierarchy and closed-pass publication admission.
+    case staticParent([Double])
+
+    var values: [Double] {
+        switch self {
+        case let .runtime(values), let .staticParent(values): values
+        }
     }
 }
 
@@ -161,6 +194,134 @@ struct WPERenderObjectTransform: Equatable, Sendable {
     }
 }
 
+/// Shared by build-time parent publication and frame-time model submission.
+struct WPEObjectModelMatrixResolver {
+    let localTransforms: [String: WPERenderObjectTransform]
+    let parentByID: [String: String]
+    let attachmentOffsets: [String: SIMD3<Double>]
+    let origins: [String: SIMD3<Double>]
+    let scales: [String: SIMD3<Double>]
+    let angles: [String: SIMD3<Double>]
+    private var completeMemo: [String: simd_double4x4] = [:]
+    private var legacyMemo: [String: simd_double4x4] = [:]
+
+    init(localTransforms: [String: WPERenderObjectTransform], parentByID: [String: String],
+         attachmentOffsets: [String: SIMD3<Double>] = [:], origins: [String: SIMD3<Double>] = [:],
+         scales: [String: SIMD3<Double>] = [:], angles: [String: SIMD3<Double>] = [:]) {
+        self.localTransforms = localTransforms
+        self.parentByID = parentByID
+        self.attachmentOffsets = attachmentOffsets
+        self.origins = origins
+        self.scales = scales
+        self.angles = angles
+    }
+
+    func completeChain(for id: String) -> [String]? {
+        var visited = Set<String>()
+        var chain: [String] = []
+        var current = id
+        while visited.count < 100 {
+            guard visited.insert(current).inserted, localTransforms[current] != nil else { return nil }
+            chain.append(current)
+            guard let parent = parentByID[current] else { return chain }
+            current = parent
+        }
+        return nil
+    }
+
+    mutating func resolve(_ id: String, requiringCompleteHierarchy: Bool) -> simd_double4x4? {
+        guard !requiringCompleteHierarchy || completeChain(for: id) != nil else { return nil }
+        var pending: [(id: String, local: simd_double4x4)] = []
+        var visited = Set<String>()
+        var current = id
+        var world: simd_double4x4?
+        // Keep the legacy stop-at-local policy, but store the bounded chain on
+        // the heap instead of retaining a large matrix stack frame per parent.
+        while true {
+            if let cached = (requiringCompleteHierarchy ? completeMemo : legacyMemo)[current] {
+                world = cached
+                break
+            }
+            guard let authored = localTransforms[current] else { break }
+            let local = WPEMetalObjectUniforms.modelMatrix(
+                origin: (origins[current] ?? authored.origin) + (attachmentOffsets[current] ?? .zero),
+                scale: scales[current] ?? authored.scale, angles: angles[current] ?? authored.angles
+            )
+            pending.append((current, local))
+            guard let parent = parentByID[current], parent != current,
+                  !visited.contains(parent), visited.count < 100 else { break }
+            visited.insert(current)
+            current = parent
+        }
+        for entry in pending.reversed() {
+            let resolved = world.map { $0 * entry.local } ?? entry.local
+            if requiringCompleteHierarchy {
+                completeMemo[entry.id] = resolved
+            } else {
+                legacyMemo[entry.id] = resolved
+            }
+            world = resolved
+        }
+        return world
+    }
+}
+
+struct WPEStaticParentHierarchyContext: Equatable, Sendable {
+    let parentByID: [String: String]
+    let localTransforms: [String: WPERenderObjectTransform]
+    let eligibleAncestorIDs: Set<String>
+    let imageObjectIDs: Set<String>
+
+    static func permitsScriptFreePublication(in document: WPESceneDocument) -> Bool {
+        WPESceneScriptInstanceInventory(document: document).total == 0
+            && document.propertyBindings.isEmpty
+            && document.imageObjects.allSatisfy { $0.effects.allSatisfy { $0.visibleScript == nil } }
+            && document.particleObjects.allSatisfy { $0.instanceOverride?.alphaScript == nil }
+    }
+
+    init?(document: WPESceneDocument, localTransforms: [String: WPERenderObjectTransform]) {
+        guard Self.permitsScriptFreePublication(in: document), document.cameraMotion == nil,
+              !document.general.cameraParallax.enabled else { return nil }
+        parentByID = document.objectParentByID
+        self.localTransforms = localTransforms
+        imageObjectIDs = Set(document.imageObjects.map(\.id)).subtracting(document.textObjects.map(\.id))
+        // Omitted depths parse as (1, 1); they are inert while the scene-wide
+        // parallax mechanism is disabled by this context's admission above.
+        eligibleAncestorIDs = Set(document.transformHostObjects.filter {
+            $0.originAnimation == nil && $0.originScript == nil && $0.scaleScript == nil && $0.anglesScript == nil
+                && $0.parallaxDepth.x.isFinite && $0.parallaxDepth.y.isFinite
+        }.map(\.id))
+    }
+
+    func modelMatrix(for layer: WPERenderLayer) -> [Double]? {
+        guard let parent = layer.parentObjectID, parentByID[layer.id] == parent,
+              imageObjectIDs.contains(layer.id), let geometry = layer.localGeometry,
+              layer.attachment == nil, layer.parallaxDepth.x.isFinite, layer.parallaxDepth.y.isFinite,
+              !layer.authoredJSON.sceneObjects.contains(where: { object in
+                  object["shape"] != nil || ["origin", "scale", "angles"].contains { key in
+                      object[key]?["animation"] != nil || object[key]?["keyframes"] != nil
+                  }
+              }) else { return nil }
+        var transforms = localTransforms
+        transforms[layer.id] = WPERenderObjectTransform(geometry)
+        var resolver = WPEObjectModelMatrixResolver(localTransforms: transforms, parentByID: parentByID)
+        guard let chain = resolver.completeChain(for: layer.id),
+              chain.dropFirst().allSatisfy(eligibleAncestorIDs.contains),
+              chain.allSatisfy({ id in
+                  guard let local = transforms[id] else { return false }
+                  return local.origin.z == 0 && local.angles.x == 0 && local.angles.y == 0
+                      && [local.origin.x, local.origin.y, local.angles.z].allSatisfy { $0.isFinite && Float($0).isFinite }
+                      && [local.scale.x, local.scale.y, local.scale.z].allSatisfy { $0 > 0 && Float($0).isFinite && Float($0) > 0 }
+              }), let world = resolver.resolve(layer.id, requiringCompleteHierarchy: true) else { return nil }
+        let values = WPEMetalObjectUniforms.flattenedColumnMajor(world)
+        guard values.allSatisfy({ $0.isFinite && Float($0).isFinite }),
+              let quantized = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: values.map { Double(Float($0)) }),
+              simd_determinant(quantized) > 0,
+              WPEMetalObjectUniforms.flattenedColumnMajor(quantized.inverse).allSatisfy({ $0.isFinite && Float($0).isFinite }) else { return nil }
+        return values
+    }
+}
+
 /// Labels describe the selected path, not pixel equivalence with WPE.
 enum WPEShaderExecutionClassification: String, Equatable, Sendable {
     case officialSource = "official-source"
@@ -210,7 +371,7 @@ extension WPEPreparedRenderPipeline {
         camera: WPEMetalCameraUniforms = .identity
     ) -> WPEPreparedRenderPipeline {
         let inheritedQuadIDs = Set(layers.filter { layer in
-            layer.graphLayer.parentObjectID != nil
+            !layer.hasStaticParentModel && layer.graphLayer.parentObjectID != nil
                 && WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera)
                 && layer.passes.contains { pass in
                     if case .scene = pass.pass.target {
@@ -224,48 +385,22 @@ extension WPEPreparedRenderPipeline {
                 || ($0.graphLayer.puppetPath != nil && ($0.graphLayer.imagePath as NSString).pathExtension.lowercased() == "mdl")
         }
         guard !models.isEmpty else { return self }
-        let localByID = Dictionary(layers.map {
+        var localByID = hostTransforms
+        localByID.merge(Dictionary(layers.map {
             ($0.id, WPERenderObjectTransform($0.graphLayer.localGeometry ?? $0.graphLayer.geometry))
-        }, uniquingKeysWith: { first, _ in first })
+        }, uniquingKeysWith: { first, _ in first })) { _, layer in layer }
         let offsets = Dictionary(layers.map { ($0.id, $0.graphLayer.attachmentOriginOffset) }, uniquingKeysWith: { first, _ in first })
-        func hasCompleteHierarchy(_ id: String) -> Bool {
-            var visited = Set<String>()
-            var current = id
-            while visited.count < 100 {
-                guard visited.insert(current).inserted, localByID[current] != nil || hostTransforms[current] != nil else { return false }
-                guard let parent = parentByID[current] else { return true }
-                current = parent
-            }
-            return false
-        }
-        var memo: [String: simd_double4x4] = [:]
-        func resolve(_ id: String, stack: Set<String>) -> simd_double4x4? {
-            if let cached = memo[id] {
-                return cached
-            }
-            guard let authored = localByID[id] ?? hostTransforms[id] else { return nil }
-            let local = WPEMetalObjectUniforms.modelMatrix(
-                origin: (origins[id] ?? authored.origin) + (offsets[id] ?? .zero),
-                scale: scales[id] ?? authored.scale, angles: angles[id] ?? authored.angles
-            )
-            let world: simd_double4x4 = if let parent = parentByID[id], parent != id, !stack.contains(parent), stack.count < 100,
-                                           let parentMatrix = resolve(parent, stack: stack.union([id])) {
-                parentMatrix * local
-            } else {
-                local
-            }
-            memo[id] = world
-            return world
-        }
+        var resolver = WPEObjectModelMatrixResolver(localTransforms: localByID, parentByID: parentByID,
+                                                    attachmentOffsets: offsets, origins: origins, scales: scales, angles: angles)
         let modelIDs = Set(models.map(\.id))
         return WPEPreparedRenderPipeline(layers: layers.map { layer in
-            guard modelIDs.contains(layer.id) else { return layer }
+            guard !layer.hasStaticParentModel, modelIDs.contains(layer.id) else { return layer }
             if inheritedQuadIDs.contains(layer.id) {
-                guard parentByID[layer.id] == layer.graphLayer.parentObjectID, hasCompleteHierarchy(layer.id) else {
+                guard parentByID[layer.id] == layer.graphLayer.parentObjectID, resolver.completeChain(for: layer.id) != nil else {
                     return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes)
                 }
             }
-            guard let world = resolve(layer.id, stack: []) else { return layer }
+            guard let world = resolver.resolve(layer.id, requiringCompleteHierarchy: inheritedQuadIDs.contains(layer.id)) else { return layer }
             return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
                                           modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world))
         })
@@ -282,6 +417,7 @@ extension WPEPreparedRenderPipeline {
         guard !parentByID.isEmpty || !hostTransforms.isEmpty else {
             var didChange = false
             let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+                guard !layer.hasStaticParentModel else { return layer }
                 let objectID = layer.graphLayer.objectID
                 let origin = origins[objectID]
                 let scale = scales[objectID]
@@ -352,6 +488,7 @@ extension WPEPreparedRenderPipeline {
 
         var didChange = false
         let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            guard !layer.hasStaticParentModel else { return layer }
             let objectID = layer.graphLayer.objectID
             guard let resolved = resolvedTransform(for: objectID, stack: []) else { return layer }
             let current = layer.graphLayer.geometry
@@ -381,9 +518,9 @@ extension WPEPreparedRenderPipeline {
         guard !mutations.isEmpty else { return self }
         var result = layers.map { layer -> WPEPreparedRenderLayer in
             guard let mutation = mutations[layer.graphLayer.objectID] else { return layer }
-            return WPEPreparedRenderLayer(
+            return layer.replacing(
                 graphLayer: layer.graphLayer.applyingScriptPresentation(mutation),
-                puppetModel: layer.puppetModel, passes: layer.passes
+                passes: layer.passes
             )
         }
         if mutations.values.contains(where: { $0.sortIndex != nil }) {
@@ -511,9 +648,8 @@ extension WPEPreparedRenderPipeline {
             }
             let resolvedGraphLayer = layer.graphLayer.resolved(at: runtimeUniforms.time)
             let geometry = resolvedGraphLayer.geometry
-            return WPEPreparedRenderLayer(
+            return layer.replacing(
                 graphLayer: resolvedGraphLayer,
-                puppetModel: layer.puppetModel,
                 passes: layer.passes.map { pass in
                     let scripted = scriptedConstants[pass.pass.id]
                     // Resolve animated tints each frame or the graph-build seed freezes the layer. Alpha-only counts: solid alpha rides in g_Color.w.
@@ -565,8 +701,7 @@ extension WPEPreparedRenderPipeline {
                         alphaContract: pass.alphaContract,
                         reusingAccess: pass.access
                     )
-                },
-                modelMatrixOverride: layer.modelMatrixOverride
+                }
             )
         }
         return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)

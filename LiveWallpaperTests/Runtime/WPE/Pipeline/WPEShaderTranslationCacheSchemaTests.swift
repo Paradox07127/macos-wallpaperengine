@@ -38,8 +38,8 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     static let expectedSchemaVersion = 39
-    /// Uniform-use proof is rebuilt on cache assembly; cached MSL and its ABI are unchanged.
-    static let expectedFingerprint = "5235111c794e1903c75fa7b60ec1faa7381664934ab7682da841e8e8f2d8a126"
+    /// Parent-context forwarding is render preparation only; preprocessing, cached MSL and ABI are unchanged.
+    static let expectedFingerprint = "836acd9057db9270931d800cef1cf2fc32c005117f58300f1c7150318fbaee09"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {
