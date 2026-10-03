@@ -127,6 +127,11 @@ extension SecurityScopedBookmarkResolver {
                 )
                 return (url, isStale)
             } catch {
+                let scopedError = error as NSError
+                Logger.warning(
+                    "[bookmark] scoped resolve refused (\(scopedError.domain) \(scopedError.code)); falling back to unscoped resolve",
+                    category: .fileAccess
+                )
                 var plainStale = false
                 let url = try URL(
                     resolvingBookmarkData: data,
