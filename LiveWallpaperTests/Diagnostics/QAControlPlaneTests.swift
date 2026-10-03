@@ -110,6 +110,58 @@ struct QAControlPlaneScreenIdentityTests {
     }
 }
 
+#if !LITE_BUILD
+@Suite("QA control plane scene property patch", .serialized)
+@MainActor
+struct QAControlPlaneScenePatchTests {
+    @Test("A patch that rebuilds the scene reports accepted, not applied", .timeLimit(.minutes(1)))
+    func rebuildIsAccepted() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("qa-scene-patch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let project = #"{"general":{"properties":{"gain":{"type":"slider","text":"Gain","value":0,"min":0,"max":1,"order":0}}}}"#
+        try Data(project.utf8).write(to: folder.appendingPathComponent("project.json"))
+
+        let nsScreen = QATestScreen()
+        nsScreen.displayID = 0xEDFA_009A
+        let screen = Screen(nsScreen: nsScreen)
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
+        ))
+        defer {
+            manager.tearDownForTermination()
+            manager.configurationStore.remove(for: screen.id)
+        }
+        manager.wallpapersGloballyEnabled = true
+        let descriptor = SceneDescriptor(
+            workshopID: "qa-scene-patch", cacheRelativePath: "wpe-cache/qa-scene-patch-\(UUID().uuidString)",
+            entryFile: "scene.json", capabilityTier: .imageOnly
+        )
+        var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor))
+        configuration.displayFingerprint = screen.displayFingerprint
+        configuration.wpeOrigin = try WPEOrigin(
+            workshopID: "qa-scene-patch", title: "QA patch", originalType: .scene,
+            sourceFolderBookmark: #require(ResourceUtilities.createBookmark(for: folder)),
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        manager.saveConfiguration(configuration)
+
+        let control = QAControlPlane(screenManager: manager)
+        let response = await control.respond(
+            to: #"{"tool":"scene.properties.patch","arguments":{"screenID":\#(screen.id),"values":{"gain":0.5}}}"#
+        )
+        let envelope = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+        #expect(envelope["ok"] as? Bool == true, "\(response)")
+        let result = try #require(envelope["result"] as? [String: Any])
+        #expect(result["status"] as? String == "accepted")
+    }
+}
+#endif
+
 @MainActor
 private final class QAPlaybackSession: WallpaperPlaybackControllable {
     let wallpaperType = WallpaperType.video
@@ -141,12 +193,14 @@ private final class QAPlaybackSession: WallpaperPlaybackControllable {
 }
 
 private final class QATestScreen: NSScreen {
+    var displayID: UInt32 = 0xEDFA_0099
+
     override var frame: NSRect {
         NSRect(x: 0, y: 0, width: 800, height: 600)
     }
 
     override var deviceDescription: [NSDeviceDescriptionKey: Any] {
-        [NSDeviceDescriptionKey("NSScreenNumber"): UInt32(0xEDFA_0099)]
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
     }
 
     override var localizedName: String {

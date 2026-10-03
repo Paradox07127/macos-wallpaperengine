@@ -247,6 +247,7 @@ struct WallpaperAttemptPreview: View {
                 apply(.wpeProjectFolder(url))
                 return
             }
+            screenManager.resetRotationClock(for: screen)
             Task { @MainActor in await screenManager.importWallpaperEngineProject(at: url, for: screen) }
         }
         #endif

@@ -498,7 +498,8 @@ final class WallpaperAutomationOrchestrator {
                     }
                 }
                 // An unmounted volume is temporary: skip this round instead of disabling the source until "Enable Again".
-                if !sourceWasFound, let bookmark = entry.content.activeVideoBookmarkData ?? entry.content.htmlSource?.localBookmarkData,
+                if !sourceWasFound,
+                   let bookmark = entry.content.activeVideoBookmarkData ?? entry.content.htmlSource?.localBookmarkData ?? entry.origin?.sourceFolderBookmark,
                    bookmarkVolumeUnavailable(bookmark) {
                     continue
                 }

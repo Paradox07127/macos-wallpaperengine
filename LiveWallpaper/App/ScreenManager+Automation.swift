@@ -187,6 +187,10 @@ extension ScreenManager {
 
     var automationTime: Date { automationCoordinator.currentTime }
 
+    func resetRotationClock(for screen: Screen) {
+        automationCoordinator.resetRotationClock(for: screen.id)
+    }
+
     func clearAutomationFailure(_ entryID: String, for screen: Screen) {
         guard !isTerminating, var config = getConfiguration(for: screen) else { return }
         config.automationFailures[entryID] = nil

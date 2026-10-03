@@ -697,5 +697,7 @@ final class UndoTestManager: UndoRestoring {
     func activateWPEHistoryEntry(_: WPEHistoryEntry, for _: Screen) async -> WallpaperFailureSnapshot? {
         nil
     }
+
+    func resetRotationClock(for _: Screen) {}
     #endif
 }

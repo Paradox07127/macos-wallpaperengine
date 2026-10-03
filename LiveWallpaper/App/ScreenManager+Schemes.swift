@@ -55,6 +55,7 @@ extension ScreenManager {
 
         // Same standing as any other explicit pick: without it a WPE import still in flight stays on the current generation and lands on top of the scheme the user just chose.
         beginExplicitWallpaperSelection(for: screen)
+        automationCoordinator.resetRotationClock(for: screen.id)
 
         var configuration = scheme.rebound(
             to: screen.id,
@@ -64,6 +65,8 @@ extension ScreenManager {
         if configuration.videoDisplayMode == .spanAllDisplays {
             configuration.videoDisplayMode = .perDisplay
         }
+        // A kept group ID would enrol this display in the source's scene span and stretch its canvas across those displays.
+        configuration.sceneSpanGroupID = nil
         restoreWallpaperSession(
             for: screen,
             configuration: configuration,

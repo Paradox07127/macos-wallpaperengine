@@ -119,6 +119,8 @@ protocol WallpaperApplying {
     ) -> RuntimePreparationWork?
     func importWallpaperEngineProject(at folderURL: URL, for screen: Screen) async -> ScreenManager.WPEProjectApplyOutcome
     func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async -> WallpaperFailureSnapshot?
+    /// Called here, not inside the two calls above: failure recovery re-runs them and must keep the countdown.
+    func resetRotationClock(for screen: Screen)
     #endif
 }
 
@@ -266,6 +268,7 @@ final class ApplyRouter {
                 with: manager, on: screen.id, committedAfter: revision,
                 timeout: confirmationTimeout, cancellation: cancellation,
                 dispatch: {
+                    manager.resetRotationClock(for: screen)
                     if let failure = await manager.activateWPEHistoryEntry(entry, for: screen) {
                         return .prepareFailed(reason: failure.cause.reason, attemptID: failure.id)
                     }
@@ -632,6 +635,7 @@ final class ApplyRouter {
             },
             with: manager, on: screen.id, timeout: confirmationTimeout, cancellation: cancellation,
             dispatch: {
+                manager.resetRotationClock(for: screen)
                 switch await manager.importWallpaperEngineProject(at: url, for: screen) {
                 case let .applied(appliedOrigin):
                     origin = appliedOrigin

@@ -1225,6 +1225,54 @@ struct WallpaperAutomationCoordinatorTests {
         orchestrator.stopMonitoring()
     }
 
+    @Test("A scene whose source folder sits on an offline volume is skipped this round without being recorded")
+    func automationSkipsOfflineSceneVolumeWithoutRecording() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let folderBookmark = Data("steam-library".utf8)
+        let origin = WPEOrigin(
+            workshopID: "7", title: "Scene", originalType: .scene, sourceFolderBookmark: folderBookmark,
+            cacheRelativePath: nil, previewFileName: nil
+        )
+        let scene = WallpaperContent.scene(SceneDescriptor(
+            workshopID: "7", cacheRelativePath: "7", entryFile: "scene.json", capabilityTier: .imageOnly
+        ))
+        let entries = [
+            WallpaperQueueEntry(id: "current", title: "current", content: .html(source: .inline("current"), config: .default)),
+            WallpaperQueueEntry(id: "bad", title: "bad", content: scene, origin: origin),
+            WallpaperQueueEntry(id: "good", title: "good", content: .html(source: .inline("good"), config: .default)),
+        ]
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content)
+        initial.wallpaperQueue = entries
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var checkedBookmarks: [Data] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                store.save(proposed)
+                return .ready
+            },
+            libraryEntryAvailable: { $0.id != "bad" },
+            bookmarkVolumeUnavailable: { data in
+                checkedBookmarks.append(data)
+                return true
+            }
+        )
+        orchestrator.advancePlaylist(for: screen)
+        for _ in 0 ..< 200 where store.get(for: screen.id)?.activeWallpaper != entries[2].content {
+            await Task.yield()
+        }
+        let result = try #require(store.get(for: screen.id))
+        #expect(result.activeWallpaper == entries[2].content)
+        #expect(checkedBookmarks == [folderBookmark])
+        #expect(result.automationFailures["bad"] == nil)
+        orchestrator.stopMonitoring()
+    }
+
     @Test("A successful retry is not marked, and cancelling a pending load never marks or retries it")
     func automationRetrySuccessAndCancellation() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))

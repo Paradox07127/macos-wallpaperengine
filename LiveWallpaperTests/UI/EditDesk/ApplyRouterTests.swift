@@ -466,6 +466,29 @@ struct ApplyRouterTests {
         #expect(manager.calls == [.workshop(entry)])
     }
 
+    @Test("An installed Workshop item or a project folder picked by the user restarts the rotation countdown")
+    func workshopAndProjectRestartRotation() async {
+        let entry = WPEHistoryEntry(origin: manager.origin, importedAt: Date())
+        _ = await router().apply(.installedWorkshop(entry), to: manager.screen)
+        _ = await router().apply(.wpeProjectFolder(URL(fileURLWithPath: "/fixture/project")), to: manager.screen)
+        #expect(manager.rotationResets == [manager.screen.id, manager.screen.id])
+    }
+
+    @Test("A scheme captured from a span group lands on its display alone")
+    func schemeLeavesSpanGroup() throws {
+        let fixture = ApplySceneFixture(id: 0xEDA0_0005)
+        defer { fixture.close() }
+        fixture.manager.wallpapersGloballyEnabled = false
+        var scheme = try ScreenScheme(
+            name: "Span", configuration: #require(fixture.manager.getConfiguration(for: fixture.screen)), overlay: .default
+        )
+        scheme.configuration.sceneSpanGroupID = UUID()
+        let revision = fixture.manager.configurationRevision(for: fixture.screen)
+        fixture.manager.applyScheme(scheme, to: fixture.screen)
+        #expect(fixture.manager.configurationRevision(for: fixture.screen) != revision)
+        #expect(fixture.manager.getConfiguration(for: fixture.screen)?.sceneSpanGroupID == nil)
+    }
+
     @Test func projectOutcomesMap() async {
         let outcomes: [(ScreenManager.WPEProjectApplyOutcome, ApplyOutcome)] = [
             (.registeredPreset(name: "Evening"), .registeredPreset(name: "Evening")),
@@ -878,6 +901,12 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         record(.workshop(entry), for: screen)
         didDispatch(projectContent, origin: entry.origin, for: screen)
         return nil
+    }
+
+    var rotationResets: [CGDirectDisplayID] = []
+
+    func resetRotationClock(for screen: Screen) {
+        rotationResets.append(screen.id)
     }
     #endif
 

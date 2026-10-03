@@ -87,13 +87,16 @@ extension QAControlPlane {
                 "overrides": next.mapValues { Self.jsonValue($0) },
             ]
         }
-        await manager.updateSceneDescriptor(descriptor.withPropertyOverrides(next), for: target.screen)
+        let patched = descriptor.withPropertyOverrides(next)
+        await manager.updateSceneDescriptor(patched, for: target.screen)
         var stored: Any = NSNull()
-        if let configuration = manager.getConfiguration(for: target.screen),
-           case let .scene(current) = configuration.activeWallpaper {
+        let configuration = manager.getConfiguration(for: target.screen)
+        if let configuration, case let .scene(current) = configuration.activeWallpaper {
             stored = current.propertyOverrides.mapValues { Self.jsonValue($0) }
         }
-        return ["status": "applied", "screenID": target.screen.id, "overrides": stored]
+        // A rebuild only starts a restore that commits later or drops silently as stale; only a stored patch has landed.
+        let status = configuration?.activeWallpaper == .scene(patched) ? "applied" : "accepted"
+        return ["status": status, "screenID": target.screen.id, "overrides": stored]
         #endif
     }
 }

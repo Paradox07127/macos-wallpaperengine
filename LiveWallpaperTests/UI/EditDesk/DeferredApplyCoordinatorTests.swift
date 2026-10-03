@@ -680,6 +680,8 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
         return nil
     }
 
+    func resetRotationClock(for _: Screen) {}
+
     func confirm(_ entry: WPEHistoryEntry, on screen: Screen) {
         var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(SceneDescriptor(
             workshopID: entry.origin.workshopID, cacheRelativePath: "42", entryFile: "scene.json", capabilityTier: .imageOnly
