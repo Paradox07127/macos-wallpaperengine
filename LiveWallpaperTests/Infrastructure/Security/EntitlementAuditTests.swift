@@ -39,8 +39,6 @@ struct EntitlementAuditTests {
             "com.spotify.client",
             "com.apple.Music",
         ]),
-        "com.apple.security.automation.startup-items": .boolean(true),
-        "com.apple.security.device.power": .boolean(true),
         "com.apple.security.exception.mach-lookup.global-name": .strings(["com.apple.audioanalyticsd"]),
         "com.apple.security.files.bookmarks.app-scope": .boolean(true),
         "com.apple.security.files.user-selected.read-write": .boolean(true),

@@ -6,10 +6,6 @@
 	     any manual/archive signing path must preserve the sandbox. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<key>com.apple.security.automation.startup-items</key>
-	<true/>
-	<key>com.apple.security.device.power</key>
-	<true/>
 	<!--
 	    Core Audio Process Tap (system-audio "loopback" capture) drives the
 	    audio-reactive wallpaper feature. Under App Sandbox the tap + private
