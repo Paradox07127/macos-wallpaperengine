@@ -1805,7 +1805,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
                 return false
             }
             pendingCreatedDestruction.insert(key)
-            destroyedCreatedKeys.insert(key)
+            if destroyedCreatedKeys.insert(key).inserted {
+                instanceLimitToken?.releaseCreatedLayer()
+            }
             currentLayerOrder.removeAll { $0 == key }
             return true
         }

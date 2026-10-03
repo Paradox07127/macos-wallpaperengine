@@ -42,7 +42,15 @@ public enum WPEParticleCurlNoise {
         return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v)
     }
 
+    @inline(__always)
+    private static func hasLatticeCell(_ value: Double) -> Bool {
+        let cell = value.rounded(.down)
+        return cell >= -0x1p63 && cell < 0x1p63
+    }
+
     public static func perlin(_ x: Double, _ y: Double, _ z: Double) -> Double {
+        // Int(_:) traps on NaN, infinities and values outside Int's range.
+        guard hasLatticeCell(x), hasLatticeCell(y), hasLatticeCell(z) else { return 0 }
         let xi = Int(x.rounded(.down)) & 255
         let yi = Int(y.rounded(.down)) & 255
         let zi = Int(z.rounded(.down)) & 255

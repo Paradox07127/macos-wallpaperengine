@@ -139,6 +139,20 @@ struct WPEParticleInstanceModifierTests {
         #expect(emitting.capacity == 8)
     }
 
+    @Test func startTimeBurstSurvivesWhenInstanceLifetimeOutlastsTheStartTime() throws {
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 8, "starttime": 5,
+            "emitter": [["name": "boxrandom", "rate": 0, "instantaneous": 4]],
+            "initializer": [["name": "lifetimerandom", "min": 1, "max": 1]],
+        ])
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 71))
+        system.instanceValues = WPEParticleInstanceValues(override: WPESceneParticleInstanceOverride(lifetime: 10))
+        system.prewarm(simulatedSeconds: 5, presimulateDelay: true)
+        system.tick(now: 0)
+        #expect(system.liveInstanceCount == 4)
+    }
+
     @Test func followedInstancesResolveTheGlobalPointerInTheirOwnSimulationFrame() throws {
         let system = try makeSystem()
         system.instanceOriginOffset = SIMD3(20, 30, 0)

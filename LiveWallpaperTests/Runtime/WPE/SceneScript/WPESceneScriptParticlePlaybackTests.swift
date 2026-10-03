@@ -127,6 +127,23 @@ struct WPESceneScriptParticlePlaybackTests {
         #expect(state.particleInstanceValues(objectID: "particleA").size == 1)
     }
 
+    @Test(arguments: ["thisLayer.instance.speed = 1e39;",
+                      "thisLayer.instance.controlpoint0 = new Vec3(1e300, 0, 0);",
+                      "thisLayer.instance.controlpoint0.x = -1e300;"])
+    func instanceWritesBeyondFloatRangeRollBackTheWholeCallback(write: String) throws {
+        let state = shared()
+        _ = try WPELayerScriptInstance(script: """
+        export function init(value) {
+            thisLayer.instance.size = 2;
+            \(write)
+            return value;
+        }
+        """, shared: state, ownLayerName: "snow", ownObjectID: "particleA")
+        #expect(state.drainParticleCommands().isEmpty)
+        let values = state.particleInstanceValues(objectID: "particleA")
+        #expect(values.size == 1 && values.speed == 1 && values.controlPoints[0] == nil)
+    }
+
     @Test func commandBudgetRejectsEntireCallbackAndRetirementRejectsLateBatches() throws {
         let token = WPESceneScriptInstanceLimitToken(generation: 4)
         #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))

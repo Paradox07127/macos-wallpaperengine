@@ -805,8 +805,10 @@ final class WPEParticleSystem {
 
     /// Skip the birth-dead treadmill of a long starttime.
     private func prewarmConvergenceStart(activeStart: Double, simulatedSeconds: Double) -> Double {
+        // Wall-clock lifetime: births sample the instance lifetime scale and age at the clamped `rate` (see advance).
         // Floor 1s so lifetimeMax 0 still has steps.
-        let converged = max(definition.lifetimeMax, 1.0)
+        let rate = max(0.01, min(64, instanceValues.rate))
+        let converged = max(definition.lifetimeMax * max(0.0001, instanceValues.lifetime) / rate, 1.0)
         guard converged.isFinite else { return activeStart }
         return max(activeStart, simulatedSeconds - converged)
     }
@@ -1175,6 +1177,10 @@ final class WPEParticleSystem {
 
     var isPermanentlyIdle: Bool {
         aliveCount == 0 && explicitlyRequestedParticles == 0 && (playback != .playing || emissionExhausted)
+    }
+
+    var isPaused: Bool {
+        playback == .paused
     }
 
     var playbackSnapshot: WPEParticlePlaybackSnapshot {

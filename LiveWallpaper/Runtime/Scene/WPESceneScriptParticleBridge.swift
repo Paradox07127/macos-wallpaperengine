@@ -110,7 +110,7 @@ final class WPESceneScriptParticleBridge {
             }
             let set: @convention(block) (JSValue) -> Void = { [weak self, weak context] raw in
                 guard let self else { return }
-                guard raw.isNumber, raw.toDouble().isFinite else {
+                guard Self.isFloatFinite(raw) else {
                     failEvaluation()
                     if let context {
                         context.exception = JSValue(newErrorFromMessage: "Particle instance vector component must be finite", in: context)
@@ -131,6 +131,12 @@ final class WPESceneScriptParticleBridge {
         return vector
     }
 
+    /// The simulation consumes instance values as Float; a Double-finite write can still become inf there.
+    private static func isFloatFinite(_ raw: JSValue?) -> Bool {
+        guard let raw, raw.isNumber else { return false }
+        return Float(raw.toDouble()).isFinite
+    }
+
     private func installInstance(on handle: JSValue, objectID: String, in context: JSContext) {
         guard let instance = JSValue(newObjectIn: context),
               let object = context.objectForKeyedSubscript("Object"),
@@ -149,7 +155,7 @@ final class WPESceneScriptParticleBridge {
                 let value: SIMD3<Double>
                 if property.isVector {
                     let components = ["x", "y", "z"].map { raw.objectForKeyedSubscript($0) }
-                    guard components.allSatisfy({ $0?.isNumber == true && $0?.toDouble().isFinite == true }) else {
+                    guard components.allSatisfy(Self.isFloatFinite) else {
                         failEvaluation()
                         if let context {
                             context.exception = JSValue(newErrorFromMessage: "Particle instance vector requires finite x, y, z", in: context)
@@ -158,7 +164,7 @@ final class WPESceneScriptParticleBridge {
                     }
                     value = SIMD3(components[0]!.toDouble(), components[1]!.toDouble(), components[2]!.toDouble())
                 } else {
-                    guard raw.isNumber, raw.toDouble().isFinite else {
+                    guard Self.isFloatFinite(raw) else {
                         failEvaluation()
                         if let context {
                             context.exception = JSValue(newErrorFromMessage: "Particle instance scalar requires a finite number", in: context)

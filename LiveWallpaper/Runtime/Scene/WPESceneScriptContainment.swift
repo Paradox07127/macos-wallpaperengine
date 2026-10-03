@@ -622,6 +622,10 @@ final class WPESceneScriptInstanceLimitToken: @unchecked Sendable {
         return acceptsCompletion()
     }
 
+    func releaseCreatedLayer() {
+        resourceBudget.releaseCreatedLayer()
+    }
+
     func admitNewSharedStateEntry() -> Bool {
         guard acceptsCompletion() else { return false }
         guard resourceBudget.admitNewSharedStateEntry() == .accepted else {

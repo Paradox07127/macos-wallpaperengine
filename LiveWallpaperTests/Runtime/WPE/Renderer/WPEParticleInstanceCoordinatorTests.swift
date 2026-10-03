@@ -126,6 +126,29 @@ struct WPEParticleInstanceCoordinatorTests {
         #expect(second.playbackSnapshot.isEmitting)
     }
 
+    @Test func pauseLongerThanChildLifetimeKeepsEventChildrenForPlay() throws {
+        let (tree, root) = try makeTree(kind: "eventspawn")
+        for frame in 0 ... 150 {
+            tree.tick(now: Double(frame) / 60)
+        }
+        let children = tree.bindings.filter { $0.system !== root }.map(\.system)
+        try #require(!children.isEmpty)
+        tree.apply([.init(objectID: "test", command: .pause)])
+        for frame in 151 ... 450 {
+            tree.tick(now: Double(frame) / 60)
+        }
+        #expect(children.allSatisfy { $0.liveInstanceCount == 0 })
+        tree.apply([.init(objectID: "test", command: .play)])
+        for frame in 451 ... 510 {
+            tree.tick(now: Double(frame) / 60)
+        }
+        for child in children {
+            #expect(tree.bindings.contains { $0.system === child })
+            #expect(child.playbackSnapshot.isEmitting)
+            #expect(child.liveInstanceCount > 0)
+        }
+    }
+
     @Test func eventSlotBudgetIsObservableAndReleasedAfterStop() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         func prototype(capacity: Int, burst: Int) throws -> WPEParticleSystem {

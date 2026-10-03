@@ -43,6 +43,13 @@ final class WPESceneScriptSceneResourceBudget: @unchecked Sendable {
         return .accepted
     }
 
+    /// Callers pair this with exactly one accepted `admitCreatedLayer()`.
+    func releaseCreatedLayer() {
+        lock.lock()
+        defer { lock.unlock() }
+        state.createdLayers -= 1
+    }
+
     func admitNewSharedStateEntry() -> Admission {
         lock.lock()
         defer { lock.unlock() }

@@ -249,8 +249,11 @@ final class WPEParticleInstanceCoordinator {
         }
     }
 
-    private func subtreeIsIdle(_ instance: Instance) -> Bool {
-        instance.system.isPermanentlyIdle && instance.children.allSatisfy(subtreeIsIdle)
+    /// A script pause is resumable, so it is not idle; a subtree whose follow parent died stays paused forever and is.
+    private func subtreeIsIdle(_ instance: Instance, emissionEnded: Bool = false) -> Bool {
+        let ended = emissionEnded || instance.emissionEndedWithParent
+        return instance.system.isPermanentlyIdle && (ended || !instance.system.isPaused)
+            && instance.children.allSatisfy { subtreeIsIdle($0, emissionEnded: ended) }
     }
 
     private func resumeSubtree(_ instance: Instance) {
