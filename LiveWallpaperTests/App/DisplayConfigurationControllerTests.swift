@@ -187,6 +187,37 @@ struct DisplayConfigurationControllerTests {
         #expect(store.get(for: displays[2].id)?.muted == true)
         #expect(store.get(for: displays[2].id)?.videoVolume == 0.25)
     }
+
+    @Test("Scene span audio and fit edits reach a disconnected member's stored configuration")
+    func sceneSpanEditsReachDisconnectedMember() throws {
+        let displays = (0 ..< 2).map { index -> Screen in
+            let screen = SpanAudioTestScreen()
+            screen.index = index
+            return Screen(nsScreen: screen)
+        }
+        let descriptor = SceneDescriptor(workshopID: "span-offline", cacheRelativePath: "wpe-cache/span-offline", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let groupID = UUID()
+        let persistence = ConfigurationMemory()
+        persistence.values = displays.map { screen in
+            var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor))
+            configuration.displayFingerprint = screen.displayFingerprint
+            configuration.sceneSpanGroupID = groupID
+            configuration.muted = false
+            configuration.videoVolume = 0.25
+            configuration.fitMode = .aspectFill
+            return configuration
+        }
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        _ = store.loadAll()
+        let playback = makePlayback(store: store, commands: DisplayConfigurationTestSupport.commands(for: store), screens: [displays[0]])
+        playback.updateMuted(true, for: displays[0])
+        playback.updateVideoVolume(0.75, for: displays[0])
+        playback.updateSceneFitMode(.aspectFit, for: displays[0])
+        let offline = try #require(store.get(for: displays[1].id))
+        #expect(offline.muted)
+        #expect(offline.videoVolume == 0.75)
+        #expect(offline.fitMode == .aspectFit)
+    }
     #endif
 
     private func makePlayback(store: WallpaperConfigurationStore, commands: any DisplayConfigurationCommitting, screens: [Screen] = []) -> PlaybackCoordinator {

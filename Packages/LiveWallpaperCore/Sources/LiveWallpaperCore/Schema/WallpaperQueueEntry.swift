@@ -63,6 +63,7 @@ public extension ScreenConfiguration {
         result.rememberCurrentSceneCustomization()
         switch entry.content {
         case let .video(data, package):
+            result.sceneSpanGroupID = nil
             result.activeWallpaper = .video(bookmarkData: data, packageEntryName: package)
         case let .html(source, config):
             result.setHTMLWallpaper(source: source, config: config)

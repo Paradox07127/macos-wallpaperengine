@@ -430,7 +430,8 @@ struct MenuBarContent: View {
         guard let config = screenManager.getConfiguration(for: screen) else { return false }
         if config.activeWallpaper.wallpaperType == .scene, let group = config.sceneSpanGroupID {
             return screenManager.screens.filter {
-                screenManager.getConfiguration(for: $0)?.sceneSpanGroupID == group
+                guard let peer = screenManager.getConfiguration(for: $0) else { return false }
+                return peer.sceneSpanGroupID == group && peer.activeWallpaper.wallpaperType == .scene
             }.count > 1
         }
         return config.activeWallpaper.wallpaperType == .video

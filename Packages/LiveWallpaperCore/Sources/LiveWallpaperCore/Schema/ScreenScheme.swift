@@ -61,12 +61,13 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         coverFileName = try c.decodeIfPresent(String.self, forKey: .coverFileName)
     }
 
-    /// Blanks the two display-identity fields with sentinels. `videoDisplayMode`
-    /// deliberately stays — neither of its cases names a screen.
+    /// Blanks the two display-identity fields with sentinels and drops span membership,
+    /// which names its peer displays. `videoDisplayMode` stays — neither of its cases names a screen.
     public static func stripped(_ configuration: ScreenConfiguration) -> ScreenConfiguration {
         var copy = configuration
         copy.screenID = unboundScreenID
         copy.displayFingerprint = nil
+        copy.sceneSpanGroupID = nil
         return copy
     }
 

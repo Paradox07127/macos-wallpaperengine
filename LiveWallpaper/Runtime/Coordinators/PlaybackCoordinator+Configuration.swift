@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
@@ -51,18 +52,29 @@ extension PlaybackCoordinator {
     /// A spanning scene owns one audio graph. Any member edits the same track.
     private func synchronizeSceneSpanAudio(configuration: ScreenConfiguration, screen: Screen) {
         #if !LITE_BUILD
-        guard let groupID = configuration.sceneSpanGroupID,
-              configuration.activeWallpaper.wallpaperType == .scene else { return }
-        for member in screensProvider() where member.id != screen.id {
-            guard var peer = configurationStore.get(for: member.id, fingerprint: member.displayFingerprint),
-                  peer.sceneSpanGroupID == groupID, peer.activeWallpaper.wallpaperType == .scene else { continue }
+        guard configuration.activeWallpaper.wallpaperType == .scene else { return }
+        let connected = screensProvider()
+        for var peer in storedSceneSpanPeers(of: configuration, excluding: screen.id) {
             peer.muted = configuration.muted
             peer.videoVolume = configuration.videoVolume
             save(peer)
-            applySceneAudioState(configuration: peer, screen: member)
+            if let member = connected.first(where: { $0.id == peer.screenID }) {
+                applySceneAudioState(configuration: peer, screen: member)
+            }
         }
         #endif
     }
+
+    #if !LITE_BUILD
+    /// Includes disconnected members: a reconnecting member commits its stored row, and an
+    /// unmuted stale row would take back the group's audio.
+    private func storedSceneSpanPeers(of configuration: ScreenConfiguration, excluding screenID: CGDirectDisplayID) -> [ScreenConfiguration] {
+        guard let groupID = configuration.sceneSpanGroupID else { return [] }
+        return configurationStore.loadAll().filter {
+            $0.screenID != screenID && $0.sceneSpanGroupID == groupID && $0.activeWallpaper.wallpaperType == .scene
+        }
+    }
+    #endif
 
     func updateSceneMouseInteraction(_ enabled: Bool, for screen: Screen) {
         guard var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -92,13 +104,9 @@ extension PlaybackCoordinator {
         save(configuration)
         #if !LITE_BUILD
         (screen.runtimeSession as? any SceneWallpaperRuntime)?.setSceneFitMode(fitMode)
-        if let groupID = configuration.sceneSpanGroupID {
-            for member in screensProvider() where member.id != screen.id {
-                guard var peer = configurationStore.get(for: member.id, fingerprint: member.displayFingerprint),
-                      peer.sceneSpanGroupID == groupID, peer.activeWallpaper.wallpaperType == .scene else { continue }
-                peer.fitMode = fitMode
-                save(peer)
-            }
+        for var peer in storedSceneSpanPeers(of: configuration, excluding: screen.id) {
+            peer.fitMode = fitMode
+            save(peer)
         }
         #endif
     }

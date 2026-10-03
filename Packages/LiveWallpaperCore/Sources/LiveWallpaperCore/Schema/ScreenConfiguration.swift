@@ -407,6 +407,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         } else {
             return false
         }
+        sceneSpanGroupID = nil
         preserveCurrentHTMLIfNeeded()
         activeWallpaper = .video(bookmarkData: bookmarkData, packageEntryName: packageEntryName)
         savedVideoBookmarkData = bookmarkData
@@ -419,6 +420,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public mutating func activateSavedHTMLWallpaper() -> Bool {
         guard let source = savedHTMLSource else { return false }
         let config = savedHTMLConfig ?? .default
+        sceneSpanGroupID = nil
         preserveCurrentVideoBookmarkIfNeeded()
         activeWallpaper = .html(source: source, config: config)
         return true

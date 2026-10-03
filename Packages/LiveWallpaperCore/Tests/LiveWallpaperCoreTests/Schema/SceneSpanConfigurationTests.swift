@@ -30,4 +30,36 @@ struct SceneSpanConfigurationTests {
         configuration.replacePrimaryVideo(bookmarkData: Data([1]))
         #expect(configuration.sceneSpanGroupID == nil)
     }
+
+    @Test("Switching back to a saved video or page leaves the span group")
+    func savedWallpaperActivationLeavesGroup() {
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
+        configuration.savedVideoBookmarkData = Data([1])
+        configuration.savedHTMLSource = .inline("page")
+        configuration.sceneSpanGroupID = UUID()
+        let videoActivated = configuration.activateSavedVideoWallpaper()
+        #expect(videoActivated)
+        #expect(configuration.sceneSpanGroupID == nil)
+        configuration.sceneSpanGroupID = UUID()
+        let pageActivated = configuration.activateSavedHTMLWallpaper()
+        #expect(pageActivated)
+        #expect(configuration.sceneSpanGroupID == nil)
+    }
+
+    @Test("A playlist entry that is not a scene leaves the span group")
+    func automationEntryLeavesGroup() {
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
+        configuration.sceneSpanGroupID = UUID()
+        let video = configuration.applyingAutomationEntry(.init(title: "", content: .video(bookmarkData: Data([2]), packageEntryName: nil)))
+        #expect(video.sceneSpanGroupID == nil)
+        let page = configuration.applyingAutomationEntry(.init(title: "", content: .html(source: .inline("page"), config: .default)))
+        #expect(page.sceneSpanGroupID == nil)
+    }
+
+    @Test("A saved scheme carries no span membership")
+    func strippedSchemeLeavesGroup() {
+        var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
+        configuration.sceneSpanGroupID = UUID()
+        #expect(ScreenScheme.stripped(configuration).sceneSpanGroupID == nil)
+    }
 }
