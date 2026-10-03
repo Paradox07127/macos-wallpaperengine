@@ -135,7 +135,7 @@ struct WallpaperOpeningLaunchTests {
             prepare: prepare,
             claimOpening: {
                 claims += 1
-                return opening
+                return opening.map { WallpaperOpeningClaim(effect: $0, barrier: WallpaperStartBarrier()) }
             },
             beforeCommit: beforeCommit,
             afterCommit: afterCommit

@@ -116,9 +116,9 @@ struct ScreenManagerCoordinationTests {
             try #require(!screens.isEmpty)
             let batch = try #require(manager.openingBatch)
             let outsider = (screens.map(\.id).max() ?? 0) &+ 1
-            #expect(batch.claim(outsider) == nil)
+            #expect(batch.claim(outsider)?.effect == nil)
             for screen in screens {
-                #expect(batch.claim(screen.id) == .loom)
+                #expect(batch.claim(screen.id)?.effect == .loom)
             }
         }
     }
@@ -1362,6 +1362,57 @@ struct ScreenManagerCoordinationTests {
         let group = try #require(groups.first ?? nil, "the targets committed outside any switch group")
         #expect(group.pace == .manual)
         #expect(groups.allSatisfy { $0 === group })
+    }
+
+    @Test("Apply to All Displays releases its targets together", .timeLimit(.minutes(1)))
+    func applyToAllDisplaysReleasesTargetsTogether() async throws {
+        guard let display = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for ScreenManager coordination test")
+            return
+        }
+        let source = UndoTestManager.makeScreen("Barrier Source", x: 0)
+        let targets = [UndoTestManager.makeScreen("Barrier Target A", x: 800), UndoTestManager.makeScreen("Barrier Target B", x: 1600)]
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
+        SettingsManager.shared.replaceAllConfigurations([
+            ScreenConfiguration(screenID: source.id, wallpaper: .html(source: .inline("<p>all</p>"), config: .default)),
+        ])
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            // A real NSScreen for refresh-rate lookups: the stand-ins trap on `maximumFramesPerSecond`.
+            displayRegistry: FakeDisplayRegistry(
+                screens: [source] + targets,
+                nsScreensByID: Dictionary(uniqueKeysWithValues: ([source] + targets).map { ($0.id, display) })
+            ),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer {
+            manager.tearDownForTermination()
+            for screen in [source] + targets {
+                screen.resetRuntimeSession()
+            }
+        }
+        @MainActor final class CommitGroups { var byScreen: [CGDirectDisplayID: WallpaperSwitchGroup?] = [:] }
+        let commits = CommitGroups()
+        // Queue nil: the commit's save posts from a task it spawned, which inherits the commit's task-locals.
+        let observer = NotificationCenter.default.addObserver(
+            forName: .wallpaperConfigurationDidChange, object: nil, queue: nil
+        ) { notification in
+            guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
+            MainActor.assumeIsolated { commits.byScreen[id] = WallpaperSwitchGroup.current }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        manager.applyConfigurationToAllDisplays(from: source)
+        try await Self.waitUntil(timeout: .seconds(20)) { targets.allSatisfy { commits.byScreen[$0.id] != nil } }
+
+        let group = try #require(commits.byScreen[targets[0].id] ?? nil, "the targets committed outside any switch group")
+        let start = try #require(group.barrier.start(for: targets[0].id), "the first target was released alone")
+        #expect(group.barrier.start(for: targets[1].id) == start)
     }
 
     // MARK: - Helpers

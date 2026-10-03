@@ -176,7 +176,7 @@ enum WallpaperSessionTransaction {
             any WallpaperRuntimeSession,
             Duration
         ) async -> WallpaperPreparationResult)? = nil,
-        claimOpening: @MainActor () -> WallpaperOpeningEffect? = { nil },
+        claimOpening: @MainActor () -> WallpaperOpeningClaim? = { nil },
         beforeCommit: @MainActor () -> Bool = { true },
         afterCommit: @MainActor () -> Void = {},
         beforeDiscard: @MainActor (WallpaperPreparationResult) async -> Void = { _ in }
@@ -185,6 +185,10 @@ enum WallpaperSessionTransaction {
         if opening != nil {
             candidate.wallpaperWindow?.alphaValue = 0
         }
+        // The action's group wins, so an opening claimed mid-action still starts with the action's other displays.
+        let barrier = WallpaperSwitchGroup.current?.barrier ?? opening?.barrier
+        let attempt = ObjectIdentifier(candidate)
+        barrier?.join(screen.id, attempt: attempt)
         // Candidate windows render behind the live session for first-frame readiness.
         if candidate.wallpaperType != .video {
             candidate.show()
@@ -197,6 +201,7 @@ enum WallpaperSessionTransaction {
             }
         }
         guard result == .ready else {
+            barrier?.leave(screen.id, attempt: attempt)
             Logger.notice(
                 "Wallpaper candidate for screen \(screen.id) discarded: \(candidate.wallpaperType) prepare returned \(result)",
                 category: .screenManager
@@ -206,6 +211,7 @@ enum WallpaperSessionTransaction {
             return result
         }
         guard !Task.isCancelled, isStillCurrent() else {
+            barrier?.leave(screen.id, attempt: attempt)
             Logger.notice(
                 Task.isCancelled
                     ? "Wallpaper candidate for screen \(screen.id) discarded after a ready prepare: the preparation task was cancelled"
@@ -220,6 +226,19 @@ enum WallpaperSessionTransaction {
             (candidate.wallpaperWindow ?? candidate.videoPlayer?.playbackWindow)?.alphaValue = 0
         }
         candidate.show()
+        if let barrier {
+            _ = await barrier.arrive(screen.id, attempt: attempt, frame: screen.frame)
+            guard !Task.isCancelled, isStillCurrent() else {
+                Logger.notice(
+                    Task.isCancelled
+                        ? "Wallpaper candidate for screen \(screen.id) discarded after the start barrier: the preparation task was cancelled"
+                        : "Wallpaper candidate for screen \(screen.id) discarded after the start barrier: it is no longer current (reason logged above)",
+                    category: .screenManager
+                )
+                candidate.cleanup()
+                return .cancelled
+            }
+        }
         var didAttemptCommit = false
         var commitAccepted = false
         guard screen.installRuntimeSession(
@@ -243,7 +262,7 @@ enum WallpaperSessionTransaction {
         }
         if let opening {
             // Before afterCommit, so the policy it applies already sees the opening's hold.
-            screen.startOpening(opening)
+            screen.startOpening(opening.effect)
         }
         afterCommit()
         return .ready

@@ -176,9 +176,15 @@ final class WallpaperOpeningTransition {
     }
 }
 
+struct WallpaperOpeningClaim {
+    let effect: WallpaperOpeningEffect
+    let barrier: WallpaperStartBarrier
+}
+
 /// The displays present at launch, each allowed to play the launch opening once.
 @MainActor
 final class WallpaperOpeningBatch {
+    let barrier: WallpaperStartBarrier
     private let effect: WallpaperOpeningEffect
     private var unclaimed: Set<CGDirectDisplayID>
     private let deadline: ContinuousClock.Instant
@@ -188,17 +194,19 @@ final class WallpaperOpeningBatch {
         displayIDs: Set<CGDirectDisplayID>,
         effect: WallpaperOpeningEffect,
         lifetime: Duration = .seconds(60),
+        barrier: WallpaperStartBarrier = WallpaperStartBarrier(),
         now: @escaping () -> ContinuousClock.Instant = { .now }
     ) {
         self.effect = effect
+        self.barrier = barrier
         unclaimed = displayIDs
         self.now = now
         deadline = now().advanced(by: lifetime)
     }
 
     /// nil when the display was not present at launch, already claimed, or the lifetime has passed.
-    func claim(_ displayID: CGDirectDisplayID) -> WallpaperOpeningEffect? {
+    func claim(_ displayID: CGDirectDisplayID) -> WallpaperOpeningClaim? {
         guard now() <= deadline, unclaimed.remove(displayID) != nil else { return nil }
-        return effect
+        return WallpaperOpeningClaim(effect: effect, barrier: barrier)
     }
 }
