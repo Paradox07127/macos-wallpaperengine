@@ -13,6 +13,56 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.2] — 2026-10-03
+
+### Added
+
+- Wallpaper transitions: Ripple, Bokeh, Crystal, Blinds and Stardust distort
+  the old wallpaper into the new one when a display switches, and a Loom Line,
+  Frame Unfold or Daybreak opening plays when launch restores each display.
+  Web wallpapers fall back to a crossfade.
+- Displays switched by one action start their transitions together.
+- The Wallpaper Automation sheet replaces Playlist & Schedule, with Playlist,
+  Daily Schedule on a 24-hour dial, and Library Shuffle. Skipped wallpapers
+  show why they were skipped.
+- A manual pause holds through property edits, rotation, replugging the
+  display and relaunch. Backups do not carry it.
+- Pro: a Workshop item is kept once in the library. At launch the Steam copy
+  supersedes a local copy, a manual download asks before replacing one, and
+  importing the same Workshop id from another folder is refused.
+
+### Changed
+
+- Video and web wallpapers on an external drive keep their setup while the
+  drive is ejected and reload when it mounts. Automation skips them meanwhile.
+- Rotation countdowns freeze while you are away, and restart when you pick a
+  wallpaper, apply a scheme or apply a Workshop item by hand.
+- Web wallpapers pause on serious thermal pressure, like video.
+- Pro: spanned scenes relayout when a display joins or leaves, and span
+  settings reach displays that are disconnected.
+- Pro: authored vertex shaders, camera intro timelines, WPE text layout,
+  `general.clearcolor`, per-submesh model textures and the effect swap command
+  now run as they do on Windows.
+
+### Fixed
+
+- Picking a new wallpaper for a paused display no longer resumes the old one
+  if the new one fails to load.
+- Switching a spanned display to video or web takes it out of the span, and a
+  scheme no longer joins a live span when applied.
+- Schedule dial edges can no longer collapse or wrap a slot, every slot is
+  reachable with VoiceOver, and the dial clock keeps moving.
+- Turning off "visible in screen capture" also hides transitions in progress.
+- Pro: hover and click hits follow the scene camera, and scripts on particles
+  and text target the right layer when names collide.
+- Pro: scripts that set only loop or rate on a video now play it.
+- Pro: album covers in media scenes are no longer too dark.
+- Pro: scripts that create and destroy layers repeatedly no longer fail the
+  scene, and paused event emitters keep their children.
+- Pro: malformed shaders, textures, particle values and script numbers no
+  longer crash or hang the app.
+- The keypad Enter key has its own label in Shortcuts.
+
 ## [0.8.1] — 2026-09-30
 
 ### Added
