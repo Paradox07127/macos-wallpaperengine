@@ -729,7 +729,7 @@ extension WPEMetalSceneRenderer {
                 applyLayerScriptOutput(output, ownObjectID: id)
             }
         }
-        return liveTextByID
+        return liveScriptAssignedText.merging(liveTextByID) { _, ownScriptText in ownScriptText }
     }
 }
 #endif

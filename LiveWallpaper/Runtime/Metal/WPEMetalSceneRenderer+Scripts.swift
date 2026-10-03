@@ -64,6 +64,7 @@ extension WPEMetalSceneRenderer {
         textVisibleScriptInstances = [:]
         textAlphaScriptInstances = [:]
         liveTextAlpha = [:]
+        liveScriptAssignedText = [:]
         layerHoverStates = [:]
         layerPressStates = [:]
         lastHoverPointerPixels = nil
@@ -306,6 +307,10 @@ extension WPEMetalSceneRenderer {
                 objectID: targetID,
                 generation: loadGeneration
             )
+        }
+        for (name, text) in output.texts {
+            guard let id = name.isEmpty ? ownObjectID : layerObjectIDByName[name] else { continue }
+            liveScriptAssignedText[id] = text
         }
     }
 
@@ -835,6 +840,10 @@ extension WPEMetalSceneRenderer {
         for (name, mutation) in output.presentation {
             guard let id = name.isEmpty ? ownObjectID : targetID(name) else { continue }
             liveLayerPresentation[id, default: .init()].merge(mutation)
+        }
+        for (name, text) in output.texts {
+            guard let id = name.isEmpty ? ownObjectID : targetID(name) else { continue }
+            liveScriptAssignedText[id] = text
         }
         for created in output.created {
             guard !created.imagePath.isEmpty else { continue }
