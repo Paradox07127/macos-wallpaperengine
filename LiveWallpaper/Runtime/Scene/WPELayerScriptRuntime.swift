@@ -955,26 +955,9 @@ final class WPELayerScriptInstance {
         ) -> WPESceneScriptBoundedExecutionResult<[String: WPESceneScriptPropertyValue]?> {
             guard allows(.userProperties) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline) {
-                guard self.acceptsCompletion(), let context = self.context,
-                      let bag = context.objectForKeyedSubscript("engine")?.objectForKeyedSubscript("userProperties"),
-                      bag.isObject else { return nil }
-                for (name, value) in properties {
-                    bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
-                }
-                var receipt: [String: WPESceneScriptPropertyValue] = [:]
-                for name in properties.keys {
-                    guard let value = bag.objectForKeyedSubscript(name) else { return nil }
-                    if value.isBoolean {
-                        receipt[name] = .bool(value.toBool())
-                    } else if value.isNumber {
-                        receipt[name] = .number(value.toDouble())
-                    } else if value.isString, let text = value.toString() {
-                        receipt[name] = .string(text)
-                    } else {
-                        return nil
-                    }
-                }
-                return context.exception == nil && self.acceptsCompletion() ? receipt : nil
+                guard self.acceptsCompletion() else { return nil }
+                let receipt = wpeInjectOracleUserProperties(properties, in: self.context, on: self.queue)
+                return self.acceptsCompletion() ? receipt : nil
             }
         }
         #endif

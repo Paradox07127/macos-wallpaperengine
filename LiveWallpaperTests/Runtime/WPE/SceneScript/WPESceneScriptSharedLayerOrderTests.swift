@@ -87,6 +87,61 @@ struct WPESceneScriptSharedLayerOrderTests {
         #expect(restored.revision > moved.revision)
     }
 
+    @Test("Oracle gate input receipts precede real boolean ticks and isolate retired loads")
+    func oracleEffectGateInputReceipts() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 50)
+        let shared = state(token: token)
+        let script = """
+        export function applyUserProperties(properties) { shared.callbackRan = true; }
+        export function update(value) {
+            shared.tickCount = Number(shared.tickCount || 0) + 1;
+            return (Number(engine.userProperties.stage) & 1) === 0;
+        }
+        """
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: script, seed: .zero, valueShape: .boolean, canvasSize: [256, 128], shared: shared
+        )
+        for (index, stage) in [1.0, 0, 2, 1].enumerated() {
+            let input: [String: WPESceneScriptPropertyValue] = ["stage": .number(stage)]
+            #expect(instance.injectOracleUserProperties(input) == input)
+            #expect((shared.get("tickCount") as? Double ?? 0) == Double(index))
+            #expect(shared.get("callbackRan") == nil)
+            let result = instance.tick(pointerPosition: .zero)
+            #expect(result == SIMD3<Double>(repeating: stage == 1 ? 0 : 1))
+        }
+        token.retire()
+        #expect(instance.injectOracleUserProperties(["stage": .number(0)]) == nil)
+        #expect(instance.tick(pointerPosition: .zero) == nil)
+        let replacement = state(token: WPESceneScriptInstanceLimitToken(generation: 51))
+        let fresh = try WPEDynamicTransformScriptInstance(
+            script: script, seed: .zero, valueShape: .boolean, canvasSize: [256, 128], shared: replacement
+        )
+        #expect(fresh.injectOracleUserProperties(["stage": .number(0)]) == ["stage": .number(0)])
+        #expect(fresh.tick(pointerPosition: .zero) == SIMD3<Double>(repeating: 1))
+        #expect(shared.get("tickCount") as? Double == 4)
+        fresh.destroy()
+        #expect(fresh.injectOracleUserProperties(["stage": .number(1)]) == nil)
+    }
+
+    @Test("Oracle gate injection respects admission deadline without evaluating a refused input")
+    func oracleEffectGateInputBudget() throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
+        let shared = state()
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: "export function update(value) { shared.stage = engine.userProperties.stage; return value; }",
+            seed: .zero, valueShape: .boolean, canvasSize: [256, 128], shared: shared,
+            tickBudget: 0.05, governor: governor
+        )
+        let participant = governor.makeParticipant()
+        let permit = try #require(governor.tryAcquireUnreserved(for: participant))
+        #expect(instance.injectOracleUserProperties(["stage": .number(99)]) == nil)
+        #expect(shared.get("stage") == nil)
+        permit.release()
+        #expect(instance.injectOracleUserProperties(["stage": .number(1)]) == ["stage": .number(1)])
+        _ = instance.tick(pointerPosition: .zero)
+        #expect(shared.get("stage") as? Double == 1)
+    }
+
     @Test("Failed and retired loads cannot mutate a restored order or a replacement load")
     func completionPermissionFencesLateMutation() {
         let token = WPESceneScriptInstanceLimitToken(generation: 4)

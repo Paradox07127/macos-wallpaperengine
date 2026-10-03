@@ -1665,6 +1665,37 @@ enum WPESceneScriptError: Error, Equatable {
     case scriptEvaluationFailed
 }
 
+#if DEBUG
+/// Queue-confined oracle input, not a settings patch or a script callback.
+func wpeInjectOracleUserProperties(
+    _ properties: [String: WPESceneScriptPropertyValue],
+    in context: JSContext?,
+    on queue: DispatchQueue
+) -> [String: WPESceneScriptPropertyValue]? {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard let context,
+          let bag = context.objectForKeyedSubscript("engine")?.objectForKeyedSubscript("userProperties"),
+          bag.isObject else { return nil }
+    for (name, value) in properties {
+        bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
+    }
+    var receipt: [String: WPESceneScriptPropertyValue] = [:]
+    for name in properties.keys {
+        guard let value = bag.objectForKeyedSubscript(name) else { return nil }
+        if value.isBoolean {
+            receipt[name] = .bool(value.toBool())
+        } else if value.isNumber {
+            receipt[name] = .number(value.toDouble())
+        } else if value.isString, let text = value.toString() {
+            receipt[name] = .string(text)
+        } else {
+            return nil
+        }
+    }
+    return context.exception == nil ? receipt : nil
+}
+#endif
+
 extension WPESceneScriptPropertyValue {
     var jsBridged: Any {
         switch self {
@@ -2727,6 +2758,24 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     // MARK: Synchronous Oracle (DEBUG only)
     #if DEBUG
+    /// Oracle-only VM input with typed readback; does not evaluate the gate.
+    func injectOracleUserProperties(
+        _ properties: [String: WPESceneScriptPropertyValue]
+    ) -> [String: WPESceneScriptPropertyValue]? {
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, !properties.isEmpty,
+              engine.allows(.userProperties) else { return nil }
+        switch engine.injectOracleUserProperties(properties, budget: tickBudget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Transform SceneScript oracle input injection exceeded its budget - frozen", category: .wpeRender)
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(receipt):
+            return engine.acceptsCompletion() ? receipt : nil
+        }
+    }
+
     func tick(
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
@@ -3030,6 +3079,20 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 )
             }
         }
+
+        #if DEBUG
+        func injectOracleUserProperties(
+            _ properties: [String: WPESceneScriptPropertyValue],
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<[String: WPESceneScriptPropertyValue]?> {
+            guard allows(.userProperties) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline) {
+                guard self.acceptsCompletion() else { return nil }
+                let receipt = wpeInjectOracleUserProperties(properties, in: self.context, on: self.queue)
+                return self.acceptsCompletion() ? receipt : nil
+            }
+        }
+        #endif
 
         func applyScriptProperties(
             _ properties: [String: WPESceneScriptPropertyValue],

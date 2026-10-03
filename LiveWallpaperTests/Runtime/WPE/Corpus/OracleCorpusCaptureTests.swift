@@ -847,18 +847,36 @@ struct OracleCorpusCaptureTests {
         let owners = shared.layers.sorted { $0.index < $1.index }.compactMap { layer in
             renderer.layerScriptInstances[layer.id].map { (layer.id, $0) }
         }
-        try #require(!owners.isEmpty, "Sequence injection requires visible-script owners")
+        let gates = renderer.effectVisibilityScriptInstances.sorted { $0.key < $1.key }
+        let gateBindings: [[String: Any]] = renderer.renderPipeline?.layers.flatMap { layer in
+            layer.passes.compactMap { prepared -> [String: Any]? in
+                guard let gate = prepared.pass.visibilityGate else { return nil }
+                return ["gateID": gate.id, "objectID": layer.graphLayer.objectID,
+                        "passID": prepared.pass.id, "initialVisible": gate.initialVisible]
+            }
+        } ?? []
+        try #require(!owners.isEmpty || !gates.isEmpty, "Sequence injection requires visible owners or effect gates")
         var ordinal = config.frames - 1
         var records: [[String: Any]] = []
         for (stepIndex, values) in config.propertySequence.enumerated() {
             try awaitSceneScriptBatch(renderer)
             let properties = WPEMetalSceneRenderer.bridgeUserProperties(values)
             var inputReceipts: [[String: Any]] = []
+            var familyInputReceipts: [[String: Any]] = []
             for (objectID, instance) in owners {
                 let readback = instance.injectOracleUserProperties(properties)
                 let receipt = try #require(readback, "Oracle input injection did not complete for \(objectID)")
                 try #require(receipt == properties, "Actual VM inputs differ from the requested sequence step")
                 inputReceipts.append(["objectID": objectID, "properties": receipt.mapValues(\.jsBridged)])
+                familyInputReceipts.append(["family": "visible-owner", "objectID": objectID,
+                                            "properties": receipt.mapValues(\.jsBridged)])
+            }
+            for (gateID, instance) in gates {
+                let readback = instance.injectOracleUserProperties(properties)
+                let receipt = try #require(readback, "Oracle input injection did not complete for gate \(gateID)")
+                try #require(receipt == properties, "Actual gate VM inputs differ from the requested sequence step")
+                familyInputReceipts.append(["family": "effect-gate", "gateID": gateID,
+                                            "properties": receipt.mapValues(\.jsBridged)])
             }
             _ = try advanceToTracedFrame(
                 renderer: renderer, id: id, entryFile: entryFile, stage: stage,
@@ -914,6 +932,10 @@ struct OracleCorpusCaptureTests {
                     "stepIndex": stepIndex, "sampleIndex": sampleIndex, "frameOrdinal": ordinal,
                     "properties": propertyObject,
                     "inputReceipts": inputReceipts,
+                    "familyInputReceipts": familyInputReceipts,
+                    "effectGateBindings": gateBindings,
+                    "effectGateStates": renderer.liveEffectVisibility,
+                    "framePassTopology": ["traceFile": traceName, "jsonPointer": "/passes"],
                     "traceFile": traceName, "pngFile": pngName,
                     "renderOrder": (renderer.lastFramePipeline ?? renderer.renderPipeline)?.layers.map(\.graphLayer.objectID) ?? [],
                     "ownerSourceOrder": owners.map(\.0),
