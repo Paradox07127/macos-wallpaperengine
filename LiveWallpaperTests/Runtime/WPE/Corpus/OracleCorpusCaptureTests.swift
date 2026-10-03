@@ -460,6 +460,7 @@ struct OracleCorpusCaptureTests {
                         capture["jobId"] = jobId
                     }
                     document["capture"] = capture
+                    try Self.exportRawPassOutputs(in: &document, outputRoot: outDir, directory: "\(id)-raw")
                     try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]).write(to: dest, options: .atomic)
                     captured += 1
                     print("[oracle-capture] [\(id)] ✅ trace → \(dest.lastPathComponent)")
@@ -627,6 +628,28 @@ struct OracleCorpusCaptureTests {
 
     private static func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Copies each raw pass output the trace references into `outputRoot/directory` and rewrites receipt paths relative to `outputRoot`.
+    /// Call before the next debug session opens: opening one may prune the session folder that holds the originals.
+    static func exportRawPassOutputs(in trace: inout [String: Any], outputRoot: URL, directory: String) throws {
+        guard var passes = trace["passes"] as? [[String: Any]] else { return }
+        let fm = FileManager.default
+        let folder = outputRoot.appendingPathComponent(directory, isDirectory: true)
+        for index in passes.indices {
+            guard var output = passes[index]["output"] as? [String: Any],
+                  var receipt = output["raw"] as? [String: Any] else { continue }
+            let source = URL(fileURLWithPath: try #require(receipt["path"] as? String))
+            let expected = try #require(receipt["rawStorageSHA256"] as? String)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let destination = folder.appendingPathComponent(source.lastPathComponent)
+            try fm.copyItem(at: source, to: destination)
+            try #require(sha256(Data(contentsOf: destination)) == expected, "Exported raw pass output hash mismatch: \(source.lastPathComponent)")
+            receipt["path"] = directory + "/" + destination.lastPathComponent
+            output["raw"] = receipt
+            passes[index]["output"] = output
+        }
+        trace["passes"] = passes
     }
 
     @MainActor
@@ -953,6 +976,7 @@ struct OracleCorpusCaptureTests {
                     time: renderer.lastRuntimeUniforms?.time ?? 0
                 )
                 trace["capture"] = capture
+                try exportRawPassOutputs(in: &trace, outputRoot: outputRoot, directory: stem + "-raw")
                 try JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]).write(to: traceURL, options: .atomic)
                 _ = try validateBuiltinPasses(in: traceURL, sceneID: id)
                 let snapshot = WPEMetalTextureSnapshotter.shared.snapshot(from: frame.texture)

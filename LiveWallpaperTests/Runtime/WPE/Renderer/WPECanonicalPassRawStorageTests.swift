@@ -101,6 +101,44 @@ struct WPECanonicalPassRawStorageTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: repeatedPath)) == firstBytes)
     }
 
+    @Test func exportedRawOutputsSurviveSessionPruning() throws {
+        let firstBytes = Data([204, 51, 153, 96, 128, 129, 64, 96])
+        let secondBytes = Data([103, 26, 76, 48, 1, 0, 76, 48])
+        let first = try texture(bytes: firstBytes)
+        let second = try texture(bytes: secondBytes)
+        let artifacts = WPESceneDebugArtifacts()
+        artifacts.setEnabledForTesting(true)
+        let folder = try #require(artifacts.beginSession(workshopID: UUID().uuidString, descriptor: "raw export"))
+        defer { artifacts.endSession() }
+        let recorder = WPECanonicalTraceRecorder(artifacts: artifacts)
+        recorder.beginScene(workshopID: "raw-export", projectJsonPath: nil, descriptor: "raw")
+        record(first, recorder: recorder)
+        record(second, recorder: recorder)
+        recorder.recordPassOutputs([(label: "particle.0", texture: first), (label: "particle.0", texture: second)], frameOrdinal: 3)
+        let data = try #require(recorder.finishFrame(outputTexture: second, runtimeUniforms: nil, firstFrameStats: nil,
+                                                     resolutionDiagnostics: .init(events: []), frameOrdinal: 3))
+        var trace = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let outputRoot = FileManager.default.temporaryDirectory.appendingPathComponent("raw-export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outputRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outputRoot) }
+
+        try OracleCorpusCaptureTests.exportRawPassOutputs(in: &trace, outputRoot: outputRoot, directory: "scene-s00-n0-raw")
+        artifacts.endSession()
+        try FileManager.default.removeItem(at: folder)
+
+        let passes = try #require(trace["passes"] as? [[String: Any]])
+        #expect(passes.count == 2)
+        for (index, pass) in passes.enumerated() {
+            let receipt = try #require((pass["output"] as? [String: Any])?["raw"] as? [String: Any])
+            let path = try #require(receipt["path"] as? String)
+            #expect(!path.hasPrefix("/"))
+            #expect(path.hasPrefix("scene-s00-n0-raw/"))
+            let copied = try Data(contentsOf: outputRoot.appendingPathComponent(path))
+            #expect(copied == (index == 0 ? firstBytes : secondBytes))
+            #expect(receipt["rawStorageSHA256"] as? String == hash(copied))
+        }
+    }
+
     @Test func float16PreservesOriginalBitsAndLegacyCanonicalHash() throws {
         let bits: [UInt16] = [0x4000, 0xBC00, 0x3600, 0x7C00, 0x7E01, 0x3800, 0, 0x3C00]
         let bytes = bits.withUnsafeBytes { Data($0) }

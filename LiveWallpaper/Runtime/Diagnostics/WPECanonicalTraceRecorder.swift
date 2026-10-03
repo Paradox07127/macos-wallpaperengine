@@ -796,52 +796,38 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         guard artifacts.isEnabled else { return }
         let sessionFolder = artifacts.activeSessionFolder
         lock.lock()
-        let shouldRecord = !frameComplete
-        lock.unlock()
-        guard shouldRecord else { return }
-
-        // Readback and disk I/O must not hold the render-thread recorder lock.
-        let hashed = entries.compactMap { entry -> (label: String, texture: MTLTexture, sha256: String,
-                                                    visualStats: [String: Any], raw: Data, rowPitch: Int)? in
-                guard let metrics = textureMetrics(entry.texture) else { return nil }
-                return (entry.label, entry.texture, metrics.sha256, metrics.visualStats, metrics.raw, metrics.rowPitch)
-        }
-        guard !hashed.isEmpty else { return }
-
-        lock.lock()
         guard !frameComplete else { lock.unlock(); return }
-        var matchedIndices: Set<Int> = []
-        var matched: [(index: Int, readbackIndex: Int, physicalResource: String?, logicalResource: String?)] = []
-        for (readbackIndex, item) in hashed.enumerated() {
-            // Repeated pass IDs are matched in draw order, without reserving global state.
-            guard let index = passes.indices.first(where: {
-                !matchedIndices.contains($0) && (passes[$0]["passId"] as? String) == item.label
-                    && ((passes[$0]["output"] as? [String: Any])?["sha256"] is NSNull)
-            }) else { continue }
-            matchedIndices.insert(index)
-            let output = passes[index]["output"] as? [String: Any]
-            let physical = output?["physicalResource"] as? String
-            let logical = output?["resource"] as? String
-            matched.append((index, readbackIndex, physical, logical))
-        }
+        let candidates: [(index: Int, label: String?, physicalResource: String?, logicalResource: String?)] =
+            passes.indices.compactMap { index in
+                let output = passes[index]["output"] as? [String: Any]
+                guard output?["sha256"] is NSNull else { return nil }
+                return (index, passes[index]["passId"] as? String,
+                        output?["physicalResource"] as? String, output?["resource"] as? String)
+            }
         lock.unlock()
 
+        // Readback and disk I/O must not hold the render-thread recorder lock; each readback is released before the next.
+        var claimed: Set<Int> = []
         var completed: [(index: Int, label: String, sha256: String, visualStats: [String: Any], rawReceipt: [String: Any]?)] = []
-        for match in matched {
-            let item = hashed[match.readbackIndex]
+        for entry in entries {
+            // Repeated pass IDs are matched in draw order; a failed readback leaves its pass for the next same-label entry.
+            guard let match = candidates.first(where: { !claimed.contains($0.index) && $0.label == entry.label }),
+                  let metrics = textureMetrics(entry.texture) else { continue }
+            claimed.insert(match.index)
             var receipt: [String: Any]?
             #if DEBUG
             if let sessionFolder {
                 receipt = recordRawPassOutput(
-                    texture: item.texture, bytes: item.raw, rowPitch: item.rowPitch, traceHash: item.sha256,
-                    label: item.label, passOrdinal: match.index, frameOrdinal: frameOrdinal,
+                    texture: entry.texture, bytes: metrics.raw, rowPitch: metrics.rowPitch, traceHash: metrics.sha256,
+                    label: entry.label, passOrdinal: match.index, frameOrdinal: frameOrdinal,
                     logicalResource: match.logicalResource, physicalResource: match.physicalResource,
                     sessionFolder: sessionFolder
                 )
             }
             #endif
-            completed.append((match.index, item.label, item.sha256, item.visualStats, receipt))
+            completed.append((match.index, entry.label, metrics.sha256, metrics.visualStats, receipt))
         }
+        guard !completed.isEmpty else { return }
 
         lock.lock()
         defer { lock.unlock() }
