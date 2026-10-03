@@ -237,7 +237,7 @@ struct MusicOverlaySection: View {
                     source == .albumArt ? "Album art" : "Custom color"
                 }
             )
-            .frame(width: 210)
+            .frame(maxWidth: 210)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Accent"))
         }

@@ -98,6 +98,14 @@ struct SchemeDetailRowsTests {
         #expect(Self.keys(sections, .other) == [.lockScreen])
     }
 
+    @Test("A spanning video lists no span switch, since applying a scheme sets each display on its own")
+    func spanIsNotListed() {
+        var configuration = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]))
+        configuration.videoDisplayMode = .spanAllDisplays
+        let sections = Rows.make(for: Self.scheme(configuration), locale: Self.locale)
+        #expect(Self.keys(sections, .other) == nil, "the modal promises a span that applying the scheme resets")
+    }
+
     @Test("A playlist lists its length, shuffle and rotation")
     func playlist() {
         var configuration = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]))

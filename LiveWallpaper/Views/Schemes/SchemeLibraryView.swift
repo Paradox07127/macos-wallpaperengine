@@ -31,6 +31,8 @@ struct SchemeLibraryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .confirmDestructive($pendingDestructive)
             .onAppear { details.requestApply = { requestApply($0, to: $1) } }
+            // The presenter outlives this view on the page's @State; a kept closure would retain the view.
+            .onDisappear { details.requestApply = { _, _ in } }
             .onChange(of: filteredSchemes, initial: true) { details.run = $1 }
     }
 
@@ -59,13 +61,13 @@ struct SchemeLibraryView: View {
         } search: {
             LibrarySearchField(text: $searchText, prompt: "Search schemes")
         } sort: {
-            LibrarySortControl(label: Text(LibraryChipsRow.sortTitle(sortOrder))) {
+            LibrarySortControl(label: Text(Self.sortTitle(sortOrder))) {
                 Picker("Sort", selection: Binding(
                     get: { sortOrder },
                     set: { sortOrder = $0 }
                 )) {
                     ForEach([SavedLibraryModel.Sort.recentlyUsed, .name, .type], id: \.self) { order in
-                        Text(LibraryChipsRow.sortTitle(order)).tag(order)
+                        Text(Self.sortTitle(order)).tag(order)
                     }
                 }
                 .labelsHidden()
@@ -76,6 +78,11 @@ struct SchemeLibraryView: View {
         }
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
         .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+    }
+
+    /// Schemes sort by last capture and applying one records no use, so the date order is not "Recently Used".
+    static func sortTitle(_ order: SavedLibraryModel.Sort) -> LocalizedStringKey {
+        order == .recentlyUsed ? "Recent" : LibraryChipsRow.sortTitle(order)
     }
 
     private var sortOrder: SavedLibraryModel.Sort {

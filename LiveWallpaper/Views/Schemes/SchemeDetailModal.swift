@@ -173,7 +173,7 @@ enum SchemeDetailRows {
             case scaling, playbackSpeed, volume, colorSpace, frameRate, sceneSettings, mouseInteraction, javaScript, interaction
             case mode, timeSlots, fallback, playlist, shuffle, rotation
             case clock, music, board
-            case lockScreen, spanDisplays, clickCapture
+            case lockScreen, clickCapture
         }
 
         let key: Key
@@ -361,9 +361,6 @@ enum SchemeDetailRows {
         var rows: [Row] = []
         if configuration.wallpaperType == .video, configuration.setAsLockScreen {
             rows.append(Row(key: .lockScreen, label: String(localized: "On Lock", bundle: .appLanguage), value: on))
-        }
-        if configuration.videoDisplayMode == .spanAllDisplays {
-            rows.append(Row(key: .spanDisplays, label: String(localized: "Span All Displays", bundle: .appLanguage), value: on))
         }
         if configuration.wallpaperType == .scene, configuration.sceneClickCaptureEnabled {
             rows.append(Row(key: .clickCapture, label: String(localized: "Interaction", bundle: .appLanguage), value: on))

@@ -283,7 +283,7 @@ private struct ShortcutCaptureField: View {
     }
 }
 
-private struct ShortcutKeyLabel: View {
+struct ShortcutKeyLabel: View {
     let binding: GlobalShortcutBinding
 
     var body: some View {
@@ -291,10 +291,10 @@ private struct ShortcutKeyLabel: View {
             ForEach(modifierSymbols, id: \.self) { symbol in
                 Image(systemName: symbol)
             }
-            if let keySymbol {
+            if let keySymbol = Self.keySymbol(for: binding.keyCode) {
                 Image(systemName: keySymbol)
             } else {
-                Text(verbatim: GlobalShortcutBinding.keyName(for: binding.keyCode))
+                Text(verbatim: Self.keyText(for: binding.keyCode))
             }
         }
         .font(DesignTokens.Typography.body)
@@ -311,9 +311,15 @@ private struct ShortcutKeyLabel: View {
         ].compactMap { binding.modifiers.contains($0.0) ? $0.1 : nil }
     }
 
-    private var keySymbol: String? {
-        switch binding.keyCode {
-        case 36, 76: "return"
+    /// Keypad Enter (76) registers apart from Return (36), so it needs a face of its own; SF Symbols has no Enter glyph.
+    static func keyText(for keyCode: UInt32) -> String {
+        keyCode == 76 ? "\u{2324}" : GlobalShortcutBinding.keyName(for: keyCode)
+    }
+
+    /// SF Symbol name; nil falls back to `keyText(for:)`.
+    static func keySymbol(for keyCode: UInt32) -> String? {
+        switch keyCode {
+        case 36: "return"
         case 48: "arrow.right.to.line"
         case 49: "space"
         case 51: "delete.left"
