@@ -115,7 +115,18 @@ struct WPETextMeshRendererTests {
         let firstWidth = (allQuads.first?.xs.upperBound ?? 0) - (allQuads.first?.xs.lowerBound ?? 0)
         #expect(maxX - minX > firstWidth * 8,
                 "10 identical glyphs must span ~10 advances, not collapse onto the first")
-        #expect(abs((minX + maxX) / 2 - 960) < 3)
+        // WPE centres the pen-start-to-ink-right block on the origin, so the glyph cells' own centre is off by the bearings.
+        let object = textObject("MMMMMMMMMM")
+        let font = WPETextFontResolver(resolver: WPEMultiRootResourceResolver(
+            primaryRootURL: FileManager.default.temporaryDirectory,
+            dependencyMounts: []
+        )).font(for: object)
+        let layout = try #require(WPETextLayoutEngine.layout(text: object.text, font: font))
+        let left = 960 - layout.blockWidth / 2
+        let cellMin = layout.quads.map { Double($0.rect.minX) }.min() ?? 0
+        let cellMax = layout.quads.map { Double($0.rect.maxX) }.max() ?? 0
+        #expect(abs(Double(minX) - (left + cellMin)) < 0.5, "block start \(minX) is not centred on the origin by ink width")
+        #expect(abs(Double(maxX) - (left + cellMax)) < 0.5, "block end \(maxX) is not centred on the origin by ink width")
     }
 
     @Test("Suspension reclaim drops atlas pages and rebuilds current text")
