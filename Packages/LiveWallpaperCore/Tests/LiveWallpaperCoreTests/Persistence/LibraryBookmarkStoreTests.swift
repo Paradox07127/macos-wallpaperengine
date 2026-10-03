@@ -4,9 +4,11 @@ import Testing
 
 @MainActor
 struct LibraryBookmarkStoreTests {
-    private static func defaults() throws -> (UserDefaults, String) {
-        let suite = "LibraryBookmarkStoreTests.\(UUID().uuidString)"
-        return try (#require(UserDefaults(suiteName: suite)), suite)
+    private static func defaults(_ test: String = #function) throws -> (UserDefaults, String) {
+        let suite = "LibraryBookmarkStoreTests.\(test)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        return (defaults, suite)
     }
 
     @Test("Marks keep the order they were added in, each once, across a relaunch")
