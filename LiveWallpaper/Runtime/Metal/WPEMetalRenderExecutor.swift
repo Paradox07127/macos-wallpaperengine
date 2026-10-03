@@ -3536,6 +3536,15 @@ final class WPEMetalRenderExecutor {
                      execution: execution)
     }
 
+    /// Effect-publication projections keep the canonical pass ID while rewriting bindings,
+    /// blending and alpha contract, so the entry must key on what the compile request reads.
+    static func compiledShaderEntryKey(for pass: WPEPreparedRenderPass) -> String {
+        let inputs = pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass)
+        let output = pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending)
+        let bindings = pass.textureBindings.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        return "\(pass.id)|in=\(inputs.sorted())|out=\(output)|\(bindings)"
+    }
+
     func compileCustomShader(
         for pass: WPEPreparedRenderPass
     ) throws -> WPEShaderCompileResult {
@@ -3545,7 +3554,8 @@ final class WPEMetalRenderExecutor {
         // Hot path: a previously-translated pass returns without re-running the
         // GLSL preprocessor (which `makeCompileRequest` would otherwise do every
         // frame just to recompute the content cache key).
-        if let cached = compiledShaderResultByPassID[pass.id] {
+        let entryKey = Self.compiledShaderEntryKey(for: pass)
+        if let cached = compiledShaderResultByPassID[entryKey] {
             return cached
         }
         if let reason = untranslatableShaderReasonByPassID[pass.id] {
@@ -3556,13 +3566,13 @@ final class WPEMetalRenderExecutor {
                 throw WPEMetalRenderExecutorError.unsupportedShader(pass.pass.shader)
             }
             if let cached = translatedShaderCache[request.translationCacheKey] {
-                compiledShaderResultByPassID[pass.id] = cached
+                compiledShaderResultByPassID[entryKey] = cached
                 return cached
             }
             do {
                 let result = try shaderCompiler.compile(request)
                 translatedShaderCache[request.translationCacheKey] = result
-                compiledShaderResultByPassID[pass.id] = result
+                compiledShaderResultByPassID[entryKey] = result
                 return result
             } catch let error as WPEShaderCompilerError {
                 switch error {

@@ -245,7 +245,7 @@ struct WPETranspileCoverageCorpusReportTests {
             }
             counts[shader.executionClassification, default: 0] += 1
             guard shader.executionClassification == .officialSource else { continue }
-            if executor.compiledShaderResultByPassID[pass.id] != nil {
+            if executor.compiledShaderResultByPassID[WPEMetalRenderExecutor.compiledShaderEntryKey(for: pass)] != nil {
                 compiled += 1
             } else if executor.untranslatableShaderReasonByPassID[pass.id] != nil {
                 failed += 1

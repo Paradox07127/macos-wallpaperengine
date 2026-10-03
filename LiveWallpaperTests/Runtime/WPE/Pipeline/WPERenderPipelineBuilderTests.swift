@@ -100,7 +100,8 @@ struct WPERenderPipelineBuilderTests {
     }
 
     @Test("Multi-material and ambiguous effect instances reject publication without partial rewrites",
-          arguments: ["multi-material", "multi-effect-pass", "duplicate-id", "missing-identity", "external-read", "external-write", "history", "extra-slot", "fbo", "owner-script", "parent", "base-history", "base-foreign-fbo", "base-raw-binding", "base-explicit-target", "copy-history", "copy-foreign-binding", "custom-base", "sampled-authored-source", "vertex-sampled-authored-source", "metadata-authored-source"])
+          arguments: ["multi-material", "multi-effect-pass", "duplicate-id", "missing-identity", "external-read", "external-write", "history", "extra-slot", "fbo", "owner-script", "parent", "base-history", "base-foreign-fbo", "base-raw-binding", "base-explicit-target", "copy-history", "copy-foreign-binding", "custom-base", "sampled-authored-source", "vertex-sampled-authored-source", "metadata-authored-source",
+                      "vertex-reduction-scale", "fragment-reduction-scale"])
     func effectPublicationRejectsUnprovedChains(scope: String) throws {
         let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false, rejection: scope)
         defer { fixture.cleanup() }
@@ -202,6 +203,50 @@ struct WPERenderPipelineBuilderTests {
         #expect(canonical.layers[0].passes == owner.passes)
     }
 
+    @Test("Native solid chain publishes a vertex reduction-scale declaration only when proven unreferenced")
+    func unreferencedVertexReductionScalePublication() throws {
+        let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false, rejection: "unused-vertex-reduction-scale")
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        #expect(canonical.layers[0].effectPublication?.scope == .nativeSolidChain)
+        #expect(canonical.layers[0].effectPublication?.sourceExtent == nil)
+    }
+
+    @Test("Composed fallback for a published pass compiles the published alpha contract, not the canonical one")
+    func publishedPassFallbackUsesPublishedAlphaContract() throws {
+        let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false, rejection: "compilable")
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        let owner = canonical.layers[0]
+        #expect(owner.effectPublication?.scope == .nativeSolidChain)
+        let visibility = Dictionary(uniqueKeysWithValues: owner.passes.compactMap { prepared in
+            prepared.pass.visibilityGate.map { ($0.id, true) }
+        })
+        let published = canonical.resolvingEffectPublication(passVisibility: visibility, camera: camera).layers[0].passes.dropFirst()
+        #expect(published.count == 2)
+        let executor = try WPEMetalRenderExecutor(device: #require(MTLCreateSystemDefaultDevice()))
+        for effect in owner.passes.dropFirst().dropLast() {
+            let canonicalContract = try executor.compileCustomShader(for: effect).alphaContract
+            #expect(canonicalContract?.unpremultipliedInputSlots == [0])
+        }
+        for effect in published {
+            let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
+            let result = try executor.compileCustomShader(for: effect)
+            #expect(result.alphaContract == .init(unpremultipliedInputSlots: request.premultipliedInputSlots,
+                                                  premultipliedOutput: request.premultipliedOutput))
+            #expect(result.alphaContract == effect.alphaContract)
+        }
+        for effect in owner.passes.dropFirst().dropLast() {
+            #expect(try executor.compileCustomShader(for: effect).alphaContract?.unpremultipliedInputSlots == [0])
+        }
+    }
+
     private func effectPublicationFixture(count: Int, reverse: Bool, rejection: String = "") throws
         -> (fixture: Fixture, document: WPESceneDocument) {
         func json(_ value: Any) throws -> String {
@@ -234,6 +279,20 @@ struct WPERenderPipelineBuilderTests {
         }
         if rejection == "vertex-sampled-authored-source" {
             vertex = "attribute vec3 a_Position; attribute vec2 a_TexCoord; uniform mat4 g_ModelViewProjectionMatrix; uniform sampler2D g_Texture0; varying vec2 uv; void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position.xy+texture2D(g_Texture0,a_TexCoord).xy,0,1);uv=a_TexCoord;}"
+        }
+        if rejection == "vertex-reduction-scale" {
+            vertex = "attribute vec3 a_Position; attribute vec2 a_TexCoord; uniform mat4 g_ModelViewProjectionMatrix; uniform float g_TextureReductionScale; varying vec2 uv; void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position,1);uv=a_TexCoord*g_TextureReductionScale;}"
+        }
+        if rejection == "unused-vertex-reduction-scale" {
+            vertex = "attribute vec3 a_Position; attribute vec2 a_TexCoord; uniform mat4 g_ModelViewProjectionMatrix; uniform float g_TextureReductionScale; varying vec2 uv; void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position,1);uv=a_TexCoord;}"
+        }
+        if rejection == "fragment-reduction-scale" {
+            fragment = "uniform sampler2D g_Texture0; uniform float g_TextureReductionScale; varying vec2 uv; void main(){vec4 c=texture2D(g_Texture0,uv*g_TextureReductionScale);gl_FragColor=c;}"
+        }
+        if rejection == "compilable" {
+            // The transpiler drops whole declaration lines, so main must not share one.
+            vertex = vertex.replacingOccurrences(of: "; ", with: ";\n").replacingOccurrences(of: "uv", with: "v_TexCoord")
+            fragment = fragment.replacingOccurrences(of: "; ", with: ";\n").replacingOccurrences(of: "uv", with: "v_TexCoord")
         }
         let fixture = try makeFixture(files: [
             "models/solid.json": #"{"material":"materials/base.json"}"#,
@@ -781,6 +840,8 @@ struct WPERenderPipelineBuilderTests {
             #expect(!request.premultipliedOutput)
             #expect(originalRequest.premultipliedOutput)
             #expect(request.translationCacheKey != originalRequest.translationCacheKey)
+            #expect(WPEMetalRenderExecutor.compiledShaderEntryKey(for: after.passes[1])
+                != WPEMetalRenderExecutor.compiledShaderEntryKey(for: before.passes[1]))
             #expect(request.processedVertexSource == originalRequest.processedVertexSource)
             #expect(request.processedFragmentSource == originalRequest.processedFragmentSource)
         } else {

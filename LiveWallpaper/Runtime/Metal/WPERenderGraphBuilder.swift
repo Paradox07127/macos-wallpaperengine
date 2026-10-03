@@ -1848,7 +1848,11 @@ extension WPERenderGraphBuilder {
                                   && ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(variable.key.name)
                                   && (variable.key.name != "g_ModelViewProjectionMatrixInverse"
                                       || (graph.geometry.scale.x != 0 && graph.geometry.scale.y != 0)))
-                              || ((sourceSize != nil || activeSubsets) && ["g_Texture0", "g_Texture0Resolution", "g_TextureReductionScale"].contains(variable.key.name))
+                              || ((sourceSize != nil || activeSubsets) && ["g_Texture0", "g_Texture0Resolution"].contains(variable.key.name))
+                              // Only a source extent produces this value; without one, only a provably dead VS declaration may pass.
+                              || (variable.key.name == "g_TextureReductionScale" && (sourceSize != nil
+                                      || (activeSubsets && variable.key.stage == .vertex
+                                          && link.interface.isVertexUniformProvenUnreferenced(variable.key.name))))
                       }) else { return layer }
                 predecessor = effect.pass.target.textureReference
             }

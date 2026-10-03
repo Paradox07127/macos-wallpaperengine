@@ -98,8 +98,12 @@ extension WPEMetalSceneRenderer {
         debugStage("shader.prewarm", "begin")
 
         var requestsByKey: [String: WPEShaderCompileRequest] = [:]
-        for layer in pipeline.layers {
-            for pass in layer.passes where pass.shader?.isBuiltin == false {
+        // Published passes reach the composed fallback with their own alpha contract.
+        let passesByLayer = pipeline.layers.map { layer in
+            (layer, layer.passes + layer.effectPublicationPrewarmPasses(camera: cameraUniforms))
+        }
+        for (_, passes) in passesByLayer {
+            for pass in passes where pass.shader?.isBuiltin == false {
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false) else { continue }
                 requestsByKey[request.translationCacheKey] = request
             }
@@ -173,11 +177,11 @@ extension WPEMetalSceneRenderer {
         var seenPipelineKeys = Set<String>()
         var passIDSeeds: [(passID: String, result: WPEShaderCompileResult)] = []
         let declaredFBOs = pipeline.layers.flatMap(\.graphLayer.localFBOs)
-        for layer in pipeline.layers {
-            for pass in layer.passes where pass.shader?.isBuiltin == false {
+        for (layer, passes) in passesByLayer {
+            for pass in passes where pass.shader?.isBuiltin == false {
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false),
                       let result = resultByKey[request.translationCacheKey] else { continue }
-                passIDSeeds.append((passID: pass.id, result: result))
+                passIDSeeds.append((passID: WPEMetalRenderExecutor.compiledShaderEntryKey(for: pass), result: result))
                 let blend = pass.pass.blending
                 let alphaWritePolicy = WPEMetalAlphaWritePolicy.resolve(
                     targetID: WPEMetalTargetID(target: pass.pass.target),
