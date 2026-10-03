@@ -209,6 +209,7 @@ extension WPEMetalSceneRenderer {
                     screenSize: scriptScreenSize,
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 layerAlphaScriptInstances[object.id] = instance
@@ -234,6 +235,7 @@ extension WPEMetalSceneRenderer {
                     initialVisible: object.visible,
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 textVisibleScriptInstances[object.id] = instance
@@ -258,6 +260,7 @@ extension WPEMetalSceneRenderer {
                     screenSize: scriptScreenSize,
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 textAlphaScriptInstances[object.id] = instance
@@ -285,6 +288,7 @@ extension WPEMetalSceneRenderer {
                     // authored `value` inside the envelope is its seed.
                     outputMode: .returnedAlpha(initialValue: override.alpha ?? 1),
                     ownLayerName: object.name,
+                    ownObjectID: object.id,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
                 particleAlphaScriptInstances[object.id] = instance
@@ -316,15 +320,15 @@ extension WPEMetalSceneRenderer {
             generation: loadGeneration
         )
         for (name, state) in output.others {
-            guard let targetID = layerObjectIDByName[name] else { continue }
+            guard let targetID = scriptTargetObjectID(name) else { continue }
             applyLayerScriptState(state, objectID: targetID)
         }
         for call in output.videoCalls where !call.layerKey.isEmpty {
-            guard let targetID = layerObjectIDByName[call.layerKey] else { continue }
+            guard let targetID = scriptTargetObjectID(call.layerKey) else { continue }
             sceneScriptVideoCommandBuffer.enqueue([call.command], objectID: targetID)
         }
         for (name, mutation) in output.otherTransforms {
-            guard let targetID = layerObjectIDByName[name] else { continue }
+            guard let targetID = scriptTargetObjectID(name) else { continue }
             layerTransformMutationJournal.record(
                 mutation,
                 objectID: targetID,
@@ -332,9 +336,15 @@ extension WPEMetalSceneRenderer {
             )
         }
         for (name, text) in output.texts {
-            guard let id = name.isEmpty ? ownObjectID : layerObjectIDByName[name] else { continue }
+            guard let id = name.isEmpty ? ownObjectID : scriptTargetObjectID(name) else { continue }
             liveScriptAssignedText[id] = text
         }
+    }
+
+    /// Duplicate or empty layer names reach scripts as object-ID keys; plain names map through the scene name index.
+    private func scriptTargetObjectID(_ key: String) -> String? {
+        if let id = wpeScriptLayerObjectID(key), sceneScriptSharedState?.layerTransform(id: id) != nil { return id }
+        return layerObjectIDByName[key]
     }
 
     /// One deterministic frame-0 pass — producers first. A `shared`-consumer must never evaluate before its producers; seeding inside each loader would let a consumer's first read hit empty `shared` and permanently corrupt state.
@@ -730,15 +740,18 @@ extension WPEMetalSceneRenderer {
         return Self.hoverHitRect(
             geometry: geometry,
             sceneSize: sceneRenderSize,
-            projection: projection
+            projection: projection,
+            camera: cameraUniforms
         )
     }
 
     /// `projection` non-nil selects the perspective branch and carries the already-projected, scene-centred (Y-up) centre plus its depth scale.
+    /// `camera` supplies the orthographic pan/zoom the quad is drawn with.
     static func hoverHitRect(
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize,
-        projection: (center: SIMD2<Double>, depthScale: Double)?
+        projection: (center: SIMD2<Double>, depthScale: Double)?,
+        camera: WPEMetalCameraUniforms = .identity
     ) -> (center: SIMD2<Double>, half: SIMD2<Double>)? {
         guard let size = geometry.size, size.width > 0, size.height > 0 else { return nil }
         let width = Double(max(sceneSize.width, 1))
@@ -757,10 +770,14 @@ extension WPEMetalSceneRenderer {
             )
         } else {
             // Authored origins are Y-up (`origin.y - sceneHeight/2`, no negation); the pointer arrives Y-down (`pointerSample` returns `1 - y`). Comparing the two raw would invert every hover.
-            center = SIMD2<Double>(geometry.origin.x, height - geometry.origin.y)
+            let drawn = camera.transformScenePoint(
+                WPEMetalRenderExecutor.centeredOrigin(of: geometry, sceneSize: sceneSize)
+            )
+            let zoom = camera.sceneMotion.zoom
+            center = SIMD2<Double>(width * 0.5 + Double(drawn.x), height * 0.5 - Double(drawn.y))
             half = SIMD2<Double>(
-                Double(size.width) * abs(geometry.scale.x) * 0.5,
-                Double(size.height) * abs(geometry.scale.y) * 0.5
+                Double(size.width) * abs(geometry.scale.x) * zoom * 0.5,
+                Double(size.height) * abs(geometry.scale.y) * zoom * 0.5
             )
         }
         // Same shift the draw path applies; it is Y-up, so its Y flips into pointer space.
@@ -838,10 +855,7 @@ extension WPEMetalSceneRenderer {
     // MARK: - Script output application
 
     func applyLayerScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
-        func targetID(_ key: String) -> String? {
-            if let id = wpeScriptLayerObjectID(key), sceneScriptSharedState?.layerTransform(id: id) != nil { return id }
-            return layerObjectIDByName[key]
-        }
+        let targetID = scriptTargetObjectID
         applyLayerScriptState(output.own, objectID: ownObjectID)
         layerTransformMutationJournal.record(
             output.ownTransform,

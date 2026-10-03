@@ -87,6 +87,7 @@ extension WPEMetalSceneRenderer {
         basePipeline: WPEPreparedRenderPipeline,
         uniforms: WPEMetalRuntimeUniforms,
         authoredTransforms: LiveScriptTransforms,
+        sampledCameraMotion: WPESceneCameraMotionSample,
         parallaxFrame: WPECameraParallaxFrame,
         frameSubmission: WPEMetalFrameSubmissionLease,
         // Set on the merged-present path (decision already ran); nil on sync/standalone.
@@ -112,6 +113,7 @@ extension WPEMetalSceneRenderer {
         guard let failure = sceneScriptLoadState.currentFailureReason else {
             throw CancellationError()
         }
+        applyScriptCameraMotion(publicationBeforeFrame.stableTransforms, sampled: sampledCameraMotion)
         let stableTransforms = publicationBeforeFrame.transformMutationJournal.applying(
             to: LiveScriptTransforms.resolving(
                 authored: authoredTransforms,
@@ -194,11 +196,21 @@ extension WPEMetalSceneRenderer {
         for scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) -> Bool {
         finishSceneScriptVideoCommands { commit in
-            sceneScriptLoadState.withCompletionPermission(
-                for: scriptLoadToken,
-                commit
-            )
+            sceneScriptLoadState.withCompletionPermission(for: scriptLoadToken) {
+                commit()
+                startLoadScriptVideosAwaitingPlayback()
+            }
         }
+    }
+
+    /// A load-time rate/loop write takes the source out of automatic playback before the
+    /// post-load profile push could start it; same rule as an on-demand rebuild.
+    private func startLoadScriptVideosAwaitingPlayback() {
+        for (key, transport) in sceneScriptVideoCommandBuffer.transportBySourceKey where transport.playback == nil {
+            guard let video = dynamicTextureSources[key] as? WPEVideoTextureSource else { continue }
+            transport.apply(to: video, automaticPlayback: currentProfile == .quality)
+        }
+        publishVideoPlaybackSnapshots()
     }
 
     func finishSceneScriptLoadVideoCommands(

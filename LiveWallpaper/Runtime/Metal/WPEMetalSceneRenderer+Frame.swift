@@ -118,15 +118,8 @@ extension WPEMetalSceneRenderer {
             ),
             generation: loadGeneration
         )
-        if let definition = cameraMotionPlayback?.definition {
-            let previous = cameraUniforms.sceneMotion
-            cameraUniforms = baseCameraUniforms.applyingSceneMotion(.init(
-                origin: liveScriptTransforms.origins[definition.objectID] ?? previous.origin,
-                zoom: liveScriptTransforms.scales[WPECameraMotionPlayback.zoomScriptKey]?.x ?? previous.zoom,
-                angles: liveScriptTransforms.angles[definition.objectID] ?? previous.angles
-            ))
-            sceneScriptSharedState?.setCursorWorldProjection(nil, sceneMotion: cameraUniforms.sceneMotion)
-        }
+        let sampledCameraMotion = cameraUniforms.sceneMotion
+        applyScriptCameraMotion(liveScriptTransforms, sampled: sampledCameraMotion)
         frameOverlay.colors = layerColorsExcludingText(liveTransforms.colors)
         var framePipeline = pipeline.applyingFrameOverlay(frameOverlay)
         if !liveTransforms.isEmpty {
@@ -210,6 +203,7 @@ extension WPEMetalSceneRenderer {
             restoreSceneScriptPresentation(publicationBeforeFrame.presentation)
             layerTransformMutationJournal = publicationBeforeFrame.transformMutationJournal
             liveScriptTransforms = lastStableScriptTransforms
+            applyScriptCameraMotion(liveScriptTransforms, sampled: sampledCameraMotion)
             liveTransforms = layerTransformMutationJournal.applying(
                 to: .resolving(
                     authored: authoredTransforms,
@@ -306,6 +300,7 @@ extension WPEMetalSceneRenderer {
             basePipeline: pipeline,
             uniforms: uniforms,
             authoredTransforms: authoredTransforms,
+            sampledCameraMotion: sampledCameraMotion,
             parallaxFrame: frameContext.parallaxFrame,
             frameSubmission: frameSubmission,
             videoCommandsOutcome: videoCommandsOutcome,
@@ -316,6 +311,17 @@ extension WPEMetalSceneRenderer {
             synchronizeFrameDemand(); publishRuntimeActivity()
         }
         return rendered
+    }
+
+    /// `sampled` is this frame's keyframed camera motion; a channel no script drives keeps it.
+    func applyScriptCameraMotion(_ scriptTransforms: LiveScriptTransforms, sampled: WPESceneCameraMotionSample) {
+        guard let definition = cameraMotionPlayback?.definition else { return }
+        cameraUniforms = baseCameraUniforms.applyingSceneMotion(.init(
+            origin: scriptTransforms.origins[definition.objectID] ?? sampled.origin,
+            zoom: scriptTransforms.scales[WPECameraMotionPlayback.zoomScriptKey]?.x ?? sampled.zoom,
+            angles: scriptTransforms.angles[definition.objectID] ?? sampled.angles
+        ))
+        sceneScriptSharedState?.setCursorWorldProjection(nil, sceneMotion: cameraUniforms.sceneMotion)
     }
 
     func encodeSceneFrame(
