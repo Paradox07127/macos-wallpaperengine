@@ -305,7 +305,7 @@ struct WPEMediaTextureProviderTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let store = WPEMediaTextureStore(device: device)
 
-        store.ingest(artwork: try Self.artwork(red: 128.0 / 255, green: 128, blue: 128))
+        try store.ingest(artwork: Self.artwork(red: 128.0 / 255, green: 128, blue: 128))
 
         let texture = try #require(store.texture(for: .thumbnail))
         var pixel = [UInt8](repeating: 0, count: 4)
