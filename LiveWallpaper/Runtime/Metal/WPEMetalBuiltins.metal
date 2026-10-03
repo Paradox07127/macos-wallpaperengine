@@ -716,14 +716,15 @@ static inline float3 wpe_authored_rgb_to_linear(float3 color) {
     return half4(wpe_attachment_output(float4(half4(float4(wpe_authored_rgb_to_linear(texture0.sample(linearSampler, in.uv).rgb), 1.0)))));
 }
 
-// combine_hdr (DISPLAYHDR=0, LINEAR=0): output = saturate(lin(scene + bloom)) * 3.0; HDR accumulation stays unclamped.
+// combine_hdr (DISPLAYHDR=0, LINEAR=0): saturate(lin(scene + bloom)) * g_RenderVar0.x, where .x is the Windows SDR white level in scRGB (240 nits = 3.0).
+// Metal's drawable 1.0 is already reference white, so the multiplier is 1. HDR accumulation stays unclamped.
 [[fragment]] half4 wpe_present_hdr_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<float, access::sample> texture0 [[texture(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float3 color = texture0.sample(linearSampler, in.uv).rgb;
-    return half4(wpe_attachment_output(float4(half4(float4(saturate(wpe_authored_rgb_to_linear(color)) * 3.0, 1.0)))));
+    return half4(wpe_attachment_output(float4(half4(float4(saturate(wpe_authored_rgb_to_linear(color)), 1.0)))));
 }
 
 // Full-frame 1:1 copy. Camera parallax is a geometry translation applied in

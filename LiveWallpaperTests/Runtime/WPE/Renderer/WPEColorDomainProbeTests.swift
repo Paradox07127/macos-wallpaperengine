@@ -237,7 +237,7 @@ struct WPEColorDomainProbeTests {
         }
     }
 
-    @Test("Terminal HDR transfer agrees with the captured combine_hdr RT and preserves the work texture")
+    @Test("Terminal HDR transfer maps the captured combine_hdr RT to EDR reference white and preserves the work texture")
     func hdrDisplayTransferIsTerminal() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -265,10 +265,10 @@ struct WPEColorDomainProbeTests {
         command.commit(); command.waitUntilCompleted()
         #expect(command.status == .completed)
         let actual = try rawPixels(output, coordinates: [[0, 0], [1, 0], [2, 0], [3, 0]], executor: executor)
-        // Windows combine_hdr reference; the tolerance covers half-float source and output quantization.
-        let reference = [0.74560546875, 0.16357421875, 0.04681396484375, 3.0]
+        // Windows combine_hdr RT divided by that capture's g_RenderVar0.x (SDR white 240 nits = 3.0): EDR 1.0 is already reference white.
+        let reference = [0.74560546875, 0.16357421875, 0.04681396484375, 3.0].map { $0 / 3 }
         for (sample, expected) in zip(actual, reference) {
-            #expect(abs(sample[0] - expected) <= 0.003)
+            #expect(abs(sample[0] - expected) <= 0.001)
             #expect(sample[3] == 1)
         }
         let unchanged = try rawPixels(input, coordinates: [[3, 0]], executor: executor)
