@@ -1837,8 +1837,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         switch configuration["text"] {
         case let .string(text)?: return text
         case let .object(field)?:
-            if case let .string(text)? = field["value"] { return text }
-            return nil
+            guard case let .string(text)? = field["value"] else {
+                return nil
+            }
+            return text
         default: return nil
         }
     }
