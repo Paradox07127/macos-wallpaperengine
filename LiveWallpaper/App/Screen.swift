@@ -45,6 +45,10 @@ final class Screen: Identifiable, Hashable {
         for session in retiringSessions.values {
             session.applyCapturePolicy(sharingType)
         }
+        // The composite holds a copy of the old wallpaper's pixels.
+        for transition in distortionTransitions.values {
+            transition.compositeWindow?.sharingType = sharingType
+        }
     }
 
     var videoPlayer: WallpaperVideoPlayer? {

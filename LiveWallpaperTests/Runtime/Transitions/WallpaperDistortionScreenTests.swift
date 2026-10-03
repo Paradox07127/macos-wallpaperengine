@@ -460,6 +460,25 @@ struct WallpaperDistortionScreenTests {
         #expect(screen.distortionTransitions.isEmpty && screen.retiringSessions.isEmpty)
     }
 
+    @Test("A capture policy change mid-distortion reaches the composite window", .timeLimit(.minutes(1)))
+    func capturePolicyDuringPlayback() async throws {
+        let log = DistortionEventLog()
+        let clocks = DistortionClockFactory()
+        let screen = try makeScreen(clocks: clocks)
+        let old = try DistortionTestSession("old", capture: makeCapture(), log: log)
+        let new = try DistortionTestSession("new", capture: incomingCapture(), log: log)
+        defer { screen.resetRuntimeSession() }
+        screen.installRuntimeSession(old)
+        screen.installRuntimeSession(new)
+        try await waitUntil("the composite") { screen.distortionTransitions.values.first?.compositeWindow != nil }
+        let composite = try #require(screen.distortionTransitions.values.first?.compositeWindow)
+        let flipped: NSWindow.SharingType = composite.sharingType == .none ? .readOnly : .none
+
+        screen.applyCapturePolicy(flipped)
+
+        #expect(composite.sharingType == flipped)
+    }
+
     @Test("Frames are captured scene side first, and the other side is asked to match", .timeLimit(.minutes(1)))
     func captureOrder() async throws {
         let device = try #require(WallpaperDistortionRenderer.shared?.device)
