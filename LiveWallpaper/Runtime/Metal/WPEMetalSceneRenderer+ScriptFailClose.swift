@@ -255,11 +255,14 @@ extension WPEMetalSceneRenderer {
                 case .pause: video.scriptPause()
                 case .stop: video.scriptStop()
                 case let .seek(seconds): video.scriptSetCurrentTime(seconds)
+                case let .setRate(rate): video.scriptSetRate(rate)
+                case let .setLoop(loop): video.scriptSetLoop(loop)
                 }
             }
             if shouldAlignIntroPhase {
                 updateIntroPhaseAlign()
             }
+            publishVideoPlaybackSnapshots()
         }
         if !committed {
             discardSceneScriptVideoCommands()

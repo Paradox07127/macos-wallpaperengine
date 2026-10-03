@@ -359,9 +359,9 @@ actor WPEDisplayRenderActor {
         renderer.surfaceControl.setNeedsRedraw()
     }
 
-    func prewarmShaders(pipeline: WPEPreparedRenderPipeline) async {
+    func prewarmShaders(pipeline: WPEPreparedRenderPipeline) async -> Set<String> {
         await renderer?.prewarmCustomShaders(for: pipeline, on: self)
-        await renderer?.prewarmAuthoredVertexShaders(for: pipeline, on: self)
+        return await renderer?.prewarmAuthoredVertexShaders(for: pipeline, on: self) ?? []
     }
 
     func publishDeferredAudio(runtime: WPESoundRuntime, generation: Int) {

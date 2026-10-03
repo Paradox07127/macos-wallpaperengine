@@ -186,7 +186,9 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
-            ".write(to": 2,
+            // PNG/text dumps plus DEBUG raw bytes: active app-owned session only,
+            // sanitized filename and exclusive creation; never a scene asset URL.
+            ".write(to": 3,
         ],
         "LiveWallpaper/Infrastructure/Assets/WallpaperEnginePackage.swift": [
             "createFile(": 1,

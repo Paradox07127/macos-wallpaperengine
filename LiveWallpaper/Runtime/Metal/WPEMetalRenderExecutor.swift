@@ -141,8 +141,10 @@ final class WPEMetalRenderExecutor {
     let shaderCompiler: WPESwiftShaderCompiler
     var translatedShaderCache: [String: WPEShaderCompileResult] = [:]
 
-    /// Keyed by `WPEPreparedRenderPass.id`, not by a hash of the preprocessed source — computing that hash means running the GLSL preprocessor every frame.
     var authoredVertexExecutionEnabled = true
+    /// Selected frame bindings only; compiled variants live in translatedShaderCache.
+    var authoredRequestKeyByPassID: [String: String] = [:]
+    var authoredRequestKeyByIdentity: [WPEAuthoredShaderRequestIdentity: String] = [:]
     var authoredShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
     var authoredVertexFailureByPassID: [String: String] = [:]
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
@@ -259,6 +261,7 @@ final class WPEMetalRenderExecutor {
         case solidColor, solidLayer, blendComposite, blendCompositeFramebufferFetch, copy
         case localSceneCapture, composeLayer, compose
         case genericImage2, genericImage4, godraysCombine, effect
+        case solidLayerStraight
     }
 
     struct PassPSOKey: Hashable {
@@ -316,6 +319,15 @@ final class WPEMetalRenderExecutor {
 
     func invalidatePassPipelineStates() {
         passPipelineStates.removeAll()
+    }
+
+    func hasCachedPassPipelineState(
+        passID: String, variant: PassPSOVariant, objectQuad: Bool, blendMode: String,
+        alphaWritePolicy: WPEMetalAlphaWritePolicy, colorPixelFormat: MTLPixelFormat, depthPixelFormat: MTLPixelFormat
+    ) -> Bool {
+        passPipelineStates[PassPSOKey(passID: passID, variant: variant, objectQuad: objectQuad,
+            blending: blendMode, alphaWritePolicy: alphaWritePolicy,
+            colorPixelFormat: colorPixelFormat, depthPixelFormat: depthPixelFormat)] != nil
     }
 
     let customTextureSlotScratch = WPEMetalTextureSlotTable()
@@ -696,6 +708,10 @@ final class WPEMetalRenderExecutor {
         /// Encode present into this scene command buffer. Nil on sync/readback.
         deferredPresent: DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
+        let dynamicLayerIDs = dynamicLayerIDs.union(pipeline.layers.compactMap { layer in
+            layer.passes.contains(where: { $0.pass.visibilityGate != nil }) ? layer.graphLayer.objectID : nil
+        })
+        let pipeline = pipeline.resolvingEffectPublication(passVisibility: passVisibility, camera: cameraUniforms)
         var diagnostics = DiagnosticFrameStats(controls: diagnosticControls)
         diagnostics.particleBatchingEnabled = !diagnosticControls.disableParticleBatching
         diagnostics.solidBatchingEnabled = solidSceneBatchingEnabled && !diagnosticControls.disableSolidBatching
@@ -1461,6 +1477,14 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID, destinationTexture: MTLTexture,
         readsCurrentTarget: Bool, frameState: WPEMetalFrameState
     ) -> WPEAttachmentLoadContract {
+        if pass.publicationVertexRole == .localEffect, !readsCurrentTarget,
+           case .layerComposite(let name) = pass.pass.target, targetID == .named(name),
+           frameState.writtenTargets.contains(targetID),
+           frameState.latestTexture(for: targetID) === destinationTexture,
+           frameState.hasInitialized(destinationTexture) {
+            // The authored quad may leave pixels uncovered; retain this frame's exact private destination.
+            return .init(load: .load, store: .store, reason: .localEffectPreservation)
+        }
         let swapped = if case let .named(name) = targetID { frameState.swapFBONames.contains(name) } else { false }
         return WPEAttachmentLoadContract.color(target: targetID, initialized: frameState.hasInitialized(destinationTexture),
                                                readsCurrentTarget: readsCurrentTarget,
@@ -3043,12 +3067,20 @@ final class WPEMetalRenderExecutor {
     func hasPrewarmedAuthoredPipeline(
         for result: WPEShaderCompileResult, pass: WPEPreparedRenderPass,
         destination: (id: WPEMetalTargetID, texture: MTLTexture), depthPixelFormat: MTLPixelFormat) -> Bool {
+        hasPrewarmedAuthoredPipeline(for: result, pass: pass, targetID: destination.id,
+                                    colorPixelFormat: destination.texture.pixelFormat, depthPixelFormat: depthPixelFormat)
+    }
+
+    func hasPrewarmedAuthoredPipeline(
+        for result: WPEShaderCompileResult, pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID,
+        colorPixelFormat: MTLPixelFormat, depthPixelFormat: MTLPixelFormat
+    ) -> Bool {
         let key = TranslatedPipelineKey(libraryID: ObjectIdentifier(result.library),
             vertexLibraryID: result.vertexStage.map { ObjectIdentifier($0.library) },
             vertexName: result.vertexFunctionName, fragmentName: result.fragmentFunctionName,
             blendMode: blendFacts(pass.pass.blending).lowercased,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
-            colorPixelFormat: destination.texture.pixelFormat.rawValue, depthPixelFormat: depthPixelFormat.rawValue)
+            alphaWritePolicy: .resolve(targetID: targetID, blendMode: pass.pass.blending),
+            colorPixelFormat: colorPixelFormat.rawValue, depthPixelFormat: depthPixelFormat.rawValue)
         return translatedPipelineCache[key] != nil
     }
 
@@ -3419,14 +3451,28 @@ final class WPEMetalRenderExecutor {
     }
 
     /// Returns nil for built-in/shader-less passes. `recordFailure` gates the scene-debug artifact so the warm stays silent.
+    static func shaderPreprocessMemoKey(for pass: WPEPreparedRenderPass) -> WPEShaderPreprocessMemoKey? {
+        guard let program = pass.shader, let fingerprint = program.sourceFingerprint else { return nil }
+        let bindings = Dictionary(uniqueKeysWithValues: pass.textureBindings.compactMap { slot, reference -> (Int, String)? in
+            switch reference {
+            case .image(let name), .asset(let name), .fbo(let name): return (slot, name)
+            case .previous: return nil
+            }
+        })
+        return .init(shaderName: program.name, sourceFingerprint: fingerprint,
+                     comboValues: pass.comboValues, materialTextureBindings: bindings)
+    }
+
     static func makeCompileRequest(
         for pass: WPEPreparedRenderPass,
-        recordFailure: Bool
+        recordFailure: Bool,
+        allowPreprocessing: Bool = true
     ) throws -> WPEShaderCompileRequest? {
         guard let program = pass.shader, !program.isBuiltin else { return nil }
         let premultipliedInputSlots = pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass)
         let premultipliedOutput = pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending)
-        let materialTextureBindings = Dictionary(
+        let key = shaderPreprocessMemoKey(for: pass)
+        let materialTextureBindings = key?.materialTextureBindings ?? Dictionary(
             uniqueKeysWithValues: pass.textureBindings.compactMap { (slot, ref) -> (Int, String)? in
                 switch ref {
                 case .image(let p), .asset(let p): return (slot, p)
@@ -3437,26 +3483,22 @@ final class WPEMetalRenderExecutor {
         )
         do {
             // Memoized on the four inputs of `process`. Builtins carry no fingerprint; a nil here degrades to the uncached path rather than key on a placeholder.
-            let key = program.sourceFingerprint.map { fingerprint in
-                WPEShaderPreprocessMemoKey(
-                    shaderName: program.name,
-                    sourceFingerprint: fingerprint,
-                    comboValues: pass.comboValues,
-                    materialTextureBindings: materialTextureBindings
-                )
-            }
-            let processed = try WPEShaderPreprocessMemoStore.shared.value(for: key) {
-                // program.*Source is already #include-expanded at graph-build time
-                // (WPERenderPipelineBuilder.preprocess); this stage does no include
-                // resolution of its own.
-                let processor = WPEShaderPreprocessor()
-                return try processor.process(
-                    shaderName: program.name,
-                    vertexSource: program.vertexSource,
-                    fragmentSource: program.fragmentSource,
-                    comboValues: pass.comboValues,
-                    materialTextureBindings: materialTextureBindings
-                )
+            let processed: WPEShaderCompileRequest
+            if !allowPreprocessing {
+                guard let cached = WPEShaderPreprocessMemoStore.shared.cachedValue(for: key) else { return nil }
+                processed = cached
+            } else {
+                processed = try WPEShaderPreprocessMemoStore.shared.value(for: key) {
+                    // Includes are expanded at graph-build time.
+                    let processor = WPEShaderPreprocessor()
+                    return try processor.process(
+                        shaderName: program.name,
+                        vertexSource: program.vertexSource,
+                        fragmentSource: program.fragmentSource,
+                        comboValues: pass.comboValues,
+                        materialTextureBindings: materialTextureBindings
+                    )
+                }
             }
             // Applied after the memo on purpose: the PMA flags come from the
             // pass's blend mode and bound targets, not from `process`'s inputs,
@@ -3482,6 +3524,16 @@ final class WPEMetalRenderExecutor {
                 reason: String(describing: error)
             )
         }
+    }
+
+    static func authoredShaderRequestIdentity(
+        for pass: WPEPreparedRenderPass, execution: WPEVertexExecution
+    ) -> WPEAuthoredShaderRequestIdentity? {
+        guard pass.shader?.isBuiltin == false, let preprocessing = shaderPreprocessMemoKey(for: pass) else { return nil }
+        return .init(preprocessing: preprocessing,
+                     inputSlots: pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass),
+                     output: pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending),
+                     execution: execution)
     }
 
     func compileCustomShader(

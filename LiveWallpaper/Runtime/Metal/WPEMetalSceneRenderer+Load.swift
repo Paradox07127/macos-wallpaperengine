@@ -5,6 +5,12 @@ import LiveWallpaperProWPE
 import MetalKit
 
 extension WPEMetalSceneRenderer {
+    static func permitsEffectGatePublication(in document: WPESceneDocument) -> Bool {
+        WPESceneScriptInstanceInventory(document: document).total == 0
+            && document.propertyBindings.isEmpty
+            && document.particleObjects.allSatisfy { $0.instanceOverride?.alphaScript == nil }
+    }
+
     // MARK: - Load entry point
 
     func load(on actor: isolated WPEDisplayRenderActor) async throws {
@@ -275,7 +281,8 @@ extension WPEMetalSceneRenderer {
             sceneHDR: document.general.usesHDRRendering,
             bloom: document.general.bloom
         )
-        let publicationCamera = WPEStaticParentHierarchyContext.permitsScriptFreePublication(in: document)
+        let permitsEffectGates = Self.permitsEffectGatePublication(in: document)
+        let publicationCamera = permitsEffectGates
             && document.cameraMotion == nil && cameraPaths.isEmpty && !document.general.cameraParallax.enabled
             ? cameraUniforms : nil
         let publicationParents = publicationCamera.flatMap { _ in
@@ -287,7 +294,8 @@ extension WPEMetalSceneRenderer {
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             return try builder.buildReportingCanonicalRotation(
                 graph: graph, sceneHDR: document.general.usesHDRRendering,
-                proceduralPublicationCamera: publicationCamera, proceduralParentHierarchy: publicationParents
+                proceduralPublicationCamera: publicationCamera, proceduralParentHierarchy: publicationParents,
+                permitsEffectVisibilityPublication: permitsEffectGates
             )
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
@@ -479,6 +487,8 @@ extension WPEMetalSceneRenderer {
             cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil,
             sceneMotion: cameraUniforms.usesPerspectiveProjection ? nil : cameraUniforms.sceneMotion
         )
+        configureSceneScriptVideoSourceMapping()
+        publishVideoPlaybackSnapshots()
         loadDynamicOriginScripts(from: document, scriptLoadToken: scriptLoadToken)
         loadEffectConstantScripts(from: pipeline, document: document, scriptLoadToken: scriptLoadToken)
         loadEffectVisibilityScripts(from: pipeline, scriptLoadToken: scriptLoadToken)
@@ -497,6 +507,8 @@ extension WPEMetalSceneRenderer {
             return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
         }
         indexOnDemandVideoLayers(pipeline: pipeline)
+        configureSceneScriptVideoSourceMapping()
+        publishVideoPlaybackSnapshots()
         debugStage("textures.load.done", "loaded=\(loadedTextures.count) dynamic=\(dynamicTextureSources.count)")
         dumpLoadedTexturesIfRequested()
         try Task.checkCancellation()
@@ -539,8 +551,9 @@ extension WPEMetalSceneRenderer {
             scriptsAreBaked: &scriptsAreBaked
         )
 
-        await shaderWarmTask.value
+        let readyPublicationLayers = await shaderWarmTask.value
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        renderPipeline = renderPipeline?.retainingEffectPublication(in: readyPublicationLayers)
         prepareSceneScriptsForFirstFrame(
             scriptLoadToken,
             scriptsAreBaked: &scriptsAreBaked

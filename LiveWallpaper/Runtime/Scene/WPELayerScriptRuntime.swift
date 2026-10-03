@@ -20,6 +20,8 @@ enum WPELayerVideoCommand: Sendable, Equatable {
     case pause
     case stop
     case seek(TimeInterval)
+    case setRate(Double)
+    case setLoop(Bool)
 }
 
 /// Scalar vs Vec2/Vec3 shape for property init/update (wrong shape is a silent undefined).
@@ -1617,6 +1619,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate var hasLoggedUnsupportedLayerOperation = false
     /// Key "" = thisLayer, else the getLayer name. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
     fileprivate var pendingVideo: [String: [WPELayerVideoCommand]] = [:]
+    private var pendingVideoIntents: [(sourceKey: String, command: WPELayerVideoCommand)] = []
     /// Last play/stop intent per sound layer, so `isPlaying()` answers without
     /// a read-back channel into the audio graph.
     fileprivate var soundIntent: [String: Bool] = [:]
@@ -2295,18 +2298,92 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let append: @Sendable (WPELayerVideoCommand) -> Void = { [weak self] command in
             guard let self, evaluationResourceBudget.admitVideoCommand() else { return }
             pendingVideo[key, default: []].append(command)
+            if let objectID = layerInfo(forKey: key)?.id,
+               let sourceKey = shared?.videoSourceKey(objectID: objectID) {
+                pendingVideoIntents.append((sourceKey, command))
+            }
         }
         let play: @convention(block) () -> Void = { append(.play) }
         let pause: @convention(block) () -> Void = { append(.pause) }
         let stop: @convention(block) () -> Void = { append(.stop) }
-        let setCurrentTime: @convention(block) (JSValue) -> Void = { arg in append(.seek(arg.toDouble())) }
-        let getCurrentTime: @convention(block) () -> Double = { 0 }
+        let setCurrentTime: @convention(block) (JSValue) -> Void = { [weak context] arg in
+            guard arg.isNumber, arg.toDouble().isFinite, arg.toDouble() >= 0 else {
+                if let context {
+                    context.exception = JSValue(newErrorFromMessage: "Video seek requires a finite non-negative number", in: context)
+                }
+                return
+            }
+            append(.seek(arg.toDouble()))
+        }
+        let getCurrentTime: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let context else { return nil }
+            guard let snapshot = self?.videoSnapshot(forKey: key) else { return JSValue(undefinedIn: context) }
+            return JSValue(double: snapshot.currentTime, in: context)
+        }
+        let isPlaying: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let context else { return nil }
+            guard let snapshot = self?.videoSnapshot(forKey: key) else { return JSValue(undefinedIn: context) }
+            return JSValue(bool: snapshot.isPlaying, in: context)
+        }
         handle.setObject(play, forKeyedSubscript: "play" as NSString)
         handle.setObject(pause, forKeyedSubscript: "pause" as NSString)
         handle.setObject(stop, forKeyedSubscript: "stop" as NSString)
         handle.setObject(setCurrentTime, forKeyedSubscript: "setCurrentTime" as NSString)
         handle.setObject(getCurrentTime, forKeyedSubscript: "getCurrentTime" as NSString)
+        handle.setObject(isPlaying, forKeyedSubscript: "isPlaying" as NSString)
+        if let object = context.objectForKeyedSubscript("Object"),
+           let define = object.objectForKeyedSubscript("defineProperty") {
+            for property in ["duration", "rate", "loop"] {
+                let get: @convention(block) () -> JSValue? = { [weak self, weak context] in
+                    guard let context else { return nil }
+                    guard let snapshot = self?.videoSnapshot(forKey: key) else { return JSValue(undefinedIn: context) }
+                    let value: Double = switch property {
+                    case "duration": snapshot.duration
+                    case "rate": snapshot.rate
+                    default: snapshot.loop ? 1 : 0
+                    }
+                    return JSValue(double: value, in: context)
+                }
+                guard let descriptor = JSValue(newObjectIn: context) else { continue }
+                descriptor.setObject(get, forKeyedSubscript: "get" as NSString)
+                descriptor.setObject(true, forKeyedSubscript: "enumerable" as NSString)
+                if property == "rate" {
+                    let set: @convention(block) (JSValue) -> Void = { [weak context] raw in
+                        guard raw.isNumber, raw.toDouble().isFinite, (0.5 ... 2).contains(raw.toDouble()) else {
+                            if let context {
+                                context.exception = JSValue(newErrorFromMessage: "Video rate is supported for finite numbers from 0.5 to 2", in: context)
+                            }
+                            return
+                        }
+                        append(.setRate(raw.toDouble()))
+                    }
+                    descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
+                } else if property == "loop" {
+                    let set: @convention(block) (JSValue) -> Void = { [weak context] raw in
+                        guard raw.isBoolean else {
+                            if let context {
+                                context.exception = JSValue(newErrorFromMessage: "Video loop requires a boolean", in: context)
+                            }
+                            return
+                        }
+                        append(.setLoop(raw.toBool()))
+                    }
+                    descriptor.setObject(set, forKeyedSubscript: "set" as NSString)
+                }
+                define.call(withArguments: [handle, property, descriptor])
+            }
+        }
         return handle
+    }
+
+    private func videoSnapshot(forKey key: String) -> WPEVideoPlaybackSnapshot? {
+        guard let objectID = layerInfo(forKey: key)?.id,
+              var snapshot = shared?.videoPlaybackSnapshot(objectID: objectID) else { return nil }
+        let sourceKey = shared?.videoSourceKey(objectID: objectID)
+        for intent in pendingVideoIntents where intent.sourceKey == sourceKey {
+            snapshot.applyEvaluationIntent(intent.command)
+        }
+        return snapshot
     }
 
     func readOutput() -> WPELayerScriptOutput {
@@ -2337,6 +2414,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             }
         }
         pendingVideo.removeAll(keepingCapacity: true)
+        pendingVideoIntents.removeAll(keepingCapacity: true)
         return WPELayerScriptOutput(
             own: own,
             others: others,

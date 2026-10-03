@@ -778,6 +778,14 @@ struct WPEVideoYCbCrUniforms {
     return half4(wpe_attachment_premultiply(uniforms.color.rgb, alpha));
 }
 
+[[fragment]] half4 wpe_solidlayer_straight_fragment(
+    WPEVertexOut in [[stage_in]],
+    constant WPESolidUniforms& uniforms [[buffer(0)]]
+) {
+    (void)in;
+    return half4(wpe_attachment_output(float4(uniforms.color.rgb, saturate(uniforms.color.a))));
+}
+
 [[fragment]] half4 wpe_util_copy_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]

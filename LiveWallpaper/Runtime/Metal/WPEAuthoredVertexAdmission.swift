@@ -198,7 +198,8 @@ extension WPEMetalRenderExecutor {
             if ["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"].contains(uniform.name), uniform.materialName == nil {
                 guard uniform.glslType == "mat4", uniform.arrayLength == nil else { return .invalidMatrix(uniform.name) }
                 if vertex.execution == .authoredFullscreen {
-                    guard result.fullscreenMVPPositionOnly else { return .unverifiedFullscreenMVP }
+                    guard result.fullscreenMVPPositionOnly
+                        || (pass.publicationVertexRole == .localEffect && result.localEffectMVPPositionOnly) else { return .unverifiedFullscreenMVP }
                     continue
                 }
                 guard let values = frameUniformContext.value(named: uniform.name, passID: pass.id)?.vectorValue,

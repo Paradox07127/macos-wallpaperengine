@@ -112,6 +112,7 @@ extension WPEMetalSceneRenderer {
         // Scene-scoped: do not reset inside `releaseTransientResources()` — that is also the `.suspended` path and would blank the inspector's failure list for a still-loaded scene.
         executor.shaderErrorSink.reset()
         executor.releaseTransientResources()
+        executor.authoredRequestKeyByIdentity.removeAll()
     }
 
     /// Suspend-path resource-release depth, not a third performance profile.
@@ -830,6 +831,7 @@ extension WPEMetalSceneRenderer {
         cachedSnapshot = nil
         resolutionTracer.reset()
         executor.releaseTransientResources()
+        executor.authoredRequestKeyByIdentity.removeAll()
         stopEngineAssetsAccessIfNeeded()
         #if DEBUG
         releaseDebugActorIfNeeded()

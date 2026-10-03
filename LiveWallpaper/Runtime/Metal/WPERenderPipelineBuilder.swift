@@ -68,13 +68,15 @@ struct WPERenderPipelineBuilder: Sendable {
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
         fullFramePassthroughElisionEnabled: Bool? = nil,
         proceduralPublicationCamera: WPEMetalCameraUniforms? = nil,
-        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil
+        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil,
+        permitsEffectVisibilityPublication: Bool = false
     ) throws -> WPEPreparedRenderPipeline {
         try buildReportingCanonicalRotation(
             graph: graph, canonicalCompositeRotationEnabled: canonicalCompositeRotationEnabled, sceneHDR: sceneHDR,
             fullFramePassthroughElisionEnabled: fullFramePassthroughElisionEnabled,
             proceduralPublicationCamera: proceduralPublicationCamera,
-            proceduralParentHierarchy: proceduralParentHierarchy
+            proceduralParentHierarchy: proceduralParentHierarchy,
+            permitsEffectVisibilityPublication: permitsEffectVisibilityPublication
         ).pipeline
     }
 
@@ -82,7 +84,8 @@ struct WPERenderPipelineBuilder: Sendable {
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
         fullFramePassthroughElisionEnabled: Bool? = nil,
         proceduralPublicationCamera: WPEMetalCameraUniforms? = nil,
-        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil
+        proceduralParentHierarchy: WPEStaticParentHierarchyContext? = nil,
+        permitsEffectVisibilityPublication: Bool = false
     ) throws -> (
         pipeline: WPEPreparedRenderPipeline,
         canonicalRotation: WPECanonicalCompositeRotationReport,
@@ -106,8 +109,9 @@ struct WPERenderPipelineBuilder: Sendable {
         }
         var pipeline = WPEPreparedRenderPipeline(layers: layers)
         if let camera = proceduralPublicationCamera, !sceneHDR {
-            pipeline = WPERenderGraphBuilder.publishingProceduralEffects(
+            pipeline = WPERenderGraphBuilder.preparingEffectPublication(
                 in: pipeline, camera: camera, parentHierarchy: proceduralParentHierarchy,
+                permitsVisibilityGates: permitsEffectVisibilityPublication,
                 staticSourceExtent: staticCompositeSourceExtent
             )
         }

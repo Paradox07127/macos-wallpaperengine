@@ -8,6 +8,7 @@ struct WPEAttachmentLoadContract: Equatable, Sendable {
     enum Reason: String, Sendable {
         case uninitialized, targetFeedback, sceneAccumulation, groupAccumulation
         case blendDestination, scratchOverwrite, fullOverwrite, transientDepth, persistentDepth, swappedPersistence
+        case localEffectPreservation
     }
 
     let load: MTLLoadAction

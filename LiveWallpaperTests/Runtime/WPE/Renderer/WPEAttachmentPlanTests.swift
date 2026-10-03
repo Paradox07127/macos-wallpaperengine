@@ -93,6 +93,60 @@ struct WPEAttachmentPlanTests {
         #expect(WPEAttachmentLoadContract.fullOverwrite.load == .dontCare)
     }
 
+    @Test func localPublicationPreservesOnlyAnExactCurrentFramePrivateWrite() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        let destination = try #require(device.makeTexture(descriptor: descriptor))
+        let alternate = try #require(device.makeTexture(descriptor: descriptor))
+        let target = WPEMetalTargetID.named("a")
+        let marked = localEffect(target: .layerComposite(name: "a"), role: .localEffect)
+        func contract(_ pass: WPEPreparedRenderPass, _ frame: WPEMetalFrameState, texture: MTLTexture? = nil,
+                      targetID: WPEMetalTargetID? = nil, feedback: Bool = false) -> WPEAttachmentLoadContract {
+            executor.attachmentLoadContract(for: pass, targetID: targetID ?? target, destinationTexture: texture ?? destination,
+                                            readsCurrentTarget: feedback, frameState: frame)
+        }
+        var written = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4))
+        written.registerWrite(texture: destination, targetID: target)
+        #expect(contract(marked, written) == .init(load: .load, store: .store, reason: .localEffectPreservation))
+        #expect(contract(marked, written, feedback: true).reason == .targetFeedback)
+
+        let history = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4), previousNamedTextures: ["a": destination])
+        #expect(contract(marked, history) == .init(load: .clear, store: .store, reason: .uninitialized))
+        var initializedOnly = history
+        initializedOnly.markInitialized(destination)
+        #expect(contract(marked, initializedOnly) == .init(load: .clear, store: .store, reason: .scratchOverwrite))
+        var wrongPhysical = written
+        wrongPhysical.markInitialized(alternate)
+        #expect(contract(marked, wrongPhysical, texture: alternate).load == .clear)
+        var foreignWrite = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4))
+        foreignWrite.registerWrite(texture: destination, targetID: .named("foreign"))
+        #expect(contract(marked, foreignWrite).load == .clear)
+        #expect(contract(marked, written, targetID: .named("foreign")).load == .clear)
+
+        let canonical = localEffect(target: .layerComposite(name: "a"), role: nil)
+        #expect(contract(canonical, written).reason == .scratchOverwrite)
+        let legacy = pass("legacy-copy", source: .fbo("b"), target: .layerComposite(name: "a"))
+        #expect(contract(legacy, written).reason == .scratchOverwrite)
+        let markedFBO = localEffect(target: .fbo(name: "a"), role: .localEffect)
+        #expect(contract(markedFBO, written).reason == .scratchOverwrite)
+        var sceneWritten = written
+        sceneWritten.registerWrite(texture: output, targetID: .scene)
+        let terminal = localEffect(target: .scene, role: nil)
+        #expect(contract(terminal, sceneWritten, texture: output, targetID: .scene).reason == .sceneAccumulation)
+        let reset = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4), previousNamedTextures: written.latestNamedTextures)
+        #expect(contract(marked, reset).reason == .uninitialized)
+    }
+
+    private func localEffect(target: WPERenderTarget, role: WPEPublicationVertexRole?) -> WPEPreparedRenderPass {
+        let raw = WPERenderPass(id: "local", phase: .effect(file: "test/probe.json"), shader: "local-probe",
+                                source: .fbo("b"), target: target, textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        return WPEPreparedRenderPass(pass: raw, shader: nil, textureBindings: [0: .fbo("b")], comboValues: [:], uniformValues: [:],
+                                     alphaContract: .init(unpremultipliedInputSlots: [], premultipliedOutput: false), publicationVertexRole: role)
+    }
+
     private func pass(_ id: String, source: WPETextureReference, target: WPERenderTarget,
                       bindings: [Int: WPETextureReference]? = nil, gate: WPEPassVisibilityGate? = nil) -> WPEPreparedRenderPass {
         let raw = WPERenderPass(id: id, phase: .material, shader: "commands/copy", source: source, target: target,

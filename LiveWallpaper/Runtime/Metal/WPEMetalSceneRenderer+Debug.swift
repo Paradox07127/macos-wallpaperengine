@@ -40,13 +40,13 @@ extension WPEMetalSceneRenderer {
     }
 
     #if DEBUG
-    func dumpScenePassesIfRequested(suffix: String = "") {
+    func dumpScenePassesIfRequested(suffix: String = "", frameOrdinal: Int = 0) {
         let wantedID = UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
         let pngRequested = (wantedID?.isEmpty == false) && wantedID == descriptor.workshopID
         // `recordPassOutputs` matches by pass id, so passing the full dump list is idempotent.
         guard pngRequested || WPEOracleMode.perPassHashesEnabled else { return }
         let dumps = executor.scenePassDumps
-        WPECanonicalTraceRecorder.shared.recordPassOutputs(dumps)
+        WPECanonicalTraceRecorder.shared.recordPassOutputs(dumps, frameOrdinal: frameOrdinal)
         guard pngRequested else { return }
         Logger.notice(
             "[WPEDumpScenePasses] dumping \(dumps.count) scene-target passes\(suffix.isEmpty ? " (t0)" : " \(suffix)") for \(descriptor.workshopID)",

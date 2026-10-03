@@ -130,6 +130,8 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     /// Recomputed from active GLSL on warm and cold assembly. Native fullscreen
     /// clip geometry preserves XY only; non-position MVP use needs a WPE producer.
     var fullscreenMVPPositionOnly: Bool = false
+    /// A separate proof for the captured local effect clip-input role.
+    var localEffectMVPPositionOnly: Bool = false
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {
@@ -141,7 +143,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 39
+    static let schemaVersion = 40
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

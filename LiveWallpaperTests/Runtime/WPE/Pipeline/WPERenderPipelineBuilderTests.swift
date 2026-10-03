@@ -8,6 +8,263 @@ import Testing
 
 @Suite("WPE render pipeline builder")
 struct WPERenderPipelineBuilderTests {
+    @Test("Independent effect publication preserves canonical gates and reconnects every active subset",
+          arguments: [false, true], [2, 3])
+    func independentEffectPublication(reverse: Bool, count: Int) throws {
+        let (fixture, document) = try effectPublicationFixture(count: count, reverse: reverse)
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        let owner = try #require(canonical.layers.first)
+        let descriptor = try #require(owner.effectPublication)
+        #expect(descriptor.scope == .nativeSolidChain)
+        #expect(owner.passes == original.layers[0].passes)
+        #expect(owner.graphLayer == original.layers[0].graphLayer)
+        #expect(descriptor.effects.map(\.passID) == owner.passes.dropFirst().dropLast().map(\.id))
+        #expect(owner.replacing().effectPublication == descriptor)
+        let prewarm = owner.effectPublicationPrewarmPasses(camera: camera)
+        #expect(prewarm.count == count * 4 + 2)
+        #expect(prewarm[0].pass.target == .layerComposite(name: owner.graphLayer.compositeA) && prewarm[0].pass.blending == "disabled")
+        #expect(prewarm[1].pass.target == .scene && prewarm[1].pass.blending == "normal")
+        #expect(prewarm.prefix(2).allSatisfy { $0.alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false) })
+        #expect(prewarm.prefix(2).allSatisfy { $0.publicationVertexRole == nil })
+        #expect(prewarm.dropFirst(2).allSatisfy {
+            $0.publicationVertexRole == ($0.pass.target == .scene ? nil : .localEffect)
+        })
+        #expect(WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: canonical, sceneHDR: true).pipeline == canonical)
+        #expect(WPERenderGraphBuilder.elidingFullFramePassthroughs(in: canonical, sceneHDR: true).pipeline == canonical)
+        #expect(canonical.retainingEffectPublication(in: []).layers[0].passes == owner.passes)
+        #expect(canonical.retainingEffectPublication(in: []).layers[0].effectPublication == nil)
+        let effects = Array(owner.passes.dropFirst().dropLast())
+        let cold = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
+        #expect(cold.layers[0].passes.count == 1 && cold.layers[0].passes[0].pass.target == .scene)
+        #expect(cold.layers[0].passes[0].pass.blending == "normal")
+        #expect(cold.layers[0].passes[0].alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false))
+        #expect(cold.layers[0].passes[0].uniformValues["g_Color"] == .vector([0.8, 0.2, 0.6, 0.375]))
+        #if DEBUG
+        #expect(WPEMetalShaderDispatcher.builtinTraceMetadata(for: .solidLayer, passShader: "solidlayer",
+                                                              alphaContract: cold.layers[0].passes[0].alphaContract).fragmentShaderName
+                == "wpe_solidlayer_straight_fragment")
+        #expect(WPEMetalShaderDispatcher.builtinTraceMetadata(for: .solidLayer, passShader: "solidlayer").fragmentShaderName
+            == "wpe_solidlayer_fragment")
+        #endif
+        for mask in 0 ..< (1 << count) {
+            var visibility: [String: Bool] = [:]
+            for (index, effect) in effects.enumerated() {
+                try visibility[#require(effect.pass.visibilityGate?.id)] = mask & (1 << index) != 0
+            }
+            let frame = canonical.resolvingEffectPublication(passVisibility: visibility, camera: camera)
+            let layer = try #require(frame.layers.first)
+            let selected = effects.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
+            #expect(layer.effectPublication == nil)
+            #expect(layer.graphLayer.passes == layer.passes.map(\.pass))
+            #expect(layer.passes.map(\.id) == [owner.passes[0].id] + selected.map(\.id))
+            #expect(layer.passes.allSatisfy { $0.pass.visibilityGate == nil })
+            #expect(layer.passes.last?.pass.target == .scene)
+            #expect(frame.resolvingEffectPublication(passVisibility: [:], camera: camera) == frame)
+            #expect(canonical.layers[0].passes == owner.passes)
+            var predecessor = WPETextureReference.fbo(owner.graphLayer.compositeA)
+            for (index, effect) in layer.passes.dropFirst().enumerated() {
+                #expect(effect.pass.source == predecessor)
+                #expect(effect.pass.textures.values.allSatisfy { $0 == predecessor })
+                #expect(effect.pass.binds.values.allSatisfy { $0 == predecessor })
+                #expect(effect.textureBindings.values.allSatisfy { $0 == predecessor })
+                #expect(effect.access.matches(pass: effect.pass, textureBindings: effect.textureBindings))
+                #expect(!effect.access.readsCurrentTarget && !effect.access.hasPreviousReference)
+                #expect(effect.alphaContract == .init(unpremultipliedInputSlots: [], premultipliedOutput: false))
+                let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
+                #expect(request.premultipliedInputSlots.isEmpty && !request.premultipliedOutput)
+                if index == selected.count - 1 {
+                    #expect(effect.pass.target == .scene && effect.pass.blending == "normal")
+                    #expect(effect.publicationVertexRole == nil)
+                } else {
+                    let expected = index.isMultiple(of: 2) ? owner.graphLayer.compositeB : owner.graphLayer.compositeA
+                    #expect(effect.pass.target == .layerComposite(name: expected))
+                    #expect(effect.pass.blending == "disabled")
+                    #expect(effect.publicationVertexRole == .localEffect)
+                    #expect(effect.pass.target.textureReference != predecessor)
+                    predecessor = .fbo(expected)
+                }
+            }
+            let rebuilt = frame.addingMetalRuntimeUniforms(
+                .init(time: 0, daytime: 0, brightness: 1, pointerPosition: .zero), camera: camera,
+                scriptedConstants: Dictionary(uniqueKeysWithValues: layer.passes.map { ($0.id, ["roleProbe": .number(1)]) })
+            ).pipeline
+            #expect(rebuilt.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
+            let overlay = frame.applyingFrameOverlay(.init(visibility: [:], alpha: [owner.id: 0.5], colors: [:]))
+            #expect(overlay.layers[0].passes.map(\.publicationVertexRole) == layer.passes.map(\.publicationVertexRole))
+        }
+        #expect(canonical.resolvingEffectPublication(passVisibility: [:], camera: camera) == cold)
+    }
+
+    @Test("Multi-material and ambiguous effect instances reject publication without partial rewrites",
+          arguments: ["multi-material", "multi-effect-pass", "duplicate-id", "missing-identity", "external-read", "external-write", "history", "extra-slot", "fbo", "owner-script", "parent", "base-history", "base-foreign-fbo", "base-raw-binding", "base-explicit-target", "copy-history", "copy-foreign-binding", "custom-base", "sampled-authored-source", "vertex-sampled-authored-source", "metadata-authored-source"])
+    func effectPublicationRejectsUnprovedChains(scope: String) throws {
+        let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false, rejection: scope)
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        var original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        if scope == "missing-identity" || scope.hasPrefix("base-") || scope.hasPrefix("copy-") {
+            let owner = original.layers[0]
+            let passes = owner.passes.enumerated().map { index, prepared -> WPEPreparedRenderPass in
+                let changesIdentity = scope == "missing-identity" && prepared.pass.authoredJSON.effectIdentity != nil
+                let changesBase = scope.hasPrefix("base-") && index == 0
+                let changesCopy = scope.hasPrefix("copy-") && index == owner.passes.count - 1
+                guard changesIdentity || changesBase || changesCopy else { return prepared }
+                let pass = prepared.pass, authored = pass.authoredJSON
+                let source: WPETextureReference = scope.hasSuffix("history") ? .previous
+                    : (scope == "base-foreign-fbo" ? .fbo("foreign") : pass.source)
+                let binds: [Int: WPETextureReference] = scope.hasSuffix("binding") ? [0: .fbo("foreign")] : pass.binds
+                var materialPass = authored.materialPass
+                if scope == "base-explicit-target" {
+                    var fields: [String: WPESceneJSONValue] = [:]
+                    if case let .object(existing)? = materialPass {
+                        fields = existing
+                    }
+                    fields["target"] = .string("foreign")
+                    materialPass = .object(fields)
+                }
+                let rewritten = WPERenderPass(
+                    id: pass.id, phase: pass.phase, shader: pass.shader, source: source, target: pass.target,
+                    textures: pass.textures, binds: binds, constants: pass.constants, combos: pass.combos,
+                    userTextureBindings: pass.userTextureBindings,
+                    authoredJSON: .init(materialDocument: authored.materialDocument, materialPass: materialPass,
+                                        effectDocument: authored.effectDocument, effectPass: authored.effectPass,
+                                        effectIdentity: changesIdentity ? nil : authored.effectIdentity),
+                    blending: pass.blending, cullMode: pass.cullMode, depthTest: pass.depthTest, depthWrite: pass.depthWrite,
+                    constantScripts: pass.constantScripts, visibilityGate: pass.visibilityGate
+                )
+                return .init(pass: rewritten, shader: prepared.shader, textureBindings: prepared.textureBindings,
+                             comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
+                             materialUniformNames: prepared.materialUniformNames, stageUniformBindings: prepared.stageUniformBindings,
+                             layerTintOverride: prepared.layerTintOverride, alphaContract: prepared.alphaContract)
+            }
+            original = .init(layers: [owner.replacing(graphLayer: owner.graphLayer.replacingPasses(passes.map(\.pass)), passes: passes)])
+        }
+        if scope.hasPrefix("external") {
+            let owner = original.layers[0]
+            let template = owner.passes[0]
+            let consumerPass = WPERenderPass(
+                id: "consumer.0", phase: .material, shader: template.pass.shader,
+                source: scope == "external-read" ? .fbo(owner.graphLayer.compositeB) : template.pass.source,
+                target: scope == "external-write" ? .fbo(name: owner.graphLayer.compositeA) : .scene,
+                textures: [:], binds: [:], constants: [:], combos: [:],
+                blending: "normal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+            )
+            let consumer = WPERenderLayer(objectID: "consumer", objectName: "consumer", imagePath: "models/solid.json",
+                                          materialPath: nil, geometry: .identity, compositeA: "consumer-a", compositeB: "consumer-b",
+                                          localFBOs: [], passes: [consumerPass])
+            original = WPEPreparedRenderPipeline(layers: original.layers + [WPEPreparedRenderLayer(
+                graphLayer: consumer, passes: [.init(pass: consumerPass, shader: template.shader,
+                                                     textureBindings: [:], comboValues: [:], uniformValues: [:])]
+            )])
+        }
+        let prepared = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        #expect(prepared == original)
+        #expect(prepared.resolvingEffectPublication(passVisibility: [:], camera: camera) == original)
+    }
+
+    @Test("Sampler-free authored white slot remains canonical while selected frame bindings use the active producer")
+    func unusedAuthoredEffectTexturePublication() throws {
+        let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false, rejection: "unused-authored-source")
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        let owner = canonical.layers[0]
+        #expect(owner.effectPublication?.scope == .nativeSolidChain)
+        #expect(owner.passes == original.layers[0].passes)
+        #expect(owner.graphLayer == original.layers[0].graphLayer)
+        let effect = owner.passes[1]
+        #expect(effect.pass.textures[0] != effect.pass.source)
+        #expect(effect.textureBindings[0] == effect.pass.source)
+        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false))
+        let link = try WPEShaderStageLink(vertex: request.processedVertexSource, fragment: request.processedFragmentSource)
+        #expect(!link.interface.variables.contains { $0.glslType.hasPrefix("sampler") })
+        let visibility = Dictionary(uniqueKeysWithValues: owner.passes.compactMap { prepared in
+            prepared.pass.visibilityGate.map { ($0.id, true) }
+        })
+        let frame = canonical.resolvingEffectPublication(passVisibility: visibility, camera: camera)
+        #expect(frame.layers[0].passes.count == 3)
+        var predecessor = WPETextureReference.fbo(owner.graphLayer.compositeA)
+        for selected in frame.layers[0].passes.dropFirst() {
+            #expect(selected.pass.source == predecessor)
+            #expect(selected.pass.textures == [0: predecessor])
+            #expect(selected.textureBindings[0] == predecessor)
+            #expect(selected.access.matches(pass: selected.pass, textureBindings: selected.textureBindings))
+            #expect(!selected.access.readsCurrentTarget)
+            predecessor = selected.pass.target.textureReference ?? predecessor
+        }
+        #expect(canonical.layers[0].passes == owner.passes)
+    }
+
+    private func effectPublicationFixture(count: Int, reverse: Bool, rejection: String = "") throws
+        -> (fixture: Fixture, document: WPESceneDocument) {
+        func json(_ value: Any) throws -> String {
+            try #require(String(data: JSONSerialization.data(withJSONObject: value), encoding: .utf8))
+        }
+        var material: [String: Any] = ["shader": "chain", "textures": [NSNull()], "blending": "disabled", "cullmode": "nocull"]
+        if rejection.hasSuffix("authored-source") {
+            material["textures"] = ["util/white"]
+        }
+        if rejection == "history" {
+            material["textures"] = ["previous"]
+        }
+        if rejection == "extra-slot" {
+            material["textures"] = [NSNull(), "external"]
+        }
+        var asset: [String: Any] = ["passes": [["material": "materials/chain.json"]]]
+        if rejection == "multi-effect-pass" {
+            asset["passes"] = [["material": "materials/chain.json"], ["material": "materials/chain.json"]]
+        }
+        if rejection == "fbo" {
+            asset["fbos"] = [["name": "scratch", "scale": 1]]
+        }
+        var vertex = "attribute vec3 a_Position; attribute vec2 a_TexCoord; uniform mat4 g_ModelViewProjectionMatrix; varying vec2 uv; void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position,1);uv=a_TexCoord;}"
+        var fragment = "uniform sampler2D g_Texture0; varying vec2 uv; void main(){vec4 c=texture2D(g_Texture0,uv);gl_FragColor=vec4(c.yx,c.z,c.a*0.5);}"
+        if ["unused-authored-source", "metadata-authored-source", "vertex-sampled-authored-source"].contains(rejection) {
+            fragment = "varying vec2 uv; void main(){gl_FragColor=vec4(uv,0.25,0.375);}"
+        }
+        if rejection == "metadata-authored-source" {
+            fragment = "uniform vec4 g_Texture0Resolution; varying vec2 uv; void main(){gl_FragColor=vec4(uv*g_Texture0Resolution.zw,0.25,0.375);}"
+        }
+        if rejection == "vertex-sampled-authored-source" {
+            vertex = "attribute vec3 a_Position; attribute vec2 a_TexCoord; uniform mat4 g_ModelViewProjectionMatrix; uniform sampler2D g_Texture0; varying vec2 uv; void main(){gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position.xy+texture2D(g_Texture0,a_TexCoord).xy,0,1);uv=a_TexCoord;}"
+        }
+        let fixture = try makeFixture(files: [
+            "models/solid.json": #"{"material":"materials/base.json"}"#,
+            "materials/base.json": #"{"passes":[{"shader":"solidlayer","blending":"normal","cullmode":"nocull"}]}"#,
+            "materials/chain.json": json(["passes": rejection == "multi-material" ? [material, material] : [material]]),
+            "effects/chain.json": json(asset),
+            "shaders/chain.vert": vertex,
+            "shaders/chain.frag": fragment,
+        ])
+        var effects: [[String: Any]] = (0 ..< count).map { index in
+            ["id": rejection == "duplicate-id" ? 7 : index + 7, "file": "effects/chain.json",
+             "visible": ["value": false, "script": "export function update(v){return engine.userProperties.gate\(index);}"]]
+        }
+        if reverse {
+            effects.reverse()
+        }
+        var owner: [String: Any] = ["id": 1, "image": rejection == "custom-base" ? "models/solid.json" : "models/util/solidlayer.json",
+                                    "origin": "128 64 0", "size": "160 96", "color": "0.8 0.2 0.6", "alpha": 0.375, "effects": effects]
+        if rejection == "owner-script" {
+            owner["origin"] = ["value": "128 64 0", "script": "export function update(v){return v;}"]
+        }
+        if rejection == "parent" {
+            owner["parent"] = 2
+        }
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["eye": "0 0 0", "center": "0 0 -1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128]], "objects": [owner],
+        ]))
+        return (fixture, document)
+    }
+
     @Test("Static positive flat parent publication preserves full hierarchy shear and rejects incomplete or mutable ancestry",
           arguments: ["identity", "combined", "deep", "missing", "cycle", "parent-link", "negative", "zero", "zero-z", "3d", "overflow", "animation", "leaf-animation", "shape", "effect-script", "cross-layer-script", "text-parent", "parallax"])
     func staticParentPublication(scope: String) throws {
@@ -115,12 +372,20 @@ struct WPERenderPipelineBuilderTests {
         let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
         let camera = WPEMetalCameraUniforms(orthogonalProjection: scene.general.orthogonalProjection, sceneCamera: scene.camera)
         let original = try builder.build(graph: graph)
-        let pipeline = try builder.build(graph: graph, proceduralPublicationCamera: camera, proceduralParentHierarchy: context)
+        let canonical = try builder.build(graph: graph, proceduralPublicationCamera: camera, proceduralParentHierarchy: context)
+        let pipeline = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
         guard ["identity", "combined", "deep"].contains(scope) else {
             #expect(pipeline == original)
             return
         }
         let layer = try #require(pipeline.layers.first { $0.id == "1" })
+        let canonicalLayer = try #require(canonical.layers.first { $0.id == "1" })
+        #expect(canonicalLayer.passes == original.layers.first { $0.id == "1" }?.passes)
+        #expect(canonicalLayer.passes.count == 3 && canonicalLayer.effectPublication != nil)
+        #expect(canonicalLayer.effectPublication?.scope == .legacyStaticSingleEffect)
+        #expect(canonicalLayer.modelMatrix == nil)
+        #expect(layer.effectPublication == nil)
+        #expect(layer.passes.allSatisfy { $0.publicationVertexRole == nil })
         #expect(layer.passes.count == 2 && layer.passes.last?.pass.target == .scene)
         #expect(layer.hasStaticParentModel)
         #expect(layer.graphLayer.parentObjectID == "2" && layer.graphLayer.localGeometry != nil)
@@ -167,9 +432,9 @@ struct WPERenderPipelineBuilderTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let pass = layer.passes[1]
-        let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
-        let compiled = try executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
-        executor.authoredShaderResultByPassID[pass.id] = compiled
+        let request = try #require(executor.authoredPrewarmRequest(for: pass, execution: .authoredObjectQuad))
+        let compiled = try executor.shaderCompiler.compile(request)
+        executor.seedTranslatedShaderCache([(key: request.translationCacheKey, result: compiled)])
         let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(
             device: device, defaultLibrary: executor.defaultLibrary, result: compiled, vertexName: nil,
             blendMode: "disabled", alphaWritePolicy: WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled"),
@@ -251,6 +516,7 @@ struct WPERenderPipelineBuilderTests {
             _ = try #require(scene.transformHostObjects.first?.originScript)
         }
         #expect(WPEStaticParentHierarchyContext.permitsScriptFreePublication(in: scene) == (scope == "none"))
+        #expect(WPEMetalSceneRenderer.permitsEffectGatePublication(in: scene) == (scope == "none" || scope == "effect-visible"))
     }
 
     @Test("Complete matrix resolution cannot reuse truncated legacy ancestry and accepts the bounded full chain")
@@ -358,12 +624,17 @@ struct WPERenderPipelineBuilderTests {
         let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
         let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
         let original = try builder.build(graph: graph)
-        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let canonical = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let result = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
         guard ["square", "padded", "default-base"].contains(scope) else {
             #expect(result == original)
             return
         }
         let layer = try #require(result.layers.first)
+        #expect(canonical.layers.first?.passes == original.layers.first?.passes)
+        #expect(canonical.layers.first?.passes.count == 3 && canonical.layers.first?.effectPublication != nil)
+        #expect(canonical.layers.first?.effectPublication?.scope == .legacyStaticSingleEffect)
+        #expect(canonical.layers.first?.graphLayer.compositeSourceExtent == nil)
         #expect(layer.passes.count == 2)
         #expect(layer.passes.last?.pass.target == .scene)
         #expect(layer.passes[0].pass.blending == "disabled")
@@ -392,11 +663,14 @@ struct WPERenderPipelineBuilderTests {
         #expect(result.resolvingSourceMipLevels { _ in -1 } == result)
         #expect(result.resolvingSourceMipLevels { _ in 15 } == result)
         for mip in [0, 1, 2] {
+            let fromCanonical = canonical.resolvingSourceMipLevels { _ in mip }
+                .resolvingEffectPublication(passVisibility: [:], camera: camera)
             let reduced = result.resolvingSourceMipLevels { reference in
                 #expect(reference == layer.passes[0].textureBindings[0])
                 return mip
             }
             let reducedLayer = try #require(reduced.layers.first)
+            #expect(fromCanonical == reduced)
             #expect(reducedLayer.passes == layer.passes)
             #expect(reducedLayer.graphLayer.geometry == layer.graphLayer.geometry)
             let imageUniforms = executor.genericImageUniforms(for: reducedLayer.passes[0], layer: reducedLayer.graphLayer, hasMask: false)
@@ -484,13 +758,17 @@ struct WPERenderPipelineBuilderTests {
                                           materialPath: nil, geometry: .identity, compositeA: "consumer-a", compositeB: "consumer-b",
                                           localFBOs: [], passes: [copy.pass])
             let shared = WPEPreparedRenderPipeline(layers: original.layers + [WPEPreparedRenderLayer(graphLayer: consumer, passes: [copy])])
-            #expect(WPERenderGraphBuilder.publishingProceduralEffects(in: shared, camera: camera) == shared)
+            #expect(WPERenderGraphBuilder.preparingEffectPublication(in: shared, camera: camera) == shared)
             return
         }
-        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let canonical = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let result = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
         if scope == "direct" || scope == "zero" {
             let before = try #require(original.layers.first)
             let after = try #require(result.layers.first)
+            #expect(canonical.layers.first?.passes == before.passes)
+            #expect(canonical.layers.first?.effectPublication != nil)
+            #expect(after.effectPublication == nil)
             #expect(before.passes.count == 3 && after.passes.count == 2)
             #expect(after.passes[1].pass.target == .scene)
             #expect(after.passes[1].pass.blending == "disabled")
@@ -546,9 +824,12 @@ struct WPERenderPipelineBuilderTests {
         let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
         let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
         let original = try builder.build(graph: graph)
-        let result = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let canonical = try builder.build(graph: graph, proceduralPublicationCamera: camera)
+        let result = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
         let before = try #require(original.layers.first)
         let after = try #require(result.layers.first)
+        #expect(canonical.layers.first?.passes == before.passes)
+        #expect(canonical.layers.first?.effectPublication != nil)
         #expect(before.passes.count == 3 && after.passes.count == 2)
         let terminal = after.passes[1]
         #expect(terminal.pass.target == .scene)

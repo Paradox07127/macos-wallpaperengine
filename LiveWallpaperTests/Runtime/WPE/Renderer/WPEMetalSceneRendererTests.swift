@@ -148,7 +148,11 @@ struct WPEMetalSceneRendererTests {
                                                  dependencyMounts: [], frame: CGRect(x: 0, y: 0, width: 256, height: 128), device: device)
         defer { renderer.cleanup() }
         try await renderer.load()
-        let passes = try #require(renderer.renderPipeline?.layers.first?.passes)
+        let canonical = try #require(renderer.renderPipeline)
+        #expect(canonical.layers.first?.passes.count == 3)
+        #expect(canonical.layers.first?.effectPublication != nil)
+        let projected = canonical.resolvingEffectPublication(passVisibility: [:], camera: renderer.cameraUniforms)
+        let passes = try #require(projected.layers.first?.passes)
         #expect(passes.count == 2)
         let published = try #require(passes.last)
         #expect(published.pass.target == .scene && published.pass.blending == "disabled")

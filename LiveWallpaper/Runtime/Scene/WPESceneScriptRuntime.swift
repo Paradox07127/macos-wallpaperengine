@@ -1963,6 +1963,28 @@ final class WPESharedScriptState: @unchecked Sendable {
     // Separate from shared-value storage: shared.set checks the token while
     // holding its own lock; particle commits hold the token before this lock.
     private let particleLock = NSLock()
+    private let videoLock = NSLock()
+    private var videoPlaybackByID: [String: WPEVideoPlaybackSnapshot] = [:]
+    private var videoSourceKeyByID: [String: String] = [:]
+
+    func publishVideoPlayback(_ snapshots: [String: WPEVideoPlaybackSnapshot], sourceKeys: [String: String]? = nil) {
+        videoLock.lock(); defer { videoLock.unlock() }
+        videoPlaybackByID = snapshots
+        if let sourceKeys {
+            videoSourceKeyByID = sourceKeys
+        }
+    }
+
+    func videoPlaybackSnapshot(objectID: String) -> WPEVideoPlaybackSnapshot? {
+        videoLock.lock(); defer { videoLock.unlock() }
+        return videoPlaybackByID[objectID]
+    }
+
+    func videoSourceKey(objectID: String) -> String? {
+        videoLock.lock(); defer { videoLock.unlock() }
+        return videoSourceKeyByID[objectID]
+    }
+
     private var particlePlaybackByID: [String: WPEParticlePlaybackSnapshot] = [:]
     private var particleInstanceByID: [String: WPEParticleInstanceValues] = [:]
 

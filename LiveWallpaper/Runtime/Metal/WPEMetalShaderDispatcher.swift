@@ -62,9 +62,10 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidLayer:
+            let straight = pass.alphaContract?.premultipliedOutput == false
             try dispatchSolid(
-                fragmentName: "wpe_solidlayer_fragment",
-                variant: .solidLayer,
+                fragmentName: straight ? "wpe_solidlayer_straight_fragment" : "wpe_solidlayer_fragment",
+                variant: straight ? .solidLayerStraight : .solidLayer,
                 pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )

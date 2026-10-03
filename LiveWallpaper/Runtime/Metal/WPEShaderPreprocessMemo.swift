@@ -52,6 +52,11 @@ final class WPEBoundedMemo<Key: Hashable & Sendable, Value: Sendable>: Sendable 
         self.cost = cost
     }
 
+    func cachedValue(for key: Key?) -> Value? {
+        guard let key else { return nil }
+        return storage.withLock { $0.entries[key]?.value }
+    }
+
     /// A nil key computes without caching — a placeholder key would serve one shader's output for another.
     /// `compute` runs outside the lock; a throwing compute stores nothing.
     func value(for key: Key?, compute: () throws -> Value) rethrows -> Value {

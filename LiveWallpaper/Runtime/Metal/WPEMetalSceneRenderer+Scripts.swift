@@ -50,6 +50,21 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Script loading & seeding
 
+    func configureSceneScriptVideoSourceMapping() {
+        guard let pipeline = renderPipeline else { return }
+        let prior = layerVideoSourceKey
+        layerVideoSourceKey = [:]
+        for layer in pipeline.layers {
+            let objectID = layer.graphLayer.objectID
+            if let key = videoTexturePaths(for: layer).first(where: {
+                dynamicTextureSources[$0] is WPEVideoTextureSource
+                    || onDemandVideoKeyByID[objectID]?.contains($0) == true || prior[objectID] == $0
+            }) {
+                layerVideoSourceKey[layer.graphLayer.objectID] = key
+            }
+        }
+    }
+
     func loadLayerScripts(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
@@ -87,24 +102,23 @@ extension WPEMetalSceneRenderer {
                 + "particleAlpha=\(particleAlphaScripted.count) "
                 + "hostNames=\(scriptHosts.prefix(8).map(\.name).joined(separator: ","))"
         )
-        // Text value scripts are built earlier by loadTextPipeline but still resolve getLayer names here.
-        guard (!visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
-                || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
-                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty),
-              let pipeline = renderPipeline else { return }
-
+        guard let pipeline = renderPipeline else { return }
+        configureSceneScriptVideoSourceMapping()
         // Index every layer because scripts can control a different layer's video by name.
         for layer in pipeline.layers {
             let id = layer.graphLayer.objectID
             layerObjectIDByName[layer.graphLayer.objectName] = id
-            if let key = videoTexturePaths(for: layer).first(where: { dynamicTextureSources[$0] is WPEVideoTextureSource }) {
-                layerVideoSourceKey[id] = key
-            }
         }
         // `getLayer(name)` also reaches particle emitters; an image layer keeps a name both share.
         for object in document.particleObjects where layerObjectIDByName[object.name] == nil {
             layerObjectIDByName[object.name] = object.id
         }
+
+        // Transform-only hosts also use the same video handles and shared source map.
+        publishVideoPlaybackSnapshots()
+        guard !visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
+                || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
+                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty else { return }
 
         // WPE delivers the user-property bag to each script after init(); without this, time-of-day scripts that gate on it (e.g. `timevarying`) never switch.
         let userProperties = currentSceneScriptUserProperties()
@@ -114,6 +128,7 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
+        publishVideoPlaybackSnapshots()
         if Self.permitsSharedAuthoredLayerOrdering(document: document, pipeline: pipeline) {
             sharedState.configureAuthoredLayerOrdering(ownerIDs: Set(visibleScripted.map(\.id)))
         }

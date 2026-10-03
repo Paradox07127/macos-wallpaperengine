@@ -434,6 +434,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         state["samplers"] = samplers
         let output: [String: Any] = [
             "resource": targetResource,
+            "physicalResource": textureResourceID(texture: targetTexture, fallbackKey: "pass-output"),
             "png": NSNull(),
             "sha256": NSNull(),
             "visualStats": ["note": "Per-pass RT hash filled from scenePassDumps when WPEDumpScenePasses captured this pass."]
@@ -567,6 +568,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         state["samplers"] = [Any]()
         let output: [String: Any] = [
             "resource": targetResource,
+            "physicalResource": textureResourceID(texture: targetTexture, fallbackKey: "builtin-output"),
             "png": NSNull(),
             "sha256": NSNull(),
             "visualStats": [
@@ -746,6 +748,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
         let output: [String: Any] = [
             "resource": targetResource,
+            "physicalResource": textureResourceID(texture: targetTexture, fallbackKey: "puppet-output"),
             "png": NSNull(),
             "sha256": NSNull(),
             "visualStats": ["note": "Puppet built-in mesh pass; output hash filled from scenePassDumps when captured."]
@@ -789,38 +792,111 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         passes.append(passRecord)
     }
 
-    func recordPassOutputs(_ entries: [(label: String, texture: MTLTexture)]) {
+    func recordPassOutputs(_ entries: [(label: String, texture: MTLTexture)], frameOrdinal: Int = 0) {
         guard artifacts.isEnabled else { return }
+        let sessionFolder = artifacts.activeSessionFolder
         lock.lock()
         let shouldRecord = !frameComplete
         lock.unlock()
         guard shouldRecord else { return }
 
-        // Read back + hash OUTSIDE the lock: getBytes on a scene-pass snapshot is
-        // expensive and must never block recordCustomPass on the render thread.
-        let hashed: [(label: String, sha256: String, visualStats: [String: Any])] = entries.compactMap { entry in
-            guard let metrics = textureMetrics(entry.texture) else { return nil }
-            return (entry.label, metrics.sha256, metrics.visualStats)
+        // Readback and disk I/O must not hold the render-thread recorder lock.
+        let hashed = entries.compactMap { entry -> (label: String, texture: MTLTexture, sha256: String,
+                                                    visualStats: [String: Any], raw: Data, rowPitch: Int)? in
+                guard let metrics = textureMetrics(entry.texture) else { return nil }
+                return (entry.label, entry.texture, metrics.sha256, metrics.visualStats, metrics.raw, metrics.rowPitch)
         }
         guard !hashed.isEmpty else { return }
 
         lock.lock()
-        defer { lock.unlock() }
-        guard !frameComplete else { return }
-        for item in hashed {
-            // Match the first still-unhashed pass with this id, so repeated pass ids (e.g. ping-pong blur) fill in draw order instead of colliding.
-            guard let index = passes.firstIndex(where: {
-                ($0["passId"] as? String) == item.label
-                    && (($0["output"] as? [String: Any])?["sha256"] is NSNull)
+        guard !frameComplete else { lock.unlock(); return }
+        var matchedIndices: Set<Int> = []
+        var matched: [(index: Int, readbackIndex: Int, physicalResource: String?, logicalResource: String?)] = []
+        for (readbackIndex, item) in hashed.enumerated() {
+            // Repeated pass IDs are matched in draw order, without reserving global state.
+            guard let index = passes.indices.first(where: {
+                !matchedIndices.contains($0) && (passes[$0]["passId"] as? String) == item.label
+                    && ((passes[$0]["output"] as? [String: Any])?["sha256"] is NSNull)
             }) else { continue }
-            var record = passes[index]
+            matchedIndices.insert(index)
+            let output = passes[index]["output"] as? [String: Any]
+            let physical = output?["physicalResource"] as? String
+            let logical = output?["resource"] as? String
+            matched.append((index, readbackIndex, physical, logical))
+        }
+        lock.unlock()
+
+        var completed: [(index: Int, label: String, sha256: String, visualStats: [String: Any], rawReceipt: [String: Any]?)] = []
+        for match in matched {
+            let item = hashed[match.readbackIndex]
+            var receipt: [String: Any]?
+            #if DEBUG
+            if let sessionFolder {
+                receipt = recordRawPassOutput(
+                    texture: item.texture, bytes: item.raw, rowPitch: item.rowPitch, traceHash: item.sha256,
+                    label: item.label, passOrdinal: match.index, frameOrdinal: frameOrdinal,
+                    logicalResource: match.logicalResource, physicalResource: match.physicalResource,
+                    sessionFolder: sessionFolder
+                )
+            }
+            #endif
+            completed.append((match.index, item.label, item.sha256, item.visualStats, receipt))
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        guard !frameComplete, artifacts.activeSessionFolder == sessionFolder else { return }
+        for item in completed {
+            guard passes.indices.contains(item.index),
+                  (passes[item.index]["passId"] as? String) == item.label,
+                  (passes[item.index]["output"] as? [String: Any])?["sha256"] is NSNull else { continue }
+            var record = passes[item.index]
             var output = record["output"] as? [String: Any] ?? [:]
             output["sha256"] = item.sha256
             output["visualStats"] = item.visualStats
+            if let receipt = item.rawReceipt {
+                output["raw"] = receipt
+            }
             record["output"] = output
-            passes[index] = record
+            passes[item.index] = record
         }
     }
+
+    #if DEBUG
+    private func recordRawPassOutput(
+        texture: MTLTexture, bytes: Data, rowPitch: Int, traceHash: String,
+        label: String, passOrdinal: Int, frameOrdinal: Int,
+        logicalResource: String?, physicalResource: String?, sessionFolder: URL
+    ) -> [String: Any]? {
+        let isFloat = texture.pixelFormat == .rgba16Float
+        let isBGRA = texture.pixelFormat == .bgra8Unorm || texture.pixelFormat == .bgra8Unorm_srgb
+        let bytesPerPixel = isFloat ? 8 : 4
+        let suffix = isFloat ? "rgba16f" : isBGRA ? "bgra8" : "rgba8"
+        let name = "pass-output-f\(frameOrdinal)-p\(passOrdinal)-\(label)-\(UUID().uuidString).\(suffix)"
+        do {
+            guard let url = try artifacts.recordPassOutputBytes(name: name, bytes: bytes, sessionFolder: sessionFolder) else { return nil }
+            return [
+                "schema": "wpe.pass-raw-storage.v1", "path": url.path, "file": url.lastPathComponent,
+                "frameOrdinal": frameOrdinal, "passOrdinal": passOrdinal, "passID": label,
+                "logicalResource": jsonOrNull(logicalResource), "physicalAttachmentResource": jsonOrNull(physicalResource),
+                "snapshotResource": textureResourceID(texture: texture, fallbackKey: "pass-output"),
+                "width": texture.width, "height": texture.height, "pixelFormat": texture.pixelFormat.rawValue,
+                "storageFormat": isFloat ? "RGBA16_FLOAT" : isBGRA ? "BGRA8_UNORM" : "RGBA8_UNORM",
+                "channelOrder": isBGRA ? "BGRA" : "RGBA", "bytesPerPixel": bytesPerPixel,
+                "componentEncoding": isFloat ? "IEEE754-binary16-little-endian" : "UNORM8",
+                "colorStorage": WPEPixelColorContract(texture.pixelFormat).jsonObject(),
+                "rowPitch": rowPitch, "rowPitchMeaning": "packed CPU getBytes destination stride",
+                "byteLength": bytes.count, "rawStorageSHA256": sha256Hex(bytes), "traceOutputSHA256": traceHash,
+                "traceHashRepresentation": isFloat ? "clamped-rounded-RGBA8" : "raw-storage",
+                "interpretation": "storage-no-transfer-or-unpremultiply", "mip": 0, "slice": 0,
+                "rowOrder": "texture-coordinate-row-major-origin-0-0",
+            ]
+        } catch {
+            artifacts.appendLog("[canonical-trace] raw pass output write failed for \(label): \(error)", level: .warning)
+            return nil
+        }
+    }
+    #endif
 
     func recordParticlePass(
         index: Int,
@@ -905,6 +981,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         state["samplers"] = [["stage": "fragment", "slot": 0, "name": "g_Texture0"]] as [[String: Any]]
         let output: [String: Any] = [
             "resource": targetResource, "png": NSNull(), "sha256": NSNull(),
+            "physicalResource": textureResourceID(texture: target, fallbackKey: "particle-output"),
             "visualStats": ["note": "particle pass (instanced quads, \(particleCount) alive)"]
         ]
         var passRecord: [String: Any] = [
@@ -1238,7 +1315,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
 
     // MARK: - Texture metrics (best-effort, post-commit only)
 
-    private func textureMetrics(_ texture: MTLTexture) -> (sha256: String, visualStats: [String: Any])? {
+    private func textureMetrics(_ texture: MTLTexture) -> (sha256: String, visualStats: [String: Any], raw: Data, rowPitch: Int)? {
         // Output ring is `.private`; one staging copy for hash + visual stats.
         guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else {
             artifacts.appendLog(
@@ -1258,7 +1335,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "nonBlackPixelCount": jsonOrNull(stats?.nonBlackPixelCount),
             "nonTransparentPixelCount": jsonOrNull(stats?.nonTransparentPixelCount)
         ]
-        return (sha256Hex(data), visualStats)
+        return (sha256Hex(data.canonical), visualStats, data.raw, data.rowPitch)
     }
 
     private static func visualStats(_ stats: WPEMetalTextureVisualStats) -> [String: Any] {
@@ -1273,7 +1350,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         ]
     }
 
-    private func readbackTextureBytes(_ texture: MTLTexture) -> Data? {
+    private func readbackTextureBytes(_ texture: MTLTexture) -> (raw: Data, canonical: Data, rowPitch: Int)? {
         // rgba8/bgra8 unorm are hashed raw; HDR rgba16Float is decoded to canonical clamped 8-bit FIRST — raw Float16 bytes are non-deterministic across runs.
         let isFloat16: Bool
         let bytesPerPixel: Int
@@ -1285,6 +1362,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             bytesPerPixel = 8
             isFloat16 = true
         default:
+            artifacts.appendLog("[canonical-trace] unsupported pass readback format \(texture.pixelFormat.rawValue)", level: .warning)
             return nil
         }
         // `textureMetrics` stages via `stagedForCPURead` (shared or managed).
@@ -1309,7 +1387,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 mipmapLevel: 0
             )
         }
-        guard isFloat16 else { return Data(raw) }
+        let storage = Data(raw)
+        guard isFloat16 else { return (storage, storage, bytesPerRow) }
         // Float16 RGBA → canonical clamped 8-bit. Non-finite and negatives collapse to 0; values ≥1 clamp to 255.
         let componentCount = width * height * 4
         var canonical = [UInt8](repeating: 0, count: componentCount)
@@ -1321,7 +1400,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 canonical[index] = UInt8((clamped * 255).rounded())
             }
         }
-        return Data(canonical)
+        return (storage, Data(canonical), bytesPerRow)
     }
 
     // MARK: - Small helpers

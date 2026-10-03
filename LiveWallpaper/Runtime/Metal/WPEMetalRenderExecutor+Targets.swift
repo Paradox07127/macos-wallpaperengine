@@ -137,6 +137,8 @@ extension WPEMetalRenderExecutor {
         // Pass-id keyed; a reload can reuse an id for a different shader. The
         // content-keyed translatedShaderCache is safe to persist and is not cleared.
         authoredShaderResultByPassID.removeAll()
+        authoredRequestKeyByPassID.removeAll()
+        // Scene request metadata survives suspension; scene retirement clears it.
         authoredVertexFailureByPassID.removeAll()
         compiledShaderResultByPassID.removeAll()
         untranslatableShaderReasonByPassID.removeAll()

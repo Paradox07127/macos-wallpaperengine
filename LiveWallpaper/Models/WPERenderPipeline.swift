@@ -10,22 +10,26 @@ struct WPEPreparedRenderPipeline: Equatable, Sendable {
     /// Upload selection happens after shader prewarm starts and before any target allocation.
     func resolvingSourceMipLevels(_ level: (WPETextureReference) -> Int?) -> Self {
         Self(layers: layers.map { layer in
-            guard let extent = layer.graphLayer.compositeSourceExtent,
+            guard let extent = layer.effectPublication?.sourceExtent ?? layer.graphLayer.compositeSourceExtent,
                   let source = layer.passes.first,
                   let mip = level(source.textureBindings[0] ?? source.pass.source),
                   (0 ... 14).contains(mip), mip != extent.sourceMipLevel else { return layer }
             let resolved = WPERenderSourceExtent(textureSize: extent.textureSize, imageSize: extent.imageSize,
                                                  sourceMipLevel: mip)
             return layer.replacing(
-                graphLayer: layer.graphLayer.replacingPasses(layer.graphLayer.passes, compositeSourceExtent: resolved),
-                passes: layer.passes
+                graphLayer: layer.effectPublication == nil
+                    ? layer.graphLayer.replacingPasses(layer.graphLayer.passes, compositeSourceExtent: resolved) : layer.graphLayer,
+                passes: layer.passes,
+                effectPublication: layer.effectPublication.map { .some($0.resolvingSourceExtent(resolved)) }
             )
         })
     }
 }
 
 struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
-    var id: String { graphLayer.id }
+    var id: String {
+        graphLayer.id
+    }
 
     let graphLayer: WPERenderLayer
     let puppetModel: WPEPuppetModel?
@@ -33,6 +37,7 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
     /// Full affine model transform, retained through mesh submission. A rotated
     /// child under non-uniform parent scale cannot be represented by Euler sums.
     let modelMatrix: WPEPreparedModelMatrix?
+    let effectPublication: WPEEffectPublicationDescriptor?
     var modelMatrixOverride: [Double]? {
         modelMatrix?.values
     }
@@ -48,23 +53,183 @@ struct WPEPreparedRenderLayer: Equatable, Sendable, Identifiable {
         graphLayer: WPERenderLayer,
         puppetModel: WPEPuppetModel? = nil,
         passes: [WPEPreparedRenderPass],
-        modelMatrixOverride: [Double]? = nil
+        modelMatrixOverride: [Double]? = nil,
+        effectPublication: WPEEffectPublicationDescriptor? = nil
     ) {
         self.init(graphLayer: graphLayer, puppetModel: puppetModel, passes: passes,
-                  modelMatrix: modelMatrixOverride.map(WPEPreparedModelMatrix.runtime))
+                  modelMatrix: modelMatrixOverride.map(WPEPreparedModelMatrix.runtime), effectPublication: effectPublication)
     }
 
     init(graphLayer: WPERenderLayer, puppetModel: WPEPuppetModel? = nil,
-         passes: [WPEPreparedRenderPass], modelMatrix: WPEPreparedModelMatrix?) {
+         passes: [WPEPreparedRenderPass], modelMatrix: WPEPreparedModelMatrix?,
+         effectPublication: WPEEffectPublicationDescriptor? = nil) {
         self.graphLayer = graphLayer
         self.puppetModel = puppetModel
         self.passes = passes
         self.modelMatrix = modelMatrix
+        self.effectPublication = effectPublication
     }
 
-    func replacing(graphLayer: WPERenderLayer? = nil, passes: [WPEPreparedRenderPass]? = nil) -> Self {
+    func replacing(graphLayer: WPERenderLayer? = nil, passes: [WPEPreparedRenderPass]? = nil,
+                   effectPublication: WPEEffectPublicationDescriptor?? = nil) -> Self {
         Self(graphLayer: graphLayer ?? self.graphLayer, puppetModel: puppetModel,
-             passes: passes ?? self.passes, modelMatrix: modelMatrix)
+             passes: passes ?? self.passes, modelMatrix: modelMatrix,
+             effectPublication: effectPublication ?? self.effectPublication)
+    }
+}
+
+enum WPEEffectPublicationScope: Equatable, Sendable {
+    case legacyStaticSingleEffect
+    case nativeSolidChain
+}
+
+/// Stable admission facts only; canonical passes remain owned by the layer.
+struct WPEEffectPublicationDescriptor: Equatable, Sendable {
+    struct Effect: Equatable, Sendable {
+        let passID: String
+        let effectID: String
+    }
+
+    let basePassID: String
+    let effects: [Effect]
+    let copyPassID: String
+    let sourceExtent: WPERenderSourceExtent?
+    let staticParentModel: WPEPreparedModelMatrix?
+    let scope: WPEEffectPublicationScope
+    let baseSceneBlending: String
+
+    var permitsActiveSubsets: Bool {
+        scope == .nativeSolidChain
+    }
+
+    func resolvingSourceExtent(_ extent: WPERenderSourceExtent) -> Self {
+        Self(basePassID: basePassID, effects: effects, copyPassID: copyPassID, sourceExtent: extent,
+             staticParentModel: staticParentModel, scope: scope,
+             baseSceneBlending: baseSceneBlending)
+    }
+}
+
+extension WPEPreparedRenderPipeline {
+    func retainingEffectPublication(in readyLayerIDs: Set<String>) -> Self {
+        Self(layers: layers.map { layer in
+            readyLayerIDs.contains(layer.id) ? layer : layer.replacing(effectPublication: .some(nil))
+        })
+    }
+
+    /// Derives one transient frame graph; the canonical pipeline is never mutated.
+    func resolvingEffectPublication(passVisibility: [String: Bool], camera: WPEMetalCameraUniforms) -> Self {
+        Self(layers: layers.map { layer in
+            guard let descriptor = layer.effectPublication,
+                  let canonical = layer.effectPublicationCanonicalPasses(camera: camera) else { return layer }
+            let active = canonical.effects.filter { prepared in
+                guard let gate = prepared.pass.visibilityGate else { return true }
+                return passVisibility[gate.id] ?? gate.initialVisible
+            }
+            guard descriptor.permitsActiveSubsets || active.count == canonical.effects.count else { return layer }
+            let passes: [WPEPreparedRenderPass]
+            if active.isEmpty {
+                passes = [layer.effectPublicationPass(canonical.base, source: canonical.base.pass.source,
+                                                      target: .scene, terminal: false, baseScene: true)]
+            } else {
+                var selected = [layer.effectPublicationPass(canonical.base, source: canonical.base.pass.source,
+                                                            target: .layerComposite(name: layer.graphLayer.compositeA),
+                                                            terminal: false)]
+                var predecessor = WPETextureReference.fbo(layer.graphLayer.compositeA)
+                for (index, effect) in active.enumerated() {
+                    let terminal = index == active.count - 1
+                    let target: WPERenderTarget = terminal ? .scene : .layerComposite(
+                        name: index.isMultiple(of: 2) ? layer.graphLayer.compositeB : layer.graphLayer.compositeA
+                    )
+                    selected.append(layer.effectPublicationPass(effect, source: predecessor, target: target, terminal: terminal))
+                    predecessor = target.textureReference ?? predecessor
+                }
+                passes = selected
+            }
+            return WPEPreparedRenderLayer(
+                graphLayer: layer.graphLayer.replacingPasses(passes.map(\.pass), compositeSourceExtent: descriptor.sourceExtent),
+                puppetModel: layer.puppetModel, passes: passes,
+                modelMatrix: descriptor.staticParentModel ?? layer.modelMatrix
+            )
+        })
+    }
+}
+
+extension WPEPreparedRenderLayer {
+    /// Bounded role/source enumeration, independent of the number of visibility subsets.
+    func effectPublicationPrewarmPasses(camera: WPEMetalCameraUniforms) -> [WPEPreparedRenderPass] {
+        guard let canonical = effectPublicationCanonicalPasses(camera: camera) else { return [] }
+        let baseRoles: [WPEPreparedRenderPass] = effectPublication?.scope == .nativeSolidChain ? [
+            effectPublicationPass(canonical.base, source: canonical.base.pass.source,
+                                  target: .layerComposite(name: graphLayer.compositeA), terminal: false),
+            effectPublicationPass(canonical.base, source: canonical.base.pass.source,
+                                  target: .scene, terminal: false, baseScene: true),
+        ] : []
+        return baseRoles + canonical.effects.flatMap { effect in
+            [graphLayer.compositeA, graphLayer.compositeB].flatMap { source in
+                let other = source == graphLayer.compositeA ? graphLayer.compositeB : graphLayer.compositeA
+                return [
+                    effectPublicationPass(effect, source: .fbo(source), target: .layerComposite(name: other), terminal: false),
+                    effectPublicationPass(effect, source: .fbo(source), target: .scene, terminal: true),
+                ]
+            }
+        }
+    }
+
+    fileprivate func effectPublicationCanonicalPasses(camera: WPEMetalCameraUniforms)
+        -> (base: WPEPreparedRenderPass, effects: [WPEPreparedRenderPass])? {
+        guard let descriptor = effectPublication, !camera.sceneHDR,
+              !graphLayer.geometry.isTimeVarying, graphLayer.geometry.shapePoints == nil,
+              !descriptor.permitsActiveSubsets || graphLayer.parentObjectID == nil,
+              Set(passes.map(\.id)).count == passes.count,
+              passes.count == descriptor.effects.count + 2,
+              graphLayer.passes == passes.map(\.pass),
+              passes.first?.id == descriptor.basePassID, passes.last?.id == descriptor.copyPassID else { return nil }
+        let effects = Array(passes.dropFirst().dropLast())
+        guard effects.map(\.id) == descriptor.effects.map(\.passID),
+              effects.map({ $0.pass.authoredJSON.effectIdentity?.stableEffectID }) == descriptor.effects.map({ Optional($0.effectID) }) else { return nil }
+        let effectIDs = Set(descriptor.effects.map(\.passID))
+        let graph = graphLayer.replacingPasses(passes.map { prepared in
+            guard effectIDs.contains(prepared.id) else { return prepared.pass }
+            let cull = prepared.pass.authoredJSON.materialPass?["cullmode"] == .string("nocull") ? "nocull" : "back"
+            return prepared.pass.replacingCullMode(cull)
+        })
+        guard WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: graph, camera: camera) else { return nil }
+        return (passes[0], effects)
+    }
+
+    fileprivate func effectPublicationPass(_ prepared: WPEPreparedRenderPass, source: WPETextureReference,
+                                           target: WPERenderTarget, terminal: Bool, baseScene: Bool = false) -> WPEPreparedRenderPass {
+        guard let descriptor = effectPublication else { return prepared }
+        let pass = prepared.pass
+        let isEffect = if case .effect = pass.phase {
+            true
+        } else {
+            false
+        }
+        let cull = terminal ? (pass.authoredJSON.materialPass?["cullmode"] == .string("nocull") ? "nocull" : "back") : pass.cullMode
+        let nativeSolid = descriptor.scope == .nativeSolidChain
+        let straight = nativeSolid || descriptor.sourceExtent != nil
+        let rewritten = WPERenderPass(
+            id: pass.id, phase: pass.phase, shader: pass.shader,
+            source: isEffect ? source : pass.source, target: target,
+            textures: isEffect ? pass.textures.mapValues { _ in source } : pass.textures,
+            binds: isEffect ? pass.binds.mapValues { _ in source } : pass.binds,
+            constants: pass.constants, combos: pass.combos, userTextureBindings: pass.userTextureBindings,
+            authoredJSON: pass.authoredJSON,
+            blending: (baseScene || (nativeSolid && terminal)) ? descriptor.baseSceneBlending
+                : ((terminal || straight) ? "disabled" : pass.blending),
+            cullMode: cull, depthTest: pass.depthTest, depthWrite: pass.depthWrite,
+            constantScripts: pass.constantScripts, visibilityGate: nil
+        )
+        return WPEPreparedRenderPass(
+            pass: rewritten, shader: prepared.shader,
+            textureBindings: isEffect ? prepared.textureBindings.mapValues { _ in source } : prepared.textureBindings,
+            comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
+            materialUniformNames: prepared.materialUniformNames, stageUniformBindings: prepared.stageUniformBindings,
+            layerTintOverride: prepared.layerTintOverride,
+            alphaContract: straight ? WPEShaderAlphaContract(unpremultipliedInputSlots: [], premultipliedOutput: false) : prepared.alphaContract,
+            publicationVertexRole: nativeSolid && isEffect && !terminal && prepared.shader?.isBuiltin == false ? .localEffect : nil
+        )
     }
 }
 
@@ -84,6 +249,10 @@ enum WPEPreparedModelMatrix: Equatable, Sendable {
 struct WPEEffectConstantScriptKey: Hashable, Sendable {
     let passID: String
     let uniform: String
+}
+
+enum WPEPublicationVertexRole: Equatable, Sendable {
+    case localEffect
 }
 
 struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
@@ -111,6 +280,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     /// Explicit producer/consumer ABI when graph lowering changes an intermediate
     /// to straight RGBA. Nil retains the existing FBO/PMA convention.
     let alphaContract: WPEShaderAlphaContract?
+    let publicationVertexRole: WPEPublicationVertexRole?
 
     init(
         pass: WPERenderPass,
@@ -122,6 +292,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:],
         layerTintOverride: WPELayerTintOverride? = nil,
         alphaContract: WPEShaderAlphaContract? = nil,
+        publicationVertexRole: WPEPublicationVertexRole? = nil,
         reusingAccess: WPEPreparedPassAccess? = nil
     ) {
         self.pass = pass
@@ -139,6 +310,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         stageUniformBindingKeys = Set(stageUniformBindings.keys)
         self.layerTintOverride = layerTintOverride
         self.alphaContract = alphaContract
+        self.publicationVertexRole = publicationVertexRole
         hasAnimatedUniformValues = uniformValues.values.contains {
             if case .animated = $0 { return true }
             return false
@@ -397,12 +569,14 @@ extension WPEPreparedRenderPipeline {
             guard !layer.hasStaticParentModel, modelIDs.contains(layer.id) else { return layer }
             if inheritedQuadIDs.contains(layer.id) {
                 guard parentByID[layer.id] == layer.graphLayer.parentObjectID, resolver.completeChain(for: layer.id) != nil else {
-                    return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes)
+                    return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
+                                                  effectPublication: layer.effectPublication)
                 }
             }
             guard let world = resolver.resolve(layer.id, requiringCompleteHierarchy: inheritedQuadIDs.contains(layer.id)) else { return layer }
             return WPEPreparedRenderLayer(graphLayer: layer.graphLayer, puppetModel: layer.puppetModel, passes: layer.passes,
-                                          modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world))
+                                          modelMatrixOverride: WPEMetalObjectUniforms.flattenedColumnMajor(world),
+                                          effectPublication: layer.effectPublication)
         })
     }
 
@@ -439,7 +613,8 @@ extension WPEPreparedRenderPipeline {
                 return WPEPreparedRenderLayer(
                     graphLayer: graphLayer,
                     puppetModel: layer.puppetModel,
-                    passes: layer.passes
+                    passes: layer.passes,
+                    effectPublication: layer.effectPublication
                 )
             }
             guard didChange else { return self }
@@ -505,7 +680,8 @@ extension WPEPreparedRenderPipeline {
                     angles: resolved.angles
                 ),
                 puppetModel: layer.puppetModel,
-                passes: layer.passes
+                passes: layer.passes,
+                effectPublication: layer.effectPublication
             )
         }
         guard didChange else { return self }
@@ -699,6 +875,7 @@ extension WPEPreparedRenderPipeline {
                         stageUniformBindings: WPEUniformStageBinding.resolved(pass.stageUniformBindings, at: runtimeUniforms.time, authoredUpdates: scripted),
                         layerTintOverride: pass.layerTintOverride,
                         alphaContract: pass.alphaContract,
+                        publicationVertexRole: pass.publicationVertexRole,
                         reusingAccess: pass.access
                     )
                 }
@@ -806,6 +983,7 @@ private extension WPEPreparedRenderLayer {
                 stageUniformBindings: preparedPass.stageUniformBindings,
                 layerTintOverride: preparedPass.layerTintOverride,
                 alphaContract: preparedPass.alphaContract,
+                publicationVertexRole: preparedPass.publicationVertexRole,
                 // The initializer re-derives access when FBO names changed.
                 reusingAccess: preparedPass.access
             )

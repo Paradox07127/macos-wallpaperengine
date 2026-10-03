@@ -4,6 +4,11 @@ import Foundation
 /// Declaration-based ABI shared by both real stages. This is not Metal reflection.
 /// Unsupported shapes fail the link; they never disappear into a reconstructed UV.
 struct WPEShaderStageLink {
+    static func usesMVPOnlyForLocalEffectPosition(_ source: String, fragment: String) -> Bool {
+        let active = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source))
+        return WPELocalEffectPositionProof(source: active, fragment: fragment)?.isProven() == true
+    }
+
     /// Conservative admission proof for the native fullscreen clip matrix. It is
     /// not a proof of WPE's Z projection: depth testing/writes remain separate.
     static func usesMVPOnlyForFullscreenPosition(_ source: String, fragment: String? = nil) -> Bool {
@@ -369,6 +374,263 @@ struct WPEShaderStageLink {
             }
             return result
         }.joined(separator: "\n")
+    }
+}
+
+/// A closed statement/def-use proof, not a substitute for the GLSL compiler.
+/// Only XY edits to one clip-input alias may reach the sole draw-MVP assignment.
+private struct WPELocalEffectPositionProof {
+    private struct Function {
+        let parameters: Set<String>?
+        let body: [[String]]
+    }
+
+    private let functions: [String: Function]
+    private let uniforms: Set<String>
+    private let outputs: Set<String>
+    private let macros: [String: (parameters: Set<String>, expression: [String])]
+    private static let pureBuiltins: Set<String> = [
+        "float", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4", "CAST2", "CAST3", "CAST4",
+        "sin", "cos", "tan", "abs", "min", "max", "clamp", "mix", "dot", "length", "normalize", "sqrt", "pow", "frac", "fract",
+    ]
+
+    init?(source: String, fragment: String) {
+        let activeFragment = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragment))
+        guard let fragmentTokens = Self.tokens(activeFragment),
+              !fragmentTokens.contains("gl_FragCoord"), !fragmentTokens.contains("gl_FragDepth") else { return nil }
+        let interface = WPEShaderInterfaceParser.parse(vertex: source, fragment: fragment)
+        uniforms = Set(interface.variables(stage: .vertex, kind: .uniform).map(\.key.name))
+            .subtracting(["g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse"])
+        outputs = Set(interface.variables(stage: .vertex, kind: .varyingOutput).map(\.key.name))
+        var macroDefinitions: [String: (parameters: Set<String>, expression: [String])] = [:]
+        var code: [String] = []
+        for line in source.components(separatedBy: .newlines) {
+            guard let tokens = Self.tokens(line) else { return nil }
+            if tokens.first == "#" {
+                guard tokens.count >= 2 else { return nil }
+                if tokens[1] == "define", tokens.count >= 3 {
+                    let name = tokens[2]
+                    var parameters = Set<String>()
+                    var start = 3
+                    // Function-like macro parentheses must immediately follow its name.
+                    if line.range(of: name + "(") != nil, tokens[start] == "(" {
+                        guard let close = tokens[start...].firstIndex(of: ")") else { return nil }
+                        for token in tokens[(start + 1) ..< close] where token != "," {
+                            guard Self.identifier(token), parameters.insert(token).inserted else { return nil }
+                        }
+                        start = close + 1
+                    }
+                    guard start <= tokens.count else { return nil }
+                    let expression = Array(tokens[start...])
+                    if let previous = macroDefinitions[name] {
+                        guard previous.parameters == parameters, previous.expression == expression else { return nil }
+                    }
+                    macroDefinitions[name] = (parameters, expression)
+                }
+                continue
+            }
+            code += tokens
+        }
+        var definitions: [String: Function] = [:]
+        var start = 0
+        while start < code.count {
+            guard let end = code[start...].firstIndex(where: { $0 == ";" || $0 == "{" }) else { return nil }
+            if code[end] == ";" {
+                let declaration = Array(code[start ..< end])
+                guard !declaration.contains("="), !declaration.contains("gl_Position") else { return nil }
+                start = end + 1
+                continue
+            }
+            let signature = Array(code[start ..< end])
+            guard signature.count >= 4, signature[2] == "(", signature.last == ")",
+                  Self.identifier(signature[1]) else { return nil }
+            let parameters = Array(signature.dropFirst(3).dropLast())
+            var names: Set<String>? = []
+            if !parameters.isEmpty {
+                for parameter in parameters.split(separator: ",") {
+                    let words = parameter.filter { $0 != "const" && $0 != "in" }
+                    guard words.count == 2, ["float", "vec2", "vec3", "vec4"].contains(words[0]),
+                          Self.identifier(words[1]), names?.insert(words[1]).inserted == true else {
+                        names = nil
+                        break
+                    }
+                }
+            }
+            var close = end + 1
+            var depth = 1
+            while close < code.count {
+                if code[close] == "{" {
+                    depth += 1
+                }
+                if code[close] == "}" {
+                    depth -= 1
+                }
+                if depth == 0 {
+                    break
+                }
+                close += 1
+            }
+            guard close < code.count else { return nil }
+            let body = Array(code[(end + 1) ..< close])
+            guard body.isEmpty || body.last == ";" || body.last == "}" else { return nil }
+            // Unused header overloads are opaque; a reachable ambiguous helper fails closed.
+            definitions[signature[1]] = .init(parameters: definitions[signature[1]] == nil ? names : nil,
+                                              body: body.split(separator: ";").map(Array.init))
+            start = close + 1
+        }
+        functions = definitions
+        macros = macroDefinitions
+    }
+
+    func isProven() -> Bool {
+        let reserved: Set = ["a_Position", "a_TexCoord", "gl_Position", "g_ModelViewProjectionMatrix", "g_ModelViewProjectionMatrixInverse", "inverse", "vec3", "vec4"]
+        guard Set(macros.keys).isDisjoint(with: reserved.union(uniforms).union(outputs)),
+              Set(functions.keys).isDisjoint(with: reserved),
+              let main = functions["main"], main.parameters?.isEmpty == true,
+              main.body.flatMap(\.self).filter({ $0 == "g_ModelViewProjectionMatrix" }).count == 1,
+              main.body.flatMap(\.self).filter({ $0 == "gl_Position" }).count == 1 else { return false }
+        var position: String?
+        var projected = false
+        for statement in main.body {
+            if statement.count == 4, statement[0] == "vec3", Self.identifier(statement[1]),
+               statement[2] == "=", statement[3] == "a_Position" {
+                guard position == nil, !uniforms.contains(statement[1]), !outputs.contains(statement[1]), macros[statement[1]] == nil else { return false }
+                position = statement[1]
+                continue
+            }
+            if statement.first == "gl_Position" {
+                guard !projected, let position, Self.positionAssignment(statement, alias: position) else { return false }
+                if statement.contains("mul") {
+                    guard functions["mul"] == nil else { return false }
+                    if let macro = macros["mul"] {
+                        guard macro.parameters.count == 2,
+                              macro.expression.filter({ $0 == "*" }).count == 1,
+                              macro.parameters.allSatisfy({ parameter in macro.expression.filter { $0 == parameter }.count == 1 }),
+                              macro.expression.allSatisfy({ macro.parameters.contains($0) || ["(", ")", "*"].contains($0) }) else { return false }
+                    }
+                }
+                projected = true
+                continue
+            }
+            if let position, statement.count > 4, statement[0] == position, statement[1] == ".", statement[2] == "xy",
+               ["=", "+=", "-=", "*=", "/="].contains(statement[3]) {
+                guard !projected, pureExpression(Array(statement.dropFirst(4)), locals: [], position: position, visiting: []) else { return false }
+                continue
+            }
+            guard statement.count > 2, outputs.contains(statement[0]), statement[1] == "=",
+                  pureExpression(Array(statement.dropFirst(2)), locals: ["a_TexCoord"], position: nil, visiting: []) else { return false }
+        }
+        return position != nil && projected
+    }
+
+    private func pureExpression(_ expression: [String], locals: Set<String>, position: String?, visiting: Set<String>) -> Bool {
+        guard !expression.isEmpty else { return false }
+        var index = 0
+        var depth = 0
+        while index < expression.count {
+            let token = expression[index]
+            if token == "(" {
+                depth += 1
+            }
+            if token == ")" {
+                depth -= 1
+            }
+            guard depth >= 0 else { return false }
+            if token == position {
+                guard index + 2 < expression.count, expression[index + 1] == ".", expression[index + 2] == "xy" else { return false }
+                index += 3
+                continue
+            }
+            if Self.identifier(token) {
+                if index > 0, expression[index - 1] == "." {
+                    guard token.allSatisfy({ "xyzwrgba".contains($0) }) else { return false }
+                } else if let macro = macros[token] {
+                    guard !visiting.contains(token), pureExpression(macro.expression, locals: macro.parameters, position: nil, visiting: visiting.union([token])) else { return false }
+                } else if index + 1 < expression.count, expression[index + 1] == "(" {
+                    guard functions[token] != nil ? pureFunction(token, visiting: visiting) : Self.pureBuiltins.contains(token) else { return false }
+                } else {
+                    guard locals.contains(token) || uniforms.contains(token) else { return false }
+                }
+            } else if Double(token) == nil {
+                guard ["(", ")", ",", ".", "+", "-", "*", "/"].contains(token) else { return false }
+            }
+            index += 1
+        }
+        return depth == 0
+    }
+
+    private func pureFunction(_ name: String, visiting: Set<String>) -> Bool {
+        guard !visiting.contains(name), let function = functions[name], let parameters = function.parameters else { return false }
+        var locals = parameters
+        var returned = false
+        for statement in function.body {
+            guard !returned else { return false }
+            if statement.first == "return" {
+                guard pureExpression(Array(statement.dropFirst()), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
+                returned = true
+            } else if statement.count > 3, ["float", "vec2", "vec3", "vec4"].contains(statement[0]),
+                      Self.identifier(statement[1]), statement[2] == "=" {
+                guard !locals.contains(statement[1]), !uniforms.contains(statement[1]),
+                      pureExpression(Array(statement.dropFirst(3)), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
+                locals.insert(statement[1])
+            } else {
+                guard statement.count > 2, locals.contains(statement[0]), statement[1] == "=",
+                      pureExpression(Array(statement.dropFirst(2)), locals: locals, position: nil, visiting: visiting.union([name])) else { return false }
+            }
+        }
+        return returned
+    }
+
+    private static func positionAssignment(_ statement: [String], alias: String) -> Bool {
+        guard Array(statement.prefix(2)) == ["gl_Position", "="] else { return false }
+        let expression = statement.dropFirst(2).map { Double($0) == 1 ? "1" : $0 }
+        let position = ["vec4", "(", alias, ",", "1", ")"]
+        let matrix = "g_ModelViewProjectionMatrix"
+        return expression == [matrix, "*"] + position
+            || expression == ["mul", "("] + position + [",", matrix, ")"]
+            || expression == ["mul", "(", matrix, ","] + position + [")"]
+    }
+
+    private static func identifier(_ value: String) -> Bool {
+        guard let first = value.first, first.isASCII, first.isLetter || first == "_" else { return false }
+        return value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }
+    }
+
+    private static func tokens(_ source: String) -> [String]? {
+        let characters = Array(source)
+        var result: [String] = []
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character.isWhitespace {
+                index += 1; continue
+            }
+            guard character.isASCII else { return nil }
+            var end = index + 1
+            if character.isLetter || character == "_" {
+                while end < characters.count, characters[end].isLetter || characters[end].isNumber || characters[end] == "_" {
+                    end += 1
+                }
+            } else if character.isNumber || (character == "." && end < characters.count && characters[end].isNumber) {
+                while end < characters.count, characters[end].isNumber || characters[end] == "." {
+                    end += 1
+                }
+                if end < characters.count, characters[end] == "e" || characters[end] == "E" {
+                    end += 1
+                    if end < characters.count, characters[end] == "+" || characters[end] == "-" {
+                        end += 1
+                    }
+                    while end < characters.count, characters[end].isNumber {
+                        end += 1
+                    }
+                }
+            } else if end < characters.count, ["+=", "-=", "*=", "/=", "++", "--", "==", "!=", "<=", ">=", "&&", "||"].contains(String(characters[index ... end])) {
+                end += 1
+            }
+            result.append(String(characters[index ..< end]))
+            index = end
+        }
+        return result
     }
 }
 #endif

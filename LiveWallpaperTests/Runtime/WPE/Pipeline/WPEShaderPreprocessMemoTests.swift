@@ -42,6 +42,14 @@ struct WPEShaderProgramFingerprintTests {
 
 @Suite("WPE shader preprocess memo")
 struct WPEShaderPreprocessMemoTests {
+    @Test("Cache-only request construction never populates an absent preprocessing entry")
+    func cacheOnlyRequestDoesNotPreprocess() throws {
+        let pass = Self.probe(namespace: UUID().uuidString)
+        #expect(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false, allowPreprocessing: false) == nil)
+        let prepared = try #require(try Self.compileRequest(pass))
+        #expect(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false, allowPreprocessing: false) == prepared)
+    }
+
     // MARK: - Stage 4: WPEMetalRenderExecutor.makeCompileRequest
 
     @Test("Stage-4 memo key separates shader names")

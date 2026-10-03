@@ -1,0 +1,164 @@
+#if !LITE_BUILD
+import Foundation
+@testable import LiveWallpaper
+import Testing
+
+@Suite("SceneScript detached video bridge")
+struct WPESceneScriptVideoBridgeTests {
+    private func layer(_ id: String, _ name: String, index: Int = 0) -> WPESceneScriptLayerInfo {
+        .init(id: id, name: name, size: SIMD2(256, 128), origin: .zero,
+              index: index, parentName: nil)
+    }
+
+    private func snapshot(_ generation: UUID, time: Double = 1.5) -> WPEVideoPlaybackSnapshot {
+        .init(sourceGeneration: generation, currentTime: time, duration: 2,
+              isPlaying: false, rate: 1, loop: true, hasPresentedFrame: true)
+    }
+
+    @Test("Getters read source values, including times beyond duration")
+    func readsDetachedSource() throws {
+        let generation = UUID()
+        let shared = WPESharedScriptState(layers: [layer("video", "video")])
+        shared.publishVideoPlayback(["video": snapshot(generation, time: 2.005)])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const video = thisLayer.getVideoTexture();
+            shared.time = video.getCurrentTime(); shared.duration = video.duration;
+            shared.playing = video.isPlaying(); shared.rate = video.rate; shared.loop = video.loop;
+        }
+        """, shared: shared, ownLayerName: "video", ownObjectID: "video")
+        #expect(instance.initialOutput.own.videoCommands.isEmpty)
+        #expect(shared.get("time") as? Double == 2.005)
+        #expect(shared.get("duration") as? Double == 2)
+        #expect(shared.get("playing") as? Bool == false)
+        #expect(shared.get("rate") as? Double == 1)
+        #expect(shared.get("loop") as? Double == 1)
+    }
+
+    @Test("Same-source aliases share immediate intent without inventing seek readback")
+    func aliasIntent() throws {
+        let generation = UUID()
+        let shared = WPESharedScriptState(layers: [layer("a", "A"), layer("b", "B", index: 1)])
+        shared.publishVideoPlayback(["a": snapshot(generation), "b": snapshot(generation)],
+                                    sourceKeys: ["a": "video.tex", "b": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const a = thisLayer.getVideoTexture();
+            const b = thisScene.getLayer('B').getVideoTexture();
+            a.play(); b.rate = 0.5; b.loop = false; a.setCurrentTime(0.25);
+            shared.time = b.getCurrentTime(); shared.playing = b.isPlaying();
+            shared.rate = a.rate; shared.loop = a.loop;
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        #expect(shared.get("time") as? Double == 1.5)
+        #expect(shared.get("playing") as? Bool == true)
+        #expect(shared.get("rate") as? Double == 0.5)
+        #expect(shared.get("loop") as? Double == 0)
+        #expect(instance.initialOutput.own.videoCommands == [
+            .play, .seek(0.25),
+        ])
+        #expect(instance.initialOutput.others["B"]?.videoCommands == [
+            .setRate(0.5), .setLoop(false),
+        ])
+    }
+
+    @Test("Stop rewinds local readback; the next evaluation reads the committed source")
+    func localStopDoesNotLeak() throws {
+        let generation = UUID()
+        let shared = WPESharedScriptState(layers: [layer("a", "A")])
+        shared.publishVideoPlayback(["a": snapshot(generation)], sourceKeys: ["a": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const video = thisLayer.getVideoTexture(); video.stop();
+            shared.stoppedTime = video.getCurrentTime(); shared.stoppedPlaying = video.isPlaying();
+        }
+        export function update() { shared.nextTime = thisLayer.getVideoTexture().getCurrentTime(); }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        #expect(shared.get("stoppedTime") as? Double == 0)
+        #expect(shared.get("stoppedPlaying") as? Bool == false)
+        shared.publishVideoPlayback(["a": snapshot(generation, time: 0.04)])
+        _ = try #require(instance.tick())
+        #expect(shared.get("nextTime") as? Double == 0.04)
+    }
+
+    @Test("Commands retain logical object identity across decoder replacement")
+    func physicalReplacementDoesNotFilterCommands() throws {
+        let shared = WPESharedScriptState(layers: [layer("a", "A")])
+        shared.publishVideoPlayback(["a": snapshot(UUID())], sourceKeys: ["a": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { thisLayer.getVideoTexture().play(); }
+        export function update() { thisLayer.getVideoTexture().pause(); }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        let initial = instance.initialOutput.own.videoCommands
+        shared.publishVideoPlayback(["a": snapshot(UUID())], sourceKeys: ["a": "video.tex"])
+        var buffer = WPESceneScriptVideoCommandBuffer()
+        buffer.begin()
+        buffer.enqueue(initial, objectID: "a")
+        #expect(buffer.finish(commit: true).map(\.command) == [.play])
+        #expect(try #require(instance.tick()).own.videoCommands == [.pause])
+    }
+
+    @Test("Missing decoder readback does not discard valid handle commands")
+    func missingDecoderStillCollectsCommands() throws {
+        let shared = WPESharedScriptState(layers: [layer("a", "A")])
+        shared.publishVideoPlayback([:], sourceKeys: ["a": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const video = thisLayer.getVideoTexture();
+            shared.unavailable = video.getCurrentTime() === undefined;
+            video.play(); video.pause(); video.setCurrentTime(0.25);
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        #expect(shared.get("unavailable") as? Bool == true)
+        #expect(instance.initialOutput.own.videoCommands == [.play, .pause, .seek(0.25)])
+    }
+
+    @Test("Existing load permission accepts ordinary commands and rejects retired load completion")
+    func loadIdentityOwnsCommandAdmission() {
+        let loads = WPESceneScriptLoadState()
+        let first = loads.begin(generation: 1)
+        var buffer = WPESceneScriptVideoCommandBuffer()
+        buffer.begin()
+        buffer.enqueue([.play, .setRate(0.5)], objectID: "a")
+        var committed: [WPELayerVideoCommand] = []
+        #expect(loads.withCompletionPermission(for: first) {
+            committed = buffer.finish(commit: true).map(\.command)
+        })
+        #expect(committed == [.play, .setRate(0.5)])
+        buffer.begin()
+        buffer.enqueue([.pause], objectID: "a")
+        _ = loads.begin(generation: 2)
+        #expect(!loads.withCompletionPermission(for: first) {
+            committed.append(contentsOf: buffer.finish(commit: true).map(\.command))
+        })
+        #expect(buffer.finish(commit: false).isEmpty)
+        #expect(committed == [.play, .setRate(0.5)])
+    }
+
+    @Test("Empty and duplicate names resolve by authored object identity")
+    func objectIdentity() throws {
+        let shared = WPESharedScriptState(layers: [layer("a", ""), layer("b", "", index: 1)])
+        shared.publishVideoPlayback(["a": snapshot(UUID(), time: 0.25), "b": snapshot(UUID(), time: 1.5)])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() { shared.time = thisLayer.getVideoTexture().getCurrentTime(); }
+        """, shared: shared, ownLayerName: "", ownObjectID: "b")
+        #expect(instance.initialOutput.own.videoCommands.isEmpty)
+        #expect(shared.get("time") as? Double == 1.5)
+    }
+
+    @Test("Missing and retired sources do not supply fabricated playback")
+    func missingSource() throws {
+        let shared = WPESharedScriptState(layers: [layer("a", "A")])
+        shared.publishVideoPlayback(["a": snapshot(UUID())])
+        let instance = try WPELayerScriptInstance(script: """
+        export function update() {
+            const video = thisLayer.getVideoTexture();
+            shared.missing = video.getCurrentTime() === undefined && video.duration === undefined && video.isPlaying() === undefined;
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a")
+        shared.publishVideoPlayback([:])
+        _ = try #require(instance.tick())
+        #expect(shared.get("missing") as? Bool == true)
+    }
+}
+#endif

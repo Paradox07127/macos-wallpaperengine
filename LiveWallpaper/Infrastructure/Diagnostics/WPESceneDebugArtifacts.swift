@@ -95,7 +95,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         pruneOldSessions(under: root)
 
         let stamp = compactTimestamp(from: Date())
-        let folder = root.appendingPathComponent("\(stamp)-\(workshopID)", isDirectory: true)
+        let folder = root.appendingPathComponent("\(stamp)-\(workshopID)-\(UUID().uuidString)", isDirectory: true)
 
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -594,6 +594,17 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         defer { sessionLock.unlock() }
         return session?.folderURL
     }
+
+    #if DEBUG
+    func recordPassOutputBytes(name: String, bytes: Data, sessionFolder: URL) throws -> URL? {
+        guard isEnabled, activeSessionFolder == sessionFolder else { return nil }
+        let url = sessionFolder.appendingPathComponent(safeFileName(name))
+        try writeQueue.sync {
+            try bytes.write(to: url, options: .withoutOverwriting)
+        }
+        return url
+    }
+    #endif
 
     // MARK: - Helpers
 

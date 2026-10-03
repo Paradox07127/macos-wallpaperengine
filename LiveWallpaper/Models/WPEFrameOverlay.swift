@@ -101,6 +101,7 @@ extension WPEPreparedRenderPipeline {
                     stageUniformBindings: pass.stageUniformBindings,
                     layerTintOverride: claim,
                     alphaContract: pass.alphaContract,
+                    publicationVertexRole: pass.publicationVertexRole,
                     reusingAccess: pass.access
                 )
                 continue
@@ -133,6 +134,7 @@ extension WPEPreparedRenderPipeline {
                 stageUniformBindings: WPEUniformStageBinding.updating(pass.stageUniformBindings, shaderName: "g_Color", value: values["g_Color"]),
                 layerTintOverride: pass.layerTintOverride,
                 alphaContract: pass.alphaContract,
+                publicationVertexRole: pass.publicationVertexRole,
                 reusingAccess: pass.access
             )
         }

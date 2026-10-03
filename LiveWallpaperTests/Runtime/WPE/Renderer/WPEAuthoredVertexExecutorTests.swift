@@ -9,6 +9,194 @@ import Testing
 
 @Suite("Authored fullscreen vertex executor contracts", .serialized)
 struct WPEAuthoredVertexExecutorTests {
+    @Test("A suspended pass selects local, object, and alpha variants after preprocess memo eviction")
+    func samePassSelectsPrewarmedRequestVariantsAfterMemoEviction() throws {
+        let fixture = try fixture(prewarmed: true)
+        let (pipeline, camera) = publicationPipeline(fixture)
+        let layer = pipeline.layers[0]
+        let variants = WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: camera)
+            .filter { $0.pass.shader?.isBuiltin == false }
+        #expect(variants.count == 5)
+        var keys: [String: WPEShaderCompileResult] = [:]
+        for variant in variants {
+            let request = try #require(fixture.executor.authoredPrewarmRequest(for: variant.pass, execution: variant.vertexExecution))
+            if keys[request.translationCacheKey] == nil {
+                keys[request.translationCacheKey] = try fixture.executor.shaderCompiler.compile(request)
+            }
+        }
+        let local = try #require(variants.first { $0.vertexExecution == .authoredFullscreen })
+        let alternateLocal = try #require(variants.first { $0.vertexExecution == .authoredFullscreen && $0.pass.pass.source == .fbo("b") })
+        let terminal = try #require(variants.first { $0.vertexExecution == .authoredObjectQuad })
+        let straightLocal = WPEPreparedRenderPass(pass: local.pass.pass, shader: local.pass.shader,
+                                                  textureBindings: local.pass.textureBindings, comboValues: local.pass.comboValues, uniformValues: [:],
+                                                  alphaContract: .init(unpremultipliedInputSlots: [], premultipliedOutput: false))
+        let straightRequest = try #require(fixture.executor.authoredPrewarmRequest(for: straightLocal, execution: .authoredFullscreen))
+        keys[straightRequest.translationCacheKey] = try fixture.executor.shaderCompiler.compile(straightRequest)
+        fixture.executor.seedTranslatedShaderCache(keys.map { (key: $0.key, result: $0.value) })
+        let preparedMetadataCount = fixture.executor.authoredRequestKeyByIdentity.count
+        fixture.executor.releaseTransientResources()
+        #expect(fixture.executor.authoredRequestKeyByIdentity.count == preparedMetadataCount)
+        #expect(fixture.executor.authoredRequestKeyByPassID.isEmpty && fixture.executor.authoredShaderResultByPassID.isEmpty)
+        let namespace = UUID().uuidString
+        for index in 0 ..< 129 {
+            let program = WPEShaderProgram(name: "eviction-\(namespace)-\(index)", vertexSource: "void main() {}",
+                                           fragmentSource: "void main() {}", isBuiltin: false)
+            let pass = WPEPreparedRenderPass(pass: local.pass.pass, shader: program, textureBindings: [:], comboValues: [:], uniformValues: [:])
+            _ = try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false)
+        }
+        #expect(try WPEMetalRenderExecutor.makeCompileRequest(for: local.pass, recordFailure: false, allowPreprocessing: false) == nil)
+        let cacheCount = fixture.executor.translatedShaderCache.count
+        for (pass, execution) in [(local.pass, WPEVertexExecution.authoredFullscreen), (terminal.pass, .authoredObjectQuad),
+                                  (alternateLocal.pass, .authoredFullscreen),
+                                  (straightLocal, .authoredFullscreen), (local.pass, .authoredFullscreen)] {
+            let selected = WPEPreparedRenderPipeline(layers: [layer.replacing(graphLayer: layer.graphLayer.replacingPasses([pass.pass]), passes: [pass])])
+            fixture.executor.adoptPrewarmedAuthoredShaders(for: selected, camera: camera)
+            let result = try #require(fixture.executor.authoredShaderResultByPassID[pass.id])
+            #expect(result.vertexStage?.execution == execution)
+            #expect(result.alphaContract?.unpremultipliedInputSlots == (pass.alphaContract?.unpremultipliedInputSlots ?? [0]))
+            #expect(fixture.executor.authoredVertexFailureByPassID[pass.id] == nil)
+        }
+        #expect(fixture.executor.translatedShaderCache.count == cacheCount)
+    }
+
+    @Test("A missing object request does not poison the same pass's prepared local request")
+    func authoredRequestMissIsScopedToItsKey() throws {
+        let fixture = try fixture(prewarmed: true)
+        let (pipeline, camera) = publicationPipeline(fixture)
+        let layer = pipeline.layers[0]
+        let variants = WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: camera)
+        let local = try #require(variants.first { $0.pass.shader?.isBuiltin == false && $0.vertexExecution == .authoredFullscreen })
+        let terminal = try #require(variants.first { $0.pass.shader?.isBuiltin == false && $0.vertexExecution == .authoredObjectQuad })
+        let localRequest = try #require(fixture.executor.authoredPrewarmRequest(for: local.pass, execution: local.vertexExecution))
+        let terminalRequest = try #require(fixture.executor.authoredPrewarmRequest(for: terminal.pass, execution: terminal.vertexExecution))
+        let localResult = try fixture.executor.shaderCompiler.compile(localRequest)
+        fixture.executor.seedTranslatedShaderCache([(localRequest.translationCacheKey, localResult)])
+        for variant in [terminal, local, terminal, local] {
+            let selected = WPEPreparedRenderPipeline(layers: [layer.replacing(
+                graphLayer: layer.graphLayer.replacingPasses([variant.pass.pass]), passes: [variant.pass]
+            )])
+            fixture.executor.adoptPrewarmedAuthoredShaders(for: selected, camera: camera)
+            if variant.vertexExecution == .authoredObjectQuad {
+                #expect(fixture.executor.authoredRequestKeyByPassID[variant.pass.id] == terminalRequest.translationCacheKey)
+                #expect(fixture.executor.authoredShaderResultByPassID[variant.pass.id] == nil)
+                #expect(fixture.executor.authoredVertexFailureByPassID[variant.pass.id] == "authored-stage-not-prepared")
+            } else {
+                #expect(fixture.executor.authoredRequestKeyByPassID[variant.pass.id] == localRequest.translationCacheKey)
+                #expect(fixture.executor.authoredShaderResultByPassID[variant.pass.id]?.vertexStage?.execution == .authoredFullscreen)
+                #expect(fixture.executor.authoredVertexFailureByPassID[variant.pass.id] == nil)
+            }
+        }
+    }
+
+    @Test("Publication remains canonical until every authored role and PSO is prepared")
+    func publicationReadinessRequiresAllShadersAndPipelines() throws {
+        let fixture = try fixture(prewarmed: true)
+        let (pipeline, camera) = publicationPipeline(fixture)
+        var pending: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
+        var objectRequests: [(WPEPreparedRenderPass, WPEShaderCompileRequest)] = []
+        for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: pipeline.layers[0], camera: camera) where variant.pass.shader?.isBuiltin == false {
+            let request = try #require(fixture.executor.authoredPrewarmRequest(for: variant.pass, execution: variant.vertexExecution))
+            if variant.vertexExecution == .authoredObjectQuad {
+                objectRequests.append((variant.pass, request))
+                continue
+            }
+            let result: WPEShaderCompileResult
+            if let cached = fixture.executor.translatedShaderCache[request.translationCacheKey] {
+                result = cached
+            } else {
+                result = try fixture.executor.shaderCompiler.compile(request)
+                fixture.executor.seedTranslatedShaderCache([(request.translationCacheKey, result)])
+            }
+            let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
+                                                                              result: result, vertexName: nil, blendMode: variant.pass.pass.blending,
+                                                                              alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: variant.pass.pass.target), blendMode: variant.pass.pass.blending),
+                                                                              colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+            try fixture.executor.seedTranslatedPipelines([#require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))])
+        }
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: pipeline, camera: camera).isEmpty)
+        for (pass, request) in objectRequests {
+            let result: WPEShaderCompileResult
+            if let cached = fixture.executor.translatedShaderCache[request.translationCacheKey] {
+                result = cached
+            } else {
+                result = try fixture.executor.shaderCompiler.compile(request)
+                fixture.executor.seedTranslatedShaderCache([(request.translationCacheKey, result)])
+            }
+            pending.append(.init(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
+                                 result: result, vertexName: nil, blendMode: pass.pass.blending,
+                                 alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
+                                 colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid))
+        }
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: pipeline, camera: camera).isEmpty)
+        let retained = pipeline.retainingEffectPublication(in: [])
+        #expect(retained.layers[0].passes == pipeline.layers[0].passes)
+        #expect(retained.layers[0].effectPublication == nil)
+        #expect(retained.resolvingEffectPublication(passVisibility: [:], camera: camera) == retained)
+        for prewarm in pending {
+            try fixture.executor.seedTranslatedPipelines([#require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))])
+        }
+        let resolveCount = fixture.executor.passPipelineResolveCount
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: pipeline, camera: camera).isEmpty)
+        #expect(fixture.executor.passPipelineResolveCount == resolveCount)
+        let native = WPEMetalRenderExecutor.authoredPrewarmVariants(for: pipeline.layers[0], camera: camera).filter {
+            $0.pass.shader?.isBuiltin == true && $0.pass.alphaContract?.premultipliedOutput == false
+        }
+        #expect(native.count == 2)
+        for (index, variant) in native.enumerated() {
+            let pass = variant.pass
+            let object = variant.vertexExecution == .authoredObjectQuad
+            _ = try fixture.executor.passPipelineState(passID: pass.id, variant: .solidLayerStraight, objectQuad: object,
+                                                       vertexName: object ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex", fragmentName: "wpe_solidlayer_straight_fragment",
+                                                       blendMode: pass.pass.blending, alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
+                                                       colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+            #expect(fixture.executor.readyEffectPublicationLayerIDs(in: pipeline, camera: camera).isEmpty == (index == 0))
+        }
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: pipeline, camera: camera) == [pipeline.layers[0].id])
+    }
+
+    @Test("An unprepared clone performs no preprocessing while selecting an authored request")
+    func coldCloneCannotPreprocessDuringAdoption() throws {
+        let fixture = try fixture(prewarmed: true)
+        let original = fixture.pipeline.layers[0].passes[0]
+        let program = WPEShaderProgram(name: "unprepared-\(UUID().uuidString)", vertexSource: "invalid unprepared shader",
+                                       fragmentSource: "invalid unprepared shader", isBuiltin: false)
+        let pass = WPEPreparedRenderPass(pass: original.pass, shader: program, textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let layer = fixture.pipeline.layers[0].replacing(passes: [pass])
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer])
+        fixture.executor.adoptPrewarmedAuthoredShaders(for: pipeline, camera: .identity)
+        #expect(fixture.executor.authoredShaderResultByPassID[pass.id] == nil)
+        #expect(fixture.executor.authoredVertexFailureByPassID[pass.id] == "authored-request-not-prepared")
+        #expect(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false, allowPreprocessing: false) == nil)
+    }
+
+    @MainActor
+    @Test("Authored request metadata survives profile suspension and retires with the scene")
+    func authoredRequestMetadataFollowsSceneLifetime() async throws {
+        let scene = try MetalSceneFixture.solidColorScene()
+        defer { scene.cleanup() }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let renderer = try WPEMetalSceneRenderer(descriptor: scene.descriptor, cacheRootURL: scene.root,
+                                                 dependencyMounts: [], frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let program = WPEShaderProgram(name: "lifetime-\(UUID().uuidString)", vertexSource: "void main() {}",
+                                       fragmentSource: "void main() {}", isBuiltin: false)
+        let authored = WPERenderPass(id: "lifetime", phase: .material, shader: program.name, source: .asset("unused"), target: .scene,
+                                     textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                                     cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let pass = WPEPreparedRenderPass(pass: authored, shader: program, textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let identity = try #require(WPEMetalRenderExecutor.authoredShaderRequestIdentity(for: pass, execution: .authoredObjectQuad))
+        let request = try #require(renderer.executor.authoredPrewarmRequest(for: pass, execution: .authoredObjectQuad))
+        renderer.applyPerformanceProfile(.suspended)
+        renderer.applyPerformanceProfile(.quality)
+        #expect(renderer.executor.authoredRequestKeyByIdentity[identity] == request.translationCacheKey)
+        try await renderer.reload()
+        #expect(renderer.executor.authoredRequestKeyByIdentity[identity] == nil)
+        _ = try #require(renderer.executor.authoredPrewarmRequest(for: pass, execution: .authoredObjectQuad))
+        renderer.cleanup()
+        #expect(renderer.executor.authoredRequestKeyByIdentity.isEmpty)
+    }
+
     @Test(arguments: [(false, true, false), (true, true, false), (true, false, false),
                       (false, true, true), (true, true, true), (true, false, true)])
     func dispatcherUsesRealStageOnlyWithItsPrewarmedPipeline(conditions: (Bool, Bool, Bool)) throws {
@@ -115,6 +303,117 @@ struct WPEAuthoredVertexExecutorTests {
             #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(
                 declaration + " void main(){" + extra + "gl_Position=mul(vec4(a_Position,1.0),g_ModelViewProjectionMatrix);}"
             ))
+        }
+    }
+
+    @Test("The staged Windows local transform needs its publication role and a structured XY proof", arguments: [false, true])
+    func stagedLocalTransformRequiresPublicationRole(extraMVPConsumer: Bool) throws {
+        let fixture = try fixture(prewarmed: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("local-effect-proof-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let vertexSource = extraMVPConsumer ? Self.localTransformProbeVertex.replacingOccurrences(
+            of: "v_TexCoord = a_TexCoord;", with: "v_TexCoord = a_TexCoord; v_TexCoord += g_ModelViewProjectionMatrix[0].xy;"
+        ) : Self.localTransformProbeVertex
+        let files = ["shaders/probe-clock.vert": vertexSource,
+                     "shaders/probe-clock.frag": "varying vec2 v_TexCoord; void main(){gl_FragColor=vec4(v_TexCoord,0.25,1.0);}"]
+        for (path, source) in files {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(source.utf8).write(to: url)
+        }
+        let authored = WPERenderPass(id: "local", phase: .effect(file: "test/probe.json"), shader: "probe-clock", source: .fbo("a"),
+                                     target: .layerComposite(name: "b"), textures: [:], binds: [:], constants: [:], combos: ["MODE": 1], blending: "disabled",
+                                     cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let graph = fixture.pipeline.layers[0].graphLayer.replacingPasses([authored])
+        let staged = try WPERenderPipelineBuilder(cacheRootURL: root).build(graph: .init(layers: [graph]),
+                                                                            canonicalCompositeRotationEnabled: false, fullFramePassthroughElisionEnabled: false)
+        let pass = try #require(staged.layers.first?.passes.first)
+        let request = try #require(fixture.executor.authoredPrewarmRequest(for: pass, execution: .authoredFullscreen))
+        #expect(request.processedVertexSource.contains("vec3 DecompressNormal(vec4 packed)"))
+        #expect(request.processedVertexSource.contains("vec3 DecompressNormal(vec3 packed)"))
+        let result = try fixture.executor.shaderCompiler.compile(request)
+        #expect(result.fullscreenMVPPositionOnly == false)
+        #expect(result.localEffectMVPPositionOnly == !extraMVPConsumer)
+        #expect(try fixture.executor.shaderCompiler.compile(request).localEffectMVPPositionOnly == !extraMVPConsumer)
+        let marked = WPEPreparedRenderPass(pass: pass.pass, shader: pass.shader, textureBindings: pass.textureBindings,
+                                           comboValues: pass.comboValues, uniformValues: pass.uniformValues, materialUniformNames: pass.materialUniformNames,
+                                           stageUniformBindings: pass.stageUniformBindings, publicationVertexRole: .localEffect)
+        let texture = try #require(fixture.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)))
+        let frame = WPEMetalFrameState(output: texture, sceneSize: CGSize(width: 4, height: 4), cameraUniforms: .identity)
+        #expect(fixture.executor.authoredVertexRejection(for: pass, result: result, layer: graph, frameState: frame,
+                                                         effectTextureProjection: { nil }) == .unverifiedFullscreenMVP)
+        #expect(fixture.executor.authoredVertexRejection(for: marked, result: result, layer: graph, frameState: frame,
+                                                         effectTextureProjection: { nil }) == (extraMVPConsumer ? .unverifiedFullscreenMVP : nil))
+        let depth = WPERenderPass(id: marked.id, phase: marked.pass.phase, shader: marked.pass.shader, source: marked.pass.source,
+                                  target: marked.pass.target, textures: marked.pass.textures, binds: marked.pass.binds, constants: marked.pass.constants,
+                                  combos: marked.pass.combos, blending: marked.pass.blending, cullMode: marked.pass.cullMode, depthTest: "less", depthWrite: "enabled")
+        let markedDepth = WPEPreparedRenderPass(pass: depth, shader: marked.shader, textureBindings: marked.textureBindings,
+                                                comboValues: marked.comboValues, uniformValues: marked.uniformValues, materialUniformNames: marked.materialUniformNames,
+                                                stageUniformBindings: marked.stageUniformBindings, publicationVertexRole: .localEffect)
+        #expect(fixture.executor.authoredVertexRejection(for: markedDepth, result: result, layer: graph, frameState: frame,
+                                                         effectTextureProjection: { nil }) == .unverifiedFullscreenDepth)
+        let fragment = request.processedFragmentSource
+        let source = request.processedVertexSource
+        let unused = "void unused(inout vec4 q){if(q.x>0.0){q=vec4(1.0);}}"
+        #expect(WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(unused + "\n" + source, fragment: fragment) == !extraMVPConsumer)
+        for extra in ["v_TexCoord += g_ModelViewProjectionMatrix[0].xy;", "gl_Position.z += 0.2;", "position.z = 0.2;",
+                      "v_TexCoord += g_ModelViewProjectionMatrixInverse[0].xy;"] {
+            let modified = source.replacingOccurrences(of: "v_TexCoord = a_TexCoord;", with: "v_TexCoord = a_TexCoord;" + extra)
+            #expect(!WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(modified, fragment: fragment))
+        }
+        for definition in ["#define a_Position vec3(0.0)", "#define gl_Position v_TexCoord", "#define g_ModelViewProjectionMatrix mat4(1.0)",
+                           "#define g_ModelViewProjectionMatrixInverse mat4(1.0)", "#define inverse(m) m", "#define position a_Position", "#define a_Position"] {
+            #expect(!WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(definition + "\n" + source, fragment: fragment))
+        }
+        let impure = "vec2 edit(inout vec2 q){q=vec2(0.0);return q;}\n" + source.replacingOccurrences(of: "applyFx(position.xy)", with: "edit(position.xy)")
+        #expect(!WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(impure, fragment: fragment))
+        let customMultiply = "vec4 mul(vec4 p,mat4 m){return vec4(0.0);}\n" + source
+        #expect(!WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(customMultiply, fragment: fragment))
+        let (canonical, camera) = publicationPipeline(fixture, includingTail: true)
+        let original = canonical.layers[0].passes[1]
+        let effect = WPEPreparedRenderPass(pass: original.pass, shader: pass.shader, textureBindings: original.textureBindings,
+                                           comboValues: pass.comboValues, uniformValues: pass.uniformValues, materialUniformNames: pass.materialUniformNames,
+                                           stageUniformBindings: pass.stageUniformBindings)
+        let candidate = WPEPreparedRenderPipeline(layers: [canonical.layers[0].replacing(
+            passes: [canonical.layers[0].passes[0], effect] + canonical.layers[0].passes.dropFirst(2)
+        )])
+        try prewarmPublicationTestVariants(candidate, camera: camera, fixture: fixture)
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: candidate, camera: camera).isEmpty == extraMVPConsumer)
+        let tail = canonical.layers[0].passes[2]
+        let transformedTail = WPEPreparedRenderPass(pass: tail.pass, shader: pass.shader, textureBindings: tail.textureBindings,
+                                                    comboValues: pass.comboValues, uniformValues: pass.uniformValues, materialUniformNames: pass.materialUniformNames,
+                                                    stageUniformBindings: pass.stageUniformBindings)
+        let tailCandidate = WPEPreparedRenderPipeline(layers: [canonical.layers[0].replacing(
+            passes: Array(canonical.layers[0].passes.prefix(2)) + [transformedTail, canonical.layers[0].passes[3]]
+        )])
+        try prewarmPublicationTestVariants(tailCandidate, camera: camera, fixture: fixture)
+        #expect(fixture.executor.readyEffectPublicationLayerIDs(in: tailCandidate, camera: camera) == ["draw"])
+    }
+
+    private func prewarmPublicationTestVariants(_ candidate: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms, fixture: Fixture) throws {
+        for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: candidate.layers[0], camera: camera) {
+            let prepared = variant.pass
+            if prepared.shader?.isBuiltin == false {
+                let compileRequest = try #require(fixture.executor.authoredPrewarmRequest(for: prepared, execution: variant.vertexExecution))
+                let compiled: WPEShaderCompileResult
+                if let cached = fixture.executor.translatedShaderCache[compileRequest.translationCacheKey] {
+                    compiled = cached
+                } else {
+                    compiled = try fixture.executor.shaderCompiler.compile(compileRequest)
+                    fixture.executor.seedTranslatedShaderCache([(compileRequest.translationCacheKey, compiled)])
+                }
+                let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
+                                                                                  result: compiled, vertexName: nil, blendMode: prepared.pass.blending,
+                                                                                  alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: prepared.pass.target), blendMode: prepared.pass.blending),
+                                                                                  colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+                try fixture.executor.seedTranslatedPipelines([#require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))])
+            } else if prepared.alphaContract?.premultipliedOutput == false {
+                let object = variant.vertexExecution == .authoredObjectQuad
+                _ = try fixture.executor.passPipelineState(passID: prepared.id, variant: .solidLayerStraight, objectQuad: object,
+                                                           vertexName: object ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex", fragmentName: "wpe_solidlayer_straight_fragment",
+                                                           blendMode: prepared.pass.blending, alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: prepared.pass.target), blendMode: prepared.pass.blending),
+                                                           colorPixelFormat: WPEMetalRenderExecutor.outputPixelFormat, depthPixelFormat: .invalid)
+            }
         }
     }
 
@@ -281,7 +580,9 @@ struct WPEAuthoredVertexExecutorTests {
         let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: original.shader,
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
-        fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        fixture.executor.authoredShaderResultByPassID[pass.id] = result
+        fixture.executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredObjectQuad).translationCacheKey, result)])
         let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
                                               alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
                                               color: SIMD3(repeating: 1), brightness: 1)
@@ -398,7 +699,9 @@ struct WPEAuthoredVertexExecutorTests {
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
         if kind == "authored" {
             let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
-            fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+            let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+            fixture.executor.authoredShaderResultByPassID[pass.id] = result
+            fixture.executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredObjectQuad).translationCacheKey, result)])
         }
         let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, kind == "nonplanar" ? 10 : 0),
                                               scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
@@ -449,6 +752,7 @@ struct WPEAuthoredVertexExecutorTests {
             let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
             let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
             fixture.executor.authoredShaderResultByPassID[pass.id] = result
+            fixture.executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredObjectQuad).translationCacheKey, result)])
             let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled")
             let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
                                                                               result: result, vertexName: nil, blendMode: "disabled", alphaWritePolicy: alpha,
@@ -609,6 +913,7 @@ struct WPEAuthoredVertexExecutorTests {
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
         let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
         fixture.executor.authoredShaderResultByPassID[pass.id] = result
+        fixture.executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredObjectQuad).translationCacheKey, result)])
         let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: fixture.device, defaultLibrary: fixture.executor.defaultLibrary,
                                                                           result: result, vertexName: nil, blendMode: "disabled",
                                                                           alphaWritePolicy: WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: .scene), blendMode: "disabled"),
@@ -703,7 +1008,9 @@ struct WPEAuthoredVertexExecutorTests {
         let pass = WPEPreparedRenderPass(pass: original.pass.replacingTarget(.scene), shader: program,
                                          textureBindings: [:], comboValues: [:], uniformValues: [:])
         let request = try #require(try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false))
-        fixture.executor.authoredShaderResultByPassID[pass.id] = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        let result = try fixture.executor.shaderCompiler.compile(request.replacingVertexExecution(.authoredObjectQuad))
+        fixture.executor.authoredShaderResultByPassID[pass.id] = result
+        fixture.executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredObjectQuad).translationCacheKey, result)])
         let geometry = WPERenderLayerGeometry(origin: SIMD3(208, 84, 0), scale: SIMD3(1.2, 0.8, 1), angles: SIMD3(0, 0, 0.17),
                                               alignment: .center, size: CGSize(width: 192, height: 192), alpha: 1,
                                               color: SIMD3(repeating: 1), brightness: 1)
@@ -739,11 +1046,74 @@ struct WPEAuthoredVertexExecutorTests {
         }
     }
 
+    /// Captured 9000542 probe-clock source; its missing common.h uses the actual builder fallback.
+    private static let localTransformProbeVertex = """
+    // [COMBO] {"material":"ui_editor_properties_mode","combo":"MODE","type":"options","default":0,"options":{"Vertex":1,"UV":0}}
+    #include "common.h"
+    uniform mat4 g_ModelViewProjectionMatrix;
+    uniform vec2 g_Offset; // {"material":"offset","default":"0 0"}
+    uniform vec2 g_Scale; // {"material":"scale","default":"1 1"}
+    uniform float g_Direction; // {"material":"angle","default":0}
+    attribute vec3 a_Position;
+    attribute vec2 a_TexCoord;
+    varying vec2 v_TexCoord;
+    vec2 applyFx(vec2 v) {
+        v = rotateVec2(v - CAST2(0.5), -g_Direction);
+        return (v + g_Offset) * g_Scale + CAST2(0.5);
+    }
+    void main() {
+        vec3 position = a_Position;
+    #if MODE == 1
+        position.xy = applyFx(position.xy);
+    #endif
+        gl_Position = mul(vec4(position, 1.0), g_ModelViewProjectionMatrix);
+        v_TexCoord = a_TexCoord;
+    #if MODE == 0
+        v_TexCoord = applyFx(v_TexCoord);
+    #endif
+    }
+    """
+
     private struct Fixture {
         let device: MTLDevice
         let executor: WPEMetalRenderExecutor
         let pipeline: WPEPreparedRenderPipeline
         let result: WPEShaderCompileResult
+    }
+
+    private func publicationPipeline(_ fixture: Fixture, includingTail: Bool = false) -> (WPEPreparedRenderPipeline, WPEMetalCameraUniforms) {
+        let original = fixture.pipeline.layers[0].passes[0]
+        let copy = fixture.pipeline.layers[0].passes[1]
+        let identity = WPERenderEffectPassIdentity(objectID: "draw", authoredEffectID: "probe", authoredEffectPath: "test/probe.json",
+                                                   effectPassIndex: 0, authoredOverrideID: nil)
+        let effect = WPERenderPass(id: original.id, phase: .effect(file: "test/probe.json"), shader: original.pass.shader,
+                                   source: .fbo("a"), target: .layerComposite(name: "b"), textures: [:], binds: [:], constants: [:], combos: [:],
+                                   authoredJSON: .init(materialPass: .object(["cullmode": .string("nocull")]), effectIdentity: identity),
+                                   blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let base = WPERenderPass(id: "base", phase: .material, shader: "solidlayer", source: .asset("unused"),
+                                 target: .layerComposite(name: "a"), textures: [:], binds: [:], constants: [:], combos: [:],
+                                 blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let preparedBase = WPEPreparedRenderPass(pass: base, shader: .init(name: "solidlayer", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                                 textureBindings: [:], comboValues: [:], uniformValues: [:])
+        let preparedEffect = WPEPreparedRenderPass(pass: effect, shader: original.shader, textureBindings: [0: .fbo("a")], comboValues: [:], uniformValues: [:])
+        let tailIdentity = WPERenderEffectPassIdentity(objectID: "draw", authoredEffectID: "tail", authoredEffectPath: "test/tail.json",
+                                                       effectPassIndex: 0, authoredOverrideID: nil)
+        let tail = WPERenderPass(id: "tail", phase: .effect(file: "test/tail.json"), shader: original.pass.shader,
+                                 source: .fbo("b"), target: .layerComposite(name: "a"), textures: [:], binds: [:], constants: [:], combos: [:],
+                                 authoredJSON: .init(materialPass: .object(["cullmode": .string("nocull")]), effectIdentity: tailIdentity),
+                                 blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let preparedTail = WPEPreparedRenderPass(pass: tail, shader: original.shader, textureBindings: [0: .fbo("b")], comboValues: [:], uniformValues: [:])
+        let passes = [preparedBase, preparedEffect] + (includingTail ? [preparedTail] : []) + [copy]
+        let effects = [WPEEffectPublicationDescriptor.Effect(passID: effect.id, effectID: identity.stableEffectID)]
+            + (includingTail ? [.init(passID: tail.id, effectID: tailIdentity.stableEffectID)] : [])
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(2, 2, 0), scale: SIMD3(repeating: 1), angles: .zero,
+                                              alignment: .center, size: CGSize(width: 2, height: 2), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let graph = WPERenderLayer(objectID: "draw", objectName: "draw", imagePath: "unused", materialPath: nil, geometry: geometry,
+                                   compositeA: "a", compositeB: "b", localFBOs: [], passes: passes.map(\.pass))
+        let descriptor = WPEEffectPublicationDescriptor(basePassID: base.id, effects: effects,
+                                                        copyPassID: copy.id, sourceExtent: nil, staticParentModel: nil, scope: .nativeSolidChain, baseSceneBlending: "normal")
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: passes, effectPublication: descriptor)])
+        return (pipeline, .init(orthogonalProjection: .init(width: 4, height: 4, auto: false), sceneCamera: .defaultCamera))
     }
 
     private func fixture(prewarmed: Bool, effectProjection: Bool = false) throws -> Fixture {
@@ -785,6 +1155,7 @@ struct WPEAuthoredVertexExecutorTests {
         let legacy = try compiler.compile(request)
         executor.seedCompiledShaderResultsByPassID([(passID: prepared.id, result: legacy)])
         executor.authoredShaderResultByPassID[prepared.id] = result
+        executor.seedTranslatedShaderCache([(request.replacingVertexExecution(.authoredFullscreen).translationCacheKey, result)])
         let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: .named("a"), blendMode: "disabled")
         for variant in prewarmed ? [legacy, result] : [legacy] {
             let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(device: device, defaultLibrary: executor.defaultLibrary,

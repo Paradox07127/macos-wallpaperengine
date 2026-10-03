@@ -72,6 +72,7 @@ extension WPEMetalSceneRenderer {
         let scriptFailureBeforeFrame = sceneScriptLoadState.currentFailureReason
         let publicationBeforeFrame = captureSceneScriptFramePublication()
         beginSceneScriptVideoCommands()
+        publishVideoPlaybackSnapshots()
         pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         var didFinishSceneScriptVideoCommands = false
         defer {

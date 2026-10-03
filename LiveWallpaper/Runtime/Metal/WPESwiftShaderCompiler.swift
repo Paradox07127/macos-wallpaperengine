@@ -197,7 +197,8 @@ struct WPESwiftShaderCompiler: Sendable {
             textureSlotCount: textureSlotCount,
             shaderInterface: WPEShaderInterfaceParser.parse(vertex: processedVertex, fragment: processedFragment),
             alphaContract: alphaContract, vertexStage: vertexStage,
-            fullscreenMVPPositionOnly: WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(processedVertex, fragment: processedFragment)
+            fullscreenMVPPositionOnly: WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(processedVertex, fragment: processedFragment),
+            localEffectMVPPositionOnly: WPEShaderStageLink.usesMVPOnlyForLocalEffectPosition(processedVertex, fragment: processedFragment)
         )
     }
 

@@ -851,7 +851,7 @@ struct OracleCorpusCaptureTests {
             try Self.awaitSceneScriptBatch(renderer)
             guard isLast else { continue }
             if perPass {
-                renderer.dumpScenePassesIfRequested(suffix: "-f\(index)")
+                renderer.dumpScenePassesIfRequested(suffix: "-f\(index)", frameOrdinal: index)
             }
             let finalTrace = WPECanonicalTraceRecorder.shared.finishFrame(
                 outputTexture: texture,

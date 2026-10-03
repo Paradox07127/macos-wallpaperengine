@@ -113,6 +113,7 @@ final class WPEVideoDecoderAdmission: @unchecked Sendable {
 }
 
 final class WPEVideoTextureSource {
+    let scriptSourceGeneration = UUID()
     private let device: MTLDevice
     private let textureCache: CVMetalTextureCache
     private let player: AVQueuePlayer?
@@ -326,17 +327,9 @@ final class WPEVideoTextureSource {
         guard !isInvalidated else { return nil }
         guard player != nil else { return currentTexture }
 
-        // Script play-once: freeze on natural loop wrap (don't mutate looper queue — races frame tap).
-        if scriptControlled {
-            if scriptHeldAtEnd { return currentTexture }
-            let playhead = playheadSeconds
-            if playhead + 0.1 < scriptLastPlaybackSeconds {
-                playbackRequested = false
-                player?.pause()
-                scriptHeldAtEnd = true
-                return currentTexture   // hold the pre-wrap (≈ last) frame
-            }
-            scriptLastPlaybackSeconds = playhead
+        observeScriptPlaybackBoundary()
+        if scriptControlled, scriptHeldAtEnd || !playbackRequested || policySuspended {
+            return currentTexture
         }
 
         if #available(macOS 15.0, *), let playerOutput = playerLevelOutput as? WPEPlayerLevelVideoOutput {
@@ -378,23 +371,49 @@ final class WPEVideoTextureSource {
 
     // MARK: - SceneScript playback control (`thisLayer.getVideoTexture()`)
 
-    /// Script owns playback — policy stops force-play; texture path becomes play-once.
+    /// Script owns playback intent independently of policy suspension and looping.
     private var scriptControlled = false
     private var playbackRequested = false
     private var policySuspended = false
+    private var scriptRate = 1.0
+    private var scriptLoop = true
 
     private func reconcilePlaybackIntent() {
         if playbackRequested, !policySuspended, !scriptHeldAtEnd {
+            player?.defaultRate = Float(scriptRate)
             player?.play()
         } else {
             player?.pause()
         }
     }
 
-    /// Last playhead for loop-wrap detection (backward jump).
-    private var scriptLastPlaybackSeconds: TimeInterval = 0
-    /// Play-once reached end and froze on last frame.
+    private var scriptLastLoopCount = 0
+    /// Nonlooping playback retains the last published frame and logical endpoint.
     private var scriptHeldAtEnd = false
+
+    private func observeScriptPlaybackBoundary() {
+        guard scriptControlled, !isInvalidated else { return }
+        let loopCount = playerLooper?.loopCount ?? 0
+        defer { scriptLastLoopCount = loopCount }
+        guard loopCount > scriptLastLoopCount, playbackRequested, !scriptLoop else { return }
+        playbackRequested = false
+        player?.pause()
+        scriptHeldAtEnd = true
+    }
+
+    var scriptPlaybackSnapshot: WPEVideoPlaybackSnapshot? {
+        guard !isInvalidated, player != nil else { return nil }
+        observeScriptPlaybackBoundary()
+        return .init(
+            sourceGeneration: scriptSourceGeneration,
+            currentTime: scriptHeldAtEnd ? loopDurationSeconds : playheadSeconds,
+            duration: loopDurationSeconds,
+            isPlaying: playbackRequested && !policySuspended && !scriptHeldAtEnd,
+            rate: scriptRate,
+            loop: scriptLoop,
+            hasPresentedFrame: latest != nil
+        )
+    }
 
     private func enterScriptControlledMode() {
         guard !scriptControlled else { return }
@@ -402,10 +421,10 @@ final class WPEVideoTextureSource {
         resetScriptPlayback()
     }
 
-    /// Clear freeze + wrap baseline for a fresh play-through.
+    /// Count completed replica items, rather than confusing a backward seek with a wrap.
     private func resetScriptPlayback() {
         scriptHeldAtEnd = false
-        scriptLastPlaybackSeconds = playheadSeconds
+        scriptLastLoopCount = playerLooper?.loopCount ?? 0
     }
 
     func scriptPlay() {
@@ -423,7 +442,7 @@ final class WPEVideoTextureSource {
         reconcilePlaybackIntent()
     }
 
-    /// Pause + rewind to first frame (reset play-once for replay).
+    /// Rewind the logical clock while retaining the presented texture.
     func scriptStop() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
@@ -434,10 +453,23 @@ final class WPEVideoTextureSource {
     }
 
     func scriptSetCurrentTime(_ seconds: TimeInterval) {
-        guard !isInvalidated else { return }
+        guard !isInvalidated, seconds.isFinite else { return }
         enterScriptControlledMode()
         player?.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
         resetScriptPlayback()
+    }
+
+    func scriptSetRate(_ rate: Double) {
+        guard !isInvalidated, rate.isFinite, (0.5 ... 2).contains(rate) else { return }
+        enterScriptControlledMode()
+        scriptRate = rate
+        reconcilePlaybackIntent()
+    }
+
+    func scriptSetLoop(_ loop: Bool) {
+        guard !isInvalidated else { return }
+        enterScriptControlledMode()
+        scriptLoop = loop
     }
 
     /// Dropping the last Swift reference does not stop a playing `AVQueuePlayer`; `invalidate()` is the teardown backstop.
@@ -984,7 +1016,7 @@ final class WPEVideoTextureSource {
         autoreleaseFrequency: .workItem
     )
 
-    /// Current item time (s); used by play-once wrap detection in all builds.
+    /// Actual current item time, independent of the retained presentation texture.
     private var playheadSeconds: TimeInterval {
         guard let time = player?.currentTime(), time.isValid, !time.isIndefinite else { return 0 }
         let seconds = time.seconds

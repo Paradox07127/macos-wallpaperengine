@@ -3,6 +3,18 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
+struct WPEAuthoredShaderRequestIdentity: Hashable {
+    let preprocessing: WPEShaderPreprocessMemoKey
+    let inputSlots: Set<Int>
+    let output: Bool
+    let execution: WPEVertexExecution
+}
+
+struct WPEAuthoredPassPrewarmVariant {
+    let pass: WPEPreparedRenderPass
+    let vertexExecution: WPEVertexExecution
+}
+
 extension WPEMetalRenderExecutor {
     /// Runtime-created passes have fresh IDs but may share an already compiled
     /// stage pair. Adopt only the complete content/execution/PMA cache key;
@@ -10,16 +22,28 @@ extension WPEMetalRenderExecutor {
     func adoptPrewarmedAuthoredShaders(for pipeline: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms) {
         for layer in pipeline.layers {
             for pass in layer.passes where pass.shader?.isBuiltin == false {
-                guard authoredShaderResultByPassID[pass.id] == nil, authoredVertexFailureByPassID[pass.id] == nil else { continue }
-                let object: Bool = if case .scene = pass.pass.target {
-                    layer.graphLayer.geometry != .identity && Self.canSupplyAuthoredObjectQuad(layer: layer.graphLayer, camera: camera)
+                let execution = Self.authoredVertexExecution(for: pass, layer: layer.graphLayer, camera: camera)
+                guard let identity = Self.authoredShaderRequestIdentity(for: pass, execution: execution) else { continue }
+                let key: String
+                if let cached = authoredRequestKeyByIdentity[identity] {
+                    key = cached
+                } else if let request = try? Self.makeCompileRequest(for: pass, recordFailure: false, allowPreprocessing: false) {
+                    key = request.replacingVertexExecution(execution).translationCacheKey
+                    authoredRequestKeyByIdentity[identity] = key
                 } else {
-                    false
+                    authoredRequestKeyByPassID.removeValue(forKey: pass.id)
+                    authoredShaderResultByPassID.removeValue(forKey: pass.id)
+                    authoredVertexFailureByPassID[pass.id] = "authored-request-not-prepared"
+                    continue
                 }
-                guard let request = try? Self.makeCompileRequest(for: pass, recordFailure: false),
-                      let result = translatedShaderCache[request.replacingVertexExecution(object ? .authoredObjectQuad : .authoredFullscreen).translationCacheKey] else {
-                    // Load prewarm is complete before frames. Remember misses so
-                    // an unprepared clone never preprocesses on every frame.
+                if authoredRequestKeyByPassID[pass.id] == key,
+                   authoredShaderResultByPassID[pass.id] != nil || translatedShaderCache[key] == nil {
+                    continue
+                }
+                authoredRequestKeyByPassID[pass.id] = key
+                authoredShaderResultByPassID.removeValue(forKey: pass.id)
+                authoredVertexFailureByPassID.removeValue(forKey: pass.id)
+                guard let result = translatedShaderCache[key] else {
                     authoredVertexFailureByPassID[pass.id] = "authored-stage-not-prepared"
                     continue
                 }
@@ -27,29 +51,106 @@ extension WPEMetalRenderExecutor {
             }
         }
     }
+
+    static func authoredVertexExecution(
+        for pass: WPEPreparedRenderPass, layer: WPERenderLayer, camera: WPEMetalCameraUniforms
+    ) -> WPEVertexExecution {
+        if case .scene = pass.pass.target,
+           layer.geometry != .identity, canSupplyAuthoredObjectQuad(layer: layer, camera: camera) {
+            return .authoredObjectQuad
+        }
+        return .authoredFullscreen
+    }
+
+    func authoredPrewarmRequest(for pass: WPEPreparedRenderPass, execution: WPEVertexExecution) -> WPEShaderCompileRequest? {
+        guard let request = try? Self.makeCompileRequest(for: pass, recordFailure: false),
+              let identity = Self.authoredShaderRequestIdentity(for: pass, execution: execution) else { return nil }
+        let authored = request.replacingVertexExecution(execution)
+        authoredRequestKeyByIdentity[identity] = authored.translationCacheKey
+        return authored
+    }
+
+    static func authoredPrewarmVariants(for layer: WPEPreparedRenderLayer, camera: WPEMetalCameraUniforms) -> [WPEAuthoredPassPrewarmVariant] {
+        layer.passes.map { pass in
+            .init(pass: pass, vertexExecution: authoredVertexExecution(for: pass, layer: layer.graphLayer, camera: camera))
+        } + layer.effectPublicationPrewarmPasses(camera: camera).map { pass in
+            .init(pass: pass, vertexExecution: authoredVertexExecution(for: pass,
+                                                                       layer: layer.graphLayer.replacingPasses([pass.pass]), camera: camera))
+        }
+    }
+
+    func readyEffectPublicationLayerIDs(
+        in pipeline: WPEPreparedRenderPipeline, camera: WPEMetalCameraUniforms
+    ) -> Set<String> {
+        let declarations = pipeline.layers.flatMap(\.graphLayer.localFBOs)
+        let colorFormat: MTLPixelFormat = camera.sceneHDR ? .rgba16Float : Self.outputPixelFormat
+        return Set(pipeline.layers.compactMap { layer in
+            let publicationPasses = layer.effectPublicationPrewarmPasses(camera: camera)
+            guard let descriptor = layer.effectPublication,
+                  publicationPasses.count == descriptor.effects.count * 4 + (descriptor.scope == .nativeSolidChain ? 2 : 0),
+                  !descriptor.effects.isEmpty else { return nil }
+            let variants = Self.authoredPrewarmVariants(for: layer, camera: camera)
+            let required = variants.suffix(publicationPasses.count)
+            let native = descriptor.scope == .nativeSolidChain ? required.filter {
+                $0.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: $0.pass.pass.shader) == .solidLayer
+                    && $0.pass.alphaContract?.premultipliedOutput == false
+            } : []
+            guard native.count == (descriptor.scope == .nativeSolidChain ? 2 : 0) else { return nil }
+            guard native.allSatisfy({ variant in
+                let pass = variant.pass
+                let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
+                                                                                     declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: camera.sceneHDR)
+                let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: depthCache.needsAttachment(for: pass))
+                return hasCachedPassPipelineState(passID: pass.id, variant: .solidLayerStraight,
+                                                  objectQuad: variant.vertexExecution == .authoredObjectQuad, blendMode: pass.pass.blending,
+                                                  alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
+                                                  colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
+            }) else { return nil }
+            guard variants.filter({ $0.pass.shader?.isBuiltin == false }).allSatisfy({ variant in
+                let pass = variant.pass
+                guard let identity = Self.authoredShaderRequestIdentity(for: pass, execution: variant.vertexExecution),
+                      let key = authoredRequestKeyByIdentity[identity], let result = translatedShaderCache[key] else { return false }
+                let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
+                                                                                     declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: camera.sceneHDR)
+                let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: depthCache.needsAttachment(for: pass))
+                return hasPrewarmedAuthoredPipeline(for: result, pass: pass, targetID: WPEMetalTargetID(target: pass.pass.target),
+                                                    colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
+            }) else { return nil }
+            let localEffectIDs = descriptor.scope == .nativeSolidChain ? Set(descriptor.effects.dropLast().map(\.passID)) : []
+            guard required
+                .filter({ $0.pass.shader?.isBuiltin == false }).allSatisfy({ variant in
+                    let needsLocalExecution = localEffectIDs.contains(variant.pass.id)
+                    guard variant.vertexExecution == .authoredObjectQuad || needsLocalExecution else { return true }
+                    guard let identity = Self.authoredShaderRequestIdentity(for: variant.pass, execution: variant.vertexExecution),
+                          let key = authoredRequestKeyByIdentity[identity], let result = translatedShaderCache[key],
+                          result.vertexStage?.execution == variant.vertexExecution else { return false }
+                    let needsPositionProof = result.vertexStage?.uniformLayout.contains {
+                        $0.name == "g_ModelViewProjectionMatrix" && $0.materialName == nil
+                            && result.shaderInterface?.isVertexUniformProvenUnreferenced($0.name) != true
+                    } == true
+                    return variant.vertexExecution != .authoredFullscreen || !needsPositionProof || result.fullscreenMVPPositionOnly
+                        || (variant.pass.publicationVertexRole == .localEffect && result.localEffectMVPPositionOnly)
+                }) else { return nil }
+            return layer.graphLayer.objectID
+        })
+    }
 }
 
 extension WPEMetalSceneRenderer {
     /// Compile and build authored pairs before any frame encoder is opened.
     /// Failures are retained as explicit admission reasons; the legacy result stays available.
     func prewarmAuthoredVertexShaders(for pipeline: WPEPreparedRenderPipeline,
-                                      on _: isolated WPEDisplayRenderActor) async {
-        guard !Task.isCancelled else { return }
+                                      on _: isolated WPEDisplayRenderActor) async -> Set<String> {
+        guard !Task.isCancelled else { return [] }
         let generation = loadGeneration
         var requestByKey: [String: WPEShaderCompileRequest] = [:]
-        var keyByPassID: [String: String] = [:]
+        var candidates: [(pass: WPEPreparedRenderPass, key: String)] = []
         for layer in pipeline.layers {
-            for pass in layer.passes where pass.shader?.isBuiltin == false {
-                guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false) else { continue }
-                let graph = layer.graphLayer
-                let object: Bool = if case .scene = pass.pass.target {
-                    graph.geometry != .identity && WPEMetalRenderExecutor.canSupplyAuthoredObjectQuad(layer: graph, camera: cameraUniforms)
-                } else {
-                    false
-                }
-                let authored = request.replacingVertexExecution(object ? .authoredObjectQuad : .authoredFullscreen)
+            for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms) where variant.pass.shader?.isBuiltin == false {
+                let pass = variant.pass
+                guard let authored = executor.authoredPrewarmRequest(for: pass, execution: variant.vertexExecution) else { continue }
                 requestByKey[authored.translationCacheKey] = authored
-                keyByPassID[pass.id] = authored.translationCacheKey
+                candidates.append((pass, authored.translationCacheKey))
             }
         }
         let partition = executor.partitionTranslatedShaderPrewarmRequests(Array(requestByKey.values))
@@ -82,33 +183,42 @@ extension WPEMetalSceneRenderer {
             }
             return outputs
         }
-        guard loadGeneration == generation, !Task.isCancelled else { return }
+        guard loadGeneration == generation, !Task.isCancelled else { return [] }
         let successful = entries.compactMap { entry in entry.result.map { (key: entry.key, result: $0) } }
         executor.seedTranslatedShaderCache(successful)
         let results = Dictionary((partition.cached + successful).map { ($0.key, $0.result) }, uniquingKeysWith: { first, _ in first })
         let reasons = Dictionary(entries.compactMap { entry in entry.reason.map { (entry.key, $0) } }, uniquingKeysWith: { first, _ in first })
         let declarations = pipeline.layers.flatMap(\.graphLayer.localFBOs)
         let colorFormat: MTLPixelFormat = cameraUniforms.sceneHDR ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
-        var prewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
-        var seen = Set<String>()
-        for layer in pipeline.layers {
-            for pass in layer.passes {
-                guard let key = keyByPassID[pass.id] else { continue }
-                guard let result = results[key] else {
-                    executor.authoredVertexFailureByPassID[pass.id] = reasons[key] ?? "authored-stage-prewarm-unavailable"
-                    continue
-                }
-                executor.authoredShaderResultByPassID[pass.id] = result
+        for layer in pipeline.layers where layer.effectPublication?.scope == .nativeSolidChain {
+            for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms)
+                where variant.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: variant.pass.pass.shader) == .solidLayer
+                && variant.pass.alphaContract?.premultipliedOutput == false {
+                let pass = variant.pass
                 let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
                                                                                      declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: cameraUniforms.sceneHDR)
                 let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: executor.depthCache.needsAttachment(for: pass))
-                let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending)
-                let identity = "\(key)|\(pass.pass.blending)|\(alpha)|\(targetFormat.rawValue)|\(depthFormat.rawValue)"
-                guard seen.insert(identity).inserted else { continue }
-                prewarms.append(.init(device: executor.textureSourceDevice, defaultLibrary: executor.defaultLibrary,
-                                      result: result, vertexName: nil, blendMode: pass.pass.blending, alphaWritePolicy: alpha,
-                                      colorPixelFormat: targetFormat, depthPixelFormat: depthFormat))
+                let objectQuad = variant.vertexExecution == .authoredObjectQuad
+                _ = try? executor.passPipelineState(passID: pass.id, variant: .solidLayerStraight, objectQuad: objectQuad,
+                                                    vertexName: objectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex", fragmentName: "wpe_solidlayer_straight_fragment",
+                                                    blendMode: pass.pass.blending,
+                                                    alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
+                                                    colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
             }
+        }
+        var prewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
+        var seen = Set<String>()
+        for (pass, key) in candidates {
+            guard let result = results[key] else { continue }
+            let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
+                                                                                 declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: cameraUniforms.sceneHDR)
+            let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: executor.depthCache.needsAttachment(for: pass))
+            let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending)
+            let identity = "\(key)|\(pass.pass.blending)|\(alpha)|\(targetFormat.rawValue)|\(depthFormat.rawValue)"
+            guard seen.insert(identity).inserted else { continue }
+            prewarms.append(.init(device: executor.textureSourceDevice, defaultLibrary: executor.defaultLibrary,
+                                  result: result, vertexName: nil, blendMode: pass.pass.blending, alphaWritePolicy: alpha,
+                                  colorPixelFormat: targetFormat, depthPixelFormat: depthFormat))
         }
         // Pipeline construction is bounded too; never start one task per pass.
         let built = await withTaskGroup(of: WPEMetalRenderExecutor.WPEPrewarmedPipeline?.self) { group in
@@ -131,9 +241,10 @@ extension WPEMetalSceneRenderer {
             }
             return outputs
         }
-        guard loadGeneration == generation, !Task.isCancelled else { return }
+        guard loadGeneration == generation, !Task.isCancelled else { return [] }
         executor.seedTranslatedPipelines(built)
         debugStage("vertex.prewarm.done", "pairs=\(results.count) failures=\(reasons.count) pipelines=\(built.count)")
+        return executor.readyEffectPublicationLayerIDs(in: pipeline, camera: cameraUniforms)
     }
 
     private struct AuthoredVertexPrewarmOutcome: @unchecked Sendable {

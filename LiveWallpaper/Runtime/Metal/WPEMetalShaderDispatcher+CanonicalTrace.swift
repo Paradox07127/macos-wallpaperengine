@@ -10,7 +10,8 @@ extension WPEMetalShaderDispatcher {
 
     static func builtinTraceMetadata(
         for kind: WPEBuiltinShaderKind,
-        passShader: String
+        passShader: String,
+        alphaContract: WPEShaderAlphaContract? = nil
     ) -> BuiltinTraceMetadata {
         if let effect = WPEEffectDispatchDescriptor.table[kind] {
             let slots = kind == .effectOpacity || kind == .effectWaterWaves ? [0, 1] : [0]
@@ -23,7 +24,8 @@ extension WPEMetalShaderDispatcher {
         case .solidColor:
             return BuiltinTraceMetadata(fragmentShaderName: "wpe_solidcolor_fragment", textureSlots: [])
         case .solidLayer:
-            return BuiltinTraceMetadata(fragmentShaderName: "wpe_solidlayer_fragment", textureSlots: [])
+            return BuiltinTraceMetadata(fragmentShaderName: alphaContract?.premultipliedOutput == false
+                ? "wpe_solidlayer_straight_fragment" : "wpe_solidlayer_fragment", textureSlots: [])
         case .copy:
             let fragment = passShader == "commands/copy"
                 ? "wpe_copy_fragment"
@@ -60,7 +62,7 @@ extension WPEMetalShaderDispatcher {
         let recorder = WPECanonicalTraceRecorder.shared
         guard recorder.isAccumulating else { return }
 
-        var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader)
+        var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader, alphaContract: pass.alphaContract)
         if kind == .blendComposite && fetchSceneColor {
             metadata = BuiltinTraceMetadata(fragmentShaderName: "wpe_blend_composite_fetch_fragment", textureSlots: [0])
         }
