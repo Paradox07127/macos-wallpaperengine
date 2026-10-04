@@ -1794,6 +1794,7 @@ final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
     let userProperties: [String: WPESceneScriptPropertyValue]
     let layers: [WPESceneScriptLayerInfo]
+    let timelineAnimations = WPESceneTimelineStore()
     private let ambiguousLayerNames: Set<String>
     private let lock = NSLock()
     private var storage: [String: Any] = [:]
@@ -3707,6 +3708,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 let current = lookup()
                 return (current?.transform.angles ?? current?.info.angles ?? .zero) * (180 / .pi)
             }
+            wpeInstallTimelineAnimation(on: handle, objectID: layer.info.id, shared: shared, in: context)
             let parentName = layer.info.parentName
             let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
                 guard let self, let context, let parentName else { return self?.neutralLayerHandle }

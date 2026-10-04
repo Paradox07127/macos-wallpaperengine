@@ -443,8 +443,9 @@ struct WPEGodraysCombineUniforms {
     var copyBackground: UInt32 = 0
     /// Authored BLENDMODE combo (common_blending.h numbering; 0 = rays only).
     var blendMode: UInt32 = 9
-    var padding1: UInt32 = 0
+    var sceneBackground: UInt32 = 0
     var padding2: UInt32 = 0
+    var backgroundProjection = matrix_identity_float4x4
 }
 
 struct WPEIrisUniforms {

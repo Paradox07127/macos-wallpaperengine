@@ -82,10 +82,13 @@ extension WPEMetalSceneRenderer {
             submitSceneScriptFrameJobs()
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
+        sceneScriptSharedState?.timelineAnimations.publishTime(uniforms.time)
         var frameOverlay = tickLayerPresentationScripts(
             uniforms: uniforms,
             layerScriptPointerFrame: frameContext.layerScriptPointerFrame
         )
+        let timelineAlpha = sceneScriptSharedState?.timelineAnimations.alphaOverrides(at: uniforms.time) ?? [:]
+        frameOverlay.alpha = timelineAlpha.merging(frameOverlay.alpha) { _, script in script }
         // Kept around past the pipeline application so render-graph text can
         // re-compose text anchors through the SAME live parent transforms.
         let authoredTransforms = authoredTransformAnimations(at: uniforms.time)

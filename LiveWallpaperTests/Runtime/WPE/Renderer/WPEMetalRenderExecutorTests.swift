@@ -503,6 +503,80 @@ struct WPEMetalRenderExecutorTests {
         #expect(pixel.a >= 250)
     }
 
+    @Test("Godrays COPYBG never leaks RGB from fully transparent texels")
+    func godraysTransparentCopyBackgroundDoesNotLeak() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let zero = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 0, count: 16))
+        let background = try makeCheckerTexture(device: device)
+        let combine = WPERenderPass(
+            id: "moon.combine", phase: .effect(file: "effects/godrays/effect.json"),
+            shader: "effects/godrays_combine", source: .image("zero"), target: .scene,
+            textures: [0: .image("zero"), 1: .image("zero"), 2: .image("background")],
+            binds: [:], constants: [:], combos: ["BLENDMODE": 9], blending: "premultiplied",
+            cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let pipeline = preparedPipeline(localFBOs: [], passes: [
+            preparedBuiltinPass(copyPass(id: "background", source: .image("background"), target: .scene, blending: "disabled")),
+            preparedBuiltinPass(combine),
+        ])
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 2, height: 2),
+                                         textures: ["zero": zero, "background": background])
+        for y in 0 ..< 2 {
+            for x in 0 ..< 2 {
+                let expected = try readPixel(background, x: x, y: y)
+                let actual = try readPixel(output, x: x, y: y)
+                expectPixel(actual, approximately: expected, tolerance: 1)
+            }
+        }
+    }
+
+    @Test("Godrays COPYBG projects layer UVs into the scene before sampling")
+    func godraysCopyBackgroundUsesProjectedSceneUV() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let rays = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 0, count: 16))
+        let albedo = try makeRGBAInputTexture(device: device, bytes: Data([0, 0, 0, 128, 0, 0, 0, 128, 0, 0, 0, 128, 0, 0, 0, 128]))
+        let background = try makeRGBAInputTexture(device: device, width: 16, height: 16,
+                                                  bytes: Data((0 ..< 256).flatMap { index -> [UInt8] in
+                                                      index % 16 < 8 ? [255, 0, 0, 255] : [0, 0, 255, 255]
+                                                  }))
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = executor.defaultLibrary.makeFunction(name: "wpe_fullscreen_vertex")
+        let constants = MTLFunctionConstantValues()
+        var unormTarget = true
+        constants.setConstantValue(&unormTarget, type: .bool, index: 1023)
+        descriptor.fragmentFunction = try executor.defaultLibrary.makeFunction(
+            name: "wpe_effect_godrays_combine_fragment", constantValues: constants
+        )
+        descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false)
+        textureDescriptor.usage = [.renderTarget, .shaderRead]
+        let output = try #require(device.makeTexture(descriptor: textureDescriptor))
+        let renderPass = MTLRenderPassDescriptor()
+        renderPass.colorAttachments[0].texture = output
+        renderPass.colorAttachments[0].loadAction = .clear
+        renderPass.colorAttachments[0].storeAction = .store
+        let command = try #require(executor.commandQueue.makeCommandBuffer())
+        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: renderPass))
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentTexture(rays, index: 0)
+        encoder.setFragmentTexture(albedo, index: 1)
+        encoder.setFragmentTexture(background, index: 2)
+        var uniforms = WPEGodraysCombineUniforms(copyBackground: 1, blendMode: 9, sceneBackground: 1)
+        uniforms.backgroundProjection.columns.0.x = 0.5
+        uniforms.backgroundProjection.columns.3.x = 0.5
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGodraysCombineUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.status == .completed)
+        let pixel = try readPixel(output, x: 0, y: 2)
+        expectPixel(pixel, approximately: Pixel(r: 0, g: 0, b: 64, a: 128), tolerance: 2)
+    }
+
     @Test("Godrays combine mixes rays over albedo through builtin compatibility path")
     func godraysCombineMixesRaysOverAlbedoThroughBuiltinPath() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
