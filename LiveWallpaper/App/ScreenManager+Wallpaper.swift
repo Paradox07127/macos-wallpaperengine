@@ -343,6 +343,18 @@ extension ScreenManager {
         refreshAppNapAssertion()
     }
 
+    /// Explicit intent for automation clients; retries do not reverse playback.
+    func setPlayback(playing: Bool, for screen: Screen) {
+        guard !isTerminating, screens.contains(where: { $0 === screen }),
+              let playback = screen.playbackController else { return }
+        if playback.userIntendsToPlay != playing {
+            if playing { playback.play() } else { playback.pause() }
+        }
+        persistUserPause(!playing, for: screen)
+        markWallpaperSessionStateChanged()
+        refreshAppNapAssertion()
+    }
+
     private func persistUserPause(_ paused: Bool, for screen: Screen) {
         // A display with no saved wallpaper has no session to restore paused. The fingerprint lookup is avoided because it can stamp the row and advance its revision.
         if paused, configurationStore.get(for: screen.id) == nil { return }

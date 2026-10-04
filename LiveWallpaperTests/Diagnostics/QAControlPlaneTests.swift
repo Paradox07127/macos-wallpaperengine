@@ -42,6 +42,26 @@ struct QAControlPlaneDefaultsTests {
 @Suite("QA control plane screen identity", .serialized)
 @MainActor
 struct QAControlPlaneScreenIdentityTests {
+    @Test("Explicit playback repeats preserve intent instead of toggling")
+    func explicitPlaybackIsIdempotent() async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let arguments = #"{"screenID":\#(fixture.screen.id),"playing":false}"#
+        for _ in 0 ..< 2 {
+            #expect(try await fixture.call("playback.set", arguments: arguments)["ok"] as? Bool == true)
+        }
+        #expect(!fixture.session.userIntendsToPlay)
+        #expect(fixture.session.toggleCount == 1)
+        let play = #"{"screenID":\#(fixture.screen.id),"playing":true}"#
+        for _ in 0 ..< 2 {
+            _ = try await fixture.call("playback.set", arguments: play)
+        }
+        #expect(fixture.session.userIntendsToPlay)
+        #expect(fixture.session.toggleCount == 2)
+        #expect(try await fixture.call("playback.set", arguments: #"{"screenID":\#(fixture.screen.id),"playing":1}"#)["ok"] as? Bool == false)
+        #expect(fixture.session.toggleCount == 2)
+    }
+
     @Test("Malformed JSON screen identities cannot toggle a real target or change its revision")
     func invalidIdentitiesDoNotReachPlayback() async throws {
         let fixture = Fixture()
