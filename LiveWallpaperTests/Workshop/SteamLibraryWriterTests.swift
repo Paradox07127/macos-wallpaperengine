@@ -804,6 +804,71 @@ struct SteamCMDProfileTests {
         }
     }
 
+    private static func probeFixture() throws -> (home: URL, outside: URL) {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        let home = scratch.appendingPathComponent("home", isDirectory: true)
+        let outside = scratch.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        return (home, outside)
+    }
+
+    private static func mode(_ url: URL) throws -> Int? {
+        try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.posixPermissions] as? Int
+    }
+
+    @Test("A prepared subscription probe is a private tree holding exactly the probe app manifest")
+    func preparedSubscriptionProbeIsPrivate() throws {
+        let (home, _) = try Self.probeFixture()
+        defer { try? FileManager.default.removeItem(at: home.deletingLastPathComponent()) }
+        let id = UUID()
+        let probe = try SteamCMDProfile.prepareSubscriptionProbe(accountName: "Alice", id: id, realHome: home.path)
+        #expect(try probe == SteamCMDProfile.subscriptionProbeDirectory(accountName: "Alice", id: id, realHome: home.path))
+        let steamapps = probe.appendingPathComponent("steamapps", isDirectory: true)
+        let manifest = steamapps.appendingPathComponent("appmanifest_431960.acf", isDirectory: false)
+        #expect(try String(contentsOf: manifest, encoding: .utf8) == SteamWorkshopManifest.probeAppManifest)
+        #expect(try Self.mode(manifest) == 0o600)
+        for directory in [probe.deletingLastPathComponent(), probe, steamapps] {
+            #expect(try Self.mode(directory) == 0o700, Comment(rawValue: directory.path))
+        }
+    }
+
+    @Test("A linked level anywhere on the probe chain is refused and nothing is created through it")
+    func linkedProbeLevelIsRefused() throws {
+        let id = UUID()
+        for linked in ["alice", "alice/SubscriptionProbe", "alice/SubscriptionProbe/\(id.uuidString)",
+                       "alice/SubscriptionProbe/\(id.uuidString)/steamapps"] {
+            let (home, outside) = try Self.probeFixture()
+            defer { try? FileManager.default.removeItem(at: home.deletingLastPathComponent()) }
+            let link = SteamCMDProfile.root(realHome: home.path).appendingPathComponent("Accounts/\(linked)", isDirectory: true)
+            try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+            #expect(throws: SteamCMDProfile.ProfileError.self, Comment(rawValue: linked)) {
+                try SteamCMDProfile.prepareSubscriptionProbe(accountName: "alice", id: id, realHome: home.path)
+            }
+            #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty, Comment(rawValue: linked))
+        }
+    }
+
+    @Test("A link planted at the probe manifest path is not written through")
+    func plantedManifestLinkIsNotFollowed() throws {
+        let (home, outside) = try Self.probeFixture()
+        defer { try? FileManager.default.removeItem(at: home.deletingLastPathComponent()) }
+        let id = UUID()
+        let steamapps = try SteamCMDProfile.subscriptionProbeDirectory(accountName: "alice", id: id, realHome: home.path)
+            .appendingPathComponent("steamapps", isDirectory: true)
+        try FileManager.default.createDirectory(at: steamapps, withIntermediateDirectories: true)
+        let victim = outside.appendingPathComponent("victim.txt", isDirectory: false)
+        try Data("keep".utf8).write(to: victim)
+        try FileManager.default.createSymbolicLink(
+            at: steamapps.appendingPathComponent("appmanifest_431960.acf", isDirectory: false), withDestinationURL: victim
+        )
+        #expect(throws: SteamCMDProfile.ProfileError.self) {
+            try SteamCMDProfile.prepareSubscriptionProbe(accountName: "alice", id: id, realHome: home.path)
+        }
+        #expect(try String(contentsOf: victim, encoding: .utf8) == "keep")
+    }
+
     static let subscriptionsVDF = """
     "subscribedfiles"
     {

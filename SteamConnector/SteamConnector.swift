@@ -540,12 +540,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
                 return
             }
-            guard let scratch = try? SteamCMDProfile.subscriptionProbeDirectory(accountName: accountName) else {
+            let probeID = UUID()
+            guard let scratch = try? SteamCMDProfile.subscriptionProbeDirectory(accountName: accountName, id: probeID) else {
                 respond(.steamCMDUnavailable, tail: "No subscription probe directory for \(accountName)")
                 return
             }
             let probe = Self.readSubscriptions(
-                accountName: accountName, steamCMDPath: steamCMDPath, scratch: scratch
+                accountName: accountName, steamCMDPath: steamCMDPath, probeID: probeID
             )
             Self.discardSubscriptionProbe(scratch)
             respond(probe.outcome, tail: probe.tail, ids: probe.ids, executed: steamCMDPath)
@@ -557,19 +558,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     private static func readSubscriptions(
         accountName: String,
         steamCMDPath: String,
-        scratch: URL
+        probeID: UUID
     ) -> (outcome: SteamSubscribedItemsResult.Outcome, tail: String, ids: [String]) {
         let appID = SteamLibraryPaths.wallpaperEngineAppID
-        let manifest = scratch.appendingPathComponent("steamapps/appmanifest_\(appID).acf", isDirectory: false)
-        do {
-            try FileManager.default.createDirectory(
-                at: manifest.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try Data(SteamWorkshopManifest.probeAppManifest.utf8).write(to: manifest)
-        } catch {
-            return (.unrecognized, "Could not prepare the subscription probe: \(error.localizedDescription)", [])
+        guard let scratch = try? SteamCMDProfile.prepareSubscriptionProbe(accountName: accountName, id: probeID) else {
+            return (.unrecognized, "Could not prepare the subscription probe inside the private profile", [])
         }
         // `force_install_dir` must precede `+login` or the run reaches the shared library.
         let run = runSteamCMD(
@@ -598,12 +591,19 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         guard out.contains("Workshop Content folder") else {
             return (.unrecognized, "SteamCMD did not load app \(appID); subscriptions were not requested", [])
         }
+        // A failed run can still leave the previous run's subscriptions file behind.
+        guard run.exitCode == 0 else {
+            return (.unrecognized, "SteamCMD exited \(run.exitCode) after requesting subscriptions; the cached list may be stale", [])
+        }
         guard let accountID = SteamCachedLoginParser.accountID(inLoginLine: out),
               let file = try? SteamCMDProfile.subscriptionsFile(accountName: accountName, accountID: accountID) else {
             return (.unrecognized, "SteamCMD output carried no account id; subscriptions file not located", [])
         }
+        let fd = open(file.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW)
         // Absent is not "zero subscriptions": the account may never have been sent a list.
-        guard let text = try? String(contentsOf: file, encoding: .utf8),
+        guard fd >= 0,
+              let data = try? FileHandle(fileDescriptor: fd, closeOnDealloc: true).readToEnd(),
+              let text = String(data: data, encoding: .utf8),
               let ids = SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: text) else {
             return (.unrecognized, "SteamCMD left no readable \(appID)_subscriptions.vdf in the account profile", [])
         }

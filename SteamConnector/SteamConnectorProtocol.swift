@@ -2196,9 +2196,26 @@ enum SteamCMDProfile {
 
     /// A throwaway `force_install_dir` for the subscription probe, outside the
     /// shared library; the UUID leaf keeps concurrent probes apart.
-    static func subscriptionProbeDirectory(accountName: String, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+    static func subscriptionProbeDirectory(accountName: String, id: UUID = UUID(), realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
         try sessionDirectory(accountName: accountName, realHome: realHome)
-            .appendingPathComponent("SubscriptionProbe/\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("SubscriptionProbe/\(id.uuidString)", isDirectory: true)
+    }
+
+    /// Writes `steamapps/appmanifest` through descriptors walked from the real home, never through a link.
+    static func prepareSubscriptionProbe(accountName: String, id: UUID, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        let probe = try subscriptionProbeDirectory(accountName: accountName, id: id, realHome: realHome)
+        let relative = probe.pathComponents.dropFirst(URL(fileURLWithPath: realHome).pathComponents.count)
+        let steamapps = try openPrivateDirectory(Array(relative) + ["steamapps"], realHome: realHome)
+        defer { close(steamapps) }
+        let name = "appmanifest_\(SteamLibraryPaths.wallpaperEngineAppID).acf"
+        let file = openat(steamapps, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard file >= 0 else { throw ProfileError.unsafeDirectory }
+        defer { close(file) }
+        let bytes = Array(SteamWorkshopManifest.probeAppManifest.utf8)
+        guard bytes.withUnsafeBytes({ write(file, $0.baseAddress, $0.count) }) == bytes.count else {
+            throw ProfileError.unsafeDirectory
+        }
+        return probe
     }
 
     static func subscriptionsFile(accountName: String, accountID: UInt32, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
@@ -2217,20 +2234,9 @@ enum SteamCMDProfile {
     /// advisory lock also covers separate XPC service instances. Caller closes fd.
     static func acquire(accountName: String?, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> (home: URL, fd: Int32) {
         let profile = try home(accountName: accountName, realHome: realHome)
-        let anchor = URL(fileURLWithPath: realHome).resolvingSymlinksInPath()
         let relative = profile.pathComponents.dropFirst(URL(fileURLWithPath: realHome).pathComponents.count)
-        var fd = open(anchor.path(percentEncoded: false), O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard fd >= 0 else { throw ProfileError.unsafeDirectory }
+        let fd = try openPrivateDirectory(Array(relative) + ["Library", "Application Support", "Steam", "config"], realHome: realHome)
         defer { close(fd) }
-        for component in Array(relative) + ["Library", "Application Support", "Steam", "config"] {
-            if mkdirat(fd, component, 0o700) != 0, errno != EEXIST {
-                throw ProfileError.unsafeDirectory
-            }
-            let next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-            guard next >= 0 else { throw ProfileError.unsafeDirectory }
-            close(fd)
-            fd = next
-        }
         let lock = openat(fd, ".loomscreen.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600)
         guard lock >= 0 else { throw ProfileError.unsafeDirectory }
         var info = stat()
@@ -2244,6 +2250,21 @@ enum SteamCMDProfile {
             throw ProfileError.busy
         }
         return (profile, lock)
+    }
+
+    /// Walks `components` below the resolved real home, creating missing levels 0700 and refusing links. Caller closes fd.
+    private static func openPrivateDirectory(_ components: [String], realHome: String) throws -> Int32 {
+        let anchor = URL(fileURLWithPath: realHome).resolvingSymlinksInPath()
+        var fd = open(anchor.path(percentEncoded: false), O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else { throw ProfileError.unsafeDirectory }
+        for component in components {
+            let next = mkdirat(fd, component, 0o700) != 0 && errno != EEXIST
+                ? -1 : openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            close(fd)
+            guard next >= 0 else { throw ProfileError.unsafeDirectory }
+            fd = next
+        }
+        return fd
     }
 
     /// Merge public identity hints only. Never copy Steam client credentials.
