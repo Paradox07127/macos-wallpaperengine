@@ -1559,9 +1559,13 @@ public struct WPESceneAnimatedValue: Equatable, Sendable {
         self.parentKey = parentKey
     }
 
-    /// Relative origins sample offsets, including zero for unauthored channels.
+    /// Unauthored channels keep the authored origin; relative origins add sampled offsets to it.
     public func originVector(at time: Double) -> [Double]? {
-        guard relative, let vectorFallback else { return vector(at: time) }
+        guard let vectorFallback else { return vector(at: time) }
+        guard relative else {
+            let sampled = animation.values(at: time, fallbacks: vectorFallback)
+            return sampled + vectorFallback.dropFirst(sampled.count)
+        }
         let offsets = animation.values(at: time, fallbacks: Array(repeating: 0, count: vectorFallback.count))
         return vectorFallback.enumerated().map { index, seed in
             seed + (offsets.indices.contains(index) ? offsets[index] : 0)
