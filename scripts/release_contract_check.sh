@@ -36,7 +36,22 @@ for required_suite in \
   fi
 done
 # Metal/display suites deadlock the headless runner; keep them out by name.
-if printf '%s\n' "$shard_suites" | grep -Eq 'Metal|Renderer(Frame|Pass)'; then
+# Exact-name exceptions: "Metal" in the name only, and their source must never touch Metal.
+hardware_free_metal_named_suites="WPEMetalFBOAliasPlannerTests"
+for suite in $hardware_free_metal_named_suites; do
+  suite_files="$(grep -rlE "struct ${suite}([^A-Za-z0-9_]|$)" LiveWallpaperTests --include='*.swift' || true)"
+  if [[ -z "$suite_files" ]]; then
+    echo "ERROR: hardware-free exception $suite has no 'struct $suite' under LiveWallpaperTests; drop it from the exception list." >&2
+    exit 1
+  fi
+  metal_uses="$(grep -nE 'import Metal|MTLCreateSystemDefaultDevice|MTLDevice|CAMetalLayer' $suite_files || true)"
+  if [[ -n "$metal_uses" ]]; then
+    echo "ERROR: $suite is exempt from the headless Metal name rule but now touches Metal; move it out of the shard:" >&2
+    echo "$metal_uses" >&2
+    exit 1
+  fi
+done
+if printf '%s\n' "$shard_suites" | grep -vFxf <(printf '%s\n' $hardware_free_metal_named_suites) | grep -Eq 'Metal|Renderer(Frame|Pass)'; then
   echo "ERROR: the headless shard must not run Metal/display suites." >&2
   exit 1
 fi
