@@ -176,5 +176,105 @@ struct WPETextRenderPipelineTests {
         // The premultiplied invariant the composite depends on.
         #expect(abs(red - alpha) < 0.01)
     }
+
+    @Test("Copied text backgrounds do not add the backdrop again around glyphs",
+          arguments: [MTLPixelFormat.rgba8Unorm, .rgba16Float])
+    func copiedTextBackgroundPreservesScene(format: MTLPixelFormat) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: format, width: 4, height: 4, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.renderTarget, .shaderRead]
+        let scene = try #require(device.makeTexture(descriptor: descriptor))
+        let surface = try #require(device.makeTexture(descriptor: descriptor))
+        if format == .rgba16Float {
+            var values = (0 ..< 16).flatMap { _ in
+                [Float16(0.2), Float16(0.4), Float16(0.6), Float16(1)].map(\.bitPattern)
+            }
+            scene.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0,
+                          withBytes: &values, bytesPerRow: 32)
+        } else {
+            var values: [UInt8] = (0 ..< 16).flatMap { _ in [51, 102, 153, 255] }
+            scene.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0,
+                          withBytes: &values, bytesPerRow: 16)
+        }
+        let atlasDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r8Unorm, width: 2, height: 2, mipmapped: false
+        )
+        let atlas = try #require(device.makeTexture(descriptor: atlasDescriptor))
+        var coverage = [UInt8](repeating: 128, count: 4)
+        atlas.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                      withBytes: &coverage, bytesPerRow: 2)
+        // The left half is padding; the right half is a partly covered glyph.
+        let corners: [SIMD2<Float>] = [
+            .init(2, 0), .init(4, 0), .init(2, 4),
+            .init(4, 0), .init(4, 4), .init(2, 4),
+        ]
+        var vertices = corners.map { WPETextMeshVertex(position: $0, uv: .init(0.5, 0.5)) }
+        let buffer = try #require(device.makeBuffer(
+            bytes: &vertices, length: MemoryLayout<WPETextMeshVertex>.stride * vertices.count
+        ))
+        let mesh = WPETextMeshPayload(
+            pages: [.init(vertexBuffer: buffer, vertexCount: vertices.count, texture: atlas)],
+            color: .init(1, 1, 1, 1)
+        )
+        let queue = try #require(device.makeCommandQueue())
+        let commandBuffer = try #require(queue.makeCommandBuffer())
+        try executor.encodeTextBackground(
+            source: scene,
+            uniforms: WPEObjectQuadUniforms(centerAndSize: .init(0, 0, 4, 4),
+                                            sceneSizeAndRotation: .init(4, 4, 0, 0),
+                                            uvSignAndPadding: .init(1, 1, 0, 0)),
+            output: surface, commandBuffer: commandBuffer
+        )
+        try executor.encodeTextMesh(
+            payload: WPETextRenderPayload(mode: .offscreen, mesh: mesh,
+                                          backgroundColor: nil, copiesSceneBackground: true),
+            sceneSize: CGSize(width: 4, height: 4), output: surface,
+            clearsOutput: false, commandBuffer: commandBuffer
+        )
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        #expect(commandBuffer.status == .completed)
+
+        let source = WPETextureReference.image("copied-clock")
+        let pass = WPERenderPass(
+            id: "clock.composite", phase: .material, shader: "commands/copy",
+            source: source, target: .scene, textures: [0: source], binds: [:],
+            constants: [:], combos: [:], blending: "premultipliednormal",
+            cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let layer = WPERenderLayer(
+            objectID: "clock", objectName: "Clock", imagePath: "copied-clock",
+            materialPath: nil, geometry: .identity, compositeA: "clock.a",
+            compositeB: "clock.b", localFBOs: [], passes: [pass]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(
+            graphLayer: layer, passes: [.init(
+                pass: pass,
+                shader: .init(name: pass.shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
+                textureBindings: [0: source], comboValues: [:], uniformValues: [:]
+            )]
+        )])
+        executor.sceneClearColor = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4),
+                                         textures: ["copied-clock": surface])
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        var bytes = [UInt8](repeating: 0, count: 64)
+        staged.getBytes(&bytes, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0)
+        let blank = 4 * 4
+        for channel in 0 ..< 4 {
+            #expect(abs(Int(bytes[blank + channel]) - [51, 102, 153, 255][channel]) <= 2)
+        }
+        let glyph = (4 + 3) * 4
+        for channel in 0 ..< 3 {
+            let backdrop = [Float(0.2), 0.4, 0.6][channel]
+            let expected = Int((Float(128) / 255 + backdrop * (1 - Float(128) / 255)) * 255)
+            #expect(abs(Int(bytes[glyph + channel]) - expected) <= 2)
+        }
+        #expect(bytes[glyph + 3] == 255)
+    }
 }
 #endif

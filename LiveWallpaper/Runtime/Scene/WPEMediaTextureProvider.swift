@@ -177,6 +177,8 @@ final class WPEMediaTextureStore: @unchecked Sendable {
             return true
         }
         guard drawn else { return nil }
+        // Media slots share the straight external-image contract with authored images.
+        WPERasterImageAlpha.unpremultiplyRGBA8(&bytes)
 
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm,
@@ -195,6 +197,7 @@ final class WPEMediaTextureStore: @unchecked Sendable {
                 bytesPerRow: bytesPerRow
             )
         }
+        WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: .straightColor)
         return texture
     }
 }

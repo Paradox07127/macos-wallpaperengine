@@ -62,7 +62,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         label: String,
         colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
-        preserveMipmaps: Bool = false
+        preserveMipmaps: Bool = false,
+        usage: WPETextureUsage = .unknown
     ) async throws -> MTLTexture {
         try Task.checkCancellation()
         if payload.videoPayload != nil {
@@ -85,7 +86,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                 capabilities: capabilities,
                 colorSpace: colorSpace,
                 maxSourceEdge: maxSourceEdge,
-                preserveMipmaps: preserveMipmaps
+                preserveMipmaps: preserveMipmaps, usage: usage
             )
         }
     }
@@ -93,16 +94,18 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     func makeLazyAnimatedTextureSource(
         from payload: WPETexStreamingPayload,
         label: String,
-        colorSpace: WPEMetalColorSpace = .linear
+        colorSpace: WPEMetalColorSpace = .linear,
+        usage: WPETextureUsage = .unknown
     ) throws -> WPETexLazyAnimatedTextureSource {
-        try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label, colorSpace: colorSpace)
+        try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label, colorSpace: colorSpace, usage: usage)
     }
 
     /// One MTLTexture per unique `imageID` (the whole atlas), not per-frame sub-rect: sprite-grid math divides atlas pixel dims by `.tex-json` frame dims to recover cols/rows.
     func makeAnimatedTextureSource(
         from payload: WPETexTexturePayload,
         label: String,
-        colorSpace: WPEMetalColorSpace = .linear
+        colorSpace: WPEMetalColorSpace = .linear,
+        usage: WPETextureUsage = .unknown
     ) async throws -> WPETexAnimatedTextureSource {
         guard let animation = payload.animationTrack else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing animation track")
@@ -134,7 +137,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                     from: framePayload,
                     label: "\(label) image \(frame.imageID)",
                     colorSpace: colorSpace,
-                    preserveMipmaps: true
+                    preserveMipmaps: true, usage: usage
                 )
                 atlasTextures[frame.imageID] = texture
             }
@@ -160,12 +163,14 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         label: String,
         colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
-        sourcePixelSize: (width: Int, height: Int)? = nil
+        sourcePixelSize: (width: Int, height: Int)? = nil,
+        usage: WPETextureUsage = .unknown
     ) async throws -> MTLTexture {
         try Task.checkCancellation()
         let device = self.device
         return try await uploadQueue.perform {
-            let upload = maxSourceEdge.flatMap { Self.downsampledImage(cgImage, maxEdge: $0) } ?? cgImage
+            let resized = maxSourceEdge.flatMap { Self.downsampledImage(cgImage, maxEdge: $0) } ?? cgImage
+            let upload = try WPERasterImageAlpha.straightImage(resized)
             let loader = MTKTextureLoader(device: device)
             do {
                 let texture = try loader.newTexture(
@@ -181,7 +186,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                     imageWidth: upload.width,
                     imageHeight: upload.height,
                     worldWidth: sourcePixelSize?.width ?? cgImage.width,
-                    worldHeight: sourcePixelSize?.height ?? cgImage.height
+                    worldHeight: sourcePixelSize?.height ?? cgImage.height,
+                    semantics: usage.isData ? .data(usage) : .straightColor
                 )
                 return texture
             } catch {
@@ -213,10 +219,16 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         return context.makeImage()
     }
 
-    /// RG88 luminance-alpha swizzle is for particle glow (R,R,R,G). Shake flow masks are also RG88 (R=x, G=y) — swizzling would collapse y-flow. Discriminator: `masks/` in the path.
-    static func rg88NeedsLuminanceAlphaSwizzle(isLuminanceAlpha: Bool, label: String) -> Bool {
+    /// Known channel roles take precedence. Unknown assets retain the legacy path rule.
+    static func rg88NeedsLuminanceAlphaSwizzle(
+        isLuminanceAlpha: Bool, label: String, usage: WPETextureUsage = .unknown
+    ) -> Bool {
         guard isLuminanceAlpha else { return false }
-        return !label.lowercased().contains("mask")
+        switch usage {
+        case .normal, .flow, .lut, .glyphDistance: return false
+        case .color, .mask, .additive: return true
+        case .unknown: return !label.lowercased().contains("mask")
+        }
     }
 
     static func makeTextureSynchronously(
@@ -226,7 +238,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         capabilities: WPEMetalTextureCapabilities,
         colorSpace: WPEMetalColorSpace = .linear,
         maxSourceEdge: Int? = nil,
-        preserveMipmaps: Bool = false
+        preserveMipmaps: Bool = false,
+        usage: WPETextureUsage = .unknown
     ) throws -> MTLTexture {
         guard let format = payload.info.format else {
             throw WPEMetalTextureLoaderError.malformedPayload("unknown texture format \(payload.info.textureFormatCode)")
@@ -281,7 +294,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         // RG88 glow sprites: luminance-alpha swizzle (R,R,R,G). Raw `.rg8Unorm` samples (R,G,0,1) and renders opaque.
-        if Self.rg88NeedsLuminanceAlphaSwizzle(isLuminanceAlpha: payload.info.isRG88LuminanceAlpha, label: label) {
+        if Self.rg88NeedsLuminanceAlphaSwizzle(isLuminanceAlpha: payload.info.isRG88LuminanceAlpha, label: label, usage: usage) {
             descriptor.swizzle = MTLTextureSwizzleChannels(red: .red, green: .red, blue: .red, alpha: .green)
         }
 
@@ -307,7 +320,10 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             // worldWidth/Height are level-0 physical dims (not authored image dims): the quad path's world fallback historically saw the padded physical size; that exact value keeps scale=1 bit-identical.
             worldWidth: level0.width,
             worldHeight: level0.height,
-            sourceMipLevel: mip.index
+            sourceMipLevel: mip.index,
+            semantics: .tex(payload.info, usage: usage, luminanceAlpha: Self.rg88NeedsLuminanceAlphaSwizzle(
+                isLuminanceAlpha: payload.info.isRG88LuminanceAlpha, label: label, usage: usage
+            ))
         )
 
         for (uploadLevel, level) in uploadMipmaps.enumerated() {

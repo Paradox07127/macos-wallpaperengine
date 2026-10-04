@@ -577,7 +577,9 @@ struct WPEMetalSolidSceneRunTests {
         #expect(built.pipeline.layers[1].passes[0].textureBindings[0] == .fbo("_rt_FullFrameBuffer"))
         #expect(built.pipeline.layers[1].passes[0].pass.target == .layerComposite(name: names.a))
         #expect(built.pipeline.layers[0] == kept.layers[0])
-        #expect(built.pipeline.layers[2] == kept.layers[2])
+        #expect(built.pipeline.layers[2].graphLayer == kept.layers[2].graphLayer)
+        #expect(built.pipeline.layers[2].passes[0].renderContract.nativeAlpha == kept.layers[2].passes[0].renderContract.nativeAlpha)
+        #expect(built.pipeline.layers[2].passes[0].renderContract.stored == kept.layers[2].passes[0].renderContract.stored)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba16Float, width: Int(size.width), height: Int(size.height), mipmapped: false
         )

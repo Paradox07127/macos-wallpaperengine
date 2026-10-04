@@ -30,6 +30,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private let loop: Bool
     private let device: MTLDevice
     private let label: String
+    private let resourceSemantics: WPEResourceSemantics
     private let format: WPETexFormat
     private let mapping: WPEMetalTextureFormatMapping
     private let alphaChannelPriorityRG88: Bool
@@ -102,7 +103,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         colorSpace: WPEMetalColorSpace = .linear,
         capabilities: WPEMetalTextureCapabilities? = nil,
         maximumTextureDimension2D: Int? = nil,
-        frameByteCache: WPEAnimatedFrameByteCache = .shared
+        frameByteCache: WPEAnimatedFrameByteCache = .shared,
+        usage: WPETextureUsage = .unknown
     ) throws {
         guard !payload.frames.isEmpty else { throw Failure.missingFrames }
         guard let format = payload.info.format else {
@@ -134,8 +136,9 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
         self.alphaChannelPriorityRG88 = WPEMetalTextureLoader.rg88NeedsLuminanceAlphaSwizzle(
             isLuminanceAlpha: payload.info.isRG88LuminanceAlpha,
-            label: label
+            label: label, usage: usage
         )
+        resourceSemantics = .tex(payload.info, usage: usage, luminanceAlpha: alphaChannelPriorityRG88)
         self.frames = payload.frames
         self.compressedImages = payload.compressedImages
         self.frameRate = payload.frameRate > 0 ? payload.frameRate : WPETexAnimationTrack.defaultFrameRate
@@ -539,7 +542,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             throw Failure.textureAllocationFailed
         }
         texture.label = "\(label) lazy frame \(frameSlot)"
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+        WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: resourceSemantics)
         workingTextureSlots[frameSlot] = WorkingTextureSlot(
             texture: texture,
             width: width,

@@ -342,6 +342,22 @@ struct WPEColorDomainProbeTests {
         #expect(sample[3] == 1, "Fresh Windows particle scene draws use writeMask=7")
     }
 
+    @Test("Transparent media artwork samples as straight RGBA before image shading")
+    func transparentMediaCoverPreservesStraightAlpha() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let store = WPEMediaTextureStore(device: device)
+        // PNG encoder receives premultiplied pixels: straight RGB is (192,128,64).
+        let pixel: [UInt8] = [96, 64, 32, 128]
+        let bytes = (0 ..< 8 * 8).flatMap { _ in pixel }
+        try #require(store.ingest(artwork: Self.png(rgba: bytes, width: 8, height: 8)))
+        let texture = try #require(store.texture(for: .thumbnail))
+        let sample = try rawPixels(texture, coordinates: [[4, 4]], executor: executor)[0]
+        let expected = [192.0, 128, 64, 128].map { $0 / 255 }
+        #expect(zip(sample, expected).allSatisfy { abs($0 - $1) <= 2.0 / 255 },
+                "Media cover must not publish premultiplied RGB as a straight image: \(sample)")
+    }
+
     @Test("A media cover samples back at its encoded sRGB byte value")
     func mediaCoverSamplesBackEncodedBytes() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

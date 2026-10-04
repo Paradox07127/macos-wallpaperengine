@@ -203,7 +203,7 @@ struct WPERendererOwnershipCharacterizationTests {
                     "static let shared = WPEMetalTextureMetadataRegistry()",
                     "weak var texture: MTLTexture?",
                     "private var resolutions: [ObjectIdentifier: Entry] = [:]",
-                    "resolutions[key] = Entry(texture: texture, resolution: resolution)",
+                    "resolutions[key] = Entry(texture: texture, resolution: resolution, semantics:",
                 ]
             ),
             SourceEvidence(

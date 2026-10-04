@@ -7,6 +7,7 @@ final class WPEMetalPipelineCache {
     private let library: MTLLibrary
     private var pipelineStates: [WPEMetalPipelineKey: MTLRenderPipelineState] = [:]
     private var lowercasedBlendModes: [String: String] = [:]
+    private var blendContracts: [String: WPEBlendContract] = [:]
 
     init(device: MTLDevice, library: MTLLibrary) {
         self.device = device
@@ -19,7 +20,9 @@ final class WPEMetalPipelineCache {
         blendMode: String,
         alphaWritePolicy: WPEMetalAlphaWritePolicy,
         colorPixelFormat: MTLPixelFormat,
-        depthPixelFormat: MTLPixelFormat
+        depthPixelFormat: MTLPixelFormat,
+        nativeAlpha: WPENativeAlphaPolicy = .compatibility,
+        blendContract: WPEBlendContract? = nil
     ) throws -> MTLRenderPipelineState {
         let normalizedBlend: String
         if let cached = lowercasedBlendModes[blendMode] {
@@ -34,14 +37,15 @@ final class WPEMetalPipelineCache {
             blendMode: normalizedBlend,
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: nativeAlpha, blendContract: blendContract
         )
         if let cached = pipelineStates[key] {
             return cached
         }
 
         guard let vertex = library.makeFunction(name: vertexName),
-              let fragment = try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: colorPixelFormat) else {
+              let fragment = try WPEMetalColorOutput.fragment(library: library, name: fragmentName, format: colorPixelFormat, nativeAlpha: nativeAlpha) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable(fragmentName)
         }
 
@@ -53,7 +57,16 @@ final class WPEMetalPipelineCache {
         }
         colorAttachment.pixelFormat = colorPixelFormat
         descriptor.depthAttachmentPixelFormat = depthPixelFormat
-        Self.applyBlendMode(normalizedBlend, to: colorAttachment)
+        let resolvedBlend: WPEBlendContract
+        if let blendContract {
+            resolvedBlend = blendContract
+        } else if let cached = blendContracts[normalizedBlend] {
+            resolvedBlend = cached
+        } else {
+            resolvedBlend = WPEBlendContract(normalizedBlend)
+            blendContracts[normalizedBlend] = resolvedBlend
+        }
+        resolvedBlend.apply(to: colorAttachment)
         Self.applyAlphaWritePolicy(alphaWritePolicy, to: colorAttachment)
 
         let state: MTLRenderPipelineState
@@ -112,83 +125,8 @@ final class WPEMetalPipelineCache {
         attachment.writeMask = policy.writeMask
     }
 
-    static func applyBlendMode(
-        _ mode: String,
-        to attachment: MTLRenderPipelineColorAttachmentDescriptor
-    ) {
-        switch mode {
-        case "disabled", "premultiplieddisabled":
-            attachment.isBlendingEnabled = false
-
-        // Sources already store premultiplied RGB, so srcRGB=.one.
-        case "premultiplied", "premultipliednormal", "premultipliedtranslucent", "premultipliednormalmapped":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-
-        case "premultipliedadditive":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .one
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .one
-
-        case "additive":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .sourceAlpha
-            attachment.destinationRGBBlendFactor = .one
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .one
-
-        case "premultipliedmultiply":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .destinationColor
-            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .zero
-            attachment.destinationAlphaBlendFactor = .one
-
-        case "multiply":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .destinationColor
-            attachment.destinationRGBBlendFactor = .zero
-            attachment.sourceAlphaBlendFactor = .zero
-            attachment.destinationAlphaBlendFactor = .one
-
-        case "premultipliedscreen", "screen":
-            // Premultiplied source: src + dst·(1−src) ≡ WPE's alpha-weighted
-            // screen mix(dst, screen(dst,src), a) — black pixels leave dst intact.
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .oneMinusSourceColor
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-
-        case "translucent", "normalmapped", "normal":
-            fallthrough
-
-        default:
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .sourceAlpha
-            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        }
+    static func applyBlendMode(_ mode: String, to attachment: MTLRenderPipelineColorAttachmentDescriptor) {
+        WPEBlendContract(mode).apply(to: attachment)
     }
 }
 #endif

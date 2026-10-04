@@ -118,7 +118,8 @@ extension WPEPreparedRenderPipeline {
 
     /// Derives one transient frame graph; the canonical pipeline is never mutated.
     func resolvingEffectPublication(passVisibility: [String: Bool], camera: WPEMetalCameraUniforms) -> Self {
-        Self(layers: layers.map { layer in
+        guard layers.contains(where: { $0.effectPublication != nil }) else { return self }
+        return Self(layers: layers.map { layer in
             guard let descriptor = layer.effectPublication,
                   let canonical = layer.effectPublicationCanonicalPasses(camera: camera) else { return layer }
             let active = canonical.effects.filter { prepared in
@@ -150,7 +151,7 @@ extension WPEPreparedRenderPipeline {
                 puppetModel: layer.puppetModel, passes: passes,
                 modelMatrix: descriptor.staticParentModel ?? layer.modelMatrix
             )
-        })
+        }).resolvingRenderContracts()
     }
 }
 
@@ -228,6 +229,7 @@ extension WPEPreparedRenderLayer {
             materialUniformNames: prepared.materialUniformNames, stageUniformBindings: prepared.stageUniformBindings,
             layerTintOverride: prepared.layerTintOverride,
             alphaContract: straight ? WPEShaderAlphaContract(unpremultipliedInputSlots: [], premultipliedOutput: false) : prepared.alphaContract,
+            renderContract: prepared.renderContract,
             publicationVertexRole: nativeSolid && isEffect && !terminal && prepared.shader?.isBuiltin == false ? .localEffect : nil
         )
     }
@@ -280,6 +282,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     /// Explicit producer/consumer ABI when graph lowering changes an intermediate
     /// to straight RGBA. Nil retains the existing FBO/PMA convention.
     let alphaContract: WPEShaderAlphaContract?
+    let renderContract: WPEPassRenderContract
     let publicationVertexRole: WPEPublicationVertexRole?
 
     init(
@@ -292,6 +295,7 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         stageUniformBindings: [WPEShaderBindingKey: WPEUniformStageBinding] = [:],
         layerTintOverride: WPELayerTintOverride? = nil,
         alphaContract: WPEShaderAlphaContract? = nil,
+        renderContract: WPEPassRenderContract? = nil,
         publicationVertexRole: WPEPublicationVertexRole? = nil,
         reusingAccess: WPEPreparedPassAccess? = nil
     ) {
@@ -310,9 +314,26 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         stageUniformBindingKeys = Set(stageUniformBindings.keys)
         self.layerTintOverride = layerTintOverride
         self.alphaContract = alphaContract
+        var effective = pass.textures
+        effective.merge(pass.binds) { _, value in value }
+        effective.merge(textureBindings) { _, value in value }
+        if effective[0] == nil {
+            effective[0] = pass.source
+        }
+        if let renderContract, renderContract.matches(pass: pass, shader: shader, references: effective, alphaOverride: alphaContract) {
+            self.renderContract = renderContract
+        } else {
+            self.renderContract = WPEPassRenderContract.resolve(
+                pass: pass, shader: shader, bindings: textureBindings, alphaOverride: alphaContract,
+                inputDeclarations: renderContract?.inputDeclarations(matching: effective) ?? [:],
+                outputDeclaration: renderContract?.outputDeclaration
+            )
+        }
         self.publicationVertexRole = publicationVertexRole
         hasAnimatedUniformValues = uniformValues.values.contains {
-            if case .animated = $0 { return true }
+            if case .animated = $0 {
+                return true
+            }
             return false
         } || stageUniformBindings.values.contains {
             if case .animated? = $0.value {
@@ -875,6 +896,7 @@ extension WPEPreparedRenderPipeline {
                         stageUniformBindings: WPEUniformStageBinding.resolved(pass.stageUniformBindings, at: runtimeUniforms.time, authoredUpdates: scripted),
                         layerTintOverride: pass.layerTintOverride,
                         alphaContract: pass.alphaContract,
+                        renderContract: pass.renderContract,
                         publicationVertexRole: pass.publicationVertexRole,
                         reusingAccess: pass.access
                     )
@@ -983,6 +1005,7 @@ private extension WPEPreparedRenderLayer {
                 stageUniformBindings: preparedPass.stageUniformBindings,
                 layerTintOverride: preparedPass.layerTintOverride,
                 alphaContract: preparedPass.alphaContract,
+                renderContract: preparedPass.renderContract,
                 publicationVertexRole: preparedPass.publicationVertexRole,
                 // The initializer re-derives access when FBO names changed.
                 reusingAccess: preparedPass.access

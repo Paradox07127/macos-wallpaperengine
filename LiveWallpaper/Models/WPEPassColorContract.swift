@@ -53,6 +53,9 @@ struct WPEPassColorContract: Codable {
         let name: String?
         let view: WPEPixelColorContract?
         let shaderAlphaOperation: String
+        let resourceSemantics: WPEResourceSemantics?
+        let declaredSemantics: WPEResourceSemantics?
+        let contractOrigin: WPEContractOrigin?
     }
 
     struct Blend: Codable {
@@ -67,6 +70,11 @@ struct WPEPassColorContract: Codable {
         let metalWriteMask: UInt
     }
 
+    let emittedSemantics: WPEResourceSemantics?
+    let storedSemantics: WPEResourceSemantics?
+    let nativeAlpha: WPENativeAlphaPolicy?
+    let clearAlpha: Double?
+    let diagnostics: [String]
     let schema: String
     let inputs: [Input]
     let shaderOutputAlphaOperation: String
@@ -80,18 +88,29 @@ struct WPEPassColorContract: Codable {
 
     init(
         textureBindings: [WPECanonicalTraceRecorder.TextureBindingInput], alpha: WPEShaderAlphaContract?,
-        target: MTLTexture, nativeState: WPECanonicalTraceRecorder.NativeRenderState
+        target: MTLTexture, nativeState: WPECanonicalTraceRecorder.NativeRenderState,
+        resolved: WPEPassRenderContract? = nil, builtin: Bool = false
     ) {
-        schema = "wpe.pass-color-contract.v1"
+        schema = "wpe.pass-color-contract.v2"
+        emittedSemantics = resolved?.emitted
+        storedSemantics = resolved?.stored
+        nativeAlpha = builtin ? resolved?.nativeAlpha : nil
+        clearAlpha = resolved?.attachment.clearAlpha
+        diagnostics = resolved?.diagnostics ?? []
         inputs = textureBindings.sorted { $0.slot < $1.slot }.map { binding in
             let authored = binding.slot
-            let operation: String = if let alpha {
+            let operation: String = if builtin, let resolved {
+                authored == 0 ? resolved.nativeAlpha.input.rawValue == 0 ? "none"
+                    : resolved.nativeAlpha.input == .premultiply ? "premultiply-after-sampling" : "unpremultiply-after-sampling" : "none"
+            } else if let alpha {
                 alpha.unpremultipliedInputSlots.contains(authored) ? "unpremultiply-after-sampling" : "no-injected-unpremultiply"
             } else {
                 "unverified"
             }
             return Input(authoredSlot: authored, metalSlot: binding.slot, name: binding.name,
-                         view: binding.texture.map { WPEPixelColorContract($0.pixelFormat) }, shaderAlphaOperation: operation)
+                         view: binding.texture.map { WPEPixelColorContract($0.pixelFormat) }, shaderAlphaOperation: operation,
+                         resourceSemantics: binding.texture.map { WPEMetalTextureMetadataRegistry.shared.semantics(for: $0) },
+                         declaredSemantics: resolved?.inputs[authored]?.semantics, contractOrigin: resolved?.inputs[authored]?.origin)
         }
         shaderOutputAlphaOperation = alpha.map { $0.premultipliedOutput ? "premultiply-before-attachment" : "no-injected-premultiply" } ?? "unverified"
         attachment = WPEPixelColorContract(target.pixelFormat)

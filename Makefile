@@ -84,11 +84,12 @@ WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEA
     WPERenderPipelineBuilderTests WPEMetalTextureLoaderTests WPEFrameUniformContextTests \
     WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
     WPEParticleInstanceCoordinatorTests WPEParticleInstanceModifierTests \
-    WPEParticleControlPointExecutionTests WPEParticleExpansionBudgetTests WPETextGlyphAtlasSizeTests \
+    WPEParticleControlPointExecutionTests WPEParticleExpansionBudgetTests WPETextGlyphAtlasSizeTests WPETextRenderPipelineTests \
     WPESceneClearColorTests WPESceneModelSubmeshMaterialRenderTests WPEParticleScriptVisibilityTests \
     WPEUniformStageBindingTests WPEAttachmentPlanTests WPECameraMotionTests \
     WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests WPEEffectFBOSwapTests \
-    WPEColorDomainProbeTests WPEOraclePixelProbeTests WPEOnDemandVideoLifecycleTests WPECanonicalUniformTraceTests \
+    WPEAlphaPipelineContractTests WPETexAnimatedTextureSourceSuspendTests WPETexLazyAnimatedTextureSourceTests \
+    WPEColorDomainProbeTests WPEBuiltinColorDomainTests WPEOraclePixelProbeTests WPEOnDemandVideoLifecycleTests WPECanonicalUniformTraceTests \
     WPECanonicalPassRawStorageTests \
     WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests \
     WPEUniformResolutionPlanTests WPEMetalSolidSceneRunTests WPERenderGraphBuilderTests \

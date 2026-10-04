@@ -516,6 +516,10 @@ extension WPEMetalSceneRenderer {
                 guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
                 return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
             }
+            renderPipeline = renderPipeline?.resolvingRenderContracts { reference in
+                guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
+                return WPEMetalTextureMetadataRegistry.shared.semantics(for: texture)
+            }
             indexOnDemandVideoLayers(pipeline: pipeline)
             configureSceneScriptVideoSourceMapping()
             publishVideoPlaybackSnapshots()
@@ -562,7 +566,18 @@ extension WPEMetalSceneRenderer {
                 scriptsAreBaked: &scriptsAreBaked
             )
 
-            let readyPublicationLayers = await shaderWarmTask.value
+            let initialReadyPublicationLayers = await shaderWarmTask.value
+            let readyPublicationLayers: Set<String>
+            if let renderPipeline, renderPipeline != pipeline {
+                readyPublicationLayers = await actor.prewarmShaders(pipeline: renderPipeline)
+            } else {
+                readyPublicationLayers = initialReadyPublicationLayers
+            }
+            if let renderPipeline {
+                for (passID, diagnostics) in renderPipeline.renderContractDiagnostics.sorted(by: { $0.key < $1.key }) {
+                    debugStage("contract.compatibility", "pass=\(passID) diagnostics=\(diagnostics.joined(separator: ","))")
+                }
+            }
             try Task.checkCancellation()
             try checkCurrentSceneScriptLoad(scriptLoadToken)
             renderPipeline = renderPipeline?.retainingEffectPublication(in: readyPublicationLayers)

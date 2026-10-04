@@ -64,10 +64,12 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
     private final class Entry {
         weak var texture: MTLTexture?
         let resolution: WPEMetalTextureResolution
+        let semantics: WPEResourceSemantics
 
-        init(texture: MTLTexture, resolution: WPEMetalTextureResolution) {
+        init(texture: MTLTexture, resolution: WPEMetalTextureResolution, semantics: WPEResourceSemantics) {
             self.texture = texture
             self.resolution = resolution
+            self.semantics = semantics
         }
     }
 
@@ -87,7 +89,8 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         noInterpolation: Bool = false,
         worldWidth: Int? = nil,
         worldHeight: Int? = nil,
-        sourceMipLevel: Int = 0
+        sourceMipLevel: Int = 0,
+        semantics: WPEResourceSemantics? = nil
     ) {
         let key = ObjectIdentifier(texture as AnyObject)
         let resolution = WPEMetalTextureResolution(
@@ -101,7 +104,8 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
             sourceMipLevel: sourceMipLevel
         )
         lock.lock()
-        resolutions[key] = Entry(texture: texture, resolution: resolution)
+        let retained = resolutions[key].flatMap { $0.texture === texture ? $0.semantics : nil }
+        resolutions[key] = Entry(texture: texture, resolution: resolution, semantics: semantics ?? retained ?? .unknown)
         registersSinceSweep += 1
         if registersSinceSweep >= Self.sweepInterval {
             registersSinceSweep = 0
@@ -125,6 +129,34 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         }
         lock.unlock()
         return WPEMetalTextureResolution(texture: texture)
+    }
+
+    func semantics(for texture: MTLTexture) -> WPEResourceSemantics {
+        let key = ObjectIdentifier(texture)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = resolutions[key], entry.texture === texture else { return .unknown }
+        return entry.semantics
+    }
+
+    func registerSemantics(_ semantics: WPEResourceSemantics, for texture: MTLTexture) {
+        let key = ObjectIdentifier(texture)
+        lock.lock()
+        defer { lock.unlock() }
+        let resolution = resolutions[key].flatMap { $0.texture === texture ? $0.resolution : nil }
+            ?? WPEMetalTextureResolution(texture: texture)
+        if resolutions[key]?.texture !== texture {
+            registersSinceSweep += 1
+            if registersSinceSweep >= Self.sweepInterval {
+                registersSinceSweep = 0
+                resolutions = resolutions.filter { $0.value.texture != nil }
+            }
+        }
+        resolutions[key] = Entry(texture: texture, resolution: resolution, semantics: semantics)
+    }
+
+    func copySemantics(from source: MTLTexture, to destination: MTLTexture) {
+        registerSemantics(semantics(for: source), for: destination)
     }
 
     /// Removes metadata at an explicit owner-driven reclamation boundary so a

@@ -62,7 +62,7 @@ extension WPEMetalShaderDispatcher {
         let recorder = WPECanonicalTraceRecorder.shared
         guard recorder.isAccumulating else { return }
 
-        var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader, alphaContract: pass.alphaContract)
+        var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader, alphaContract: pass.renderContract.shaderAlpha)
         if kind == .blendComposite && fetchSceneColor {
             metadata = BuiltinTraceMetadata(fragmentShaderName: "wpe_blend_composite_fetch_fragment", textureSlots: [0])
         }

@@ -79,6 +79,7 @@ extension WPEMetalSceneRenderer {
         let candidates: [String]
         /// Slot 0 must resolve. A missing auxiliary slot is unbound (dispatcher binds primary) rather than failing the scene.
         let isRequired: Bool
+        var usage: WPETextureUsage = .unknown
     }
 
     enum WPEParallelTextureResult: @unchecked Sendable { // MTLTexture is documented thread-safe; ferries it across the actor hop.
@@ -295,6 +296,22 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources = [:]
         resetTextureCacheBudgetState()
 
+        // A shared path with conflicting channel roles retains compatibility behavior.
+        var usages: [String: Set<WPETextureUsage>] = [:]
+        for pass in pipeline.layers.flatMap(\.passes) {
+            for input in pass.renderContract.inputs.values {
+                guard let path = externalTexturePath(for: input.reference), input.semantics.usage != .unknown else { continue }
+                usages[path, default: []].insert(input.semantics.usage)
+            }
+        }
+        func usage(for path: String) -> WPETextureUsage {
+            let roles = usages[path] ?? []
+            if roles.count > 1 {
+                Logger.warning("Texture channel roles require verification: \(path) \(roles.map(\.rawValue).sorted())", category: .wpeRender)
+                return .unknown
+            }
+            return roles.first ?? .unknown
+        }
         var jobs: [WPETextureLoadJob] = []
         var seen = Set<String>()
         for layer in pipeline.layers {
@@ -306,7 +323,7 @@ extension WPEMetalSceneRenderer {
                         path: path,
                         layerName: layerName,
                         candidates: textureCandidates(for: path),
-                        isRequired: true
+                        isRequired: true, usage: usage(for: path)
                     ))
                 }
                 continue
@@ -322,7 +339,7 @@ extension WPEMetalSceneRenderer {
                         path: path,
                         layerName: layerName,
                         candidates: textureCandidates(for: path),
-                        isRequired: role.isRequired
+                        isRequired: role.isRequired, usage: usage(for: path)
                     ))
                 }
             }
@@ -357,7 +374,7 @@ extension WPEMetalSceneRenderer {
                             resolver: resolver,
                             loader: loader,
                             streamingThreshold: threshold,
-                            maxSourceEdge: maxSourceEdge
+                            maxSourceEdge: maxSourceEdge, usage: job.usage
                         )
                         return (index, result)
                     } catch is CancellationError {
@@ -400,7 +417,7 @@ extension WPEMetalSceneRenderer {
                         publicationAllowed: { [weak self] in
                             self?.loadGeneration == generation
                         },
-                        on: actor
+                        usage: jobs[index].usage, on: actor
                     )
                 }
                 _ = spawnNext()
@@ -415,7 +432,7 @@ extension WPEMetalSceneRenderer {
         resolver: WPEMultiRootResourceResolver,
         loader: WPEMetalTextureLoader,
         streamingThreshold: Int,
-        maxSourceEdge: Int? = nil
+        maxSourceEdge: Int? = nil, usage: WPETextureUsage = .unknown
     ) async throws -> WPEParallelTextureResult {
         let colorSpace = WPEMetalColorSpace.linear
         try Task.checkCancellation()
@@ -440,7 +457,7 @@ extension WPEMetalSceneRenderer {
                         }
                         return .staticTexture(try await loader.makeTexture(
                             from: payload, label: label, colorSpace: colorSpace,
-                            maxSourceEdge: maxSourceEdge
+                            maxSourceEdge: maxSourceEdge, usage: usage
                         ))
                     } catch is CancellationError {
                         throw CancellationError()
@@ -458,7 +475,7 @@ extension WPEMetalSceneRenderer {
                     label: label,
                     colorSpace: colorSpace,
                     maxSourceEdge: maxSourceEdge,
-                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight)
+                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight), usage: usage
                 ))
             } catch is CancellationError {
                 throw CancellationError()
@@ -529,13 +546,14 @@ extension WPEMetalSceneRenderer {
         path: String,
         layerName: String,
         publicationAllowed: () async -> Bool = { true },
+        usage: WPETextureUsage = .unknown,
         on actor: isolated WPEDisplayRenderActor
     ) async throws {
         do {
             let resource = try await makeTextureResource(
                 relativePath: path,
                 label: "WPE texture \(path)",
-                maxSourceEdge: latchedTextureCap,
+                maxSourceEdge: latchedTextureCap, usage: usage,
                 on: actor
             )
             // `publicationAllowed` is an async hop; re-check after it resumes so a cancel during the hop does not publish.
@@ -656,6 +674,7 @@ extension WPEMetalSceneRenderer {
         label: String,
         colorSpace: WPEMetalColorSpace? = nil,
         maxSourceEdge: Int? = nil,
+        usage: WPETextureUsage = .unknown,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
         let colorSpace = colorSpace ?? .linear
@@ -670,7 +689,7 @@ extension WPEMetalSceneRenderer {
                             let source = try textureLoader.makeLazyAnimatedTextureSource(
                                 from: streaming,
                                 label: label,
-                                colorSpace: colorSpace
+                                colorSpace: colorSpace, usage: usage
                             )
                             // Finished off-thread decode hops back into this actor immediately, not on the next frame tick.
                             source.onPrefetchComplete = { [weak actor] in
@@ -700,14 +719,14 @@ extension WPEMetalSceneRenderer {
                             let source = try await textureLoader.makeAnimatedTextureSource(
                                 from: payload,
                                 label: label,
-                                colorSpace: colorSpace
+                                colorSpace: colorSpace, usage: usage
                             )
                             attachAtlasProvider(
                                 to: source,
                                 eagerPayload: payload,
                                 candidate: candidate,
                                 label: label,
-                                colorSpace: colorSpace
+                                colorSpace: colorSpace, usage: usage
                             )
                             return .dynamicSource(source)
                         }
@@ -716,7 +735,7 @@ extension WPEMetalSceneRenderer {
                             from: payload,
                             label: label,
                             colorSpace: colorSpace,
-                            maxSourceEdge: maxSourceEdge
+                            maxSourceEdge: maxSourceEdge, usage: usage
                         ))
                     } catch is CancellationError {
                         throw CancellationError()
@@ -734,7 +753,7 @@ extension WPEMetalSceneRenderer {
                     label: label,
                     colorSpace: colorSpace,
                     maxSourceEdge: maxSourceEdge,
-                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight)
+                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight), usage: usage
                 ))
             } catch is CancellationError {
                 throw CancellationError()
@@ -752,7 +771,7 @@ extension WPEMetalSceneRenderer {
         eagerPayload: WPETexTexturePayload,
         candidate: String,
         label: String,
-        colorSpace: WPEMetalColorSpace
+        colorSpace: WPEMetalColorSpace, usage: WPETextureUsage
     ) {
         guard !eagerPayload.mipmaps.isEmpty,
               !WPEMetalTextureLoader.uploadsMipChain(scalingActive: false),
@@ -761,7 +780,7 @@ extension WPEMetalSceneRenderer {
                   payload: streaming,
                   device: executor.textureSourceDevice,
                   label: label,
-                  colorSpace: colorSpace
+                  colorSpace: colorSpace, usage: usage
               ) else { return }
         if !source.attachAtlasProvider(provider) {
             debugStage("tex.eager.provider-rejected", "candidate=\(candidate)")
@@ -935,7 +954,7 @@ extension WPEMetalSceneRenderer {
         staticTextureCacheRecords[path] = StaticTextureCacheRecord(
             layerName: layerName,
             candidates: candidates,
-            bytes: bytes
+            bytes: bytes, usage: WPEMetalTextureMetadataRegistry.shared.semantics(for: texture).usage
         )
         staticTextureRecordsEpoch += 1
         if textureCacheBudgetBytesInUse != nil {

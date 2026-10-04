@@ -101,10 +101,15 @@ struct WPEMetalFrameState {
         writtenTargets.contains(.scene) ? latestSceneTexture : nil
     }
 
-    mutating func registerWrite(texture: MTLTexture, targetID: WPEMetalTargetID) {
+    mutating func registerWrite(texture: MTLTexture, targetID: WPEMetalTargetID, semantics: WPEResourceSemantics? = nil) {
         let textureID = ObjectIdentifier(texture)
         writtenTargets.insert(targetID)
         initializedTextures.insert(textureID)
+        if let semantics {
+            WPEMetalTextureMetadataRegistry.shared.registerSemantics(semantics, for: texture)
+        } else if targetID == .scene {
+            WPEMetalTextureMetadataRegistry.shared.registerSemantics(.opaqueColor, for: texture)
+        }
         #if DEBUG
         WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "target-write-publication", label: String(describing: targetID),
                                                                    destination: texture)
@@ -156,6 +161,8 @@ struct WPEMetalPipelineKey: Hashable {
     let colorPixelFormat: MTLPixelFormat
     /// Every pipeline state must declare the same depth attachment format as the render pass that drives it. Default `.invalid` for non-depth passes so Metal validation does not fail when a fullscreen copy without depth meets a pipeline that thought it had `.depth32Float`.
     let depthPixelFormat: MTLPixelFormat
+    var nativeAlpha: WPENativeAlphaPolicy = .compatibility
+    var blendContract: WPEBlendContract?
 }
 
 struct WPEMetalDepthKey: Hashable {

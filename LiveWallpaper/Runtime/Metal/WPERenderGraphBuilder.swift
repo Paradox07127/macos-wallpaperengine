@@ -1951,6 +1951,7 @@ extension WPERenderGraphBuilder {
                     stageUniformBindings: prepared.stageUniformBindings,
                     layerTintOverride: prepared.layerTintOverride,
                     alphaContract: prepared.alphaContract,
+                    renderContract: prepared.renderContract,
                     publicationVertexRole: prepared.publicationVertexRole
                 )
             }
@@ -2159,6 +2160,7 @@ extension WPERenderGraphBuilder {
                     stageUniformBindings: prepared.stageUniformBindings,
                     layerTintOverride: prepared.layerTintOverride,
                     alphaContract: prepared.alphaContract,
+                    renderContract: prepared.renderContract,
                     publicationVertexRole: prepared.publicationVertexRole
                 )
             }

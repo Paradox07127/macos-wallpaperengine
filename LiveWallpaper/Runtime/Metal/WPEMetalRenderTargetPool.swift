@@ -64,13 +64,14 @@ final class WPEMetalRenderTargetPool {
     /// Register the WORLD size; without this the registry reports scaled physical size and identity-less layers shrink by the pixel scale. Identity at scale 1.
     private func registerWorldSize(of texture: MTLTexture) {
         guard pixelScale < 1 else {
-            WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+            WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: .unknown)
             return
         }
         WPEMetalTextureMetadataRegistry.shared.register(
             texture: texture,
             worldWidth: Int((Double(texture.width) / pixelScale).rounded()),
-            worldHeight: Int((Double(texture.height) / pixelScale).rounded())
+            worldHeight: Int((Double(texture.height) / pixelScale).rounded()),
+            semantics: .unknown
         )
     }
 

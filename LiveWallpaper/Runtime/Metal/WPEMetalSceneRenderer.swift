@@ -92,6 +92,7 @@ final class WPEMetalSceneRenderer: NSObject {
     struct ParticleTextureLoadKey: Hashable {
         let path: String
         let colorSpace: WPEMetalColorSpace
+        var usage: WPETextureUsage = .color
     }
     var particleTextureLoadCache: [ParticleTextureLoadKey: WPELoadedTextureResource] = [:]
     var textMeshRenderer: WPETextMeshRenderer?
@@ -246,6 +247,7 @@ final class WPEMetalSceneRenderer: NSObject {
         let layerName: String
         let candidates: [String]
         var bytes: Int
+        var usage: WPETextureUsage = .unknown
     }
     var staticTextureCacheRecords: [String: StaticTextureCacheRecord] = [:]
     var textureCacheLRU = WPEMetalTextureCacheLRU(budgetBytes: 0)

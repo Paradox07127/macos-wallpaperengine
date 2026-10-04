@@ -195,7 +195,7 @@ struct WPECanonicalUniformTraceTests {
         let coverage = try #require(passes[0]["semanticCoverage"] as? [String: Any])
         #expect(coverage["passID"] as? String == "layer.0")
         let color = try #require(passes[0]["colorContract"] as? [String: Any])
-        #expect(color["schema"] as? String == "wpe.pass-color-contract.v1")
+        #expect(color["schema"] as? String == "wpe.pass-color-contract.v2")
         #expect(color["shaderOutputAlphaOperation"] as? String == "unverified")
         #expect((color["attachment"] as? [String: Any])?["hardwareRGBTransfer"] as? String == "identity")
         #expect(color["finalDisplayTransfer"] as? String == "outside-pass-contract")

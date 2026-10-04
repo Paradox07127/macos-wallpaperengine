@@ -222,14 +222,108 @@ struct WPEMetalTextureLoaderTests {
         return buffer.contents().load(as: SIMD2<Float>.self)
     }
 
+    @Test("CGImage uploads preserve straight sampled RGB and coverage before image shaders",
+          arguments: [(false, false), (false, true), (true, false), (true, true)], [false, true])
+    func cgImageAlphaRepresentation(configuration: (Bool, Bool), srgb: Bool) async throws {
+        let (premultiplied, capped) = configuration
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pixel: [UInt8] = premultiplied ? [128, 64, 0, 128] : [255, 128, 0, 128]
+        let bytes = Data((0 ..< 128 * 128).flatMap { _ in pixel })
+        let provider = try #require(CGDataProvider(data: bytes as CFData))
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let image = try #require(CGImage(
+            width: 128, height: 128, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 512,
+            space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: (premultiplied ? CGImageAlphaInfo.premultipliedLast : .last).rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        let texture = try await WPEMetalTextureLoader(device: device).makeTexture(
+            from: image, label: "alpha-upload-probe", colorSpace: srgb ? .sRGB : .linear,
+            maxSourceEdge: capped ? 64 : nil
+        )
+        #expect(texture.width == (capped ? 64 : 128))
+        let sample = try sampleRGBA(texture, device: device)
+        let green = Float(128.0 / 255)
+        // Alpha association is independent of the actual hardware sampling transfer.
+        // MetalKit can infer a view format from the CGImage despite the requested SRGB option.
+        let decodesSRGB = texture.pixelFormat == .rgba8Unorm_srgb || texture.pixelFormat == .bgra8Unorm_srgb
+        let expected = SIMD4<Float>(1, decodesSRGB ? pow((green + 0.055) / 1.055, 2.4) : green, 0, green)
+        #expect(abs(sample.x - expected.x) < 0.01 && abs(sample.y - expected.y) < 0.01
+            && abs(sample.z - expected.z) < 0.01 && abs(sample.w - expected.w) < 0.01,
+            "External images must sample as straight RGBA; sampled \(sample)")
+
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let pass = WPERenderPass(id: "raster", phase: .material, shader: "genericimage4", source: .image("raster"),
+                                 target: .scene, textures: [0: .image("raster")], binds: [:], constants: [:], combos: ["VERSION": 2],
+                                 blending: "premultiplied", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let geometry = WPERenderLayerGeometry(origin: SIMD3(2, 2, 0), scale: SIMD3(repeating: 1), angles: .zero,
+                                              alignment: .center, size: CGSize(width: 4, height: 4), alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
+        let graph = WPERenderLayer(objectID: "raster", objectName: "raster", imagePath: "raster", materialPath: nil,
+                                   geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let prepared = WPEPreparedRenderPass(pass: pass,
+                                             shader: .init(name: "genericimage4", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                             textureBindings: [0: .image("raster")], comboValues: ["VERSION": 2], uniformValues: [:])
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: [prepared])])
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: ["raster": texture])
+        let composited = try sampleRGBA(output, device: device)
+        #expect(abs(composited.x - expected.x * expected.w) < 0.01
+            && abs(composited.y - expected.y * expected.w) < 0.01
+            && composited.w == 1, "Production image pass must apply coverage exactly once: \(composited)")
+    }
+
+    @Test("Raster alpha conversion preserves 16-bit component precision")
+    func rasterAlphaConversionKeepsPrecision() throws {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let components: [UInt16] = [32768, 16384, 0, 32768]
+        let bytes = components.withUnsafeBytes { Data($0) }
+        let provider = try #require(CGDataProvider(data: bytes as CFData))
+        let image = try #require(CGImage(
+            width: 1, height: 1, bitsPerComponent: 16, bitsPerPixel: 64, bytesPerRow: 8, space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        let straight = try WPERasterImageAlpha.straightImage(image)
+        #expect(straight.bitsPerComponent == 16 && straight.bitsPerPixel == 64)
+        #expect(straight.alphaInfo == .last && straight.colorSpace == image.colorSpace)
+        let data = try #require(straight.dataProvider?.data)
+        let values = (data as Data).withUnsafeBytes { Array($0.bindMemory(to: UInt16.self)) }
+        #expect(values[0] == 65535 && abs(Int(values[1]) - 32768) <= 1 && values[2] == 0 && values[3] == 32768)
+    }
+
+    private func sampleRGBA(_ texture: MTLTexture, device: MTLDevice) throws -> SIMD4<Float> {
+        let library = try device.makeLibrary(source: """
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void sample_rgba(texture2d<float> t [[texture(0)]], device float4 *out [[buffer(0)]]) {
+            constexpr sampler s(filter::nearest, address::clamp_to_edge);
+            out[0] = t.sample(s, float2(0.5));
+        }
+        """, options: nil)
+        let function = try #require(library.makeFunction(name: "sample_rgba"))
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let buffer = try #require(device.makeBuffer(length: MemoryLayout<SIMD4<Float>>.stride, options: .storageModeShared))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let encoder = try #require(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(texture, index: 0)
+        encoder.setBuffer(buffer, offset: 0, index: 0)
+        encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        return buffer.contents().load(as: SIMD4<Float>.self)
+    }
+
     @Test("Uploads RGBA texture payload into an MTLTexture")
     func uploadsRGBA8888Payload() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let bytes = Data([
-            255, 0, 0, 255,
-            0, 255, 0, 255,
-            0, 0, 255, 255,
-            255, 255, 255, 255
+            255, 0, 0, 0,
+            0, 255, 0, 64,
+            0, 0, 255, 128,
+            255, 255, 255, 255,
         ])
         let payload = WPETexTexturePayload(
             info: WPETexInfo(
@@ -251,6 +345,9 @@ struct WPEMetalTextureLoaderTests {
         #expect(texture.width == 2)
         #expect(texture.height == 2)
         #expect(texture.pixelFormat == .rgba8Unorm)
+        var uploaded = [UInt8](repeating: 0, count: bytes.count)
+        texture.getBytes(&uploaded, bytesPerRow: 8, from: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0)
+        #expect(uploaded == Array(bytes), "Raw TEX uploads must preserve all four channels, including RGB at alpha zero")
     }
 
     @Test("RG88 alpha-channel-priority uploads .rg8Unorm with (R,R,R,G) swizzle")
@@ -575,6 +672,7 @@ struct WPEMetalTextureLoaderTests {
             defer { WPEMetalTextureMetadataRegistry.shared.unregister(texture: texture) }
             let expectedLevel = maxEdge == 0 || height <= 64 || flags == 1 ? 0 : (maxEdge == 128 ? 1 : 2)
             let resolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+            #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: texture) == .straightColor)
             #expect(resolution.sourceMipLevel == mipmaps[expectedLevel].index)
             #expect(texture.width == (256 >> expectedLevel))
             #expect(texture.height == (height >> expectedLevel))

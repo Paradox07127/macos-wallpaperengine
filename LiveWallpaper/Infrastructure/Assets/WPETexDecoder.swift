@@ -1016,31 +1016,8 @@ struct WPETexDecoder: Sendable {
         guard drew else {
             throw WPETexDecodeError.decodeFailed(mipmap: mipmap, detail: "CGContext allocation or draw failed for encoded payload")
         }
-        unpremultiplyAlphaLast(&buffer)
+        WPERasterImageAlpha.unpremultiplyRGBA8(&buffer)
         return DecodedRGBAImage(width: width, height: height, pixels: buffer)
-    }
-
-    /// Reverses `CGImageAlphaInfo.premultipliedLast` in place so semi- transparent pixels are emitted as straight-alpha RGBA8.
-    private func unpremultiplyAlphaLast(_ buffer: inout Data) {
-        buffer.withUnsafeMutableBytes { rawBuffer in
-            let bytes = rawBuffer.bindMemory(to: UInt8.self)
-            guard let base = bytes.baseAddress else { return }
-            var offset = 0
-            while offset + 3 < bytes.count {
-                let alpha = Int(base[offset + 3])
-                if alpha == 0 {
-                    base[offset]     = 0
-                    base[offset + 1] = 0
-                    base[offset + 2] = 0
-                } else if alpha < 255 {
-                    let halfAlpha = alpha / 2
-                    base[offset]     = UInt8(min(255, (Int(base[offset])     * 255 + halfAlpha) / alpha))
-                    base[offset + 1] = UInt8(min(255, (Int(base[offset + 1]) * 255 + halfAlpha) / alpha))
-                    base[offset + 2] = UInt8(min(255, (Int(base[offset + 2]) * 255 + halfAlpha) / alpha))
-                }
-                offset += 4
-            }
-        }
     }
 
     private func normalizedBytes(

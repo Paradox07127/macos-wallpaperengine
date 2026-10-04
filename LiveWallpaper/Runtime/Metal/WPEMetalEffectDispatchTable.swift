@@ -486,9 +486,10 @@ extension WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: descriptor.fragmentName,
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let primary = try descriptor.bind(executor, pass, textures, frameState, destination, encoder)
         guard usesObjectQuad else { return }

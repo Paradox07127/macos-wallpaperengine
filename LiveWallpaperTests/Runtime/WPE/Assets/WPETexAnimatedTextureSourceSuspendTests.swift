@@ -10,6 +10,40 @@ import Testing
 @Suite("WPETexAnimatedTextureSource suspend")
 @MainActor
 struct WPETexAnimatedTextureSourceSuspendTests {
+    @Test("Suspended eager and lazy animation restore channel roles and transparent RGBA", arguments: [false, true], [WPETextureUsage.color, .normal, .flow])
+    func restoreResourceSemantics(lazy: Bool, usage: WPETextureUsage) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let base = makeStreamingPayload()
+        let raw = Data(Array(repeating: [UInt8(200), 50, 10, 128], count: 16).flatMap(\.self))
+        let mip = WPETexCompressedMipmap(index: 0, width: 4, height: 4, isCompressed: true,
+                                         compressedBytes: lz4Encoded(raw), decompressedByteCount: raw.count)
+        let payload = WPETexStreamingPayload(info: base.info,
+                                             compressedImages: [.init(width: 4, height: 4, payloads: [mip])],
+                                             frames: Array(base.frames.prefix(2)), frameRate: 10, loop: true)
+        let source: any WPEDynamicTextureSource
+        if lazy {
+            source = try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: "restore", usage: usage)
+        } else {
+            let provider = try #require(WPETexAnimatedAtlasProvider(payload: payload, device: device, label: "restore", usage: usage))
+            let atlas = try provider.makeAtlas(imageID: 0)
+            let eager = WPETexAnimatedTextureSource(frames: payload.frames.map {
+                .init(texture: atlas, sourceSubRect: $0.subRect, duration: $0.duration)
+            }, frameRate: 10, loop: true)
+            try #require(eager.attachAtlasProvider(provider))
+            source = eager
+        }
+        let before = try #require(source.texture(at: 0))
+        let bytes = readRGBA(before)
+        let expected: WPEResourceSemantics = usage.isData ? .data(usage) : .straightColor
+        #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: before) == expected)
+        #expect(stride(from: 3, to: bytes.count, by: 4).allSatisfy { bytes[$0] == 128 })
+        source.applyPerformanceProfile(.suspended)
+        source.applyPerformanceProfile(.quality)
+        let restored = try #require(source.texture(at: 0))
+        #expect(readRGBA(restored) == bytes)
+        #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: restored) == expected)
+        source.invalidate()
+    }
 
     @Test("Suspend drops eager atlas GPU bytes to zero")
     func suspendReleasesAtlasGPUBytes() throws {

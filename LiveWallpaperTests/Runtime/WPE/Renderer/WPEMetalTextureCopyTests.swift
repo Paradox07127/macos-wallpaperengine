@@ -20,9 +20,11 @@ struct WPEMetalTextureCopyTests {
             let column = index % 4
             return corners[(row / 2) * 2 + column / 2]
         }
+        WPEMetalTextureMetadataRegistry.shared.registerSemantics(.data(.normal), for: source)
         upload(pixels, to: source, bytesPerPixel: 4)
         try copy(executor, source, destination)
         #expect(readBytes(destination, bytesPerPixel: 4) == corners.flatMap(\.self))
+        #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: destination) == .data(.normal))
     }
 
     @Test("Upsampling preserves HDR RGB and unmodified alpha, and refreshes destination mip levels", arguments: [Float(0), Float(2)])
@@ -31,10 +33,12 @@ struct WPEMetalTextureCopyTests {
         let executor = try WPEMetalRenderExecutor(device: device)
         let source = try texture(device, .rgba16Float, 2, 2)
         let destination = try texture(device, .rgba16Float, 4, 4, mipmapped: true)
+        WPEMetalTextureMetadataRegistry.shared.registerSemantics(.emission, for: source)
         for red: Float in [4, 8] {
             let pixel = [red, 1, 0.5, alpha].map { Float16($0).bitPattern }
             upload(Array(repeating: pixel, count: 4).flatMap(\.self), to: source, bytesPerPixel: 8)
             try copy(executor, source, destination, mipmaps: true)
+            #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: destination) == .emission)
             for level in 0 ..< destination.mipmapLevelCount {
                 let actual = readBytes(destination, bytesPerPixel: 8, level: level)
                 let count = max(1, destination.width >> level) * max(1, destination.height >> level)

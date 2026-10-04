@@ -37,9 +37,9 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 41
+    static let expectedSchemaVersion = 42
     /// Cached stage results must include the scoped local-effect position proof.
-    static let expectedFingerprint = "fc834219d9590e10fd0b477d4e65280bcbb835807240eaf9ae6d8f5baacaaf21"
+    static let expectedFingerprint = "a68d714c0d273eda7f8d3f7dc3130c16536242b8a6400fc4bb4e4636c260cf1f"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {

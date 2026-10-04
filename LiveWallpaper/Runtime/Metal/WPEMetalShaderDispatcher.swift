@@ -62,7 +62,7 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidLayer:
-            let straight = pass.alphaContract?.premultipliedOutput == false
+            let straight = pass.renderContract.shaderAlpha.premultipliedOutput == false
             try dispatchSolid(
                 fragmentName: straight ? "wpe_solidlayer_straight_fragment" : "wpe_solidlayer_fragment",
                 variant: straight ? .solidLayerStraight : .solidLayer,
@@ -167,9 +167,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         var uniforms = WPESolidUniforms(color: WPEMetalShaderInputs.colorVector(for: pass))
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
@@ -201,9 +202,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: fetchSceneColor ? "wpe_blend_composite_fetch_fragment" : "wpe_blend_composite_fragment",
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
 
         let layerReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
@@ -264,9 +266,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
         let texture = try WPEMetalShaderInputs.resolve(
@@ -310,10 +313,11 @@ struct WPEMetalShaderDispatcher {
                 variant: .localSceneCapture,
                 fragmentName: "wpe_local_scene_capture_fragment",
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
-            ))
+                depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
+        ))
             let firstTexture = try WPEMetalShaderInputs.resolve(
                 reference: firstReference,
                 textures: textures,
@@ -341,10 +345,11 @@ struct WPEMetalShaderDispatcher {
                 variant: .composeLayer,
                 fragmentName: "wpe_composelayer_fragment",
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
-            ))
+                depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
+        ))
             let firstTexture = try WPEMetalShaderInputs.resolve(
                 reference: firstReference,
                 textures: textures,
@@ -383,10 +388,11 @@ struct WPEMetalShaderDispatcher {
                 vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
                 fragmentName: "wpe_compose_fragment",
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
-            ))
+                depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
+        ))
             encoder.setFragmentTexture(firstTexture, index: firstComposeSlot)
             encoder.setFragmentTexture(secondTexture, index: secondComposeSlot)
             var uniforms = WPESolidUniforms(color: WPEMetalShaderInputs.colorVector(for: pass))
@@ -427,9 +433,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_genericimage2_fragment",
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
         let texture = mediaSubstituted(
@@ -451,7 +458,7 @@ struct WPEMetalShaderDispatcher {
         )
         // The closed source-to-terminal contract stores straight RGBA before
         // the authored effect; other native image paths keep their PMA ABI.
-        uniforms.alphaMaskUV.w = pass.alphaContract?.premultipliedOutput == false ? 1 : 0
+        uniforms.alphaMaskUV.w = pass.renderContract.shaderAlpha.premultipliedOutput == false ? 1 : 0
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {
             bindObjectQuadVertexUniforms(
@@ -481,9 +488,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_genericimage4_fragment",
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
         let primaryRef = pass.textureBindings[primarySlot] ?? pass.pass.textures[primarySlot] ?? pass.pass.source
         let primary = mediaSubstituted(
@@ -795,7 +803,7 @@ struct WPEMetalShaderDispatcher {
             for: result,
             vertexName: vertexPath.functionOverride,
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
             depthPixelFormat: depthPixelFormat
         )
@@ -809,7 +817,7 @@ struct WPEMetalShaderDispatcher {
             usesObjectQuad: usesObjectQuad,
             nativeState: .scenePass(
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 cullMode: pass.pass.cullMode,
                 depthAttached: executor.depthCache.needsAttachment(for: pass),
                 depthTest: pass.pass.depthTest,
@@ -891,9 +899,10 @@ struct WPEMetalShaderDispatcher {
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_effect_godrays_combine_fragment",
             blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend
         ))
 
         let raysSlot = 0

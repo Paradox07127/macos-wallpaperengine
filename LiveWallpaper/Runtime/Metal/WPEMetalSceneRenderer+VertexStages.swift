@@ -84,7 +84,7 @@ extension WPEMetalRenderExecutor {
     ) -> Set<String> {
         let declarations = pipeline.layers.flatMap(\.graphLayer.localFBOs)
         let colorFormat: MTLPixelFormat = camera.sceneHDR ? .rgba16Float : Self.outputPixelFormat
-        return Set(pipeline.layers.compactMap { layer in
+        return Set(pipeline.layers.compactMap { layer -> String? in
             let publicationPasses = layer.effectPublicationPrewarmPasses(camera: camera)
             guard let descriptor = layer.effectPublication,
                   publicationPasses.count == descriptor.effects.count * 4 + (descriptor.scope == .nativeSolidChain ? 2 : 0),
@@ -93,7 +93,7 @@ extension WPEMetalRenderExecutor {
             let required = variants.suffix(publicationPasses.count)
             let native = descriptor.scope == .nativeSolidChain ? required.filter {
                 $0.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: $0.pass.pass.shader) == .solidLayer
-                    && $0.pass.alphaContract?.premultipliedOutput == false
+                    && $0.pass.renderContract.shaderAlpha.premultipliedOutput == false
             } : []
             guard native.count == (descriptor.scope == .nativeSolidChain ? 2 : 0) else { return nil }
             guard native.allSatisfy({ variant in
@@ -103,8 +103,9 @@ extension WPEMetalRenderExecutor {
                 let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: depthCache.needsAttachment(for: pass))
                 return hasCachedPassPipelineState(passID: pass.id, variant: .solidLayerStraight,
                                                   objectQuad: variant.vertexExecution == .authoredObjectQuad, blendMode: pass.pass.blending,
-                                                  alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
-                                                  colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
+                                                  alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
+                                                  colorPixelFormat: targetFormat, depthPixelFormat: depthFormat,
+                                                  nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend)
             }) else { return nil }
             guard variants.filter({ $0.pass.shader?.isBuiltin == false }).allSatisfy({ variant in
                 let pass = variant.pass
@@ -194,7 +195,7 @@ extension WPEMetalSceneRenderer {
         for layer in pipeline.layers where layer.effectPublication?.scope == .nativeSolidChain {
             for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms)
                 where variant.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: variant.pass.pass.shader) == .solidLayer
-                && variant.pass.alphaContract?.premultipliedOutput == false {
+                && variant.pass.renderContract.shaderAlpha.premultipliedOutput == false {
                 guard !Task.isCancelled else { return [] }
                 let pass = variant.pass
                 let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
@@ -204,8 +205,9 @@ extension WPEMetalSceneRenderer {
                 _ = try? executor.passPipelineState(passID: pass.id, variant: .solidLayerStraight, objectQuad: objectQuad,
                                                     vertexName: objectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex", fragmentName: "wpe_solidlayer_straight_fragment",
                                                     blendMode: pass.pass.blending,
-                                                    alphaWritePolicy: .resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending),
-                                                    colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
+                                                    alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
+                                                    colorPixelFormat: targetFormat, depthPixelFormat: depthFormat,
+                                                    nativeAlpha: pass.renderContract.nativeAlpha, blendContract: pass.renderContract.blend)
             }
         }
         var prewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
@@ -216,7 +218,7 @@ extension WPEMetalSceneRenderer {
             let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
                                                                                  declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: cameraUniforms.sceneHDR)
             let depthFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: executor.depthCache.needsAttachment(for: pass))
-            let alpha = WPEMetalAlphaWritePolicy.resolve(targetID: WPEMetalTargetID(target: pass.pass.target), blendMode: pass.pass.blending)
+            let alpha = pass.renderContract.attachment.alphaWritePolicy
             let identity = "\(key)|\(pass.pass.blending)|\(alpha)|\(targetFormat.rawValue)|\(depthFormat.rawValue)"
             guard seen.insert(identity).inserted else { continue }
             prewarms.append(.init(device: executor.textureSourceDevice, defaultLibrary: executor.defaultLibrary,

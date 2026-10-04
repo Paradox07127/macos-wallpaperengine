@@ -137,7 +137,7 @@ struct WPERenderPipelineBuilder: Sendable {
             pipeline = elision.pipeline
             elisionReport = WPEFullFramePassthroughElisionReport(enabled: true, decisions: elision.decisions)
         }
-        return (pipeline, rotationReport, elisionReport)
+        return (pipeline.resolvingRenderContracts(), rotationReport, elisionReport)
     }
 
     private func staticCompositeSourceExtent(_ reference: WPETextureReference) -> WPERenderSourceExtent? {

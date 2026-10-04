@@ -36,11 +36,12 @@ struct WPETexAnimatedAtlasProvider {
     private let device: MTLDevice
     private let label: String
     private let format: WPETexFormat
+    private let usage: WPETextureUsage
     private let colorSpace: WPEMetalColorSpace
 
     init?(
         payload: WPETexStreamingPayload, device: MTLDevice, label: String,
-        colorSpace: WPEMetalColorSpace = .linear
+        colorSpace: WPEMetalColorSpace = .linear, usage: WPETextureUsage = .unknown
     ) {
         guard let format = payload.info.format,
               (try? WPEMetalTextureFormatMapper.mapping(
@@ -53,6 +54,7 @@ struct WPETexAnimatedAtlasProvider {
         self.label = label
         self.format = format
         self.colorSpace = colorSpace
+        self.usage = usage
     }
 
     func atlasDimensions(imageID: Int) -> (width: Int, height: Int)? {
@@ -85,7 +87,7 @@ struct WPETexAnimatedAtlasProvider {
             from: WPETexTexturePayload(info: payload.info, mipmaps: mipmaps, hasAnimationFrames: false),
             label: "\(label) image \(imageID)", device: device,
             capabilities: WPEMetalTextureCapabilities(device: device),
-            colorSpace: colorSpace, preserveMipmaps: true
+            colorSpace: colorSpace, preserveMipmaps: true, usage: usage
         )
     }
 

@@ -473,7 +473,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "semanticCoverage": coverage.jsonObject(),
             "vertexContract": vertexContract,
             "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: result.alphaContract,
-                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
+                                                  target: targetTexture, nativeState: nativeState, resolved: pass.renderContract).jsonObject(),
         ]
         passes.append(passRecord)
     }
@@ -589,9 +589,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "state": state,
             "output": output,
             "builtin": ["kind": builtinKind],
-            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: nil,
-                                                  target: targetTexture, nativeState: nativeState).jsonObject(),
-            "implementation": implementationRecord(for: pass.shader)
+            "colorContract": WPEPassColorContract(textureBindings: textureBindings, alpha: pass.renderContract.shaderAlpha,
+                                                  target: targetTexture, nativeState: nativeState, resolved: pass.renderContract, builtin: true).jsonObject(),
+            "implementation": implementationRecord(for: pass.shader),
         ]
         passes.append(passRecord)
     }

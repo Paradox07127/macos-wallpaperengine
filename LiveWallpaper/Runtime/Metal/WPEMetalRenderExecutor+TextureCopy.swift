@@ -53,6 +53,7 @@ extension WPEMetalRenderExecutor {
                 WPEFrameOccupancyMeter.count(.reflectionMipGeneration)
             }
             blit.endEncoding()
+            WPEMetalTextureMetadataRegistry.shared.copySemantics(from: source, to: destination)
             #if DEBUG
             WPECanonicalTraceRecorder.shared.recordAttachmentOperation(kind: "blit-copy", label: traceLabel(), source: source,
                                                                        destination: destination, writesPixels: source !== destination)
@@ -64,6 +65,7 @@ extension WPEMetalRenderExecutor {
         }
 
         try encodeSampledTextureCopy(source, to: destination, commandBuffer: commandBuffer, traceLabel: traceLabel())
+        WPEMetalTextureMetadataRegistry.shared.copySemantics(from: source, to: destination)
         if needsMipmaps {
             // Render must end before blit generates the new destination chain.
             guard let blit = commandBuffer.makeBlitCommandEncoder() else {

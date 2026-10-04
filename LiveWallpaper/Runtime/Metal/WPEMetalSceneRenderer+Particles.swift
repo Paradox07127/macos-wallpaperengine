@@ -159,17 +159,18 @@ extension WPEMetalSceneRenderer {
         relativePath: String,
         label: String,
         colorSpace: WPEMetalColorSpace? = nil,
+        usage: WPETextureUsage = .color,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
         let colorSpace = colorSpace ?? .linear
-        let key = ParticleTextureLoadKey(path: relativePath, colorSpace: colorSpace)
+        let key = ParticleTextureLoadKey(path: relativePath, colorSpace: colorSpace, usage: usage)
         if let cached = particleTextureLoadCache[key] {
             return cached
         }
         let loaded = try await makeTextureResource(
             relativePath: relativePath,
             label: label,
-            colorSpace: colorSpace,
+            colorSpace: colorSpace, usage: usage,
             on: actor
         )
         // Only static atlases are cached. Particles never tick a dynamic source, so holding one for the scene lifetime would pin a payload nothing will read again, and none of them are in `dynamicTextureSources` for suspend-time release.
@@ -620,7 +621,7 @@ extension WPEMetalSceneRenderer {
             // a normal map is DATA — sRGB gamma corrupts its vectors
             let normalPayload = try? await particleTextureResource(
                 relativePath: normalPath, label: "particle normal \(normalPath)",
-                colorSpace: .linear, on: actor)
+                colorSpace: .linear, usage: .normal, on: actor)
             let normalTexture: MTLTexture? = switch normalPayload {
             case .staticTexture(let t): t
             case .dynamicSource(let source): source.texture(at: 0)

@@ -170,7 +170,7 @@ final class WPETextGlyphAtlas {
         descriptor.storageMode = .shared
         guard let texture = device.makeTexture(descriptor: descriptor) else { return false }
         texture.label = "WPE text glyph atlas \(pages.count)"
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+        WPEMetalTextureMetadataRegistry.shared.register(texture: texture, semantics: .data(.glyphDistance))
         // New MTLTexture contents are undefined; the 1px isolation strips are never written by glyph uploads, and linear sampling reads them at every cell edge — zero the page once.
         let zeroRow = [UInt8](repeating: 0, count: pageSize * pageSize)
         zeroRow.withUnsafeBytes { raw in

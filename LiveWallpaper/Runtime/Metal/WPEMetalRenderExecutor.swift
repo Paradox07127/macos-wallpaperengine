@@ -231,6 +231,7 @@ final class WPEMetalRenderExecutor {
     private struct BlendStringFacts {
         let lowercased: String
         let requiresExistingDestination: Bool
+        let contract: WPEBlendContract
     }
 
     private var blendStringFactsCache: [String: BlendStringFacts] = [:]
@@ -278,6 +279,8 @@ final class WPEMetalRenderExecutor {
         let alphaWritePolicy: WPEMetalAlphaWritePolicy
         let colorPixelFormat: MTLPixelFormat
         let depthPixelFormat: MTLPixelFormat
+        var nativeAlpha: WPENativeAlphaPolicy = .compatibility
+        var blendContract: WPEBlendContract?
     }
 
     private var passPipelineStates: [PassPSOKey: MTLRenderPipelineState] = [:]
@@ -294,7 +297,9 @@ final class WPEMetalRenderExecutor {
         blendMode: String,
         alphaWritePolicy: WPEMetalAlphaWritePolicy,
         colorPixelFormat: MTLPixelFormat,
-        depthPixelFormat: MTLPixelFormat
+        depthPixelFormat: MTLPixelFormat,
+        nativeAlpha: WPENativeAlphaPolicy = .compatibility,
+        blendContract: WPEBlendContract? = nil
     ) throws -> MTLRenderPipelineState {
         let key = PassPSOKey(
             passID: passID,
@@ -303,7 +308,8 @@ final class WPEMetalRenderExecutor {
             blending: blendMode,
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: nativeAlpha, blendContract: blendContract ?? blendFacts(blendMode).contract
         )
         if let cached = passPipelineStates[key] {
             return cached
@@ -315,7 +321,8 @@ final class WPEMetalRenderExecutor {
             blendMode: blendMode,
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: nativeAlpha, blendContract: blendContract ?? blendFacts(blendMode).contract
         )
         passPipelineStates[key] = state
         return state
@@ -327,11 +334,12 @@ final class WPEMetalRenderExecutor {
 
     func hasCachedPassPipelineState(
         passID: String, variant: PassPSOVariant, objectQuad: Bool, blendMode: String,
-        alphaWritePolicy: WPEMetalAlphaWritePolicy, colorPixelFormat: MTLPixelFormat, depthPixelFormat: MTLPixelFormat
+        alphaWritePolicy: WPEMetalAlphaWritePolicy, colorPixelFormat: MTLPixelFormat, depthPixelFormat: MTLPixelFormat,
+        nativeAlpha: WPENativeAlphaPolicy = .compatibility, blendContract: WPEBlendContract? = nil
     ) -> Bool {
         passPipelineStates[PassPSOKey(passID: passID, variant: variant, objectQuad: objectQuad,
             blending: blendMode, alphaWritePolicy: alphaWritePolicy,
-            colorPixelFormat: colorPixelFormat, depthPixelFormat: depthPixelFormat)] != nil
+            colorPixelFormat: colorPixelFormat, depthPixelFormat: depthPixelFormat, nativeAlpha: nativeAlpha, blendContract: blendContract ?? blendFacts(blendMode).contract)] != nil
     }
 
     let customTextureSlotScratch = WPEMetalTextureSlotTable()
@@ -357,7 +365,8 @@ final class WPEMetalRenderExecutor {
         if let cached = blendStringFactsCache[blendMode] { return cached }
         let facts = BlendStringFacts(
             lowercased: blendMode.lowercased(),
-            requiresExistingDestination: Self.blendModeRequiresExistingDestination(blendMode)
+            requiresExistingDestination: Self.blendModeRequiresExistingDestination(blendMode),
+            contract: WPEBlendContract(blendMode)
         )
         blendStringFactsCache[blendMode] = facts
         return facts
@@ -1635,7 +1644,7 @@ final class WPEMetalRenderExecutor {
             )
             if encoded || copiedSceneBackground {
                 frameState.markInitialized(destination.texture)
-                frameState.registerWrite(texture: destination.texture, targetID: targetID)
+                frameState.registerWrite(texture: destination.texture, targetID: targetID, semantics: pass.renderContract.stored)
             }
             return
         }
@@ -1736,7 +1745,7 @@ final class WPEMetalRenderExecutor {
             commandBuffer: commandBuffer,
             frameState: &frameState
         ) {
-            frameState.registerWrite(texture: destination.texture, targetID: destination.id)
+            frameState.registerWrite(texture: destination.texture, targetID: destination.id, semantics: pass.renderContract.stored)
             return
         }
 
@@ -1876,7 +1885,7 @@ final class WPEMetalRenderExecutor {
                 )
             } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
                 // The encoder is already open and has cleared this target, so hand the cleared texture to `frameState`: a later pass sampling the same name reads transparent black instead of failing the WHOLE scene.
-                frameState.registerWrite(texture: destination.texture, targetID: destination.id)
+                frameState.registerWrite(texture: destination.texture, targetID: destination.id, semantics: pass.renderContract.stored)
                 throw error
             }
 
@@ -1887,7 +1896,7 @@ final class WPEMetalRenderExecutor {
                 solidRun?.texturedDrawCount += 1
             }
         }
-        frameState.registerWrite(texture: destination.texture, targetID: destination.id)
+        frameState.registerWrite(texture: destination.texture, targetID: destination.id, semantics: pass.renderContract.stored)
     }
 
     /// The scene can stack several animation layers; play them all so blinks/mouth motion compose on top of the body sway, instead of only the first layer.
@@ -2310,7 +2319,9 @@ final class WPEMetalRenderExecutor {
         blendMode: String = "disabled",
         alphaWritePolicy: WPEMetalAlphaWritePolicy = .all,
         colorPixelFormat: MTLPixelFormat = WPEMetalRenderExecutor.outputPixelFormat,
-        depthPixelFormat: MTLPixelFormat = .invalid
+        depthPixelFormat: MTLPixelFormat = .invalid,
+        nativeAlpha: WPENativeAlphaPolicy = .compatibility,
+        blendContract: WPEBlendContract? = nil
     ) throws -> MTLRenderPipelineState {
         try pipelineCache.pipelineState(
             vertexName: vertexName,
@@ -2318,7 +2329,8 @@ final class WPEMetalRenderExecutor {
             blendMode: blendMode,
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: nativeAlpha, blendContract: blendContract
         )
     }
 
@@ -3447,40 +3459,6 @@ final class WPEMetalRenderExecutor {
     }
 
     /// Those targets already store premultiplied RGB, so a transpiled straight-alpha shader must un-premultiply them before running its original math.
-    private static func premultipliedInputSlots(for pass: WPEPreparedRenderPass) -> Set<Int> {
-        var slots = Set<Int>()
-        for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit {
-            let reference = pass.textureBindings[slot]
-                ?? pass.pass.binds[slot]
-                ?? pass.pass.textures[slot]
-                ?? (slot == 0 ? pass.pass.source : nil)
-            if let reference, isPremultipliedRenderTarget(reference) {
-                slots.insert(slot)
-            }
-        }
-        return slots
-    }
-
-    private static func isPremultipliedRenderTarget(_ reference: WPETextureReference) -> Bool {
-        switch reference {
-        case .fbo, .previous:
-            return true
-        case .image, .asset:
-            return false
-        }
-    }
-
-    /// True when the pass targets the premultiplied render-target path, so a
-    /// transpiled straight-alpha shader must premultiply its final output.
-    private static func usesPremultipliedOutput(blendMode: String) -> Bool {
-        blendMode
-            .lowercased()
-            .replacingOccurrences(of: "-", with: "")
-            .replacingOccurrences(of: "_", with: "")
-            .replacingOccurrences(of: " ", with: "")
-            .hasPrefix("premultiplied")
-    }
-
     /// Returns nil for built-in/shader-less passes. `recordFailure` gates the scene-debug artifact so the warm stays silent.
     static func shaderPreprocessMemoKey(for pass: WPEPreparedRenderPass) -> WPEShaderPreprocessMemoKey? {
         guard let program = pass.shader, let fingerprint = program.sourceFingerprint else { return nil }
@@ -3500,8 +3478,8 @@ final class WPEMetalRenderExecutor {
         allowPreprocessing: Bool = true
     ) throws -> WPEShaderCompileRequest? {
         guard let program = pass.shader, !program.isBuiltin else { return nil }
-        let premultipliedInputSlots = pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass)
-        let premultipliedOutput = pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending)
+        let premultipliedInputSlots = pass.renderContract.shaderAlpha.unpremultipliedInputSlots
+        let premultipliedOutput = pass.renderContract.shaderAlpha.premultipliedOutput
         let key = shaderPreprocessMemoKey(for: pass)
         let materialTextureBindings = key?.materialTextureBindings ?? Dictionary(
             uniqueKeysWithValues: pass.textureBindings.compactMap { (slot, ref) -> (Int, String)? in
@@ -3562,16 +3540,16 @@ final class WPEMetalRenderExecutor {
     ) -> WPEAuthoredShaderRequestIdentity? {
         guard pass.shader?.isBuiltin == false, let preprocessing = shaderPreprocessMemoKey(for: pass) else { return nil }
         return .init(preprocessing: preprocessing,
-                     inputSlots: pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass),
-                     output: pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending),
+                     inputSlots: pass.renderContract.shaderAlpha.unpremultipliedInputSlots,
+                     output: pass.renderContract.shaderAlpha.premultipliedOutput,
                      execution: execution)
     }
 
     /// Effect-publication projections keep the canonical pass ID while rewriting bindings,
     /// blending and alpha contract, so the entry must key on what the compile request reads.
     static func compiledShaderEntryKey(for pass: WPEPreparedRenderPass) -> String {
-        let inputs = pass.alphaContract?.unpremultipliedInputSlots ?? premultipliedInputSlots(for: pass)
-        let output = pass.alphaContract?.premultipliedOutput ?? usesPremultipliedOutput(blendMode: pass.pass.blending)
+        let inputs = pass.renderContract.shaderAlpha.unpremultipliedInputSlots
+        let output = pass.renderContract.shaderAlpha.premultipliedOutput
         let bindings = pass.textureBindings.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         return "\(pass.id)|in=\(inputs.sorted())|out=\(output)|\(bindings)"
     }

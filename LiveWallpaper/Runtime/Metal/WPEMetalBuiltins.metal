@@ -6,6 +6,18 @@ constant bool wpe_unorm_target [[function_constant(1023)]];
 inline float4 wpe_attachment_output(float4 color) {
     return is_function_constant_defined(wpe_unorm_target) && wpe_unorm_target ? saturate(color) : color;
 }
+constant uint wpe_input_alpha_operation [[function_constant(1022)]];
+constant bool wpe_native_straight_output [[function_constant(1021)]];
+inline float4 wpe_native_sample(float4 color) {
+    uint operation = is_function_constant_defined(wpe_input_alpha_operation) ? wpe_input_alpha_operation : 0u;
+    if (operation == 1u) { color.rgb *= color.a; }
+    else if (operation == 2u) { color.rgb = color.a > 0.00001 ? color.rgb / color.a : float3(0.0); }
+    return color;
+}
+inline float4 wpe_native_sample(half4 color) { return wpe_native_sample(float4(color)); }
+inline bool wpe_native_output_is_straight() {
+    return is_function_constant_defined(wpe_native_straight_output) && wpe_native_straight_output;
+}
 // Native image/model/text paths inject PMA to use Metal's .one source factor.
 // Apply the WPE source-range operation before that representation conversion.
 inline float4 wpe_attachment_premultiply(float3 rgb, float alpha) {
@@ -58,7 +70,7 @@ struct WPETextMeshVertex {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     // Straight rgb + alpha applied once → premultiplied RGB, so the pipeline's
     // `.one` / `.oneMinusSourceAlpha` on both channels keeps `rgb <= alpha`.
-    float coverage = float(atlas.sample(linearSampler, in.uv).r);
+    float coverage = float(wpe_native_sample(atlas.sample(linearSampler, in.uv)).r);
     float alpha = coverage * color.a;
     return half4(wpe_attachment_premultiply(color.rgb, alpha));
 }
@@ -266,7 +278,10 @@ struct WPEObjectQuadUniforms {
     float2 halfSize = max(u.sceneSizeAndRotation.xy * 0.5, float2(0.5));
     float2 oriented = (u.cameraOrientation * float4(centered / halfSize, u.cameraWorldDepth.x, 1.0)).xy;
     float2 sceneUV = float2(0.5 + oriented.x * 0.5, 0.5 - oriented.y * 0.5);
-    return half4(wpe_attachment_output(float4(half4(scene.sample(linearSampler, sceneUV).rgb, half(0.0)))));
+    // The copied backdrop is part of this premultiplied text surface. Clearing
+    // its alpha while retaining RGB makes the scene composite add it again,
+    // producing a bright rectangle around the glyphs.
+    return half4(wpe_attachment_output(float4(wpe_native_sample(scene.sample(linearSampler, sceneUV)))));
 }
 
 // WPE `effects/skew` MODE=1 (Vertex): displaces the quad corners in the layer's
@@ -713,7 +728,7 @@ static inline float3 wpe_authored_rgb_to_linear(float3 color) {
     texture2d<float, access::sample> texture0 [[texture(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    return half4(wpe_attachment_output(float4(half4(float4(wpe_authored_rgb_to_linear(texture0.sample(linearSampler, in.uv).rgb), 1.0)))));
+    return half4(wpe_attachment_output(float4(half4(float4(wpe_authored_rgb_to_linear(wpe_native_sample(texture0.sample(linearSampler, in.uv)).rgb), 1.0)))));
 }
 
 // combine_hdr (DISPLAYHDR=0, LINEAR=0): saturate(lin(scene + bloom)) * g_RenderVar0.x, where .x is the Windows SDR white level in scRGB (240 nits = 3.0).
@@ -723,7 +738,7 @@ static inline float3 wpe_authored_rgb_to_linear(float3 color) {
     texture2d<float, access::sample> texture0 [[texture(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float3 color = texture0.sample(linearSampler, in.uv).rgb;
+    float3 color = wpe_native_sample(texture0.sample(linearSampler, in.uv)).rgb;
     return half4(wpe_attachment_output(float4(half4(float4(saturate(wpe_authored_rgb_to_linear(color)), 1.0)))));
 }
 
@@ -731,12 +746,12 @@ static inline float3 wpe_authored_rgb_to_linear(float3 color) {
 // the vertex stage (objectQuadUniforms / pixelOffset), so this fragment never
 // offsets its sample UV — it samples the source texture straight through and
 // takes no uniform buffer.
-[[fragment]] half4 wpe_copy_fragment(
+[[fragment]] float4 wpe_copy_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, in.uv))));
+    return wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, in.uv))));
 }
 
 struct WPEVideoYCbCrUniforms {
@@ -758,7 +773,7 @@ struct WPEVideoYCbCrUniforms {
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float3 ycbcr = float3(
-        luma.sample(linearSampler, in.uv).r,
+        wpe_native_sample(luma.sample(linearSampler, in.uv)).r,
         chroma.sample(linearSampler, in.uv).rg
     );
     float3 rgb = clamp(conversion.colorMatrix * (ycbcr - conversion.offset), 0.0, 1.0);
@@ -787,12 +802,12 @@ struct WPEVideoYCbCrUniforms {
     return half4(wpe_attachment_output(float4(uniforms.color.rgb, saturate(uniforms.color.a))));
 }
 
-[[fragment]] half4 wpe_util_copy_fragment(
+[[fragment]] float4 wpe_util_copy_fragment(
     WPEVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, in.uv))));
+    return wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, in.uv))));
 }
 
 struct WPEBlendCompositeUniforms {
@@ -816,7 +831,7 @@ struct WPEBlendCompositeUniforms {
     constant WPEBlendCompositeUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 layer = float4(texture0.sample(linearSampler, in.uv));
+    float4 layer = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     // Layer composites are premultiplied; ApplyBlending's B is straight colour.
     float3 straight = layer.a > 0.001 ? saturate(layer.rgb / layer.a) : layer.rgb;
 
@@ -840,7 +855,7 @@ struct WPEBlendCompositeUniforms {
     constant WPEBlendCompositeUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 layer = float4(texture0.sample(linearSampler, in.uv));
+    float4 layer = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float3 straight = layer.a > 0.001 ? saturate(layer.rgb / layer.a) : layer.rgb;
     float3 blended = wpe_ApplyBlending(uniforms.blendMode, float3(sceneColor.rgb), straight, layer.a);
     return half4(wpe_attachment_premultiply(blended, layer.a));
@@ -860,7 +875,7 @@ struct WPEBlendCompositeUniforms {
     constant WPEComposeLayerUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 color = float4(texture0.sample(linearSampler, in.uv));
+    float4 color = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     if (uniforms.flags.x > 0.5) {
         // Premultiplied transparent = all channels zero (zeroing only alpha
         // would leave premultiplied rgb that re-adds under premultiplied over).
@@ -905,7 +920,7 @@ struct WPEBlendCompositeUniforms {
         (scenePixels.x + sceneW * 0.5) / sceneW,
         (sceneH * 0.5 - scenePixels.y) / sceneH
     );
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, clamp(uv, float2(0.0), float2(1.0))))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, clamp(uv, float2(0.0), float2(1.0)))))));
 }
 
 [[fragment]] half4 wpe_compose_fragment(
@@ -915,7 +930,7 @@ struct WPEBlendCompositeUniforms {
     constant WPESolidUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 a = float4(texture0.sample(linearSampler, in.uv));
+    float4 a = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float4 b = float4(texture1.sample(linearSampler, in.uv));
     // Both inputs are premultiplied: composite b over a with the
     // premultiplied over operator (src + dst*(1-src.a)).
@@ -947,7 +962,7 @@ struct WPEColorBalanceUniforms {
     constant WPEColorBalanceUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 color = float4(texture0.sample(linearSampler, in.uv));
+    float4 color = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
 
     // These fallback effects receive PMA layer targets. With no coverage, retain
     // additive RGB verbatim; no straight colour exists on which to apply an offset.
@@ -985,7 +1000,7 @@ struct WPEBlurUniforms {
     float4 color = float4(0.0);
     for (uint i = 0; i < 9; i++) {
         float2 uv = clamp(in.uv + stepUV * offsets[i], float2(0.0), float2(1.0));
-        color += float4(texture0.sample(linearSampler, uv)) * weights[i];
+        color += float4(wpe_native_sample(texture0.sample(linearSampler, uv))) * weights[i];
     }
 
     return half4(wpe_attachment_output(float4(half4(color))));
@@ -1005,7 +1020,7 @@ struct WPEVignetteUniforms {
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
 
-    float4 color = float4(texture0.sample(linearSampler, in.uv));
+    float4 color = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float innerRadius = max(uniforms.innerRadius, 0.0);
     float outerRadius = max(uniforms.outerRadius, innerRadius + 0.0001);
     float edge = smoothstep(innerRadius, outerRadius, distance(in.uv, float2(0.5, 0.5)));
@@ -1036,7 +1051,7 @@ struct WPEWaterUniforms {
     ) * uniforms.amplitude;
 
     float2 uv = clamp(in.uv + wave, float2(0.0), float2(1.0));
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPEShakeUniforms {
@@ -1070,10 +1085,10 @@ static inline half4 wpe_genericimage2_shade(
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_logical_texture_uv(uv, uniforms.textureUVScale.xy);
-    float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
     float alpha = sampled.a * uniforms.color.a * uniforms.alphaMaskUV.x;
-    if (uniforms.alphaMaskUV.w > 0.5) {
+    if (wpe_native_output_is_straight() || uniforms.alphaMaskUV.w > 0.5) {
         return half4(wpe_attachment_output(float4(rgb, alpha)));
     }
     // Premultiplied-alpha render target: the layer-FBO / effect-chain passes
@@ -1112,7 +1127,7 @@ static inline half4 wpe_genericimage2_shade(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
     float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
-    float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float maskAlpha = 1.0;
     if (uniforms.alphaMaskUV.z > 0.5) {
         maskAlpha = float(texture1.sample(linearSampler, maskUV).a);
@@ -1120,7 +1135,7 @@ static inline half4 wpe_genericimage2_shade(
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
     float alpha = sampled.a * maskAlpha * uniforms.color.a * uniforms.alphaMaskUV.x;
     // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
-    return half4(wpe_attachment_premultiply(rgb, alpha));
+    return half4(wpe_native_output_is_straight() ? wpe_attachment_output(float4(rgb, alpha)) : wpe_attachment_premultiply(rgb, alpha));
 }
 
 // WPE HDR scene bloom pyramid. Parameters RenderDoc-verified on 3509243656:
@@ -1295,7 +1310,7 @@ static inline float3 wpe_scene_model_reflection(
     constant WPESceneModelMeshUniforms& mesh [[buffer(1)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 albedo = float4(texture0.sample(linearSampler, in.uv));
+    float4 albedo = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
@@ -1365,7 +1380,7 @@ static inline float3 wpe_scene_model_reflection(
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     constexpr sampler noiseSampler(address::repeat, filter::linear);
-    float4 albedo = float4(texture0.sample(linearSampler, in.uv));
+    float4 albedo = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
@@ -1439,7 +1454,7 @@ static inline float3 wpe_scene_model_reflection(
     constant WPESceneModelGenericUniforms& u [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 albedo = float4(texture0.sample(linearSampler, in.uv));
+    float4 albedo = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
@@ -1468,7 +1483,7 @@ static inline float3 wpe_scene_model_reflection(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
     float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
-    float albedoAlpha = float(texture0.sample(linearSampler, sourceUV).a);
+    float albedoAlpha = float(wpe_native_sample(texture0.sample(linearSampler, sourceUV)).a);
     float mask = float(texture1.sample(linearSampler, maskUV).r);
     float alpha = wpe_lerp(pow(albedoAlpha, 4.0), albedoAlpha, mask);
     float red = mask * alpha;
@@ -1489,7 +1504,7 @@ static inline float3 wpe_scene_model_reflection(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
     float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
-    float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float maskAlpha = 1.0;
     if (uniforms.alphaMaskUV.z > 0.5) {
         maskAlpha = float(texture1.sample(linearSampler, maskUV).a);
@@ -1507,7 +1522,7 @@ static inline float3 wpe_scene_model_reflection(
         alpha *= clipping.r;
         rgb = wpe_lerp(rgb, clipping.rgb, clipping.a);
     }
-    return half4(wpe_attachment_premultiply(rgb, alpha));
+    return half4(wpe_native_output_is_straight() ? float4(rgb, alpha) : wpe_attachment_premultiply(rgb, alpha));
 }
 
 // Final deferred puppet clip. The local material + effect chain has already
@@ -1521,7 +1536,7 @@ static inline float3 wpe_scene_model_reflection(
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
-    float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float coverage = float(texture8.sample(linearSampler, saturate(in.screenUV)).r);
     return half4(wpe_attachment_output(float4(half4(sampled * coverage))));
 }
@@ -1905,7 +1920,7 @@ struct WPEParticleRopeVertex {
     constant WPEGenericParticleUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.sizeAndAge.y;
     float alpha = sampled.a * uniforms.color.a * uniforms.sizeAndAge.x;
     return half4(wpe_attachment_premultiply(rgb, alpha));
@@ -1932,7 +1947,7 @@ struct WPEOpacityUniforms {
     constant WPEOpacityUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float mask = 1.0;
     if (uniforms.hasMask > 0.5) {
         float2 maskUV = in.uv * float2(uniforms.maskScaleX, uniforms.maskScaleY);
@@ -1959,7 +1974,7 @@ struct WPEScrollUniforms {
 ) {
     constexpr sampler linearSampler(address::repeat, filter::linear);
     float2 uv = fract(in.uv + uniforms.speed * uniforms.time);
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPEPulseUniforms {
@@ -1985,7 +2000,7 @@ struct WPEGodraysCombineUniforms {
     constant WPEPulseUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float modulation = 1.0 + sin(uniforms.time * uniforms.frequency * 6.2831853) * uniforms.amplitude;
     return half4(wpe_attachment_output(float4(half4(float4(saturate(sampled.rgb * modulation), sampled.a)))));
 }
@@ -2005,7 +2020,7 @@ struct WPEGodraysCombineUniforms {
     constant WPEGodraysCombineUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 rays = float4(raysTexture.sample(linearSampler, in.uv));
+    float4 rays = float4(wpe_native_sample(raysTexture.sample(linearSampler, in.uv)));
     if (uniforms.blendMode == 0u) {
         return half4(wpe_attachment_output(float4(half4(rays))));
     }
@@ -2042,7 +2057,7 @@ struct WPEIrisUniforms {
     constant WPEIrisUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float dist = distance(in.uv, float2(0.5, 0.5));
     float radius = max(uniforms.radius, 0.0);
     float softness = max(uniforms.softness, 0.0001);
@@ -2096,7 +2111,7 @@ struct WPEWaterWavesUniforms {
     float2 displacement = shaped * offset * strength * mask;
     float2 uv = clamp(in.uv + displacement, float2(0.0), float2(1.0));
 
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 // Single-pass effect approximations used across the corpus: visually
@@ -2124,7 +2139,7 @@ struct WPESpinUniforms {
     float s = sin(a), co = cos(a);
     float2 r = float2(d.x * co - d.y * s, d.x * s + d.y * co) + c;
     float2 uv = clamp(r, float2(0.0), float2(1.0));
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPETintUniforms {
@@ -2141,7 +2156,7 @@ struct WPETintUniforms {
     constant WPETintUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float t = saturate(uniforms.intensity);
     float3 rgb = wpe_lerp(sampled.rgb, sampled.rgb * uniforms.color.rgb, t);
     return half4(wpe_attachment_output(float4(half4(float4(rgb, sampled.a)))));
@@ -2163,7 +2178,7 @@ struct WPEFoliageSwayUniforms {
     float yMask = 1.0 - in.uv.y;
     float wave = sin(uniforms.time * uniforms.speed + in.uv.y * uniforms.frequency);
     float2 uv = clamp(in.uv + float2(wave * uniforms.amplitude * yMask, 0.0), float2(0.0), float2(1.0));
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPEWaterRippleUniforms {
@@ -2185,7 +2200,7 @@ struct WPEWaterRippleUniforms {
     float wave = sin(r * uniforms.frequency - uniforms.time * uniforms.speed);
     float2 disp = (r > 0.0001) ? (d / r) * wave * uniforms.amplitude : float2(0.0);
     float2 uv = clamp(in.uv + disp, float2(0.0), float2(1.0));
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPEBlendUniforms {
@@ -2202,7 +2217,7 @@ struct WPEBlendUniforms {
     constant WPEBlendUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float o = saturate(uniforms.opacity);
     float3 rgb = wpe_lerp(sampled.rgb, sampled.rgb * uniforms.color.rgb, o);
     return half4(wpe_attachment_output(float4(half4(float4(rgb, sampled.a)))));
@@ -2221,7 +2236,7 @@ struct WPEWaterFlowUniforms {
 ) {
     constexpr sampler linearSampler(address::repeat, filter::linear);
     float2 uv = fract(in.uv + uniforms.direction * uniforms.speed * uniforms.time);
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 struct WPEColorGradingUniforms {
@@ -2236,7 +2251,7 @@ struct WPEColorGradingUniforms {
     constant WPEColorGradingUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     // Preserve zero-coverage additive values, as in the colorbalance fallback.
     if (sampled.a == 0.0) { return half4(wpe_attachment_output(float4(half4(sampled)))); }
     float3 lifted = sampled.rgb / sampled.a + uniforms.lift.rgb;
@@ -2258,7 +2273,7 @@ struct WPEShimmerUniforms {
     constant WPEShimmerUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float4 sampled = float4(texture0.sample(linearSampler, in.uv));
+    float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
     float n = fract(sin(dot(in.uv * 100.0, float2(12.9898, 78.233)) + uniforms.time * uniforms.speed) * 43758.5453);
     float boost = 1.0 + n * uniforms.intensity;
     return half4(wpe_attachment_output(float4(half4(float4(saturate(sampled.rgb * boost), sampled.a)))));
@@ -2280,7 +2295,7 @@ struct WPEShimmerUniforms {
     ) * magnitude;
 
     float2 uv = clamp(in.uv + jitter, float2(0.0), float2(1.0));
-    return half4(wpe_attachment_output(float4(texture0.sample(linearSampler, uv))));
+    return half4(wpe_attachment_output(float4(wpe_native_sample(texture0.sample(linearSampler, uv)))));
 }
 
 // MARK: - Engine colour correction
