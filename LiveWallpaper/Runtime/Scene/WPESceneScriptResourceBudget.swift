@@ -50,6 +50,14 @@ final class WPESceneScriptSceneResourceBudget: @unchecked Sendable {
         state.createdLayers -= 1
     }
 
+    /// Restores one bridge's active-layer delta, including after load retirement.
+    func adjustCreatedLayerCountForRollback(_ delta: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        state.createdLayers += delta
+        assert(state.createdLayers >= 0)
+    }
+
     func admitNewSharedStateEntry() -> Admission {
         lock.lock()
         defer { lock.unlock() }

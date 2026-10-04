@@ -50,14 +50,15 @@ struct WPESceneScriptContainmentCharacterizationTests {
         let remainingOracleBodies = try RR10ProductionSource.engineMethodBodies(named: "injectOracleUserProperties", in: runtime)
         #expect(remainingOracleBodies.isEmpty)
 
-        // 1 = the parse-time evaluator's own private queue; 3 = the per-object
-        // engines taking theirs from the batch dispatcher.
+        // 1 = the parse-time evaluator's private queue; 3 = text/layer/transform
+        // engines sharing their scene's VM lane, with the dispatcher fallback
+        // only when there is no shared scene store.
         #expect(RR10ProductionSource.occurrences(
             of: "com.livewallpaper.wpe-transform-evaluator",
             in: runtime
         ) == 1)
         #expect(RR10ProductionSource.occurrences(
-            of: "let lane = batchDispatcher.reserveLane()",
+            of: "let lane = shared?.executionLane(using: batchDispatcher) ?? batchDispatcher.reserveLane()",
             in: runtime
         ) == 3)
         #expect(RR10ProductionSource.occurrences(

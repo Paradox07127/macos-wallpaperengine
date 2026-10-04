@@ -122,9 +122,6 @@ extension WPEMetalSceneRenderer {
                 || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
                 || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty else { return }
 
-        // WPE delivers the user-property bag to each script after init(); without this, time-of-day scripts that gate on it (e.g. `timevarying`) never switch.
-        let userProperties = currentSceneScriptUserProperties()
-        debugStage("layerScripts.userProperties", "count=\(userProperties.count)")
         // One `shared` store for the whole scene so WPE's cross-script `shared`
         // global coordinates across the scripts' isolated contexts.
         let sharedState = sceneScriptSharedState
@@ -156,13 +153,9 @@ extension WPEMetalSceneRenderer {
                     createdLayerBridge: Self.createdLayerBridgeConfiguration(
                         document: document, pipeline: pipeline, ownerName: object.name
                     ),
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 layerScriptInstances[object.id] = instance
-                applyLayerScriptOutput(instance.initialOutput, ownObjectID: object.id)
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    applyLayerScriptOutput(output, ownObjectID: object.id)
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [ScriptHost] init failed for \(object.name): \(error)", category: .wpeRender)
@@ -185,13 +178,9 @@ extension WPEMetalSceneRenderer {
                     createdLayerBridge: Self.createdLayerBridgeConfiguration(
                         document: document, pipeline: pipeline, ownerName: object.name
                     ),
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 layerScriptInstances[object.id] = instance
-                applyLayerScriptOutput(instance.initialOutput, ownObjectID: object.id)
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    applyLayerScriptOutput(output, ownObjectID: object.id)
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [LayerScript] init failed for \(object.name): \(error)", category: .wpeRender)
@@ -210,13 +199,9 @@ extension WPEMetalSceneRenderer {
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
                     ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 layerAlphaScriptInstances[object.id] = instance
-                applyLayerAlphaScriptOutput(instance.initialOutput, ownObjectID: object.id)
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    applyLayerAlphaScriptOutput(output, ownObjectID: object.id)
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [AlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
@@ -236,13 +221,9 @@ extension WPEMetalSceneRenderer {
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
                     ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 textVisibleScriptInstances[object.id] = instance
-                applyTextScriptOutput(instance.initialOutput, ownObjectID: object.id)
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    applyTextScriptOutput(output, ownObjectID: object.id)
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [TextVisibleScript] init failed for \(object.name): \(error)", category: .wpeRender)
@@ -261,13 +242,9 @@ extension WPEMetalSceneRenderer {
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
                     ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 textAlphaScriptInstances[object.id] = instance
-                liveTextAlpha[object.id] = instance.initialOutput.own.alpha
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    liveTextAlpha[object.id] = output.own.alpha
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [TextAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
@@ -289,22 +266,14 @@ extension WPEMetalSceneRenderer {
                     outputMode: .returnedAlpha(initialValue: override.alpha ?? 1),
                     ownLayerName: object.name,
                     ownObjectID: object.id,
-                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                    batchDispatcher: self.sceneScriptBatchDispatcher, initializationMode: .deferred)
                 }) else { return }
                 particleAlphaScriptInstances[object.id] = instance
-                liveParticleInstanceAlpha[object.id] = instance.initialOutput.own.alpha
-                if let output = applyScriptUserProperties(instance, userProperties) {
-                    liveParticleInstanceAlpha[object.id] = output.own.alpha
-                }
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [ParticleAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
             }
         }
-        setUpIntroPhaseAlign(
-            scripted: visibleScripted,
-            scriptLoadToken: scriptLoadToken
-        )
     }
 
     func applyTextScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
@@ -347,16 +316,91 @@ extension WPEMetalSceneRenderer {
         return layerObjectIDByName[key]
     }
 
-    /// One deterministic frame-0 pass — producers first. A `shared`-consumer must never evaluate before its producers; seeding inside each loader would let a consumer's first read hit empty `shared` and permanently corrupt state.
+    /// All modules are prepared before document-owner initialization; initial
+    /// properties follow every init without inferring authored dependencies.
+    func initializePreparedSceneScripts(
+        from document: WPESceneDocument,
+        scriptLoadToken: WPESceneScriptInstanceLimitToken
+    ) {
+        guard isCurrentSceneScriptLoad(scriptLoadToken), scriptLoadToken.allows(.setup) else { return }
+        var jobs: [(ownerID: String, run: () -> Void)] = []
+        func append(
+            ownerID: String, initialize: @escaping () throws -> Void,
+            accepted: @escaping () -> Void = {}
+        ) {
+            jobs.append((ownerID, {
+                guard self.isCurrentSceneScriptLoad(scriptLoadToken), scriptLoadToken.allows(.setup) else { return }
+                do {
+                    try initialize()
+                } catch {
+                    _ = self.latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
+                    Logger.warning("Scene \(self.descriptor.workshopID) script init failed for \(ownerID): \(error)", category: .wpeRender)
+                }
+                if self.isCurrentSceneScriptLoad(scriptLoadToken), scriptLoadToken.acceptsCompletion() {
+                    accepted()
+                }
+            }))
+        }
+        let dynamicFamilies = [
+            dynamicOriginScriptInstances, dynamicScaleScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+        ]
+        for instances in dynamicFamilies {
+            for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
+                append(ownerID: objectID, initialize: instance.initializePreparedScript)
+            }
+        }
+        for (key, instance) in effectConstantScriptInstances.sorted(by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }) {
+            append(ownerID: instance.ownObjectID ?? key.passID, initialize: instance.initializePreparedScript)
+        }
+        for (key, instance) in effectVisibilityScriptInstances.sorted(by: { $0.key < $1.key }) {
+            append(ownerID: instance.ownObjectID ?? key, initialize: instance.initializePreparedScript)
+        }
+        for (objectID, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
+            append(ownerID: objectID, initialize: instance.initializePreparedScript)
+        }
+        let layerFamilies: [([String: WPELayerScriptInstance], (WPELayerScriptOutput, String) -> Void)] = [
+            (layerScriptInstances, { self.applyLayerScriptOutput($0, ownObjectID: $1) }),
+            (layerAlphaScriptInstances, { self.applyLayerAlphaScriptOutput($0, ownObjectID: $1) }),
+            (textVisibleScriptInstances, { self.applyTextScriptOutput($0, ownObjectID: $1) }),
+            (textAlphaScriptInstances, { self.applyTextAlphaScriptOutput($0, ownObjectID: $1) }),
+            (particleAlphaScriptInstances, { self.applyParticleAlphaScriptOutput($0, ownObjectID: $1) }),
+        ]
+        for (instances, publish) in layerFamilies {
+            for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
+                append(ownerID: objectID, initialize: instance.initializePreparedScript,
+                       accepted: { publish(instance.initialOutput, objectID) })
+            }
+        }
+        let order = Dictionary((sceneScriptSharedState?.layers ?? []).map { ($0.id, $0.index) }, uniquingKeysWith: min)
+        for job in jobs.enumerated().sorted(by: {
+            (order[$0.element.ownerID] ?? Int.max, $0.offset) < (order[$1.element.ownerID] ?? Int.max, $1.offset)
+        }) {
+            job.element.run()
+        }
+        guard isCurrentSceneScriptLoad(scriptLoadToken), scriptLoadToken.allows(.event) else { return }
+        consumeSceneScriptLayerOutputs()
+        let userProperties = currentSceneScriptUserProperties()
+        for (instances, publish) in layerFamilies {
+            for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
+                if let output = applyScriptUserProperties(instance, userProperties) {
+                    publish(output, objectID)
+                }
+            }
+        }
+        dispatchTransformScriptUserProperties(userProperties)
+        consumeSceneScriptLayerOutputs()
+        setUpIntroPhaseAlign(scripted: document.imageObjects.filter { $0.visibleScript != nil }, scriptLoadToken: scriptLoadToken)
+    }
+
     func seedSceneScriptsAfterLoad(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) {
         guard isCurrentSceneScriptLoad(scriptLoadToken),
               scriptLoadToken.allows(.tick) else { return }
+        consumeSceneScriptLayerOutputs()
         applyInitialSceneScriptGeneralSettings()
-        // Transform families must get the initial full user-property bag here — before the seeding ticks below — because a script that initialises state in the handler otherwise computes its first value from `undefined`.
-        dispatchTransformScriptUserProperties(currentSceneScriptUserProperties())
         for host in document.scriptHostObjects {
             guard let instance = layerScriptInstances[host.id] else { continue }
             if let output = instance.tick(runtimeSeconds: 0, pointerFrame: .neutral) {
@@ -391,6 +435,7 @@ extension WPEMetalSceneRenderer {
         for (_, instance) in effectVisibilityScriptInstances.sorted(by: { $0.key < $1.key }) {
             instance.seedAsyncTick(pointerPosition: neutralPointer)
         }
+        consumeSceneScriptLayerOutputs()
     }
 
     // MARK: - On-demand video layers
@@ -855,8 +900,13 @@ extension WPEMetalSceneRenderer {
     // MARK: - Script output application
 
     func applyLayerScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
-        let targetID = scriptTargetObjectID
         applyLayerScriptState(output.own, objectID: ownObjectID)
+        applyLayerScriptSideEffects(output, ownObjectID: ownObjectID)
+    }
+
+    /// Property-return scripts bind only their own alpha; their other layer and transport writes use the normal journal.
+    func applyLayerScriptSideEffects(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        let targetID = scriptTargetObjectID
         layerTransformMutationJournal.record(
             output.ownTransform,
             objectID: ownObjectID,
@@ -899,6 +949,17 @@ extension WPEMetalSceneRenderer {
 
     func applyLayerAlphaScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
         liveLayerAlpha[ownObjectID] = output.own.alpha
+        applyLayerScriptSideEffects(output, ownObjectID: ownObjectID)
+    }
+
+    func applyTextAlphaScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        liveTextAlpha[ownObjectID] = output.own.alpha
+        applyLayerScriptSideEffects(output, ownObjectID: ownObjectID)
+    }
+
+    func applyParticleAlphaScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        liveParticleInstanceAlpha[ownObjectID] = output.own.alpha
+        applyLayerScriptSideEffects(output, ownObjectID: ownObjectID)
     }
 
     // MARK: - Static-cache exclusion & ancestor visibility

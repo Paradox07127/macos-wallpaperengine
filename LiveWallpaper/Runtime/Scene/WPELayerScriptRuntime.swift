@@ -289,16 +289,27 @@ final class WPELayerScriptCursorInbox: Sendable {
 
 /// Not @MainActor.
 final class WPELayerScriptInstance {
+    /// Cross-context calls publish separately from this instance's ordinary
+    /// init/tick return, so command streams are never applied twice.
+    func takeSharedLayerOutput() -> WPELayerScriptOutput? {
+        engine.sharedLayerOutputs.takeLatest()
+    }
+
     private let engineRelease: WPESceneScriptLaneRelease<LayerEngine>
-    private var engine: LayerEngine { engineRelease.value }
-    private let hasUpdateFunction: Bool
+    private var engine: LayerEngine {
+        engineRelease.value
+    }
+
+    private var hasUpdateFunction: Bool
     let handlesUserProperties: Bool
-    let mediaHandlers: WPESceneMediaHandlerSet
+    private(set) var mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
     /// Lifecycle is one-way; only the first teardown path may invoke the authored destroy() handler.
     private var isDestroyed = false
-    let initialOutput: WPELayerScriptOutput
+    private var requiresInitialization: Bool
+    private var remainingSetupBudget: TimeInterval
+    private(set) var initialOutput: WPELayerScriptOutput
     private let cursorInbox = WPELayerScriptCursorInbox()
     private var pendingMediaEvents: [WPESceneMediaEvent] = []
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
@@ -323,9 +334,12 @@ final class WPELayerScriptInstance {
         ownObjectID: String? = nil,
         createdLayerBridge: WPECreatedLayerBridgeConfiguration? = nil,
         governor: WPESceneScriptExecutionGovernor = .processShared,
-        batchDispatcher: WPESceneScriptBatchDispatcher = .processShared
+        batchDispatcher: WPESceneScriptBatchDispatcher = .processShared,
+        initializationMode: WPESceneScriptInitializationMode = .immediate
     ) throws {
         self.tickBudget = tickBudget
+        requiresInitialization = initializationMode == .deferred
+        remainingSetupBudget = setupBudget
         let engine = LayerEngine(
             nowProviderMillis: nowProviderMillis,
             shared: shared,
@@ -345,11 +359,14 @@ final class WPELayerScriptInstance {
         if !scriptProperties.isEmpty {
             prepared = wpeNormalizeScriptPropertiesDeclaration(prepared)
         }
+        let setupStarted = ProcessInfo.processInfo.systemUptime
         let setupResult = engine.setUp(
             script: prepared,
             scriptProperties: scriptProperties,
+            initialize: initializationMode == .immediate,
             budget: setupBudget
         )
+        remainingSetupBudget = max(0, setupBudget - (ProcessInfo.processInfo.systemUptime - setupStarted))
         switch setupResult {
         case .timedOut:
             shared?.sceneScriptLoadToken?.failClosed(.executionTimedOut(operation: .setup))
@@ -364,6 +381,8 @@ final class WPELayerScriptInstance {
             switch outcome {
             case .contextUnavailable:
                 throw WPESceneScriptError.contextUnavailable
+            case .setupFailed:
+                throw WPESceneScriptError.scriptEvaluationFailed
             case let .ready(hasUpdate, handlesUserProperties, media, output):
                 self.hasUpdateFunction = hasUpdate
                 self.handlesUserProperties = handlesUserProperties
@@ -373,12 +392,40 @@ final class WPELayerScriptInstance {
         }
     }
 
+    func initializePreparedScript() throws {
+        guard requiresInitialization, !isDestroyed else { return }
+        requiresInitialization = false
+        switch engine.initialize(budget: remainingSetupBudget) {
+        case .timedOut:
+            isPoisoned = true
+            engine.instanceLimitToken?.failClosed(.executionTimedOut(operation: .setup))
+            throw WPESceneScriptError.executionTimedOut
+        case .capacityUnavailable:
+            isPoisoned = true
+            engine.instanceLimitToken?.failClosed(.capacityUnavailable(operation: .setup))
+            throw WPESceneScriptError.capacityUnavailable(operation: .setup)
+        case let .completed(outcome):
+            switch outcome {
+            case .contextUnavailable:
+                isPoisoned = true
+                throw WPESceneScriptError.contextUnavailable
+            case .setupFailed:
+                isPoisoned = true
+                throw WPESceneScriptError.scriptEvaluationFailed
+            case let .ready(hasUpdate, _, media, output):
+                hasUpdateFunction = hasUpdate
+                mediaHandlers = media
+                initialOutput = Self.mergedOutputs(pending: initialOutput, newer: output)
+            }
+        }
+    }
+
     @discardableResult
     func dispatchMediaEvent(
         _ event: WPESceneMediaEvent,
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }
         switch engine.dispatchMediaEvent(
             event,
             runtimeSeconds: runtimeSeconds,
@@ -402,7 +449,7 @@ final class WPELayerScriptInstance {
         _ event: WPESceneMediaEvent,
         runtimeSeconds: Double? = nil
     ) {
-        guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
         _ = engine.dispatchMediaEventAsync(
             event,
             runtimeSeconds: runtimeSeconds,
@@ -415,7 +462,7 @@ final class WPELayerScriptInstance {
         _ events: [WPESceneMediaEvent],
         runtimeSeconds: Double? = nil
     ) {
-        guard !isPoisoned, !isDestroyed else { return }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return }
         for event in events where handles(event) {
             pendingMediaEvents.coalesce(event)
         }
@@ -432,7 +479,7 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil,
         allowSubmission: Bool = true
     ) -> WPESceneScriptBatchDispatcher.Job? {
-        guard !isPoisoned, !isDestroyed else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return nil }
         for event in events where handles(event) {
             pendingMediaEvents.coalesce(event)
         }
@@ -453,7 +500,7 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
     ) -> WPELayerScriptOutput? {
-        guard hasUpdateFunction, !isPoisoned, !isDestroyed,
+        guard !requiresInitialization, hasUpdateFunction, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return nil }
         switch engine.tick(
             runtimeSeconds: runtimeSeconds,
@@ -480,7 +527,7 @@ final class WPELayerScriptInstance {
         hit: WPELayerScriptCursorHit = .init(),
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
         switch engine.dispatchCursorEvent(
             event,
             pointerFrame: pointerFrame,
@@ -505,7 +552,7 @@ final class WPELayerScriptInstance {
     func injectOracleUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue]
     ) -> [String: WPESceneScriptPropertyValue]? {
-        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         switch engine.injectOracleUserProperties(properties, budget: tickBudget) {
         case .timedOut:
@@ -524,7 +571,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         switch engine.applyUserProperties(
             properties,
@@ -551,12 +598,12 @@ final class WPELayerScriptInstance {
 
     /// Renderer-owned ordered batches drain only after every submitted job has settled.
     func takeCompletedBatchOutput() -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, engine.acceptsCompletion() else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, engine.acceptsCompletion() else { return nil }
         return asyncOutcomeSlot.takeLatest()
     }
 
     func observeBatchTickDeadline() {
-        guard !isPoisoned, !isDestroyed else { return }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -573,7 +620,7 @@ final class WPELayerScriptInstance {
         consumeOutput: Bool = true
     ) -> (output: WPELayerScriptOutput?, job: WPESceneScriptBatchDispatcher.Job?) {
         observeBatchTickDeadline()
-        guard !isPoisoned, !isDestroyed else { return (nil, nil) }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed else { return (nil, nil) }
         guard engine.allows(.tick) else { return (nil, nil) }
         let fresh = consumeOutput ? asyncOutcomeSlot.takeLatest() : nil
         guard hasUpdateFunction, let claim = asyncOutcomeSlot.beginTick() else { return (fresh, nil) }
@@ -597,7 +644,7 @@ final class WPELayerScriptInstance {
         _ events: [WPELayerScriptCursorInvocation],
         allowSubmission: Bool = true
     ) -> WPESceneScriptBatchDispatcher.Job? {
-        guard !isPoisoned, !isDestroyed, engine.allows(.event) else {
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, engine.allows(.event) else {
             cursorInbox.close()
             return nil
         }
@@ -617,7 +664,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         let budget = tickBudget * 2
         switch engine.applyUserProperties(
@@ -641,7 +688,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         let budget = tickBudget * 2
         switch engine.applyScriptProperties(
@@ -667,7 +714,7 @@ final class WPELayerScriptInstance {
 
     @discardableResult
     func resizeScreen(_ size: SIMD2<Double>) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
         let budget = tickBudget * 2
         switch engine.resizeScreen(size, budget: budget) {
         case .timedOut:
@@ -686,7 +733,7 @@ final class WPELayerScriptInstance {
     /// later renderer notifications call this only when `language` changed.
     @discardableResult
     func applyGeneralSettings(language: String) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
         let budget = tickBudget * 2
         switch engine.applyGeneralSettings(language: language, budget: budget) {
         case .timedOut:
@@ -707,7 +754,10 @@ final class WPELayerScriptInstance {
         guard !isDestroyed else { return nil }
         isDestroyed = true
         cursorInbox.close()
-        guard !isPoisoned, engine.allows(.event) else { return nil }
+        guard !requiresInitialization, !isPoisoned, engine.allows(.event) else {
+            engine.discardPreparedResources()
+            return nil
+        }
         let budget = tickBudget * 2
         switch engine.destroy(budget: budget) {
         case .timedOut:
@@ -769,17 +819,22 @@ final class WPELayerScriptInstance {
                 output: WPELayerScriptOutput
             )
             case contextUnavailable
+            case setupFailed
         }
 
         fileprivate var queue: DispatchQueue { executionLane.queue }
         fileprivate let executionLane: WPESceneScriptBatchDispatcher.Lane
         private let virtualMachine: JSVirtualMachine
+        fileprivate let sharedLayerOutputs = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
+            combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
+        )
         private var context: JSContext?
         /// Rewrites every `registerAudioBuffers` array from the shared audio
         /// broker at the top of each tick; nil until `setUp` builds the context.
         private var audioBridge: WPESceneScriptAudioBridge?
         fileprivate var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
+        private var didInitialize = false
         fileprivate var screenResolution: JSValue?
         /// Set by the context exception handler so `init()` failures can degrade
         /// safely (run on the engine queue, so no synchronization needed).
@@ -821,7 +876,7 @@ final class WPELayerScriptInstance {
             governor: WPESceneScriptExecutionGovernor,
             batchDispatcher: WPESceneScriptBatchDispatcher
         ) {
-            let lane = batchDispatcher.reserveLane()
+            let lane = shared?.executionLane(using: batchDispatcher) ?? batchDispatcher.reserveLane()
             executionLane = lane
             virtualMachine = lane.virtualMachine
             self.nowProviderMillis = nowProviderMillis
@@ -836,18 +891,39 @@ final class WPELayerScriptInstance {
                 initialAlpha: initialAlpha,
                 ownLayerName: ownLayerName,
                 ownObjectID: ownObjectID,
-                createdLayerBridge: createdLayerBridge
+                createdLayerBridge: createdLayerBridge,
+                preservesOwnLayerWritesAfterFailure: true
             )
+            configureOutputPublisher(publishesOwnEntry: false) { [weak self] output, _ in
+                self?.sharedLayerOutputs.publishEvent(output)
+            }
         }
 
         func setUp(
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue],
+            initialize: Bool,
             budget: TimeInterval
         ) -> WPESceneScriptBoundedExecutionResult<SetupOutcome> {
             guard allows(.setup) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline) {
-                self.setUpOnQueue(script: script, scriptProperties: scriptProperties)
+                self.setUpOnQueue(script: script, scriptProperties: scriptProperties, initialize: initialize)
+            }
+        }
+
+        func initialize(budget: TimeInterval) -> WPESceneScriptBoundedExecutionResult<SetupOutcome> {
+            guard allows(.setup) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline) {
+                let evaluation = self.evaluateLayerEntry { self.initializeOnQueue() }
+                guard let metadata = evaluation.result else { return self.context == nil ? .contextUnavailable : .setupFailed }
+                return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
+            }
+        }
+
+        func discardPreparedResources() {
+            queue.async { [self] in
+                timerScheduler?.invalidate()
+                releaseCreatedLayerResources()
             }
         }
 
@@ -1134,108 +1210,127 @@ final class WPELayerScriptInstance {
             return value.isFinite ? value : nil
         }
 
+        private func evaluateLayerEntry<Result>(_ body: () -> Result) -> (result: Result, output: WPELayerScriptOutput) {
+            beginEvaluation()
+            let result = body()
+            finishEvaluation(commit: acceptsCompletion())
+            return (result, readOutput())
+        }
+
         private func setUpOnQueue(
             script: String,
-            scriptProperties: [String: WPESceneScriptPropertyValue]
+            scriptProperties: [String: WPESceneScriptPropertyValue],
+            initialize: Bool
         ) -> SetupOutcome {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
-            }
-            guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
-            self.context = context
-            let timerScheduler = WPESceneScriptTimerScheduler()
-            self.timerScheduler = timerScheduler
-            audioBridge = WPESceneScriptInstance.installSandbox(
-                in: context,
-                userProperties: shared?.userProperties ?? [:],
-                timerScheduler: timerScheduler
-            )
-            WPESceneScriptBaseclasses.install(in: context)
-            installCanvasSize(in: context)
-            installInput(in: context)
-            engineClockWriter = WPEEngineClockWriter(context: context)
-            cachedTrueArgument = JSValue(bool: true, in: context)
-            cachedFalseArgument = JSValue(bool: false, in: context)
-            _ = updateEngineRuntime(0)
-            installLayerBridge(in: context)
-            if case let .returnedAlpha(initialValue) = outputMode {
-                setOwnLayerAlpha(initialValue.isFinite ? initialValue : 1)
-            }
-            if let shared { wpeInstallSharedState(shared, in: context) }
-            if let nowProviderMillis {
-                let now: @convention(block) () -> Double = { nowProviderMillis() }
-                context.setObject(now, forKeyedSubscript: "__hostNow" as NSString)
-                _ = context.evaluateScript("Date.now = function(){ return __hostNow(); };")
-            }
-            context.exceptionHandler = { [weak self] _, exception in
-                self?.didThrow = true
-                self?.particleBridge.failEvaluation()
-                self?.cameraBridge.failEvaluation()
-                self?.logFirstThrow(exception)
-            }
-            evaluationResourceBudget.beginEvaluation()
-            _ = context.evaluateScript(script)
-            // Exported `let` is a lexical binding, not necessarily a global-object property.
-            let namespace = context.evaluateScript("typeof __workshopId === 'string' ? __workshopId : undefined")
-            scriptWorkshopID = namespace?.isString == true ? namespace?.toString() : nil
-            if !scriptProperties.isEmpty {
-                wpeInstallScriptProperties(
-                    overrides: scriptProperties,
-                    declaredDefaults: wpeDeclaredScriptPropertyDefaults(
-                        context.objectForKeyedSubscript("scriptProperties")
-                    ),
-                    into: context
+            let evaluation = evaluateLayerEntry { () -> (Bool, Bool, WPESceneMediaHandlerSet)? in
+                guard let context = JSContext(virtualMachine: virtualMachine) else { return nil }
+                self.context = context
+                let timerScheduler = WPESceneScriptTimerScheduler()
+                self.timerScheduler = timerScheduler
+                audioBridge = WPESceneScriptInstance.installSandbox(
+                    in: context,
+                    userProperties: shared?.userProperties ?? [:],
+                    timerScheduler: timerScheduler
                 )
+                WPESceneScriptBaseclasses.install(in: context)
+                installCanvasSize(in: context)
+                installInput(in: context)
+                engineClockWriter = WPEEngineClockWriter(context: context)
+                cachedTrueArgument = JSValue(bool: true, in: context)
+                cachedFalseArgument = JSValue(bool: false, in: context)
+                _ = updateEngineRuntime(0)
+                installLayerBridge(in: context)
+                if case let .returnedAlpha(initialValue) = outputMode {
+                    setOwnLayerAlpha(initialValue.isFinite ? initialValue : 1)
+                }
+                if let shared {
+                    wpeInstallSharedState(shared, in: context)
+                }
+                if let nowProviderMillis {
+                    let now: @convention(block) () -> Double = { nowProviderMillis() }
+                    context.setObject(now, forKeyedSubscript: "__hostNow" as NSString)
+                    _ = context.evaluateScript("Date.now = function(){ return __hostNow(); };")
+                }
+                context.exceptionHandler = { [weak self] _, exception in
+                    self?.didThrow = true
+                    self?.failEvaluation()
+                    self?.logFirstThrow(exception)
+                }
+                evaluationResourceBudget.beginEvaluation()
+                _ = context.evaluateScript(wpeLowerBuiltinImports(script, in: context, acceptsCompletion: acceptsCompletion))
+                guard !didThrow else { return nil }
+                // Exported `let` is a lexical binding, not necessarily a global-object property.
+                let namespace = context.evaluateScript("typeof __workshopId === 'string' ? __workshopId : undefined")
+                scriptWorkshopID = namespace?.isString == true ? namespace?.toString() : nil
+                if !scriptProperties.isEmpty {
+                    wpeInstallScriptProperties(
+                        overrides: scriptProperties,
+                        declaredDefaults: wpeDeclaredScriptPropertyDefaults(
+                            context.objectForKeyedSubscript("scriptProperties")
+                        ),
+                        into: context
+                    )
+                }
+                let updateValue = context.objectForKeyedSubscript("update")
+                if let updateValue, !updateValue.isUndefined, updateValue.hasProperty("call") {
+                    updateFunction = updateValue
+                } else {
+                    updateFunction = nil
+                }
+                let userPropertiesValue = context.objectForKeyedSubscript("applyUserProperties")
+                let handlesUserProperties = userPropertiesValue != nil
+                    && userPropertiesValue?.isUndefined == false
+                    && userPropertiesValue?.hasProperty("call") == true
+                if initialize {
+                    return initializeOnQueue()
+                }
+                return (updateFunction != nil || timerScheduler.hasPendingTimers, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
             }
-            let updateValue = context.objectForKeyedSubscript("update")
-            if let updateValue, !updateValue.isUndefined, updateValue.hasProperty("call") {
-                updateFunction = updateValue
-            } else {
-                updateFunction = nil
-            }
+            guard let metadata = evaluation.result else { return context == nil ? .contextUnavailable : .setupFailed }
+            return .ready(hasUpdate: metadata.0, handlesUserProperties: metadata.1, media: metadata.2, output: evaluation.output)
+        }
+
+        private func initializeOnQueue() -> (Bool, Bool, WPESceneMediaHandlerSet)? {
+            guard let context else { return nil }
             let userPropertiesValue = context.objectForKeyedSubscript("applyUserProperties")
             let handlesUserProperties = userPropertiesValue != nil
                 && userPropertiesValue?.isUndefined == false
                 && userPropertiesValue?.hasProperty("call") == true
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
-            didThrow = false
-            if let initFn = context.objectForKeyedSubscript("init"),
-               !initFn.isUndefined, initFn.hasProperty("call") {
-                // init returns the modified value to be applied, just as update does. Calling with no argument fed init(value) undefined, so return !value showed an authored-visible layer it meant to hide.
-                switch outputMode {
-                case .layerState:
-                    let returned = withAuthoredLayerOrderMutation {
-                        initFn.call(withArguments: [initialOwnVisible])
+            if !didInitialize {
+                didInitialize = true
+                evaluationResourceBudget.beginEvaluation()
+                didThrow = false
+                if let initFn = context.objectForKeyedSubscript("init"),
+                   !initFn.isUndefined, initFn.hasProperty("call") {
+                    // init returns the modified value to be applied, just as update does. Calling with no argument fed init(value) undefined, so return !value showed an authored-visible layer it meant to hide.
+                    switch outputMode {
+                    case .layerState:
+                        let returned = withAuthoredLayerOrderMutation {
+                            initFn.call(withArguments: [initialOwnVisible])
+                        }
+                        if let value = Self.coercedVisible(returned) {
+                            setOwnLayerVisible(value)
+                        }
+                    case let .returnedAlpha(initialValue):
+                        let returned = initFn.call(withArguments: [initialValue])
+                        if let value = Self.coercedAlpha(returned) {
+                            setOwnLayerAlpha(value)
+                        }
                     }
-                    if let value = Self.coercedVisible(returned) { setOwnLayerVisible(value) }
-                case .returnedAlpha(let initialValue):
-                    let returned = initFn.call(withArguments: [initialValue])
-                    if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
+                }
+                // A failed init preserves authored own visibility and alpha, but (as in WPE) keeps its
+                // writes to other layers and leaves update() running.
+                if didThrow {
+                    let authoredAlpha = switch outputMode {
+                    case .layerState: initialOwnAlpha
+                    case let .returnedAlpha(seed): seed.isFinite ? seed : initialOwnAlpha
+                    }
+                    assignedVisible[Self.ownKey] = initialOwnVisible
+                    assignedAlpha[Self.ownKey] = authoredAlpha
+                    assignedText[Self.ownKey] = nil
                 }
             }
-            // A failed init preserves authored own visibility and alpha, but (as in WPE) keeps its
-            // writes to other layers and leaves update() running.
-            let media = WPESceneMediaHandlerSet(in: context)
-            if didThrow {
-                let authoredAlpha = switch outputMode {
-                case .layerState: initialOwnAlpha
-                case let .returnedAlpha(seed): seed.isFinite ? seed : initialOwnAlpha
-                }
-                assignedVisible[Self.ownKey] = initialOwnVisible
-                assignedAlpha[Self.ownKey] = authoredAlpha
-                assignedText[Self.ownKey] = nil
-            }
-            return .ready(
-                hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,
-                handlesUserProperties: handlesUserProperties,
-                media: media,
-                output: readOutput()
-            )
+            return (updateFunction != nil || timerScheduler?.hasPendingTimers == true, handlesUserProperties, WPESceneMediaHandlerSet(in: context))
         }
 
         /// Keyed by handler name, so a throwing media handler backs off alone
@@ -1244,33 +1339,27 @@ final class WPELayerScriptInstance {
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
-            }
-            evaluationResourceBudget.beginEvaluation()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            guard let context,
-                  let fn = context.objectForKeyedSubscript(event.handlerName),
-                  !fn.isUndefined, fn.hasProperty("call") else {
-                return readOutput()
-            }
-            let now = WPEScriptFaultPolicy.monotonicNow()
-            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
-                return readOutput()
-            }
-            didThrow = false
-            WPEFrameOccupancyMeter.count(.jscCall)
-            _ = fn.call(withArguments: [wpeMediaEventObject(event, in: context)])
-            if didThrow {
-                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
-            } else {
-                faultPolicy.recordSuccess(entryPoint: event.handlerName)
-            }
-            return readOutput()
+            evaluateLayerEntry {
+                evaluationResourceBudget.beginEvaluation()
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard let context,
+                      let fn = context.objectForKeyedSubscript(event.handlerName),
+                      !fn.isUndefined, fn.hasProperty("call") else {
+                    return
+                }
+                let now = WPEScriptFaultPolicy.monotonicNow()
+                guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
+                    return
+                }
+                didThrow = false
+                WPEFrameOccupancyMeter.count(.jscCall)
+                _ = fn.call(withArguments: [wpeMediaEventObject(event, in: context)])
+                if didThrow {
+                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                } else {
+                    faultPolicy.recordSuccess(entryPoint: event.handlerName)
+                }
+            }.output
         }
 
         private func tickOnQueue(
@@ -1280,50 +1369,44 @@ final class WPELayerScriptInstance {
             // WPE retains a destroyed handle through the first update after init;
             // retire it after that frame's callback, not before an unrelated event.
             defer { finishCreatedLayerDestruction() }
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
-            }
-            audioBridge?.refresh()
-            evaluationResourceBudget.beginEvaluation()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            updateInput(pointerFrame)
-            guard let context, let updateFunction else { return readOutput() }
-            let now = WPEScriptFaultPolicy.monotonicNow()
-            guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return readOutput() }
-            didThrow = false
-            switch outputMode {
-            case .layerState:
-                // update(value) receives the live current value; its return becomes the new one. The live property is the argument, not the last return — replaying a return pinned the seed, and thisLayer.visible = !value re-inverted every frame.
-                let current = assignedVisible[Self.ownKey] ?? initialOwnVisible
-                let arg = (current ? cachedTrueArgument : cachedFalseArgument)
-                    ?? JSValue(bool: current, in: context)
-                    ?? JSValue(nullIn: context)!
-                WPEFrameOccupancyMeter.count(.jscCall)
-                let returned = withAuthoredLayerOrderMutation {
-                    updateFunction.call(withArguments: [arg as Any])
+            return evaluateLayerEntry {
+                audioBridge?.refresh()
+                evaluationResourceBudget.beginEvaluation()
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                updateInput(pointerFrame)
+                guard let context, let updateFunction else { return }
+                let now = WPEScriptFaultPolicy.monotonicNow()
+                guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return }
+                didThrow = false
+                switch outputMode {
+                case .layerState:
+                    // update(value) receives the live current value; its return becomes the new one. The live property is the argument, not the last return — replaying a return pinned the seed, and thisLayer.visible = !value re-inverted every frame.
+                    let current = assignedVisible[Self.ownKey] ?? initialOwnVisible
+                    let arg = (current ? cachedTrueArgument : cachedFalseArgument)
+                        ?? JSValue(bool: current, in: context)
+                        ?? JSValue(nullIn: context)!
+                    WPEFrameOccupancyMeter.count(.jscCall)
+                    let returned = withAuthoredLayerOrderMutation {
+                        updateFunction.call(withArguments: [arg as Any])
+                    }
+                    if let value = Self.coercedVisible(returned) {
+                        setOwnLayerVisible(value)
+                    }
+                case .returnedAlpha:
+                    // Same contract as .layerState: the live property is the argument, not the last returned value, or thisLayer.alpha = 1 - value reads the seed forever.
+                    let current = assignedAlpha[Self.ownKey] ?? initialOwnAlpha
+                    let arg = JSValue(object: current, in: context) ?? JSValue(nullIn: context)!
+                    WPEFrameOccupancyMeter.count(.jscCall)
+                    if let value = Self.coercedAlpha(updateFunction.call(withArguments: [arg as Any])) {
+                        setOwnLayerAlpha(value)
+                    }
                 }
-                if let value = Self.coercedVisible(returned) {
-                    setOwnLayerVisible(value)
+                if didThrow {
+                    faultPolicy.recordFailure(entryPoint: "update", at: now)
+                } else {
+                    faultPolicy.recordSuccess(entryPoint: "update")
                 }
-            case .returnedAlpha:
-                // Same contract as .layerState: the live property is the argument, not the last returned value, or thisLayer.alpha = 1 - value reads the seed forever.
-                let current = assignedAlpha[Self.ownKey] ?? initialOwnAlpha
-                let arg = JSValue(object: current, in: context) ?? JSValue(nullIn: context)!
-                WPEFrameOccupancyMeter.count(.jscCall)
-                if let value = Self.coercedAlpha(updateFunction.call(withArguments: [arg as Any])) {
-                    setOwnLayerAlpha(value)
-                }
-            }
-            if didThrow {
-                faultPolicy.recordFailure(entryPoint: "update", at: now)
-            } else {
-                faultPolicy.recordSuccess(entryPoint: "update")
-            }
-            return readOutput()
+            }.output
         }
 
         /// One line per instance, so a permanently-broken script is findable without a per-frame log flood.
@@ -1343,138 +1426,113 @@ final class WPELayerScriptInstance {
             hit: WPELayerScriptCursorHit,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
-            }
-            evaluationResourceBudget.beginEvaluation()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            updateInput(pointerFrame)
-            guard let context,
-                  let fn = context.objectForKeyedSubscript(event.handlerName),
-                  !fn.isUndefined, fn.hasProperty("call") else {
-                return readOutput()
-            }
-            // Keyed by handler name, so a throwing cursorClick backs off alone
-            // and never gates update() or the other cursor handlers.
-            let now = WPEScriptFaultPolicy.monotonicNow()
-            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
-                return readOutput()
-            }
-            didThrow = false
-            _ = fn.call(withArguments: [cursorEventObject(
-                event,
-                pointerFrame: pointerFrame,
-                hit: hit,
-                in: context
-            )])
-            if didThrow {
-                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
-            } else {
-                faultPolicy.recordSuccess(entryPoint: event.handlerName)
-            }
-            return readOutput()
+            evaluateLayerEntry {
+                evaluationResourceBudget.beginEvaluation()
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                updateInput(pointerFrame)
+                guard let context,
+                      let fn = context.objectForKeyedSubscript(event.handlerName),
+                      !fn.isUndefined, fn.hasProperty("call") else {
+                    return
+                }
+                // Keyed by handler name, so a throwing cursorClick backs off alone
+                // and never gates update() or the other cursor handlers.
+                let now = WPEScriptFaultPolicy.monotonicNow()
+                guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
+                    return
+                }
+                didThrow = false
+                _ = fn.call(withArguments: [cursorEventObject(
+                    event,
+                    pointerFrame: pointerFrame,
+                    hit: hit,
+                    in: context
+                )])
+                if didThrow {
+                    faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                } else {
+                    faultPolicy.recordSuccess(entryPoint: event.handlerName)
+                }
+            }.output
         }
 
         private func applyUserPropertiesOnQueue(
             _ properties: [String: WPESceneScriptPropertyValue],
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
-            }
-            evaluationResourceBudget.beginEvaluation()
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            guard let context,
-                  let fn = context.objectForKeyedSubscript("applyUserProperties"),
-                  !fn.isUndefined, fn.hasProperty("call"),
-                  let bag = JSValue(newObjectIn: context) else {
-                return readOutput()
-            }
-            for (name, value) in properties {
-                bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
-            }
-            _ = fn.call(withArguments: [bag])
-            return readOutput()
+            evaluateLayerEntry {
+                evaluationResourceBudget.beginEvaluation()
+                guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+                guard let context,
+                      let fn = context.objectForKeyedSubscript("applyUserProperties"),
+                      !fn.isUndefined, fn.hasProperty("call"),
+                      let bag = JSValue(newObjectIn: context) else {
+                    return
+                }
+                for (name, value) in properties {
+                    bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
+                }
+                _ = fn.call(withArguments: [bag])
+            }.output
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> WPELayerScriptOutput? {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
+            let evaluation = evaluateLayerEntry {
+                let size = SIMD2<Double>(max(requestedSize.x, 1), max(requestedSize.y, 1))
+                guard size != screenSize else { return false }
+                screenSize = size
+                update(screenResolution, x: size.x, y: size.y)
+                pendingVideo.removeAll(keepingCapacity: true)
+                evaluationResourceBudget.beginEvaluation()
+                guard let context,
+                      let function = context.objectForKeyedSubscript("resizeScreen"),
+                      !function.isUndefined, function.hasProperty("call"),
+                      let vectorType = context.objectForKeyedSubscript("Vec2"),
+                      let argument = vectorType.construct(withArguments: [size.x, size.y]) else {
+                    return false
+                }
+                didThrow = false
+                _ = function.call(withArguments: [argument])
+                return !didThrow
             }
-            let size = SIMD2<Double>(max(requestedSize.x, 1), max(requestedSize.y, 1))
-            guard size != screenSize else { return nil }
-            screenSize = size
-            update(screenResolution, x: size.x, y: size.y)
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
-            guard let context,
-                  let function = context.objectForKeyedSubscript("resizeScreen"),
-                  !function.isUndefined, function.hasProperty("call"),
-                  let vectorType = context.objectForKeyedSubscript("Vec2"),
-                  let argument = vectorType.construct(withArguments: [size.x, size.y]) else {
-                return nil
-            }
-            didThrow = false
-            _ = function.call(withArguments: [argument])
-            return didThrow ? nil : readOutput()
+            return evaluation.result ? evaluation.output : nil
         }
 
         private func applyGeneralSettingsOnQueue(language: String) -> WPELayerScriptOutput? {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
+            let evaluation = evaluateLayerEntry {
+                pendingVideo.removeAll(keepingCapacity: true)
+                evaluationResourceBudget.beginEvaluation()
+                guard let context,
+                      let function = context.objectForKeyedSubscript("applyGeneralSettings"),
+                      !function.isUndefined, function.hasProperty("call"),
+                      let settings = JSValue(newObjectIn: context) else { return false }
+                settings.setObject(language, forKeyedSubscript: "language" as NSString)
+                didThrow = false
+                _ = function.call(withArguments: [settings])
+                return !didThrow
             }
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
-            guard let context,
-                  let function = context.objectForKeyedSubscript("applyGeneralSettings"),
-                  !function.isUndefined, function.hasProperty("call"),
-                  let settings = JSValue(newObjectIn: context) else { return nil }
-            settings.setObject(language, forKeyedSubscript: "language" as NSString)
-            didThrow = false
-            _ = function.call(withArguments: [settings])
-            return didThrow ? nil : readOutput()
+            return evaluation.result ? evaluation.output : nil
         }
 
         private func destroyOnQueue() -> WPELayerScriptOutput {
-            particleBridge.beginEvaluation()
-            cameraBridge.beginEvaluation()
-            defer {
-                let commit = acceptsCompletion()
-                particleBridge.finishEvaluation(commit: commit)
-                cameraBridge.finishEvaluation(commit: commit)
+            let evaluation = evaluateLayerEntry {
+                pendingVideo.removeAll(keepingCapacity: true)
+                evaluationResourceBudget.beginEvaluation()
+                if let context,
+                   let function = context.objectForKeyedSubscript("destroy"),
+                   !function.isUndefined, function.hasProperty("call") {
+                    didThrow = false
+                    _ = function.call(withArguments: [])
+                }
+                timerScheduler?.invalidate()
+                updateFunction = nil
             }
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
-            if let context,
-               let function = context.objectForKeyedSubscript("destroy"),
-               !function.isUndefined, function.hasProperty("call") {
-                didThrow = false
-                _ = function.call(withArguments: [])
-            }
-            timerScheduler?.invalidate()
-            updateFunction = nil
-            let output = readOutput()
+            releaseCreatedLayerResources()
             currentLayerOrder.removeAll(keepingCapacity: false)
             createdLayers.removeAll(keepingCapacity: false)
             presentationMutations.removeAll(keepingCapacity: false)
             createdAngles.removeAll(keepingCapacity: false)
-            return output
+            return evaluation.output
         }
 
         private func updateEngineRuntime(_ runtimeSeconds: Double?) -> Double? {
@@ -1650,6 +1708,56 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate let ownObjectID: String?
     fileprivate let particleBridge: WPESceneScriptParticleBridge
     fileprivate let cameraBridge: WPESceneScriptCameraBridge
+    private let readsLiveTransforms: Bool
+    private let preservesOwnLayerWritesAfterFailure: Bool
+    private var outputPublisher: (@Sendable (WPELayerScriptOutput, Bool) -> Void)?
+    private var publishesOwnEntry = true
+    private var localEvaluationFailed = false
+    private var pendingSound: [(String, WPELayerSoundCommand)] = []
+    private struct CreatedHandleSnapshot {
+        let image: JSValue
+        let color: JSValue
+        let colorVector: SIMD3<Double>?
+    }
+
+    private struct EvaluationJournal {
+        let visible: [String: Bool]
+        let alpha: [String: Double]
+        let text: [String: String]
+        let ownTransform: WPELayerScriptTransformMutation
+        let otherTransforms: [String: WPELayerScriptTransformMutation]
+        let presentation: [String: WPELayerScriptPresentationMutation]
+        let video: [(call: WPELayerScriptVideoCall, sourceKey: String?)]
+        let sound: [(String, WPELayerSoundCommand)]
+        let soundIntent: [String: Bool]
+        let soundVolume: [String: Double]
+        let created: [(key: String, handle: JSValue, configuration: WPESceneJSONValue)]
+        let destroyed: Set<String>
+        let pendingDestruction: Set<String>
+        let order: [String]
+        let didSort: Bool
+        var transformVectors: [String: [OwnTransformField: SIMD3<Double>]]
+        let createdAngles: [String: SIMD3<Double>]
+        let createdHandles: [String: CreatedHandleSnapshot]
+    }
+
+    private var evaluationJournal: EvaluationJournal?
+
+    func configureOutputPublisher(
+        publishesOwnEntry: Bool = true,
+        _ publisher: @escaping @Sendable (WPELayerScriptOutput, Bool) -> Void
+    ) {
+        self.publishesOwnEntry = publishesOwnEntry
+        outputPublisher = publisher
+    }
+
+    func releaseCreatedLayerResources() {
+        for layer in createdLayers where !destroyedCreatedKeys.contains(layer.key) {
+            instanceLimitToken?.releaseCreatedLayer()
+        }
+        createdLayers.removeAll(keepingCapacity: false)
+        createdAngles.removeAll(keepingCapacity: false)
+    }
 
     init(
         shared: WPESharedScriptState?,
@@ -1657,7 +1765,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
         initialAlpha: Double,
         ownLayerName: String?,
         ownObjectID: String?,
-        createdLayerBridge: WPECreatedLayerBridgeConfiguration?
+        createdLayerBridge: WPECreatedLayerBridgeConfiguration?,
+        readsLiveTransforms: Bool = false,
+        preservesOwnLayerWritesAfterFailure: Bool = false
     ) {
         self.shared = shared
         instanceLimitToken = shared?.sceneScriptLoadToken
@@ -1666,6 +1776,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
         self.ownLayerName = ownLayerName
         self.ownObjectID = ownObjectID
         self.createdLayerBridge = createdLayerBridge
+        self.readsLiveTransforms = readsLiveTransforms
+        self.preservesOwnLayerWritesAfterFailure = preservesOwnLayerWritesAfterFailure
         particleBridge = WPESceneScriptParticleBridge(shared: shared)
         cameraBridge = WPESceneScriptCameraBridge(shared: shared)
         if let shared, !shared.layers.isEmpty, createdLayerBridge?.allowsSorting != true {
@@ -1681,19 +1793,138 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     /// Brackets one JS entry point by an engine that does not subclass the bridge.
     func beginEvaluation() {
+        if let shared {
+            shared.beginScriptEvaluation(self)
+        } else {
+            beginLocalEvaluation()
+        }
+    }
+
+    func beginLocalEvaluation() {
+        localEvaluationFailed = false
+        evaluationJournal = EvaluationJournal(
+            visible: assignedVisible, alpha: assignedAlpha, text: assignedText,
+            ownTransform: assignedOwnTransform, otherTransforms: assignedOtherTransforms,
+            presentation: presentationMutations, video: pendingVideo, sound: pendingSound,
+            soundIntent: soundIntent, soundVolume: assignedSoundVolume,
+            created: createdLayers, destroyed: destroyedCreatedKeys,
+            pendingDestruction: pendingCreatedDestruction, order: currentLayerOrder, didSort: didSortLayers,
+            transformVectors: transformVectorSnapshots(), createdAngles: createdAngles,
+            createdHandles: createdHandleSnapshots()
+        )
         particleBridge.beginEvaluation()
         cameraBridge.beginEvaluation()
         evaluationResourceBudget.beginEvaluation()
     }
 
     func failEvaluation() {
+        localEvaluationFailed = true
+        shared?.failScriptEvaluation()
         particleBridge.failEvaluation()
         cameraBridge.failEvaluation()
     }
 
     func finishEvaluation(commit: Bool) {
+        if let shared {
+            shared.finishScriptEvaluation(commit: commit)
+        } else {
+            finishLocalEvaluation(commit: commit, ownsEntry: true)
+        }
+    }
+
+    func finishLocalEvaluation(commit: Bool, ownsEntry: Bool) {
+        let commit = commit && !localEvaluationFailed
         particleBridge.finishEvaluation(commit: commit)
         cameraBridge.finishEvaluation(commit: commit)
+        if commit {
+            for (layer, command) in pendingSound {
+                shared?.enqueueSoundCommand(layer: layer, command)
+            }
+            pendingSound.removeAll(keepingCapacity: true)
+            if let outputPublisher, publishesOwnEntry || !ownsEntry {
+                outputPublisher(readOutput(), ownsEntry)
+            }
+        } else if ownsEntry, preservesOwnLayerWritesAfterFailure,
+                  instanceLimitToken?.acceptsCompletion() ?? true {
+            // Preserve existing partial visible/alpha/text writes only, not the
+            // richer transport, geometry or creation commands on a failed entry.
+            if let previous = evaluationJournal {
+                restoreRichLayerState(previous)
+            }
+            if let outputPublisher, publishesOwnEntry {
+                outputPublisher(readOutput(), ownsEntry)
+            }
+        } else if let previous = evaluationJournal {
+            assignedVisible = previous.visible
+            assignedAlpha = previous.alpha
+            assignedText = previous.text
+            restoreRichLayerState(previous)
+        }
+        evaluationJournal = nil
+    }
+
+    private func restoreRichLayerState(_ previous: EvaluationJournal) {
+        let previousCreatedKeys = Set(previous.created.map(\.key))
+        let rejectedCreatedKeys = createdLayers.map(\.key).filter { !previousCreatedKeys.contains($0) }
+        let activeBefore = previous.created.filter { !previous.destroyed.contains($0.key) }.count
+        let activeAfter = createdLayers.filter { !destroyedCreatedKeys.contains($0.key) }.count
+        instanceLimitToken?.adjustCreatedLayerCountForRollback(activeBefore - activeAfter)
+        assignedOwnTransform = previous.ownTransform
+        assignedOtherTransforms = previous.otherTransforms
+        presentationMutations = previous.presentation
+        pendingVideo = previous.video
+        pendingSound = previous.sound
+        soundIntent = previous.soundIntent
+        assignedSoundVolume = previous.soundVolume
+        createdLayers = previous.created
+        createdAngles = previous.createdAngles
+        destroyedCreatedKeys = previous.destroyed
+        pendingCreatedDestruction = previous.pendingDestruction
+        currentLayerOrder = previous.order
+        didSortLayers = previous.didSort
+        for key in rejectedCreatedKeys {
+            otherTransformValues[key] = nil
+            videoHandles[key] = nil
+        }
+        for (key, fields) in previous.transformVectors {
+            for (field, vector) in fields {
+                Self.update(transformBridgeValue(forKey: key, field: field), with: vector)
+            }
+        }
+        for created in createdLayers {
+            guard let snapshot = previous.createdHandles[created.key] else { continue }
+            created.handle.setObject(snapshot.image, forKeyedSubscript: "image" as NSString)
+            if let vector = snapshot.colorVector {
+                Self.update(snapshot.color, with: vector)
+            }
+            created.handle.setObject(snapshot.color, forKeyedSubscript: "color" as NSString)
+        }
+    }
+
+    private func transformVectorSnapshots() -> [String: [OwnTransformField: SIMD3<Double>]] {
+        var snapshots = otherTransformValues.mapValues { $0.compactMapValues(finiteVector) }
+        snapshots[Self.ownKey] = ownTransformBridgeValues.compactMapValues(finiteVector)
+        return snapshots
+    }
+
+    private var ownTransformBridgeValues: [OwnTransformField: JSValue] {
+        let values: [OwnTransformField: JSValue?] = [.origin: ownOriginValue, .scale: ownScaleValue, .angles: ownAnglesValue]
+        return values.compactMapValues { $0 }
+    }
+
+    private func createdHandleSnapshots() -> [String: CreatedHandleSnapshot] {
+        var snapshots: [String: CreatedHandleSnapshot] = [:]
+        for created in createdLayers {
+            guard let image = created.handle.objectForKeyedSubscript("image"),
+                  let color = created.handle.objectForKeyedSubscript("color") else { continue }
+            snapshots[created.key] = CreatedHandleSnapshot(image: image, color: color, colorVector: finiteVector(color))
+        }
+        return snapshots
+    }
+
+    private func recordNewTransformBridgeValues(_ values: [OwnTransformField: JSValue], key: String) {
+        guard evaluationJournal?.transformVectors[key] == nil else { return }
+        evaluationJournal?.transformVectors[key] = values.compactMapValues(finiteVector)
     }
 
     fileprivate func withAuthoredLayerOrderMutation<Result>(_ operation: () -> Result) -> Result {
@@ -1716,7 +1947,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         thisLayer?.setObject(value.isFinite ? value : 1, forKeyedSubscript: "alpha" as NSString)
     }
 
-    fileprivate func installLayerBridge(in context: JSContext) {
+    func installLayerBridge(in context: JSContext) {
         let layer = makeLayerHandle(key: Self.ownKey, in: context)
         context.setObject(layer, forKeyedSubscript: "thisLayer" as NSString)
         // Same handle under WPE's other name for it. thisObject is a real global rather than one author's invention — and it was undefined, so those scripts threw.
@@ -1727,6 +1958,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     /// Installs thisScene/scene only, leaving the context's thisLayer as it is.
     func installScene(in context: JSContext) {
+        shared?.registerScriptBridge(self, in: context)
         let scene = JSValue(newObjectIn: context)!
         let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
             guard let self, let context, let key = layerKey(value) else { return nil }
@@ -1896,10 +2128,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     fileprivate func initialLayerConfiguration(_ value: JSValue) -> WPESceneJSONValue? {
         if value.isObject {
             if let thisLayer, value.isEqual(to: thisLayer) {
-                if let ownObjectID {
-                    return shared?.layers.first(where: { $0.id == ownObjectID })?.initialConfiguration
-                }
-                return shared?.layers.first(where: { $0.name == ownLayerName })?.initialConfiguration
+                return layerInfo(forKey: Self.ownKey)?.initialConfiguration
             }
             if let created = createdLayers.first(where: { value.isEqual(to: $0.handle) }) {
                 return created.configuration
@@ -1962,8 +2191,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     fileprivate func layerInfo(forKey key: String) -> WPESceneScriptLayerInfo? {
         if key == Self.ownKey {
-            return ownObjectID.flatMap { id in shared?.layers.first(where: { $0.id == id }) }
-                ?? shared?.layers.first(where: { $0.name == ownLayerName })
+            if let ownObjectID, let info = shared?.layers.first(where: { $0.id == ownObjectID }) {
+                return info
+            }
+            guard let ownLayerName, !ownLayerName.isEmpty else { return nil }
+            return shared?.layers.first(where: { $0.name == ownLayerName })
         }
         return shared?.layerInfo(forHandleKey: key)
     }
@@ -2016,6 +2248,19 @@ class WPELayerScriptBridge: @unchecked Sendable {
             return layerHandle(named: parentName, in: context)
         }
         handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        let getTransformMatrix: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let self, let context, let info = layerInfo(forKey: key) else { return nil }
+            let live = shared?.layerTransform(id: info.id)?.transform
+            let origin = live?.origin ?? SIMD3(info.origin.x, info.origin.y, info.originZ)
+            let scale = live?.scale ?? info.scale
+            let result = JSValue(newObjectIn: context)
+            result?.setObject([
+                scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0,
+                origin.x, origin.y, origin.z, 1,
+            ], forKeyedSubscript: "m" as NSString)
+            return result
+        }
+        handle.setObject(getTransformMatrix, forKeyedSubscript: "getTransformMatrix" as NSString)
         let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
             self?.neutralAnimationStubCache
         }
@@ -2033,15 +2278,17 @@ class WPELayerScriptBridge: @unchecked Sendable {
             particleBridge.install(on: handle, objectID: info.id, in: context)
             return handle
         }
-        let store = shared
         for (method, command) in [
             ("play", WPELayerSoundCommand.play),
             ("stop", .stop),
             ("pause", .pause),
         ] {
             let block: @convention(block) () -> Void = { [weak self] in
-                self?.soundIntent[layerName] = (command == .play)
-                store?.enqueueSoundCommand(layer: layerName, command)
+                guard let self else { return }
+                soundIntent[layerName] = (command == .play)
+                if pendingSound.count < 256 {
+                    pendingSound.append((layerName, command))
+                }
             }
             handle.setObject(block, forKeyedSubscript: method as NSString)
         }
@@ -2084,7 +2331,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
             let scalar = value.toDouble()
             guard scalar.isFinite else { return }
             assignedSoundVolume[layerName] = scalar
-            shared?.enqueueSoundCommand(layer: layerName, .setVolume(scalar))
+            if pendingSound.count < 256 {
+                pendingSound.append((layerName, .setVolume(scalar)))
+            }
         }
         defineAccessor(on: handle, property: "visible", get: getVisible, set: setVisible, in: context)
         defineAccessor(on: handle, property: "alpha", get: getAlpha, set: setAlpha, in: context)
@@ -2139,16 +2388,23 @@ class WPELayerScriptBridge: @unchecked Sendable {
         ownOriginValue = Self.vector(origin, in: context)
         ownScaleValue = Self.vector(scale, in: context)
         ownAnglesValue = Self.vector(anglesDegrees, in: context)
+        recordNewTransformBridgeValues(ownTransformBridgeValues, key: Self.ownKey)
 
-        let getOrigin: @convention(block) () -> JSValue? = { [weak self] in self?.ownOriginValue }
+        let getOrigin: @convention(block) () -> JSValue? = { [weak self] in
+            self?.transformValue(forKey: Self.ownKey, field: .origin)
+        }
         let setOrigin: @convention(block) (JSValue) -> Void = { [weak self] value in
             self?.setOwnTransformVector(value, field: .origin)
         }
-        let getScale: @convention(block) () -> JSValue? = { [weak self] in self?.ownScaleValue }
+        let getScale: @convention(block) () -> JSValue? = { [weak self] in
+            self?.transformValue(forKey: Self.ownKey, field: .scale)
+        }
         let setScale: @convention(block) (JSValue) -> Void = { [weak self] value in
             self?.setOwnTransformVector(value, field: .scale)
         }
-        let getAngles: @convention(block) () -> JSValue? = { [weak self] in self?.ownAnglesValue }
+        let getAngles: @convention(block) () -> JSValue? = { [weak self] in
+            self?.transformValue(forKey: Self.ownKey, field: .angles)
+        }
         let setAngles: @convention(block) (JSValue) -> Void = { [weak self] value in
             self?.setOwnTransformVector(value, field: .angles)
         }
@@ -2180,6 +2436,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             bridges[field] = Self.vector(seed, in: context)
         }
         otherTransformValues[key] = bridges
+        recordNewTransformBridgeValues(bridges, key: key)
 
         for (field, property) in [
             (OwnTransformField.origin, "origin"),
@@ -2187,7 +2444,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             (OwnTransformField.angles, "angles"),
         ] {
             let get: @convention(block) () -> JSValue? = { [weak self] in
-                self?.otherTransformValues[key]?[field]
+                self?.transformValue(forKey: key, field: field)
             }
             let set: @convention(block) (JSValue) -> Void = { [weak self] value in
                 self?.setOtherTransformVector(value, key: key, field: field)
@@ -2214,6 +2471,43 @@ class WPELayerScriptBridge: @unchecked Sendable {
         case .angles: mutation.angles = vector
         }
         assignedOtherTransforms[key] = mutation
+    }
+
+    private func transformBridgeValue(forKey key: String, field: OwnTransformField) -> JSValue? {
+        if key == Self.ownKey {
+            switch field {
+            case .origin: ownOriginValue
+            case .scale: ownScaleValue
+            case .angles: ownAnglesValue
+            }
+        } else {
+            otherTransformValues[key]?[field]
+        }
+    }
+
+    private func transformValue(forKey key: String, field: OwnTransformField) -> JSValue? {
+        let value = transformBridgeValue(forKey: key, field: field)
+        let assigned = key == Self.ownKey ? assignedOwnTransform : assignedOtherTransforms[key] ?? .init()
+        switch field {
+        case .origin: if assigned.origin != nil {
+                return value
+            }
+        case .scale: if assigned.scale != nil {
+                return value
+            }
+        case .angles: if assigned.angles != nil {
+                return value
+            }
+        }
+        guard readsLiveTransforms, let info = layerInfo(forKey: key),
+              let live = shared?.layerTransform(id: info.id)?.transform else { return value }
+        let vector: SIMD3<Double> = switch field {
+        case .origin: live.origin ?? SIMD3(info.origin.x, info.origin.y, info.originZ)
+        case .scale: live.scale ?? info.scale
+        case .angles: (live.angles ?? info.angles) * (180 / .pi)
+        }
+        Self.update(value, with: vector)
+        return value
     }
 
     fileprivate func setOwnTransformVector(_ value: JSValue, field: OwnTransformField) {

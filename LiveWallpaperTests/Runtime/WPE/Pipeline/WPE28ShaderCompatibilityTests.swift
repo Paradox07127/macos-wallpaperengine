@@ -501,7 +501,9 @@ struct WPE28ShaderCompatibilityTests {
         for (tid, input) in inputs.enumerated() {
             let phases = Self.waterflowPhases(time: input.x, speed: input.y)
             for component in 0 ..< 4 {
-                let admitted = Self.waterflowCycleAdmissible(phases[component])
+                let admitted = fastMath
+                    ? Self.waterflowFastCycleAdmissible(input, component: component)
+                    : Self.waterflowCycleAdmissible(phases[component])
                 let value = Double(Float(bitPattern: words[tid * 8 + component]))
                 if Self.waterflowMeasure(admitted) > 1.0e-3 {
                     failures.append(
@@ -517,9 +519,9 @@ struct WPE28ShaderCompatibilityTests {
                 }
             }
             for component in 0 ..< 2 {
-                let admitted = Self.waterflowBlendAdmissible(
-                    phases[component == 0 ? 0 : 2], feather: input.z
-                )
+                let admitted = fastMath
+                    ? Self.waterflowFastBlendAdmissible(input, component: component)
+                    : Self.waterflowBlendAdmissible(phases[component == 0 ? 0 : 2], feather: input.z)
                 let value = Double(Float(bitPattern: words[tid * 8 + 4 + component]))
                 // A feather this narrow degenerates to a hard step, where a legitimate phase ULP
                 // is a 0->1 flip; those rows only assert membership.
@@ -539,10 +541,26 @@ struct WPE28ShaderCompatibilityTests {
                     interiorBlends += 1
                 }
             }
+            if fastMath, input.x == Float(7.77), input.y == -1 {
+                let raw = words[(tid * 8) ..< (tid * 8 + 6)].map {
+                    "\(Double(Float(bitPattern: $0)))/0x\(String($0, radix: 16))"
+                }
+                let cycles = Self.waterflowFastCycleValues(input, component: 0)
+                let lo = 0.5 - input.z, hi = 0.5 + input.z
+                let widths = [hi - lo, 2 * input.z]
+                let numerators = cycles.flatMap { cycle in
+                    let band = 2 * abs(cycle)
+                    return [band - lo, (band - 0.5) + input.z]
+                }
+                print("[waterflow-fast-model] tid=\(tid) input=\(input) gpu=\(raw) "
+                    + "cpuCyclePaths=\(cycles.map(Double.init)) cpuBandPaths=\(cycles.map { Double(2 * abs($0)) }) "
+                    + "cpuNumeratorPaths=\(numerators.map(Double.init)) cpuWidthPaths=\(widths.map(Double.init)) "
+                    + "cpuBlendRange=\(Self.waterflowFastBlendAdmissible(input, component: 0))")
+            }
         }
         // Report a handful: a broken formula misses on thousands of rows, and Swift Testing
         // expands whole arrays into the diagnostic.
-        let reported = Array(failures.prefix(8))
+        let reported = Array(failures.prefix(32))
         #expect(
             reported.isEmpty,
             Comment(rawValue: "\(failures.count) of \(inputs.count * 6) probes off model:\n"
@@ -615,6 +633,161 @@ struct WPE28ShaderCompatibilityTests {
             let image = [smoothstep(band.lowerBound - bandSlack), smoothstep(band.upperBound + bandSlack)]
             return (image.min()! - outputSlack) ... (image.max()! + outputSlack)
         }
+    }
+
+    /// MSL 4.1 section 8, table 8.2: fast math permits reassociation despite correctly
+    /// rounded individual +/-/*/fract operations. Keep the actual arithmetic paths, not
+    /// a blanket phase epsilon: subtracting 0.5 before floor subtraction can round at
+    /// the large phase's exponent instead of at the small fractional result's exponent.
+    private static func waterflowFastCycleValues(_ input: SIMD4<Float>, component: Int) -> [Float] {
+        let t = input.x * input.y
+        let offset: Float = [0, 0.5, 0.25, 0.75][component]
+        var phases = [t + offset, offset.addingProduct(input.x, input.y)]
+        if component == 3 {
+            phases += [(0.25 + t) + 0.5, Float(0.25).addingProduct(input.x, input.y) + 0.5,
+                       Float(0.5).addingProduct(input.x, input.y) + 0.25]
+        }
+        var values: [Float] = []
+        for phase in phases {
+            let integral = floor(phase)
+            let fraction = min(phase - integral, Float(1).nextDown)
+            values += [fraction - 0.5, (phase - 0.5) - integral, phase - (integral + 0.5),
+                       (offset - 0.5).addingProduct(input.x, input.y) - integral]
+        }
+        return Array(Set(values)).sorted()
+    }
+
+    private static func waterflowFastCycleAdmissible(
+        _ input: SIMD4<Float>, component: Int
+    ) -> [ClosedRange<Double>] {
+        waterflowMergedRanges(
+            waterflowCycleAdmissible(waterflowPhases(time: input.x, speed: input.y)[component])
+                + waterflowFastCycleValues(input, component: component).map { Double($0) ... Double($0) }
+        )
+    }
+
+    private static func waterflowRoundedRange(_ values: [Double]) -> ClosedRange<Double> {
+        Double(Float(values.min()!)) ... Double(Float(values.max()!))
+    }
+
+    private static func waterflowMultiply(
+        _ a: ClosedRange<Double>, _ b: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        waterflowRoundedRange([a.lowerBound * b.lowerBound, a.lowerBound * b.upperBound,
+                               a.upperBound * b.lowerBound, a.upperBound * b.upperBound])
+    }
+
+    private static func waterflowSubtract(
+        _ a: ClosedRange<Double>, _ b: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        waterflowRoundedRange([a.lowerBound - b.upperBound, a.upperBound - b.lowerBound])
+    }
+
+    private static func waterflowFMA(
+        _ a: ClosedRange<Double>, _ b: ClosedRange<Double>, _ c: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        waterflowRoundedRange([a.lowerBound, a.upperBound].flatMap { x in
+            [b.lowerBound, b.upperBound].flatMap { y in
+                [c.lowerBound, c.upperBound].map { z in z.addingProduct(x, y) }
+            }
+        })
+    }
+
+    private static func waterflowMergedRanges(_ ranges: [ClosedRange<Double>]) -> [ClosedRange<Double>] {
+        var merged: [ClosedRange<Double>] = []
+        for range in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = merged.last, range.lowerBound <= last.upperBound {
+                merged[merged.count - 1] = last.lowerBound ... max(last.upperBound, range.upperBound)
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
+    }
+
+    private static func waterflowFastBlendAdmissible(
+        _ input: SIMD4<Float>, component: Int
+    ) -> [ClosedRange<Double>] {
+        let feather = input.z
+        let lo = 0.5 - feather, hi = 0.5 + feather
+        let widths = Array(Set([hi - lo, 2 * feather]))
+        let cycles = waterflowFastCycleAdmissible(input, component: component == 0 ? 0 : 2)
+        var admitted: [ClosedRange<Double>] = []
+        for cycle in cycles {
+            let absolute = (cycle.contains(0) ? 0 : min(abs(cycle.lowerBound), abs(cycle.upperBound)))
+                ... max(abs(cycle.lowerBound), abs(cycle.upperBound))
+            let band = waterflowMultiply(2 ... 2, absolute)
+            if lo == hi {
+                admitted.append((band.lowerBound < Double(lo) ? 0 : 1)
+                    ... (band.upperBound < Double(lo) ? 0 : 1))
+                continue
+            }
+            let numerators = [
+                waterflowSubtract(band, Double(lo) ... Double(lo)),
+                waterflowSubtract(waterflowSubtract(band, 0.5 ... 0.5), Double(-feather) ... Double(-feather)),
+            ]
+            for numerator in numerators {
+                for width in widths where width != 0 {
+                    let quotients = [numerator.lowerBound / Double(width), numerator.upperBound / Double(width)]
+                    // Fast x/y is <= 2.5 ULP. Also model reciprocal (<= 1 ULP) then
+                    // correctly-rounded multiply; table 8.2 bounds each operation.
+                    let divisionSlack = 2.5 * Double(Float(quotients.map(abs).max()!).ulp)
+                    let direct = (quotients.min()! - divisionSlack) ... (quotients.max()! + divisionSlack)
+                    let reciprocal = 1 / Double(width)
+                    let reciprocalSlack = Double(Float(reciprocal).ulp)
+                    let multiplied = waterflowMultiply(numerator,
+                                                       (reciprocal - reciprocalSlack) ... (reciprocal + reciprocalSlack))
+                    for quotient in [direct, multiplied] {
+                        let u = waterflowRoundedRange([min(max(quotient.lowerBound, 0), 1),
+                                                       min(max(quotient.upperBound, 0), 1)])
+                        let square = waterflowMultiply(u, u)
+                        let cubic = waterflowMultiply(square, waterflowSubtract(3 ... 3, waterflowMultiply(2 ... 2, u)))
+                        let contracted = waterflowMultiply(square, waterflowFMA(-2 ... -2, u, 3 ... 3))
+                        let expanded = waterflowSubtract(waterflowMultiply(3 ... 3, square),
+                                                         waterflowMultiply(2 ... 2, waterflowMultiply(square, u)))
+                        let fusedExpanded = waterflowFMA(waterflowMultiply(-2 ... -2, u), square,
+                                                         waterflowMultiply(3 ... 3, square))
+                        admitted += [cubic, contracted, expanded, fusedExpanded]
+                    }
+                }
+            }
+        }
+        return waterflowMergedRanges(admitted)
+    }
+
+    @Test("Waterflow numeric admission still rejects wrong phase and blend formulas", arguments: [false, true])
+    func waterflowNumericModelRejectsFormulaMutations(fastMath: Bool) {
+        let positive = SIMD4<Float>(0.125, 1, 0.4, 0)
+        let negative = SIMD4<Float>(0.125, -1, 0.4, 0)
+        func cycleRange(_ input: SIMD4<Float>) -> [ClosedRange<Double>] {
+            fastMath ? Self.waterflowFastCycleAdmissible(input, component: 0)
+                : Self.waterflowCycleAdmissible(Self.waterflowPhases(time: input.x, speed: input.y)[0])
+        }
+        let blendRange = fastMath ? Self.waterflowFastBlendAdmissible(positive, component: 0)
+            : Self.waterflowBlendAdmissible(Self.waterflowPhases(time: positive.x, speed: positive.y)[0], feather: positive.z)
+        #expect(!Self.waterflowAdmits(cycleRange(positive), -0.125), "wrong quarter-phase offset")
+        #expect(!Self.waterflowAdmits(cycleRange(positive), 0.125), "missing centered-phase subtraction")
+        #expect(!Self.waterflowAdmits(cycleRange(negative), -0.375), "negative speed changed to abs(speed)")
+        let lo = Double(Float(0.5) - positive.z), width = Double((Float(0.5) + positive.z) - (Float(0.5) - positive.z))
+        let linear = (0.75 - lo) / width
+        let missingDoubleBand = (0.375 - lo) / width
+        let wrongBandWeight = missingDoubleBand * missingDoubleBand * (3 - 2 * missingDoubleBand)
+        #expect(!Self.waterflowAdmits(blendRange, linear), "cubic smoothstep changed to linear")
+        #expect(!Self.waterflowAdmits(blendRange, wrongBandWeight), "band lost its factor of two")
+    }
+
+    @Test("Waterflow fast admission includes the observed reassociation without widening strict math")
+    func waterflowNumericModelAdmitsReassociatedWitness() {
+        let input = SIMD4<Float>(7.77, -1, 0.25, 0)
+        let observed = Double(Float(bitPattern: 0xBE8A_3D80))
+        let strict = Self.waterflowCycleAdmissible(Self.waterflowPhases(time: input.x, speed: input.y)[0])
+        let fast = Self.waterflowFastCycleAdmissible(input, component: 0)
+        #expect(!Self.waterflowAdmits(strict, observed))
+        #expect(Self.waterflowAdmits(fast, observed))
+        #expect(Self.waterflowMeasure(fast) < 1.0e-3)
+        let blend = Self.waterflowFastBlendAdmissible(input, component: 0)
+        #expect(Self.waterflowAdmits(blend, 0.6189786791801453))
+        #expect(Self.waterflowMeasure(blend) < 1.0e-2)
     }
 
     private static func waterflowMeasure(_ ranges: [ClosedRange<Double>]) -> Double {

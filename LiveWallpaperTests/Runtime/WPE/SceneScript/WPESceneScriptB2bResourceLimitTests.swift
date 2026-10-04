@@ -18,26 +18,28 @@
             expectEveryOperationRejected(by: token)
         }
 
-        @Test("Actual layer bridge emits 64 created layers and refuses layer 65")
-        @MainActor
-        func createdLayerBridgeExactBoundary() throws {
-            let exactToken = preparedToken(generation: 11, inventory: .init(text: 0, layer: 1, transform: 0))
-            let exact = try WPELayerScriptInstance(
-                script: Self.createdLayerScript(count: 64),
-                shared: WPESharedScriptState(sceneScriptLoadToken: exactToken)
-            )
-            #expect(exact.initialOutput.created.count == 64)
-            #expect(exactToken.failureReason == nil)
+    @Test("Actual layer bridge accepts 64 layers and discards an over-limit entry")
+    @MainActor
+    func createdLayerBridgeExactBoundary() throws {
+        let exactToken = preparedToken(generation: 11, inventory: .init(text: 0, layer: 1, transform: 0))
+        let exact = try WPELayerScriptInstance(
+            script: Self.createdLayerScript(count: 64),
+            shared: WPESharedScriptState(sceneScriptLoadToken: exactToken)
+        )
+        #expect(exact.initialOutput.created.count == 64)
+        #expect(exactToken.resourceSnapshot.createdLayers == 64)
+        #expect(exactToken.failureReason == nil)
 
-            let overToken = preparedToken(generation: 12, inventory: .init(text: 0, layer: 1, transform: 0))
-            let over = try WPELayerScriptInstance(
-                script: Self.createdLayerScript(count: 65),
-                shared: WPESharedScriptState(sceneScriptLoadToken: overToken)
-            )
-            #expect(over.initialOutput.created.count == 64)
-            #expect(overToken.failureReason == .createdLayerLimitExceeded(limit: 64))
-            expectEveryOperationRejected(by: overToken)
-        }
+        let overToken = preparedToken(generation: 12, inventory: .init(text: 0, layer: 1, transform: 0))
+        let over = try WPELayerScriptInstance(
+            script: Self.createdLayerScript(count: 65),
+            shared: WPESharedScriptState(sceneScriptLoadToken: overToken)
+        )
+        #expect(over.initialOutput.created.isEmpty)
+        #expect(overToken.resourceSnapshot.createdLayers == 0)
+        #expect(overToken.failureReason == .createdLayerLimitExceeded(limit: 64))
+        expectEveryOperationRejected(by: overToken)
+    }
 
         @Test("Video command cap accepts 256 in one evaluation and scene-latches on 257")
         func videoCommandExactBoundary() {
@@ -54,28 +56,29 @@
             expectEveryOperationRejected(by: token)
         }
 
-        @Test("Actual video bridge accepts 256 commands and refuses command 257")
-        @MainActor
-        func videoCommandBridgeExactBoundary() throws {
-            let exactToken = preparedToken(generation: 13, inventory: .init(text: 0, layer: 1, transform: 0))
-            let exact = try WPELayerScriptInstance(
-                script: Self.videoCommandScript(count: 256),
-                shared: WPESharedScriptState(sceneScriptLoadToken: exactToken)
-            )
-            #expect(exact.initialOutput.own.videoCommands.count == 256)
-            #expect(exactToken.failureReason == nil)
+    @Test("Actual video bridge accepts 256 commands and discards an over-limit entry")
+    @MainActor
+    func videoCommandBridgeExactBoundary() throws {
+        let exactToken = preparedToken(generation: 13, inventory: .init(text: 0, layer: 1, transform: 0))
+        let exact = try WPELayerScriptInstance(
+            script: Self.videoCommandScript(count: 256),
+            shared: WPESharedScriptState(sceneScriptLoadToken: exactToken)
+        )
+        #expect(exact.initialOutput.own.videoCommands.count == 256)
+        #expect(exactToken.failureReason == nil)
 
-            let overToken = preparedToken(generation: 14, inventory: .init(text: 0, layer: 1, transform: 0))
-            let over = try WPELayerScriptInstance(
-                script: Self.videoCommandScript(count: 257),
-                shared: WPESharedScriptState(sceneScriptLoadToken: overToken)
-            )
-            #expect(over.initialOutput.own.videoCommands.count == 256)
-            #expect(overToken.failureReason == .videoCommandLimitExceeded(limit: 256))
-            expectEveryOperationRejected(by: overToken)
-        }
+        let overToken = preparedToken(generation: 14, inventory: .init(text: 0, layer: 1, transform: 0))
+        let over = try WPELayerScriptInstance(
+            script: Self.videoCommandScript(count: 257),
+            shared: WPESharedScriptState(sceneScriptLoadToken: overToken)
+        )
+        #expect(over.initialOutput.own.videoCommands.isEmpty)
+        #expect(over.initialOutput.videoCalls.isEmpty)
+        #expect(overToken.failureReason == .videoCommandLimitExceeded(limit: 256))
+        expectEveryOperationRejected(by: overToken)
+    }
 
-        @Test("Async output merge preserves accepted per-evaluation video commands")
+    @Test("Async output merge preserves accepted per-evaluation video commands")
         @MainActor
         func asynchronousVideoCommandMerge() {
             let pending = Self.layerOutput(commands: Array(repeating: .play, count: 256))

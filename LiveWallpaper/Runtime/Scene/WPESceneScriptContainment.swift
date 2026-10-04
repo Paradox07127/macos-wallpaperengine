@@ -626,6 +626,10 @@ final class WPESceneScriptInstanceLimitToken: @unchecked Sendable {
         resourceBudget.releaseCreatedLayer()
     }
 
+    func adjustCreatedLayerCountForRollback(_ delta: Int) {
+        resourceBudget.adjustCreatedLayerCountForRollback(delta)
+    }
+
     func admitNewSharedStateEntry() -> Bool {
         guard acceptsCompletion() else { return false }
         guard resourceBudget.admitNewSharedStateEntry() == .accepted else {

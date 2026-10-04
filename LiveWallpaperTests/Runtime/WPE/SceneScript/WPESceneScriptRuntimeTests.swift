@@ -9,6 +9,670 @@ import Testing
 struct WPESceneScriptRuntimeTests {
     private let isolatedGovernor = WPESceneScriptExecutionGovernor(limit: 4)
 
+    @Test("Inline and multiline built-in imports preserve statements and namespace aliases")
+    func inlineBuiltinImportsPreserveAliases() throws {
+        let scripts = [
+            "let before=2;import*as math from'WEMath';export function update(v){return String(math.clamp(before,0,1));}",
+            "let before=2;import *\n as math\n from \"WEMath\";export function update(v){return String(math.clamp(before,0,1));}",
+            "import {clamp as bounded, mix} from 'WEMath';export function update(v){return String(bounded(mix(0,4,.5),0,1));}",
+            "import 'WEColor';import * as colors from 'WEColor';export function update(v){return typeof colors;}",
+            "let q={} / 2;import/*a*/*/*b*/as/*c*/ math /*d*/from 'WEMath';export function update(v){return String(math.clamp(2,0,1));}",
+        ]
+        for (index, script) in scripts.enumerated() {
+            let instance = try WPESceneScriptInstance(script: script, initialValue: "?")
+            #expect(instance.tickString() == (index == 3 ? "object" : "1"))
+        }
+    }
+
+    @Test("Import-looking literals, comments, regexes and unknown modules remain intact")
+    func builtinImportLoweringRespectsLexicalBoundaries() throws {
+        let script = #"""
+        var quoted = "import*as alias from'WEMath';";
+        var template = `import*as alias from'WEMath';`;
+        var pattern = /import *as alias from'WEMath';/;
+        if (true) /import*as fake from'WEMath'/.test('anything');
+        {} /import*as fake from'WEMath'/.test('anything');
+        var nestedTemplate = `${`import*as fake from'WEMath';`} and ${"import*as fake from'WEMath';"}`;
+        var object = {}; object['import'] = "import*as fake from'WEMath';";
+        // import*as alias from'WEMath';
+        /* import*as alias from'WEMath'; */
+        var ratio = 4 / 2;import*as real from'WEMath';
+        function nested(){ import*as illegal from'WEMath'; }
+        import*as unknown from'MissingModule';
+        import unsupportedDefault from 'WEMath';
+        """#
+        let lowered = try wpeLowerBuiltinImports(LiveWallpaper.WPESceneScriptInstance.preprocess(script: script), in: #require(JSContext()))
+        #expect(lowered.contains("var real = WEMath;"))
+        #expect(lowered.contains("var quoted = \"import*as alias from'WEMath';\""))
+        #expect(lowered.contains("var template = `import*as alias from'WEMath';`"))
+        #expect(lowered.contains("/import *as alias from'WEMath';/"))
+        #expect(lowered.contains("if (true) /import*as fake from'WEMath'/.test('anything');"))
+        #expect(lowered.contains("{} /import*as fake from'WEMath'/.test('anything');"))
+        #expect(lowered.contains(#"var nestedTemplate = `${`import*as fake from'WEMath';`} and ${"import*as fake from'WEMath';"}`;"#))
+        #expect(lowered.contains("object['import'] = \"import*as fake from'WEMath';\""))
+        #expect(lowered.contains("// import*as alias from'WEMath';"))
+        #expect(lowered.contains("/* import*as alias from'WEMath'; */"))
+        #expect(lowered.contains("function nested(){ import*as illegal from'WEMath'; }"))
+        #expect(lowered.contains("import*as unknown from'MissingModule';"))
+        #expect(lowered.contains("import unsupportedDefault from 'WEMath';"))
+    }
+
+    @Test("Two real script contexts share closures and preserve argument identity")
+    func sharedCallablesCrossRealScriptContexts() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPELayerScriptInstance(script: """
+        let counter = 0;
+        export function init() {
+            shared.clamp = function(x, lo, hi) { counter++; return Math.min(Math.max(x, lo), hi); };
+            shared.calls = function() { return counter; };
+            shared.identity = function(object) { object.x += 2; return object; };
+        }
+        export function update() {}
+        """, shared: store)
+        let consumer = try WPESceneScriptInstance(script: """
+        export function update(value) {
+            let object = {x: 3};
+            let same = shared.identity(object) === object;
+            return shared.clamp(2, 0, 1) + ':' + shared.calls() + ':' + same + ':' + object.x;
+        }
+        """, initialValue: "?", shared: store)
+        #expect(consumer.tickString() == "1:1:true:5")
+        #expect(consumer.tickString() == "1:2:true:5")
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("Transform init publishes a callable before visible applyUserProperties consumes it")
+    func sharedCallableTransformToVisibleInitialization() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPEDynamicTransformScriptInstance(script: """
+        let calls = 0;
+        export function playTrack() { calls++; shared.playCount = calls; }
+        export function init(value) { shared.playTrack = playTrack; return value; }
+        export function update(value) { return value; }
+        """, seed: .zero, canvasSize: SIMD2(64, 64), shared: store)
+        let consumer = try WPELayerScriptInstance(script: """
+        export function init(value) { return value; }
+        export function applyUserProperties(properties) { shared.playTrack(); }
+        export function update(value) { return value; }
+        """, shared: store)
+        _ = consumer.applyUserProperties(["startup": .bool(true)])
+        #expect(store.get("playCount") as? Double == 1)
+        _ = consumer.applyUserProperties(["startup": .bool(false)])
+        #expect(store.get("playCount") as? Double == 2)
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("Callable replacements are visible to the producer and consumers, without stale local caches")
+    func sharedCallableReplacementAndThis() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPESceneScriptInstance(script: """
+        export function init() { shared.read = function() { return this.count; }; shared.count = 7; }
+        export function update() { return String(shared.read()); }
+        """, initialValue: "?", shared: store)
+        #expect(producer.tickString() == "7")
+        let replacement = try WPESceneScriptInstance(script: """
+        export function init() { shared.read = function() { return this.count + 3; }; }
+        export function update() { return String(shared.read()); }
+        """, initialValue: "?", shared: store)
+        #expect(producer.tickString() == "10")
+        #expect(replacement.tickString() == "10")
+        store.set("read", 42)
+        let observer = try WPESceneScriptInstance(script: "export function update() { return String(shared.read); }", initialValue: "?", shared: store)
+        #expect(observer.tickString() == "42")
+    }
+
+    @Test("Shared class instances retain prototypes, callable exceptions propagate, and missing values stay missing")
+    func sharedPrototypeAndCallableExceptions() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPESceneScriptInstance(script: """
+        class Counter { constructor() { this.n = 2; } increment() { return ++this.n; } }
+        export function init() { shared.counter = new Counter(); shared.fail = function() { throw new Error('expected'); }; }
+        export function update() { return String(shared.counter.increment()); }
+        """, initialValue: "?", shared: store)
+        let consumer = try WPESceneScriptInstance(script: """
+        export function update() {
+            let caught = false;
+            try { shared.fail(); } catch(e) { caught = e.message === 'expected'; }
+            return shared.counter.increment() + ':' + caught + ':' + typeof shared.missing;
+        }
+        """, initialValue: "?", shared: store)
+        #expect(consumer.tickString() == "3:true:undefined")
+        #expect(producer.tickString() == "4")
+    }
+
+    @Test("A rooted shared callable survives its publisher wrapper and garbage collection, then retires without leaking contexts")
+    func sharedCallableManagedLifetime() throws {
+        let before = WPESceneScriptContextBeacon.liveCount
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 4)
+        var store: WPESharedScriptState? = WPESharedScriptState()
+        let lane = try #require(store).executionLane(using: dispatcher)
+        try autoreleasepool {
+            _ = try LiveWallpaper.WPESceneScriptInstance(script: """
+            let captured = 13;
+            export function init() { shared.read = function() { return captured; }; }
+            export function update(value) { return value; }
+            """, initialValue: "?", shared: store, governor: isolatedGovernor, batchDispatcher: dispatcher)
+        }
+        lane.queue.sync {
+            if let probe = JSContext(virtualMachine: lane.virtualMachine) {
+                JSGarbageCollect(probe.jsGlobalContextRef)
+            }
+        }
+        try autoreleasepool {
+            let consumer = try LiveWallpaper.WPESceneScriptInstance(
+                script: "export function update() { return String(shared.read()); }",
+                initialValue: "?", shared: store, governor: isolatedGovernor, batchDispatcher: dispatcher
+            )
+            #expect(consumer.tickString() == "13")
+        }
+        store = nil
+        let deadline = Date().addingTimeInterval(2)
+        while WPESceneScriptContextBeacon.liveCount > before, Date() < deadline {
+            lane.queue.sync {
+                if let probe = JSContext(virtualMachine: lane.virtualMachine) {
+                    JSGarbageCollect(probe.jsGlobalContextRef)
+                }
+            }
+            usleep(20000)
+        }
+        #expect(WPESceneScriptContextBeacon.liveCount <= before)
+    }
+
+    @Test("Same-scene contexts reuse a lane; different scenes retain independent lanes and values")
+    func sharedLaneIsSceneScoped() {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 4)
+        let first = WPESharedScriptState()
+        let second = WPESharedScriptState()
+        let firstLane = first.executionLane(using: dispatcher)
+        #expect(first.executionLane(using: dispatcher).queue === firstLane.queue)
+        #expect(first.executionLane(using: dispatcher).virtualMachine === firstLane.virtualMachine)
+        let secondLane = second.executionLane(using: dispatcher)
+        #expect(secondLane.queue !== firstLane.queue)
+        #expect(secondLane.virtualMachine !== firstLane.virtualMachine)
+        first.set("value", 1)
+        #expect(second.get("value") == nil)
+        #expect(firstLane.invalidate())
+        let next = WPESharedScriptState().executionLane(using: dispatcher)
+        #expect(next.virtualMachine !== firstLane.virtualMachine)
+    }
+
+    @Test("An over-budget shared callable fails its scene closed and does not contaminate a new scene")
+    func sharedCallableTimeoutContainsScene() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let oldToken = WPESceneScriptInstanceLimitToken(generation: 9001)
+        let oldStore = WPESharedScriptState(sceneScriptLoadToken: oldToken)
+        let producer = try LiveWallpaper.WPESceneScriptInstance(script: """
+        export function init() { shared.slow = function() { let stop = Date.now() + 120; while(Date.now() < stop) {} shared.late = 1; return 'late'; }; }
+        export function update(value) { return value; }
+        """, initialValue: "?", shared: oldStore, governor: isolatedGovernor, batchDispatcher: dispatcher)
+        let consumer = try LiveWallpaper.WPESceneScriptInstance(
+            script: "export function update() { return shared.slow(); }", initialValue: "seed", shared: oldStore,
+            tickBudget: 0.03, governor: isolatedGovernor, batchDispatcher: dispatcher
+        )
+        #expect(consumer.tickString() == "seed")
+        #expect(!oldToken.acceptsCompletion())
+        let nextStore = WPESharedScriptState(sceneScriptLoadToken: WPESceneScriptInstanceLimitToken(generation: 9002))
+        let healthy = try LiveWallpaper.WPESceneScriptInstance(
+            script: "export function update() { return 'fresh'; }", initialValue: "?", shared: nextStore,
+            governor: isolatedGovernor, batchDispatcher: dispatcher
+        )
+        #expect(healthy.tickString() == "fresh")
+        #expect(nextStore.get("slow") == nil)
+        usleep(150_000)
+        #expect(oldStore.get("late") == nil, "a quarantined callback must not publish shared writes")
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("Nested functions and arrays preserve callable identity across contexts")
+    func sharedNestedCallablesAndDataSnapshot() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPESceneScriptInstance(script: """
+        let count = 4;
+        export function init() {
+            let fn = function() { return ++count; };
+            shared.graph = {nested: [{fn: fn}], value: 9};
+            shared.originalIdentity = shared.graph.nested[0].fn === fn;
+            shared.accentColor = new Vec3(.2, .4, .6);
+        }
+        export function update(value) { return value; }
+        """, initialValue: "?", shared: store)
+        let consumer = try WPESceneScriptInstance(script: """
+        export function update() {
+            shared.accentColor.x = .7;
+            return shared.graph.nested[0].fn() + ':' + (shared.graph.nested[0].fn === shared.graph.nested[0].fn);
+        }
+        """, initialValue: "?", shared: store)
+        #expect(store.get("originalIdentity") as? Bool == true)
+        #expect(consumer.tickString() == "5:true")
+        let snapshot = try #require(store.get("accentColor") as? [String: Any])
+        #expect((snapshot["x"] as? NSNumber)?.doubleValue == 0.7)
+        #expect((snapshot["y"] as? NSNumber)?.doubleValue == 0.4)
+        #expect((snapshot["z"] as? NSNumber)?.doubleValue == 0.6)
+        withExtendedLifetime(producer) {}
+    }
+
+    private func callableTransactionStore() -> WPESharedScriptState {
+        WPESharedScriptState(layers: [
+            .init(id: "producer", name: "Producer", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+            .init(id: "target", name: "Target", size: SIMD2(8, 8), origin: .zero, index: 1, parentName: nil),
+            .init(id: "video", name: "Video", size: SIMD2(8, 8), origin: .zero, index: 2, parentName: nil),
+            .init(id: "sound", name: "Song.mp3", size: .zero, origin: .zero, index: 3, parentName: nil),
+            .init(id: "particles", name: "Particles", size: .zero, origin: .zero, index: 4, parentName: nil, isParticleSystem: true),
+        ])
+    }
+
+    private func collectSharedGarbage(_ store: WPESharedScriptState) {
+        let lane = store.executionLane(using: .processShared)
+        lane.queue.sync {
+            if let probe = JSContext(virtualMachine: lane.virtualMachine) {
+                JSGarbageCollect(probe.jsGlobalContextRef)
+            }
+        }
+    }
+
+    @Test("Cached cross-context functions commit publisher journals without a publisher update")
+    func sharedCallableCommitsPublisherSideEffects() throws {
+        let store = callableTransactionStore()
+        let producer = try LiveWallpaper.WPEDynamicTransformScriptInstance(script: """
+                                                                           function action() {
+                                                                               let target = thisScene.getLayer('Target');
+                                                                               target.text = 'committed'; target.alpha = .25; target.scale = new Vec3(2, 3, 4);
+                                                                               thisScene.getLayer('Video').getVideoTexture().play();
+                                                                               thisScene.getLayer('Song.mp3').play();
+                                                                               thisScene.getLayer('Particles').emitParticles(3);
+                                                                           }
+                                                                           export function init(value) {
+                                                                               shared.action = action;
+                                                                               shared.identity = shared.action === action;
+                                                                               shared.layerCount = thisScene.enumerateLayers().length;
+                                                                               return value;
+                                                                           }
+                                                                           """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Producer", ownObjectID: "producer", shared: store,
+                                                                           governor: isolatedGovernor)
+        collectSharedGarbage(store)
+        let consumer = try WPELayerScriptInstance(script: """
+        let cached;
+        export function init() { cached = shared.action; }
+        export function applyUserProperties() { cached(); }
+        export function update(value) { return value; }
+        """, shared: store)
+        _ = producer.takeLayerOutput()
+        #expect(store.get("identity") as? Bool == true)
+        #expect(store.get("layerCount") as? Double == 5)
+        for _ in 0 ..< 2 {
+            _ = consumer.applyUserProperties(["run": .bool(true)])
+            let output = try #require(producer.takeLayerOutput())
+            #expect(output.texts["Target"] == "committed")
+            #expect(output.others["Target"]?.alpha == 0.25)
+            #expect(output.otherTransforms["Target"]?.scale == SIMD3(2, 3, 4))
+            #expect(output.videoCalls == [.init(layerKey: "Video", command: .play)])
+            #expect(store.drainSoundCommands().map(\.command) == [.play])
+            #expect(store.drainParticleCommands().map(\.command) == [.emit(3)])
+        }
+    }
+
+    @Test("A throwing cached callable rolls back publisher commands and cannot leak them on the next entry")
+    func sharedCallableRollsBackFailedPublisherEntry() throws {
+        let store = callableTransactionStore()
+        let producer = try LiveWallpaper.WPEDynamicTransformScriptInstance(script: """
+                                                                           export function init(value) {
+                                                                               shared.action = function(fail) {
+                                                                                   thisScene.getLayer('Target').text = fail ? 'failed' : 'good';
+                                                                                   thisScene.getLayer('Target').alpha = fail ? .1 : .8;
+                                                                                   thisScene.getLayer('Target').scale = new Vec3(fail ? 99 : 2, 3, 4);
+                                                                                   if (fail) {
+                                                                                       thisScene.getLayer('Video').getVideoTexture().play();
+                                                                                       thisScene.getLayer('Song.mp3').play();
+                                                                                       thisScene.getLayer('Particles').emitParticles(8);
+                                                                                       throw new Error('failed transaction');
+                                                                                   }
+                                                                               };
+                                                                               return value;
+                                                                           }
+                                                                           """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Producer", ownObjectID: "producer", shared: store,
+                                                                           governor: isolatedGovernor)
+        collectSharedGarbage(store)
+        let consumer = try WPELayerScriptInstance(script: """
+        let cached;
+        export function init() { cached = shared.action; }
+        export function applyUserProperties(p) { cached(p.fail); }
+        export function update(value) { return value; }
+        """, shared: store)
+        _ = producer.takeLayerOutput()
+        _ = consumer.applyUserProperties(["fail": .bool(false)])
+        #expect(producer.takeLayerOutput()?.texts["Target"] == "good")
+        _ = consumer.applyUserProperties(["fail": .bool(true)])
+        #expect(producer.takeLayerOutput() == nil)
+        #expect(store.drainSoundCommands().isEmpty)
+        #expect(store.drainParticleCommands().isEmpty)
+        _ = consumer.tick()
+        let clean = try #require(producer.takeLayerOutput())
+        #expect(clean.texts["Target"] == "good")
+        #expect(clean.others["Target"]?.alpha == 0.8)
+        #expect(clean.otherTransforms["Target"]?.scale == SIMD3(2, 3, 4))
+        #expect(clean.videoCalls.isEmpty)
+    }
+
+    @Test("Returned functions keep transitive publisher dependencies across cached entries")
+    func sharedCallableTransitiveReturnedFunction() throws {
+        let store = callableTransactionStore()
+        let first = try LiveWallpaper.WPEDynamicTransformScriptInstance(script: """
+        export function init(value) {
+            shared.first = function() { thisScene.getLayer('Target').text = 'transitive'; };
+            return value;
+        }
+        """, seed: .zero, canvasSize: SIMD2(64, 64), ownObjectID: "producer", shared: store, governor: isolatedGovernor)
+        let middle = try WPESceneScriptInstance(script: """
+        let captured;
+        export function init() { captured = shared.first; shared.factory = function() { return function() { captured(); }; }; }
+        export function update(value) { return value; }
+        """, initialValue: "?", shared: store)
+        collectSharedGarbage(store)
+        let consumer = try WPELayerScriptInstance(script: """
+        let returned;
+        export function init() { returned = shared.factory(); }
+        export function applyUserProperties() { returned(); }
+        export function update(value) { return value; }
+        """, shared: store)
+        _ = first.takeLayerOutput()
+        _ = consumer.applyUserProperties(["run": .bool(true)])
+        #expect(first.takeLayerOutput()?.texts["Target"] == "transitive")
+        withExtendedLifetime(middle) {}
+    }
+
+    @Test("Regular layer publishers use a separate cross-context output slot without duplicating own commands")
+    func sharedCallableRegularPublisherOutputIsDistinct() throws {
+        let store = callableTransactionStore()
+        let producer = try WPELayerScriptInstance(script: """
+        export function init() { shared.play = function() { thisScene.getLayer('Video').getVideoTexture().play(); }; }
+        export function update() { thisScene.getLayer('Video').getVideoTexture().pause(); }
+        """, shared: store)
+        #expect(producer.takeSharedLayerOutput() == nil)
+        #expect(producer.tick()?.videoCalls == [.init(layerKey: "Video", command: .pause)])
+        #expect(producer.takeSharedLayerOutput() == nil)
+        let consumer = try WPESceneScriptInstance(script: "export function update() { shared.play(); return 'ok'; }", initialValue: "?", shared: store)
+        #expect(consumer.tickString() == "ok")
+        #expect(producer.takeSharedLayerOutput()?.videoCalls == [.init(layerKey: "Video", command: .play)])
+        #expect(producer.takeSharedLayerOutput() == nil)
+    }
+
+    @Test("An authored init callback exception keeps the transform seed and later updates")
+    func authorCallbackThrowKeepsSeedAndUpdates() throws {
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+        export function init(value) { throw new Error('init'); }
+        export function update(value) { return value; }
+        """, seed: SIMD3(787, -31, 0), canvasSize: SIMD2(64, 64))
+        instance.seedAsyncTick(pointerPosition: SIMD2(0.5, 0.5))
+        #expect(instance.batchTick(pointerPosition: SIMD2(0.5, 0.5)).value == SIMD3(787, -31, 0))
+    }
+
+    @Test("Native import lowering preserves regex, object division and multiline ASI without fixing illegal neighbors")
+    func nativeImportParserUsesRealGrammarAndBoundaries() throws {
+        let context = try #require(JSContext())
+        for source in [
+            "var q={} / 2;import*as math from'WEMath';",
+            "var q=3;q++ / 2;import*as math from'WEMath';",
+            "var f=function(){} / 2;import*as math from'WEMath';",
+            "if(true) /import*as fake from'WEMath'/.test('');import*as math from'WEMath';",
+            "import*as math from'WEMath'\nvar after=1;",
+            "var literal='x\u{0000}y';import*as math from'WEMath';",
+        ] {
+            let lowered = wpeLowerBuiltinImports(source, in: context)
+            #expect(lowered.contains("var math = WEMath;"))
+        }
+        for source in [
+            "import*as math from'WEMath' var after=1;",
+            "import{clamp as bounded}from'WEMath' var after=1;",
+            "import'WEMath' var after=1;",
+            "import*as aliasfrom'WEMath';",
+            "import{,mix}from'WEMath';",
+            "import{mix,,smoothstep}from'WEMath';",
+            "import{mix,,}from'WEMath';",
+        ] {
+            #expect(wpeLowerBuiltinImports(source, in: context) == source)
+        }
+        #expect(wpeLowerBuiltinImports("import{mix,}from'WEMath';", in: context) == "var mix = WEMath.mix;")
+        #expect(wpeLowerBuiltinImports("import{}from'WEMath';", in: context) == ";")
+    }
+
+    @Test("Native import candidate limits reject explicitly without executing the authored body")
+    func nativeImportPreparationIsBoundedAndCancellable() throws {
+        let context = try #require(JSContext())
+        let source = String(repeating: "// import*as fake from'WEMath';\n", count: 129) + "var shouldNotRun = true;"
+        let lowered = wpeLowerBuiltinImports(source, in: context)
+        #expect(lowered.contains("Built-in import preparation limit exceeded"))
+        _ = context.evaluateScript(lowered)
+        #expect(context.exception != nil)
+        #expect(context.objectForKeyedSubscript("shouldNotRun")?.isUndefined == true)
+        let cancelled = wpeLowerBuiltinImports("import*as math from'WEMath';var shouldNotRun=true;", in: context, acceptsCompletion: { false })
+        #expect(cancelled.contains("preparation was cancelled"))
+    }
+
+    @Test("Shared classification and host snapshots never execute authored accessors")
+    func sharedAccessorClassificationHasNoGetterSideEffects() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPESceneScriptInstance(script: """
+        let reads = 0;
+        export function init() {
+            let object = {};
+            Object.defineProperty(object, 'lazy', {enumerable:true, get:function(){ reads++; return 17; }});
+            Object.defineProperty(object, 'throws', {enumerable:true, get:function(){ throw new Error('getter'); }});
+            shared.object = object;
+            shared.reads = function() { return reads; };
+        }
+        export function update(value) { return value; }
+        """, initialValue: "?", shared: store)
+        collectSharedGarbage(store)
+        let consumer = try WPESceneScriptInstance(script: """
+        export function update() {
+            let before = shared.reads(), object = shared.object;
+            let classified = shared.reads();
+            let result = object.lazy;
+            return before + ':' + classified + ':' + result + ':' + shared.reads();
+        }
+        """, initialValue: "?", shared: store)
+        #expect(consumer.tickString() == "0:0:17:1")
+        #expect(consumer.tickString() == "1:1:17:2")
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("A failed own text entry preserves legacy visibility but drops rich transport and geometry")
+    func failedOwnTextEntryDoesNotLeakRichCommands() throws {
+        let store = callableTransactionStore()
+        let instance = try WPESceneScriptInstance(script: """
+        export function init() {
+            thisScene.getLayer('Target').visible = false;
+            thisScene.getLayer('Target').scale = new Vec3(9, 9, 9);
+            thisScene.getLayer('Video').getVideoTexture().play();
+            thisScene.getLayer('Song.mp3').volume = .2;
+            thisScene.getLayer('Song.mp3').play();
+            thisScene.getLayer('Particles').emitParticles(4);
+            throw new Error('own entry');
+        }
+        export function update() {
+            let target = thisScene.getLayer('Target'); target.scale = target.scale;
+            return String(thisScene.getLayer('Song.mp3').isPlaying()) + ':' + thisScene.getLayer('Song.mp3').volume + ':' + target.scale.x;
+        }
+        """, initialValue: "?", shared: store)
+        let output = try #require(instance.takeLayerOutput())
+        #expect(output.others["Target"]?.visible == false)
+        #expect(output.otherTransforms.isEmpty)
+        #expect(output.videoCalls.isEmpty)
+        #expect(store.drainSoundCommands().isEmpty)
+        #expect(store.drainParticleCommands().isEmpty)
+        #expect(instance.tickString() == "false:1:1")
+        #expect(instance.takeLayerOutput()?.otherTransforms["Target"]?.scale == SIMD3(1, 1, 1))
+    }
+
+    @Test("Failed own and cross-publisher entries restore vector contents without replacing getter aliases", arguments: [false, true])
+    func failedEntryRestoresTransformAliases(crossPublisher: Bool) throws {
+        let store = callableTransactionStore()
+        let producer = try LiveWallpaper.WPESceneScriptInstance(script: """
+        let aliases;
+        function fields() {
+            let target = thisScene.getLayer('Target');
+            return [thisLayer.origin, thisLayer.scale, thisLayer.angles, target.origin, target.scale, target.angles];
+        }
+        function act(fail) {
+            let target = thisScene.getLayer('Target');
+            if (fail) {
+                thisLayer.origin = thisLayer.scale = thisLayer.angles = new Vec3(99, 99, 99);
+                target.origin = target.scale = target.angles = new Vec3(99, 99, 99);
+                throw new Error('vectors');
+            }
+            let restored = fields();
+            shared.components = restored.map(function(v) { return v.x; }).join(':');
+            shared.sameAliases = restored.every(function(v, i) { return v === aliases[i]; });
+            thisLayer.origin = restored[0]; thisLayer.scale = restored[1]; thisLayer.angles = restored[2];
+            target.origin = restored[3]; target.scale = restored[4]; target.angles = restored[5];
+        }
+        export function init(value) {
+            let target = thisScene.getLayer('Target');
+            thisLayer.origin = new Vec3(2, 3, 4); thisLayer.scale = new Vec3(3, 4, 5); thisLayer.angles = new Vec3(4, 5, 6);
+            target.origin = new Vec3(5, 6, 7); target.scale = new Vec3(6, 7, 8); target.angles = new Vec3(7, 8, 9);
+            aliases = fields(); shared.action = act; return value;
+        }
+        export function update(value) { act(true); return value; }
+        """, initialValue: "?", shared: store, governor: isolatedGovernor, ownLayerName: "Producer", ownObjectID: "producer")
+        let consumer = try WPELayerScriptInstance(script: """
+        let action;
+        export function init() { action = shared.action; }
+        export function applyUserProperties(p) { action(p.fail); }
+        """, shared: store)
+        _ = producer.takeLayerOutput()
+        if crossPublisher {
+            _ = consumer.applyUserProperties(["fail": .bool(true)])
+        } else {
+            _ = producer.tickString()
+        }
+        _ = producer.takeLayerOutput()
+        _ = consumer.applyUserProperties(["fail": .bool(false)])
+        #expect(store.get("components") as? String == "2:3:4:5:6:7")
+        #expect(store.get("sameAliases") as? Bool == true)
+        let output = try #require(producer.takeLayerOutput())
+        #expect(output.ownTransform.origin == SIMD3(2, 3, 4))
+        #expect(output.ownTransform.scale == SIMD3(3, 4, 5))
+        #expect(output.ownTransform.angles == SIMD3(4, 5, 6))
+        #expect(output.otherTransforms["Target"]?.origin == SIMD3(5, 6, 7))
+        #expect(output.otherTransforms["Target"]?.scale == SIMD3(6, 7, 8))
+        #expect(output.otherTransforms["Target"]?.angles == SIMD3(7, 8, 9))
+    }
+
+    @Test("Failed created-layer entries restore active quota and fixed product fields", arguments: [false, true])
+    func failedCreatedLayerEntryRestoresState(destroyExisting: Bool) throws {
+        let token = WPESceneScriptInstanceLimitToken(
+            generation: 9030, resourceBudget: WPESceneScriptSceneResourceBudget(createdLayerLimit: 2)
+        )
+        #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token)
+        let instance = try WPELayerScriptInstance(script: """
+        let made, originalColor;
+        export function init() {
+            made = thisScene.createLayer({image:'models/bar.json', color:new Vec3(.2, .3, .4), origin:new Vec3(2,3,4), scale:new Vec3(3,4,5), angles:new Vec3(4,5,6)});
+            originalColor = made.color;
+        }
+        export function applyUserProperties(p) {
+            if (p.fail) {
+                if (p.destroy) thisScene.destroyLayer(made); else thisScene.createLayer('models/bar.json');
+                made.image = 'invalid.json'; made.color.x = 99; made.color = new Vec3(9,9,9);
+                made.origin = made.scale = made.angles = new Vec3(99,99,99);
+                throw new Error('created');
+            }
+            shared.sameColor = originalColor === made.color;
+            shared.originalColorX = originalColor.x;
+            let fields = [made.origin, made.scale, made.angles];
+            made.origin = fields[0]; made.scale = fields[1]; made.angles = fields[2];
+            thisScene.createLayer('models/bar.json');
+        }
+        export function update(value) { return value; }
+        """, shared: store, createdLayerBridge: .init(imagePaths: ["models/bar.json"], orderedLayerNames: [], allowsSorting: false))
+        for _ in 0 ..< 5 {
+            let rejected = try #require(instance.applyUserProperties(["fail": .bool(true), "destroy": .bool(destroyExisting)]))
+            #expect(token.resourceSnapshot.createdLayers == 1)
+            #expect(token.failureReason == nil)
+            #expect(rejected.created.count == 1)
+            #expect(rejected.created.first?.imagePath == "models/bar.json")
+            #expect(rejected.created.first?.color == SIMD3(0.2, 0.3, 0.4))
+            #expect(rejected.created.first?.origin == SIMD3(2, 3, 4))
+            #expect(rejected.destroyedCreatedKeys.isEmpty)
+            #expect(rejected.videoCalls.isEmpty)
+        }
+        let output = try #require(instance.applyUserProperties(["fail": .bool(false)]))
+        #expect(token.resourceSnapshot.createdLayers == 2)
+        #expect(token.failureReason == nil)
+        #expect(store.get("sameColor") as? Bool == true)
+        #expect(store.get("originalColorX") as? Double == 0.2)
+        let original = try #require(output.created.first)
+        #expect(output.created.count == 2)
+        #expect(original.imagePath == "models/bar.json")
+        #expect(original.color == SIMD3(0.2, 0.3, 0.4))
+        #expect(original.origin == SIMD3(2, 3, 4))
+        #expect(original.scale == SIMD3(3, 4, 5))
+        #expect(original.angles == SIMD3(4, 5, 6))
+        #expect(output.destroyedCreatedKeys.isEmpty)
+    }
+
+    @Test("Created-layer rollback permits successful destroy/create at capacity and restoration after retirement")
+    func createdLayerQuotaRollbackRetainsCapacityContract() throws {
+        let budget = WPESceneScriptSceneResourceBudget(createdLayerLimit: 1)
+        let token = WPESceneScriptInstanceLimitToken(generation: 9031, resourceBudget: budget)
+        #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
+        let instance = try WPELayerScriptInstance(script: """
+        let made;
+        export function init() { made = thisScene.createLayer('models/bar.json'); }
+        export function applyUserProperties() {
+            thisScene.destroyLayer(made); made = thisScene.createLayer('models/bar.json');
+        }
+        """, shared: WPESharedScriptState(sceneScriptLoadToken: token), createdLayerBridge: .init(imagePaths: ["models/bar.json"], orderedLayerNames: [], allowsSorting: false))
+        #expect(instance.applyUserProperties(["replace": .bool(true)])?.created.count == 1)
+        #expect(token.resourceSnapshot.createdLayers == 1)
+        #expect(token.failureReason == nil)
+        token.releaseCreatedLayer()
+        token.retire()
+        token.adjustCreatedLayerCountForRollback(1)
+        #expect(token.resourceSnapshot.createdLayers == 1)
+    }
+
+    @Test("Rejected regular-layer entries return settled rich output and destroy releases surviving quota")
+    func regularLayerEntryOutputSettlesBeforeReturn() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 9032)
+        #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token, layers: [
+            .init(id: "target", name: "Target", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+        ])
+        let instance = try WPELayerScriptInstance(script: """
+        function rejected() {
+            thisScene.getLayer('Target').visible = false;
+            thisScene.getLayer('Target').scale = new Vec3(99,99,99);
+            thisScene.getLayer('Target').getVideoTexture().play();
+            thisScene.createLayer('models/bar.json');
+            throw new Error('regular');
+        }
+        export function init() { rejected(); }
+        export function applyUserProperties(p) {
+            if (p.fail) rejected(); else thisScene.createLayer('models/bar.json');
+        }
+        export function update(value) { rejected(); return value; }
+        """, shared: store, createdLayerBridge: .init(imagePaths: ["models/bar.json"], orderedLayerNames: [], allowsSorting: false))
+        let initial = instance.initialOutput
+        #expect(initial.others["Target"]?.visible == false)
+        #expect(initial.otherTransforms.isEmpty)
+        #expect(initial.created.isEmpty)
+        #expect(initial.videoCalls.isEmpty)
+        #expect(token.resourceSnapshot.createdLayers == 0)
+        for output in [instance.applyUserProperties(["fail": .bool(true)]), instance.tick()] {
+            let rejected = try #require(output)
+            #expect(rejected.others["Target"]?.visible == false)
+            #expect(rejected.otherTransforms.isEmpty)
+            #expect(rejected.created.isEmpty)
+            #expect(rejected.videoCalls.isEmpty)
+        }
+        #expect(instance.applyUserProperties(["fail": .bool(false)])?.created.count == 1)
+        #expect(token.resourceSnapshot.createdLayers == 1)
+        #expect(instance.destroy()?.created.count == 1)
+        #expect(token.resourceSnapshot.createdLayers == 0)
+    }
+
     private func WPESceneScriptInstance(
         script: String,
         initialValue: String,
@@ -4175,5 +4839,218 @@ export function init(value) {
         #expect(store.get("resized") == nil)
         #expect(store.get("language") == nil)
         #expect(store.get("destroyed") == nil)
+    }
+}
+
+@Suite(.serialized)
+@MainActor
+struct WPESceneScriptInitializationOrderingTests {
+    private let governor = WPESceneScriptExecutionGovernor(limit: 4)
+    private let dispatcher = WPESceneScriptBatchDispatcher(width: 2)
+
+    @Test("Prepared transform init sees later module functions before that publisher's init", arguments: [SIMD3<Double>(787, -31, 0), SIMD3<Double>(0.35, 0.35, 1)])
+    func laterModulePublisherPreservesOriginalSeed(seed: SIMD3<Double>) throws {
+        let store = WPESharedScriptState()
+        let consumer = try WPEDynamicTransformScriptInstance(script: """
+        shared.consumerModules = (shared.consumerModules || 0) + 1;
+        let initial;
+        export function init(value) {
+            shared.consumerInits = (shared.consumerInits || 0) + 1;
+            shared.publisherAlreadyInitialized = shared.publisherInitialized === true;
+            initial = shared.copyVec3(value); return value;
+        }
+        export function applyUserProperties() { shared.consumerProperties = (shared.consumerProperties || 0) + 1; }
+        export function update() { return initial; }
+        """, seed: seed, canvasSize: SIMD2(64, 64), shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        #expect(consumer.applyUserProperties(["beforeInit": .bool(true)]) == false)
+        let publisher = try WPELayerScriptInstance(script: """
+        shared.publisherModules = (shared.publisherModules || 0) + 1;
+        shared.copyVec3 = value => new Vec3(value.x, value.y, value.z);
+        export function init() { shared.publisherInitialized = true; }
+        export function applyUserProperties() { shared.publisherProperties = (shared.publisherProperties || 0) + 1; }
+        """, shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        try consumer.initializePreparedScript()
+        try publisher.initializePreparedScript()
+        try consumer.initializePreparedScript()
+        try publisher.initializePreparedScript()
+        #expect(store.get("publisherAlreadyInitialized") as? Bool == false)
+        #expect(store.get("consumerModules") as? Double == 1)
+        #expect(store.get("publisherModules") as? Double == 1)
+        #expect(store.get("consumerInits") as? Double == 1)
+        #expect(consumer.applyUserProperties(["initial": .bool(true)]))
+        _ = publisher.applyUserProperties(["initial": .bool(true)])
+        #expect(store.get("consumerProperties") as? Double == 1)
+        #expect(store.get("publisherProperties") as? Double == 1)
+        consumer.seedAsyncTick(pointerPosition: SIMD2(0.5, 0.5))
+        #expect(consumer.batchTick(pointerPosition: SIMD2(0.5, 0.5)).value == seed)
+    }
+
+    @Test("Transform init publishes playTrack before initial visible properties, and text hot properties stay connected")
+    func initPublisherBeforeAllInitialProperties() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPEDynamicTransformScriptInstance(script: """
+        shared.dynamicModules = (shared.dynamicModules || 0) + 1;
+        export function init(value) {
+            shared.dynamicInits = (shared.dynamicInits || 0) + 1;
+            shared.playTrack = function() { shared.playCalls = (shared.playCalls || 0) + 1; };
+            return value;
+        }
+        """, seed: .zero, canvasSize: SIMD2(64, 64), shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        let consumer = try WPELayerScriptInstance(script: """
+        shared.visibleModules = (shared.visibleModules || 0) + 1;
+        export function init(value) { shared.visibleInits = (shared.visibleInits || 0) + 1; return value; }
+        export function applyUserProperties() { shared.playTrack(); }
+        """, shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        let text = try WPESceneScriptInstance(script: """
+        shared.textModules = (shared.textModules || 0) + 1;
+        let label = '';
+        export function init(value) { shared.textInits = (shared.textInits || 0) + 1; return value + '!'; }
+        export function applyUserProperties(p) { label = p.label; shared.textProperties = (shared.textProperties || 0) + 1; }
+        export function update() { return label; }
+        """, initialValue: "seed", shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        #expect(text.tickString() == "seed")
+        #expect(text.applyUserProperties(["label": .string("premature")]) == false)
+        try producer.initializePreparedScript()
+        try consumer.initializePreparedScript()
+        try text.initializePreparedScript()
+        try text.initializePreparedScript()
+        _ = consumer.applyUserProperties(["initial": .bool(true)])
+        #expect(text.applyUserProperties(["label": .string("initial")]))
+        #expect(store.get("playCalls") as? Double == 1)
+        #expect(store.get("textProperties") as? Double == 1)
+        for key in ["dynamicModules", "dynamicInits", "visibleModules", "visibleInits", "textModules", "textInits"] {
+            #expect(store.get(key) as? Double == 1)
+        }
+        #expect(text.tickString() == "initial")
+        #expect(text.applyUserProperties(["label": .string("hot")]))
+        #expect(text.tickString() == "hot")
+        #expect(store.get("textProperties") as? Double == 2)
+    }
+
+    @Test("Accepted module and init media/create outputs are retained once in authored phase order")
+    func moduleAndInitCommandsAreNotDroppedOrDuplicated() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 9040)
+        #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token)
+        let instance = try WPELayerScriptInstance(script: """
+        thisScene.createLayer('models/bar.json'); thisLayer.getVideoTexture().play();
+        export function init() { thisScene.createLayer('models/bar.json'); thisLayer.getVideoTexture().pause(); }
+        """, shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        #expect(instance.initialOutput.created.count == 1)
+        try instance.initializePreparedScript()
+        try instance.initializePreparedScript()
+        #expect(instance.initialOutput.created.count == 2)
+        #expect(instance.initialOutput.videoCalls.map(\.command) == [.play, .pause])
+        #expect(token.resourceSnapshot.createdLayers == 2)
+        _ = instance.destroy()
+        #expect(token.resourceSnapshot.createdLayers == 0)
+    }
+
+    @Test("Init callback exceptions preserve seeds and continue all three script families", arguments: [WPESceneScriptInitializationMode.immediate, .deferred])
+    func initCallbackThrowContinues(mode: WPESceneScriptInitializationMode) throws {
+        let store = WPESharedScriptState()
+        let dynamic = try WPEDynamicTransformScriptInstance(script: """
+        export function init(value) { throw new Error('authored'); }
+        export function applyUserProperties() { shared.dynamicProperties = true; }
+        export function update(value) { shared.dynamicUpdated = true; return value; }
+        """, seed: SIMD3(787, -31, 0), canvasSize: SIMD2(64, 64), shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: mode)
+        let regular = try WPELayerScriptInstance(script: """
+        export function init(value) { throw new Error('authored'); }
+        export function applyUserProperties() { shared.regularProperties = true; }
+        export function update(value) { shared.regularUpdated = true; return value; }
+        """, shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: mode)
+        let text = try WPESceneScriptInstance(script: """
+        export function init(value) { throw new Error('authored'); }
+        export function applyUserProperties() { shared.textProperties = true; }
+        export function update(value) { shared.textUpdated = true; return value; }
+        """, initialValue: "authored", shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: mode)
+        try dynamic.initializePreparedScript()
+        try regular.initializePreparedScript()
+        try text.initializePreparedScript()
+        #expect(dynamic.applyUserProperties(["run": .bool(true)]))
+        _ = regular.applyUserProperties(["run": .bool(true)])
+        #expect(text.applyUserProperties(["run": .bool(true)]))
+        dynamic.seedAsyncTick(pointerPosition: SIMD2(0.5, 0.5))
+        #expect(dynamic.batchTick(pointerPosition: SIMD2(0.5, 0.5)).value == SIMD3(787, -31, 0))
+        #expect(regular.tick()?.own.visible == true)
+        #expect(text.tickString() == "authored")
+        for key in ["dynamicProperties", "regularProperties", "textProperties", "dynamicUpdated", "regularUpdated", "textUpdated"] {
+            #expect(store.get(key) as? Bool == true)
+        }
+    }
+
+    @Test("Module compilation and evaluation failures remain fatal rather than becoming init callback warnings", arguments: ["function broken( {", "throw new Error('module');"])
+    func moduleFailuresAreFatal(source: String) throws {
+        let store = WPESharedScriptState()
+        #expect(throws: WPESceneScriptError.scriptEvaluationFailed) {
+            _ = try WPEDynamicTransformScriptInstance(script: source, seed: .zero, canvasSize: SIMD2(64, 64), shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        }
+        #expect(throws: WPESceneScriptError.scriptEvaluationFailed) {
+            _ = try WPELayerScriptInstance(script: source, shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        }
+        #expect(throws: WPESceneScriptError.scriptEvaluationFailed) {
+            _ = try WPESceneScriptInstance(script: source, initialValue: "seed", shared: store, governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        }
+    }
+
+    @Test("Successful module commands survive init throw while failed init rich writes do not leak")
+    func acceptedModuleSurvivesRejectedInitEntry() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 9041)
+        #expect(token.prepare(.init(text: 0, layer: 0, transform: 1)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token, layers: [
+            .init(id: "producer", name: "Producer", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+            .init(id: "target", name: "Target", size: SIMD2(8, 8), origin: .zero, index: 1, parentName: nil),
+        ])
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             thisScene.createLayer('models/bar.json'); thisLayer.getVideoTexture().play();
+                                                             thisScene.getLayer('Target').text = 'module';
+                                                             export function init(value) {
+                                                                 thisScene.createLayer('models/bar.json'); thisLayer.getVideoTexture().pause();
+                                                                 thisScene.getLayer('Target').scale = new Vec3(99,99,99);
+                                                                 throw new Error('init');
+                                                             }
+                                                             export function update(value) { return value; }
+                                                             """, seed: SIMD3(787, -31, 0), canvasSize: SIMD2(64, 64), ownObjectID: "producer", shared: store,
+                                                             governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        try instance.initializePreparedScript()
+        let output = try #require(instance.takeLayerOutput())
+        #expect(output.created.count == 1)
+        #expect(output.videoCalls.map(\.command) == [.play])
+        #expect(output.texts["Target"] == "module")
+        #expect(output.otherTransforms.isEmpty)
+        #expect(instance.takeLayerOutput() == nil)
+        #expect(token.resourceSnapshot.createdLayers == 1)
+        _ = instance.destroy()
+        #expect(token.resourceSnapshot.createdLayers == 0)
+    }
+
+    @Test("Retirement and init budget timeout stay fail-closed without repeating the module or init")
+    func stagedInitializationContainment() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 9042, executionQuarantine: WPESceneScriptQuarantine(limit: 2))
+        #expect(token.prepare(.init(text: 0, layer: 0, transform: 1)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token)
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             shared.modules = (shared.modules || 0) + 1;
+                                                             export function init() { shared.inits = (shared.inits || 0) + 1; while(true) {} }
+                                                             export function update() { shared.updated = true; }
+                                                             """, seed: .zero, canvasSize: SIMD2(64, 64), shared: store, setupBudget: 0.2,
+                                                             governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        #expect(throws: WPESceneScriptError.executionTimedOut) { try instance.initializePreparedScript() }
+        try instance.initializePreparedScript()
+        #expect(token.failureReason == .executionTimedOut(operation: .setup))
+        #expect(store.get("modules") as? Double == 1)
+        #expect(store.get("inits") as? Double == 1)
+        #expect(instance.applyUserProperties(["run": .bool(true)]) == false)
+        #expect(instance.batchTick(pointerPosition: SIMD2(0.5, 0.5)).value == nil)
+        #expect(store.get("updated") == nil)
+
+        let retired = WPESceneScriptInstanceLimitToken(generation: 9043)
+        #expect(retired.prepare(.init(text: 1, layer: 0, transform: 0)))
+        let nextStore = WPESharedScriptState(sceneScriptLoadToken: retired)
+        let text = try WPESceneScriptInstance(script: "export function init() { shared.initialized = true; }", initialValue: "seed", shared: nextStore,
+                                              governor: governor, batchDispatcher: dispatcher, initializationMode: .deferred)
+        retired.retire()
+        #expect(throws: WPESceneScriptError.capacityUnavailable(operation: .setup)) { try text.initializePreparedScript() }
+        #expect(nextStore.get("initialized") == nil)
     }
 }

@@ -310,7 +310,10 @@ extension WPEMetalSceneRenderer {
                         screenSize: SIMD2<Double>(
                             max(Double(self.surfaceDrawableSize.width), 1),
                             max(Double(self.surfaceDrawableSize.height), 1)
-                        )
+                        ),
+                        ownLayerName: object.name,
+                        ownObjectID: object.id,
+                        initializationMode: .deferred
                     )
                 }) else { return }
                 textScriptInstances[object.id] = instance

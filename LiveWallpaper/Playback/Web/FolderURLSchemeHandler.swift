@@ -331,22 +331,12 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
             siblingPreview = " | parentUnreadable"
         }
 
-        let codecHint: String
-        switch fileURL.pathExtension.lowercased() {
-        case "ogg", "oga", "opus":
-            codecHint = " | hint=Ogg/Opus has historically poor WebKit support on macOS — convert to .mp3 / .aac if 404 persists"
-        case "webm":
-            codecHint = " | hint=WebM audio/video has limited WebKit support on macOS"
-        default:
-            codecHint = ""
-        }
-
         Logger.info(
             """
             FolderScheme 404: \(fileURL.lastPathComponent) \
             requested=\(requestURL.path) \
             resolved=\(fileURL.path) \
-            onDisk=\(exists)\(siblingPreview)\(codecHint)
+            onDisk=\(exists)\(siblingPreview)
             """,
             category: .screenManager
         )

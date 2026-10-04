@@ -54,13 +54,18 @@ extension WPEMetalSceneRenderer {
             WPESceneDebugArtifacts.shared.endSession()
         } catch {
             let ownedFailedLoad = isCurrentSceneScriptLoad(scriptLoadToken)
+            let wasCancelled = error is CancellationError
             // Diagnostics first: the teardown below resets `resolutionTracer` and
             // drops `cachedSnapshot`, both of which the failure report needs.
-            logSceneFailureDiagnostics(error: error)
+            if wasCancelled {
+                Logger.notice("Scene \(descriptor.workshopID) preparation cancelled", category: .screenManager)
+            } else {
+                logSceneFailureDiagnostics(error: error)
+            }
             WPESceneDebugArtifacts.shared.recordResolutionSummary(resolutionTracer.snapshot())
             WPESceneDebugArtifacts.shared.appendLog(
-                "load() failed: \(error)",
-                level: .error
+                wasCancelled ? "load() cancelled" : "load() failed: \(error)",
+                level: wasCancelled ? .notice : .error
             )
             if let snapshot = cachedSnapshot {
                 WPESceneDebugArtifacts.shared.recordFirstFrame(image: snapshot)
@@ -76,7 +81,9 @@ extension WPEMetalSceneRenderer {
                 didLoad = false
                 _ = await staticTextureReloadTaskOwner.quiesce()
             }
-            loadDiagnostics = diagnostic(for: error)
+            if ownedFailedLoad {
+                loadDiagnostics = wasCancelled ? nil : diagnostic(for: error)
+            }
             if let reason = Self.metalUnsupportedReason(for: error) {
                 throw SceneRenderingError.metalRendererUnsupported(reason: reason)
             }
@@ -497,112 +504,123 @@ extension WPEMetalSceneRenderer {
         let shaderWarmTask = Task { [actor] in
             await actor.prewarmShaders(pipeline: pipeline)
         }
+        defer { shaderWarmTask.cancel() }
 
-        debugStage("textures.load", "begin (pipeline-driven)")
-        onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
-        try await loadTextures(for: pipeline, on: actor)
-        try checkCurrentSceneScriptLoad(scriptLoadToken)
-        renderPipeline = pipeline.resolvingSourceMipLevels { reference in
-            guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
-            return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
-        }
-        indexOnDemandVideoLayers(pipeline: pipeline)
-        configureSceneScriptVideoSourceMapping()
-        publishVideoPlaybackSnapshots()
-        debugStage("textures.load.done", "loaded=\(loadedTextures.count) dynamic=\(dynamicTextureSources.count)")
-        dumpLoadedTexturesIfRequested()
-        try Task.checkCancellation()
+        try await withTaskCancellationHandler {
+            debugStage("textures.load", "begin (pipeline-driven)")
+            onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
+            try await loadTextures(for: pipeline, on: actor)
+            try checkCurrentSceneScriptLoad(scriptLoadToken)
+            renderPipeline = pipeline.resolvingSourceMipLevels { reference in
+                guard let path = externalTexturePath(for: reference), let texture = loadedTextures[path] else { return nil }
+                return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).sourceMipLevel
+            }
+            indexOnDemandVideoLayers(pipeline: pipeline)
+            configureSceneScriptVideoSourceMapping()
+            publishVideoPlaybackSnapshots()
+            debugStage("textures.load.done", "loaded=\(loadedTextures.count) dynamic=\(dynamicTextureSources.count)")
+            dumpLoadedTexturesIfRequested()
+            try Task.checkCancellation()
 
-        debugStage("particles.load", "begin")
-        onProgress?(String(localized: "Loading particle systems", bundle: .appLanguage, comment: "Scene load progress: building particle systems."))
-        await loadParticleSystems(from: document, on: actor)
-        try checkCurrentSceneScriptLoad(scriptLoadToken)
-        publishParticlePlaybackSnapshots()
-        // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU sim; registered systems exist only from this point, hence the late OR onto the shader/script scan above.
-        if !sceneSupportsAudioProcessing {
-            sceneSupportsAudioProcessing = particleSystems.contains(where: \.isAudioResponsive)
-        }
-        debugStage(
-            "particles.load.done",
-            "systems=\(particleSystems.count)"
-        )
-        try Task.checkCancellation()
+            debugStage("particles.load", "begin")
+            onProgress?(String(localized: "Loading particle systems", bundle: .appLanguage, comment: "Scene load progress: building particle systems."))
+            await loadParticleSystems(from: document, on: actor)
+            try checkCurrentSceneScriptLoad(scriptLoadToken)
+            publishParticlePlaybackSnapshots()
+            // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU sim; registered systems exist only from this point, hence the late OR onto the shader/script scan above.
+            if !sceneSupportsAudioProcessing {
+                sceneSupportsAudioProcessing = particleSystems.contains(where: \.isAudioResponsive)
+            }
+            debugStage(
+                "particles.load.done",
+                "systems=\(particleSystems.count)"
+            )
+            try Task.checkCancellation()
 
-        debugStage("text.load", "begin")
-        onProgress?(String(localized: "Loading text pipeline", bundle: .appLanguage, comment: "Scene load progress: building the text rendering pipeline."))
-        beginSceneScriptVideoCommands()
-        loadTextPipeline(from: document, scriptLoadToken: scriptLoadToken)
-        debugStage("text.load.done", "objects=\(textObjects.count)")
-        try Task.checkCancellation()
+            debugStage("text.load", "begin")
+            onProgress?(String(localized: "Loading text pipeline", bundle: .appLanguage, comment: "Scene load progress: building the text rendering pipeline."))
+            beginSceneScriptVideoCommands()
+            loadTextPipeline(from: document, scriptLoadToken: scriptLoadToken)
+            debugStage("text.load.done", "objects=\(textObjects.count)")
+            try Task.checkCancellation()
 
-        // After textures so video sources exist; init() seeds visibility/alpha and suppresses auto-play on script-owned video.
-        loadLayerScripts(from: document, scriptLoadToken: scriptLoadToken)
-        seedSceneScriptsAfterLoad(from: document, scriptLoadToken: scriptLoadToken)
-        var scriptsAreBaked = resetSceneScriptsToBakedIfFailed(scriptLoadToken)
-        do {
+            // After textures so video sources exist; init() seeds visibility/alpha and suppresses auto-play on script-owned video.
+            loadLayerScripts(from: document, scriptLoadToken: scriptLoadToken)
+            initializePreparedSceneScripts(from: document, scriptLoadToken: scriptLoadToken)
+            seedSceneScriptsAfterLoad(from: document, scriptLoadToken: scriptLoadToken)
+            var scriptsAreBaked = resetSceneScriptsToBakedIfFailed(scriptLoadToken)
+            do {
+                try Task.checkCancellation()
+                try checkCurrentSceneScriptLoad(scriptLoadToken)
+            } catch {
+                discardSceneScriptVideoCommands()
+                throw error
+            }
+            try finishSceneScriptLoadVideoCommands(
+                for: scriptLoadToken,
+                scriptsAreBaked: &scriptsAreBaked
+            )
+
+            let readyPublicationLayers = await shaderWarmTask.value
             try Task.checkCancellation()
             try checkCurrentSceneScriptLoad(scriptLoadToken)
-        } catch {
-            discardSceneScriptVideoCommands()
-            throw error
-        }
-        try finishSceneScriptLoadVideoCommands(
-            for: scriptLoadToken,
-            scriptsAreBaked: &scriptsAreBaked
-        )
+            renderPipeline = renderPipeline?.retainingEffectPublication(in: readyPublicationLayers)
+            prepareSceneScriptsForFirstFrame(
+                scriptLoadToken,
+                scriptsAreBaked: &scriptsAreBaked
+            )
+            debugStage("render.firstFrame", "begin")
+            onProgress?(String(localized: "Rendering scene", bundle: .appLanguage, comment: "Scene load progress: first frame is being drawn."))
 
-        let readyPublicationLayers = await shaderWarmTask.value
-        try checkCurrentSceneScriptLoad(scriptLoadToken)
-        renderPipeline = renderPipeline?.retainingEffectPublication(in: readyPublicationLayers)
-        prepareSceneScriptsForFirstFrame(
-            scriptLoadToken,
-            scriptsAreBaked: &scriptsAreBaked
-        )
-        debugStage("render.firstFrame", "begin")
-        onProgress?(String(localized: "Rendering scene", bundle: .appLanguage, comment: "Scene load progress: first frame is being drawn."))
-
-        // First frame must be sync: snapshot/`renderedTexture` read back immediately after load(). Async would race the GPU.
-        executor.synchronizeFrameCompletion = true
-        let capture = beginGPUCaptureIfRequested()
-        outputTexture = try renderCurrentFrame(inputs: makeFrameInputs())
-        outputFrameProduction = latestFrameProduction
-        capture?.stop()
-
-        if let outputTexture {
-            // Before finishFrame latches the trace; later recordPassOutputs would drop per-pass hashes.
-            #if DEBUG
-            dumpScenePassesIfRequested()
-            #endif
-            if WPESceneDebugArtifacts.shared.isEnabled {
-                cachedSnapshot = snapshotter.snapshot(from: outputTexture)
-                let stats = WPEMetalTextureVisualStats.analyze(texture: outputTexture)
-                if let stats {
-                    WPESceneDebugArtifacts.shared.recordFirstFrameStats(stats)
-                }
-                #if !LITE_BUILD && DEBUG
-                WPECanonicalTraceRecorder.shared.finishFrame(
-                    outputTexture: outputTexture,
-                    runtimeUniforms: lastRuntimeUniforms,
-                    firstFrameStats: stats,
-                    resolutionDiagnostics: resolutionTracer.snapshot()
-                )
-                #endif
+            // First frame must be sync: snapshot/`renderedTexture` read back immediately after load(). Async would race the GPU.
+            executor.synchronizeFrameCompletion = true
+            do {
+                let capture = beginGPUCaptureIfRequested()
+                defer { capture?.stop() }
+                outputTexture = try renderCurrentFrame(inputs: makeFrameInputs())
             }
-            dumpOutputTextureIfRequested(outputTexture)
-        }
-        didLoad = true
-        // A defaults/locale notification may arrive while load is suspended; reconcile once loaded so that race becomes one changed-only event.
-        applySceneScriptGeneralSettingsIfChanged()
-        // Steady-state: async unless a per-frame read-back is active or WPEMetalSerializeFrames is set.
-        executor.synchronizeFrameCompletion = shouldSynchronizeFrames()
-        applyPerformanceProfile(currentProfile)
-        surfaceControl.setNeedsRedraw()
-        debugStage("render.firstFrame.done", "size=\(outputTexture?.width ?? 0)x\(outputTexture?.height ?? 0) snapshot=\(cachedSnapshot == nil ? "none" : "saved")")
-        if document.soundObjects.isEmpty {
-            soundRuntime = nil
-            pendingAudioStartupDocument = nil
-        } else {
-            pendingAudioStartupDocument = document
+            try Task.checkCancellation()
+            try checkCurrentSceneScriptLoad(scriptLoadToken)
+            outputFrameProduction = latestFrameProduction
+
+            if let outputTexture {
+                // Before finishFrame latches the trace; later recordPassOutputs would drop per-pass hashes.
+                #if DEBUG
+                dumpScenePassesIfRequested()
+                #endif
+                if WPESceneDebugArtifacts.shared.isEnabled {
+                    cachedSnapshot = snapshotter.snapshot(from: outputTexture)
+                    let stats = WPEMetalTextureVisualStats.analyze(texture: outputTexture)
+                    if let stats {
+                        WPESceneDebugArtifacts.shared.recordFirstFrameStats(stats)
+                    }
+                    #if !LITE_BUILD && DEBUG
+                    WPECanonicalTraceRecorder.shared.finishFrame(
+                        outputTexture: outputTexture,
+                        runtimeUniforms: lastRuntimeUniforms,
+                        firstFrameStats: stats,
+                        resolutionDiagnostics: resolutionTracer.snapshot()
+                    )
+                    #endif
+                }
+                dumpOutputTextureIfRequested(outputTexture)
+            }
+            didLoad = true
+            // A defaults/locale notification may arrive while load is suspended; reconcile once loaded so that race becomes one changed-only event.
+            applySceneScriptGeneralSettingsIfChanged()
+            // Steady-state: async unless a per-frame read-back is active or WPEMetalSerializeFrames is set.
+            executor.synchronizeFrameCompletion = shouldSynchronizeFrames()
+            applyPerformanceProfile(currentProfile)
+            surfaceControl.setNeedsRedraw()
+            debugStage("render.firstFrame.done", "size=\(outputTexture?.width ?? 0)x\(outputTexture?.height ?? 0) snapshot=\(cachedSnapshot == nil ? "none" : "saved")")
+            if document.soundObjects.isEmpty {
+                soundRuntime = nil
+                pendingAudioStartupDocument = nil
+            } else {
+                pendingAudioStartupDocument = document
+            }
+        } onCancel: {
+            shaderWarmTask.cancel()
         }
         _ = id
     }

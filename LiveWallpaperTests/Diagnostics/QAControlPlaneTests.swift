@@ -110,6 +110,163 @@ struct QAControlPlaneScreenIdentityTests {
     }
 }
 
+@Suite("QA control plane active wallpaper window", .serialized)
+@MainActor
+struct QAControlPlaneWindowObservationTests {
+    @Test("A video candidate is not observed until committed, for file and package sources",
+          arguments: [false, true])
+    func videoWindowRequiresCommittedSession(packaged: Bool) async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let player = fixture.makePlayer(packaged: packaged)
+        let session = VideoWallpaperSession(player: player)
+        defer { session.cleanup() }
+        let window = VideoWallpaperWindow(frame: fixture.screen.frame)
+        player.installPlaybackWindowForTesting(window)
+
+        try await fixture.expectWindow(nil)
+        fixture.screen.installRuntimeSession(session)
+        try await fixture.expectWindow(window)
+        #expect(session.wallpaperWindow == nil)
+        #expect(fixture.screen.activeWallpaperWindow == nil, "QA must not change the non-video UI contract")
+
+        session.setTransitionHold(true)
+        try await fixture.expectWindow(window)
+        session.setTransitionHold(false)
+        try await fixture.expectWindow(window)
+    }
+
+    @Test("An installed video without a playback window remains unobservable, then clears after cleanup")
+    func videoWindowTracksPlayerLifecycle() async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let player = fixture.makePlayer()
+        let session = VideoWallpaperSession(player: player)
+        fixture.screen.installRuntimeSession(session)
+        try await fixture.expectWindow(nil)
+
+        let window = VideoWallpaperWindow(frame: fixture.screen.frame)
+        player.installPlaybackWindowForTesting(window)
+        try await fixture.expectWindow(window)
+        session.cleanup()
+        try await fixture.expectWindow(nil)
+        #expect(player.playbackWindow == nil)
+        #expect(fixture.screen.runtimeSession === session)
+    }
+
+    @Test("A retiring video window is never reported as the new session's active window")
+    func retiringWindowDoesNotMaskMissingIncomingWindow() async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        fixture.screen.transitionEnvironment.reduceMotion = { false }
+        fixture.screen.transitionEnvironment.lowPowerMode = { false }
+        fixture.screen.transitionEnvironment.plan = { _, _ in .crossfade }
+        let oldPlayer = fixture.makePlayer()
+        let oldWindow = VideoWallpaperWindow(frame: fixture.screen.frame)
+        oldPlayer.installPlaybackWindowForTesting(oldWindow)
+        let oldSession = VideoWallpaperSession(player: oldPlayer)
+        fixture.screen.installRuntimeSession(oldSession)
+        try await fixture.expectWindow(oldWindow)
+
+        let currentPlayer = fixture.makePlayer()
+        let currentSession = VideoWallpaperSession(player: currentPlayer)
+        fixture.screen.installRuntimeSession(currentSession)
+        #expect(fixture.screen.retiringSessions[ObjectIdentifier(oldSession)] != nil)
+        #expect(oldPlayer.playbackWindow === oldWindow)
+        try await fixture.expectWindow(nil)
+
+        let currentWindow = VideoWallpaperWindow(frame: fixture.screen.frame)
+        currentPlayer.installPlaybackWindowForTesting(currentWindow)
+        try await fixture.expectWindow(currentWindow)
+        fixture.screen.resetRuntimeSession()
+        try await fixture.expectWindow(nil)
+        #expect(oldPlayer.playbackWindow == nil && currentPlayer.playbackWindow == nil)
+    }
+
+    @Test("Retry observes a replacement only after successful preparation", arguments: [false, true])
+    func retryWindowTracksCurrentPlayer(prepared: Bool) async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let oldPlayer = fixture.makePlayer()
+        let oldWindow = VideoWallpaperWindow(frame: fixture.screen.frame)
+        oldPlayer.installPlaybackWindowForTesting(oldWindow)
+        let replacement = fixture.makePlayer()
+        let newWindow = VideoWallpaperWindow(frame: fixture.screen.frame)
+        replacement.installPlaybackWindowForTesting(newWindow)
+        let session = VideoWallpaperSession(
+            player: oldPlayer,
+            retryPlayerFactory: { _, _, _, _ in replacement },
+            retryPreparation: { _ in prepared ? .ready : .failed }
+        )
+        fixture.screen.installRuntimeSession(session)
+        try await fixture.expectWindow(oldWindow)
+
+        await session.retry()
+        try await fixture.expectWindow(prepared ? newWindow : oldWindow)
+        #expect(oldPlayer.isCleanedUp == prepared)
+        #expect(replacement.isCleanedUp == !prepared)
+        #expect(fixture.screen.activeWallpaperWindow == nil)
+    }
+
+    @Test("Non-video sessions keep their existing active-window observation", arguments: [WallpaperType.html, .scene])
+    func nonVideoWindowRemainsObservable(type: WallpaperType) async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let window = VideoWallpaperWindow(frame: fixture.screen.frame)
+        let session = AmbientWallpaperSession(window: window, wallpaperType: type, performanceTarget: nil)
+        fixture.screen.installRuntimeSession(session)
+        try await fixture.expectWindow(window)
+        #expect(fixture.screen.activeWallpaperWindow === window)
+        fixture.screen.resetRuntimeSession()
+        try await fixture.expectWindow(nil)
+    }
+
+    @MainActor
+    private struct Fixture {
+        let screen: Screen
+        let manager: ScreenManager
+        let control: QAControlPlane
+
+        init() {
+            let nsScreen = QATestScreen()
+            nsScreen.displayID = 0xEDFA_009B
+            screen = Screen(nsScreen: nsScreen)
+            manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+                restoreSavedWallpapers: false, startAutomation: false,
+                powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+                playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+                featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
+            ))
+            control = QAControlPlane(screenManager: manager)
+        }
+
+        func makePlayer(packaged: Bool = false) -> WallpaperVideoPlayer {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("qa-window-\(UUID().uuidString).\(packaged ? "pkg" : "mp4")")
+            return WallpaperVideoPlayer(
+                url: url, frame: screen.frame,
+                packageEntryName: packaged ? "videos/background.mp4" : nil,
+                startsHidden: true, loadImmediately: false
+            )
+        }
+
+        func expectWindow(_ window: NSWindow?) async throws {
+            let response = await control.respond(to: #"{"tool":"state.dump","arguments":{}}"#)
+            let envelope = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+            #expect(envelope["ok"] as? Bool == true)
+            let result = try #require(envelope["result"] as? [String: Any])
+            let screens = try #require(result["screens"] as? [[String: Any]])
+            let entry = try #require(screens.first(where: { ($0["screenID"] as? NSNumber)?.uint32Value == screen.id }))
+            #expect(entry["hasActiveWindow"] as? Bool == (window != nil))
+            if let window {
+                #expect(entry["wallpaperWindowNumber"] as? Int == window.windowNumber)
+            } else {
+                #expect(entry["wallpaperWindowNumber"] is NSNull)
+            }
+        }
+    }
+}
+
 #if !LITE_BUILD
 @Suite("QA control plane scene property patch", .serialized)
 @MainActor

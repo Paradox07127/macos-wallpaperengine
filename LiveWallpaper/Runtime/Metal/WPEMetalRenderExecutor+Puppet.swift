@@ -96,7 +96,8 @@ extension WPEMetalRenderExecutor {
         model: WPEPuppetModel,
         attachedChildNames: Set<String>,
         time: Double
-    ) -> PuppetSkinningState {
+    ) throws -> PuppetSkinningState {
+        try Task.checkCancellation()
         let attachmentsByName = Dictionary(
             model.attachments.map { ($0.name, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -119,7 +120,7 @@ extension WPEMetalRenderExecutor {
 
         // MDLV0019/0020 bind pose is the exploded character sheet, so skinning is mandatory — the regression carve-outs and the displacement bound must not apply.
         if model.version >= 19, model.version < 21, !model.bones.isEmpty {
-            return mandatorySkinningState(
+            return try mandatorySkinningState(
                 for: layer,
                 model: model,
                 attachmentsByName: attachmentsByName,
@@ -148,10 +149,10 @@ extension WPEMetalRenderExecutor {
         guard evaluation.parentChannelMapSucceeded, !evaluation.palette.isEmpty else {
             return disabled("palette-unresolved")
         }
-        guard Self.skinBlendIndicesAreInRange(in: model.meshes, paletteCount: evaluation.palette.count) else {
+        guard try Self.skinBlendIndicesAreInRange(in: model.meshes, paletteCount: evaluation.palette.count) else {
             return disabled("skin-index-out-of-range")
         }
-        if let detail = cachedPaletteBoundFailureDetail(objectID: layer.objectID, layers: animationLayers, model: model) {
+        if let detail = try cachedPaletteBoundFailureDetail(objectID: layer.objectID, layers: animationLayers, model: model) {
             return disabled("palette-unbounded[\(detail)]")
         }
         return PuppetSkinningState(
@@ -169,8 +170,8 @@ extension WPEMetalRenderExecutor {
         model: WPEPuppetModel,
         attachedChildNames: Set<String> = [],
         time: Double = 0
-    ) -> (enabled: Bool, reason: String, bonePalette: [simd_float4x4], skinningEnabledUniform: Float) {
-        let state = validatedSkinningState(
+    ) throws -> (enabled: Bool, reason: String, bonePalette: [simd_float4x4], skinningEnabledUniform: Float) {
+        let state = try validatedSkinningState(
             for: layer,
             model: model,
             attachedChildNames: attachedChildNames,
@@ -179,6 +180,14 @@ extension WPEMetalRenderExecutor {
         let paletteState = puppetBonePalette(for: state)
         return (state.enabled, state.reason, paletteState.bonePalette, paletteState.skinningEnabled)
     }
+
+    #if DEBUG
+    func puppetBoundScanForTesting(layer: WPERenderLayer, model: WPEPuppetModel) throws -> String? {
+        try paletteBoundFailureDetail(
+            layers: puppetAnimationLayers(for: layer, model: model), bones: model.bones, meshes: model.meshes
+        )
+    }
+    #endif
 
     /// Time-independent identity of an animation-layer stack: every input `paletteEvaluation` and the bound scan depend on besides time.
     private static func puppetStackSignature(_ layers: [WPEPuppetAnimationLayer]) -> [UInt64] {
@@ -232,13 +241,15 @@ extension WPEMetalRenderExecutor {
         objectID: String,
         layers: [WPEPuppetAnimationLayer],
         model: WPEPuppetModel
-    ) -> String? {
+    ) throws -> String? {
+        try Task.checkCancellation()
         let signature = Self.puppetStackSignature(layers)
         if let cached = puppetBoundScanDetailByObjectID[objectID], cached.stackSignature == signature {
             puppetBoundScanCacheHitsForTesting += 1
             return cached.detail
         }
-        let detail = paletteBoundFailureDetail(layers: layers, bones: model.bones, meshes: model.meshes)
+        let detail = try paletteBoundFailureDetail(layers: layers, bones: model.bones, meshes: model.meshes)
+        try Task.checkCancellation()
         puppetBoundScanDetailByObjectID[objectID] = PuppetBoundScanCacheEntry(
             stackSignature: signature,
             detail: detail
@@ -254,7 +265,8 @@ extension WPEMetalRenderExecutor {
         boneBindByIndex: [Int: simd_float4x4],
         assembledBoneBindByIndex: [Int: simd_float4x4],
         time: Double
-    ) -> PuppetSkinningState {
+    ) throws -> PuppetSkinningState {
+        try Task.checkCancellation()
         let generation = String(format: "MDLV%04d", model.version)
         func disabled(_ reason: String) -> PuppetSkinningState {
             PuppetSkinningState(
@@ -294,13 +306,9 @@ extension WPEMetalRenderExecutor {
             )
             return disabled("palette-unresolved")
         }
-        if let detail = cachedPaletteBoundFailureDetail(objectID: layer.objectID, layers: animationLayers, model: model) {
-            warnOnce(
-                "bound-exempt",
-                "WPE \(generation) character-sheet puppet exceeds the displacement bound (\(detail)); "
-                    + "skinning anyway (bind pose is unassembled)."
-            )
-        }
+        // The displacement bound cannot gate character sheets: their bind pose is intentionally
+        // unassembled. Scanning every sampled frame and vertex here only delayed the first frame.
+        try Task.checkCancellation()
         return PuppetSkinningState(
             enabled: true,
             palette: evaluation.palette,
@@ -316,16 +324,18 @@ extension WPEMetalRenderExecutor {
         layers: [WPEPuppetAnimationLayer],
         bones: [WPEPuppetBone],
         meshes: [WPEPuppetMesh]
-    ) -> String? {
+    ) throws -> String? {
+        try Task.checkCancellation()
         guard let base = layers.first(where: { !$0.additive }) ?? layers.first else { return "no-base-layer" }
         let fps = Double(base.animation.fps)
         guard fps.isFinite, fps > 0 else { return "bad-fps" }
         let last = max(base.animation.frameCount, 1)
         let frames = Array(Set([0, 1, last / 4, last / 2, (last * 3) / 4, last])).sorted()
-        let extent = Self.modelExtent(meshes: meshes)
+        let extent = try Self.modelExtent(meshes: meshes)
         // Bound is max(256, 1.5×extent): only catch a grossly exploding palette; a legit pose stays within ~1.5 model extents of rest.
         let maxAllowedDelta = max(Float(256), extent * 1.5)
         for frame in frames {
+            try Task.checkCancellation()
             let time = Double(frame) / fps / max(base.rate, 0.0001)
             let evaluation = WPEPuppetAnimationEvaluator.paletteEvaluation(layers: layers, bones: bones, at: time)
             guard evaluation.parentChannelMapSucceeded,
@@ -335,7 +345,7 @@ extension WPEMetalRenderExecutor {
                 return "frame=\(frame) parentMap=\(evaluation.parentChannelMapSucceeded) "
                     + "empty=\(evaluation.palette.isEmpty) finite=\(finite)"
             }
-            let delta = Self.maxSkinnedVertexDelta(meshes: meshes, palette: evaluation.palette)
+            let delta = try Self.maxSkinnedVertexDelta(meshes: meshes, palette: evaluation.palette)
             guard delta <= maxAllowedDelta else {
                 return "frame=\(frame) space=\(evaluation.transformSpace?.rawValue ?? "nil") "
                     + "Δ=\(Int(delta))>\(Int(maxAllowedDelta)) extent=\(Int(extent))"
@@ -345,10 +355,11 @@ extension WPEMetalRenderExecutor {
     }
 
     /// Shader clamps negatives to bone 0, so a negative index with weight must be rejected here rather than skin against the wrong bone.
-    private static func skinBlendIndicesAreInRange(in meshes: [WPEPuppetMesh], paletteCount: Int) -> Bool {
+    private static func skinBlendIndicesAreInRange(in meshes: [WPEPuppetMesh], paletteCount: Int) throws -> Bool {
         guard paletteCount > 0 else { return false }
         for mesh in meshes {
-            for vertex in mesh.vertices {
+            for (vertexIndex, vertex) in mesh.vertices.enumerated() {
+                if vertexIndex.isMultiple(of: 256) { try Task.checkCancellation() }
                 let weights = vertex.skinBlendWeights
                 let indices = vertex.skinBlendIndices
                 func valid(_ index: Int32, _ weight: Float) -> Bool {
@@ -363,11 +374,12 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    private static func modelExtent(meshes: [WPEPuppetMesh]) -> Float {
+    private static func modelExtent(meshes: [WPEPuppetMesh]) throws -> Float {
         var minPoint = SIMD2<Float>(.greatestFiniteMagnitude, .greatestFiniteMagnitude)
         var maxPoint = SIMD2<Float>(-.greatestFiniteMagnitude, -.greatestFiniteMagnitude)
         for mesh in meshes {
-            for vertex in mesh.vertices {
+            for (vertexIndex, vertex) in mesh.vertices.enumerated() {
+                if vertexIndex.isMultiple(of: 256) { try Task.checkCancellation() }
                 let p = SIMD2<Float>(vertex.position.x, vertex.position.y)
                 minPoint = min(minPoint, p)
                 maxPoint = max(maxPoint, p)
@@ -377,10 +389,11 @@ extension WPEMetalRenderExecutor {
         return max(maxPoint.x - minPoint.x, maxPoint.y - minPoint.y, 1)
     }
 
-    private static func maxSkinnedVertexDelta(meshes: [WPEPuppetMesh], palette: [simd_float4x4]) -> Float {
+    private static func maxSkinnedVertexDelta(meshes: [WPEPuppetMesh], palette: [simd_float4x4]) throws -> Float {
         var maxDelta: Float = 0
         for mesh in meshes {
-            for vertex in mesh.vertices {
+            for (vertexIndex, vertex) in mesh.vertices.enumerated() {
+                if vertexIndex.isMultiple(of: 256) { try Task.checkCancellation() }
                 let weights = max(vertex.skinBlendWeights, SIMD4<Float>(repeating: 0))
                 let weightSum = weights.x + weights.y + weights.z + weights.w
                 guard weightSum > 0.00001 else { continue }

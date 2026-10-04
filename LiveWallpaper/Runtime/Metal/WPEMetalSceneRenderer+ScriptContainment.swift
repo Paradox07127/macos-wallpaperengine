@@ -137,6 +137,11 @@ extension WPEMetalSceneRenderer {
             sharedState.layers.map { ($0.id, $0.name) },
             uniquingKeysWith: { first, _ in first }
         )
+        let createdBridge = WPECreatedLayerBridgeConfiguration(
+            imagePaths: Set(createdLayerTemplatesByImagePath.keys),
+            orderedLayerNames: sharedState.layers.sorted { $0.index < $1.index }.map(\.name),
+            allowsSorting: false
+        )
         func install(
             _ scripts: [(String, WPESceneTransformScript)],
             into instances: inout [String: WPEDynamicTransformScriptInstance],
@@ -159,8 +164,10 @@ extension WPEMetalSceneRenderer {
                             screenSize: screenSize,
                             ownLayerName: layerNameByID[objectID],
                             ownObjectID: objectID,
+                            createdLayerBridge: createdBridge,
                             shared: sharedState,
-                            batchDispatcher: self.sceneScriptBatchDispatcher
+                            batchDispatcher: self.sceneScriptBatchDispatcher,
+                            initializationMode: .deferred
                         )
                     }) else { return }
                     instances[objectID] = instance
@@ -193,7 +200,8 @@ extension WPEMetalSceneRenderer {
                     (
                         WPEEffectConstantScriptKey(passID: prepared.pass.id, uniform: uniform),
                         script,
-                        Self.valueShape(of: prepared.pass.constants[uniform])
+                        Self.valueShape(of: prepared.pass.constants[uniform]),
+                        layer.graphLayer.objectID
                     )
                 }
             }
@@ -222,7 +230,7 @@ extension WPEMetalSceneRenderer {
         let sharedState = sceneScriptSharedState
             ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
         sceneScriptSharedState = sharedState
-        for (key, script, shape) in bindings {
+        for (key, script, shape, objectID) in bindings {
             if let sharedKey = WPESharedReadFanAnalysis.readKey(in: script.script) {
                 sharedEffectConstantReadFans[key] = (sharedKey, shape)
                 continue
@@ -236,8 +244,11 @@ extension WPEMetalSceneRenderer {
                         valueShape: shape,
                         canvasSize: canvasSize,
                         screenSize: screenSize,
+                        ownLayerName: sharedState.layers.first(where: { $0.id == objectID })?.name,
+                        ownObjectID: objectID,
                         shared: sharedState,
-                        batchDispatcher: self.sceneScriptBatchDispatcher
+                        batchDispatcher: self.sceneScriptBatchDispatcher,
+                        initializationMode: .deferred
                     )
                 }) else { return }
                 effectConstantScriptInstances[key] = instance
@@ -262,10 +273,12 @@ extension WPEMetalSceneRenderer {
         effectVisibilityScriptInstances = [:]
         liveEffectVisibility = [:]
         var gatesByID: [String: WPEPassVisibilityGate] = [:]
+        var ownerIDsByGate: [String: String] = [:]
         for layer in pipeline.layers {
             for prepared in layer.passes {
                 guard let gate = prepared.pass.visibilityGate else { continue }
                 gatesByID[gate.id] = gate
+                ownerIDsByGate[gate.id] = layer.graphLayer.objectID
             }
         }
         debugStage("effectVisibilityScripts.load", "count=\(gatesByID.count)")
@@ -296,8 +309,11 @@ extension WPEMetalSceneRenderer {
                         valueShape: .boolean,
                         canvasSize: canvasSize,
                         screenSize: screenSize,
+                        ownLayerName: sharedState.layers.first(where: { $0.id == ownerIDsByGate[id] })?.name,
+                        ownObjectID: ownerIDsByGate[id],
                         shared: sharedState,
-                        batchDispatcher: self.sceneScriptBatchDispatcher
+                        batchDispatcher: self.sceneScriptBatchDispatcher,
+                        initializationMode: .deferred
                     )
                 }) else { return }
                 effectVisibilityScriptInstances[id] = instance
@@ -356,7 +372,7 @@ extension WPEMetalSceneRenderer {
     nonisolated static func offscreenConstantScriptBindings(
         in document: WPESceneDocument,
         excludingObjectIDs drawn: Set<String>
-    ) -> [(WPEEffectConstantScriptKey, WPESceneTransformScript, WPEScriptValueShape)] {
+    ) -> [(WPEEffectConstantScriptKey, WPESceneTransformScript, WPEScriptValueShape, String)] {
         document.imageObjects.filter { !drawn.contains($0.id) }.flatMap { object in
             object.effects.enumerated().flatMap { effectIndex, effect in
                 effect.passOverrides.enumerated().flatMap { passIndex, override in
@@ -367,7 +383,8 @@ extension WPEMetalSceneRenderer {
                                 uniform: uniform
                             ),
                             script,
-                            WPEScriptValueShape.scalar
+                            WPEScriptValueShape.scalar,
+                            object.id
                         )
                     }
                 }

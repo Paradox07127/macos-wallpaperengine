@@ -93,6 +93,7 @@ extension WPEMetalSceneRenderer {
         for pipeline: WPEPreparedRenderPipeline,
         on actor: isolated WPEDisplayRenderActor
     ) async {
+        guard !Task.isCancelled else { return }
         // Must pre-compile before first-frame encode: inline compile during an open encoder corrupts the pass.
         let generation = loadGeneration
         debugStage("shader.prewarm", "begin")
@@ -104,12 +105,13 @@ extension WPEMetalSceneRenderer {
         }
         for (_, passes) in passesByLayer {
             for pass in passes where pass.shader?.isBuiltin == false {
+                guard !Task.isCancelled else { return }
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false) else { continue }
                 requestsByKey[request.translationCacheKey] = request
             }
         }
         let allRequests = Array(requestsByKey.values)
-        guard !allRequests.isEmpty, loadGeneration == generation else {
+        guard !allRequests.isEmpty, loadGeneration == generation, !Task.isCancelled else {
             debugStage("shader.prewarm.done", "passes=0")
             return
         }
@@ -127,7 +129,7 @@ extension WPEMetalSceneRenderer {
             ) { group in
                 var next = 0
                 func spawn() -> Bool {
-                    guard next < requests.count else { return false }
+                    guard next < requests.count, !Task.isCancelled else { return false }
                     let request = requests[next]
                     next += 1
                     group.addTask(priority: .userInitiated) {
@@ -143,7 +145,7 @@ extension WPEMetalSceneRenderer {
                 for _ in 0..<width where spawn() {}
                 var collected: [(key: String, result: WPEShaderCompileResult)] = []
                 while let entry = try await group.next() {
-                    if loadGeneration != generation {
+                    if loadGeneration != generation || Task.isCancelled {
                         group.cancelAll()
                         break
                     }
@@ -157,7 +159,7 @@ extension WPEMetalSceneRenderer {
             return
         }
 
-        guard loadGeneration == generation else { return }
+        guard loadGeneration == generation, !Task.isCancelled else { return }
         executor.seedTranslatedShaderCache(compiled)
         let warmed = partition.cached + compiled
         debugStage(
@@ -179,6 +181,7 @@ extension WPEMetalSceneRenderer {
         let declaredFBOs = pipeline.layers.flatMap(\.graphLayer.localFBOs)
         for (layer, passes) in passesByLayer {
             for pass in passes where pass.shader?.isBuiltin == false {
+                guard !Task.isCancelled else { return }
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false),
                       let result = resultByKey[request.translationCacheKey] else { continue }
                 passIDSeeds.append((passID: WPEMetalRenderExecutor.compiledShaderEntryKey(for: pass), result: result))
@@ -212,7 +215,7 @@ extension WPEMetalSceneRenderer {
                 }
             }
         }
-        guard loadGeneration == generation else { return }
+        guard loadGeneration == generation, !Task.isCancelled else { return }
         executor.seedCompiledShaderResultsByPassID(passIDSeeds)
         guard !pipelinePrewarms.isEmpty else {
             debugStage("pipeline.prewarm.done", "combos=0")
@@ -225,18 +228,19 @@ extension WPEMetalSceneRenderer {
         ) { group in
             var next = 0
             func spawn() -> Bool {
-                guard next < pipelinePrewarms.count else { return false }
+                guard next < pipelinePrewarms.count, !Task.isCancelled else { return false }
                 let prewarm = pipelinePrewarms[next]
                 next += 1
                 group.addTask(priority: .userInitiated) {
-                    WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                    guard !Task.isCancelled else { return nil }
+                    return WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
                 }
                 return true
             }
             for _ in 0..<pipeWidth where spawn() {}
             var collected: [WPEMetalRenderExecutor.WPEPrewarmedPipeline] = []
             while let entry = await group.next() {
-                if loadGeneration != generation {
+                if loadGeneration != generation || Task.isCancelled {
                     group.cancelAll()
                     break
                 }
@@ -245,7 +249,7 @@ extension WPEMetalSceneRenderer {
             }
             return collected
         }
-        guard loadGeneration == generation else { return }
+        guard loadGeneration == generation, !Task.isCancelled else { return }
         executor.seedTranslatedPipelines(built)
         debugStage("pipeline.prewarm.done", "combos=\(pipelinePrewarms.count) built=\(built.count)")
     }

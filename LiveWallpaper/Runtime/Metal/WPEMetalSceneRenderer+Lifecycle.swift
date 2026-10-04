@@ -247,7 +247,7 @@ extension WPEMetalSceneRenderer {
                         changed,
                         runtimeSeconds: lastRuntimeUniforms?.time
                     ) {
-                        liveParticleInstanceAlpha[objectID] = output.own.alpha
+                        applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
                     }
                 }
                 for (objectID, instance) in textVisibleScriptInstances {
@@ -265,7 +265,7 @@ extension WPEMetalSceneRenderer {
                         changed,
                         runtimeSeconds: lastRuntimeUniforms?.time
                     ) {
-                        liveTextAlpha[objectID] = output.own.alpha
+                        applyTextAlphaScriptOutput(output, ownObjectID: objectID)
                     }
                 }
                 dispatchTransformScriptUserProperties(changed)
@@ -423,7 +423,7 @@ extension WPEMetalSceneRenderer {
                         properties,
                         runtimeSeconds: runtimeSeconds
                       ) else { return false }
-                liveTextAlpha[key.objectID] = output.own.alpha
+                applyTextAlphaScriptOutput(output, ownObjectID: key.objectID)
             case .effectVisible, .effectConstant:
                 return false
             }

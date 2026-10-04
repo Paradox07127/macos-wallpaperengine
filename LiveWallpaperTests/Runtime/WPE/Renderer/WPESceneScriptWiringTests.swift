@@ -8,6 +8,262 @@ import Testing
 @MainActor
 @Suite("SceneScript renderer wiring", .serialized)
 struct WPESceneScriptWiringTests {
+    @Test("Alpha families retain their own entry side effects without applying own alpha twice",
+          arguments: ["layer", "text", "particle"])
+    func alphaEntrySideEffects(family: String) async throws {
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        objects[0]["name"] = "target"
+        objects.append([
+            "id": "owner", "name": "owner", "image": "models/util/solidlayer.json",
+            "origin": "32 32 0", "alpha": 1,
+        ])
+        for stage in 1 ... 7 {
+            var target = objects[0]
+            target["id"] = "target\(stage)"
+            target["name"] = "target\(stage)"
+            objects.append(target)
+        }
+        let script = """
+        function write(stage, command) {
+            shared['stage' + stage] = (shared['stage' + stage] || 0) + 1;
+            let target = thisScene.getLayer('target' + stage);
+            target.alpha = stage / 10; target.scale = new Vec3(stage + 10, stage + 10, 1);
+            target.getVideoTexture()[command]();
+        }
+        write(1, 'play');
+        export function init(value) { write(2, 'pause'); return 0.25; }
+        export function applyUserProperties(p) { write(p.stage || 3, 'stop'); }
+        export function update(value) { if (shared.runAlphaTick) { shared.runAlphaTick = false; write(4, 'play'); } return value; }
+        export function applyGeneralSettings() { if (shared.runAlphaGeneral) { write(5, 'pause'); } }
+        export function resizeScreen() { write(6, 'stop'); }
+        """
+        let alpha: [String: Any] = ["value": 1, "script": script]
+        let ownerID: String
+        switch family {
+        case "text":
+            ownerID = "label"
+            objects.append([
+                "id": ownerID, "name": ownerID, "text": "seed", "font": "Arial",
+                "pointsize": 12, "origin": "32 32 0", "alpha": alpha,
+            ])
+        case "particle":
+            ownerID = "pfx"
+            objects[1]["instanceoverride"] = ["alpha": alpha]
+        default:
+            ownerID = "owner"
+            objects[2]["alpha"] = alpha
+        }
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        try JSONSerialization.data(withJSONObject: ["general": ["properties": ["trigger": ["type": "bool", "value": true, "text": "Trigger"]]]])
+            .write(to: fixture.root.appendingPathComponent("project.json"))
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let store = try #require(renderer.sceneScriptSharedState)
+        let instance: WPELayerScriptInstance
+        let publish: (WPELayerScriptOutput) -> Void
+        switch family {
+        case "text":
+            instance = try #require(renderer.textAlphaScriptInstances[ownerID])
+            publish = { renderer.applyTextAlphaScriptOutput($0, ownObjectID: ownerID) }
+        case "particle":
+            instance = try #require(renderer.particleAlphaScriptInstances[ownerID])
+            publish = { renderer.applyParticleAlphaScriptOutput($0, ownObjectID: ownerID) }
+        default:
+            instance = try #require(renderer.layerAlphaScriptInstances[ownerID])
+            publish = { renderer.applyLayerAlphaScriptOutput($0, ownObjectID: ownerID) }
+        }
+        func check(stage: Int) {
+            #expect(store.get("stage\(stage)") as? Double == 1)
+            #expect(renderer.liveLayerAlpha["target\(stage)"] == Double(stage) / 10)
+            #expect(renderer.layerTransformMutationJournal.entries[
+                .init(objectID: "target\(stage)", generation: renderer.loadGeneration)
+            ]?.scale == SIMD3(Double(stage + 10), Double(stage + 10), 1))
+            switch family {
+            case "text":
+                #expect(renderer.liveTextAlpha[ownerID] == 0.25)
+                #expect(renderer.liveLayerAlpha[ownerID] == nil)
+            case "particle":
+                #expect(renderer.liveParticleInstanceAlpha[ownerID] == 0.25)
+                #expect(renderer.liveLayerAlpha[ownerID] == nil)
+            default:
+                #expect(renderer.liveLayerAlpha[ownerID] == 0.25)
+            }
+            #expect(renderer.liveLayerVisibility[ownerID] == nil)
+        }
+        check(stage: 3)
+        check(stage: 1)
+        check(stage: 2)
+        #expect(instance.initialOutput.videoCalls.map(\.command) == [.play, .pause])
+
+        renderer.beginSceneScriptVideoCommands()
+        try publish(#require(renderer.applyScriptUserProperties(instance, ["stage": .number(7)])))
+        check(stage: 7)
+        #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.stop])
+        renderer.discardSceneScriptVideoCommands()
+
+        renderer.beginSceneScriptVideoCommands()
+        store.set("runAlphaTick", true)
+        try publish(#require(instance.tick(runtimeSeconds: 1, pointerFrame: .neutral)))
+        check(stage: 4)
+        #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.play])
+        renderer.consumeSceneScriptLayerOutputs()
+        #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.play])
+        renderer.discardSceneScriptVideoCommands()
+
+        renderer.beginSceneScriptVideoCommands()
+        store.set("runAlphaGeneral", true)
+        renderer.setSceneScriptLanguage(renderer.sceneScriptGeneralSettings.language == "de-de" ? "en-us" : "de-de")
+        check(stage: 5)
+        #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.pause])
+        renderer.discardSceneScriptVideoCommands()
+
+        renderer.beginSceneScriptVideoCommands()
+        renderer.dispatchSceneScriptResizeScreen(SIMD2(128, 128))
+        check(stage: 6)
+        #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.stop])
+        renderer.discardSceneScriptVideoCommands()
+    }
+
+    @Test("Actual scene bootstrap prepares later and same-owner modules before init and delivers initial properties once")
+    func sceneBootstrapModuleBarrierAndProperties() async throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        func script(module: String = "", initBody: String = "", properties: String = "") -> String {
+            """
+            shared.modules = (shared.modules || 0) + 1;
+            \(module)
+            export function init(value) { shared.inits = (shared.inits || 0) + 1; \(initBody); return value; }
+            export function applyUserProperties(p) { shared.properties = (shared.properties || 0) + 1; \(properties); }
+            export function update(value) { return value; }
+            """
+        }
+        objects[0]["name"] = "consumer"
+        objects[0]["origin"] = ["value": "787 -31 0", "script": script(initBody: """
+        shared.sawLaterModule = typeof shared.copyVec3 === 'function';
+        shared.laterInitWasAbsent = shared.laterInitialized !== true;
+        shared.sawSameOwnerModule = shared.sameOwnerModule === true;
+        let initial = shared.copyVec3(value); shared.originSeed = initial.x + ':' + initial.y;
+        shared.playTrack = function() { shared.playCalls = (shared.playCalls || 0) + 1; };
+        """)]
+        objects[0]["scale"] = ["value": "0.35 0.35 1", "script": script(initBody: """
+        let initial = shared.copyVec3(value); shared.scaleSeed = initial.x;
+        """)]
+        objects[0]["color"] = ["value": "1 1 1", "script": script()]
+        objects[0]["visible"] = ["value": true, "script": script(module: "shared.sameOwnerModule = true;", properties: "shared.playTrack();")]
+        var publisher = objects[0]
+        publisher["id"] = "publisher"
+        publisher["name"] = "publisher"
+        publisher["origin"] = "32 32 0"
+        publisher["scale"] = "1 1 1"
+        publisher["color"] = "1 1 1"
+        publisher["visible"] = ["value": true, "script": """
+        shared.copyVec3 = value => new Vec3(value.x, value.y, value.z);
+        export function init(value) { shared.laterInitialized = true; return value; }
+        """]
+        objects.append(publisher)
+        objects.append([
+            "id": "label", "name": "label", "text": ["value": "seed", "script": """
+            let label = 'seed';
+            export function init(value) { shared.textInits = (shared.textInits || 0) + 1; return value; }
+            export function applyUserProperties(p) { shared.textProperties = (shared.textProperties || 0) + 1; label = p.trigger ? 'initial' : 'hot'; }
+            export function update() { return label; }
+            """],
+            "font": "Arial", "pointsize": 12, "origin": "32 32 0", "scale": "1 1 1", "angles": "0 0 0",
+        ])
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        try JSONSerialization.data(withJSONObject: ["general": ["properties": ["trigger": ["type": "bool", "value": true, "text": "Trigger"]]]])
+            .write(to: fixture.root.appendingPathComponent("project.json"))
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        #expect(renderer.didLoad)
+        let shared = try #require(renderer.sceneScriptSharedState)
+        for key in ["sawLaterModule", "laterInitWasAbsent", "sawSameOwnerModule"] {
+            #expect(shared.get(key) as? Bool == true)
+        }
+        for key in ["modules", "inits", "properties"] {
+            #expect(shared.get(key) as? Double == 4)
+        }
+        #expect(shared.get("originSeed") as? String == "787:-31")
+        #expect(shared.get("scaleSeed") as? Double == 0.35)
+        #expect(shared.get("playCalls") as? Double == 1)
+        #expect(shared.get("textInits") as? Double == 1)
+        #expect(shared.get("textProperties") as? Double == 1)
+        #expect(renderer.textScriptInstances["label"]?.tickString() == "initial")
+        renderer.dispatchTransformScriptUserProperties(["trigger": .bool(false)])
+        #expect(renderer.textScriptInstances["label"]?.tickString() == "hot")
+        #expect(shared.get("textProperties") as? Double == 2)
+    }
+
+    @Test("An origin publisher without update commits cross-context layer writes during the consumer callback",
+          arguments: [false, true])
+    func sharedCallableLayerWritesAreTransactional(throwsAfterWriting: Bool) async throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        objects[0]["name"] = "producer"
+        objects[0]["origin"] = ["value": "32 32 0", "script": """
+        export function init(value) {
+            shared.writeLayers = function() {
+                thisScene.getLayer('label').text = 'published';
+                thisScene.getLayer('consumer').alpha = 0.25;
+                thisScene.getLayer('consumer').scale = new Vec3(2, 2, 1);
+                \(throwsAfterWriting ? "throw new Error('rollback');" : "")
+            };
+            return value;
+        }
+        """]
+        var consumer = objects[0]
+        consumer["id"] = "consumer"
+        consumer["name"] = "consumer"
+        consumer["origin"] = "32 32 0"
+        consumer["visible"] = ["value": true, "script": """
+        export function applyUserProperties(properties) { shared.called = true; shared.writeLayers(); }
+        export function update(value) { return value; }
+        """]
+        objects.append(consumer)
+        objects.append([
+            "id": "label", "name": "label", "text": "seed", "font": "Arial",
+            "pointsize": 12, "origin": "32 32 0", "scale": "1 1 1", "angles": "0 0 0",
+        ])
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        let project: [String: Any] = [
+            "general": ["properties": ["trigger": ["type": "bool", "value": true, "text": "Trigger"]]],
+        ]
+        try JSONSerialization.data(withJSONObject: project).write(to: fixture.root.appendingPathComponent("project.json"))
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        #expect(renderer.currentSceneScriptUserProperties()["trigger"] == .bool(true))
+        try await renderer.load()
+        #expect(renderer.dynamicOriginScriptInstances.count == 1)
+        #expect(renderer.didLoad)
+        #expect(renderer.sceneScriptSharedState?.get("called") as? Bool == true)
+        if throwsAfterWriting {
+            #expect(renderer.liveScriptAssignedText["label"] == nil)
+            #expect(renderer.liveLayerAlpha["consumer"] != 0.25)
+            #expect(renderer.layerTransformMutationJournal.entries.values.allSatisfy { $0.scale == nil })
+        } else {
+            #expect(renderer.liveScriptAssignedText["label"] == "published")
+            #expect(renderer.liveLayerAlpha["consumer"] == 0.25)
+            #expect(renderer.layerTransformMutationJournal.entries[
+                .init(objectID: "consumer", generation: renderer.loadGeneration)
+            ]?.scale == SIMD3(2, 2, 1))
+        }
+    }
+
     @Test("Orthographic hover hit-testing follows the camera zoom the quad is drawn with")
     func hoverFollowsCameraZoom() throws {
         let fixture = try MetalSceneFixture.solidColorScene()

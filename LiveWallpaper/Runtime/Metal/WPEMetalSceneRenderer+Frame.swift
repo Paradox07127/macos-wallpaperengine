@@ -73,6 +73,7 @@ extension WPEMetalSceneRenderer {
         let publicationBeforeFrame = captureSceneScriptFramePublication()
         beginSceneScriptVideoCommands()
         publishVideoPlaybackSnapshots()
+        consumeSceneScriptLayerOutputs()
         pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         var didFinishSceneScriptVideoCommands = false
         defer {
@@ -451,7 +452,7 @@ extension WPEMetalSceneRenderer {
                 runtimeSeconds: uniforms.time,
                 pointerFrame: layerScriptPointerFrame
             ) {
-                liveTextAlpha[objectID] = output.own.alpha
+                applyTextAlphaScriptOutput(output, ownObjectID: objectID)
             }
         }
         for (objectID, instance) in particleAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
@@ -460,7 +461,7 @@ extension WPEMetalSceneRenderer {
                 runtimeSeconds: uniforms.time,
                 pointerFrame: layerScriptPointerFrame
             ) {
-                liveParticleInstanceAlpha[objectID] = output.own.alpha
+                applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
             }
         }
         stageIntroPhaseAlign()

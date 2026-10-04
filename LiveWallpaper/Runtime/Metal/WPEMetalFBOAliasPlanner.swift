@@ -29,30 +29,36 @@ enum WPEMetalFBOAliasPlanner {
         let ordered = intervals.sorted {
             $0.firstPass != $1.firstPass ? $0.firstPass < $1.firstPass : $0.size > $1.size
         }
+        // Production IDs are unique, but preserve the original first-match lifetime
+        // for duplicate IDs rather than silently changing the planner's input semantics.
+        let firstIntervalByID = Dictionary(ordered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var placements: [Placement] = []
         placements.reserveCapacity(ordered.count)
+        var active: [(placement: Placement, lifetime: Interval)] = []
         var heapSize = 0
 
         for interval in ordered {
-            let conflicts = placements
-                .filter { placed in
-                    guard let placedInterval = ordered.first(where: { $0.id == placed.id }) else { return false }
-                    return placedInterval.firstPass <= interval.lastPass
-                        && interval.firstPass <= placedInterval.lastPass
-                }
-                .map { (start: $0.offset, end: $0.offset + $0.size) }
-                .sorted { $0.start < $1.start }
+            // Inclusive lifetimes: a target ending at this pass still conflicts. Starts
+            // are nondecreasing, so expired placements can never conflict again.
+            active.removeAll { $0.lifetime.lastPass < interval.firstPass }
 
             var offset = 0
-            for range in conflicts {
-                if offset + interval.size <= range.start {
+            for entry in active {
+                // Retain this half of the original overlap test even for reversed
+                // intervals or duplicate IDs resolved to their first lifetime.
+                guard entry.lifetime.firstPass <= interval.lastPass else { continue }
+                if offset + interval.size <= entry.placement.offset {
                     break
                 }
-                offset = max(offset, roundUp(range.end, to: align))
+                offset = max(offset, roundUp(entry.placement.offset + entry.placement.size, to: align))
             }
 
-            placements.append(Placement(id: interval.id, offset: offset, size: interval.size))
+            let placement = Placement(id: interval.id, offset: offset, size: interval.size)
+            placements.append(placement)
+            // Equal offsets keep insertion order, matching the original stable sort.
+            let insertionIndex = active.firstIndex { $0.placement.offset > offset } ?? active.endIndex
+            active.insert((placement, firstIntervalByID[interval.id, default: interval]), at: insertionIndex)
             heapSize = max(heapSize, offset + interval.size)
         }
 

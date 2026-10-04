@@ -465,6 +465,8 @@ final class QAControlPlane {
         guard let screenManager else { throw QAError.message("ScreenManager unavailable") }
         let screens = screenManager.screens.map { screen -> [String: Any] in
             let summary = screenManager.wallpaperSummary(for: screen)
+            // Video keeps its window on the player; observe only the committed session, not retiring windows.
+            let window = screen.activeWallpaperWindow ?? screen.videoPlayer?.playbackWindow
             var entry: [String: Any] = [
                 "screenID": screen.id,
                 "name": screen.name,
@@ -472,9 +474,9 @@ final class QAControlPlane {
                 "frame": ["width": screen.frame.width, "height": screen.frame.height],
                 "activity": String(describing: summary.activity),
                 "supportsPlaybackControl": summary.supportsPlaybackControl,
-                "hasActiveWindow": screen.activeWallpaperWindow != nil,
+                "hasActiveWindow": window != nil,
             ]
-            entry["wallpaperWindowNumber"] = screen.activeWallpaperWindow?.windowNumber ?? NSNull()
+            entry["wallpaperWindowNumber"] = window?.windowNumber ?? NSNull()
             entry["wallpaperType"] = summary.wallpaperType.map { String(describing: $0) } ?? NSNull()
             entry["subtitle"] = summary.subtitle ?? NSNull()
             entry["displayName"] = screenManager.wallpaperDisplayName(for: screen) ?? NSNull()

@@ -39,6 +39,7 @@ PARALLEL_SUITES=(
   InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests
+  QAControlPlaneWindowObservationTests
   WallpaperOpeningBatchTests
   WallpaperStartBarrierTests
   WallpaperStartBarrierCommitTests
@@ -100,6 +101,7 @@ PARALLEL_SUITES=(
   # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
   WPEWorkshopVaryingReconstructionTests
   WPERendererOwnershipCharacterizationTests
+  WPEMetalFBOAliasPlannerTests
   # Shared scene output geometry and frame leases use synthetic, hardware-free fixtures.
   WPESceneSpanMappingTests
   WPESceneSpanFramesTests
@@ -215,7 +217,6 @@ PARALLEL_SUITES=(
   HoverAutoplayPreviewRowTests
   DisplayFloatLayerTests
   WallpaperModalTests
-  ModalActionsTests
   WorkshopCoverSaveTimeTests
   DisplayDetailTests
   DetailTransitionTests
@@ -293,6 +294,14 @@ SERIAL_SUITES=(
   # Keep the oracles' own concurrent operations and assertions unchanged.
   WPESceneScriptContainmentCharacterizationTests
   WPESceneScriptBatchCompletionTests
+  WPESceneScriptRuntimeTests
+  WPESceneScriptInitializationOrderingTests
+  WPESceneScriptInitReturnTests
+  WPESceneScriptCreatedLayerQuotaTests
+  WPESceneScriptB2bResourceLimitTests
+  WPESceneScriptLaneLifetimeTests
+  WPESceneScriptQuarantineCompletionTests
+  WPEScriptAsyncTickSemanticsTests
   # Shelf GIF attachment has a two-second deadline and shares AppKit delivery
   # with other UI probes; the isolated 119-test suite passes without contention.
   EditDeskStageViewTests
@@ -300,6 +309,7 @@ SERIAL_SUITES=(
   OverlayVisibilityLifecycleCharacterizationTests
   # Error snapshots compare app-language text across calls; locale probes change it process-wide.
   SceneFailureFlowTests
+  ModalActionsTests
   # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   RuntimeTests

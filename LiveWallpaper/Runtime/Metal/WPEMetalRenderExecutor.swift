@@ -506,6 +506,8 @@ final class WPEMetalRenderExecutor {
     #if DEBUG
     /// Test seam: remaining `encodePresent` calls that skip `nextDrawable()`.
     var remainingForcedDrawableMissesForTesting = 0
+    /// Cancels a real encoded frame before any present/submission ownership is registered.
+    var beforeFrameSubmissionForTesting: (() throws -> Void)?
     #endif
 
     func beginFrameSubmission() throws -> WPEMetalFrameSubmissionLease {
@@ -708,6 +710,7 @@ final class WPEMetalRenderExecutor {
         /// Encode present into this scene command buffer. Nil on sync/readback.
         deferredPresent: DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
+        try Task.checkCancellation()
         let dynamicLayerIDs = dynamicLayerIDs.union(pipeline.layers.compactMap { layer in
             layer.passes.contains(where: { $0.pass.visibilityGate != nil }) ? layer.graphLayer.objectID : nil
         })
@@ -795,6 +798,10 @@ final class WPEMetalRenderExecutor {
         defer {
             if staticLayerCacheEnabled { staticLayerCompositeCache.discardUnsubmittedWork(for: commandBuffer) }
             discardUnsubmittedBootstrapTextures(for: commandBuffer)
+            // Normal submission transfers these buffers to its completion handler and empties
+            // the array. A precommit error/cancellation has no GPU reader, so return them now.
+            bonePaletteBufferPool.recycle(bonePaletteBuffersInFlight)
+            bonePaletteBuffersInFlight.removeAll(keepingCapacity: true)
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         // Video conversions first: they write textures the scene passes below sample, and same-buffer order is what guarantees write-before-read.
@@ -894,7 +901,7 @@ final class WPEMetalRenderExecutor {
         persistentDepthTargetIDs = computePersistentDepthTargetIDs(for: preparedPipeline)
         var didEncode = false
         var skippedShaderError: WPEMetalRenderExecutorError?
-        let attachmentContext = makeAttachmentFrameContext(
+        let attachmentContext = try makeAttachmentFrameContext(
             for: preparedPipeline,
             runtimeUniforms: runtimeUniforms,
             sceneSize: size
@@ -1010,6 +1017,7 @@ final class WPEMetalRenderExecutor {
         // Flattened pass index for FBO aliasing — MUST advance in lockstep with the same `for layer { for pass in layer.passes }` order the alias plan used.
         var aliasPassCounter = 0
         for (layerIndex, layer) in preparedPipeline.layers.enumerated() {
+            try Task.checkCancellation()
             if layerIndex > 0 { try finishInitialSceneClear() }
             let solidEligible = WPEMetalSolidSceneRun.accepts(layer)
             let allowsSceneSharing = !(solidEligible && diagnosticControls.disableSolidBatching)
@@ -1245,6 +1253,12 @@ final class WPEMetalRenderExecutor {
         captureScenePassIfDumping(oracleSceneStagesEnabled, label: "oracle.post-color-correction", output: graded, commandBuffer: commandBuffer)
         #endif
 
+        #if DEBUG
+        try beforeFrameSubmissionForTesting?()
+        #endif
+        // Once present registers its source reference, commit must follow: abandoning its
+        // command buffer would otherwise strand a reference that only completion releases.
+        try Task.checkCancellation()
         let presentationAccepted: Bool
         if asyncSubmission, let deferredPresent {
             presentationAccepted = try deferredPresent(graded, commandBuffer)
@@ -1888,7 +1902,7 @@ final class WPEMetalRenderExecutor {
         for pipeline: WPEPreparedRenderPipeline,
         runtimeUniforms: WPEMetalRuntimeUniforms,
         sceneSize: CGSize
-    ) -> PuppetAttachmentFrameContext {
+    ) throws -> PuppetAttachmentFrameContext {
         var attachedChildNamesByParent: [String: Set<String>] = [:]
         for layer in pipeline.layers {
             guard let parentID = layer.graphLayer.parentObjectID,
@@ -1904,8 +1918,9 @@ final class WPEMetalRenderExecutor {
             )
         var skinningByObjectID: [String: PuppetSkinningState] = [:]
         for layer in pipeline.layers {
+            try Task.checkCancellation()
             guard let model = layer.puppetModel else { continue }
-            skinningByObjectID[layer.graphLayer.objectID] = validatedSkinningState(
+            skinningByObjectID[layer.graphLayer.objectID] = try validatedSkinningState(
                 for: layer.graphLayer,
                 model: model,
                 attachedChildNames: attachedChildNamesByParent[layer.graphLayer.objectID] ?? [],
@@ -1979,7 +1994,7 @@ final class WPEMetalRenderExecutor {
     }
 
     let bonePaletteBufferPool = PuppetBonePaletteBufferPool()
-    /// A frame aborted before commit leaves its buffers here — they ride along with the next commit (never executed by the GPU, so recycling them late is safe, early would be too).
+    /// Buffers encoded for the current frame; completion takes ownership on commit, otherwise render's defer returns them immediately.
     var bonePaletteBuffersInFlight: [MTLBuffer] = []
 
     struct PuppetMeshBufferKey: Hashable {

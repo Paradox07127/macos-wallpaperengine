@@ -149,7 +149,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("A valid pre-assembled puppet skins with no defaults involved")
     func validPreassembledPuppetSkins() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "valid"),
             model: validModel()
         )
@@ -161,7 +161,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("no-animation gates skinning off with the identity palette")
     func noAnimationFallsBackToIdentity() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "no-animation"),
             model: validModel(animations: 0)
         )
@@ -172,7 +172,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("unresolved-attachment gates skinning off with the identity palette")
     func unresolvedAttachmentFallsBackToIdentity() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "unresolved-attachment"),
             model: validModel(),
             attachedChildNames: ["missing_anchor"]
@@ -190,7 +190,7 @@ struct WPEPuppetSkinningGateTests {
             bones: [],
             animations: validModel().animations
         )
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "missing-hierarchy"),
             model: boneless
         )
@@ -201,7 +201,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("palette-unresolved gates skinning off with the identity palette")
     func paletteUnresolvedFallsBackToIdentity() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "palette-unresolved"),
             model: unresolvablePaletteSheetModel(),
             time: 0.05
@@ -213,7 +213,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("skin-index-out-of-range gates skinning off with the identity palette")
     func skinIndexOutOfRangeFallsBackToIdentity() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "skin-index"),
             model: validModel(skinIndices: SIMD4<Int32>(7, 0, 0, 0))
         )
@@ -224,7 +224,7 @@ struct WPEPuppetSkinningGateTests {
     @Test("palette-unbounded gates skinning off with the identity palette")
     func paletteUnboundedFallsBackToIdentity() throws {
         let executor = try makeExecutor()
-        let gate = executor.puppetSkinningGateForTesting(
+        let gate = try executor.puppetSkinningGateForTesting(
             layer: puppetLayer(objectID: "palette-unbounded"),
             model: validModel(frame1Translation: SIMD3<Float>(10_000, 0, 0))
         )
@@ -236,7 +236,7 @@ struct WPEPuppetSkinningGateTests {
     func characterSheetsSkinMandatorily() throws {
         let executor = try makeExecutor()
         for version in [19, 20] {
-            let sheet = executor.puppetSkinningGateForTesting(
+            let sheet = try executor.puppetSkinningGateForTesting(
                 layer: puppetLayer(objectID: "sheet-\(version)"),
                 model: characterSheetModel(version: version)
             )
@@ -256,9 +256,9 @@ struct WPEPuppetSkinningGateTests {
             WPEPuppetAnimationLayer(animation: model.animations[0], rate: 1, additive: false, blend: 1)
         ]
 
-        let first = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.034)
+        let first = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.034)
         #expect(executor.puppetPaletteCacheHitsForTesting == 0)
-        let second = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.049)
+        let second = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.049)
         #expect(executor.puppetPaletteCacheHitsForTesting == 0)
         #expect(first.enabled && second.enabled)
         let oracleFirst = WPEPuppetAnimationEvaluator.paletteEvaluation(
@@ -270,11 +270,11 @@ struct WPEPuppetSkinningGateTests {
         )
         #expect(second.bonePalette == oracleSameFrame.palette)
 
-        let repeated = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.049)
+        let repeated = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.049)
         #expect(executor.puppetPaletteCacheHitsForTesting == 1)
         #expect(repeated.bonePalette == second.bonePalette)
 
-        let wrapped = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.067)
+        let wrapped = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.067)
         #expect(executor.puppetPaletteCacheHitsForTesting == 1)
         #expect(wrapped.bonePalette != second.bonePalette)
         let oracleWrapped = WPEPuppetAnimationEvaluator.paletteEvaluation(
@@ -289,9 +289,89 @@ struct WPEPuppetSkinningGateTests {
         let model = validModel()
         let layer = puppetLayer(objectID: "bound-memo")
 
-        _ = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0)
+        _ = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0)
         #expect(executor.puppetBoundScanCacheHitsForTesting == 0)
-        _ = executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.5)
+        _ = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: 0.5)
         #expect(executor.puppetBoundScanCacheHitsForTesting == 1)
     }
+
+    @Test("Mandatory character sheets never spend preparation work on a displacement-bound scan")
+    func mandatorySheetsDoNotScanExemptBound() throws {
+        let executor = try makeExecutor()
+        for version in [19, 20] {
+            let layer = puppetLayer(objectID: "exempt-\(version)")
+            let model = validModel(version: version, frame1Translation: SIMD3<Float>(10000, 0, 0))
+            for time in [0.0, 0.02, 0.04] {
+                let gate = try executor.puppetSkinningGateForTesting(layer: layer, model: model, time: time)
+                #expect(gate.enabled && gate.skinningEnabledUniform == 1)
+                #expect(gate.reason.hasPrefix("character-sheet"))
+            }
+            #expect(executor.puppetBoundScanDetailByObjectID[layer.objectID] == nil)
+            #expect(executor.characterSheetWarnedReasonByObjectID[layer.objectID] == nil)
+        }
+        #expect(executor.puppetBoundScanCacheHitsForTesting == 0)
+    }
+
+    @Test("Cancelled preparation throws without producing a fallback palette or cached verdict")
+    func cancelledPreparationDoesNotPublishSkinningState() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let models = [validModel(version: 19), validModel(version: 20), validModel()]
+        let layers = models.indices.map { puppetLayer(objectID: "cancel-\($0)") }
+        let worker = Task {
+            let executor = try WPEMetalRenderExecutor(device: device)
+            withUnsafeCurrentTask { $0?.cancel() }
+            for (model, layer) in zip(models, layers) {
+                #expect(throws: CancellationError.self) {
+                    try executor.puppetSkinningGateForTesting(layer: layer, model: model)
+                }
+            }
+            #expect(executor.puppetPaletteCacheByObjectID.isEmpty)
+            #expect(executor.puppetBoundScanDetailByObjectID.isEmpty)
+            #expect(executor.characterSheetWarnedReasonByObjectID.isEmpty)
+        }
+        try await worker.value
+    }
+
+    #if DEBUG
+    @Test("Measure a real MDL's exempt bound scan separately from mandatory preparation",
+          .enabled(if: ProcessInfo.processInfo.environment["LW_PUPPET_PREPARATION_MODEL"] != nil))
+    func realModelPreparationCostProbe() throws {
+        let path = try #require(ProcessInfo.processInfo.environment["LW_PUPPET_PREPARATION_MODEL"])
+        let input = URL(fileURLWithPath: path)
+        let modelURLs: [URL]
+        if try input.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+            let enumerator = try #require(FileManager.default.enumerator(
+                at: input, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]
+            ))
+            modelURLs = try enumerator.compactMap { item -> URL? in
+                guard let url = item as? URL, url.pathExtension.lowercased() == "mdl",
+                      try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
+                return url
+            }.sorted { $0.path < $1.path }
+        } else {
+            modelURLs = [input]
+        }
+        #expect(!modelURLs.isEmpty, "The real-model probe must discover at least one source MDL")
+        let clock = ContinuousClock()
+        for url in modelURLs {
+            let model = try WPEMdlParser.parse(data: Data(contentsOf: url))
+            for round in 0 ..< 3 {
+                let executor = try makeExecutor()
+                let layer = puppetLayer(objectID: "measured")
+                let scanStart = clock.now
+                let detail = try executor.puppetBoundScanForTesting(layer: layer, model: model)
+                let scanElapsed = scanStart.duration(to: clock.now)
+                let gateStart = clock.now
+                let gate = try executor.puppetSkinningGateForTesting(layer: layer, model: model)
+                let gateElapsed = gateStart.duration(to: clock.now)
+                print("[puppet-preparation-probe] round=\(round) path=\(url.path) version=\(model.version) "
+                    + "vertices=\(model.meshes.reduce(0) { $0 + $1.vertices.count }) bones=\(model.bones.count) "
+                    + "scan=\(scanElapsed) gate=\(gateElapsed) enabled=\(gate.enabled) detail=\(detail ?? "none")")
+                if (19 ..< 21).contains(model.version) {
+                    #expect(executor.puppetBoundScanDetailByObjectID.isEmpty)
+                }
+            }
+        }
+    }
+    #endif
 }

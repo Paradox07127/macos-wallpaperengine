@@ -22,13 +22,14 @@ struct WPESceneScriptCreatedLayerQuotaTests {
         #expect(churn.initialOutput.created.count == 1)
 
         let repeatToken = preparedToken(generation: 18)
-        _ = try WPELayerScriptInstance(
+        let rejected = try WPELayerScriptInstance(
             script: Self.repeatedDestroyScript,
             shared: WPESharedScriptState(sceneScriptLoadToken: repeatToken),
             createdLayerBridge: bridge
         )
         #expect(repeatToken.failureReason == .createdLayerLimitExceeded(limit: 64))
-        #expect(repeatToken.resourceSnapshot.createdLayers == 64)
+        #expect(repeatToken.resourceSnapshot.createdLayers == 0)
+        #expect(rejected.initialOutput.created.isEmpty)
     }
 
     private func preparedToken(generation: Int) -> WPESceneScriptInstanceLimitToken {

@@ -52,4 +52,15 @@ struct ReviewFixSourceGuardsTests {
             "a worker that outlived a stop() removed the replacement registered under the same task identifier"
         )
     }
+
+    @Test("A missing local resource diagnostic does not infer codec support from its extension")
+    func missingResourceDoesNotRecommendCodecConversion() throws {
+        let handler = try RepositoryRoot.source("LiveWallpaper/Playback/Web/FolderURLSchemeHandler.swift")
+        let start = try #require(handler.range(of: "private func logMissingResource("))
+        let end = try #require(handler.range(of: "func webView(_ webView: WKWebView, stop", range: start.upperBound ..< handler.endIndex))
+        let body = handler[start.lowerBound ..< end.lowerBound]
+        #expect(!body.contains("fileURL.pathExtension"), "A missing source is a resource failure, not a codec verdict")
+        #expect(!body.contains("hint="), "A 404 must not recommend converting a file that does not exist")
+        #expect(body.contains("FolderScheme 404:") && body.contains("onDisk=") && body.contains("siblingPreview"))
+    }
 }

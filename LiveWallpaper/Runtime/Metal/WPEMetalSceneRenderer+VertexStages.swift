@@ -147,6 +147,7 @@ extension WPEMetalSceneRenderer {
         var candidates: [(pass: WPEPreparedRenderPass, key: String)] = []
         for layer in pipeline.layers {
             for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms) where variant.pass.shader?.isBuiltin == false {
+                guard !Task.isCancelled else { return [] }
                 let pass = variant.pass
                 guard let authored = executor.authoredPrewarmRequest(for: pass, execution: variant.vertexExecution) else { continue }
                 requestByKey[authored.translationCacheKey] = authored
@@ -159,7 +160,7 @@ extension WPEMetalSceneRenderer {
         let entries = await withTaskGroup(of: AuthoredVertexPrewarmOutcome.self) { group in
             var next = 0
             func spawn() -> Bool {
-                guard next < partition.missing.count else { return false }
+                guard next < partition.missing.count, !Task.isCancelled else { return false }
                 let request = partition.missing[next]; next += 1
                 group.addTask {
                     if Task.isCancelled {
@@ -176,7 +177,7 @@ extension WPEMetalSceneRenderer {
             for _ in 0 ..< width where spawn() {}
             var outputs: [AuthoredVertexPrewarmOutcome] = []
             while let entry = await group.next() {
-                if loadGeneration != generation {
+                if loadGeneration != generation || Task.isCancelled {
                     group.cancelAll(); break
                 }
                 outputs.append(entry); _ = spawn()
@@ -194,6 +195,7 @@ extension WPEMetalSceneRenderer {
             for variant in WPEMetalRenderExecutor.authoredPrewarmVariants(for: layer, camera: cameraUniforms)
                 where variant.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: variant.pass.pass.shader) == .solidLayer
                 && variant.pass.alphaContract?.premultipliedOutput == false {
+                guard !Task.isCancelled else { return [] }
                 let pass = variant.pass
                 let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
                                                                                      declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: cameraUniforms.sceneHDR)
@@ -209,6 +211,7 @@ extension WPEMetalSceneRenderer {
         var prewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
         var seen = Set<String>()
         for (pass, key) in candidates {
+            guard !Task.isCancelled else { return [] }
             guard let result = results[key] else { continue }
             let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
                                                                                  declaredFBOs: declarations, sceneColorFormat: colorFormat, hdr: cameraUniforms.sceneHDR)
@@ -224,15 +227,18 @@ extension WPEMetalSceneRenderer {
         let built = await withTaskGroup(of: WPEMetalRenderExecutor.WPEPrewarmedPipeline?.self) { group in
             var next = 0
             func spawn() -> Bool {
-                guard next < prewarms.count else { return false }
+                guard next < prewarms.count, !Task.isCancelled else { return false }
                 let prewarm = prewarms[next]; next += 1
-                group.addTask { WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm) }
+                group.addTask {
+                    guard !Task.isCancelled else { return nil }
+                    return WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                }
                 return true
             }
             for _ in 0 ..< width where spawn() {}
             var outputs: [WPEMetalRenderExecutor.WPEPrewarmedPipeline] = []
             while let entry = await group.next() {
-                if loadGeneration != generation {
+                if loadGeneration != generation || Task.isCancelled {
                     group.cancelAll(); break
                 }
                 if let entry {

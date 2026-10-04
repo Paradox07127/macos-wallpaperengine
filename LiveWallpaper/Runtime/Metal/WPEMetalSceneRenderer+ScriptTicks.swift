@@ -6,6 +6,50 @@ import LiveWallpaperProWPE
 extension WPEMetalSceneRenderer {
     // MARK: - Script Tick Dispatch
 
+    func consumeSceneScriptLayerOutputs() {
+        guard sceneScriptLoadState.currentFailureReason == nil else { return }
+        let layerFamilies: [([String: WPELayerScriptInstance], (WPELayerScriptOutput, String) -> Void)] = [
+            (layerScriptInstances, { self.applyLayerScriptOutput($0, ownObjectID: $1) }),
+            (layerAlphaScriptInstances, { self.applyLayerAlphaScriptOutput($0, ownObjectID: $1) }),
+            (textVisibleScriptInstances, { self.applyLayerScriptOutput($0, ownObjectID: $1) }),
+            (textAlphaScriptInstances, { self.applyTextAlphaScriptOutput($0, ownObjectID: $1) }),
+            (particleAlphaScriptInstances, { self.applyParticleAlphaScriptOutput($0, ownObjectID: $1) }),
+        ]
+        for (instances, publish) in layerFamilies {
+            for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.takeSharedLayerOutput() {
+                    publish(output, objectID)
+                }
+            }
+        }
+        for (objectID, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let output = instance.takeLayerOutput() {
+                applyLayerScriptOutput(output, ownObjectID: objectID)
+            }
+        }
+        for instances in [
+            dynamicOriginScriptInstances, dynamicScaleScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+        ] {
+            for (_, instance) in instances.sorted(by: { $0.key < $1.key }) {
+                consumeTransformScriptLayerOutput(instance)
+            }
+        }
+        for (_, instance) in effectConstantScriptInstances.sorted(
+            by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
+        ) {
+            consumeTransformScriptLayerOutput(instance)
+        }
+        for (_, instance) in effectVisibilityScriptInstances.sorted(by: { $0.key < $1.key }) {
+            consumeTransformScriptLayerOutput(instance)
+        }
+    }
+
+    private func consumeTransformScriptLayerOutput(_ instance: WPEDynamicTransformScriptInstance) {
+        guard let output = instance.takeLayerOutput(), let objectID = instance.ownObjectID else { return }
+        applyLayerScriptOutput(output, ownObjectID: objectID)
+    }
+
     static func currentSceneScriptLanguage() -> String {
         AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
     }
@@ -67,7 +111,12 @@ extension WPEMetalSceneRenderer {
         }
         for (objectID, instance) in textAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let output = instance.applyGeneralSettings(language: language) {
-                liveTextAlpha[objectID] = output.own.alpha
+                applyTextAlphaScriptOutput(output, ownObjectID: objectID)
+            }
+        }
+        for (objectID, instance) in particleAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let output = instance.applyGeneralSettings(language: language) {
+                applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
             }
         }
         for key in textScriptInstances.keys.sorted() {
@@ -91,6 +140,7 @@ extension WPEMetalSceneRenderer {
         for key in effectVisibilityScriptInstances.keys.sorted() {
             _ = effectVisibilityScriptInstances[key]?.applyGeneralSettings(language: language)
         }
+        consumeSceneScriptLayerOutputs()
     }
 
 
@@ -151,6 +201,9 @@ extension WPEMetalSceneRenderer {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
         for instance in textAlphaScriptInstances.values {
+            instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+        }
+        for instance in particleAlphaScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
         for event in events {
@@ -224,7 +277,12 @@ extension WPEMetalSceneRenderer {
         }
         for (objectID, instance) in textAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let output = instance.resizeScreen(size) {
-                liveTextAlpha[objectID] = output.own.alpha
+                applyTextAlphaScriptOutput(output, ownObjectID: objectID)
+            }
+        }
+        for (objectID, instance) in particleAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let output = instance.resizeScreen(size) {
+                applyParticleAlphaScriptOutput(output, ownObjectID: objectID)
             }
         }
         for objectID in textScriptInstances.keys.sorted() {
@@ -248,6 +306,7 @@ extension WPEMetalSceneRenderer {
         for key in effectVisibilityScriptInstances.keys.sorted() {
             _ = effectVisibilityScriptInstances[key]?.resizeScreen(size)
         }
+        consumeSceneScriptLayerOutputs()
     }
 
     func destroySceneScriptInstances() {
@@ -309,6 +368,9 @@ extension WPEMetalSceneRenderer {
         _ properties: [String: WPESceneScriptPropertyValue]
     ) {
         guard !properties.isEmpty else { return }
+        for (_, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
+            _ = instance.applyUserProperties(properties)
+        }
         var seen: Set<ObjectIdentifier> = []
         for instances in [
             dynamicOriginScriptInstances,
@@ -332,6 +394,7 @@ extension WPEMetalSceneRenderer {
                   seen.insert(ObjectIdentifier(instance)).inserted else { continue }
             _ = instance.applyUserProperties(properties)
         }
+        consumeSceneScriptLayerOutputs()
     }
 }
 #endif

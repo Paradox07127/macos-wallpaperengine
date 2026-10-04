@@ -79,7 +79,7 @@ test-app:
 
 # GPU execution and temporal feedback cannot be certified by a headless shard.
 # Keep the local gate explicit and require every listed suite to execute.
-WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
+WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
     WPEAuthoredVertexUniformReferenceTests WPEOrderedLayerPublicationTests \
     WPERenderPipelineBuilderTests WPEMetalTextureLoaderTests WPEFrameUniformContextTests \
     WPESparseTextureTraceTests WPEParticleEventTests WPEParticlePlaybackTests \
@@ -92,9 +92,11 @@ WPE_METAL_SUITES := WPELinkedShaderStageTests WPEAuthoredVertexExecutorTests \
     WPECanonicalPassRawStorageTests \
     WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests \
     WPEUniformResolutionPlanTests WPEMetalSolidSceneRunTests WPERenderGraphBuilderTests \
-    WPEMetalSceneRendererTests WPESceneHibernateTests WPEMediaTextureProviderTests \
+    WPEMetalSceneRendererTests WPESceneScriptWiringTests WPESceneHibernateTests WPEMediaTextureProviderTests \
     WPEDisplayedFrameCaptureTests WallpaperVideoPlayerDisplayedFrameCaptureTests \
-    SceneLoadProgressTests WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
+    SceneLoadProgressTests WPEPreparationCancellationTests WPEPuppetSkinningGateTests \
+    WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests \
+    WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
     WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
     WPERenderThreadTests WPERenderThreadDrainRuntimeTests
 

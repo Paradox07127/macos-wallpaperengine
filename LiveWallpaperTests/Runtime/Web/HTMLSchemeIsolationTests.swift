@@ -269,6 +269,30 @@ struct FolderURLSchemeHandlerIsolationTests {
         }
     }
 
+    @Test("A missing media file stays a file-not-found failure, not a successful codec response",
+          arguments: ["ogg", "oga", "opus", "webm"])
+    func missingMediaRemainsFileNotFound(ext: String) async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let handler = FolderURLSchemeHandler()
+        handler.folderURL = folder
+        let webView = makeWebView()
+        let requestURL = try #require(URL(string: "livewallpaper://wallpaper/missing.\(ext)"))
+        var request = URLRequest(url: requestURL)
+        request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
+        let task = FakeURLSchemeTask(request: request)
+        defer { handler.webView(webView, stop: task) }
+        handler.webView(webView, start: task)
+        try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
+
+        let error = try #require(task.failedError as NSError?)
+        #expect(error.domain == NSCocoaErrorDomain)
+        #expect(error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError)
+        #expect(task.receivedResponse == nil && task.receivedData.isEmpty)
+        #expect(!task.didFinishCalled)
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("missing.\(ext)").path))
+    }
+
     @Test("Ogg fallback accepts a regular sibling symlink within the source root")
     func oggFallbackAcceptsContainedSibling() async throws {
         let folder = makeTemporaryFolder()
