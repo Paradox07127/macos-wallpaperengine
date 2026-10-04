@@ -20,6 +20,8 @@ struct LibraryModalHost: View {
     var applying: Set<CGDirectDisplayID> = []
     /// Displays whose newest cover capture has landed: only their covers show what runs there now.
     var currentCovers: Set<CGDirectDisplayID> = []
+    /// Opens a display's detail page; the modal closes first.
+    let showDisplay: @MainActor (CGDirectDisplayID) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
@@ -99,10 +101,15 @@ struct LibraryModalHost: View {
     }
 
     private func modal(for item: LibraryItem, content: WallpaperModalContent, targets: [ModalDisplayTarget]) -> WallpaperModal {
+        var itemActions = actions.actions(for: item)
+        itemActions.showDisplay = { id in
+            dismiss()
+            showDisplay(id)
+        }
         var modal = WallpaperModal(
             content: content,
             targets: targets,
-            actions: actions.actions(for: item),
+            actions: itemActions,
             requestRename: { requestRename(item) },
             requestDelete: { requestDelete(item) },
             navigation: navigation(for: item),

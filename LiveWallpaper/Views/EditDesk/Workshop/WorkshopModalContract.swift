@@ -352,5 +352,7 @@ struct WorkshopModalActions {
     var browseCreator: (@MainActor (String, String?) -> Void)?
     /// Puts the item's link or ID on the pasteboard; nil leaves both copy buttons out of the title row.
     var copyText: (@MainActor (String) -> Void)?
+    /// Opens a display's detail page from its button once the wallpaper runs there; nil presses it instead.
+    var showDisplay: (@MainActor (CGDirectDisplayID) -> Void)?
 }
 #endif

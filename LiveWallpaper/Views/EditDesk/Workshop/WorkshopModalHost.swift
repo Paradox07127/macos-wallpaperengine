@@ -92,6 +92,8 @@ struct WorkshopModalHost: View {
     let windowSize: CGSize
     /// Opens the Steam wizard over the modal when a setup step blocks the download.
     let onConnectSteam: () -> Void
+    /// Opens a display's detail page; the modal closes first.
+    let showDisplay: @MainActor (CGDirectDisplayID) -> Void
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(WorkshopServices.self) private var services
@@ -321,6 +323,10 @@ struct WorkshopModalHost: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
                 toasts.post(String(localized: "Copied", bundle: .appLanguage), style: .success)
+            },
+            showDisplay: { id in
+                presentedItemID = nil
+                showDisplay(id)
             }
         )
     }

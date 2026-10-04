@@ -414,7 +414,7 @@ struct HomePage: View {
                     library: library, stage: stage, drag: libraryDrag, actions: modalActions,
                     requestRename: requestRename, requestDelete: requestDelete,
                     presentedItemID: $presentedItemID, preferredTarget: router.libraryTarget, applying: applies.inFlight,
-                    currentCovers: currentCoverDisplays
+                    currentCovers: currentCoverDisplays, showDisplay: { router.showDetail($0) }
                 )
             }
         }

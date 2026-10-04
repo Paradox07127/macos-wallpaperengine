@@ -60,7 +60,8 @@ struct WorkshopPage: View {
                 session: session,
                 toasts: toasts,
                 windowSize: stageSize,
-                onConnectSteam: presentWizard
+                onConnectSteam: presentWizard,
+                showDisplay: { router.showDetail($0) }
             )
         }
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.

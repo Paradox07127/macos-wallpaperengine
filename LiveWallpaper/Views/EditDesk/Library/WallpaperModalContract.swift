@@ -218,6 +218,8 @@ struct ModalDisplayTarget: Identifiable, Equatable {
 struct WallpaperModalActions {
     var applyTo: @MainActor (CGDirectDisplayID) -> Void
     var applyToAllDisplays: @MainActor () -> Void
+    /// Opens a display's detail page from its button once the wallpaper runs there; nil applies again instead.
+    var showDisplay: (@MainActor (CGDirectDisplayID) -> Void)?
     /// The context menus' rows and the modal's title-row buttons.
     var showInFinder: (@MainActor () -> Void)?
     var openInSteam: (@MainActor () -> Void)?

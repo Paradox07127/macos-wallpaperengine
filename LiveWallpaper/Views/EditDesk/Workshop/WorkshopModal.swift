@@ -203,6 +203,7 @@ struct WorkshopModal: View {
             canApply: row.canPress,
             mode: row.mode,
             applyTo: actions.press,
+            showDisplay: actions.showDisplay,
             extras: row.extras.map { extra in
                 ModalExtraButton(title: extra.kind.title, isEnabled: extra.isEnabled, action: perform(extra.kind))
             }
@@ -222,8 +223,14 @@ struct WorkshopModal: View {
     /// ⌘1…⌘9 press that display's button, as a click would.
     private func pressByShortcut(_ index: Int) {
         guard let target = ModalKeyMap.target(forShortcut: index, in: row.targets),
-              ModalDisplayButtons.isEnabled(target, canApply: row.canPress, mode: row.mode) else { return }
-        actions.press(target.id)
+              ModalDisplayButtons.isPressable(
+                  target, canApply: row.canPress, canShow: actions.showDisplay != nil, mode: row.mode
+              ) else { return }
+        if let showDisplay = actions.showDisplay, ModalDisplayButtons.press(for: target, canShow: true) == .show {
+            showDisplay(target.id)
+        } else {
+            actions.press(target.id)
+        }
     }
 }
 

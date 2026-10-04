@@ -106,7 +106,8 @@ struct LibraryModalHostLoadTests {
         )]
         let host = LibraryModalHost(
             library: library, stage: stage, drag: LibraryDragController(), actions: actions,
-            requestRename: { _ in }, requestDelete: { _ in }, presentedItemID: .constant(item.id), currentCovers: [display]
+            requestRename: { _ in }, requestDelete: { _ in }, presentedItemID: .constant(item.id), currentCovers: [display],
+            showDisplay: { _ in }
         )
         let hosting = NSHostingView(rootView: host.tint(.gray))
         hosting.sizingOptions = []

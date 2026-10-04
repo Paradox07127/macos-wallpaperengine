@@ -70,7 +70,7 @@ struct WallpaperModal: View {
             buttons: {
                 ModalDisplayButtons(
                     targets: targets, canApply: content.canApply,
-                    applyTo: actions.applyTo, applyToAll: actions.applyToAllDisplays
+                    applyTo: actions.applyTo, showDisplay: actions.showDisplay, applyToAll: actions.applyToAllDisplays
                 )
             }
         )
@@ -225,8 +225,15 @@ struct WallpaperModal: View {
     // MARK: Keyboard
 
     private func applyToShortcut(_ index: Int) {
-        guard content.canApply, let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
-        actions.applyTo(target.id)
+        guard let target = ModalKeyMap.target(forShortcut: index, in: targets),
+              ModalDisplayButtons.isPressable(
+                  target, canApply: content.canApply, canShow: actions.showDisplay != nil, mode: .apply
+              ) else { return }
+        if let showDisplay = actions.showDisplay, ModalDisplayButtons.press(for: target, canShow: true) == .show {
+            showDisplay(target.id)
+        } else {
+            actions.applyTo(target.id)
+        }
     }
 
     /// True when ESC went to the drag instead of the modal.

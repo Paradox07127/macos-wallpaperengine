@@ -190,6 +190,31 @@ struct WorkshopModalTests {
         #expect(allBusy.first(where: \.isPrimary)?.id == 1, "with nowhere free the leftmost display is still the default")
     }
 
+    private func target(applied: Bool, preparing: Bool = false) -> ModalDisplayTarget {
+        ModalDisplayTarget(
+            id: 1, name: "Left", shortcutIndex: 1, aspectRatio: 16.0 / 9, isPrimary: true,
+            isApplied: applied, isPreparing: preparing
+        )
+    }
+
+    @Test("A display already showing the wallpaper opens its page, unless it is still preparing or no page can open")
+    func appliedDisplayShowsItsPage() {
+        #expect(ModalDisplayButtons.press(for: target(applied: true), canShow: true) == .show)
+        #expect(ModalDisplayButtons.press(for: target(applied: true, preparing: true), canShow: true) == .apply)
+        #expect(ModalDisplayButtons.press(for: target(applied: false), canShow: true) == .apply)
+        #expect(ModalDisplayButtons.press(for: target(applied: true), canShow: false) == .apply)
+    }
+
+    @Test("⌘n reaches a display already showing the wallpaper even while applying is greyed out")
+    func shortcutReachesAppliedDisplayWithoutApply() {
+        let applied = target(applied: true)
+        #expect(ModalDisplayButtons.isPressable(applied, canApply: false, canShow: true, mode: .apply))
+        #expect(ModalDisplayButtons.isPressable(applied, canApply: false, canShow: true, mode: .download))
+        #expect(!ModalDisplayButtons.isPressable(applied, canApply: false, canShow: false, mode: .apply))
+        #expect(!ModalDisplayButtons.isPressable(target(applied: false), canApply: false, canShow: true, mode: .apply))
+        #expect(!ModalDisplayButtons.isEnabled(applied, canApply: false, mode: .apply), "applying itself stays greyed out")
+    }
+
     // MARK: Status line
 
     private func presentation(

@@ -30833,6 +30833,76 @@
         }
       }
     },
+    "Go to %@" : {
+      "comment" : "Wallpaper modal button on a display already showing the wallpaper: opens that display's page. Placeholder is the display name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir a %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ へ移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %@"
+          }
+        }
+      }
+    },
+    "Go to %@ (⌘%lld)" : {
+      "comment" : "Wallpaper modal tooltip on a display already showing the wallpaper: opens that display's page. Placeholders are a display name and its ⌘ shortcut number.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to %1$@ (⌘%2$lld)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir a %1$@ (⌘%2$lld)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ へ移動（⌘%2$lld）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %1$@（⌘%2$lld）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %1$@（⌘%2$lld）"
+          }
+        }
+      }
+    },
     "GPU" : {
       "comment" : "Monitor widget name: GPU instrument.",
       "extractionState" : "manual",

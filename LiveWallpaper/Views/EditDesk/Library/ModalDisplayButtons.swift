@@ -14,11 +14,25 @@ struct ModalDisplayButtons: View {
         canApply && !(mode == .download && target.isPreparing)
     }
 
+    /// A display already showing the wallpaper opens its detail page instead of applying it again.
+    enum Press: Equatable { case apply, show }
+
+    static func press(for target: ModalDisplayTarget, canShow: Bool) -> Press {
+        canShow && target.isApplied && !target.isPreparing ? .show : .apply
+    }
+
+    /// A button, menu row or ⌘n: a display to show stays pressable while applying is greyed out.
+    static func isPressable(_ target: ModalDisplayTarget, canApply: Bool, canShow: Bool, mode: Mode) -> Bool {
+        press(for: target, canShow: canShow) == .show || isEnabled(target, canApply: canApply, mode: mode)
+    }
+
     let targets: [ModalDisplayTarget]
     /// False greys every display button: a type this Mac cannot run, or a download that cannot start.
     let canApply: Bool
     var mode: Mode = .apply
     let applyTo: @MainActor (CGDirectDisplayID) -> Void
+    /// nil applies again on a display already showing the wallpaper.
+    var showDisplay: (@MainActor (CGDirectDisplayID) -> Void)?
     /// nil hides All Displays; one display hides it too.
     var applyToAll: (@MainActor () -> Void)?
     /// After the displays, such as Save only.
@@ -72,14 +86,38 @@ struct ModalDisplayButtons: View {
         }
     }
 
-    private func applyButton(_ target: ModalDisplayTarget) -> some View {
-        Button { applyTo(target.id) } label: {
-            Label { Text(verbatim: target.name) } icon: { targetIcon(target) }
-                .lineLimit(1).truncationMode(.middle)
+    private func press(_ target: ModalDisplayTarget) -> Press {
+        Self.press(for: target, canShow: showDisplay != nil)
+    }
+
+    private func isPressable(_ target: ModalDisplayTarget) -> Bool {
+        Self.isPressable(target, canApply: canApply, canShow: showDisplay != nil, mode: mode)
+    }
+
+    private func perform(_ target: ModalDisplayTarget) {
+        switch press(target) {
+        case .show: showDisplay?(target.id)
+        case .apply: applyTo(target.id)
         }
-        .disabled(!Self.isEnabled(target, canApply: canApply, mode: mode))
-        .help(applyHelp(target))
-        .accessibilityLabel(applyLabel(target))
+    }
+
+    private func applyButton(_ target: ModalDisplayTarget) -> some View {
+        let shows = press(target) == .show
+        return Button { perform(target) } label: {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Label { Text(verbatim: target.name) } icon: { targetIcon(target) }
+                    .lineLimit(1).truncationMode(.middle)
+                if shows {
+                    Image(systemName: "chevron.forward")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .disabled(!isPressable(target))
+        .help(shows ? showHelp(target) : applyHelp(target))
+        .accessibilityLabel(shows ? showLabel(target) : applyLabel(target))
         .accessibilityValue(targetValue(target))
     }
 
@@ -87,15 +125,32 @@ struct ModalDisplayButtons: View {
     private func overflowMenu(_ rest: [ModalDisplayTarget]) -> some View {
         Menu {
             ForEach(rest) { target in
-                Button(target.name) { applyTo(target.id) }
-                    .disabled(!Self.isEnabled(target, canApply: canApply, mode: mode))
+                Button { perform(target) } label: {
+                    press(target) == .show ? showLabel(target) : Text(verbatim: target.name)
+                }
+                .disabled(!isPressable(target))
             }
         } label: {
             Text("Other Displays", comment: "Wallpaper modal pull-down listing the displays past the first three buttons.")
         }
         .menuStyle(.button)
         .fixedSize()
-        .disabled(!canApply)
+        .disabled(!canApply && !rest.contains { press($0) == .show })
+    }
+
+    private func showLabel(_ target: ModalDisplayTarget) -> Text {
+        Text(
+            "Go to \(target.name)",
+            comment: "Wallpaper modal button on a display already showing the wallpaper: opens that display's page. Placeholder is the display name."
+        )
+    }
+
+    private func showHelp(_ target: ModalDisplayTarget) -> Text {
+        guard target.shortcutIndex <= 9 else { return showLabel(target) }
+        return Text(
+            "Go to \(target.name) (⌘\(target.shortcutIndex))",
+            comment: "Wallpaper modal tooltip on a display already showing the wallpaper: opens that display's page. Placeholders are a display name and its ⌘ shortcut number."
+        )
     }
 
     private func applyLabel(_ target: ModalDisplayTarget) -> Text {
