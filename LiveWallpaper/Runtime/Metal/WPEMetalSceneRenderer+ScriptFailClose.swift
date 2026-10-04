@@ -33,7 +33,8 @@ extension WPEMetalSceneRenderer {
             transforms.origins[playback.definition.objectID] = cameraUniforms.sceneMotion.origin
         }
         for (objectID, animation) in dynamicOriginAnimations.sorted(by: { $0.key < $1.key }) {
-            guard let value = animation.vector(at: time), value.count >= 3 else { continue }
+            let sampleTime = sceneScriptSharedState?.timelineAnimations.seconds(objectID: objectID, property: "origin", at: time) ?? time
+            guard let value = animation.originVector(at: sampleTime), value.count >= 3 else { continue }
             transforms.origins[objectID] = SIMD3<Double>(value[0], value[1], value[2])
         }
         return transforms

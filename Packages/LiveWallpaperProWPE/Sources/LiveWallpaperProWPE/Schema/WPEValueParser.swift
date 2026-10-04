@@ -108,7 +108,9 @@ public enum WPEValueParser {
                 events: authoredJSONField(in: options, key: "events", parse: animationEvents)
             ),
             scalarFallback: scalarFallback,
-            vectorFallback: vectorFallback
+            vectorFallback: vectorFallback,
+            relative: bool(animationDict["relative"]) ?? false,
+            parentKey: (options["parent"] as? [String: Any])?["key"] as? String
         )
     }
 

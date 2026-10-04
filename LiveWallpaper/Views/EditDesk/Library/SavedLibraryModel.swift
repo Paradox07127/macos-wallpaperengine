@@ -443,9 +443,8 @@ final class SavedLibraryModel {
         return usageSnapshot[item.id]
     }
 
-    func refresh() {
-        filePaths = [:]
-        let previous = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    /// Shared read-only projection. Migrations, source probes and cover cleanup belong to the UI lifecycle.
+    static func catalogSnapshot(inputs: Inputs) -> CatalogSnapshot {
         var merged: [LibraryItem] = []
         #if !LITE_BUILD
         merged = inputs.history().map { entry in
@@ -457,7 +456,7 @@ final class SavedLibraryModel {
             let source = LibraryItem.Source.workshop(entry)
             return LibraryItem(
                 id: "workshop:\(entry.id)", title: entry.origin.title, kind: kind, source: source,
-                isSteam: isSteam(entry.id), createdAt: entry.importedAt, lastUsedAt: entry.lastUsedAt,
+                isSteam: Self.isSteam(entry.id), createdAt: entry.importedAt, lastUsedAt: entry.lastUsedAt,
                 onDisplays: inputs.nowPlaying(nil, entry),
                 thumbnail: .workshop(entry, coverRevision: inputs.workshopCoverRevision(entry)),
                 metadata: nil, isVariant: false, parentID: nil,
@@ -488,31 +487,71 @@ final class SavedLibraryModel {
             }
             merged.append(LibraryItem(
                 id: "bookmark:\(bookmark.id)", title: bookmark.label, kind: kind, source: .bookmark(bookmark),
-                isSteam: isSteam(bookmark.wpeOrigin?.workshopID), createdAt: bookmark.createdAt,
-                lastUsedAt: bookmark.lastUsedAt, onDisplays: displays(for: bookmark.content),
+                isSteam: Self.isSteam(bookmark.wpeOrigin?.workshopID), createdAt: bookmark.createdAt,
+                lastUsedAt: bookmark.lastUsedAt, onDisplays: {
+                    #if !LITE_BUILD
+                    inputs.nowPlaying(bookmark.content, nil)
+                    #else
+                    inputs.nowPlaying(bookmark.content)
+                    #endif
+                }(),
                 thumbnail: .bookmark(bookmark), metadata: nil,
                 isVariant: parentID != nil, parentID: parentID, isSupported: true
             ))
         }
-        aerialsStatus = inputs.aerials()
-        bookmarkedIDs = inputs.libraryBookmarks()
+        let aerialsStatus = inputs.aerials()
+        var bookmarkedIDs = inputs.libraryBookmarks()
+        var markMoves: [(from: LibraryItem.ID, to: LibraryItem.ID)] = []
         #if !LITE_BUILD
-        for move in Self.foldedMarkMoves(bookmarkedIDs, bookmarks: bookmarks, rows: Set(merged.map(\.id))) {
-            inputs.remapLibraryBookmark(move.from, move.to)
+        markMoves = Self.foldedMarkMoves(bookmarkedIDs, bookmarks: bookmarks, rows: Set(merged.map(\.id)))
+        for move in markMoves {
             bookmarkedIDs.remove(move.from)
             bookmarkedIDs.insert(move.to)
         }
         #endif
         let active = inputs.activeWallpapers()
+        // One resolution per active video, not per Aerial row. Cache paths only, never scoped URLs.
+        var resolvedPaths: [Data: String?] = [:]
+        for entry in active {
+            guard let data = entry.content.activeVideoBookmarkData, resolvedPaths[data] == nil else { continue }
+            let path = inputs.filePath(data).map { Self.normalizedPath(URL(fileURLWithPath: $0)) }
+            resolvedPaths[data] = .some(path)
+        }
         merged += aerialsStatus.assets.map { asset in
             let source = LibraryItem.Source.aerial(asset)
             return LibraryItem(
                 id: "aerial:\(asset.url.path)", title: asset.displayName, kind: .aerial, source: source,
                 isSteam: false, createdAt: .distantPast, lastUsedAt: nil,
-                onDisplays: active.filter { aerial(asset, matches: $0.content) }.map(\.display), thumbnail: .aerial(.init(asset)),
+                onDisplays: active.filter { entry in
+                    guard let data = entry.content.activeVideoBookmarkData else { return false }
+                    return data == asset.bookmarkData
+                        || (resolvedPaths[data] ?? nil) == Self.normalizedPath(asset.url)
+                }.map(\.display), thumbnail: .aerial(.init(asset)),
                 metadata: nil,
                 isVariant: false, parentID: nil, isSupported: true
             )
+        }
+        return CatalogSnapshot(items: merged, bookmarkedIDs: bookmarkedIDs, aerials: aerialsStatus, markMoves: markMoves, filePaths: resolvedPaths)
+    }
+
+    struct CatalogSnapshot {
+        var items: [LibraryItem]
+        var bookmarkedIDs: Set<LibraryItem.ID>
+        var aerials: AerialsState
+        var markMoves: [(from: LibraryItem.ID, to: LibraryItem.ID)]
+        var filePaths: [Data: String?]
+    }
+
+    func refresh() {
+        filePaths = [:]
+        let previous = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let snapshot = Self.catalogSnapshot(inputs: inputs)
+        filePaths = snapshot.filePaths
+        var merged = snapshot.items
+        aerialsStatus = snapshot.aerials
+        bookmarkedIDs = snapshot.bookmarkedIDs
+        for move in snapshot.markMoves {
+            inputs.remapLibraryBookmark(move.from, move.to)
         }
         for index in merged.indices {
             if let probe = probedSources[merged[index].id], Self.sameSource(probe.source, merged[index].source) {
@@ -691,7 +730,7 @@ final class SavedLibraryModel {
         #endif
     }
 
-    private func isSteam(_ id: String?) -> Bool {
+    private static func isSteam(_ id: String?) -> Bool {
         guard let id, !id.isEmpty else { return false }
         return id.allSatisfy(\.isNumber)
     }

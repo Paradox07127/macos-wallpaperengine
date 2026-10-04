@@ -83,10 +83,13 @@ extension WPEMetalSceneRenderer {
             submitSceneScriptFrameJobs()
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
+        sceneScriptSharedState?.timelineAnimations.publishTime(uniforms.time)
         var frameOverlay = tickLayerPresentationScripts(
             uniforms: uniforms,
             layerScriptPointerFrame: frameContext.layerScriptPointerFrame
         )
+        let timelineAlpha = sceneScriptSharedState?.timelineAnimations.alphaOverrides(at: uniforms.time) ?? [:]
+        frameOverlay.alpha = timelineAlpha.merging(frameOverlay.alpha) { _, script in script }
         // Kept around past the pipeline application so render-graph text can
         // re-compose text anchors through the SAME live parent transforms.
         let authoredTransforms = authoredTransformAnimations(at: uniforms.time)
@@ -254,8 +257,8 @@ extension WPEMetalSceneRenderer {
         }
         let frameSubmission = try executor.beginFrameSubmission()
         defer { frameSubmission.seal() }
-        withFrameSignpost("particleTick") {
-            tickParticleSystems(
+        try withFrameSignpost("particleTick") {
+            try tickParticleSystems(
                 time: uniforms.time,
                 followPointerIsLive: frameContext.followPointerIsLive,
                 pointer: frameContext.pointer,
@@ -603,7 +606,7 @@ extension WPEMetalSceneRenderer {
         frameSlot: Int,
         presentationBeforeScripts: WPESceneScriptPresentationSnapshot,
         audioSpectrum16: [Float]? = nil
-    ) {
+    ) throws {
         guard !particleSystems.isEmpty else { return }
         // Cursor in the centered render frame (Y-up), or nil when Follow Cursor is off/outside. Center-relative so it matches `WPEParticleSceneTransform`'s coordinate space.
         let particlePointer: SIMD2<Float>? = followPointerIsLive
@@ -634,13 +637,18 @@ extension WPEMetalSceneRenderer {
                     system.instanceAlphaScale = Float(max(0, min(1, alpha)))
                 }
                 if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
-                system.tick(now: time, frameSlot: frameSlot)
+                system.advanceSimulation(now: time)
+                if !Self.particleFrameArenaEnabled, system.definition.rendersSprite {
+                    system.prepareRenderData(frameSlot: frameSlot)
+                }
             }
         }
         if let coordinator = particleInstanceCoordinator {
             let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
             withFrameSignpost("particleEvents") {
-                coordinator.tick(now: time, frameSlot: frameSlot) { system in
+                coordinator.tick(now: time, frameSlot: frameSlot, shouldPrepareRenderData: { system in
+                    !Self.particleFrameArenaEnabled && system.definition.rendersSprite && particleSystemVisible(system)
+                }, configure: { system in
                     updateParticleHostOriginOffset(system, using: liveTransforms)
                     system.pointerCentered = system.pointerInSimulationFrame(particlePointer)
                     system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
@@ -651,10 +659,15 @@ extension WPEMetalSceneRenderer {
                     if system.isAudioResponsive {
                         system.audioSpectrum16 = audioSpectrum16
                     }
-                }
+                })
             }
             withFrameSignpost("particleBindings") {
                 synchronizeParticleInstanceBindings()
+            }
+        }
+        if Self.particleFrameArenaEnabled {
+            try withFrameSignpost("particlePrepare") {
+                try prepareParticleFrameOutput(frameSlot: frameSlot)
             }
         }
         withFrameSignpost("particlePublish") {

@@ -1974,8 +1974,9 @@ struct WPEGodraysCombineUniforms {
     uint copyBackground;
     /// Authored BLENDMODE combo (common_blending.h numbering; 0 = rays only).
     uint blendMode;
-    uint padding1;
+    uint sceneBackground;
     uint padding2;
+    float4x4 backgroundProjection;
 };
 
 [[fragment]] half4 wpe_effect_pulse_fragment(
@@ -2010,8 +2011,18 @@ struct WPEGodraysCombineUniforms {
     }
     float4 albedo = float4(albedoTexture.sample(linearSampler, in.uv));
     if (uniforms.copyBackground == 1u) {
-        float4 background = float4(baseTexture.sample(linearSampler, in.uv));
-        albedo.rgb = wpe_lerp(background.rgb, albedo.rgb, albedo.a);
+        float2 backgroundUV = in.uv;
+        if (uniforms.sceneBackground == 1u) {
+            float4 clip = uniforms.backgroundProjection * float4(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0, 0.0, 1.0);
+            float2 ndc = clip.xy / max(abs(clip.w), 1e-6);
+            backgroundUV = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+        }
+        float4 background = float4(baseTexture.sample(linearSampler, backgroundUV));
+        // Native layer RTs carry PMA. Mix COPYBG in straight space, then
+        // restore coverage before the final .one source-factor composite.
+        // Transparent texels must never carry an unmasked scene rectangle.
+        float3 straightAlbedo = albedo.a > 1e-6 ? albedo.rgb / albedo.a : float3(0.0);
+        albedo.rgb = wpe_lerp(background.rgb, straightAlbedo, albedo.a) * albedo.a;
     }
     albedo.rgb = wpe_ApplyBlending(int(uniforms.blendMode), albedo.rgb, rays.rgb, rays.a);
     albedo.a = saturate(albedo.a + rays.a);

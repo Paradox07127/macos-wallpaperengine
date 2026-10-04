@@ -489,6 +489,7 @@ extension WPEMetalSceneRenderer {
             userProperties: currentSceneScriptUserProperties(),
             layers: Self.scriptLayerTable(for: document)
         )
+        sceneScriptSharedState?.timelineAnimations.configure(document: document, token: scriptLoadToken)
         sceneScriptSharedState?.seedStaticCamera(document.staticCamera, allowsMutation: !document.general.usesPerspectiveProjection)
         sceneScriptSharedState?.setCursorWorldProjection(
             cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil,

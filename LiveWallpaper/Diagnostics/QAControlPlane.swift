@@ -8,12 +8,17 @@ import LiveWallpaperCore
 @MainActor
 final class QAControlPlane {
     static let shared = QAControlPlane()
+    static let instanceID = UUID().uuidString
 
     static var socketPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("tmp/loomscreen-qa.sock")
     }
 
     private(set) weak var screenManager: ScreenManager?
+    var libraryInputs: SavedLibraryModel.Inputs?
+    var libraryApply: (@MainActor (ApplyIntent, Screen) async -> ApplyReport)?
+    let applyOperations = QAApplyOperations()
+    var screenCheckpoints: [String: QAScreenCheckpoint] = [:]
     private var listenerFD: Int32 = -1
     /// The socket we bound, so shutdown never unlinks a path another instance took over.
     private var boundInode: ino_t?
@@ -146,6 +151,7 @@ final class QAControlPlane {
     }
 
     private func stop() {
+        applyOperations.shutdown()
         guard listenerFD >= 0 else { return }
         isStopped = true
         let path = Self.socketPath
@@ -277,6 +283,18 @@ final class QAControlPlane {
         case "wallpaper.apply": return try wallpaperApply(arguments)
         case "wallpaper.clear": return try wallpaperClear(arguments)
         case "wallpaper.togglePlayback": return try wallpaperTogglePlayback(arguments)
+        case "library.list": return try libraryList(arguments)
+        case "library.get": return try await libraryGet(arguments)
+        case "library.refresh": return try await libraryRefresh(arguments)
+        case "wallpaper.applyLibraryItem": return try wallpaperApplyLibraryItem(arguments)
+        case "playback.set": return try playbackSet(arguments)
+        case "screen.checkpoint": return try screenCheckpoint(arguments)
+        case "screen.restoreCheckpoint": return try screenRestoreCheckpoint(arguments)
+        case "screen.releaseCheckpoint": return try screenReleaseCheckpoint(arguments)
+        case "operation.get":
+            try QALibraryCatalog.validateKeys(arguments, allowed: ["operationID"])
+            return try applyOperations.get(arguments).json
+        case "operation.wait": return try await applyOperations.wait(arguments)
         case "screen.get": return try screenGet(arguments)
         case "screen.patch": return try screenPatch(arguments)
         case "runtime.state": return try runtimeState(arguments)
@@ -290,6 +308,7 @@ final class QAControlPlane {
     private static func describe() -> Any {
         [
             "protocolVersion": 1,
+            "instanceID": instanceID,
             "sku": Bundle.main.bundleIdentifier ?? "unknown",
             "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "pid": ProcessInfo.processInfo.processIdentifier,
@@ -330,7 +349,7 @@ final class QAControlPlane {
                  "description": "What the live session reports (playback, frame production, renderer errors) — as opposed to what the store holds. Volume, frame-rate and fit mode are push-only and absent here."],
                 ["name": "screen.patch", "arguments": ["screenID": "Int", "<field>": "any key listed in screenWritableKeys"],
                  "description": "Write per-screen playback settings through ScreenManager's named setters, so each change also reaches the live session."],
-            ],
+            ] + libraryToolDescriptions + checkpointToolDescriptions,
             "writableKeys": [
                 "general": Array(generalKeys).sorted(),
                 "workshop": Array(workshopKeys).sorted(),
@@ -466,11 +485,13 @@ final class QAControlPlane {
         let screens = screenManager.screens.map { screen -> [String: Any] in
             let summary = screenManager.wallpaperSummary(for: screen)
             // Video keeps its window on the player; observe only the committed session, not retiring windows.
-            let window = screen.activeWallpaperWindow ?? screen.videoPlayer?.playbackWindow
+            let window = Self.actualWallpaperWindow(for: screen)
             var entry: [String: Any] = [
                 "screenID": screen.id,
                 "name": screen.name,
                 "displayFingerprint": screen.displayFingerprint,
+                "configurationRevision": screenManager.configurationRevision(for: screen),
+                "sessionID": screen.runtimeSession.map { String(describing: ObjectIdentifier($0)) } ?? NSNull(),
                 "frame": ["width": screen.frame.width, "height": screen.frame.height],
                 "activity": String(describing: summary.activity),
                 "supportsPlaybackControl": summary.supportsPlaybackControl,

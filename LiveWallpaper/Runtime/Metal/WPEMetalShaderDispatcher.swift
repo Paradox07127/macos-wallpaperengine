@@ -953,6 +953,18 @@ struct WPEMetalShaderDispatcher {
             copyBackground: baseReference == nil ? 0 : 1,
             blendMode: Self.sanitizedGodraysBlendMode(pass.comboValues["BLENDMODE"])
         )
+        if let baseReference, isSceneAliasReference(baseReference),
+           case .named = destination.id {
+            uniforms.sceneBackground = 1
+            if let projection = executor.effectTextureProjectionMatrix(
+                for: layer, frameState: frameState, sourceTexture: albedoTexture
+            ) {
+                uniforms.backgroundProjection = simd_float4x4(
+                    SIMD4<Float>(projection.columns.0), SIMD4<Float>(projection.columns.1),
+                    SIMD4<Float>(projection.columns.2), SIMD4<Float>(projection.columns.3)
+                )
+            }
+        }
         encoder.setFragmentBytes(
             &uniforms,
             length: MemoryLayout<WPEGodraysCombineUniforms>.stride,

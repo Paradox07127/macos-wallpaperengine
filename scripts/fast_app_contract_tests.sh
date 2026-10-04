@@ -40,6 +40,7 @@ PARALLEL_SUITES=(
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests
   QAControlPlaneWindowObservationTests
+  QAApplyOperationsTests
   WallpaperOpeningBatchTests
   WallpaperStartBarrierTests
   WallpaperStartBarrierCommitTests
@@ -268,6 +269,7 @@ SERIAL_SUITES=(
   # These fixtures mutate global render defaults/language or need prompt AppKit/decoder delivery.
   WPEDisplayRenderActorTests
   SavedLibraryModelTests
+  QAControlPlaneLibraryTests
   WallpaperExportServiceTests
   BrowseCardEditDeskLayoutTests
   # XPC factory substitution and blocked filesystem fixtures require an isolated pass.

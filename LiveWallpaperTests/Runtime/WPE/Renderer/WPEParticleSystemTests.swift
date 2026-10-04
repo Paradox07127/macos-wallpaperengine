@@ -3392,4 +3392,43 @@ struct WPEParticleSystemTests {
                 == withRamp.overrideAlphaAnimation
         )
     }
+
+    @Test("Animated instance alpha follows the system clock for sprites and both ribbon forms",
+          arguments: ["sprite", "rope", "ropetrail"])
+    func animatedInstanceAlphaClock(renderer: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let base = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 4,
+            "emitter": [["name": "boxrandom", "instantaneous": 4, "rate": 0]],
+            "initializer": [["name": "lifetimerandom", "min": 5, "max": 5],
+                            ["name": "alpharandom", "min": 0.8, "max": 0.8],
+                            ["name": "sizerandom", "min": 2, "max": 2]],
+            "renderer": [["name": renderer]],
+        ])
+        let ramp = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[.init(frame: 0, value: 0.1), .init(frame: 15, value: 1),
+                          .init(frame: 30, value: 0.1)]],
+                fps: 30, length: 30, mode: "loop", wrapLoop: true
+            ), scalarFallback: 1, vectorFallback: nil
+        )
+        let definition = base.applying(instanceOverride: WPESceneParticleInstanceOverride(alphaAnimation: ramp))
+        let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 17))
+        for frame in 0 ... 90 {
+            let now = Double(frame) / 30
+            system.tick(now: now)
+            #expect(system.liveParticleCount == 4)
+            let identity = try #require(system.primaryLiveParticleIdentity)
+            let snapshot = try #require(system.snapshot(for: identity))
+            let sampledScale = try #require(ramp.scalar(at: now))
+            let scale = Float(max(0, sampledScale))
+            #expect(abs(snapshot.currentAlpha - snapshot.initialAlpha * scale) < 0.00001)
+            if renderer == "sprite" {
+                let packet = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 4)
+                for index in 0 ..< 4 {
+                    #expect(abs(packet[index].color.w - snapshot.currentAlpha) < 0.00001)
+                }
+            }
+        }
+    }
 }

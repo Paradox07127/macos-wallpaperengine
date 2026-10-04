@@ -2207,6 +2207,7 @@ public enum WPESceneDocumentParser {
             visibleScript: visibleScript,
             alphaScript: alphaScript,
             alphaScriptProperties: alphaScriptProperties,
+            originAnimation: WPEValueParser.animatedValue(dict["origin"]),
             originScript: originScript,
             scaleScript: scaleScript,
             anglesScript: anglesScript,

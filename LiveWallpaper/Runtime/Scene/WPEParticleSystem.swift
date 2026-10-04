@@ -247,8 +247,17 @@ final class WPEParticleSystem {
     let blendMode: WPEParticleBlendMode
     let sceneTransform: WPEParticleSceneTransform
     private let instanceBuffers: [MTLBuffer]
+    let usesFrameArena: Bool
+    private var renderSlice: WPEParticleRenderSlice?
     private var activeFrameSlot = 0
-    var instanceBuffer: MTLBuffer { instanceBuffers[activeFrameSlot] }
+    var instanceBuffer: MTLBuffer {
+        renderSlice?.buffer ?? instanceBuffers[activeFrameSlot]
+    }
+
+    var renderBufferOffset: Int {
+        renderSlice?.offset ?? 0
+    }
+
     let isRope: Bool
     /// `ropetrail`: each particle owns a history ribbon. `isRope`: one ribbon through the pool.
     let usesTrailRibbon: Bool
@@ -258,16 +267,31 @@ final class WPEParticleSystem {
 
     var usesRibbonGeometry: Bool { isRope || usesTrailRibbon }
     private let trailPointCount: Int
-    private var trailSamples: [SIMD2<Float>] = []
-    private var trailSampleHead: [Int] = []
-    private var trailSampleFill: [Int] = []
+    private var trailSamples: [SIMD2<Float>] {
+        _read { yield cpuStorage.trailSamples }
+        _modify { yield &cpuStorage.trailSamples }
+    }
+
+    private var trailSampleHead: [Int] {
+        _read { yield cpuStorage.trailHeads }
+        _modify { yield &cpuStorage.trailHeads }
+    }
+
+    private var trailSampleFill: [Int] {
+        _read { yield cpuStorage.trailFills }
+        _modify { yield &cpuStorage.trailFills }
+    }
+
     private var trailRibbonScratch: [SIMD2<Float>] = []
     /// 48 samples still cover corpus trails at 120 Hz.
     private static let trailSampleCapacity = 48
     private let ropeVertexBuffers: [MTLBuffer]
     private let ropeVertexCapacity: Int
     var ropeVertexBuffer: MTLBuffer? {
-        ropeVertexBuffers.indices.contains(activeFrameSlot)
+        if usesRibbonGeometry, let renderSlice {
+            return renderSlice.buffer
+        }
+        return ropeVertexBuffers.indices.contains(activeFrameSlot)
             ? ropeVertexBuffers[activeFrameSlot]
             : nil
     }
@@ -322,7 +346,11 @@ final class WPEParticleSystem {
     private(set) var particleEventsThisTick: [WPEParticleEvent] = []
     private(set) var droppedParticleEventsThisTick = 0
     private var recordsParticleEvents = false
-    private var particleGenerations: [UInt64]
+    private var particleGenerations: [UInt64] {
+        _read { yield cpuStorage.generations }
+        _modify { yield &cpuStorage.generations }
+    }
+
     static let maximumRecordedParticleEvents = absoluteCap * 2
 
     private var simulationNow: Double = 0
@@ -339,10 +367,18 @@ final class WPEParticleSystem {
     }
 
     private(set) var lastAttractorAffectedCount = 0
-    private var particles: [Particle]
+    private var particles: [Particle] {
+        _read { yield cpuStorage.particles }
+        _modify { yield &cpuStorage.particles }
+    }
+
     /// Must stay exactly consistent with the `age` sentinel: every alive/dead
     /// transition (spawn, lifetime expiry, clearLiveParticles) updates both.
-    private var liveSlots: WPEParticleSlotIndex
+    private var liveSlots: WPEParticleSlotIndex {
+        _read { yield cpuStorage.liveSlots }
+        _modify { yield &cpuStorage.liveSlots }
+    }
+
     private struct ResolvedAttractor {
         var position: SIMD3<Float>
         var threshold: Float
@@ -380,6 +416,26 @@ final class WPEParticleSystem {
     static let absoluteCap = 8192
     static let perspectiveNearBoost: Float = 1.5
 
+    var requiredRenderByteCount: Int {
+        let stride = MemoryLayout<WPEParticleRopeVertex>.stride
+        if isRope {
+            return aliveCount * 2 * stride
+        }
+        if usesTrailRibbon {
+            return aliveCount * (trailPointCount * 2 + 2) * stride
+        }
+        return aliveCount * MemoryLayout<WPEParticleInstance>.stride
+    }
+
+    var ownedRenderBufferBytes: Int {
+        (instanceBuffers + ropeVertexBuffers).reduce(0) { $0 + $1.length }
+    }
+
+    func discardRenderData() {
+        renderSlice = nil
+        ropeVertexCount = 0
+    }
+
     func anchorInstanceClock(at now: Double, presimulateDelay: Bool = false) {
         firstTickTime = now
         lastTickTime = now
@@ -400,7 +456,8 @@ final class WPEParticleSystem {
             definition: definition, device: device, blendMode: blendMode,
             sceneTransform: sceneTransform,
             childScale: SIMD3(repeating: childWorldSizeMultiplier),
-            spriteSheet: spriteSheet, seed: seed
+            spriteSheet: spriteSheet, seed: seed, usesFrameArena: usesFrameArena,
+            sharedFrameRectsBuffer: frameRectsBuffer, cpuStoragePool: cpuStoragePool
         ) else { return nil }
         instance.parallaxDepth = parallaxDepth
         instance.parallaxCenter = parallaxCenter
@@ -441,28 +498,16 @@ final class WPEParticleSystem {
         return hash ^ UInt64(bitPattern: Int64(sortIndex))
     }
 
-    private struct Particle {
-        var position: SIMD3<Float>
-        var velocity: SIMD3<Float>
-        var speedScale: Float
-        var size: Float
-        var color: SIMD3<Float>
-        var rotationZ: Float
-        var angularVelocityZ: Float
-        var alphaBase: Float
-        var lifetime: Float
-        var age: Float       // Float.greatestFiniteMagnitude when slot is free
-        var turbulenceSpeed: Float
-        var turbulencePhase: Float
-        var staticFrame: Float
-        var oscPosFrequency: Float
-        var oscPosScale: Float
-        var oscPosPhase: Float
-        /// Per-particle `oscillatealpha` so a star field twinkles out of phase.
-        var oscAlphaFrequency: Float
-        var oscAlphaPhase: Float
-        var oscSizeFrequency: Float
-        var oscSizePhase: Float
+    private typealias Particle = WPEParticleCPUState
+    private let cpuStorage: WPEParticleCPUStorage
+    private let cpuStoragePool: WPEParticleCPUStoragePool?
+
+    var cpuStorageIdentity: ObjectIdentifier {
+        ObjectIdentifier(cpuStorage)
+    }
+
+    deinit {
+        cpuStoragePool?.recycle(cpuStorage)
     }
 
     init?(
@@ -472,41 +517,26 @@ final class WPEParticleSystem {
         sceneTransform: WPEParticleSceneTransform = .identity,
         childScale: SIMD3<Float> = SIMD3<Float>(repeating: 1),
         spriteSheet: WPEParticleSpriteSheet? = nil,
-        seed: UInt64? = nil
+        seed: UInt64? = nil,
+        usesFrameArena: Bool = false,
+        sharedFrameRectsBuffer: MTLBuffer? = nil,
+        cpuStoragePool: WPEParticleCPUStoragePool? = nil
     ) {
         self.definition = definition
         self.blendMode = blendMode
         self.sceneTransform = sceneTransform
         self.spriteSheet = spriteSheet
+        self.usesFrameArena = usesFrameArena
         let cap = max(1, min(definition.maxCount, Self.absoluteCap))
         self.capacity = cap
-        self.particles = .init(repeating: Particle(
-            position: .zero,
-            velocity: .zero,
-            speedScale: 1,
-            size: 0,
-            color: SIMD3(1, 1, 1),
-            rotationZ: 0,
-            angularVelocityZ: 0,
-            alphaBase: 1,
-            lifetime: 0,
-            age: .greatestFiniteMagnitude,
-            turbulenceSpeed: 0,
-            turbulencePhase: 0,
-            staticFrame: 0,
-            oscPosFrequency: 0,
-            oscPosScale: 0,
-            oscPosPhase: 0,
-            oscAlphaFrequency: 0,
-            oscAlphaPhase: 0,
-            oscSizeFrequency: 0,
-            oscSizePhase: 0
-        ), count: cap)
-        self.liveSlots = WPEParticleSlotIndex(capacity: cap)
-        particleGenerations = .init(repeating: 0, count: cap)
+        let storageKey = WPEParticleCPUStorage.Key(
+            capacity: cap, trailSamples: definition.usesTrailRibbon ? Self.trailSampleCapacity : 0
+        )
+        self.cpuStoragePool = cpuStoragePool
+        cpuStorage = cpuStoragePool?.acquire(storageKey) ?? WPEParticleCPUStorage(key: storageKey)
         var instanceBuffers: [MTLBuffer] = []
         instanceBuffers.reserveCapacity(WPEMetalRenderExecutor.maxFramesInFlight)
-        for slot in 0..<WPEMetalRenderExecutor.maxFramesInFlight {
+        for slot in 0 ..< (usesFrameArena ? 0 : WPEMetalRenderExecutor.maxFramesInFlight) {
             guard let buffer = device.makeBuffer(
                 length: cap * MemoryLayout<WPEParticleInstance>.stride,
                 options: [.storageModeShared]
@@ -533,7 +563,7 @@ final class WPEParticleSystem {
             self.ropeVertexCapacity = vertexCapacity
             var ropeBuffers: [MTLBuffer] = []
             ropeBuffers.reserveCapacity(WPEMetalRenderExecutor.maxFramesInFlight)
-            for slot in 0..<WPEMetalRenderExecutor.maxFramesInFlight {
+            for slot in 0 ..< (usesFrameArena ? 0 : WPEMetalRenderExecutor.maxFramesInFlight) {
                 guard let ropeBuffer = device.makeBuffer(
                     length: vertexCapacity * MemoryLayout<WPEParticleRopeVertex>.stride,
                     options: [.storageModeShared]
@@ -550,9 +580,6 @@ final class WPEParticleSystem {
             self.ropeVertexCapacity = 0
         }
         if trailPoints > 0 {
-            self.trailSamples = .init(repeating: .zero, count: cap * Self.trailSampleCapacity)
-            self.trailSampleHead = .init(repeating: 0, count: cap)
-            self.trailSampleFill = .init(repeating: 0, count: cap)
             self.trailRibbonScratch = .init(repeating: .zero, count: trailPoints)
         }
         if let seed {
@@ -583,7 +610,9 @@ final class WPEParticleSystem {
         } else {
             self.oscillatePositionMask = .zero
         }
-        if let rects = spriteSheet?.frameRects, !rects.isEmpty {
+        if let sharedFrameRectsBuffer, sharedFrameRectsBuffer.device.registryID == device.registryID {
+            frameRectsBuffer = sharedFrameRectsBuffer
+        } else if let rects = spriteSheet?.frameRects, !rects.isEmpty {
             let buffer = rects.withUnsafeBytes { bytes in
                 device.makeBuffer(bytes: bytes.baseAddress!, length: bytes.count, options: [.storageModeShared])
             }
@@ -832,7 +861,7 @@ final class WPEParticleSystem {
     }
 
     private func drawAttributes(
-        of particle: Particle
+        of particle: Particle, overrideAlphaScale: Float?
     ) -> (position: SIMD3<Float>, rgb: SIMD3<Float>, alpha: Float, size: Float, lifetimeFraction: Float) {
         let envelope = fadeEnvelope(age: particle.age, lifetime: particle.lifetime)
         let lifetimeFraction = particle.lifetime > 0 ? min(1, max(0, particle.age / particle.lifetime)) : 0
@@ -840,9 +869,8 @@ final class WPEParticleSystem {
         if let alphaChange = definition.alphaChange {
             alpha *= Float(alphaChange.factor(lifetimeFraction: Double(lifetimeFraction)))
         }
-        if let overrideAlpha = definition.overrideAlphaAnimation,
-           let scale = overrideAlpha.scalar(at: systemElapsed) {
-            alpha *= Float(max(0, scale))
+        if let overrideAlphaScale {
+            alpha *= overrideAlphaScale
         }
         if let oscillateAlpha = definition.oscillateAlpha {
             alpha *= Float(oscillateAlpha.factor(
@@ -892,6 +920,10 @@ final class WPEParticleSystem {
         return (drawPosition, rgb, alpha, spriteSize, lifetimeFraction)
     }
 
+    private var animatedOverrideAlphaScale: Float? {
+        definition.overrideAlphaAnimation?.scalar(at: systemElapsed).map { Float(max(0, $0)) }
+    }
+
     private func perspectiveDepthScale(depth z: Float) -> Float {
         let t = min(max(z / perspectiveExtent, 0), 1)
         return 1 + Self.perspectiveNearBoost * t
@@ -936,9 +968,27 @@ final class WPEParticleSystem {
     }
 
     func tick(now: Double, frameSlot: Int = 0) {
-        precondition(instanceBuffers.indices.contains(frameSlot))
-        activeFrameSlot = frameSlot
+        advanceSimulation(now: now)
+        prepareRenderData(frameSlot: frameSlot)
+    }
+
+    func advanceSimulation(now: Double) {
         advance(now: now)
+    }
+
+    func prepareRenderData(frameSlot: Int = 0, slice: WPEParticleRenderSlice? = nil) {
+        precondition((0 ..< WPEMetalRenderExecutor.maxFramesInFlight).contains(frameSlot))
+        precondition(!usesFrameArena || slice != nil || aliveCount == 0)
+        if let slice {
+            precondition(slice.offset >= 0 && slice.length >= requiredRenderByteCount)
+            precondition(slice.offset <= slice.buffer.length - slice.length)
+        }
+        activeFrameSlot = frameSlot
+        renderSlice = slice
+        if aliveCount == 0 {
+            ropeVertexCount = 0
+            return
+        }
         if isRope {
             buildRopeGeometry()
             return
@@ -947,14 +997,16 @@ final class WPEParticleSystem {
             buildTrailGeometry()
             return
         }
-        let pointer = instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: capacity)
+        let pointer = instanceBuffer.contents().advanced(by: renderBufferOffset)
+            .bindMemory(to: WPEParticleInstance.self, capacity: aliveCount)
         let frameCount: Float = Float(max(1, spriteSheet?.frameCount ?? 1))
         let animatesSequence = definition.animationMode == .sequence && frameCount > 1
         let cyclesPerLifetime = max(0.0001, Float(definition.sequenceMultiplier))
         var written = 0
+        let overrideAlphaScale = animatedOverrideAlphaScale
         liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
-            let attrs = drawAttributes(of: particle)
+            let attrs = drawAttributes(of: particle, overrideAlphaScale: overrideAlphaScale)
             let lifetimeFraction = attrs.lifetimeFraction
             let alpha = attrs.alpha
             let spriteSize = attrs.size
@@ -981,19 +1033,18 @@ final class WPEParticleSystem {
             )
             written += 1
         }
-        aliveCount = written
     }
 
     private func buildRopeGeometry() {
         guard let buffer = ropeVertexBuffer else {
-            aliveCount = 0
             ropeVertexCount = 0
             return
         }
         ropeKnotScratch.removeAll(keepingCapacity: true)
+        let overrideAlphaScale = animatedOverrideAlphaScale
         liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
-            let attrs = drawAttributes(of: particle)
+            let attrs = drawAttributes(of: particle, overrideAlphaScale: overrideAlphaScale)
             ropeKnotScratch.append((
                 SIMD2<Float>(attrs.position.x, attrs.position.y),
                 SIMD4<Float>(attrs.rgb.x, attrs.rgb.y, attrs.rgb.z, attrs.alpha),
@@ -1001,14 +1052,14 @@ final class WPEParticleSystem {
                 particle.age
             ))
         }
-        aliveCount = ropeKnotScratch.count
         guard ropeKnotScratch.count >= 2 else {
             ropeVertexCount = 0
             return
         }
         ropeKnotScratch.sort { $0.age < $1.age }
 
-        let verts = buffer.contents().bindMemory(to: WPEParticleRopeVertex.self, capacity: capacity * 2)
+        let verts = buffer.contents().advanced(by: renderBufferOffset)
+            .bindMemory(to: WPEParticleRopeVertex.self, capacity: aliveCount * 2)
         let count = ropeKnotScratch.count
         // Carry the last valid normal across coincident knots so the ribbon does not spike.
         var lastNormal = SIMD2<Float>(0, 1)
@@ -1042,21 +1093,19 @@ final class WPEParticleSystem {
 
     private func buildTrailGeometry() {
         guard let buffer = ropeVertexBuffer, trailPointCount >= 2 else {
-            aliveCount = 0
             ropeVertexCount = 0
             return
         }
-        let verts = buffer.contents()
-            .bindMemory(to: WPEParticleRopeVertex.self, capacity: ropeVertexCapacity)
+        let verts = buffer.contents().advanced(by: renderBufferOffset)
+            .bindMemory(to: WPEParticleRopeVertex.self, capacity: aliveCount * (trailPointCount * 2 + 2))
         let pointCount = trailPointCount
         let perRibbon = pointCount * 2 + 2
         var written = 0
-        var live = 0
+        let overrideAlphaScale = animatedOverrideAlphaScale
         liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
-            live += 1
             guard written + perRibbon <= ropeVertexCapacity else { return }
-            let attrs = drawAttributes(of: particle)
+            let attrs = drawAttributes(of: particle, overrideAlphaScale: overrideAlphaScale)
             let color = SIMD4<Float>(attrs.rgb.x, attrs.rgb.y, attrs.rgb.z, attrs.alpha)
             let halfSize = max(0, attrs.size * 0.5)
             resampleTrailRibbon(index, size: attrs.size, velocity: particle.velocity)
@@ -1094,7 +1143,6 @@ final class WPEParticleSystem {
             }
             written = cursor
         }
-        aliveCount = live
         ropeVertexCount = written
     }
 
@@ -1232,8 +1280,7 @@ final class WPEParticleSystem {
     }
 
     func clearLiveParticles() {
-        // Deliberately sweeps every slot: clearing must reach all of them.
-        for index in 0..<capacity {
+        liveSlots.forEachLiveSlot { index in
             particles[index].age = .greatestFiniteMagnitude
         }
         liveSlots.removeAll()
@@ -1277,7 +1324,7 @@ final class WPEParticleSystem {
 
     private func particleSnapshot(at slot: Int) -> WPEParticleSnapshot {
         let p = particles[slot]
-        let current = drawAttributes(of: p)
+        let current = drawAttributes(of: p, overrideAlphaScale: animatedOverrideAlphaScale)
         return WPEParticleSnapshot(identity: .init(slot: slot, generation: particleGenerations[slot]),
                                    position: p.position, displayPosition: current.position, velocity: p.velocity,
                                    initialColor: p.color, currentColor: current.rgb,
@@ -1470,6 +1517,7 @@ final class WPEParticleSystem {
                     recordParticleEvent(.death, slot: index)
                     particles[index].age = .greatestFiniteMagnitude
                     liveSlots.markDead(index)
+                    aliveCount -= 1
                     continue
                 }
                 notePrimaryCandidate(age: particles[index].age, slot: index)
@@ -1515,7 +1563,7 @@ final class WPEParticleSystem {
         var records: [[String: Any]] = []
         if usesRibbonGeometry {
             guard let buffer = ropeVertexBuffer, ropeVertexCount > 0 else { return ([], false) }
-            let verts = buffer.contents().bindMemory(
+            let verts = buffer.contents().advanced(by: renderBufferOffset).bindMemory(
                 to: WPEParticleRopeVertex.self, capacity: ropeVertexCount)
             let count = min(ropeVertexCount, limit)
             records.reserveCapacity(count)
@@ -1532,8 +1580,8 @@ final class WPEParticleSystem {
             return (records, ropeVertexCount > limit)
         }
         let alive = liveInstanceCount
-        guard alive > 0 else { return ([], false) }
-        let pointer = instanceBuffer.contents().bindMemory(
+        guard alive > 0, !usesFrameArena || renderSlice != nil else { return ([], false) }
+        let pointer = instanceBuffer.contents().advanced(by: renderBufferOffset).bindMemory(
             to: WPEParticleInstance.self, capacity: alive)
         let count = min(alive, limit)
         records.reserveCapacity(count)
@@ -1738,6 +1786,7 @@ final class WPEParticleSystem {
         )
         particleGenerations[slot] &+= 1
         liveSlots.markLive(slot)
+        aliveCount += 1
         notePrimaryCandidate(age: 0, slot: slot)
         if trailPointCount > 0 {
             resetTrailHistory(slot, to: position)

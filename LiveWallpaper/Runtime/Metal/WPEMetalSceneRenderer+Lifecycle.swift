@@ -76,6 +76,8 @@ extension WPEMetalSceneRenderer {
         releaseDynamicTextureSources()
         particleIndependentSystems.removeAll()
         particleInstanceCoordinator = nil
+        particleFrameArena = nil
+        particleCPUStoragePool = nil
         particleTemplates.removeAll()
         particleRootTemplates.removeAll()
         particleTemplateTextures.removeAll()
@@ -804,6 +806,8 @@ extension WPEMetalSceneRenderer {
         releaseDynamicTextureSources()
         particleIndependentSystems.removeAll()
         particleInstanceCoordinator = nil
+        particleFrameArena = nil
+        particleCPUStoragePool = nil
         particleTemplates.removeAll()
         particleRootTemplates.removeAll()
         particleTemplateTextures.removeAll()

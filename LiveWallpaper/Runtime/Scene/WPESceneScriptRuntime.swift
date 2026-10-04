@@ -2025,6 +2025,7 @@ final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
     let userProperties: [String: WPESceneScriptPropertyValue]
     let layers: [WPESceneScriptLayerInfo]
+    let timelineAnimations = WPESceneTimelineStore()
     private let ambiguousLayerNames: Set<String>
     private let lock = NSLock()
     private var storage: [String: Any] = [:]

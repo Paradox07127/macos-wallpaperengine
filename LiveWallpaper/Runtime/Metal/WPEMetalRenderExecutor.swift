@@ -21,12 +21,14 @@ final class WPEMetalRenderExecutor {
     struct DiagnosticControls: Equatable, Sendable {
         static let process = DiagnosticControls(environment: ProcessInfo.processInfo.environment)
         let disableParticleBatching: Bool
+        let disableParticleDrawBatching: Bool
         let disableSolidBatching: Bool
         let disableFBOAliasing: Bool
         let disableSceneAliasDirectBind: Bool
 
         init(environment: [String: String] = [:]) {
             disableParticleBatching = environment["WPE_DIAGNOSTIC_DISABLE_PARTICLE_BATCHING"] == "1"
+            disableParticleDrawBatching = environment["WPE_DIAGNOSTIC_DISABLE_PARTICLE_DRAW_BATCHING"] == "1"
             disableSolidBatching = environment["WPE_DIAGNOSTIC_DISABLE_SOLID_BATCHING"] == "1"
             disableFBOAliasing = environment["WPE_DIAGNOSTIC_DISABLE_FBO_ALIASING"] == "1"
             disableSceneAliasDirectBind = environment["WPE_DIAGNOSTIC_DISABLE_SCENE_ALIAS_DIRECT_BIND"] == "1"
@@ -42,6 +44,8 @@ final class WPEMetalRenderExecutor {
         var perPassReadbackActive = false
         var particleEncoderCount = 0
         var particleSystemsEncoded = 0
+        var particleDrawCount = 0
+        var particleDrawBatchingEnabled = false
         var plannedAliasIntervalCount = 0
         /// Intervals actually submitted to the pool, not a GPU allocation count.
         var aliasIntervalCount = 0
@@ -755,6 +759,8 @@ final class WPEMetalRenderExecutor {
         diagnostics.solidBatchingEnabled = diagnostics.solidBatchingEnabled && !dumpScenePasses
         diagnostics.sceneQuadBatchingEnabled = diagnostics.sceneQuadBatchingEnabled && !dumpScenePasses
         #endif
+        diagnostics.particleDrawBatchingEnabled = diagnostics.particleBatchingEnabled
+            && !diagnosticControls.disableParticleDrawBatching
         adoptPrewarmedAuthoredShaders(for: pipeline, camera: cameraUniforms)
         var shaderRuntimeUniforms = runtimeUniforms
         shaderRuntimeUniforms.frameTime = advanceShaderFrameTime(runtimeTime: runtimeUniforms.time)
@@ -984,6 +990,7 @@ final class WPEMetalRenderExecutor {
                         didEncode = true
                         diagnostics.particleSystemsEncoded += 1
                         diagnostics.particleEncoderCount += 1
+                        diagnostics.particleDrawCount += 1
                         #if DEBUG
                         // Label MUST equal the trace passId `recordParticlePass` emits (`particle.<traceIndex>`); the old `.<sortIndex>.` form never matched.
                         captureScenePassIfDumping(dumpScenePasses, label: "particle.\(traceIndex)", output: output, commandBuffer: commandBuffer)
@@ -992,6 +999,12 @@ final class WPEMetalRenderExecutor {
                     continue
                 }
 
+                let batch = particleSpriteBatch(
+                    startingWith: system, following: sortedParticles, cursor: &particleCursor,
+                    threshold: threshold, enabled: diagnostics.particleDrawBatchingEnabled,
+                    textures: particleTextures, normals: particleNormalTextures,
+                    sceneSize: size, cameraParallax: particleParallax, cameraUniforms: cameraUniforms
+                )
                 let encoder = try particleRunEncoder
                     ?? makeParticleOutputEncoder(output: output, commandBuffer: commandBuffer)
                 if particleRunEncoder == nil { diagnostics.particleEncoderCount += 1 }
@@ -1006,10 +1019,13 @@ final class WPEMetalRenderExecutor {
                     normalsByMaterial: particleNormalTextures,
                     frameState: &frameState,
                     traceIndex: traceIndex,
-                    sharedEncoder: encoder
+                    sharedEncoder: encoder,
+                    preparedUniforms: batch.uniforms,
+                    combinedInstanceCount: batch.systemCount > 1 ? batch.instanceCount : nil
                 ) {
                     didEncode = true
-                    diagnostics.particleSystemsEncoded += 1
+                    diagnostics.particleSystemsEncoded += batch.systemCount
+                    diagnostics.particleDrawCount += 1
                 }
             }
         }

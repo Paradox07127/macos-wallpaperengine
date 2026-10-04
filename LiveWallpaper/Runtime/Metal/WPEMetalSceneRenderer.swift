@@ -76,6 +76,10 @@ final class WPEMetalSceneRenderer: NSObject {
     var particleSystems: [WPEParticleSystem] = []
     var particleIndependentSystems: [WPEParticleSystem] = []
     var particleInstanceCoordinator: WPEParticleInstanceCoordinator?
+    var particleFrameArena: WPEParticleFrameArena?
+    var particleCPUStoragePool: WPEParticleCPUStoragePool?
+    weak var synchronizedParticleCoordinator: WPEParticleInstanceCoordinator?
+    var synchronizedParticleBindingRevision: UInt64 = .max
     var particleTemplates: [ObjectIdentifier: WPEParticleTemplate] = [:]
     var particleRootTemplates: [WPEParticleTemplate] = []
     var particleTemplateTextures: [ObjectIdentifier: MTLTexture] = [:]

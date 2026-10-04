@@ -108,7 +108,9 @@ extension WPEMetalSceneRenderer {
         // Keyframed origins ride the same live-transform map as the scripts, so a
         // moving transform host composes onto its children exactly the same way.
         dynamicOriginAnimations = Dictionary(
-            document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
+            document.imageObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
+                object.originAnimation.map { (object.id, $0) }
+            } + document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
                 guard object.id != cameraMotionPlayback?.definition.objectID else { return nil }
                 return object.originAnimation.map { (object.id, $0) }
             },

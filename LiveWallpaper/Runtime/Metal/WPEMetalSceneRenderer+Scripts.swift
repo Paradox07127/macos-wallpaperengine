@@ -948,7 +948,9 @@ extension WPEMetalSceneRenderer {
     }
 
     func applyLayerAlphaScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
-        liveLayerAlpha[ownObjectID] = output.own.alpha
+        if output.own.alphaAssigned {
+            liveLayerAlpha[ownObjectID] = output.own.alpha
+        }
         applyLayerScriptSideEffects(output, ownObjectID: ownObjectID)
     }
 

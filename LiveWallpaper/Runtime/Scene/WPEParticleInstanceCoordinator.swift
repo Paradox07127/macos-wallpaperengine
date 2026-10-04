@@ -34,6 +34,7 @@ final class WPEParticleInstanceCoordinator {
         var followsParent = false
         var emissionEndedWithParent = false
         var children: [Instance] = []
+        var childCounts: [Int]
 
         init(system: WPEParticleSystem, template: WPEParticleTemplate,
              parent: Instance? = nil, referenceIndex: Int? = nil) {
@@ -41,14 +42,20 @@ final class WPEParticleInstanceCoordinator {
             self.template = template
             self.parent = parent
             self.referenceIndex = referenceIndex
+            childCounts = .init(repeating: 0, count: template.children.count)
             if template.children.contains(where: \.reference.rollsProbabilityPerEvent) {
                 system.beginRecordingParticleEvents()
             }
         }
+
+        func appendChild(_ child: Instance) {
+            children.append(child)
+            childCounts[child.referenceIndex!] += 1
+        }
     }
 
     /// Event pools are bounded separately from the existing authored root pools.
-    /// The slot budget covers CPU particles and three in-flight GPU buffers.
+    /// The slot budget covers CPU particles and in-flight GPU buffers.
     static let maximumEventInstances = 1024
     static let maximumEventParticleSlots = 65536
     private let device: MTLDevice
@@ -62,6 +69,8 @@ final class WPEParticleInstanceCoordinator {
     private var random: SplitMix64
     private var previousTime: Double?
     private var previousInterval: Double = 0
+    private var cachedBindings: [Binding]?
+    private(set) var bindingRevision: UInt64 = 0
 
     init(templates: [WPEParticleTemplate], device: MTLDevice, seed: UInt64) {
         self.device = device
@@ -74,6 +83,9 @@ final class WPEParticleInstanceCoordinator {
     }
 
     var bindings: [Binding] {
+        if let cachedBindings {
+            return cachedBindings
+        }
         var result: [Binding] = []
         func append(_ instance: Instance) {
             result.append(.init(system: instance.system, prototype: instance.template.prototype))
@@ -84,6 +96,7 @@ final class WPEParticleInstanceCoordinator {
         for root in roots {
             append(root)
         }
+        cachedBindings = result
         return result
     }
 
@@ -97,6 +110,12 @@ final class WPEParticleInstanceCoordinator {
     /// One substep clock for the entire tree. A follower sees its own parent's
     /// same-substep position, including a terminal death snapshot, before ticking.
     func tick(now: Double, frameSlot: Int = 0, configure: (WPEParticleSystem) -> Void = { _ in }) {
+        tick(now: now, frameSlot: frameSlot, shouldPrepareRenderData: { _ in true }, configure: configure)
+    }
+
+    func tick(now: Double, frameSlot: Int = 0,
+              shouldPrepareRenderData: (WPEParticleSystem) -> Bool,
+              configure: (WPEParticleSystem) -> Void = { _ in }) {
         guard now.isFinite else { return }
         let raw = max(0, now - (previousTime ?? now))
         let delta = min(raw, max(0.1, 2 * previousInterval))
@@ -106,8 +125,11 @@ final class WPEParticleInstanceCoordinator {
         for index in 0 ..< steps {
             let time = now - delta + Double(index + 1) * delta / Double(steps)
             for root in roots {
-                tick(root, now: time, frameSlot: frameSlot, configure: configure)
+                advance(root, now: time, configure: configure)
             }
+        }
+        for binding in bindings where shouldPrepareRenderData(binding.system) {
+            binding.system.prepareRenderData(frameSlot: frameSlot)
         }
     }
 
@@ -122,10 +144,13 @@ final class WPEParticleInstanceCoordinator {
             for root in roots {
                 let seconds = max(0, secondsByRoot[ObjectIdentifier(root.system)] ?? 0)
                 guard now >= -seconds else { continue }
-                tick(root, now: now, frameSlot: 0, configure: { _ in })
+                advance(root, now: now, configure: { _ in })
             }
         }
         for binding in bindings {
+            if !binding.system.usesFrameArena {
+                binding.system.prepareRenderData()
+            }
             binding.system.finishInstancePrewarm()
         }
         previousTime = 0
@@ -139,8 +164,8 @@ final class WPEParticleInstanceCoordinator {
         }
     }
 
-    private func tick(_ instance: Instance, now: Double, frameSlot: Int,
-                      configure: (WPEParticleSystem) -> Void) {
+    private func advance(_ instance: Instance, now: Double,
+                         configure: (WPEParticleSystem) -> Void) {
         let system = instance.system
         if let parent = instance.parent {
             if instance.followsParent, let identity = instance.followedParticle {
@@ -177,7 +202,7 @@ final class WPEParticleInstanceCoordinator {
             }
         }
         configure(system)
-        system.tick(now: now, frameSlot: frameSlot)
+        system.advanceSimulation(now: now)
         for event in system.particleEventsThisTick {
             for (index, child) in instance.template.children.enumerated() {
                 let kind = child.reference.eventKind
@@ -193,16 +218,17 @@ final class WPEParticleInstanceCoordinator {
                 }
                 // Establish this instance's own birth clock, not the scene clock.
                 created.system.anchorInstanceClock(at: event.simulationTime)
-                instance.children.append(created)
+                instance.appendChild(created)
                 addStaticChildren(to: created, reusePrototypes: false)
             }
         }
         for child in instance.children {
-            tick(child, now: now, frameSlot: frameSlot, configure: configure)
+            advance(child, now: now, configure: configure)
         }
         instance.children.removeAll { child in
             let reference = instance.template.children[child.referenceIndex!].reference
             guard reference.rollsProbabilityPerEvent, subtreeIsIdle(child) else { return false }
+            instance.childCounts[child.referenceIndex!] -= 1
             release(child)
             return true
         }
@@ -210,7 +236,7 @@ final class WPEParticleInstanceCoordinator {
 
     private func allowsCreation(_ reference: WPEParticleChildReference, parent: Instance, index: Int) -> Bool {
         if let maximum = reference.maxCount,
-           parent.children.filter({ $0.referenceIndex == index }).count >= max(0, maximum) {
+           parent.childCounts[index] >= max(0, maximum) {
             return false
         }
         return reference.probability > 0 && (reference.probability >= 1 || Double.random(in: 0 ..< 1, using: &random) < reference.probability)
@@ -230,6 +256,7 @@ final class WPEParticleInstanceCoordinator {
         eventInstanceCount += 1
         eventParticleSlots += system.capacity
         createdEventInstances += 1
+        invalidateBindings()
         return Instance(system: system, template: child.template, parent: parent, referenceIndex: index)
     }
 
@@ -244,7 +271,7 @@ final class WPEParticleInstanceCoordinator {
             }
             guard let instance else { continue }
             instance.system.instanceOriginOffset = parent.system.instanceOriginOffset
-            parent.children.append(instance)
+            parent.appendChild(instance)
             addStaticChildren(to: instance, reusePrototypes: reusePrototypes)
         }
     }
@@ -272,6 +299,7 @@ final class WPEParticleInstanceCoordinator {
     }
 
     private func release(_ instance: Instance) {
+        invalidateBindings()
         for child in instance.children {
             release(child)
         }
@@ -280,6 +308,11 @@ final class WPEParticleInstanceCoordinator {
             releasedEventInstances += 1
             eventParticleSlots -= instance.system.capacity
         }
+    }
+
+    private func invalidateBindings() {
+        cachedBindings = nil
+        bindingRevision &+= 1
     }
 
     func apply(_ commands: [WPESceneScriptParticleCommand]) {
@@ -292,6 +325,7 @@ final class WPEParticleInstanceCoordinator {
                         release(child)
                     }
                     root.children.removeAll()
+                    root.childCounts = .init(repeating: 0, count: root.template.children.count)
                 case .play:
                     resumeSubtree(root)
                     if root.children.isEmpty {

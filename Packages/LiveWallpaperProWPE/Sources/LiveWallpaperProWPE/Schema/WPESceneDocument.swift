@@ -1194,6 +1194,8 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// Alpha scripts return the live alpha from `update(value)` and must not change layer visibility.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
+    /// Local keyframed origin, sampled before parent transform composition.
+    public let originAnimation: WPESceneAnimatedValue?
     /// Dynamic WPE SceneScript attached to this layer's `origin` field. Static
     /// origin scripts are resolved at parse time and leave this nil.
     public let originScript: WPESceneTransformScript?
@@ -1245,6 +1247,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         visibleScript: String? = nil,
         alphaScript: String? = nil,
         alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:],
+        originAnimation: WPESceneAnimatedValue? = nil,
         originScript: WPESceneTransformScript? = nil,
         scaleScript: WPESceneTransformScript? = nil,
         anglesScript: WPESceneTransformScript? = nil,
@@ -1288,6 +1291,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.visibleScript = visibleScript
         self.alphaScript = alphaScript
         self.alphaScriptProperties = alphaScriptProperties
+        self.originAnimation = originAnimation
         self.originScript = originScript
         self.scaleScript = scaleScript
         self.anglesScript = anglesScript
@@ -1538,15 +1542,30 @@ public struct WPESceneAnimatedValue: Equatable, Sendable {
     public let animation: WPESceneNumericAnimation
     public let scalarFallback: Double?
     public let vectorFallback: [Double]?
+    public let relative: Bool
+    public let parentKey: String?
 
     public init(
         animation: WPESceneNumericAnimation,
         scalarFallback: Double?,
-        vectorFallback: [Double]?
+        vectorFallback: [Double]?,
+        relative: Bool = false,
+        parentKey: String? = nil
     ) {
         self.animation = animation
         self.scalarFallback = scalarFallback
         self.vectorFallback = vectorFallback
+        self.relative = relative
+        self.parentKey = parentKey
+    }
+
+    /// Relative origins sample offsets, including zero for unauthored channels.
+    public func originVector(at time: Double) -> [Double]? {
+        guard relative, let vectorFallback else { return vector(at: time) }
+        let offsets = animation.values(at: time, fallbacks: Array(repeating: 0, count: vectorFallback.count))
+        return vectorFallback.enumerated().map { index, seed in
+            seed + (offsets.indices.contains(index) ? offsets[index] : 0)
+        }
     }
 
     public func resolvedValue(at time: Double) -> WPESceneShaderConstantValue {

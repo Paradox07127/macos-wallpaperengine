@@ -888,7 +888,12 @@ final class WPELayerScriptInstance {
             super.init(
                 shared: shared,
                 initialVisible: initialVisible,
-                initialAlpha: initialAlpha,
+                initialAlpha: {
+                    if case let .returnedAlpha(seed) = outputMode {
+                        return seed
+                    }
+                    return initialAlpha
+                }(),
                 ownLayerName: ownLayerName,
                 ownObjectID: ownObjectID,
                 createdLayerBridge: createdLayerBridge,
@@ -1240,9 +1245,6 @@ final class WPELayerScriptInstance {
                 cachedFalseArgument = JSValue(bool: false, in: context)
                 _ = updateEngineRuntime(0)
                 installLayerBridge(in: context)
-                if case let .returnedAlpha(initialValue) = outputMode {
-                    setOwnLayerAlpha(initialValue.isFinite ? initialValue : 1)
-                }
                 if let shared {
                     wpeInstallSharedState(shared, in: context)
                 }
@@ -1321,12 +1323,8 @@ final class WPELayerScriptInstance {
                 // A failed init preserves authored own visibility and alpha, but (as in WPE) keeps its
                 // writes to other layers and leaves update() running.
                 if didThrow {
-                    let authoredAlpha = switch outputMode {
-                    case .layerState: initialOwnAlpha
-                    case let .returnedAlpha(seed): seed.isFinite ? seed : initialOwnAlpha
-                    }
                     assignedVisible[Self.ownKey] = initialOwnVisible
-                    assignedAlpha[Self.ownKey] = authoredAlpha
+                    assignedAlpha[Self.ownKey] = nil
                     assignedText[Self.ownKey] = nil
                 }
             }
@@ -2274,6 +2272,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
             self?.neutralAnimationStubCache
         }
         handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
+        if let info {
+            wpeInstallTimelineAnimation(on: handle, objectID: info.id, shared: shared, in: context)
+        }
         if let info, info.isParticleSystem {
             particleBridge.install(on: handle, objectID: info.id, in: context)
             return handle

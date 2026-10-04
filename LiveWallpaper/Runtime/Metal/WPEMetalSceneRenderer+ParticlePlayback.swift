@@ -18,6 +18,8 @@ extension WPEMetalSceneRenderer {
 
     func synchronizeParticleInstanceBindings() {
         guard let coordinator = particleInstanceCoordinator else { return }
+        guard synchronizedParticleCoordinator !== coordinator
+            || synchronizedParticleBindingRevision != coordinator.bindingRevision else { return }
         let bindings = coordinator.bindings
         particleSystems = particleIndependentSystems + bindings.map(\.system)
         particleTextures.removeAll(keepingCapacity: true)
@@ -33,6 +35,8 @@ extension WPEMetalSceneRenderer {
             particleTextures[id] = particleTemplateTextures[prototypeID]
             particleNormalTextures[id] = particleTemplateNormals[prototypeID]
         }
+        synchronizedParticleCoordinator = coordinator
+        synchronizedParticleBindingRevision = coordinator.bindingRevision
     }
 
     func publishParticlePlaybackSnapshots() {
