@@ -76,11 +76,19 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(",
             in: runtime
-        ) == 24)
+        ) == 28)
+        // Every bounded entry checks the scene token first; admission itself lives in the one shared runner.
+        let runtimeLines = runtime.components(separatedBy: "\n")
+        for index in runtimeLines.indices.dropFirst() where runtimeLines[index].contains("return runWithBudget(") {
+            let gate = runtimeLines[index - 1].trimmingCharacters(in: .whitespaces)
+            #expect(gate.hasPrefix("guard allows(.") && gate.hasSuffix("else { return .capacityUnavailable }"),
+                    "unguarded bounded entry: \(runtimeLines[index])")
+        }
+        // 6 = module setUp plus the staged init() callback on each of the three live engines.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline)",
             in: runtime
-        ) == 3)
+        ) == 6)
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .tick, admission: .failFast)",
             in: runtime
@@ -97,10 +105,11 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline)",
             in: runtime
         ) == 10)
+        // 2 = layer and text engines' applyUserProperties.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline)",
             in: runtime
-        ) == 1)
+        ) == 2)
         #expect(RR10ProductionSource.occurrences(
             of: "governor: WPESceneScriptExecutionGovernor = .processShared",
             in: runtime
@@ -226,20 +235,21 @@ struct WPESceneScriptContainmentCharacterizationTests {
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
         ])
         // Instance-level media entry points (engine-level ones sit behind these).
+        // Staged init adds a leading `!requiresInitialization`; the destroy barrier must follow it.
         let mediaGuards = [
-            "guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }",
-            "guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }",
-            "guard !isPoisoned, !isDestroyed else { return }",
-            "guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,",
-            "guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }",
+            "guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }",
+            "guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }",
+            "guard !requiresInitialization, !isPoisoned, !isDestroyed else { return }",
+            "guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,",
+            "guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }",
         ]
         for pattern in mediaGuards {
             #expect(runtime.contains(pattern), "missing destroy barrier: \(pattern)")
         }
         // No media entry may guard on poison alone (`isPoisoned, handles(` without `isDestroyed`).
-        #expect(!runtime.contains("guard !isPoisoned, handles(event)"),
+        #expect(!runtime.contains("!isPoisoned, handles(event)"),
                 "a media entry lost its destroy barrier")
-        #expect(!runtime.contains("guard !isPoisoned, !engine.hasRuntimeFault,\n              mediaHandlers.handles"),
+        #expect(!runtime.contains("!isPoisoned, !engine.hasRuntimeFault,\n              mediaHandlers.handles"),
                 "a transform media entry lost its destroy barrier")
     }
 
@@ -1067,7 +1077,7 @@ struct WPESceneScriptBatchAutoreleaseTests {
         deinit { deinitSignal.signal() }
     }
 
-    @Test("A busy worker still drains each job's autoreleased objects")
+    @Test("A busy worker still drains each job's autoreleased objects", .timeLimit(.minutes(1)))
     func busyWorkerDrainsPerJob() async throws {
         let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
         let queue = dispatcher.reserveLane().queue

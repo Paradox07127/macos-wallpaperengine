@@ -43,6 +43,7 @@ enum WPEBatchTickDriver {
     }
 }
 
+@Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct WPEScriptAsyncTickSemanticsTests {
 
