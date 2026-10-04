@@ -2442,25 +2442,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld de %2$lld seleccionados"
+            "value" : "%lld de %lld seleccionados"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld / %2$lld 件を選択"
+            "value" : "%lld / %lld 件を選択"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选择 %1$lld 项，共 %2$lld 项"
+            "value" : "已选择 %lld 项，共 %lld 项"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已選取 %1$lld 項，共 %2$lld 項"
+            "value" : "已選取 %lld 項，共 %lld 項"
           }
         }
       }
