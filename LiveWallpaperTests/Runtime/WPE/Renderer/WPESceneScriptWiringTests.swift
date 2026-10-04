@@ -9,7 +9,7 @@ import Testing
 @Suite("SceneScript renderer wiring", .serialized)
 struct WPESceneScriptWiringTests {
     @Test("Alpha families retain their own entry side effects without applying own alpha twice",
-          arguments: ["layer", "text", "particle"])
+          arguments: ["layer", "hidden-layer", "text", "particle"])
     func alphaEntrySideEffects(family: String) async throws {
         let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
         defer { fixture.cleanup() }
@@ -56,6 +56,9 @@ struct WPESceneScriptWiringTests {
         default:
             ownerID = "owner"
             objects[2]["alpha"] = alpha
+            if family == "hidden-layer" {
+                objects[2]["visible"] = false
+            }
         }
         scene["objects"] = objects
         try JSONSerialization.data(withJSONObject: scene).write(to: path)
@@ -84,17 +87,19 @@ struct WPESceneScriptWiringTests {
             #expect(renderer.layerTransformMutationJournal.entries[
                 .init(objectID: "target\(stage)", generation: renderer.loadGeneration)
             ]?.scale == SIMD3(Double(stage + 10), Double(stage + 10), 1))
+            // Load seeds image objects (text included, via its synthetic layer) with authored `visible`; alpha scripts must leave it.
+            #expect(renderer.liveLayerVisibility[ownerID] == ["layer": true, "hidden-layer": false, "text": true][family])
             switch family {
             case "text":
                 #expect(renderer.liveTextAlpha[ownerID] == 0.25)
                 #expect(renderer.liveLayerAlpha[ownerID] == nil)
+                #expect(renderer.liveTextVisibility[ownerID] == true)
             case "particle":
                 #expect(renderer.liveParticleInstanceAlpha[ownerID] == 0.25)
                 #expect(renderer.liveLayerAlpha[ownerID] == nil)
             default:
                 #expect(renderer.liveLayerAlpha[ownerID] == 0.25)
             }
-            #expect(renderer.liveLayerVisibility[ownerID] == nil)
         }
         check(stage: 3)
         check(stage: 1)
@@ -124,7 +129,8 @@ struct WPESceneScriptWiringTests {
         renderer.discardSceneScriptVideoCommands()
 
         renderer.beginSceneScriptVideoCommands()
-        renderer.dispatchSceneScriptResizeScreen(SIMD2(128, 128))
+        // Non-square, so it never equals the 64x64-point frame's drawable at any backing scale (an unchanged size skips resizeScreen).
+        renderer.dispatchSceneScriptResizeScreen(SIMD2(160, 90))
         check(stage: 6)
         #expect(renderer.sceneScriptVideoCommandBuffer.pending.map(\.command) == [.stop])
         renderer.discardSceneScriptVideoCommands()
