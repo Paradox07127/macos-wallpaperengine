@@ -20,20 +20,22 @@ final class WorkshopSubscriptionSync {
     /// The failure is "sign in first", which the sheet can offer to fix rather
     /// than only describe.
     private(set) var requiresSignIn = false
+    var selection: Set<UInt64> = []
 
     @ObservationIgnored private let metadataService: SteamWorkshopMetadataService
     @ObservationIgnored private let downloads: WorkshopDownloadCoordinator
-    /// The sequential download walk, so a second press replaces it.
-    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private let queue: WorkshopDownloadQueue
 
     private static let metadataFetchBatchSize = 50
 
     init(
         metadataService: SteamWorkshopMetadataService = SteamWorkshopMetadataService(),
-        downloads: WorkshopDownloadCoordinator = .shared
+        downloads: WorkshopDownloadCoordinator = .shared,
+        queue: WorkshopDownloadQueue = .shared
     ) {
         self.metadataService = metadataService
         self.downloads = downloads
+        self.queue = queue
     }
 
     func refresh(using doctor: SteamCMDDoctorService) async {
@@ -67,6 +69,7 @@ final class WorkshopSubscriptionSync {
         case .listed:
             let missing = result.workshopIDs.compactMap(UInt64.init).filter { !installed.contains($0) }
             phase = .ready(missing: missing)
+            selection = Set(missing)
             await loadTitles(for: missing)
         case .loginRequired:
             fail(String(
@@ -93,25 +96,28 @@ final class WorkshopSubscriptionSync {
         }
     }
 
-    /// One at a time: the connector runs SteamCMD on a serial queue and drops a request that waited too long, so enqueueing the whole list times out everything after the first item.
-    func downloadMissing(using doctor: SteamCMDDoctorService) {
-        guard case let .ready(missing) = phase else { return }
-        task?.cancel()
-        task = Task { [weak self] in
-            for itemID in missing {
-                guard let self, !Task.isCancelled else { return }
-                // download() approves only a local copy, so a Steam holder passed here still refuses.
-                downloads.download(
-                    itemID: itemID, title: title(for: itemID), using: doctor,
-                    replacing: downloads.libraryCopyBlockingDownload(of: itemID)
-                )
-                while downloads.isBusy(itemID) {
-                    if Task.isCancelled {
-                        return
-                    }
-                    try? await Task.sleep(for: .seconds(1))
-                }
+    /// Selected missing items that a press of Download would still send.
+    func downloadableSelection() -> [UInt64] {
+        guard case let .ready(missing) = phase else { return [] }
+        return missing.filter { itemID in
+            switch downloads.phase(for: itemID) {
+            case .succeeded, .succeededAsPreset: return false
+            default: return selection.contains(itemID) && !queue.isQueued(itemID) && !downloads.isBusy(itemID)
             }
+        }
+    }
+
+    func downloadSelected(using doctor: SteamCMDDoctorService) {
+        // download() approves only a local copy, so a Steam holder passed as `replacing:` still refuses.
+        queue.enqueue(downloadableSelection().map {
+            WorkshopDownloadQueue.Request(itemID: $0, title: title(for: $0), replacesLocalCopy: true, doctor: doctor)
+        })
+    }
+
+    func cancelDownloads() {
+        guard case let .ready(missing) = phase else { return }
+        for itemID in missing {
+            queue.cancel(itemID)
         }
     }
 

@@ -293,6 +293,7 @@ SERIAL_SUITES=(
   WPELocalCopySupersedeTests
   WorkshopMutationGateTests
   WorkshopDownloadReadinessTests
+  WorkshopDownloadQueueTests
   WallpaperEnginePackageTests
   # Controlled dispatch-worker oracles have 2 s hard deadlines. Unrelated
   # parallel suites can exhaust the dispatch pool before their workers start.

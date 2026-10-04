@@ -2430,6 +2430,41 @@
         }
       }
     },
+    "%lld of %lld selected" : {
+      "comment" : "Subscription sync list header; first number is how many missing items are selected, second is how many are missing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld selected"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld seleccionados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld 件を選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择 %1$lld 项，共 %2$lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選取 %1$lld 項，共 %2$lld 項"
+          }
+        }
+      }
+    },
     "%lld of %lld shown" : {
       "comment" : "Library status bar when a search or filter narrows the page. The first %lld is how many are shown, the second the library size.",
       "localizations" : {
@@ -2864,66 +2899,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 訂閱"
-          }
-        }
-      }
-    },
-    "%lld subscribed wallpapers are missing from this Mac." : {
-      "comment" : "Subscription sync result count; %lld is how many subscribed items are not downloaded.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld subscribed wallpaper is missing from this Mac."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld subscribed wallpapers are missing from this Mac."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Falta %lld fondo suscrito en este Mac."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Faltan %lld fondos suscritos en este Mac."
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サブスクライブ済みの壁紙が %lld 件、この Mac にありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机缺少 %lld 个已订阅的壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這台 Mac 上缺少 %lld 個已訂閱的桌布。"
           }
         }
       }
@@ -12047,6 +12022,41 @@
         }
       }
     },
+    "Cancel downloads" : {
+      "comment" : "Subscription sync footer button that cancels every queued or running download from the list.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel downloads"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar descargas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのダウンロードをキャンセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消全部下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消全部下載"
+          }
+        }
+      }
+    },
     "Cancel update" : {
       "comment" : "Tooltip for canceling an update operation.",
       "extractionState" : "manual",
@@ -12917,6 +12927,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "充電中"
+          }
+        }
+      }
+    },
+    "Check again" : {
+      "comment" : "Subscription sync list header icon button that re-reads the Steam subscriptions.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobar de nuevo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再確認"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新检查"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新檢查"
           }
         }
       }
@@ -22945,6 +22990,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載未回傳任何資料夾。"
+          }
+        }
+      }
+    },
+    "Download selected" : {
+      "comment" : "Subscription sync primary button that queues the checked missing items.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download selected"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar selección"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択項目をダウンロード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载所选项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載所選項目"
           }
         }
       }
@@ -50423,6 +50503,41 @@
         }
       }
     },
+    "Queued" : {
+      "comment" : "Paste queue row status: the item waits in the download queue.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queued"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En cola"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "順番待ち"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已排队"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已排入佇列"
+          }
+        }
+      }
+    },
     "Quit %@" : {
       "comment" : "Menu bar quit action. Placeholder is the running Pro/Lite product name.",
       "extractionState" : "manual",
@@ -59285,6 +59400,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇時段"
+          }
+        }
+      }
+    },
+    "Select all" : {
+      "comment" : "Subscription sync checkbox that selects or clears every selectable missing item.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select all"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleccionar todo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全選"
           }
         }
       }
@@ -77239,6 +77389,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "寫入峰值"
+          }
+        }
+      }
+    },
+    "Waiting" : {
+      "comment" : "Subscription sync row status: the item waits in the download queue.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En espera"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待機中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
           }
         }
       }

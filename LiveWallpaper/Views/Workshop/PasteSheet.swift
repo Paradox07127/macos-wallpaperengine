@@ -7,6 +7,7 @@ struct PasteSheet: View {
     @Environment(SteamCMDDoctorService.self) private var doctor
     @State private var model = WorkshopPasteQueueModel()
     @State private var downloads = WorkshopDownloadCoordinator.shared
+    @State private var queue = WorkshopDownloadQueue.shared
     @State private var toastVisible = false
     @State private var pendingDestructive: PendingDestructive?
     @FocusState private var textFieldIsFocused: Bool
@@ -73,9 +74,15 @@ struct PasteSheet: View {
 
                 if !downloadableRows.isEmpty {
                     Button {
-                        for row in downloadableRows {
-                            downloadAction(for: row, confirmsReplacement: false)?()
-                        }
+                        // replacesLocalCopy false: a row holding a local copy fails as already in the library instead of asking — one alert can't carry several rows.
+                        queue.enqueue(downloadableRows.compactMap { row in
+                            row.publishedFileID.map {
+                                WorkshopDownloadQueue.Request(
+                                    itemID: $0, title: row.metadata?.title ?? String($0),
+                                    replacesLocalCopy: false, doctor: doctor
+                                )
+                            }
+                        })
                     } label: {
                         Label("Download all", systemImage: "arrow.down.circle.fill")
                             .font(DesignTokens.Typography.caption)
@@ -86,7 +93,14 @@ struct PasteSheet: View {
 
                 Menu {
                     Button("Open all in Steam") { model.openAllInSteam() }
-                    Button("Clear queue", role: .destructive) { model.removeAll() }
+                    Button("Clear queue", role: .destructive) {
+                        for row in model.rows {
+                            if let id = row.publishedFileID {
+                                queue.remove(id)
+                            }
+                        }
+                        model.removeAll()
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                 }
@@ -170,11 +184,17 @@ struct PasteSheet: View {
                     PasteRowCard(
                         row: row,
                         onRetry: { model.retry(rowID: row.id) },
-                        onRemove: { model.remove(rowID: row.id) },
+                        onRemove: {
+                            if let id = row.publishedFileID {
+                                queue.remove(id)
+                            }
+                            model.remove(rowID: row.id)
+                        },
                         onOpenInSteam: { openInSteam(row) },
                         onCopyDiagnostic: { copyDiagnostic(for: row.id) },
                         onDownload: downloadAction(for: row),
-                        downloadPhase: row.publishedFileID.map { downloads.phase(for: $0) } ?? .idle
+                        downloadPhase: row.publishedFileID.map { downloads.phase(for: $0) } ?? .idle,
+                        isQueued: row.publishedFileID.map { queue.isQueued($0) } ?? false
                     )
                 }
             }
@@ -212,21 +232,18 @@ struct PasteSheet: View {
         guard doctor.isDownloadReady else { return [] }
         return model.rows.filter { row in
             guard let id = row.publishedFileID else { return false }
-            return downloads.phase(for: id) == .idle
+            return downloads.phase(for: id) == .idle && !queue.isQueued(id)
         }
     }
 
     // MARK: - Helpers
 
     /// `nil` hides the button: no id to download, or SteamCMD is not set up and signed in.
-    /// `confirmsReplacement` false: a row holding a local copy fails as already in the library instead of asking — one alert can't carry several rows.
-    private func downloadAction(
-        for row: WorkshopPasteQueueModel.QueueRow, confirmsReplacement: Bool = true
-    ) -> (() -> Void)? {
+    private func downloadAction(for row: WorkshopPasteQueueModel.QueueRow) -> (() -> Void)? {
         guard let itemID = row.publishedFileID, doctor.isDownloadReady else { return nil }
         let title = row.metadata?.title ?? String(itemID)
         return {
-            guard confirmsReplacement, let local = downloads.localCopyToReplace(for: itemID) else {
+            guard let local = downloads.localCopyToReplace(for: itemID) else {
                 downloads.download(itemID: itemID, title: title, using: doctor)
                 return
             }

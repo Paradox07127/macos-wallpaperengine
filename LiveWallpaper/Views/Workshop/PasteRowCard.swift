@@ -11,6 +11,7 @@ struct PasteRowCard: View {
     /// `nil` when this row has no usable id, or SteamCMD isn't ready to download.
     var onDownload: (() -> Void)?
     var downloadPhase: WorkshopDownloadCoordinator.DownloadPhase = .idle
+    var isQueued = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -168,12 +169,18 @@ struct PasteRowCard: View {
                 .controlSize(.small)
                 .help(Text(verbatim: reason))
             case .idle:
-                Button(action: onDownload) {
-                    Label("Download", systemImage: "arrow.down.circle")
-                        .font(DesignTokens.Typography.body)
+                if isQueued {
+                    Label("Queued", systemImage: "clock")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(action: onDownload) {
+                        Label("Download", systemImage: "arrow.down.circle")
+                            .font(DesignTokens.Typography.body)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
     }
