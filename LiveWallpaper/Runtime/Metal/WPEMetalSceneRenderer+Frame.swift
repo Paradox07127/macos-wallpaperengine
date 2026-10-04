@@ -413,7 +413,11 @@ extension WPEMetalSceneRenderer {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty || !textScriptInstances.isEmpty else {
-            return WPEFrameOverlay()
+            // Transform/effect scripts' layer writes land in the live maps via consumeSceneScriptLayerOutputs.
+            let hasLayerWritingScripts = !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
+                || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
+                || !effectConstantScriptInstances.isEmpty || !effectVisibilityScriptInstances.isEmpty
+            return hasLayerWritingScripts ? livePresentationOverlay : WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
         // stable tick order keeps the frame deterministic (oracle) and behaviour
@@ -471,10 +475,11 @@ extension WPEMetalSceneRenderer {
         // Capture now: transform/event scripts run later and may mutate live
         // presentation. The frame keeps the same snapshot as the old early
         // visibility/alpha application, while the tree is rebuilt only once.
-        return WPEFrameOverlay(
-            visibility: liveLayerVisibilityIncludingText,
-            alpha: liveLayerAlphaIncludingText
-        )
+        return livePresentationOverlay
+    }
+
+    private var livePresentationOverlay: WPEFrameOverlay {
+        WPEFrameOverlay(visibility: liveLayerVisibilityIncludingText, alpha: liveLayerAlphaIncludingText)
     }
 
     /// WPE evaluates the parallax static term at the root's CURRENT position. Only parentless ids are overlaid:
