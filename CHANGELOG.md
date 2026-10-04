@@ -13,6 +13,34 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.3] — 2026-10-04
+
+### Added
+
+- The Wallpaper Automation sheet has an Explain This Page guide.
+
+### Changed
+
+- Pro: Sync subscribed wallpapers reads the subscription list Steam keeps for
+  the account, so subscription changes made on Steam reach the library.
+- Pro: scenes with many particles use less CPU.
+
+### Fixed
+
+- Pro: Workshop items whose file names contain ".." download and import, and a
+  failed import shows the real reason.
+- Pro: a Steam library that lost its access grant is reported instead of
+  showing an empty Workshop, and the library is scanned at launch and right
+  after it is chosen again.
+- Pro: a scene script that never finishes no longer freezes the app when
+  Multithreaded rendering is off.
+- Pro: linked scene timelines move together, and animations that start paused
+  stay paused until a script plays them.
+- Pro: origin animations on some axes only play, and transform scripts can
+  show, hide or fade other layers.
+- Pro: god-ray effects no longer show a small copy of the scene through
+  transparent areas.
+
 ## [0.8.2] — 2026-10-03
 
 ### Added
