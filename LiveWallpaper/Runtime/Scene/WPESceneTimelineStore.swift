@@ -3,8 +3,7 @@ import Foundation
 import JavaScriptCore
 import LiveWallpaperProWPE
 
-/// Linked property tracks share one clock. Only script-controlled clocks need
-/// alpha overlays; ordinary tracks retain the existing uniform sampling path.
+/// Linked tracks share one clock; only non-free-running (startpaused or scripted) clocks get alpha overlays.
 final class WPESceneTimelineStore: @unchecked Sendable {
     private struct Key: Hashable {
         let objectID: String
@@ -16,6 +15,7 @@ final class WPESceneTimelineStore: @unchecked Sendable {
         var anchorSeconds: Double = 0
         var rate: Double = 1
         var paused = false
+        /// true once the clock can diverge from elapsed time (startpaused or any script command).
         var controlled = false
 
         func seconds(at time: Double) -> Double {
@@ -57,6 +57,7 @@ final class WPESceneTimelineStore: @unchecked Sendable {
             var clock = Clock()
             if case .value(true)? = tracks[root]?.animation.startPaused {
                 clock.paused = true
+                clock.controlled = true
             }
             clocks[root] = clock
         }

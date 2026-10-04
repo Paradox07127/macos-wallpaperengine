@@ -85,6 +85,50 @@ struct WPESceneTimelineTests {
         #expect(shared.timelineAnimations.read(objectID: "1733", property: "alpha", field: "rate") == 0.5)
     }
 
+    private func linkedDocument(startPaused: Bool) throws -> WPESceneDocument {
+        let json = """
+        {"camera":{"center":"1920 1080 0","eye":"1920 1080 100","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":3840,"height":2160}},
+         "objects":[
+          {"id":7,"name":"Sun","image":"materials/sun.json",
+           "origin":{"value":"0 0 0","animation":{"relative":true,
+             "c0":[{"frame":0,"value":0},{"frame":30,"value":100}],
+             "c1":[{"frame":0,"value":0},{"frame":30,"value":0}],
+             "options":{"fps":30,"length":60,"mode":"loop","parent":{"key":"alpha"}}}},
+           "alpha":{"value":1,"animation":{
+             "c0":[{"frame":0,"value":0.25},{"frame":30,"value":1},{"frame":60,"value":0.25}],
+             "options":{"fps":30,"length":60,"mode":"loop","startpaused":\(startPaused)}}}}]}
+        """
+        return try WPESceneDocumentParser.parse(data: Data(json.utf8))
+    }
+
+    @Test("A startpaused alpha track holds frame 0 with its linked origin until play() advances both")
+    func startPausedAlphaFollowsLinkedClock() throws {
+        let document = try linkedDocument(startPaused: true)
+        let alpha = try #require(document.imageObjects.first?.alphaAnimation)
+        let store = WPESceneTimelineStore()
+        store.configure(document: document)
+        store.publishTime(1)
+        #expect(store.seconds(objectID: "7", property: "origin", at: 1) == 0)
+        #expect(store.alphaOverrides(at: 1)["7"] == alpha.scalar(at: 0))
+        #expect(store.alphaOverrides(at: 1)["7"] == 0.25)
+        #expect(store.read(objectID: "7", property: "alpha", field: "frame") == 0)
+
+        store.command(objectID: "7", property: "alpha", operation: "play", value: 0)
+        #expect(store.seconds(objectID: "7", property: "origin", at: 1.5) == 0.5)
+        #expect(store.alphaOverrides(at: 1.5)["7"] == alpha.scalar(at: 0.5))
+        #expect((store.alphaOverrides(at: 1.5)["7"] ?? 0) > 0.25)
+    }
+
+    @Test("A free-running, uncommanded alpha track stays on the ordinary sampler")
+    func freeRunningAlphaHasNoOverride() throws {
+        let store = WPESceneTimelineStore()
+        try store.configure(document: linkedDocument(startPaused: false))
+        store.publishTime(1)
+        #expect(store.alphaOverrides(at: 1).isEmpty)
+        #expect(store.seconds(objectID: "7", property: "origin", at: 1) == 1)
+    }
+
     @Test("Explicit alpha assignments retain their claim")
     func explicitAlphaAssignmentStillOverrides() throws {
         let layer = try WPELayerScriptInstance(
