@@ -63,7 +63,7 @@ struct SteamWriteOwnershipTests {
     func workshopDownloadTargetsSharedLibrary() throws {
         let connector = try Self.source("SteamConnector/SteamConnector.swift")
         let start = try #require(connector.range(of: "func downloadWorkshopItem("))
-        let body = String(connector[start.lowerBound...].prefix(3000))
+        let body = String(connector[start.lowerBound...].prefix(4000))
 
         let installDir = try #require(body.range(of: "\"+force_install_dir\""))
         let login = try #require(body.range(of: "\"+login\""))
