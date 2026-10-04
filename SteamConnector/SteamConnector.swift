@@ -544,34 +544,41 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 respond(.steamCMDUnavailable, tail: "No subscription probe directory for \(accountName)")
                 return
             }
-            let probe = Self.readSubscriptionLedger(
+            let probe = Self.readSubscriptions(
                 accountName: accountName, steamCMDPath: steamCMDPath, scratch: scratch
             )
-            // Gone before the caller hears anything: the tree is a copy of the
-            // user's Workshop ledger with no reason to outlive one reply.
             Self.discardSubscriptionProbe(scratch)
             respond(probe.outcome, tail: probe.tail, ids: probe.ids, executed: steamCMDPath)
         }
     }
 
-    /// Runs `workshop_status` into `scratch` and reads back the ledger SteamCMD
-    /// records the account's subscription list in. Downloads nothing.
-    private static func readSubscriptionLedger(
+    /// Runs `workshop_status` against a fake Wallpaper Engine install in `scratch`,
+    /// then reads the subscription list SteamCMD keeps in the account profile.
+    private static func readSubscriptions(
         accountName: String,
         steamCMDPath: String,
         scratch: URL
     ) -> (outcome: SteamSubscribedItemsResult.Outcome, tail: String, ids: [String]) {
-        // `force_install_dir` before `+login`, the order Valve documents and
-        // the same one `downloadWorkshopItem` uses: it redirects the whole
-        // Workshop tree, ledger included, so nothing here reaches the shared
-        // library.
+        let appID = SteamLibraryPaths.wallpaperEngineAppID
+        let manifest = scratch.appendingPathComponent("steamapps/appmanifest_\(appID).acf", isDirectory: false)
+        do {
+            try FileManager.default.createDirectory(
+                at: manifest.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try Data(SteamWorkshopManifest.probeAppManifest.utf8).write(to: manifest)
+        } catch {
+            return (.unrecognized, "Could not prepare the subscription probe: \(error.localizedDescription)", [])
+        }
+        // `force_install_dir` must precede `+login` or the run reaches the shared library.
         let run = runSteamCMD(
             steamCMDPath: steamCMDPath,
             arguments: [
                 "+@NoPromptForPassword", "1",
                 "+force_install_dir", scratch.path(percentEncoded: false),
                 "+login", accountName,
-                "+workshop_status", SteamLibraryPaths.wallpaperEngineAppID,
+                "+workshop_status", appID,
                 "+quit",
             ],
             timeout: 180
@@ -587,24 +594,20 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return (.steamUnreachable, out, [])
         }
 
-        let ledger = scratch.appendingPathComponent(
-            "steamapps/workshop/appworkshop_\(SteamLibraryPaths.wallpaperEngineAppID).acf",
-            isDirectory: false
-        )
-        guard let ledgerText = try? String(contentsOf: ledger, encoding: .utf8) else {
-            // Not reported as an empty subscription list: whether
-            // `workshop_status` alone is enough to make SteamCMD refresh the
-            // list is unverified, so a silent `[]` would read to the user as
-            // "you are subscribed to nothing".
-            return (
-                .unrecognized,
-                "SteamCMD did not write a subscription ledger; workshop_status may not refresh subscriptions",
-                []
-            )
+        // Printed only once the app is loaded and the subscription list was requested.
+        guard out.contains("Workshop Content folder") else {
+            return (.unrecognized, "SteamCMD did not load app \(appID); subscriptions were not requested", [])
         }
-        // A ledger that exists and parses to nothing is a real answer: the
-        // account is subscribed to nothing. Only its absence is unexplained.
-        return (.listed, out, SteamWorkshopManifest.subscribedIDs(fromACF: ledgerText))
+        guard let accountID = SteamCachedLoginParser.accountID(inLoginLine: out),
+              let file = try? SteamCMDProfile.subscriptionsFile(accountName: accountName, accountID: accountID) else {
+            return (.unrecognized, "SteamCMD output carried no account id; subscriptions file not located", [])
+        }
+        // Absent is not "zero subscriptions": the account may never have been sent a list.
+        guard let text = try? String(contentsOf: file, encoding: .utf8),
+              let ids = SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: text) else {
+            return (.unrecognized, "SteamCMD left no readable \(appID)_subscriptions.vdf in the account profile", [])
+        }
+        return (.listed, out, ids)
     }
 
     /// Symlink-guarded the same way `discardStagedWorkshopTree` is.

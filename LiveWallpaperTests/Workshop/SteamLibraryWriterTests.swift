@@ -804,63 +804,74 @@ struct SteamCMDProfileTests {
         }
     }
 
-    @Test("Only the ids under WorkshopItemsInstalled are read, once each")
-    func subscribedIDsComeFromTheInstalledSectionOnly() {
-        let acf = """
-        "AppWorkshop"
-        {
-        \t"appid"\t\t"431960"
-        \t"WorkshopItemsInstalled"
-        \t{
-        \t\t"2638328545"
-        \t\t{
-        \t\t\t"size"\t\t"44636140"
-        \t\t\t"manifest"\t\t"4827768822074803252"
-        \t\t}
-        \t\t"3647999330"
-        \t\t{
-        \t\t\t"size"\t\t"1502995"
-        \t\t}
-        \t}
-        \t"WorkshopItemDetails"
-        \t{
-        \t\t"2638328545"
-        \t\t{
-        \t\t\t"manifest"\t\t"4827768822074803252"
-        \t\t}
-        \t\t"9999999999"
-        \t\t{
-        \t\t\t"manifest"\t\t"1"
-        \t\t}
-        \t}
-        }
-        """
-        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: acf) == ["2638328545", "3647999330"])
+    static let subscriptionsVDF = """
+    "subscribedfiles"
+    {
+    \t"appid"\t\t"431960"
+    \t"time_last_updated"\t\t"1790817072"
+    \t"0"
+    \t{
+    \t\t"publishedfileid"\t\t"3647999330"
+    \t\t"time_subscribed"\t\t"1786170811"
+    \t\t"disabled_locally"\t\t"0"
+    \t}
+    \t"1"
+    \t{
+    \t\t"publishedfileid"\t\t"../x"
+    \t\t"time_subscribed"\t\t"1786170812"
+    \t}
+    \t"2"
+    \t{
+    \t\t"time_subscribed"\t\t"1786170813"
+    \t\t"publishedfileid"\t\t"3605861317"
+    \t}
+    \t"3"
+    \t{
+    \t\t"publishedfileid"\t\t"3647999330"
+    \t}
+    }
+    """
+
+    @Test("Subscribed ids are read from every subscribedfiles entry, in order, once each, safe ids only")
+    func subscribedIDsComeFromTheSubscriptionsFile() {
+        #expect(SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: Self.subscriptionsVDF) == ["3647999330", "3605861317"])
+        let none = "\"subscribedfiles\"\n{\n\t\"appid\"\t\t\"431960\"\n}"
+        #expect(SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: none) == [])
     }
 
-    @Test("Ids that could not be a Steam id are dropped, and a missing section yields nothing")
-    func subscribedIDsRejectUnsafeIDsAndMissingSections() {
-        let unsafe = """
-        "AppWorkshop"
-        {
-        \t"WorkshopItemsInstalled"
-        \t{
-        \t\t"../../etc"
-        \t\t{
-        \t\t\t"size"\t\t"1"
-        \t\t}
-        \t\t"2638328545"
-        \t\t{
-        \t\t\t"size"\t\t"1"
-        \t\t}
-        \t}
-        }
-        """
-        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: unsafe) == ["2638328545"])
+    @Test("A truncated or empty subscriptions file is no answer, not an empty list")
+    func truncatedSubscriptionsFileIsNoAnswer() {
+        let truncated = String(Self.subscriptionsVDF.dropLast(40))
+        #expect(SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: truncated) == nil)
+        #expect(SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: "") == nil)
+    }
 
-        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "") == [])
-        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"431960\"\n}") == [])
-        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "\"WorkshopItemsInstalled\"\n{\n\t\"2638328545\"") == [])
+    @Test("The probe app manifest carries exactly the fields that make SteamCMD load the app")
+    func probeAppManifestText() {
+        #expect(SteamWorkshopManifest.probeAppManifest == """
+        "AppState"
+        {
+        \t"appid"\t\t"431960"
+        \t"Universe"\t\t"1"
+        \t"StateFlags"\t\t"4"
+        \t"installdir"\t\t"wallpaper_engine"
+        }\n
+        """)
+    }
+
+    @Test("The 32-bit account id comes from a successful login line only")
+    func accountIDFromLoginLine() {
+        #expect(SteamCachedLoginParser.accountID(inLoginLine: "x\nLogging in user 'alice_01' [U:1:1267132100] to Steam Public...OK\n") == 1_267_132_100)
+        #expect(SteamCachedLoginParser.accountID(inLoginLine: "Logging in user 'x' [U:1:42] to Steam Public...FAILED (Rate Limit Exceeded)") == nil)
+        #expect(SteamCachedLoginParser.accountID(inLoginLine: "Logging in user 'x' [U:1:4294967296] to Steam Public...OK") == nil)
+        #expect(SteamCachedLoginParser.accountID(inLoginLine: "no login line here") == nil)
+    }
+
+    @Test("The subscriptions file sits under the account's own Steam root")
+    func subscriptionsFilePath() throws {
+        let file = try SteamCMDProfile.subscriptionsFile(accountName: "Alice", accountID: 42, realHome: "/Users/example")
+        let root = try SteamCMDProfile.steamRoot(accountName: "alice", realHome: "/Users/example")
+        #expect(file == root.appendingPathComponent("userdata/42/ugc/431960_subscriptions.vdf", isDirectory: false))
     }
 
     @Test("Session removal refuses the Maintenance profile and any name that leaves Accounts")

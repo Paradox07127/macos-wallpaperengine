@@ -73,10 +73,9 @@ protocol SteamConnectorProtocol {
         with reply: @escaping @Sendable (Data) -> Void
     )
 
-    /// Reads the account's Workshop subscription list, which SteamCMD records
-    /// locally on login. Downloads nothing and writes nothing into the shared
-    /// Steam library — the run happens in a throwaway directory that is deleted
-    /// before this replies. Replies with a JSON `SteamSubscribedItemsResult`.
+    /// Refreshes and reads the subscription list SteamCMD keeps in the account
+    /// profile via `workshop_status` in a throwaway install dir deleted before
+    /// replying; nothing reaches the shared library. Replies with a JSON `SteamSubscribedItemsResult`.
     func listSubscribedWorkshopItems(
         accountName: String,
         with reply: @escaping @Sendable (Data) -> Void
@@ -661,7 +660,7 @@ struct SteamSubscribedItemsResult: Codable, Equatable, Sendable {
     }
 
     let outcome: Outcome
-    /// Workshop ids the account is subscribed to, in ledger order.
+    /// Workshop ids the account is subscribed to, in subscriptions-file order.
     let workshopIDs: [String]
     let diagnosticTail: String
     /// Execution receipt: the canonical binary this operation actually spawned.
@@ -858,9 +857,16 @@ enum SteamCachedLoginParser {
     /// `Logging in user 'x' [U:1:1267132100] to Steam Public...OK` carries a
     /// SteamID3 account id; SteamID64 is that plus the individual-account base.
     static func steamID64(inLoginLine stdout: String) -> String? {
-        guard let match = stdout.firstMatch(of: /Logging in user '[^']+' \[U:1:(\d+)\] to Steam Public\.\.\.OK/),
-              let accountID = UInt64(match.output.1) else { return nil }
-        return String(76_561_197_960_265_728 + accountID)
+        guard let accountID = accountID(inLoginLine: stdout) else { return nil }
+        return String(76_561_197_960_265_728 + UInt64(accountID))
+    }
+
+    /// The SteamID3 account id, which also names the account's `userdata/<id>` directory.
+    static func accountID(inLoginLine stdout: String) -> UInt32? {
+        guard let match = stdout.firstMatch(of: /Logging in user '[^']+' \[U:1:(\d+)\] to Steam Public\.\.\.OK/) else {
+            return nil
+        }
+        return UInt32(match.output.1)
     }
 }
 
@@ -1113,44 +1119,40 @@ enum SteamAccountsFile {
     }
 }
 
-/// The `appworkshop_<appid>.acf` ledger SteamCMD keeps beside the Workshop
-/// content it manages.
-///
-/// `WorkshopItemsInstalled` is filled from the account's subscription list at
-/// login — measured 2026-09-05, on a profile that had downloaded nothing — so
-/// this is where the subscriptions can be read without a publisher Web API key
-/// (`ISteamRemoteStorage/EnumerateUserSubscribedFiles` needs one, and Valve
-/// documents it as never usable directly by clients).
+/// The account's Workshop subscription list as SteamCMD keeps it in the profile,
+/// readable without a publisher Web API key.
 enum SteamWorkshopManifest {
-    /// Subscribed ids in file order, deduplicated, each one safe as a path
-    /// component. Only the ids directly under `WorkshopItemsInstalled`:
-    /// `WorkshopItemDetails` repeats the same ids further down, so a scan of
-    /// the whole file returns every subscription twice.
-    static func subscribedIDs(fromACF text: String) -> [String] {
-        guard let block = installedBlock(in: text) else { return [] }
+    /// SteamCMD only requests the subscription list for apps it sees installed;
+    /// without `Universe` it ignores the manifest.
+    static let probeAppManifest = """
+    "AppState"
+    {
+    \t"appid"\t\t"\(SteamLibraryPaths.wallpaperEngineAppID)"
+    \t"Universe"\t\t"1"
+    \t"StateFlags"\t\t"4"
+    \t"installdir"\t\t"wallpaper_engine"
+    }\n
+    """
+
+    /// `publishedfileid`s of `userdata/<accountid>/ugc/<appid>_subscriptions.vdf` in file
+    /// order, deduplicated, path-safe only. nil when the `subscribedfiles` block is incomplete.
+    static func subscribedIDs(fromSubscriptionsVDF text: String) -> [String]? {
+        guard let key = text.range(of: "\"subscribedfiles\"") else { return nil }
+        var cursor = key.upperBound
+        guard let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &cursor) else { return nil }
         var ids: [String] = []
         var seen: Set<String> = []
-        var cursor = block.startIndex
-        while let id = SteamAccountsFile.nextQuoted(in: block, from: &cursor) {
-            // Every entry is `"<id>" { … }`; a token with no block following is
-            // a truncated file, not an id.
-            guard SteamAccountsFile.nextBraceBlock(in: block, from: &cursor) != nil else { break }
-            guard SteamLibraryPaths.isSafeWorkshopID(id), seen.insert(id).inserted else { continue }
-            ids.append(id)
-        }
-        return ids
-    }
-
-    private static func installedBlock(in text: String) -> Substring? {
-        var cursor = text.startIndex
-        while let range = text.range(of: "\"WorkshopItemsInstalled\"", range: cursor ..< text.endIndex) {
-            cursor = range.upperBound
-            var probe = cursor
-            if let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &probe) {
-                return block
+        var entryCursor = block.startIndex
+        while let entry = SteamAccountsFile.nextBraceBlock(in: block, from: &entryCursor) {
+            var fieldCursor = entry.startIndex
+            while let field = SteamAccountsFile.nextQuoted(in: entry, from: &fieldCursor),
+                  let value = SteamAccountsFile.nextQuoted(in: entry, from: &fieldCursor) {
+                guard field == "publishedfileid", SteamLibraryPaths.isSafeWorkshopID(value),
+                      seen.insert(value).inserted else { continue }
+                ids.append(value)
             }
         }
-        return nil
+        return ids
     }
 }
 
@@ -2192,14 +2194,18 @@ enum SteamCMDProfile {
             .appendingPathComponent("Library/Application Support/Steam/steamapps/workshop", isDirectory: true)
     }
 
-    /// A throwaway `force_install_dir` target for the subscription probe, so
-    /// SteamCMD writes its Workshop ledger somewhere the app can read it
-    /// without touching the shared library. The UUID leaf is what keeps two
-    /// concurrent probes from reading each other's ledger; it goes through
-    /// `sessionDirectory` for the containment and the `anonymous` refusal.
+    /// A throwaway `force_install_dir` for the subscription probe, outside the
+    /// shared library; the UUID leaf keeps concurrent probes apart.
     static func subscriptionProbeDirectory(accountName: String, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
         try sessionDirectory(accountName: accountName, realHome: realHome)
             .appendingPathComponent("SubscriptionProbe/\(UUID().uuidString)", isDirectory: true)
+    }
+
+    static func subscriptionsFile(accountName: String, accountID: UInt32, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        try steamRoot(accountName: accountName, realHome: realHome).appendingPathComponent(
+            "userdata/\(accountID)/ugc/\(SteamLibraryPaths.wallpaperEngineAppID)_subscriptions.vdf",
+            isDirectory: false
+        )
     }
 
     static func account(in arguments: [String]) -> String? {
