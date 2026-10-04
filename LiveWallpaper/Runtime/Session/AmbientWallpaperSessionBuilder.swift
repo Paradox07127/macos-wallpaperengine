@@ -13,7 +13,7 @@ private enum WPEPathSafety {
         !value.isEmpty
             && !value.contains("\0")
             && !value.hasPrefix("/")
-            && !value.contains("..")
+            && !value.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..")
             && value != "."
     }
 
@@ -21,7 +21,7 @@ private enum WPEPathSafety {
         path.hasPrefix("wpe-cache/")
             && !path.contains("\0")
             && !path.contains("\\")
-            && !path.contains("..")
+            && !path.split(separator: "/", omittingEmptySubsequences: false).contains("..")
             && !path.contains("//")
     }
 

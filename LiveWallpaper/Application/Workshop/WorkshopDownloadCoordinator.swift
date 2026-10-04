@@ -164,7 +164,14 @@ final class WorkshopDownloadCoordinator {
                             guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                             phases[itemID] = .importing
                             clearProgress(itemID)
-                            let result = try? await importService.importProject(folder: folderURL)
+                            let result: WallpaperEngineImportService.ImportResult
+                            do {
+                                result = try await importService.importProject(folder: folderURL)
+                            } catch {
+                                result = .rejected(reason: String(
+                                    localized: "Couldn't import this project: \(error.localizedDescription)", bundle: .appLanguage
+                                ))
+                            }
                             guard isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                             return result
                         }

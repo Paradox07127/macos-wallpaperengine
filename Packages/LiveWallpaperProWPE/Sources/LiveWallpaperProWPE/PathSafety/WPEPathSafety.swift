@@ -8,7 +8,6 @@ public enum WPEPathSafety {
             && value != ".."
             && !value.contains("/")
             && !value.contains("\\")
-            && !value.contains("..")
     }
 
     /// Only the path-component check, not "is a Steam id" — `SteamLibraryPaths.isSafeWorkshopID`
@@ -21,7 +20,7 @@ public enum WPEPathSafety {
         !value.isEmpty
             && !value.contains("\0")
             && !value.hasPrefix("/")
-            && !value.contains("..")
+            && !value.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..")
             && value != "."
     }
 
@@ -40,7 +39,7 @@ public enum WPEPathSafety {
         path.hasPrefix("wpe-cache/")
             && !path.contains("\0")
             && !path.contains("\\")
-            && !path.contains("..")
+            && !path.split(separator: "/", omittingEmptySubsequences: false).contains("..")
             && !path.contains("//")
     }
 

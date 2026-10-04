@@ -586,7 +586,6 @@ final class SettingsManager {
             && value != ".."
             && !value.contains("/")
             && !value.contains("\\")
-            && !value.contains("..")
     }
 
     func recordWPEDeleteTombstone(workshopID: String) {
