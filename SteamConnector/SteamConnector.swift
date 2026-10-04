@@ -459,6 +459,18 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             // No `validate`: the ledger now sits beside the content it
             // describes, and validating would re-fetch everything the user
             // subscribed to through the Steam client as well.
+            let report: @Sendable (SteamOperationProgress) -> Void = { progress in
+                guard let data = try? JSONEncoder().encode(progress) else { return }
+                sink?.connectorDidReportProgress(data)
+            }
+            // SteamCMD prints no progress lines when non-interactive, so the staged size is the only signal.
+            let stopStagingPoll = Self.pollStagedBytes(
+                in: SteamLibraryPaths.workshopStagingDirectories(
+                    steamRoot: libraryRoot, appID: SteamLibraryPaths.wallpaperEngineAppID, itemID: workshopID
+                ),
+                canContinue: { liveness.canContinue },
+                report: report
+            )
             let run = Self.runSteamCMD(
                 steamCMDPath: steamCMDPath,
                 arguments: [
@@ -471,11 +483,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timeout: 3600,
                 operationID: operationID,
                 isCancelled: { !liveness.canContinue },
-                onProgress: { progress in
-                    guard let data = try? JSONEncoder().encode(progress) else { return }
-                    sink?.connectorDidReportProgress(data)
-                }
+                onProgress: report
             )
+            stopStagingPoll()
             let out = run.output
             if run.timedOut { respond(.timedOut, tail: out, executed: steamCMDPath); return }
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
@@ -509,6 +519,43 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 return
             }
             respond(.downloaded, tail: out, path: folder.path(percentEncoded: false), executed: steamCMDPath)
+        }
+    }
+
+    /// Off `steamCMDQueue`, which the SteamCMD run it measures is blocking.
+    private static let stagingPollQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.staging-poll")
+
+    /// Reports each new high of the staged bytes every 0.5 s. The returned stop sends no frame once it returns.
+    private static func pollStagedBytes(
+        in directories: [URL],
+        canContinue: @escaping @Sendable () -> Bool,
+        report: @escaping @Sendable (SteamOperationProgress) -> Void
+    ) -> () -> Void {
+        let state = OSAllocatedUnfairLock(initialState: (stopped: false, reported: UInt64(0)))
+        let timer = DispatchSource.makeTimerSource(queue: stagingPollQueue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { @Sendable in
+            guard !state.withLock({ $0.stopped }) else { return }
+            guard canContinue() else {
+                state.withLock { $0.stopped = true }
+                return
+            }
+            let measured = directories.reduce(UInt64(0)) {
+                $0 + SteamDirectorySize.allocatedBytes(at: $1, entryLimit: 10000)
+            }
+            // Sent under the lock so a frame cannot slip out after stop() has returned.
+            state.withLock { current in
+                guard !current.stopped,
+                      let next = SteamDirectorySize.nextReport(measured: measured, reported: current.reported)
+                else { return }
+                current.reported = next
+                report(SteamOperationProgress(phase: .downloading, fraction: nil, downloadedBytes: next, totalBytes: nil))
+            }
+        }
+        timer.resume()
+        return {
+            state.withLock { $0.stopped = true }
+            timer.cancel()
         }
     }
 

@@ -1083,8 +1083,7 @@ final class SteamCMDDoctorService {
             username,
             steamRoot.path(percentEncoded: false),
             { @Sendable update in
-                guard let fraction = update.fraction else { return }
-                onProgress?(fraction * 100, update.downloadedBytes, update.totalBytes)
+                onProgress?(update.fraction.map { $0 * 100 }, update.downloadedBytes, update.totalBytes)
             }
         )
         guard let result else {
@@ -1247,7 +1246,7 @@ final class SteamCMDDoctorService {
     }
 
     typealias SteamCMDProgressHandler = @Sendable (
-        _ percent: Double, _ downloadedBytes: UInt64?, _ totalBytes: UInt64?
+        _ percent: Double?, _ downloadedBytes: UInt64?, _ totalBytes: UInt64?
     ) -> Void
 
     /// `killed` means the connector never produced a verdict, not that a child was signalled.

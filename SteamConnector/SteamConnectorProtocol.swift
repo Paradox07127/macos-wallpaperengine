@@ -771,6 +771,42 @@ enum SteamCMDProgressLine {
     }
 }
 
+enum SteamDirectorySize {
+    /// Allocated bytes of the regular files under `root`, links never followed; 0 when `root` is
+    /// missing. Stops at what it has counted once `entryLimit` entries were visited.
+    static func allocatedBytes(at root: URL, entryLimit: Int) -> UInt64 {
+        var total: UInt64 = 0
+        var visited = 0
+        var pending = [root.path(percentEncoded: false)]
+        while let directory = pending.popLast() {
+            var info = stat()
+            guard lstat(directory, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
+                  let names = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
+            for name in names {
+                guard visited < entryLimit else { return total }
+                visited += 1
+                let path = (directory as NSString).appendingPathComponent(name)
+                guard lstat(path, &info) == 0 else { continue }
+                switch info.st_mode & S_IFMT {
+                case S_IFREG:
+                    // SteamCMD preallocates its files, so st_size alone reads near-complete from the start.
+                    total += min(UInt64(info.st_size), UInt64(info.st_blocks) * 512)
+                case S_IFDIR:
+                    pending.append(path)
+                default:
+                    break
+                }
+            }
+        }
+        return total
+    }
+
+    /// The value to report, or nil unless it beats the last one: the commit empties staging.
+    static func nextReport(measured: UInt64, reported: UInt64) -> UInt64? {
+        measured > reported ? measured : nil
+    }
+}
+
 enum SteamCachedLoginOutcome: String, Codable, Sendable {
     case sessionValid
     case noCachedSession
@@ -2332,6 +2368,13 @@ enum SteamLibraryPaths {
             "steamapps/workshop/content/\(wallpaperEngineAppID)",
             isDirectory: true
         )
+    }
+
+    /// Where SteamCMD stages `itemID` before committing it to `content/`; emptied by the commit.
+    static func workshopStagingDirectories(steamRoot root: URL, appID: String, itemID: String) -> [URL] {
+        ["downloads", "temp"].map {
+            root.appendingPathComponent("steamapps/workshop/\($0)/\(appID)/\(itemID)", isDirectory: true)
+        }
     }
 
     static let workshopContentComponents = ["steamapps", "workshop", "content", wallpaperEngineAppID]

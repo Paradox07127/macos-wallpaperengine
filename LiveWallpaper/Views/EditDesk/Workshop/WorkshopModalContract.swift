@@ -68,7 +68,8 @@ struct WorkshopDownloadPresentation: Equatable {
         return Double(bytes) / elapsed
     }
 
-    /// `264 MB / 412 MB · 12 MB/s`; each half is dropped when its numbers are unknown.
+    /// `264 MB / 412 MB · 12 MB/s`, or `264 MB` without a total; each half is dropped when its numbers
+    /// are unknown, and a total alone is not shown.
     @MainActor
     static func detailText(
         downloaded: UInt64?, total: UInt64?, bytesPerSecond: Double?, fraction: Double?
@@ -77,12 +78,15 @@ struct WorkshopDownloadPresentation: Equatable {
         if let fraction {
             parts.append("\(Int((fraction * 100).rounded()))%")
         }
-        if let total, total > 0 {
+        let received = downloaded.flatMap { $0 > 0 ? $0 : nil }
+        if let total, total > 0, fraction != nil || received != nil {
             let downloadedBytes = downloaded ?? UInt64((Double(total) * (fraction ?? 0)).rounded())
             parts.append(
                 "\(WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: downloadedBytes)))"
                     + " / \(WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: total)))"
             )
+        } else if let received {
+            parts.append(WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: received)))
         }
         if let bytesPerSecond, bytesPerSecond > 0 {
             let amount = WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: UInt64(bytesPerSecond)))
@@ -92,6 +96,12 @@ struct WorkshopDownloadPresentation: Equatable {
             ))
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Capped below 1: the total is Steam's listed size, which the staged bytes can reach before the commit.
+    static func byteFraction(downloaded: UInt64?, total: UInt64?) -> Double? {
+        guard let downloaded, downloaded > 0, let total, total > 0 else { return nil }
+        return min(Double(downloaded) / Double(total), 0.99)
     }
 
     /// `screenName` is the ticket's display; `wallpapersOn` is the master switch; `blocker` is the
@@ -156,7 +166,8 @@ struct WorkshopDownloadPresentation: Equatable {
         }
         switch phase {
         case .downloading:
-            presentation.progress = fraction.map { .fraction($0) } ?? .indeterminate
+            presentation.progress = (fraction ?? byteFraction(downloaded: downloadedBytes, total: totalBytes))
+                .map { .fraction($0) } ?? .indeterminate
             presentation.status = ticketState == .waiting
                 ? String(
                     localized: "Will apply to \(screenName) when done", bundle: .appLanguage,

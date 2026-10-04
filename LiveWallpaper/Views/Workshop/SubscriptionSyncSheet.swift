@@ -203,6 +203,16 @@ struct SubscriptionSyncSheet: View {
                             .monospacedDigit()
                     } else {
                         ProgressView().controlSize(.small)
+                        let received = WorkshopDownloadPresentation.detailText(
+                            downloaded: downloads.progressBytes[itemID]?.downloaded, total: nil,
+                            bytesPerSecond: nil, fraction: nil
+                        )
+                        if !received.isEmpty {
+                            Text(verbatim: received)
+                                .font(DesignTokens.Typography.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
                     }
                     cancelButton(for: itemID)
                 }

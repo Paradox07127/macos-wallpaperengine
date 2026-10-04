@@ -244,12 +244,16 @@ final class WorkshopDownloadCoordinator {
     private func recordProgress(
         itemID: UInt64,
         attemptID: UUID,
-        percent: Double,
+        percent: Double?,
         downloadedBytes: UInt64?,
         totalBytes: UInt64?
     ) {
-        guard isCurrent(itemID: itemID, attemptID: attemptID), case .downloading? = phases[itemID], percent.isFinite else { return }
-        progress[itemID] = min(max(percent / 100, 0), 1)
+        guard isCurrent(itemID: itemID, attemptID: attemptID), case .downloading? = phases[itemID] else { return }
+        // nil percent: only bytes are known, so the last reported fraction stands.
+        if let percent {
+            guard percent.isFinite else { return }
+            progress[itemID] = min(max(percent / 100, 0), 1)
+        }
         progressBytes[itemID] = DownloadProgressBytes(
             downloaded: downloadedBytes,
             total: (totalBytes ?? 0) > 0 ? totalBytes : nil

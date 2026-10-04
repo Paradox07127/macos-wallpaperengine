@@ -36,6 +36,7 @@ PARALLEL_SUITES=(
   LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
   WorkshopCardPreviewLayoutTests
+  WorkshopDownloadByteProgressTests
   InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests
