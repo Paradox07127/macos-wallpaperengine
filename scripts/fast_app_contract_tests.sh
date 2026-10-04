@@ -242,6 +242,7 @@ PARALLEL_SUITES=(
   # The connector's id/containment predicates are the last line of defence
   # before a write lands in the user's real Steam library.
   SteamLibraryPathsTests
+  SteamCMDProfileTests
   LitePathSafetyShadowTests
   WallpaperEngineImportServiceTests
   # Pure alpha arithmetic, no view host: the paused dim used to multiply the
@@ -259,6 +260,7 @@ PARALLEL_SUITES=(
   # weather and particle fields, and the particle picker offers no "none".
   ColorAdjustmentsViewResetTests
   OverlaysInspectorPanelPickerTests
+  WPESceneTimelineTests
 )
 
 # These fail when other suites run beside them: they share process-wide state
@@ -299,6 +301,8 @@ SERIAL_SUITES=(
   WPESceneScriptBatchCompletionTests
   WPESceneScriptRuntimeTests
   WPESceneScriptInitializationOrderingTests
+  WPESceneScriptLaneRunLoopTests
+  WPETransformEvaluatorRunLoopTests
   WPESceneScriptInitReturnTests
   WPESceneScriptCreatedLayerQuotaTests
   WPESceneScriptB2bResourceLimitTests
