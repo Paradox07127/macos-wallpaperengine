@@ -40,6 +40,8 @@ what shipped at that time; current behavior is documented in `docs/`.
   show, hide or fade other layers.
 - Pro: god-ray effects no longer show a small copy of the scene through
   transparent areas.
+- Pro: puppet characters whose intro animation plays once settle into their
+  normal pose instead of keeping part of the intro.
 
 ## [0.8.2] — 2026-10-03
 
