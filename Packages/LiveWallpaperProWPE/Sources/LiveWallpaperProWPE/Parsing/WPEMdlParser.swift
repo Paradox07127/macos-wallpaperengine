@@ -386,7 +386,7 @@ public struct WPEPuppetPaletteEvaluation: Equatable, Sendable {
     )
 }
 
-/// `palette[boneIndex] = worldCurrent · worldBind⁻¹`. First non-additive layer is the base pose; additive layers add per-bone delta-from-bind in TRS (translation/euler added, scale multiplied), weighted by `blend`. Frame 0 of every layer is bind, so the palette is identity there.
+/// `palette[boneIndex] = worldCurrent · worldBind⁻¹`; single-shot tracks use the base reference pose.
 public enum WPEPuppetAnimationEvaluator {
     public static func palette(
         layers: [WPEPuppetAnimationLayer],
@@ -424,6 +424,7 @@ public enum WPEPuppetAnimationEvaluator {
             interpolation: WPEPuppetInterpolationInfo,
             channelForBone: [Int: Int],
             channels: [WPEPuppetAnimChannel],
+            usesBaseReference: Bool,
             weight: Float
         )] =
             layers.indices.compactMap { index in
@@ -437,24 +438,12 @@ public enum WPEPuppetAnimationEvaluator {
                     interpolationInfo(for: layer.animation, at: time * layer.rate),
                     channelForBone,
                     layer.animation.channels,
+                    layer.animation.mode == "single",
                     max(0, min(Float(layer.blend), 1))
                 )
             }
 
-        // Identity palette at bind only when frame-0 IS the MDLS raw bind (pre-assembled MDLV0021/0023). A character-sheet puppet (MDLV0019/0020) has an exploded MDLS bind whose frame-0 pose is the assembled character — short-circuiting to identity would leave the sheet exploded.
-        if baseInterpolation.frameA == 0, baseInterpolation.t == 0,
-           additiveLayers.allSatisfy({ $0.interpolation.frameA == 0 && $0.interpolation.t == 0 }),
-           baseFrameMatchesRawBind(channels: baseChannels, bones: bones) {
-            return WPEPuppetPaletteEvaluation(
-                palette: identityPalette(count: requiredPaletteCount),
-                paletteCount: requiredPaletteCount,
-                transformSpace: nil,
-                parentChannelMapSucceeded: parentChannelMap(channels: baseChannels, bones: bones) != nil
-            )
-        }
-
-        // Combined parent-LOCAL transform for a base channel: base pose plus each additive layer's
-        // delta-from-its-own-bind in TRS space. `bind == true` yields the rest pose.
+        // A single-shot's first frame can be an opening pose; loops retain their own reference.
         func localMatrix(_ channelPosition: Int, bind: Bool) -> simd_float4x4 {
             let channel = baseChannels[channelPosition]
             guard let bindKey = channel.keyframes.first else { return matrix_identity_float4x4 }
@@ -476,22 +465,24 @@ public enum WPEPuppetAnimationEvaluator {
 
             for additive in additiveLayers {
                 guard let position = additive.channelForBone[channel.boneIndex],
-                      let additiveBind = additive.channels[position].keyframes.first else { continue }
+                      let firstKey = additive.channels[position].keyframes.first else { continue }
+                let reference = additive.usesBaseReference ? bindKey : firstKey
                 let additiveCurrent = sampledTRS(
                     channel: additive.channels[position],
                     interpolation: additive.interpolation
                 )
-                translation += (additiveCurrent.translation - additiveBind.translation) * additive.weight
-                let additiveBindRotation = rotationQuaternion(euler: additiveBind.euler)
-                let additiveRotationDelta = additiveCurrent.rotation * additiveBindRotation.inverse
+                translation += (additiveCurrent.translation - reference.translation) * additive.weight
+                let referenceRotation = rotationQuaternion(euler: reference.euler)
+                let additiveRotationDelta = additiveCurrent.rotation * referenceRotation.inverse
                 rotation *= simd_slerp(
                     simd_quatf(real: 1, imag: .zero),
                     additiveRotationDelta,
                     additive.weight
                 )
-                scale *= additiveScaleRatio(
+                scale = additiveScale(
                     current: additiveCurrent.scale,
-                    bind: additiveBind.scale,
+                    reference: reference.scale,
+                    first: firstKey.scale,
                     base: scale,
                     weight: additive.weight
                 )
@@ -526,24 +517,24 @@ public enum WPEPuppetAnimationEvaluator {
         )
     }
 
-    private static func additiveScaleRatio(
+    private static func additiveScale(
         current: SIMD3<Float>,
-        bind: SIMD3<Float>,
+        reference: SIMD3<Float>,
+        first: SIMD3<Float>,
         base: SIMD3<Float>,
         weight: Float
     ) -> SIMD3<Float> {
-        func axis(_ current: Float, _ bind: Float, _ base: Float) -> Float {
-            guard abs(bind) > 1e-6 else {
-                // Zero authored bind scale is a collapsed-at-rest bone. A delta ratio is undefined, so lerp the running scale toward the layer's absolute authored scale: weight 1 reproduces `current`. The old `return 1` froze the bone at the base scale.
-                guard abs(base) > 1e-6 else { return 1 }
-                return 1 + (current / base - 1) * weight
+        func axis(_ current: Float, _ reference: Float, _ first: Float, _ base: Float) -> Float {
+            // A collapsed-at-rest track carries absolute scale; division would lose its blink.
+            if abs(first) <= 1e-6 || abs(reference) <= 1e-6 {
+                return base + (current - base) * weight
             }
-            return 1 + (current / bind - 1) * weight
+            return base * (1 + (current / reference - 1) * weight)
         }
         return SIMD3<Float>(
-            axis(current.x, bind.x, base.x),
-            axis(current.y, bind.y, base.y),
-            axis(current.z, bind.z, base.z)
+            axis(current.x, reference.x, first.x, base.x),
+            axis(current.y, reference.y, first.y, base.y),
+            axis(current.z, reference.z, first.z, base.z)
         )
     }
 
