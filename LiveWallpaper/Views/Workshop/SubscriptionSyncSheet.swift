@@ -263,8 +263,8 @@ struct SubscriptionSyncSheet: View {
 
     private func isInstalled(_ itemID: UInt64) -> Bool {
         switch downloads.phase(for: itemID) {
-        case .succeeded, .succeededAsPreset: return true
-        default: return false
+        case .succeeded, .succeededAsPreset: true
+        default: false
         }
     }
 

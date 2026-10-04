@@ -101,8 +101,8 @@ final class WorkshopSubscriptionSync {
         guard case let .ready(missing) = phase else { return [] }
         return missing.filter { itemID in
             switch downloads.phase(for: itemID) {
-            case .succeeded, .succeededAsPreset: return false
-            default: return selection.contains(itemID) && !queue.isQueued(itemID) && !downloads.isBusy(itemID)
+            case .succeeded, .succeededAsPreset: false
+            default: selection.contains(itemID) && !queue.isQueued(itemID) && !downloads.isBusy(itemID)
             }
         }
     }
