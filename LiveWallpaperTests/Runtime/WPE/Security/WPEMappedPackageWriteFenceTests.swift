@@ -209,6 +209,8 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
+        // Probe appmanifest into a fresh UUID dir under the private profile, never the shared library.
+        "SteamConnector/SteamConnector.swift": [".write(to": 1],
         "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1, "O_RDWR": 1],
         "SteamConnector/SteamLibraryWriter.swift": ["O_WRONLY": 1],
     ]
