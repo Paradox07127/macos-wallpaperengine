@@ -1,8 +1,9 @@
 #if !LITE_BUILD
 import Foundation
-import Testing
-import os
 @testable import LiveWallpaper
+import LiveWallpaperCore
+import os
+import Testing
 
 @Suite("Workshop download readiness", .serialized)
 @MainActor
@@ -376,6 +377,64 @@ struct WorkshopDownloadReadinessTests {
             }
             try? await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    /// Outside the app container, where only a sandbox extension can open the folder.
+    private static let sharedLibrary = URL(fileURLWithPath: "/private/tmp/LoomscreenUnscopedLibrary", isDirectory: true)
+
+    private func makeService(resolvingTo url: URL, scoped: Bool, function: String = #function) throws -> SteamCMDDoctorService {
+        let scratch = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.DownloadReadiness", function: function)
+        let resolver = SecurityScopedBookmarkResolver(
+            resolveScoped: { _ in
+                guard scoped else { throw CocoaError(.fileReadNoPermission) }
+                return (url, false)
+            },
+            resolveUnscoped: { _ in (url, false) },
+            refreshData: { _ in Data() }
+        )
+        return SteamCMDDoctorService(defaults: scratch.defaults, bookmarkResolver: resolver)
+    }
+
+    @Test("A library grant that only resolves unscoped is a broken grant, not a ready library")
+    func unscopedFallbackBlocksDownloads() throws {
+        let service = try makeService(resolvingTo: Self.sharedLibrary, scoped: false)
+        configureAllGreen(service, bookmark: Data([0x01]))
+
+        #expect(throws: SteamCMDDoctorError.self) { _ = try service.resolveWorkdirURL() }
+
+        #expect(service.workdirResolutionFailed)
+        #expect(!service.isLibraryReady)
+        #expect(service.libraryStepState == .attention)
+        #expect(service.downloadBlocker == .library)
+        #expect(!service.isDownloadReady)
+    }
+
+    @Test("A broken library grant scans nothing and is marked broken", .timeLimit(.minutes(1)))
+    func unscopedFallbackScansNothing() async throws {
+        let service = try makeService(resolvingTo: Self.sharedLibrary, scoped: false)
+        configureAllGreen(service, bookmark: Data([0x01]))
+        service.workdirResolutionFailed = false
+        var scanned: [URL] = []
+
+        await service.enumerateDownloadedItemFolders { scanned.append($0) }
+
+        #expect(scanned.isEmpty)
+        #expect(service.workdirResolutionFailed)
+        #expect(service.downloadBlocker == .library)
+    }
+
+    @Test("A scoped library grant is ready as before")
+    func scopedGrantIsReady() throws {
+        let grant = try resolvableBookmark()
+        defer { try? FileManager.default.removeItem(at: grant.directory) }
+        let service = try makeService(resolvingTo: grant.directory, scoped: true)
+        configureAllGreen(service, bookmark: grant.bookmark)
+
+        #expect(try service.resolveWorkdirURL().path == grant.directory.resolvingSymlinksInPath().standardizedFileURL.path)
+        #expect(!service.workdirResolutionFailed)
+        #expect(service.isLibraryReady)
+        #expect(service.downloadBlocker == nil)
+        #expect(service.isDownloadReady)
     }
 
     @Test("Everything green with a resolvable grant is ready")

@@ -410,6 +410,91 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(library.toastCenter.lastEvent?.token == toast?.token, "the second scan repeated a conflict already shown")
     }
 
+    // MARK: - Library scan without the Workshop page
+
+    @Test("The launch scan imports the bound library's downloads without SteamCMD", .timeLimit(.minutes(1)))
+    func launchScanImportsTheBoundLibrary() async throws {
+        let steam = try SteamDownloads(itemCount: 2)
+        let library = try ConflictLibrary()
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        #expect(!steam.doctor.hasBoundBinary)
+
+        await library.coordinator.ingestBoundLibraryDownloads(using: steam.doctor)
+
+        #expect(library.importedIDs == Set(steam.itemFolders.map(\.lastPathComponent)))
+    }
+
+    @Test("The launch scan skips a missing or broken library grant", .timeLimit(.minutes(1)), arguments: [false, true])
+    func launchScanSkipsAnUnusableGrant(bound: Bool) async throws {
+        let library = try ConflictLibrary()
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.LaunchScanGrant")
+        defer {
+            suite.discard()
+            await library.discard()
+        }
+        let doctor = SteamCMDDoctorService(defaults: suite.defaults, bookmarkResolver: unscopedSharedLibraryResolver())
+        if bound {
+            doctor.workdirBookmarkData = Data([0x01])
+        }
+
+        await library.coordinator.ingestBoundLibraryDownloads(using: doctor)
+
+        #expect(library.importedIDs.isEmpty)
+        #expect(doctor.workdirResolutionFailed == bound)
+    }
+
+    @Test("Authorizing the Steam library imports its downloads without the Workshop page", .timeLimit(.minutes(1)))
+    func successfulBindScansTheLibrary() async throws {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary()
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let grant = try #require(steam.doctor.workdirBookmarkData)
+        steam.doctor.workdirBookmarkData = nil
+        let controller = WorkshopSetupController(
+            doctor: steam.doctor, defaults: steam.suite.defaults, folderImporter: library.coordinator,
+            bindLibrary: { _ in steam.doctor.workdirBookmarkData = grant }
+        )
+
+        await controller.bindSteamLibrary(steam.root)
+
+        #expect(controller.setupError == nil)
+        #expect(library.importedIDs == Set(steam.itemFolders.map(\.lastPathComponent)))
+    }
+
+    @Test("A refused Steam library binding scans nothing", .timeLimit(.minutes(1)))
+    func failedBindDoesNotScan() async throws {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary()
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let controller = WorkshopSetupController(
+            doctor: steam.doctor, defaults: steam.suite.defaults, folderImporter: library.coordinator,
+            bindLibrary: { url in throw SteamCMDDoctorError.steamLibraryMissingConfig(url) }
+        )
+
+        await controller.bindSteamLibrary(steam.root)
+
+        #expect(controller.setupError != nil)
+        #expect(library.importedIDs.isEmpty, "a refused binding still scanned the previously bound library")
+    }
+
+    private func unscopedSharedLibraryResolver() -> SecurityScopedBookmarkResolver {
+        let shared = URL(fileURLWithPath: "/private/tmp/LoomscreenUnscopedLibrary", isDirectory: true)
+        return SecurityScopedBookmarkResolver(
+            resolveScoped: { _ in throw CocoaError(.fileReadNoPermission) },
+            resolveUnscoped: { _ in (shared, false) },
+            refreshData: { _ in Data() }
+        )
+    }
+
     private func importer(parkingOn gate: ValidationGate) -> WallpaperEngineImportService {
         WallpaperEngineImportService(
             validateVideo: { _ in try await gate.park() },
@@ -499,6 +584,10 @@ private struct ConflictLibrary {
             : root.appendingPathComponent("Wallpapers/\(name)", isDirectory: true)
         try writeVideoProject(at: folder, workshopID: Self.itemID, title: title)
         return folder
+    }
+
+    var importedIDs: Set<String> {
+        Set(manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID))
     }
 
     func discard() async {

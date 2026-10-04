@@ -55,10 +55,19 @@ final class WorkshopSetupController {
     private var manualBindingRevision: UInt64 = 0
     private static let manualBindingKey = "loomscreen.workshop.doctor.hasManualBinding.v1"
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let folderImporter: WorkshopFolderImportCoordinator
+    @ObservationIgnored private let bindLibrary: @MainActor (URL) async throws -> Void
 
-    init(doctor: SteamCMDDoctorService, defaults: UserDefaults = .appScoped()) {
+    init(
+        doctor: SteamCMDDoctorService,
+        defaults: UserDefaults = .appScoped(),
+        folderImporter: WorkshopFolderImportCoordinator = .shared,
+        bindLibrary: (@MainActor (URL) async throws -> Void)? = nil
+    ) {
         self.doctor = doctor
         self.defaults = defaults
+        self.folderImporter = folderImporter
+        self.bindLibrary = bindLibrary ?? { url in try await doctor.bindSteamLibrary(url) }
     }
 
     // MARK: - Lifecycle
@@ -303,12 +312,18 @@ final class WorkshopSetupController {
             : String(localized: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately.", bundle: .appLanguage, comment: "Open-panel message for the content library; credentials use a private profile.")
         panel.prompt = String(localized: "Use Steam Library", bundle: .appLanguage, comment: "Open-panel confirm button when authorizing the official Steam Library.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        await bindSteamLibrary(url)
+    }
+
+    func bindSteamLibrary(_ url: URL) async {
         beginSetupAction()
         do {
-            try await doctor.bindSteamLibrary(url)
+            try await bindLibrary(url)
         } catch {
             setupError = error.localizedDescription
+            return
         }
+        await folderImporter.ingestBoundLibraryDownloads(using: doctor)
     }
 
     // MARK: - Steam account

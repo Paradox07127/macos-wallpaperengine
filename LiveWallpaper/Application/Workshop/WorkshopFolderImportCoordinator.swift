@@ -159,6 +159,12 @@ final class WorkshopFolderImportCoordinator {
         onLocalLibraryImported?(wallpaperEntries)
     }
 
+    /// The download scan for launch and re-authorization: it needs a usable library grant, not SteamCMD.
+    func ingestBoundLibraryDownloads(using doctor: SteamCMDDoctorService) async {
+        guard (try? doctor.resolveWorkdirURL()) != nil else { return }
+        await ingestExistingDownloads(using: doctor)
+    }
+
     /// Skipped, not queued, while anything else imports: the scan reruns on the next Workshop visit.
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
         guard allowsImport, importer == nil else { return }

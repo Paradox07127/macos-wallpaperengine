@@ -180,6 +180,7 @@ final class SteamCMDDoctorService {
     @ObservationIgnored let operationCoordinator: SteamCMDDoctorOperationCoordinator
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored let fileManager: FileManager
+    @ObservationIgnored private let bookmarkResolver: SecurityScopedBookmarkResolver
     @ObservationIgnored private let workshopFileInventory: any SteamCMDWorkshopFileInventoryServing
 
     typealias WorkshopDownloadOperation = @MainActor @Sendable (
@@ -253,6 +254,7 @@ final class SteamCMDDoctorService {
     init(
         defaults: UserDefaults = .appScoped(),
         fileManager: FileManager = .default,
+        bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
         workshopFileInventory: (any SteamCMDWorkshopFileInventoryServing)? = nil,
         operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared,
         downloadOperation: @escaping WorkshopDownloadOperation = { @Sendable item, account, library, progress in
@@ -265,6 +267,7 @@ final class SteamCMDDoctorService {
         self.downloadOperation = downloadOperation
         self.defaults = defaults
         self.fileManager = fileManager
+        self.bookmarkResolver = bookmarkResolver
         self.workshopFileInventory = workshopFileInventory
             ?? SteamCMDWorkshopFileInventory(fileManager: fileManager)
         self.probes = Dictionary(uniqueKeysWithValues: DoctorProbeKind.allCases.map { kind in
@@ -380,22 +383,13 @@ final class SteamCMDDoctorService {
     }
 
     private func autoConfigureWorkdirIfNeeded() async {
-        guard let data = workdirBookmarkData else { return }
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-            data,
-            target: .transient
-        ) else {
-            workdirResolutionFailed = true
-            return
-        }
-        workdirResolutionFailed = false
-        let didStart = resolved.url.startAccessingSecurityScopedResource()
-        defer { if didStart { resolved.url.stopAccessingSecurityScopedResource() } }
-        guard !WPEEngineAssetsLibrary.isContainerInternal(resolved.url) else {
+        guard workdirBookmarkData != nil, let access = try? beginWorkdirAccess() else { return }
+        defer { access.end() }
+        guard !WPEEngineAssetsLibrary.isContainerInternal(access.url) else {
             forgetWorkdirBinding(reason: "binding pointed inside the app container, not the shared Steam profile")
             return
         }
-        guard Self.isLibraryRoot(resolved.url) else {
+        guard Self.isLibraryRoot(access.url) else {
             forgetWorkdirBinding(reason: "retired non-Steam Workshop repository binding")
             return
         }
@@ -1070,9 +1064,15 @@ final class SteamCMDDoctorService {
         guard (try? resolveBinaryURL()) != nil else {
             return .notConfigured(reason: SteamCMDDoctorError.missingBinaryBinding.errorDescription ?? "No SteamCMD binary is selected.")
         }
-        guard let steamRoot = try? resolveWorkdirURL() else {
-            return .notConfigured(reason: SteamCMDDoctorError.missingWorkdirBinding.errorDescription ?? "No Steam Library is authorized.")
+        // The import reads the folder and mints its own per-project bookmark, so the scope stays open across the handoff.
+        let access: WorkdirAccess
+        do {
+            access = try beginWorkdirAccess()
+        } catch {
+            return .notConfigured(reason: error.localizedDescription)
         }
+        defer { access.end() }
+        let steamRoot = access.url
         // No digest means the binding never completed its identity probe. This is a readiness check, not an authorization one.
         guard lastBinarySHA256 != nil else { return .untrustedBinary }
 
@@ -1101,14 +1101,6 @@ final class SteamCMDDoctorService {
                 return .failed(reason: String(localized: "Download cancelled.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
             }
             guard result.itemPath != nil else { return .failed(reason: String(localized: "Download reported no folder.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
-            // The import reads the folder and mints its own per-project bookmark,
-            // so the Steam-library scope has to stay open across the handoff.
-            let scope = steamRoot.startAccessingSecurityScopedResource()
-            defer {
-                if scope {
-                    steamRoot.stopAccessingSecurityScopedResource()
-                }
-            }
             let folder = await authorizedDownloadedItemDirectory(
                 workshopID: String(itemID),
                 steamRoot: steamRoot
@@ -1175,9 +1167,9 @@ final class SteamCMDDoctorService {
         var seen = Set<String>()
         let inventory = workshopFileInventory
 
-        if let workdir = try? resolveWorkdirURL() {
-            let scope = workdir.startAccessingSecurityScopedResource()
-            defer { if scope { workdir.stopAccessingSecurityScopedResource() } }
+        if let access = try? beginWorkdirAccess() {
+            defer { access.end() }
+            let workdir = access.url
             let snapshotSeen = seen
             let projects = await Task.detached(priority: .utility) {
                 inventory.projectFolders(
@@ -1376,11 +1368,44 @@ final class SteamCMDDoctorService {
         return URL(fileURLWithPath: path)
     }
 
+    /// The library's sandbox scope, held on the URL of the resolve that produced it until `end()`.
+    struct WorkdirAccess {
+        let url: URL
+        let isOpen: Bool
+        private let scopedURL: URL
+
+        init(url: URL, scopedURL: URL) {
+            self.url = url
+            self.scopedURL = scopedURL
+            isOpen = scopedURL.startAccessingSecurityScopedResource()
+        }
+
+        func end() {
+            if isOpen {
+                scopedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+    }
+
     func resolveWorkdirURL() throws -> URL {
+        let access = try beginWorkdirAccess()
+        access.end()
+        return access.url
+    }
+
+    private func beginWorkdirAccess() throws -> WorkdirAccess {
         guard let data = workdirBookmarkData else { throw SteamCMDDoctorError.missingWorkdirBinding }
-        switch SecurityScopedBookmarkResolver.shared.resolve(data, target: .transient) {
+        switch bookmarkResolver.resolve(data, target: .transient) {
         case .success(let resolved):
             let url = resolved.url.resolvingSymlinksInPath().standardizedFileURL
+            let access = WorkdirAccess(url: url, scopedURL: resolved.url)
+            // Outside the container only a live sandbox extension opens the library; without one every scan reads as empty.
+            guard WPEEngineAssetsLibrary.isContainerInternal(url) || (resolved.isSecurityScoped && access.isOpen) else {
+                access.end()
+                workdirResolutionFailed = true
+                Logger.warning("Steam library grant resolved without sandbox access; re-authorization needed", category: .workshop)
+                throw SteamCMDDoctorError.bookmarkResolution(url.path(percentEncoded: false))
+            }
             if resolved.didRefresh {
                 // The shared resolver refreshes with read-only scope, but workdir needs write access — recreate the bookmark with write scope and persist.
                 if let refreshed = try? Self.makeBookmark(for: url, readOnly: false) {
@@ -1389,7 +1414,7 @@ final class SteamCMDDoctorService {
             }
             workdirDisplayPath = url.path(percentEncoded: false)
             workdirResolutionFailed = false
-            return url
+            return access
         case .failure(let failure):
             workdirResolutionFailed = true
             throw SteamCMDDoctorError.bookmarkResolution(failure.localizedDescription)
@@ -1398,19 +1423,22 @@ final class SteamCMDDoctorService {
 
     private func refreshDisplayPaths() {
         binaryDisplayPath = defaults.string(forKey: Keys.binaryPath)
-        workdirDisplayPath = Self.displayPath(for: defaults.data(forKey: Keys.workdirBookmark))
-        // Bytes that no longer resolve are a broken grant from the first frame,
-        // not only after some later probe happens to notice.
-        if workdirDisplayPath == nil, defaults.data(forKey: Keys.workdirBookmark) != nil {
+        guard let data = defaults.data(forKey: Keys.workdirBookmark) else {
+            workdirDisplayPath = nil
+            return
+        }
+        // Bytes that no longer resolve, or resolve without sandbox access, are a broken grant
+        // from the first frame, not only after some later probe happens to notice.
+        guard case let .success(resolved) = bookmarkResolver.resolve(data, target: .transient) else {
+            workdirDisplayPath = nil
+            workdirResolutionFailed = true
+            return
+        }
+        let url = resolved.url.resolvingSymlinksInPath().standardizedFileURL
+        workdirDisplayPath = url.path(percentEncoded: false)
+        if !resolved.isSecurityScoped, !WPEEngineAssetsLibrary.isContainerInternal(url) {
             workdirResolutionFailed = true
         }
-    }
-
-    private static func displayPath(for bookmarkData: Data?) -> String? {
-        guard let bookmarkData,
-              case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(bookmarkData, target: .transient)
-        else { return nil }
-        return resolved.url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
     }
 
     private static func makeBookmark(for url: URL, readOnly: Bool) throws -> Data {

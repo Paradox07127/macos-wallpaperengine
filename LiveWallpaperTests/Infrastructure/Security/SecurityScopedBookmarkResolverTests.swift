@@ -104,6 +104,33 @@ struct SecurityScopedBookmarkResolverTests {
         #expect(capture.snapshot.isEmpty)
     }
 
+    @Test("A refused scoped resolve that falls back to an unscoped one is reported as unscoped")
+    func unscopedFallbackIsReported() throws {
+        let resolver = SecurityScopedBookmarkResolver(
+            resolveScoped: { _ in throw FakeError.resolutionFailed },
+            resolveUnscoped: { _ in (Self.fixtureURL, false) },
+            refreshData: { _ in Self.refreshedData }
+        )
+
+        let resolved = try resolver.resolve(Self.originalData, target: .transient).get()
+
+        #expect(resolved.url == Self.fixtureURL)
+        #expect(!resolved.isSecurityScoped, "an unscoped fallback carries no sandbox extension")
+    }
+
+    @Test("A scoped resolve is reported as scoped and never tries the fallback")
+    func scopedResolveIsReported() throws {
+        let resolver = SecurityScopedBookmarkResolver(
+            resolveScoped: { _ in (Self.fixtureURL, false) },
+            resolveUnscoped: { _ in throw FakeError.resolutionFailed },
+            refreshData: { _ in Self.refreshedData }
+        )
+
+        let resolved = try resolver.resolve(Self.originalData, target: .transient).get()
+
+        #expect(resolved.isSecurityScoped)
+    }
+
     @Test("withScopedAccess runs the closure")
     func withScopedAccessRunsWork() {
         let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())

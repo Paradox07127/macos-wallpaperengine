@@ -239,6 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lifecycle.schedule(after: .seconds(2)) { [weak manager] in
                 manager?.supersedeLocalCopiesWithSteam()
             }
+            lifecycle.schedule(after: .seconds(2)) { [workshopDoctorService] in
+                await WorkshopFolderImportCoordinator.shared.ingestBoundLibraryDownloads(using: workshopDoctorService)
+            }
             manager.observeWPEHistoryForSupersede()
         }
         #endif
