@@ -186,6 +186,8 @@ extension WPEMetalSceneRenderer {
     ) async {
         particleIndependentSystems.removeAll()
         particleInstanceCoordinator = nil
+        particleCPUStoragePool = WPEParticleCPUStoragePool()
+        particleFrameArena = nil
         particleTemplates.removeAll()
         particleRootTemplates.removeAll()
         particleTemplateTextures.removeAll()
@@ -482,7 +484,7 @@ extension WPEMetalSceneRenderer {
                                                  blendMode: blendMode, sceneTransform: sceneTransform,
                                                  seed: WPEOracleMode.isEnabled ? WPEParticleSystem.deterministicSeed(
                                                      workshopID: descriptor.workshopID, objectID: object.id, sortIndex: sortIndex
-                                                 ) : nil) else { return nil }
+                                                 ) : nil, usesFrameArena: Self.particleFrameArenaEnabled, cpuStoragePool: particleCPUStoragePool) else { return nil }
             system.instanceValues = WPEParticleInstanceValues(override: object.instanceOverride)
             system.instanceColorBrightnessScale = Float(object.instanceOverride?.brightness ?? 1)
             system.scriptParticleObjectID = object.id
@@ -570,7 +572,8 @@ extension WPEMetalSceneRenderer {
                 Float(childTransform.scale.z)
             ),
             spriteSheet: spriteSheet,
-            seed: oracleSeed
+            seed: oracleSeed,
+            usesFrameArena: Self.particleFrameArenaEnabled, cpuStoragePool: particleCPUStoragePool
         ) else { return nil }
         #if !LITE_BUILD && DEBUG
         system.traceObjectID = object.id

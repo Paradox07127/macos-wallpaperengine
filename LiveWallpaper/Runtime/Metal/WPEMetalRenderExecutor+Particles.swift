@@ -50,9 +50,18 @@ extension WPEMetalRenderExecutor {
         normalsByMaterial: [ObjectIdentifier: MTLTexture],
         frameState: inout WPEMetalFrameState,
         traceIndex: Int,
-        sharedEncoder: MTLRenderCommandEncoder? = nil
+        sharedEncoder: MTLRenderCommandEncoder? = nil,
+        preparedUniforms: WPEParticleDrawUniforms? = nil,
+        combinedInstanceCount: Int? = nil
     ) throws -> Bool {
         guard system.liveInstanceCount > 0 else { return false }
+        let instanceCount = combinedInstanceCount ?? system.liveInstanceCount
+        precondition(instanceCount >= system.liveInstanceCount)
+        if combinedInstanceCount != nil {
+            precondition(sharedEncoder != nil && !system.usesRibbonGeometry)
+            precondition(instanceCount * MemoryLayout<WPEParticleInstance>.stride
+                <= system.instanceBuffer.length - system.renderBufferOffset)
+        }
         // A rope needs ≥2 knots (4 verts) for a strip; a degenerate/empty ribbon
         // draws nothing, so skip the pass entirely rather than encode an empty one.
         if system.usesRibbonGeometry, system.ropeVertexCount < 4 { return false }
@@ -76,6 +85,107 @@ extension WPEMetalRenderExecutor {
         let encoder = try sharedEncoder
             ?? makeParticleOutputEncoder(output: output, commandBuffer: commandBuffer)
 
+        let uniforms = preparedUniforms ?? particleDrawUniforms(
+            system, texture: texture, sceneSize: sceneSize, cameraParallax: cameraParallax,
+            cameraUniforms: frameState.cameraUniforms, isRefract: isRefract
+        )
+        var projection = uniforms.projection
+        var sprite = uniforms.sprite
+        let groupMask = isRefract ? nil : system.groupOpacityMask
+
+        encoder.setRenderPipelineState(state)
+        encoder.setVertexBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 2)
+        encoder.setFragmentBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 0)
+        encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentSamplerState(customShaderSamplerState(for: texture, useMipmaps: texture.mipmapLevelCount > 1), index: 0)
+        if let groupMask {
+            encoder.setFragmentTexture(groupMask, index: 1)
+        }
+        if isRefract {
+            // g_Texture1 = refraction normal map; g_Texture3-equivalent = the scene-so-far snapshot. sceneSize lets the fragment turn its pixel position into a screen UV for the background sample.
+            encoder.setFragmentTexture(refractNormal, index: 1)
+            encoder.setFragmentSamplerState(customShaderSamplerState(for: refractNormal, useMipmaps: (refractNormal?.mipmapLevelCount ?? 1) > 1), index: 1)
+            encoder.setFragmentTexture(refractBackground, index: 2)
+            encoder.setFragmentBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 1)
+        }
+        if system.usesRibbonGeometry, let ropeBuffer = system.ropeVertexBuffer {
+            // One continuous ribbon strip: 2 edge vertices per knot, built by
+            // `tick`. No instancing, no sprite-sheet rects.
+            encoder.setVertexBuffer(ropeBuffer, offset: system.renderBufferOffset, index: 1)
+            encoder.drawPrimitives(
+                type: .triangleStrip,
+                vertexStart: 0,
+                vertexCount: system.ropeVertexCount
+            )
+        } else {
+            encoder.setVertexBuffer(system.instanceBuffer, offset: system.renderBufferOffset, index: 1)
+            encoder.setVertexBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 3)
+            // Buffer(4) must always be bound for the vertex function's signature. Use the system's pre-allocated frame-rect buffer; a 1-element dummy covers the uniform-grid path.
+            if let frameRectsBuffer = system.frameRectsBuffer {
+                encoder.setVertexBuffer(frameRectsBuffer, offset: 0, index: 4)
+            } else {
+                var dummyFrameRect = SIMD4<Float>(0, 0, 1, 1)
+                encoder.setVertexBytes(&dummyFrameRect, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
+            }
+            encoder.drawPrimitives(
+                type: .triangleStrip,
+                vertexStart: 0,
+                vertexCount: 4,
+                instanceCount: instanceCount
+            )
+        }
+        if ownsEncoder {
+            encoder.endEncoding()
+            // Mark the scene target written so a later scene pass loads (instead of clearing) the particles, and any refraction snapshot taken before this draw is invalidated. A shared run defers both to `flushParticles`.
+            frameState.registerWrite(texture: output, targetID: .scene)
+        }
+
+        #if !LITE_BUILD && DEBUG
+        let traceVertices = WPESceneDebugArtifacts.shared.isEnabled
+            ? system.particleTraceVertices() : (records: [[String: Any]](), truncated: false)
+        WPECanonicalTraceRecorder.shared.recordParticlePass(
+            index: traceIndex,
+            particleCount: instanceCount,
+            sprite: texture,
+            blendMode: system.blendMode.rawValue,
+            nativeState: .particle(blendMode: system.blendMode),
+            target: output,
+            spriteSheet: system.spriteSheet.map {
+                (cols: $0.cols, rows: $0.rows, frames: $0.frameCount, alphaMask: $0.isAlphaMask)
+            },
+            overbright: system.overbright,
+            layerID: system.traceObjectID,
+            spritePath: system.definition.materialRelativePath,
+            extraTextures: {
+                var extras: [WPECanonicalTraceRecorder.ParticleTextureInput] = []
+                if isRefract {
+                    extras.append(.init(slot: 1, name: "g_Texture1", texture: refractNormal,
+                                        path: nil))
+                    // WPE's `genericparticle.frag` declares the refraction backdrop as `g_Texture3`. Our Metal pipeline binds it at index 2; report the AUTHORED slot so the diff lines up. Bindings unchanged.
+                    extras.append(.init(slot: 3, name: "g_Texture3", texture: refractBackground,
+                                        path: "fbo(_rt_FullFrameBuffer)"))
+                } else if let groupMask {
+                    extras.append(.init(slot: 1, name: "g_Texture1", texture: groupMask, path: nil))
+                }
+                return extras
+            }(),
+            vertices: traceVertices.records,
+            verticesTruncated: traceVertices.truncated || instanceCount != system.liveInstanceCount
+        )
+        if WPESceneDebugArtifacts.shared.isEnabled {
+            WPESceneDebugArtifacts.shared.recordNoteOnce(
+                name: "particle-state-\(traceIndex).txt",
+                contents: system.particleStateDumpText())
+        }
+        #endif
+        return true
+    }
+
+    func particleDrawUniforms(
+        _ system: WPEParticleSystem, texture: MTLTexture, sceneSize: CGSize,
+        cameraParallax: WPECameraParallaxFrame, cameraUniforms: WPEMetalCameraUniforms,
+        isRefract: Bool
+    ) -> WPEParticleDrawUniforms {
         var projection = WPEParticleProjection(
             sceneSize: SIMD4<Float>(
                 Float(max(sceneSize.width, 1)),
@@ -83,14 +193,14 @@ extension WPEMetalRenderExecutor {
                 0, 0
             )
         )
-        projection.cameraClipTransform = frameState.cameraUniforms.sceneClipTransform
+        projection.cameraClipTransform = cameraUniforms.sceneClipTransform
         // The measured rigid UP-axis contract belongs to orthographic sprites.
         // Perspective sprites and ribbons retain their existing geometry owner.
         let cameraAngles = !system.definition.isPerspective && !system.usesRibbonGeometry
-            && !frameState.cameraUniforms.usesPerspectiveProjection
-            ? frameState.cameraUniforms.sceneMotion.angles : .zero
+            && !cameraUniforms.usesPerspectiveProjection
+            ? cameraUniforms.sceneMotion.angles : .zero
         projection.cameraOrientation = cameraAngles == .zero ? matrix_identity_float4x4
-            : frameState.cameraUniforms.sceneOrientationCorrection
+            : cameraUniforms.sceneOrientationCorrection
         projection.sceneSize.w = cameraAngles == .zero ? 0 : 1
         let transform = system.sceneTransform
         let projectedRotation = WPECameraMotionProjection.spriteRotation(modelAngle: transform.objectAngleZ,
@@ -126,7 +236,7 @@ extension WPEMetalRenderExecutor {
         }
 
         if system.definition.isPerspective, !system.usesRibbonGeometry, averageScale > 0,
-           let particleViewProjection = frameState.cameraUniforms.particlePerspectiveViewProjectionMatrix {
+           let particleViewProjection = cameraUniforms.particlePerspectiveViewProjectionMatrix {
             let scale = transform.objectScale
             let c = transform.cosAngleZ
             let s = transform.sinAngleZ
@@ -164,98 +274,12 @@ extension WPEMetalRenderExecutor {
             )
         )
         // Compose-group opacity mask + tint, baked from the parent composelayer. Refract binds texture(1)/(2) itself; the two never co-occur (matrix rain is additive-sprite, not refract).
-        let groupMask = isRefract ? nil : system.groupOpacityMask
         sprite.tintAndMask = SIMD4<Float>(
             system.groupTint.x, system.groupTint.y, system.groupTint.z,
-            groupMask != nil ? 1 : 0
+            !isRefract && system.groupOpacityMask != nil ? 1 : 0
         )
 
-        encoder.setRenderPipelineState(state)
-        encoder.setVertexBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 2)
-        encoder.setFragmentBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 0)
-        encoder.setFragmentTexture(texture, index: 0)
-        encoder.setFragmentSamplerState(customShaderSamplerState(for: texture, useMipmaps: texture.mipmapLevelCount > 1), index: 0)
-        if let groupMask {
-            encoder.setFragmentTexture(groupMask, index: 1)
-        }
-        if isRefract {
-            // g_Texture1 = refraction normal map; g_Texture3-equivalent = the scene-so-far snapshot. sceneSize lets the fragment turn its pixel position into a screen UV for the background sample.
-            encoder.setFragmentTexture(refractNormal, index: 1)
-            encoder.setFragmentSamplerState(customShaderSamplerState(for: refractNormal, useMipmaps: (refractNormal?.mipmapLevelCount ?? 1) > 1), index: 1)
-            encoder.setFragmentTexture(refractBackground, index: 2)
-            encoder.setFragmentBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 1)
-        }
-        if system.usesRibbonGeometry, let ropeBuffer = system.ropeVertexBuffer {
-            // One continuous ribbon strip: 2 edge vertices per knot, built by
-            // `tick`. No instancing, no sprite-sheet rects.
-            encoder.setVertexBuffer(ropeBuffer, offset: 0, index: 1)
-            encoder.drawPrimitives(
-                type: .triangleStrip,
-                vertexStart: 0,
-                vertexCount: system.ropeVertexCount
-            )
-        } else {
-            encoder.setVertexBuffer(system.instanceBuffer, offset: 0, index: 1)
-            encoder.setVertexBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 3)
-            // Buffer(4) must always be bound for the vertex function's signature. Use the system's pre-allocated frame-rect buffer; a 1-element dummy covers the uniform-grid path.
-            if let frameRectsBuffer = system.frameRectsBuffer {
-                encoder.setVertexBuffer(frameRectsBuffer, offset: 0, index: 4)
-            } else {
-                var dummyFrameRect = SIMD4<Float>(0, 0, 1, 1)
-                encoder.setVertexBytes(&dummyFrameRect, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
-            }
-            encoder.drawPrimitives(
-                type: .triangleStrip,
-                vertexStart: 0,
-                vertexCount: 4,
-                instanceCount: system.liveInstanceCount
-            )
-        }
-        if ownsEncoder {
-            encoder.endEncoding()
-            // Mark the scene target written so a later scene pass loads (instead of clearing) the particles, and any refraction snapshot taken before this draw is invalidated. A shared run defers both to `flushParticles`.
-            frameState.registerWrite(texture: output, targetID: .scene)
-        }
-
-        #if !LITE_BUILD && DEBUG
-        let traceVertices = WPESceneDebugArtifacts.shared.isEnabled
-            ? system.particleTraceVertices() : (records: [[String: Any]](), truncated: false)
-        WPECanonicalTraceRecorder.shared.recordParticlePass(
-            index: traceIndex,
-            particleCount: system.liveInstanceCount,
-            sprite: texture,
-            blendMode: system.blendMode.rawValue,
-            nativeState: .particle(blendMode: system.blendMode),
-            target: output,
-            spriteSheet: system.spriteSheet.map {
-                (cols: $0.cols, rows: $0.rows, frames: $0.frameCount, alphaMask: $0.isAlphaMask)
-            },
-            overbright: system.overbright,
-            layerID: system.traceObjectID,
-            spritePath: system.definition.materialRelativePath,
-            extraTextures: {
-                var extras: [WPECanonicalTraceRecorder.ParticleTextureInput] = []
-                if isRefract {
-                    extras.append(.init(slot: 1, name: "g_Texture1", texture: refractNormal,
-                                        path: nil))
-                    // WPE's `genericparticle.frag` declares the refraction backdrop as `g_Texture3`. Our Metal pipeline binds it at index 2; report the AUTHORED slot so the diff lines up. Bindings unchanged.
-                    extras.append(.init(slot: 3, name: "g_Texture3", texture: refractBackground,
-                                        path: "fbo(_rt_FullFrameBuffer)"))
-                } else if let groupMask {
-                    extras.append(.init(slot: 1, name: "g_Texture1", texture: groupMask, path: nil))
-                }
-                return extras
-            }(),
-            vertices: traceVertices.records,
-            verticesTruncated: traceVertices.truncated
-        )
-        if WPESceneDebugArtifacts.shared.isEnabled {
-            WPESceneDebugArtifacts.shared.recordNoteOnce(
-                name: "particle-state-\(traceIndex).txt",
-                contents: system.particleStateDumpText())
-        }
-        #endif
-        return true
+        return .init(projection: projection, sprite: sprite)
     }
 
     /// Mirrors `WPEParticleSpriteParams` in `WPEMetalBuiltins.metal`:
