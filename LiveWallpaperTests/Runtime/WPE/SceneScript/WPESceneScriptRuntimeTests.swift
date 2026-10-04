@@ -5032,10 +5032,6 @@ struct WPESceneScriptInitializationOrderingTests {
         let token = WPESceneScriptInstanceLimitToken(generation: 9042, executionQuarantine: WPESceneScriptQuarantine(limit: 2))
         #expect(token.prepare(.init(text: 0, layer: 0, transform: 1)))
         let store = WPESharedScriptState(sceneScriptLoadToken: token)
-        // A VM's GC timer fires on its creating thread's run loop and would park main on the looping VM's JSLock.
-        let reserved = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async { _ = store.executionLane(using: dispatcher); reserved.signal() }
-        reserved.wait()
         let instance = try WPEDynamicTransformScriptInstance(script: """
                                                              shared.modules = (shared.modules || 0) + 1;
                                                              export function init() { shared.inits = (shared.inits || 0) + 1; while(true) {} }

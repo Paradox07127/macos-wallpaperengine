@@ -230,21 +230,24 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Every media entry point is barred after destroy()")
     func mediaEntriesGuardIsDestroyed() throws {
-        let runtime = try RR10ProductionSource.combined([
-            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
-        ])
-        // Instance-level media entry points (engine-level ones sit behind these).
-        // Staged init adds a leading `!requiresInitialization`; the destroy barrier must follow it.
-        let mediaGuards = [
-            "guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }",
-            "guard !requiresInitialization, !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }",
-            "guard !requiresInitialization, !isPoisoned, !isDestroyed else { return }",
-            "guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,",
-            "guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }",
+        let layerRuntime = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift")
+        let sceneRuntime = try RR10ProductionSource.read("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
+        let runtime = layerRuntime + "\n" + sceneRuntime
+        // Instance-level media entry points (engine-level ones sit behind these), counted per file.
+        let entryPoints: [(source: String, name: String, count: Int)] = [
+            (layerRuntime, "dispatchMediaEvent", 1), (layerRuntime, "liveDispatchMediaEvent", 1),
+            (layerRuntime, "liveDispatchMediaEvents", 1), (layerRuntime, "batchMediaEvents", 1),
+            (sceneRuntime, "dispatchMediaEvent", 2), (sceneRuntime, "liveDispatchMediaEvent", 1),
+            (sceneRuntime, "liveDispatchMediaEvents", 1),
         ]
-        for pattern in mediaGuards {
-            #expect(runtime.contains(pattern), "missing destroy barrier: \(pattern)")
+        for entry in entryPoints {
+            let bodies = try RR10ProductionSource.instanceMethodBodies(named: entry.name, in: entry.source)
+            #expect(bodies.count == entry.count, "media entry census changed: \(entry.name)")
+            for body in bodies {
+                // Staged init adds a leading `!requiresInitialization`; the destroy barrier must follow it.
+                #expect(body.hasPrefix("guard !requiresInitialization, !isPoisoned, !isDestroyed"),
+                        "\(entry.name) lost its destroy barrier")
+            }
         }
         // No media entry may guard on poison alone (`isPoisoned, handles(` without `isDestroyed`).
         #expect(!runtime.contains("!isPoisoned, handles(event)"),
@@ -1050,6 +1053,15 @@ private enum RR10ProductionSource {
         return try source.components(separatedBy: marker).dropFirst().map { suffix in
             let end = try #require(suffix.range(of: "\n        }\n"))
             return suffix[..<end.upperBound].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
+    }
+
+    /// Whitespace-normalized body of each four-space `func name(`, starting at its first statement.
+    static func instanceMethodBodies(named name: String, in source: String) throws -> [String] {
+        try source.components(separatedBy: "\n    func \(name)(").dropFirst().map { suffix in
+            let end = try #require(suffix.range(of: "\n    }\n"))
+            let open = try #require(suffix.range(of: "{\n"))
+            return suffix[open.upperBound ..< end.upperBound].split(whereSeparator: \.isWhitespace).joined(separator: " ")
         }
     }
 }

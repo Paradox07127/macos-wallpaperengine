@@ -73,7 +73,31 @@ final class WPESceneScriptBatchDispatcher: Sendable {
     private final class LaneVMOwnership: @unchecked Sendable {
         /// Read under the dispatcher lock while installed. Once detached,
         /// only the owning queue clears it; returned Lanes hold their own VM.
-        var virtualMachine: JSVirtualMachine? = JSVirtualMachine()
+        var virtualMachine: JSVirtualMachine?
+
+        init(virtualMachine: JSVirtualMachine) {
+            self.virtualMachine = virtualMachine
+        }
+    }
+
+    /// Written once on the VM's queue before `created.signal()`; read only after `created.wait()`.
+    private final class CreatedVirtualMachine: @unchecked Sendable {
+        var value: JSVirtualMachine?
+    }
+
+    /// JSC attaches a VM's GC timers to its creating thread's run loop; when one fires while a
+    /// quarantined script holds the VM's JSLock, that thread parks, so never create on main/render.
+    static func makeVirtualMachine(on queue: DispatchQueue) -> JSVirtualMachine {
+        // `queue.sync` would run inline on the caller's thread; `async` lands on a GCD worker.
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        let created = DispatchSemaphore(value: 0)
+        let box = CreatedVirtualMachine()
+        queue.async {
+            box.value = JSVirtualMachine()
+            created.signal()
+        }
+        created.wait()
+        return box.value!
     }
 
     private struct LaneRecord: @unchecked Sendable {
@@ -195,13 +219,15 @@ final class WPESceneScriptBatchDispatcher: Sendable {
         // (.inherit → "unspecified times, when the thread idles") never fires under a
         // continuous 30 fps tick stream, so per-tick ObjC temporaries (JSValue boxing, audio
         // bridge exception objects) accumulated for the whole session — 6.3 GB sampled on 2955378002.
-        LaneRecord(
-            queue: DispatchQueue(
-                label: "com.livewallpaper.wpe-script-batch.\(slot).\(generation)",
-                qos: .userInitiated,
-                autoreleaseFrequency: .workItem
-            ),
-            vmOwnership: LaneVMOwnership(),
+        let queue = DispatchQueue(
+            label: "com.livewallpaper.wpe-script-batch.\(slot).\(generation)",
+            qos: .userInitiated,
+            autoreleaseFrequency: .workItem
+        )
+        // Waits under the dispatcher lock: the queue is brand new and its block never takes that lock.
+        return LaneRecord(
+            queue: queue,
+            vmOwnership: LaneVMOwnership(virtualMachine: makeVirtualMachine(on: queue)),
             generation: generation
         )
     }

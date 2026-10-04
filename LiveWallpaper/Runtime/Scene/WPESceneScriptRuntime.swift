@@ -2853,11 +2853,8 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
     private let evaluationBudget: TimeInterval
     private let governor: WPESceneScriptExecutionGovernor
     private let participant: WPESceneScriptExecutionGovernor.Participant
-    private let queue = DispatchQueue(
-        label: "com.livewallpaper.wpe-transform-evaluator",
-        qos: .userInitiated
-    )
-    private let virtualMachine: JSVirtualMachine = JSVirtualMachine()
+    private let queue: DispatchQueue
+    private let virtualMachine: JSVirtualMachine
     private var contextsBySource: [String: CachedContext] = [:]
     /// Set by each context's exception handler; reset around eval/update so a
     /// throwing script is rejected (nil → caller keeps the baked value) instead
@@ -2899,6 +2896,12 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
         self.evaluationBudget = evaluationBudget
         self.governor = governor
         self.participant = governor.makeParticipant()
+        let queue = DispatchQueue(
+            label: "com.livewallpaper.wpe-transform-evaluator",
+            qos: .userInitiated
+        )
+        self.queue = queue
+        virtualMachine = WPESceneScriptBatchDispatcher.makeVirtualMachine(on: queue)
     }
 
     // No deinit teardown on purpose: a worker that overran its budget still owns queue and may be executing JS on this VM.
