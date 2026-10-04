@@ -97,6 +97,7 @@ PARALLEL_SUITES=(
   WPECorpusManifestTests
   WallpaperEngineProjectPropertiesTests
   WPEProjectPropertyInputSafetyTests
+  WPEDottedFileNameTests
   WallpaperEngineWebPropertyBridgeTests
   # String transform only, no Metal device: a workshop varying with no
   # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
