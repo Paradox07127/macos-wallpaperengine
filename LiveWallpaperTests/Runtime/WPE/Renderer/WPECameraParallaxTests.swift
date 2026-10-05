@@ -275,6 +275,63 @@ struct WPECameraParallaxTests {
         #expect(try #require(doc.imageObjects.first).parallaxDepth == SIMD2<Double>(1, 1))
     }
 
+    @Test("parallaxDepth script envelope preserves source, properties, and baked depth")
+    func parsesParallaxDepthScriptEnvelope() throws {
+        let doc = try parse([
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 100, "height": 100, "auto": true]],
+            "objects": [[
+                "id": "1", "name": "Wide", "type": "image",
+                "image": "models/util/solidlayer.json", "visible": true,
+                "parallaxDepth": [
+                    "value": "0.8 0",
+                    "script": "export function init(value) { return new Vec2(thisScene.cameraparallaxamount, 0); }",
+                    "scriptproperties": [
+                        "rate": ["index": 0, "type": "slider", "value": 0.5],
+                    ],
+                ],
+            ]],
+        ])
+        let object = try #require(doc.imageObjects.first)
+        #expect(object.parallaxDepth == SIMD2<Double>(0.8, 0))
+        let script = try #require(object.parallaxDepthScript)
+        #expect(script.script.contains("thisScene.cameraparallaxamount"))
+        #expect(script.scriptProperties["rate"] == .number(0.5))
+        #expect(script.seed.x == 0.8)
+    }
+
+    @Test("cameraparallax* general fields honor {user} envelopes and register incremental bindings")
+    func generalParallaxFieldBindings() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 100, "height": 100, "auto": true],
+                "cameraparallax": true,
+                "cameraparallaxamount": ["user": "amount", "value": 0.8],
+                "cameraparallaxmouseinfluence": ["user": "influence", "value": 0.4],
+            ],
+            "objects": [[
+                "id": "1", "name": "Solid", "type": "image",
+                "image": "models/util/solidlayer.json", "visible": true,
+            ]],
+        ])
+        let doc = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: ["amount": .number(0.2), "influence": .number(0.9)]
+        )
+        #expect(abs(doc.general.cameraParallax.amount - 0.2) < 1e-9)
+        #expect(abs(doc.general.cameraParallax.mouseInfluence - 0.9) < 1e-9)
+        #expect(doc.general.cameraParallax.enabled)
+        let parallaxBindings = doc.propertyBindings.values.flatMap(\.self).filter {
+            if case let .generalField(name) = $0.target {
+                return name.hasPrefix("cameraparallax")
+            }
+            return false
+        }
+        #expect(Set(parallaxBindings.map(\.propertyKey)) == ["amount", "influence"])
+        #expect(parallaxBindings.allSatisfy { $0.action == .incremental })
+    }
+
     @Test("Absent parallaxDepth is 1 for text, particle and group objects too")
     func absentDepthDefaultsToOneForEveryKind() throws {
         let doc = try parse([

@@ -29,7 +29,9 @@ extension WPEMetalSceneRenderer {
         }
         for instances in [
             dynamicOriginScriptInstances, dynamicScaleScriptInstances,
-            dynamicAnglesScriptInstances, dynamicColorScriptInstances, particleRateScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+            particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ] {
             for (_, instance) in instances.sorted(by: { $0.key < $1.key }) {
                 consumeTransformScriptLayerOutput(instance)
@@ -128,6 +130,7 @@ extension WPEMetalSceneRenderer {
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
             particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 _ = instances[key]?.applyGeneralSettings(language: language)
@@ -227,6 +230,9 @@ extension WPEMetalSceneRenderer {
         for instance in particleRateScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
+        for instance in dynamicParallaxDepthScriptInstances.values {
+            instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+        }
         for instance in effectConstantScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
@@ -298,6 +304,7 @@ extension WPEMetalSceneRenderer {
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
             particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ] {
             for objectID in instances.keys.sorted() {
                 _ = instances[objectID]?.resizeScreen(size)
@@ -344,6 +351,7 @@ extension WPEMetalSceneRenderer {
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
             particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 guard let instance = instances[key],
@@ -367,6 +375,7 @@ extension WPEMetalSceneRenderer {
         !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
             || !particleRateScriptInstances.isEmpty
+            || !dynamicParallaxDepthScriptInstances.isEmpty
             || !effectConstantScriptInstances.isEmpty
             || !effectVisibilityScriptInstances.isEmpty
     }
@@ -385,6 +394,7 @@ extension WPEMetalSceneRenderer {
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
             particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 guard let instance = instances[key],

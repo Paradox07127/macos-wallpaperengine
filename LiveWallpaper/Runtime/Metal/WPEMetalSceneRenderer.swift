@@ -197,6 +197,10 @@ final class WPEMetalSceneRenderer: NSObject {
     var dynamicColorScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
+    /// Bound `parallaxDepth` scripts; ticked Vec2 lands in `liveLayerPresentation`.
+    var dynamicParallaxDepthScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
     /// `return shared.K` fans: no JS instance; the frame path copies the host value.
     var sharedOriginReadFans: [String: String] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
@@ -208,6 +212,9 @@ final class WPEMetalSceneRenderer: NSObject {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
     var sharedColorReadFans: [String: String] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
+    var sharedParallaxReadFans: [String: String] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
     var sharedEffectConstantReadFans: [WPEEffectConstantScriptKey: (sharedKey: String, valueShape: WPEScriptValueShape)] = [:]

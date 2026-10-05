@@ -65,6 +65,8 @@ extension WPEMetalSceneRenderer {
         sharedScaleReadFans = [:]
         sharedAnglesReadFans = [:]
         sharedColorReadFans = [:]
+        dynamicParallaxDepthScriptInstances = [:]
+        sharedParallaxReadFans = [:]
         transformHostLocalTransformsByID = Self.transformHostLocalTransforms(in: document)
         layerAncestorLocalTransformsByID = Self.ancestorLocalTransforms(in: document)
         // Lights also appear as transform hosts in the parsed document. Give
@@ -118,6 +120,11 @@ extension WPEMetalSceneRenderer {
         } + document.lightObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.transformScript(for: "color").map { (object.id, $0) }
         }
+        // Bound `parallaxDepth` scripts return Vec2 — the same instance type works;
+        // only the frame-side application differs.
+        let parallaxScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.parallaxDepthScript.map { (object.id, $0) }
+        }
         // Keyframed origins ride the same live-transform map as the scripts, so a
         // moving transform host composes onto its children exactly the same way.
         dynamicOriginAnimations = Dictionary(
@@ -137,7 +144,8 @@ extension WPEMetalSceneRenderer {
             object.instanceOverride?.rateScript.map { (object.id, $0) }
         }
         guard !rateScripts.isEmpty || !originScripts.isEmpty || !scaleScripts.isEmpty
-            || !anglesScripts.isEmpty || !colorScripts.isEmpty else { return }
+            || !anglesScripts.isEmpty || !colorScripts.isEmpty
+            || !parallaxScripts.isEmpty else { return }
         guard isCurrentSceneScriptLoad(scriptLoadToken),
               scriptLoadToken.allows(.setup) else { return }
         let canvasSize = SIMD2<Double>(
@@ -217,6 +225,7 @@ extension WPEMetalSceneRenderer {
                 Logger.warning("Scene \(descriptor.workshopID) [ParticleRateScript] init failed for \(objectID): \(error)", category: .wpeRender)
             }
         }
+        install(parallaxScripts, into: &dynamicParallaxDepthScriptInstances, fans: &sharedParallaxReadFans, label: "ParallaxScript")
         debugStage(
             "transformScripts.fans",
             "origin=\(sharedOriginReadFans.count) scale=\(sharedScaleReadFans.count) angles=\(sharedAnglesReadFans.count) color=\(sharedColorReadFans.count)"
@@ -479,10 +488,12 @@ extension WPEMetalSceneRenderer {
         dynamicAnglesScriptInstances.removeAll(keepingCapacity: false)
         dynamicColorScriptInstances.removeAll(keepingCapacity: false)
         particleRateScriptInstances.removeAll(keepingCapacity: false)
+        dynamicParallaxDepthScriptInstances.removeAll(keepingCapacity: false)
         sharedOriginReadFans.removeAll(keepingCapacity: false)
         sharedScaleReadFans.removeAll(keepingCapacity: false)
         sharedAnglesReadFans.removeAll(keepingCapacity: false)
         sharedColorReadFans.removeAll(keepingCapacity: false)
+        sharedParallaxReadFans.removeAll(keepingCapacity: false)
         sharedEffectConstantReadFans.removeAll(keepingCapacity: false)
         effectConstantScriptInstances.removeAll(keepingCapacity: false)
         effectVisibilityScriptInstances.removeAll(keepingCapacity: false)

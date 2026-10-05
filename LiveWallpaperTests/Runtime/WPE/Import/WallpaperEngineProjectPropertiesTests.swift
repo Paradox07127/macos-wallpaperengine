@@ -143,6 +143,37 @@ struct WallpaperEngineProjectPropertiesTests {
         }
     }
 
+    @Test("Unresolvable condition identifiers behave like JS undefined")
+    func conditionUnresolvableIdentifiers() {
+        // Real-workshop typo (`value==ture` on workshop 3800044547): both
+        // identifiers are undefined and `undefined == undefined` keeps the
+        // property visible, matching Wallpaper Engine.
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value==ture", values: [:]
+        ))
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value!=ture", values: [:]
+        ))
+        // A defined side never equals undefined, whichever side it sits on.
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "missing == 'x'", values: [:]
+        ))
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "missing == present", values: ["present": .bool(true)]
+        ))
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "missing != 'x'", values: [:]
+        ))
+        // A bare unquoted token is an identifier, so a defined property can
+        // compare against another property's value, not just literals.
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "mode == other.value", values: ["mode": .string("a"), "other": .string("a")]
+        ))
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "mode == other.value", values: ["mode": .string("a"), "other": .string("b")]
+        ))
+    }
+
     @Test("Boolean groups preserve precedence, unary negation and atomic includes calls")
     func parenthesizedConditionGroups() {
         let values: [String: WallpaperEngineProjectPropertyValue] = ["a": .bool(true), "b": .bool(false),

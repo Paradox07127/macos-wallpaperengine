@@ -216,6 +216,7 @@ public enum WPESceneScriptPropertyRole: String, Equatable, Hashable, Sendable {
     case textAlpha
     case effectVisible
     case effectConstant
+    case parallaxDepth
 }
 
 public enum WPEScenePropertyBindingKind: String, Equatable, Sendable {
@@ -1071,10 +1072,10 @@ public struct WPESceneGeneral: Equatable, Sendable {
 
 /// Scene-level camera parallax: the scene follows the cursor; each layer shifts by its `parallaxDepth`. Defaults match WPE. Disabled (no-op) by default.
 public struct WPESceneCameraParallaxSettings: Equatable, Sendable {
-    public let enabled: Bool
-    public let amount: Double
-    public let delay: Double
-    public let mouseInfluence: Double
+    public var enabled: Bool
+    public var amount: Double
+    public var delay: Double
+    public var mouseInfluence: Double
 
     public init(
         enabled: Bool = false,
@@ -1209,6 +1210,10 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// WPE SceneScript attached to this layer's `color` field. Returns a Vec3 in
     /// 0…1 linear RGB, ticked by the same runtime as scale/angles.
     public let colorScript: WPESceneTransformScript?
+    /// WPE SceneScript bound to `parallaxDepth`. `init(value)` returns a Vec2 that
+    /// replaces `parallaxDepth`; most walls define only init — it is not re-run on
+    /// user-property changes.
+    public let parallaxDepthScript: WPESceneTransformScript?
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
     /// Normalized `point0..3` for a `shape: "quad"` DIRECTDRAW layer. When present the renderer synthesizes a 4-corner quad instead of the axis-aligned object quad. `nil` for ordinary image/model layers.
     public let shapePoints: [SIMD2<Double>]?
@@ -1256,6 +1261,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         scaleScript: WPESceneTransformScript? = nil,
         anglesScript: WPESceneTransformScript? = nil,
         colorScript: WPESceneTransformScript? = nil,
+        parallaxDepthScript: WPESceneTransformScript? = nil,
         scriptProperties: [String: WPESceneScriptPropertyValue] = [:],
         shapePoints: [SIMD2<Double>]? = nil,
         isShapeQuad: Bool = false
@@ -1300,6 +1306,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.scaleScript = scaleScript
         self.anglesScript = anglesScript
         self.colorScript = colorScript
+        self.parallaxDepthScript = parallaxDepthScript
         self.scriptProperties = scriptProperties
         self.shapePoints = shapePoints
         self.isShapeQuad = isShapeQuad

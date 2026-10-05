@@ -735,6 +735,19 @@ public enum WPESceneDocumentParser {
                     action: .reload
                 )
             }
+            // Camera parallax is a per-frame smooth term, not graph state — a
+            // bound slider patches it in place rather than remounting the scene.
+            for field in [
+                "cameraparallax", "cameraparallaxamount",
+                "cameraparallaxdelay", "cameraparallaxmouseinfluence",
+            ] {
+                append(
+                    raw: general[field],
+                    target: .generalField(name: field),
+                    kind: .general,
+                    action: .incremental
+                )
+            }
         }
 
         for object in rawObjects {
@@ -744,6 +757,7 @@ public enum WPESceneDocumentParser {
             appendScriptProperties(in: object["scale"], objectID: objectID, role: .scale)
             appendScriptProperties(in: object["angles"], objectID: objectID, role: .angles)
             appendScriptProperties(in: object["color"], objectID: objectID, role: .color)
+            appendScriptProperties(in: object["parallaxDepth"] ?? object["parallaxdepth"], objectID: objectID, role: .parallaxDepth)
             switch objectKind {
             case .image:
                 append(raw: object["visible"], target: .imageObject(id: objectID), kind: .visible, action: .incremental, includeNestedScriptProperties: false)
@@ -1997,9 +2011,9 @@ public enum WPESceneDocumentParser {
         }
         let cameraParallax = WPESceneCameraParallaxSettings(
             enabled: parseBool(dict["cameraparallax"]) ?? parallaxDefaults.enabled,
-            amount: parseDouble(dict["cameraparallaxamount"]) ?? parallaxDefaults.amount,
-            delay: parseDouble(dict["cameraparallaxdelay"]) ?? parallaxDefaults.delay,
-            mouseInfluence: parseDouble(dict["cameraparallaxmouseinfluence"]) ?? parallaxDefaults.mouseInfluence
+            amount: unwrapDouble(dict["cameraparallaxamount"]) ?? parallaxDefaults.amount,
+            delay: unwrapDouble(dict["cameraparallaxdelay"]) ?? parallaxDefaults.delay,
+            mouseInfluence: unwrapDouble(dict["cameraparallaxmouseinfluence"]) ?? parallaxDefaults.mouseInfluence
         )
         let supportsAudioProcessing = parseBool(dict["supportsaudioprocessing"]) ?? false
         let hdr = parseBool(dict["hdr"]) ?? false
@@ -2161,9 +2175,13 @@ public enum WPESceneDocumentParser {
         }
 
         let parallaxDepth = parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"])
-
-        // The layer stays renderable (visible defaults true above) until the captured
-        // script's init()/update() run.
+        // Bound `init()` returns a Vec2 that becomes the layer's parallax depth
+        // (e.g. sizing mouse-pan travel to the image's padded width). The baked
+        // `value` stays the seed/fallback.
+        let parallaxDepthScript = dynamicTransformScript(
+            in: dict["parallaxDepth"] ?? dict["parallaxdepth"],
+            preserveStaticallyResolvable: true
+        )
         var visibleScript: String?
         var visibleScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
         if let visibleDict = dict["visible"] as? [String: Any],
@@ -2222,6 +2240,7 @@ public enum WPESceneDocumentParser {
             scaleScript: scaleScript,
             anglesScript: anglesScript,
             colorScript: colorScript,
+            parallaxDepthScript: parallaxDepthScript,
             scriptProperties: visibleScriptProperties,
             shapePoints: shapePoints,
             isShapeQuad: isShapeQuad

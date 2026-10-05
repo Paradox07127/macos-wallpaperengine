@@ -58,19 +58,28 @@ struct WPEPointerEdgeDeliveryTests {
     export function update(value) { return value; }
     export function cursorDown() { shared.events += 'd'; }
     export function cursorUp() { shared.events += 'u'; }
-    export function cursorClick() { shared.events += 'c'; }
+    // Workshop 3809609151 ignores non-left clicks via `event.button !== 0`;
+    // a missing field reads as undefined and fails this check.
+    export function cursorClick(event) {
+        if (event.button !== 0) { shared.events += '?'; return; }
+        shared.events += 'c';
+    }
     export function cursorRightDown() { shared.events += 'r'; }
     export function cursorRightUp() { shared.events += 'R'; }
     """
 
-    private func fixture(script: String = Self.buttonEdgeScript) throws -> MetalSceneFixture {
+    private func fixture(
+        script: String = Self.buttonEdgeScript,
+        property: String = "visible",
+        value: Any = true
+    ) throws -> MetalSceneFixture {
         let fixture = try MetalSceneFixture.solidColorScene()
         let path = fixture.root.appendingPathComponent("scene.json")
         var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         var objects = try #require(scene["objects"] as? [[String: Any]])
         objects[0]["origin"] = "32 32 0"
         objects[0]["size"] = "32 32"
-        objects[0]["visible"] = ["value": true, "script": script]
+        objects[0][property] = ["value": value, "script": script]
         scene["objects"] = objects
         try JSONSerialization.data(withJSONObject: scene).write(to: path)
         return fixture
@@ -114,6 +123,32 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(renderer.makeFrameInputs().pointerFrame.isDown == false)
         _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
         try await waitForEvents("duc", renderer: renderer)
+    }
+
+    @Test("cursorClick on a transform-property script reaches the authored handler", arguments: ["angles", "parallaxDepth"])
+    func transformPropertyScriptReceivesCursorEvents(property: String) async throws {
+        // Workshop 3809609151 attaches click-to-switch handlers to `angles`
+        // scripts; routing once skipped every transform-property script family.
+        let scene = try fixture(
+            script: Self.buttonEdgeScript,
+            property: property,
+            value: "0 0 0"
+        )
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("duc", renderer: renderer)
+        #expect(renderer.frameDemand.contains(.scripts))
     }
 
     @Test("A media event refused while the VM is busy reaches the script on the next frame without a new player notification")
@@ -242,6 +277,42 @@ struct WPEPointerEdgeDeliveryTests {
             try render(false, x: 0.9)
         }
         #expect(renderer.sharedScriptValueForTesting("released") as? Bool == true)
+    }
+
+    @Test("Every property script on a layer receives its hover transition")
+    func hoverTransitionReachesEveryPropertyScript() async throws {
+        let scene = try fixture()
+        defer { scene.cleanup() }
+        let path = scene.root.appendingPathComponent("scene.json")
+        var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(json["objects"] as? [[String: Any]])
+        objects[0]["angles"] = ["value": "0 0 0", "script": "export function update(value) { return value; }"]
+        json["objects"] = objects
+        try JSONSerialization.data(withJSONObject: json).write(to: path)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let pipeline = try #require(renderer.renderPipeline)
+        renderer.layerHoverStates = [:]
+        var entering = 0
+        renderer.dispatchLayerHoverEvents(pointer: SIMD2(0.5, 0.5), pipeline: pipeline,
+                                          pointerFrame: pointer(false)) { _, events, _ in
+            if events.contains(.enter) {
+                entering += 1
+            }
+        }
+        #expect(entering == 2)
+        var leaving = 0
+        renderer.dispatchLayerHoverEvents(pointer: nil, pipeline: pipeline,
+                                          pointerFrame: pointer(false)) { _, events, _ in
+            if events.contains(.leave) {
+                leaving += 1
+            }
+        }
+        #expect(leaving == 2)
     }
 
     private func invocation(_ event: WPELayerScriptCursorEvent, down: Bool,

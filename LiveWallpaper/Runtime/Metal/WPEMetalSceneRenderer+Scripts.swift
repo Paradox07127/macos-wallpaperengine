@@ -45,8 +45,30 @@ struct WPESceneScriptTransformMutationJournal: Equatable {
     }
 }
 
+/// Both layer-state scripts and transform-property scripts can export cursor
+/// handlers. Implementations buffer the frame's burst and return a batch job
+/// for the renderer-owned ordered drain (nil when nothing is pending).
+protocol WPECursorEventScriptInstance: AnyObject {
+    func enqueueCursorEvents(
+        _ events: [WPELayerScriptCursorInvocation],
+        allowSubmission: Bool
+    ) -> WPESceneScriptBatchDispatcher.Job?
+    func cancelPendingCursorEvents()
+}
+
+extension WPELayerScriptInstance: WPECursorEventScriptInstance {
+    func enqueueCursorEvents(
+        _ events: [WPELayerScriptCursorInvocation],
+        allowSubmission: Bool = true
+    ) -> WPESceneScriptBatchDispatcher.Job? {
+        batchCursorEvents(events, allowSubmission: allowSubmission)
+    }
+}
+
+extension WPEDynamicTransformScriptInstance: WPECursorEventScriptInstance {}
+
 extension WPEMetalSceneRenderer {
-    typealias CursorEventDelivery = (WPELayerScriptInstance, [WPELayerScriptCursorEvent], WPEPointerFrame) -> Void
+    typealias CursorEventDelivery = (any WPECursorEventScriptInstance, [WPELayerScriptCursorEvent], WPEPointerFrame) -> Void
 
     // MARK: - Script loading & seeding
 
@@ -350,7 +372,9 @@ extension WPEMetalSceneRenderer {
         }
         let dynamicFamilies = [
             dynamicOriginScriptInstances, dynamicScaleScriptInstances,
-            dynamicAnglesScriptInstances, dynamicColorScriptInstances, particleRateScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+            particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances,
         ]
         for instances in dynamicFamilies {
             for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
@@ -716,15 +740,31 @@ extension WPEMetalSceneRenderer {
     ) {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
+            || !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
+            || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
+            || !dynamicParallaxDepthScriptInstances.isEmpty
+            || !effectVisibilityScriptInstances.isEmpty || !effectConstantScriptInstances.isEmpty
         else { return }
         var geometryByID: [String: WPERenderLayerGeometry] = [:]
         for layer in pipeline.layers {
             let objectID = layer.graphLayer.objectID
             if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil
                 || textVisibleScriptInstances[objectID] != nil
-                || textAlphaScriptInstances[objectID] != nil {
+                || textAlphaScriptInstances[objectID] != nil
+                || dynamicOriginScriptInstances[objectID] != nil
+                || dynamicScaleScriptInstances[objectID] != nil
+                || dynamicAnglesScriptInstances[objectID] != nil
+                || dynamicColorScriptInstances[objectID] != nil
+                || dynamicParallaxDepthScriptInstances[objectID] != nil {
                 geometryByID[objectID] = attachmentGeometry[objectID] ?? layer.graphLayer.geometry
             }
+        }
+        // Effect-constant/visibility scripts key by pass, not object — resolve the host object.
+        for instance in [WPEDynamicTransformScriptInstance](effectConstantScriptInstances.values)
+            + effectVisibilityScriptInstances.values {
+            guard let id = instance.ownObjectID, geometryByID[id] == nil,
+                  let layer = pipeline.layers.first(where: { $0.graphLayer.objectID == id }) else { continue }
+            geometryByID[id] = attachmentGeometry[id] ?? layer.graphLayer.geometry
         }
         let width = Double(max(sceneRenderSize.width, 1))
         let height = Double(max(sceneRenderSize.height, 1))
@@ -734,6 +774,8 @@ extension WPEMetalSceneRenderer {
         // its hit region. Without capture, authored drag handlers stop midway.
         let moved = pointerPixels != lastHoverPointerPixels
         lastHoverPointerPixels = pointerPixels
+        // All property scripts on an object receive the same transition.
+        let previousHoverStates = layerHoverStates
         forEachCursorScriptInstance { objectID, instance in
             let inside: Bool
             if let pointerPixels, let geometry = geometryByID[objectID] {
@@ -741,7 +783,7 @@ extension WPEMetalSceneRenderer {
             } else {
                 inside = false
             }
-            let previous = layerHoverStates[objectID] ?? false
+            let previous = previousHoverStates[objectID] ?? false
             var events: [WPELayerScriptCursorEvent] = []
             if inside != previous {
                 layerHoverStates[objectID] = inside
@@ -882,9 +924,9 @@ extension WPEMetalSceneRenderer {
         if released { layerPressStates.removeAll(keepingCapacity: true) }
     }
 
-    /// `textVisible` and `textAlpha` are the same `WPELayerScriptInstance` type as the layer families; leaving them out would silently drop those handlers.
+    /// `textVisible` and `textAlpha` are the same `WPELayerScriptInstance` type as the layer families; leaving them out would silently drop those handlers. Transform-property scripts are a different class but can export the same handlers (workshop 3809609151 gates poses on `cursorClick` inside `angles` scripts).
     func forEachCursorScriptInstance(
-        _ body: (String, WPELayerScriptInstance) -> Void
+        _ body: (String, any WPECursorEventScriptInstance) -> Void
     ) {
         var seen: Set<ObjectIdentifier> = []
         for instances in [
@@ -898,6 +940,28 @@ extension WPEMetalSceneRenderer {
             where seen.insert(ObjectIdentifier(instance)).inserted {
                 body(objectID, instance)
             }
+        }
+        for instances in [
+            dynamicOriginScriptInstances,
+            dynamicScaleScriptInstances,
+            dynamicAnglesScriptInstances,
+            dynamicColorScriptInstances,
+            dynamicParallaxDepthScriptInstances,
+        ] {
+            for (objectID, instance) in instances
+            where seen.insert(ObjectIdentifier(instance)).inserted {
+                body(objectID, instance)
+            }
+        }
+        // Gate-keyed dicts: the key is a pass/gate id, not an object id, so the
+        // host object must come from the instance — like the constants loop.
+        for (gateID, instance) in effectVisibilityScriptInstances
+        where seen.insert(ObjectIdentifier(instance)).inserted {
+            body(instance.ownObjectID ?? gateID, instance)
+        }
+        for (key, instance) in effectConstantScriptInstances
+        where seen.insert(ObjectIdentifier(instance)).inserted {
+            body(instance.ownObjectID ?? key.passID, instance)
         }
     }
 
@@ -1026,7 +1090,8 @@ extension WPEMetalSceneRenderer {
             originAnimationIDs: dynamicOriginAnimations.keys,
             scaleScriptIDs: Array(dynamicScaleScriptInstances.keys) + Array(sharedScaleReadFans.keys),
             anglesScriptIDs: Array(dynamicAnglesScriptInstances.keys) + Array(sharedAnglesReadFans.keys),
-            colorScriptIDs: Array(dynamicColorScriptInstances.keys) + Array(sharedColorReadFans.keys),
+            colorScriptIDs: Array(dynamicColorScriptInstances.keys) + Array(sharedColorReadFans.keys)
+                + Array(dynamicParallaxDepthScriptInstances.keys) + Array(sharedParallaxReadFans.keys),
             liveCreatedLayerIDs: EmptyCollection<String>(),
             layerScriptIDs: layerScriptInstances.keys,
             alphaScriptIDs: layerAlphaScriptInstances.keys,
@@ -1068,15 +1133,16 @@ extension WPEMetalSceneRenderer {
     }
 
     private func applyLayerScriptState(_ state: WPELayerScriptState, objectID: String) {
-        // A hidden ancestor always wins — the script runtime's `getParent()` is an always-visible stub, so a dock script gating on `parent.visible` cannot otherwise hide itself. Walk the chain live so a runtime ancestor toggle is respected, not snapshotted.
+        // Store the script-assigned OWN flag — ancestors fold in at the frame
+        // overlay (`liveLayerVisibilityIncludingText`), which also re-shows this
+        // object's subtree when the assignment makes it visible again.
         // Text objects draw from the text maps, which also win the merge over the layer maps.
         let isText = liveTextVisibility[objectID] != nil
         if state.visibleAssigned {
-            let visible = state.visible && ancestorChainVisible(objectID)
             if isText {
-                liveTextVisibility[objectID] = visible
+                liveTextVisibility[objectID] = state.visible
             } else {
-                liveLayerVisibility[objectID] = visible
+                liveLayerVisibility[objectID] = state.visible
             }
         }
         if state.alphaAssigned {

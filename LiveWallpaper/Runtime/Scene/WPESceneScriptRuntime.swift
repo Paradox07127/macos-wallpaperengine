@@ -1985,10 +1985,16 @@ struct WPESceneScriptLayerInfo: Sendable {
     /// Name of this layer's parent, so `getParent()` can hand back the real
     /// handle (with a real `origin`) instead of a neutral stub.
     let parentName: String?
+    /// Parent object id — `getChildren()` matches on this, not the name,
+    /// which can repeat across layers.
+    let parentID: String?
     let alignment: String
     let parallaxDepth: SIMD2<Double>
     let isParticleSystem: Bool
     let particleInstanceSeed: WPEParticleInstanceValues
+    /// Resolved own presentation seeds; initialConfiguration retains authored envelopes.
+    let initialVisible: Bool?
+    let initialAlpha: Double?
     /// Complete load-time configuration, never synthesized from mutable layer state.
     let initialConfiguration: WPESceneJSONValue?
 
@@ -2002,10 +2008,13 @@ struct WPESceneScriptLayerInfo: Sendable {
         angles: SIMD3<Double> = .zero,
         index: Int,
         parentName: String?,
+        parentID: String? = nil,
         alignment: String = "center",
         parallaxDepth: SIMD2<Double> = .zero,
         isParticleSystem: Bool = false,
         particleInstanceSeed: WPEParticleInstanceValues = .init(),
+        initialVisible: Bool? = nil,
+        initialAlpha: Double? = nil,
         initialConfiguration: WPESceneJSONValue? = nil
     ) {
         self.id = id
@@ -2017,10 +2026,13 @@ struct WPESceneScriptLayerInfo: Sendable {
         self.angles = angles
         self.index = index
         self.parentName = parentName
+        self.parentID = parentID
         self.alignment = alignment
         self.parallaxDepth = parallaxDepth
         self.isParticleSystem = isParticleSystem
         self.particleInstanceSeed = particleInstanceSeed
+        self.initialVisible = initialVisible
+        self.initialAlpha = initialAlpha
         self.initialConfiguration = initialConfiguration
     }
 }
@@ -2230,6 +2242,26 @@ final class WPESharedScriptState: @unchecked Sendable {
     }
 
     private var staticCameraState = WPEStaticCameraScriptSnapshot()
+
+    /// Resolved `general.cameraparallax*` (with user-prop envelopes folded) so
+    /// `thisScene.cameraparallaxamount` & friends see the same values the
+    /// renderer uses. Patched live by incremental general-field bindings.
+    private var cameraParallaxSettings = WPESceneCameraParallaxSettings.disabled
+
+    func seedCameraParallax(_ settings: WPESceneCameraParallaxSettings) {
+        lock.lock(); defer { lock.unlock() }
+        cameraParallaxSettings = settings
+    }
+
+    func cameraParallaxSnapshot() -> WPESceneCameraParallaxSettings {
+        lock.lock(); defer { lock.unlock() }
+        return cameraParallaxSettings
+    }
+
+    func updateCameraParallax(_ update: (inout WPESceneCameraParallaxSettings) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        update(&cameraParallaxSettings)
+    }
 
     func seedStaticCamera(_ camera: WPESceneCamera, allowsMutation: Bool = true) {
         lock.lock(); defer { lock.unlock() }
@@ -3139,6 +3171,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private var lastAsyncInner: SIMD3<Double>?
     private var hasAsyncOutcome = false
     private var pendingMediaEvents: [WPESceneMediaEvent] = []
+    private var pendingCursorEvents: [WPELayerScriptCursorInvocation] = []
     /// The arity WPE authored for the bound property. Vec3 is the transform
     /// default; shader constants are usually scalars.
     private let valueShape: WPEScriptValueShape
@@ -3306,6 +3339,28 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         if engine.dispatchMediaEventsAsync(pendingMediaEvents, runtimeSeconds: runtimeSeconds) {
             pendingMediaEvents.removeAll(keepingCapacity: true)
         }
+    }
+
+    /// Property scripts export cursor handlers too (click-to-switch poses on an
+    /// `angles` script, workshop 3809609151). A refused batch stays pending and
+    /// the next frame's drain retries it, like pendingMediaEvents.
+    func enqueueCursorEvents(
+        _ events: [WPELayerScriptCursorInvocation],
+        allowSubmission: Bool = true
+    ) -> WPESceneScriptBatchDispatcher.Job? {
+        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else {
+            pendingCursorEvents.removeAll(keepingCapacity: true)
+            return nil
+        }
+        pendingCursorEvents.append(contentsOf: events)
+        guard allowSubmission, !pendingCursorEvents.isEmpty, engine.allows(.event),
+              let work = engine.makeCursorEventsBatch(pendingCursorEvents) else { return nil }
+        pendingCursorEvents.removeAll(keepingCapacity: true)
+        return WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work)
+    }
+
+    func cancelPendingCursorEvents() {
+        pendingCursorEvents.removeAll(keepingCapacity: true)
     }
 
 
@@ -3565,6 +3620,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var updateFunction: JSValue?
         fileprivate var screenResolution: JSValue?
         private var didInitialize = false
+        private var cursorScreenPosition: JSValue?
         private var cursorWorldPosition: JSValue?
         /// One-crossing clock updates; nil until setUp (then falls back to
         /// `wpeRefreshEngineClock` should construction ever fail).
@@ -3764,6 +3820,38 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return true
         }
 
+        /// Host-side admission for a frame's aggregated cursor burst, so a
+        /// refused job leaves the instance's pending events intact. Returned as
+        /// work so the renderer can chain it inside its ordered batch.
+        func makeCursorEventsBatch(
+            _ events: [WPELayerScriptCursorInvocation]
+        ) -> (@Sendable () -> Void)? {
+            guard !events.isEmpty, allows(.event) else { return nil }
+            guard let safety = asyncExecutionSafety.begin(
+                sceneToken: instanceLimitToken,
+                operation: .event
+            ) else { return nil }
+            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
+                asyncExecutionSafety.complete(safety)
+                return nil
+            }
+            return { @Sendable [self] in
+                defer {
+                    asyncExecutionSafety.complete(safety)
+                    permit.release()
+                }
+                for event in events {
+                    guard acceptsCompletion() else { return }
+                    dispatchCursorEventOnQueue(
+                        event.event,
+                        pointerFrame: event.pointerFrame,
+                        hit: event.hit,
+                        runtimeSeconds: event.runtimeSeconds
+                    )
+                }
+            }
+        }
+
         func resizeScreen(
             _ size: SIMD2<Double>,
             budget: TimeInterval
@@ -3953,6 +4041,86 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             }
         }
 
+        /// Same dispatch shape as dispatchMediaEventOnQueue: beginEvaluation so
+        /// `thisLayer`/`getLayer` writes publish, fresh cursor input, then the
+        /// exported handler keyed by name in faultPolicy.
+        private func dispatchCursorEventOnQueue(
+            _ event: WPELayerScriptCursorEvent,
+            pointerFrame: WPEPointerFrame,
+            hit: WPELayerScriptCursorHit,
+            runtimeSeconds: Double?
+        ) {
+            layerBridge.beginEvaluation()
+            defer { publishLayerOutput() }
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+            updateInput(pointerFrame.position)
+            guard let context,
+                  let fn = context.objectForKeyedSubscript(event.handlerName),
+                  !fn.isUndefined, fn.hasProperty("call") else { return }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else { return }
+            didThrow = false
+            WPEFrameOccupancyMeter.count(.jscCall)
+            _ = fn.call(withArguments: [cursorEventObject(
+                event,
+                pointerFrame: pointerFrame,
+                hit: hit,
+                in: context
+            )])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+            } else {
+                faultPolicy.recordSuccess(entryPoint: event.handlerName)
+            }
+        }
+
+        /// Same event shape the layer engine hands cursorClick & friends.
+        private func cursorEventObject(
+            _ event: WPELayerScriptCursorEvent,
+            pointerFrame: WPEPointerFrame,
+            hit: WPELayerScriptCursorHit,
+            in context: JSContext
+        ) -> JSValue {
+            let object = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            object.setObject(event.handlerName, forKeyedSubscript: "type" as NSString)
+            object.setObject(event.button, forKeyedSubscript: "button" as NSString)
+            object.setObject(pointerFrame.isDown, forKeyedSubscript: "leftDown" as NSString)
+            object.setObject(pointerFrame.isRightDown, forKeyedSubscript: "rightDown" as NSString)
+            let position = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            position.setObject(clampFinite(pointerFrame.position.x, lower: 0, upper: 1), forKeyedSubscript: "x" as NSString)
+            position.setObject(clampFinite(pointerFrame.position.y, lower: 0, upper: 1), forKeyedSubscript: "y" as NSString)
+            object.setObject(position, forKeyedSubscript: "position" as NSString)
+            object.setObject(cursorScreenPosition, forKeyedSubscript: "cursorScreenPosition" as NSString)
+            object.setObject(cursorWorldPosition, forKeyedSubscript: "cursorWorldPosition" as NSString)
+            object.setObject(
+                hit.worldPosition.map { cursorVectorObject($0, in: context) } ?? cursorWorldPosition,
+                forKeyedSubscript: "worldPosition" as NSString
+            )
+            object.setObject(
+                hit.localPosition.map { cursorVectorObject($0, in: context) } ?? JSValue(nullIn: context),
+                forKeyedSubscript: "localPosition" as NSString
+            )
+            if let hitBox = hit.hitBox {
+                object.setObject(hitBox, forKeyedSubscript: "hitBox" as NSString)
+            } else {
+                object.setObject(JSValue(nullIn: context), forKeyedSubscript: "hitBox" as NSString)
+            }
+            return object
+        }
+
+        private func cursorVectorObject(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
+            let object = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            object.setObject(value.x.isFinite ? value.x : 0, forKeyedSubscript: "x" as NSString)
+            object.setObject(value.y.isFinite ? value.y : 0, forKeyedSubscript: "y" as NSString)
+            object.setObject(value.z.isFinite ? value.z : 0, forKeyedSubscript: "z" as NSString)
+            return object
+        }
+
+        private func clampFinite(_ value: Double, lower: Double, upper: Double) -> Double {
+            guard value.isFinite else { return (lower + upper) * 0.5 }
+            return min(max(value, lower), upper)
+        }
+
         /// init must not reuse the update object — scripts snapshot `initial = value` and would otherwise alias the live argument.
         private func jsValue(
             for value: SIMD3<Double>,
@@ -3997,22 +4165,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let updateFunction else { return nil }
-            // Restore host input every tick, including after a script mutates it.
-            let world = shared?.cursorWorldPosition(pointer: pointerPosition, canvasSize: canvasSize, fallbackZ: seed.z)
-                ?? SIMD3(pointerPosition.x * canvasSize.x, (1 - pointerPosition.y) * canvasSize.y, seed.z)
-            if let cursorHelper {
-                WPEFrameOccupancyMeter.count(.jscCall)
-                cursorHelper.call(withArguments: [
-                    world.x,
-                    world.y,
-                    world.z,
-                ])
-            } else {
-                WPEFrameOccupancyMeter.count(.jscSetObject, by: 3)
-                cursorWorldPosition?.setObject(world.x, forKeyedSubscript: "x" as NSString)
-                cursorWorldPosition?.setObject(world.y, forKeyedSubscript: "y" as NSString)
-                cursorWorldPosition?.setObject(world.z, forKeyedSubscript: "z" as NSString)
-            }
+            updateInput(pointerPosition)
 
             didThrow = false
             guard let argument = jsValue(for: currentValue, in: context, reuseUpdateArgument: true) else { return nil }
@@ -4159,23 +4312,51 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return !didThrow
         }
 
+        /// Rewrites both cursor inputs every entry, including after a script
+        /// mutates them; screen stays in canvas pixels, world is projected.
+        private func updateInput(_ pointer: SIMD2<Double>) {
+            let world = shared?.cursorWorldPosition(pointer: pointer, canvasSize: canvasSize, fallbackZ: seed.z)
+                ?? SIMD3(pointer.x * canvasSize.x, (1 - pointer.y) * canvasSize.y, seed.z)
+            if let cursorHelper {
+                WPEFrameOccupancyMeter.count(.jscCall)
+                cursorHelper.call(withArguments: [
+                    pointer.x * canvasSize.x,
+                    pointer.y * canvasSize.y,
+                    world.x,
+                    world.y,
+                    world.z,
+                ])
+            } else {
+                WPEFrameOccupancyMeter.count(.jscSetObject, by: 5)
+                cursorScreenPosition?.setObject(pointer.x * canvasSize.x, forKeyedSubscript: "x" as NSString)
+                cursorScreenPosition?.setObject(pointer.y * canvasSize.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(world.x, forKeyedSubscript: "x" as NSString)
+                cursorWorldPosition?.setObject(world.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(world.z, forKeyedSubscript: "z" as NSString)
+            }
+        }
+
         private func installInput(in context: JSContext) {
             let input = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            let screen = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let world = shared?.projectedCursorWorldPosition(pointer: SIMD2(0.5, 0.5)) ?? seed
             // Keep this native Vec3 alive across ticks: scripts may capture it before the first input update.
             let cursor = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [world.x, world.y, world.z])
                 ?? JSValue(nullIn: context)!
+            input.setObject(screen, forKeyedSubscript: "cursorScreenPosition" as NSString)
             input.setObject(cursor, forKeyedSubscript: "cursorWorldPosition" as NSString)
             context.setObject(input, forKeyedSubscript: "input" as NSString)
+            cursorScreenPosition = screen
             cursorWorldPosition = cursor
             cursorHelper = wpeMakeHostTickHelper(
                 in: context,
                 factory: """
-                (function (world) { return function (wx, wy, wz) {
+                (function (screen, world) { return function (sx, sy, wx, wy, wz) {
+                    screen.x = sx; screen.y = sy;
                     world.x = wx; world.y = wy; world.z = wz;
                 }; })
                 """,
-                targets: [cursor]
+                targets: [screen, cursor]
             )
         }
 

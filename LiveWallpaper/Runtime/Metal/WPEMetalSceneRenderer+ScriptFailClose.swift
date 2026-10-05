@@ -6,6 +6,7 @@ import Metal
 
 struct WPESceneScriptPresentationSnapshot {
     var staticCamera: WPEStaticCameraScriptSnapshot?
+    var cameraParallax: WPESceneCameraParallaxSettings = .disabled
     let layerVisibility: [String: Bool]
     let textVisibility: [String: Bool]
     let layerAlpha: [String: Double]
@@ -43,6 +44,7 @@ extension WPEMetalSceneRenderer {
     func captureSceneScriptPresentation() -> WPESceneScriptPresentationSnapshot {
         WPESceneScriptPresentationSnapshot(
             staticCamera: sceneScriptSharedState?.staticCameraSnapshot(),
+            cameraParallax: resolvedCameraParallaxSettings,
             layerVisibility: liveLayerVisibility,
             textVisibility: liveTextVisibility,
             layerAlpha: liveLayerAlpha,
@@ -59,6 +61,8 @@ extension WPEMetalSceneRenderer {
         if let camera = snapshot.staticCamera {
             sceneScriptSharedState?.restoreStaticCamera(camera)
         }
+        cameraParallaxSettings = snapshot.cameraParallax
+        sceneScriptSharedState?.seedCameraParallax(snapshot.cameraParallax)
         liveLayerVisibility = snapshot.layerVisibility
         liveTextVisibility = snapshot.textVisibility
         liveLayerAlpha = snapshot.layerAlpha

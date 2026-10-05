@@ -1,43 +1,45 @@
 #if !LITE_BUILD
-    import Foundation
-    @testable import LiveWallpaper
-    import Testing
+import Foundation
+@testable import LiveWallpaper
+import Testing
 
-    @Suite("WPE SceneScript B2b resource limits")
-    struct WPESceneScriptB2bResourceLimitTests {
-        @Test("Created layer cap accepts 64 and scene-latches on 65")
-        func createdLayerExactBoundary() {
-            let token = preparedToken(generation: 1)
-            for _ in 0 ..< 64 {
-                #expect(token.admitCreatedLayer())
-            }
-            #expect(token.resourceSnapshot.createdLayers == 64)
-            #expect(!token.admitCreatedLayer())
-            #expect(token.resourceSnapshot.createdLayers == 64)
-            #expect(token.failureReason == .createdLayerLimitExceeded(limit: 64))
-            expectEveryOperationRejected(by: token)
+@Suite("WPE SceneScript B2b resource limits")
+struct WPESceneScriptB2bResourceLimitTests {
+    @Test("Created layer cap accepts its exact boundary and scene-latches on the next layer")
+    func createdLayerExactBoundary() {
+        let token = preparedToken(generation: 1)
+        let limit = WPESceneScriptContainmentDefaults.maximumCreatedLayersPerScene
+        for _ in 0 ..< limit {
+            #expect(token.admitCreatedLayer())
         }
+        #expect(token.resourceSnapshot.createdLayers == limit)
+        #expect(!token.admitCreatedLayer())
+        #expect(token.resourceSnapshot.createdLayers == limit)
+        #expect(token.failureReason == .createdLayerLimitExceeded(limit: limit))
+        expectEveryOperationRejected(by: token)
+    }
 
-    @Test("Actual layer bridge accepts 64 layers and discards an over-limit entry")
+    @Test("Actual layer bridge accepts the configured layer cap and discards an over-limit entry")
     @MainActor
     func createdLayerBridgeExactBoundary() throws {
+        let limit = WPESceneScriptContainmentDefaults.maximumCreatedLayersPerScene
         let exactToken = preparedToken(generation: 11, inventory: .init(text: 0, layer: 1, transform: 0))
         let exact = try WPELayerScriptInstance(
-            script: Self.createdLayerScript(count: 64),
+            script: Self.createdLayerScript(count: limit),
             shared: WPESharedScriptState(sceneScriptLoadToken: exactToken)
         )
-        #expect(exact.initialOutput.created.count == 64)
-        #expect(exactToken.resourceSnapshot.createdLayers == 64)
+        #expect(exact.initialOutput.created.count == limit)
+        #expect(exactToken.resourceSnapshot.createdLayers == limit)
         #expect(exactToken.failureReason == nil)
 
         let overToken = preparedToken(generation: 12, inventory: .init(text: 0, layer: 1, transform: 0))
         let over = try WPELayerScriptInstance(
-            script: Self.createdLayerScript(count: 65),
+            script: Self.createdLayerScript(count: limit + 1),
             shared: WPESharedScriptState(sceneScriptLoadToken: overToken)
         )
         #expect(over.initialOutput.created.isEmpty)
         #expect(overToken.resourceSnapshot.createdLayers == 0)
-        #expect(overToken.failureReason == .createdLayerLimitExceeded(limit: 64))
+        #expect(overToken.failureReason == .createdLayerLimitExceeded(limit: limit))
         expectEveryOperationRejected(by: overToken)
     }
 

@@ -213,9 +213,20 @@ extension WPEMetalSceneRenderer {
         return SIMD2<Double>(x * cosine - y * sine, x * sine + y * cosine)
     }
 
+    /// Effective per-layer visibility: the stored maps hold each object's OWN
+    /// live flag (authored seed or script/property assignment), so a parent's
+    /// state must fold onto its subtree here — a hidden ancestor always wins.
     var liveLayerVisibilityIncludingText: [String: Bool] {
-        guard !liveTextVisibility.isEmpty else { return liveLayerVisibility }
-        return liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
+        let merged = liveTextVisibility.isEmpty
+            ? liveLayerVisibility
+            : liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
+        guard !objectParentByID.isEmpty else { return merged }
+        var effective: [String: Bool] = [:]
+        effective.reserveCapacity(merged.count)
+        for id in merged.keys {
+            effective[id] = (merged[id] ?? true) && ancestorChainVisible(id)
+        }
+        return effective
     }
 
     var liveLayerAlphaIncludingText: [String: Double] {
