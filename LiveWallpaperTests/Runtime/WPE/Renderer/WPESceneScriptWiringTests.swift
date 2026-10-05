@@ -9,6 +9,34 @@ import Testing
 @MainActor
 @Suite("SceneScript renderer wiring", .serialized)
 struct WPESceneScriptWiringTests {
+    @Test("Renderer frame inputs retain above-one stereo audio before pooling")
+    func rendererAudioPreservesAboveOne() async throws {
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        var right = left
+        left[0] = 2; right[1] = 1.5
+        let wasCapturing = SystemAudioCaptureManager.isCapturing
+        SystemAudioCaptureManager.broker.attachAnalyzer(ClockRateSpectrum(
+            frame: AudioSpectrumFrame(validatedLeft: left, validatedRight: right, timestampNanos: 1)
+        ))
+        SystemAudioCaptureManager.setCapturingForTesting(true)
+        defer {
+            SystemAudioCaptureManager.setCapturingForTesting(wasCapturing)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
+        let uniforms = renderer.sampleFrameContext(inputs: renderer.makeFrameInputs()).uniforms
+        #expect(uniforms.audioSpectrumLeft[0] == 2)
+        #expect(uniforms.audioSpectrumRight[1] == 1.5)
+        #expect(uniforms.uniformValues["g_AudioSpectrum16Left"] == .vector([2] + [Double](repeating: 0, count: 15)))
+        #expect(uniforms.audioSpectrum16Average[0] == 1)
+        #expect(SystemAudioCaptureManager.broker.snapshot().left[0] == 1)
+    }
+
     @Test("A particle rate envelope executes init and requests audio without emitter audio fields")
     func particleRateEnvelopeBootstraps() async throws {
         let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)

@@ -120,7 +120,7 @@ extension WPEMetalSceneRenderer {
         )
         // Audio-reactive uniforms follow the shared system-audio capture, not the scene's own sounds. When capture is off the broker is silent (flat bars).
         if SystemAudioCaptureManager.isCapturing, oracleFrameOverride == nil {
-            let audio = SystemAudioCaptureManager.broker.snapshot()
+            let audio = SystemAudioCaptureManager.broker.snapshot(clampedTo01: false)
             if audioDebugLogEnabled {
                 audioDiagCounter += 1
                 if audioDiagCounter % 60 == 1 {

@@ -426,7 +426,7 @@ final class WPESceneScriptAudioBridge {
             wasSilent = true
             return
         }
-        let frame = SystemAudioCaptureManager.broker.snapshot()
+        let frame = SystemAudioCaptureManager.broker.snapshot(clampedTo01: false)
         for buffer in buffers {
             write(
                 buffer,
@@ -441,7 +441,7 @@ final class WPESceneScriptAudioBridge {
         guard SystemAudioCaptureManager.isCapturing else {
             return [Double](repeating: 0, count: AudioSpectrumFrame.binCount)
         }
-        let frame = SystemAudioCaptureManager.broker.snapshot()
+        let frame = SystemAudioCaptureManager.broker.snapshot(clampedTo01: false)
         return zip(frame.left, frame.right).map { (Double($0) + Double($1)) * 0.5 }
     }
 

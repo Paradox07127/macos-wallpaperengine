@@ -1387,6 +1387,43 @@ struct WPESceneScriptRuntimeTests {
         #expect(instance.tickString() == "0.5:0.25:0.375:0")
     }
 
+    @Test("Linked audio arrays preserve above-one stereo values across live updates",
+          arguments: [16, 32, 64])
+    func engineAudioBuffersPreserveAboveOne(bands: Int) throws {
+        var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        var right = left
+        left[60] = 2; right[61] = 1.5
+        let wasCapturing = SystemAudioCaptureManager.isCapturing
+        SystemAudioCaptureManager.setCapturingForTesting(true)
+        defer {
+            SystemAudioCaptureManager.setCapturingForTesting(wasCapturing)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
+        SystemAudioCaptureManager.broker.attachAnalyzer(SpectrumAnalyzerStub(
+            AudioSpectrumFrame(validatedLeft: left, validatedRight: right, timestampNanos: 1)
+        ))
+        let index = 60 / (64 / bands)
+        let rightIndex = 61 / (64 / bands)
+        let script = """
+        const audio = engine.registerAudioBuffers(\(bands));
+        const left = audio.left, right = audio.right, average = audio.average;
+        export function update() {
+            return [left === audio.left, right === audio.right, average === audio.average,
+                    left[\(index)], right[\(rightIndex)], average[\(index)]].join(':');
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "")
+        #expect(instance.tickString() == (bands == 64 ? "true:true:true:2:1.5:1" : "true:true:true:2:1.5:1.75"))
+        left[60] = 1.5; right[61] = 2.5
+        SystemAudioCaptureManager.broker.attachAnalyzer(SpectrumAnalyzerStub(
+            AudioSpectrumFrame(validatedLeft: left, validatedRight: right, timestampNanos: 2)
+        ))
+        #expect(instance.tickString() == (bands == 64 ? "true:true:true:1.5:2.5:0.75" : "true:true:true:1.5:2.5:2"))
+        #expect(SystemAudioCaptureManager.broker.snapshot().left[60] == 1)
+        #expect(SystemAudioCaptureManager.broker.snapshot().right[61] == 1)
+    }
+
     /// Identity, not values: replacing `audioBuffer.average` each tick would pass
     /// value tests and still break the corpus template.
     @Test("Registered audio buffer arrays keep identity while values update in place")
