@@ -72,7 +72,7 @@ struct WPERenderGraphBuilder: Sendable {
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
         ).union(Self.emptyComposeWrapperIDs(in: document, objectByID: objectByID))
-            .union(noOpFullFrameDrops).subtracting(cursorRegionIDs)
+            .union(noOpFullFrameDrops)
         let visibleLayerIDs = Set(document.imageObjects
             .filter { !composeWrappersToDrop.contains($0.id) }
             .filter { !Self.hasHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs) }

@@ -41,6 +41,87 @@ struct WPEBuiltinColorDomainTests {
         }
     }
 
+    @Test("Text-carrier inputs keep independent RGB through identity colour effects and blend composites",
+          arguments: [false, true])
+    func carrierInputsSkipCoverageDivision(straightOutput: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Metal/WPEMetalBuiltins.metal")
+        let library = try device.makeLibrary(source: source, options: WPEMetalLibraryRegistry.Configuration(fastMathEnabled: true).makeOptions())
+        let queue = try #require(device.makeCommandQueue())
+        let carrier = WPENativeAlphaPolicy(input: .none, straightOutput: straightOutput, independentCoverageInput: true)
+        // RGB greater than coverage: a PMA division would clip every channel to 1.
+        let input = SIMD4<Float>(0.6, 0.7, 0.8, 0.25).mapHalfRoundTrip
+        let associated = SIMD4(input.x * input.w, input.y * input.w, input.z * input.w, input.w)
+        let effects = ["wpe_effect_colorbalance_fragment", "wpe_effect_color_grading_fragment"]
+        for name in effects {
+            let actual = try renderCarrier(input, fragment: name, nativeAlpha: carrier, library: library, device: device, queue: queue)
+            expectClose(actual, straightOutput ? input : associated, "\(name), straightOutput=\(straightOutput)")
+        }
+        // Darker Color against a white scene returns the layer's straight RGB unmixed.
+        for name in ["wpe_blend_composite_fragment", "wpe_blend_composite_fetch_fragment"] {
+            let actual = try renderCarrier(input, fragment: name, nativeAlpha: carrier, library: library, device: device, queue: queue)
+            expectClose(actual, associated, "\(name), straightOutput=\(straightOutput)")
+        }
+    }
+
+    private func expectClose(_ actual: SIMD4<Float>, _ expected: SIMD4<Float>, _ label: String) {
+        for channel in 0 ..< 4 {
+            #expect(abs(actual[channel] - expected[channel]) <= 0.002, "\(label), channel=\(channel): \(actual) vs \(expected)")
+        }
+    }
+
+    private func renderCarrier(_ input: SIMD4<Float>, fragment: String, nativeAlpha: WPENativeAlphaPolicy,
+                               library: MTLLibrary, device: MTLDevice, queue: MTLCommandQueue) throws -> SIMD4<Float> {
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
+        pipelineDescriptor.fragmentFunction = try WPEMetalColorOutput.fragment(
+            library: library, name: fragment, format: .rgba16Float, nativeAlpha: nativeAlpha
+        )
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .rgba16Float
+        let pipeline = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 1, height: 1, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let scene = try #require(device.makeTexture(descriptor: descriptor))
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        let region = MTLRegionMake2D(0, 0, 1, 1)
+        var pixel = (0 ..< 4).map { Float16(input[$0]).bitPattern }
+        pixel.withUnsafeBytes { source.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8) }
+        let white = [UInt16](repeating: Float16(1).bitPattern, count: 4)
+        for texture in [scene, output] {
+            white.withUnsafeBytes { texture.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8) }
+        }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = output
+        pass.colorAttachments[0].loadAction = .load
+        pass.colorAttachments[0].storeAction = .store
+        let command = try #require(queue.makeCommandBuffer())
+        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentTexture(source, index: 0)
+        encoder.setFragmentTexture(scene, index: 4)
+        switch fragment {
+        case "wpe_effect_colorbalance_fragment":
+            var uniforms = WPEColorBalanceUniforms(brightness: 0, contrast: 1, saturation: 1, padding: 0)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout.size(ofValue: uniforms), index: 0)
+        case "wpe_effect_color_grading_fragment":
+            var uniforms = WPEColorGradingUniforms(lift: .zero, gamma: SIMD4(repeating: 1), gain: SIMD4(repeating: 1))
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout.size(ofValue: uniforms), index: 0)
+        default:
+            var uniforms = WPEBlendCompositeUniforms(blendMode: 5)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEBlendCompositeUniforms>.stride, index: 0)
+        }
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed, "\(String(describing: command.error))")
+        pixel.withUnsafeMutableBytes { output.getBytes($0.baseAddress!, bytesPerRow: 8, from: region, mipmapLevel: 0) }
+        return SIMD4(Float(Float16(bitPattern: pixel[0])), Float(Float16(bitPattern: pixel[1])),
+                     Float(Float16(bitPattern: pixel[2])), Float(Float16(bitPattern: pixel[3])))
+    }
+
     private func reference(_ sampled: SIMD4<Float>, grading: Bool) -> SIMD4<Float> {
         guard sampled.w != 0 else { return sampled }
         let alpha = Double(sampled.w)

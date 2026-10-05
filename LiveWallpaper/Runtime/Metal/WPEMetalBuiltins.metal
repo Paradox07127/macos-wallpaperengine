@@ -19,11 +19,23 @@ inline float4 wpe_native_sample(half4 color) { return wpe_native_sample(float4(c
 inline bool wpe_native_output_is_straight() {
     return is_function_constant_defined(wpe_native_straight_output) && wpe_native_straight_output;
 }
+inline bool wpe_native_input_is_independent_coverage() {
+    return is_function_constant_defined(wpe_independent_coverage_input) && wpe_independent_coverage_input;
+}
+// Straight RGB of a native input: a carrier's RGB already is; PMA divides by coverage.
+inline float3 wpe_native_straight_rgb(float4 color) {
+    if (wpe_native_input_is_independent_coverage()) { return color.rgb; }
+    return color.a > 0.001 ? saturate(color.rgb / color.a) : color.rgb;
+}
 // Native image/model/text paths inject PMA to use Metal's .one source factor.
 // Apply the WPE source-range operation before that representation conversion.
 inline float4 wpe_attachment_premultiply(float3 rgb, float alpha) {
     float4 straight = wpe_attachment_output(float4(rgb, alpha));
     return float4(straight.rgb * straight.a, straight.a);
+}
+// Carrier consumers keep coverage separate unless the output contract asks for PMA.
+inline float4 wpe_native_carrier_output(float3 rgb, float alpha) {
+    return wpe_native_output_is_straight() ? wpe_attachment_output(float4(rgb, alpha)) : wpe_attachment_premultiply(rgb, alpha);
 }
 
 
@@ -856,8 +868,8 @@ struct WPEBlendCompositeUniforms {
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 layer = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
-    // Layer composites are premultiplied; ApplyBlending's B is straight colour.
-    float3 straight = layer.a > 0.001 ? saturate(layer.rgb / layer.a) : layer.rgb;
+    // ApplyBlending's B is straight colour.
+    float3 straight = wpe_native_straight_rgb(layer);
 
     float2 sceneSize = float2(texture4.get_width(), texture4.get_height());
     float2 screenUV = in.position.xy / max(sceneSize, float2(1.0));
@@ -880,7 +892,7 @@ struct WPEBlendCompositeUniforms {
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 layer = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
-    float3 straight = layer.a > 0.001 ? saturate(layer.rgb / layer.a) : layer.rgb;
+    float3 straight = wpe_native_straight_rgb(layer);
     float3 blended = wpe_ApplyBlending(uniforms.blendMode, float3(sceneColor.rgb), straight, layer.a);
     return half4(wpe_attachment_premultiply(blended, layer.a));
 }
@@ -988,15 +1000,17 @@ struct WPEColorBalanceUniforms {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 color = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
 
-    // These fallback effects receive PMA layer targets. With no coverage, retain
-    // additive RGB verbatim; no straight colour exists on which to apply an offset.
-    if (color.a == 0.0) { return half4(wpe_attachment_output(float4(half4(color)))); }
-    float3 rgb = color.rgb / color.a + uniforms.brightness;
+    bool carrier = wpe_native_input_is_independent_coverage();
+    // PMA layer targets with no coverage retain additive RGB verbatim; no straight
+    // colour exists on which to apply an offset.
+    if (!carrier && color.a == 0.0) { return half4(wpe_attachment_output(float4(half4(color)))); }
+    float3 rgb = (carrier ? color.rgb : color.rgb / color.a) + uniforms.brightness;
     rgb = (rgb - 0.5) * max(uniforms.contrast, 0.0) + 0.5;
 
     float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
     rgb = wpe_lerp(float3(luma), rgb, max(uniforms.saturation, 0.0));
 
+    if (carrier) { return half4(wpe_native_carrier_output(saturate(rgb), color.a)); }
     return half4(wpe_attachment_output(float4(half4(float4(saturate(rgb) * color.a, color.a)))));
 }
 
@@ -2345,11 +2359,13 @@ struct WPEColorGradingUniforms {
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
+    bool carrier = wpe_native_input_is_independent_coverage();
     // Preserve zero-coverage additive values, as in the colorbalance fallback.
-    if (sampled.a == 0.0) { return half4(wpe_attachment_output(float4(half4(sampled)))); }
-    float3 lifted = sampled.rgb / sampled.a + uniforms.lift.rgb;
+    if (!carrier && sampled.a == 0.0) { return half4(wpe_attachment_output(float4(half4(sampled)))); }
+    float3 lifted = (carrier ? sampled.rgb : sampled.rgb / sampled.a) + uniforms.lift.rgb;
     float3 gained = lifted * max(uniforms.gain.rgb, float3(0.0001));
     float3 graded = pow(saturate(gained), float3(1.0) / max(uniforms.gamma.rgb, float3(0.0001)));
+    if (carrier) { return half4(wpe_native_carrier_output(saturate(graded), sampled.a)); }
     return half4(wpe_attachment_output(float4(half4(float4(saturate(graded) * sampled.a, sampled.a)))));
 }
 

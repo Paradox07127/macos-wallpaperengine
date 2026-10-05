@@ -1222,6 +1222,73 @@ struct WPERenderGraphBuilderTests {
         #expect(graph.layers.contains { $0.objectID == "child" })
     }
 
+    @Test("Visible cursor regions on dropped utility wrappers keep geometry without compositing to scene")
+    func visibleCursorRegionWrappersDoNotCompositeToScene() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+        try writeJSON(["material": "materials/util/fullscreenlayer.json"], to: root.appendingPathComponent("models/util/fullscreenlayer.json"))
+        try writeJSON([
+            "passes": [["shader": "copy", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/fullscreenlayer.json"))
+        try writeJSON([
+            "passes": [["material": "materials/effects/blur.json"]],
+        ], to: root.appendingPathComponent("effects/blur/effect.json"))
+        try writeJSON([
+            "passes": [["shader": "effects/blur"]],
+        ], to: root.appendingPathComponent("materials/effects/blur.json"))
+
+        let clickVisible: [String: Any] = [
+            "value": true, "script": "export function cursorClick() { shared.clicked = true; }",
+        ]
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                [
+                    "id": "emptyCompose", "name": "Click Zone", "type": "image",
+                    "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "200 200 0",
+                    "visible": clickVisible,
+                ],
+                [
+                    "id": "fullscreen", "name": "Click Overlay", "type": "image",
+                    "image": "models/util/fullscreenlayer.json", "origin": "500 400 0", "size": "1000 800 0",
+                    "visible": clickVisible,
+                ],
+                [
+                    "id": "particleCompose", "name": "Rain Group", "type": "image",
+                    "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "300 300 0",
+                    "visible": clickVisible,
+                    "effects": [["id": 1, "file": "effects/blur/effect.json", "visible": true]],
+                ],
+                [
+                    "id": "rain", "name": "Rain", "type": "particle",
+                    "particle": "particles/rain.json", "parent": "particleCompose", "origin": "0 0 0",
+                ],
+            ],
+        ]
+        let sceneData = try JSONSerialization.data(withJSONObject: scenePayload)
+        let document = try WPESceneDocumentParser.parse(data: sceneData)
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+
+        let expectedSizes = [
+            "emptyCompose": CGSize(width: 200, height: 200),
+            "fullscreen": CGSize(width: 1000, height: 800),
+            "particleCompose": CGSize(width: 300, height: 300),
+        ]
+        for (id, size) in expectedSizes {
+            let layer = try #require(graph.layers.first { $0.objectID == id })
+            #expect(layer.geometry.size == size, "\(id) lost its hit-test geometry")
+            #expect(!layer.passes.contains { $0.target == .scene }, "\(id) composites a cursor region into the scene")
+        }
+    }
+
     @Test("Childless composition effects survive pruning (Lofi Cafe audio bars)")
     func childlessCompositionWithEffectIsRendered() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
