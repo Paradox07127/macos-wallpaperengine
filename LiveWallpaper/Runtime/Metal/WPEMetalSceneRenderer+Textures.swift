@@ -1269,6 +1269,13 @@ extension WPEMetalSceneRenderer {
                 fallbackPath: context.path,
                 layerName: context.layerName
             )
+        case let graphError as WPERenderGraphError:
+            if case let .fileMissing(path) = graphError {
+                // Keep the resource failure typed so the failed-attempt page can
+                // offer engine-assets setup instead of only retrying the same miss.
+                return .fileMissing(layer: layerName, path: path)
+            }
+            return .other(layer: layerName, message: graphError.localizedDescription)
         case let executorError as WPEMetalRenderExecutorError:
             switch executorError {
             case .unsupportedShader(let name):

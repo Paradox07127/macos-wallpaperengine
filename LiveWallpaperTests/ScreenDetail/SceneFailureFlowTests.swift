@@ -3,11 +3,55 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 import SwiftUI
 import Testing
 
 @Suite("Scene failure flow")
 struct SceneFailureFlowTests {
+    @MainActor
+    @Test("A missing fullscreen model reaches the failed-attempt page with engine setup, even while a video is retained")
+    func fullscreenFailureOffersSetupOnAttemptPage() throws {
+        let path = "models/util/fullscreenlayer.json"
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("fullscreen-failure-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 256, "height": 128]],
+            "objects": [["id": 183, "name": "Contrast Lighting", "image": path,
+                         "effects": [["id": 185, "file": "effects/localcontrast/effect.json", "visible": true]]]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
+        let error = try #require(#expect(throws: WPERenderGraphError.self) {
+            _ = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        })
+        #expect(error == .fileMissing(path))
+
+        let descriptor = SceneDescriptor(workshopID: "2934020506", cacheRelativePath: "fixture", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: descriptor, cacheRootURL: root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 256, height: 128), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        let diagnostic = renderer.diagnostic(for: error)
+        #expect(diagnostic == .fileMissing(layer: "scene", path: path))
+        let cause = SceneWallpaperSession.failureCause(for: error, diagnostic: diagnostic)
+        #expect(cause.code == "scene.file_missing")
+        #expect(cause.reason.contains(path))
+
+        let snapshot = WallpaperFailureSnapshot(
+            id: UUID(), title: "Golden flowers", workshopID: "2934020506", displayName: "Built-in Display",
+            stage: .loading, cause: cause, previousWallpaper: "Golden Knight · Video", timestamp: Date(),
+            diagnostics: "", wallpaperType: .scene
+        )
+        let page = WallpaperFailureView(failure: snapshot, onRetry: {})
+        #expect(page.recovery(engineAssetsAuthorized: false) == [.configureEngineAssets, .retry, .openWorkshop("2934020506")])
+        #expect(page.recovery(engineAssetsAuthorized: true) == [.retry, .openWorkshop("2934020506")])
+        let history = WallpaperFailureView(failure: snapshot, isCurrentAttempt: false)
+        #expect(history.recovery(engineAssetsAuthorized: false) == [.openWorkshop("2934020506")])
+    }
+
     @Test("Unsafe schema paths are failures, not scenes without options")
     func unsafeSchemaPath() async {
         let result = await WPESceneProjectSchemaLoader.load(
@@ -239,10 +283,14 @@ struct SceneFailureFlowTests {
                     onRetry: {},
                     onViewDesktop: {},
                     onChooseSource: {},
-                    onClearDisplay: {}
+                    onClearDisplay: {},
+                    onShowDetails: {}
                 )
                 let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
                     page.frame(width: width, height: 560)
+                        .environment(\.featureCatalog, FeatureCatalog(capabilities: .pro))
+                        .environment(\.colorScheme, appearanceName == "light" ? .light : .dark)
+                        .background(appearanceName == "light" ? Color.white : Color.black)
                 })
                 host.appearance = NSAppearance(named: appearance)
                 host.frame = CGRect(x: 0, y: 0, width: width, height: 560)

@@ -106,8 +106,13 @@ extension WallpaperFailureCause {
         Self.sourceRelinkCodes.contains(code)
     }
 
-    func recovery(workshopID: String?, canChooseSource: Bool) -> [WallpaperFailureRecovery] {
+    func recovery(
+        workshopID: String?, canChooseSource: Bool, engineAssetsAuthorized: Bool = true
+    ) -> [WallpaperFailureRecovery] {
         var actions: [WallpaperFailureRecovery] = []
+        if !engineAssetsAuthorized, code == "graph.file_missing" || code == "scene.file_missing" {
+            actions.append(.configureEngineAssets)
+        }
         // `canRetry` is the producers' call but cannot outvote a fatal code:
         // `WPEImportCoordinator` emits `scene.windows_plugin` with `canRetry: true`.
         if failureClass != .fatal {

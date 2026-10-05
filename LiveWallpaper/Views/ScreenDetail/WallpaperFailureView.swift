@@ -14,6 +14,19 @@ struct WallpaperFailureView: View {
     /// so a nested overlay would be cut off at the card's edge.
     var onShowDetails: (() -> Void)?
 
+    #if !LITE_BUILD
+    @Environment(\.featureCatalog) private var featureCatalog
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
+    #endif
+
+    private var engineAssetsAuthorized: Bool {
+        #if LITE_BUILD
+        true
+        #else
+        !featureCatalog.isEnabled(.wpeImport) || engineAssets.isAuthorized
+        #endif
+    }
+
     private var failureClass: WallpaperFailureClass {
         failure.cause.failureClass
     }
@@ -21,9 +34,14 @@ struct WallpaperFailureView: View {
     /// Historic failures keep only the Workshop link: retrying or re-linking would act on
     /// the display's current assignment, not on the one being read about.
     private var recovery: [WallpaperFailureRecovery] {
+        recovery(engineAssetsAuthorized: engineAssetsAuthorized)
+    }
+
+    func recovery(engineAssetsAuthorized: Bool) -> [WallpaperFailureRecovery] {
         let actions = failure.cause.recovery(
             workshopID: failure.workshopID,
-            canChooseSource: onChooseSource != nil
+            canChooseSource: onChooseSource != nil,
+            engineAssetsAuthorized: engineAssetsAuthorized
         )
         guard isCurrentAttempt else {
             return actions.filter { action in
@@ -49,6 +67,9 @@ struct WallpaperFailureView: View {
             .frame(maxWidth: 560, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        #if !LITE_BUILD
+        .task { engineAssets.refresh() }
+        #endif
     }
 
     private var diagnosis: some View {
@@ -78,6 +99,13 @@ struct WallpaperFailureView: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, DesignTokens.Spacing.md)
+                if recovery.contains(.configureEngineAssets) {
+                    Text("Set up Wallpaper Engine assets in Settings › Workshop, then retry this wallpaper.")
+                        .font(DesignTokens.Typography.body)
+                        .foregroundStyle(DesignTokens.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, DesignTokens.Spacing.md)
+                }
                 actionRow
                     .padding(.top, DesignTokens.Spacing.xl)
             }
@@ -86,17 +114,27 @@ struct WallpaperFailureView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            WallpaperFailureRecoveryActions(
-                recovery: recovery,
-                onRetry: onRetry,
-                onChooseSource: onChooseSource,
-                isCompact: false
-            )
-            if let onShowDetails {
-                Button("View Details", action: onShowDetails)
-                    .buttonStyle(.bordered)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                recoveryControls
             }
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                recoveryControls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recoveryControls: some View {
+        WallpaperFailureRecoveryActions(
+            recovery: recovery,
+            onRetry: onRetry,
+            onChooseSource: onChooseSource,
+            isCompact: false
+        )
+        if let onShowDetails {
+            Button("View Details", action: onShowDetails)
+                .buttonStyle(.bordered)
         }
     }
 

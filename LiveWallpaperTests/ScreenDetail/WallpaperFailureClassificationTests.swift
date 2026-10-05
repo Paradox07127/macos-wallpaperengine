@@ -95,4 +95,20 @@ struct WallpaperFailureClassificationTests {
         #expect(actions.first == .chooseSource)
         #expect(actions.last == .openWorkshop("1234567890"))
     }
+
+    @Test("Missing scene resources lead with setup only while engine assets are unlinked")
+    func missingResourcesOfferEngineSetup() {
+        for code in ["graph.file_missing", "scene.file_missing"] {
+            let subject = cause(code)
+            #expect(subject.recovery(workshopID: "2934020506", canChooseSource: true, engineAssetsAuthorized: false)
+                == [.configureEngineAssets, .retry, .openWorkshop("2934020506")])
+            #expect(subject.recovery(workshopID: "2934020506", canChooseSource: true, engineAssetsAuthorized: true)
+                == [.retry, .openWorkshop("2934020506")])
+        }
+        // An unrelated parse, source-access or renderer failure must keep its own recovery.
+        for code in ["scene.parse", "scene.other", "scene.cache_missing", "scene.cross_package", "web.entry_missing", "texture.metal_format"] {
+            #expect(!cause(code).recovery(workshopID: nil, canChooseSource: true, engineAssetsAuthorized: false)
+                .contains(.configureEngineAssets), "\(code)")
+        }
+    }
 }

@@ -56993,6 +56993,42 @@
         }
       }
     },
+    "Set up Wallpaper Engine assets in Settings › Workshop, then retry this wallpaper." : {
+      "comment" : "Recovery guidance on a scene load failure when shared engine assets are not configured.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up Wallpaper Engine assets in Settings › Workshop, then retry this wallpaper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configura los recursos de Wallpaper Engine en Ajustes › Workshop y vuelve a intentar aplicar este fondo de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 › ワークショップで Wallpaper Engine のアセットを設定してから、この壁紙を再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先前往设置 › 创意工坊配置 Wallpaper Engine 资源，再重试此壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先前往設定 › 工作坊設定 Wallpaper Engine 素材，再重試此桌布。"
+          }
+        }
+      }
+    },
     "Set Up Assets" : {
       "comment" : "Button that opens the Workshop settings page to link Wallpaper Engine's shared assets.",
       "localizations" : {
