@@ -1250,6 +1250,52 @@ struct WPERenderGraphBuilderTests {
         #expect(graph.layers.contains { $0.objectID == "clickRegion" })
     }
 
+    @Test(
+        "An empty compose layer whose transform or effect script exports a cursor handler is a cursor region",
+        arguments: ["origin", "scale", "angles", "color", "parallaxDepth", "effectVisible", "effectConstant"]
+    )
+    func transformAndEffectScriptCursorHandlersAreCursorRegions(field: String) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["material": "materials/effects/tint.json"]],
+        ], to: root.appendingPathComponent("effects/tint/effect.json"))
+        try writeJSON([
+            "passes": [["shader": "effects/tint"]],
+        ], to: root.appendingPathComponent("materials/effects/tint.json"))
+        let script = "export function update(value) { return value; }\nexport function cursorClick() { shared.clicked = true; }"
+        var object: [String: Any] = [
+            "id": "region", "name": "region", "type": "image", "image": "models/util/composelayer.json",
+            "origin": "500 400 0", "size": "200 200",
+        ]
+        switch field {
+        case "effectVisible":
+            object["effects"] = [["id": 1, "file": "effects/tint/effect.json", "visible": ["value": false, "script": script]]]
+        case "effectConstant":
+            object["effects"] = [[
+                "id": 1, "file": "effects/tint/effect.json", "visible": false,
+                "passes": [["constantshadervalues": ["strength": ["value": 1, "script": script]]]],
+            ]]
+        default:
+            let seeds = ["origin": "500 400 0", "scale": "1 1 1", "angles": "0 0 0", "color": "1 1 1", "parallaxDepth": "1 1"]
+            object[field] = ["value": seeds[field] ?? "0 0 0", "script": script]
+        }
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [object],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        #expect(graph.layers.contains { $0.objectID == "region" }, "\(field) cursor handler lost its hit region")
+    }
+
     @Test("Visible cursor regions on dropped utility wrappers keep geometry without compositing to scene")
     func visibleCursorRegionWrappersDoNotCompositeToScene() throws {
         let root = FileManager.default.temporaryDirectory

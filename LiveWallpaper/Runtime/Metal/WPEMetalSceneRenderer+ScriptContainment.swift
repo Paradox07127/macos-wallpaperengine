@@ -177,7 +177,8 @@ extension WPEMetalSceneRenderer {
             _ scripts: [(String, WPESceneTransformScript)],
             into instances: inout [String: WPEDynamicTransformScriptInstance],
             fans: inout [String: String],
-            label: String
+            label: String,
+            shape: WPEScriptValueShape = .vector3
         ) {
             for (objectID, script) in scripts {
                 if let key = WPESharedReadFanAnalysis.readKey(in: script.script) {
@@ -190,7 +191,7 @@ extension WPEMetalSceneRenderer {
                             script: script.script,
                             scriptProperties: script.scriptProperties,
                             seed: script.seed,
-                            valueShape: objectID == WPECameraMotionPlayback.zoomScriptKey ? .scalar : .vector3,
+                            valueShape: objectID == WPECameraMotionPlayback.zoomScriptKey ? .scalar : shape,
                             canvasSize: canvasSize,
                             screenSize: screenSize,
                             ownLayerName: layerNameByID[objectID],
@@ -230,7 +231,10 @@ extension WPEMetalSceneRenderer {
                 Logger.warning("Scene \(descriptor.workshopID) [ParticleRateScript] init failed for \(objectID): \(error)", category: .wpeRender)
             }
         }
-        install(parallaxScripts, into: &dynamicParallaxDepthScriptInstances, fans: &sharedParallaxReadFans, label: "ParallaxScript")
+        install(
+            parallaxScripts, into: &dynamicParallaxDepthScriptInstances, fans: &sharedParallaxReadFans,
+            label: "ParallaxScript", shape: .vector2
+        )
         debugStage(
             "transformScripts.fans",
             "origin=\(sharedOriginReadFans.count) scale=\(sharedScaleReadFans.count) angles=\(sharedAnglesReadFans.count) color=\(sharedColorReadFans.count)"
@@ -432,7 +436,8 @@ extension WPEMetalSceneRenderer {
         // Overrides the synthetic text image, whose origin is the anchored block centre, not the text origin.
         for object in document.textObjects {
             result[object.id] = WPERenderObjectTransform(
-                origin: object.localOrigin ?? object.origin, scale: object.localScale ?? object.scale, angles: object.angles
+                origin: object.localOrigin ?? object.origin, scale: object.localScale ?? object.scale,
+                angles: object.localAngles ?? object.angles
             )
         }
         // A particle stores only its parse-time world transform; that is its local one only without a parent.

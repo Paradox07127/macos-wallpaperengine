@@ -3610,6 +3610,27 @@ extension WPEMetalSceneRendererTests {
         #expect(cyclic.lights.isEmpty && cyclic.unresolvedObjectIDs == ["text-light"])
     }
 
+    @Test("A light under an unrotated text in a rotated group turns once, by the group's angle")
+    func directionalLightUnderTextComposesGroupAngleOnce() throws {
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [
+                ["id": "group", "name": "group", "origin": "0 0 0", "angles": "0 0 \(Double.pi / 2)"],
+                ["id": "label", "text": "A", "parent": "group", "origin": "4 5 0", "angles": "0 0 0"],
+                ["id": "light", "light": "ldirectional", "parent": "label", "color": "1 1 1", "intensity": 1],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
+        let lighting = WPESceneDirectionalLightingSnapshot.make(
+            lights: document.lightObjects, localTransforms: WPEMetalSceneRenderer.lightingLocalTransforms(in: document),
+            parentByID: document.objectParentByID, ownVisibilityByID: [:]
+        )
+        let light = try #require(lighting.lights.first)
+        // Rz(90°) turns the local -X basis into world -Y; composing the group twice would give +X.
+        #expect(abs(light.uniforms.direction.x) < 0.001 && abs(light.uniforms.direction.y + 1) < 0.001)
+    }
+
     @Test("A directional light parented to a particle emitter contributes in the rendered frame")
     func directionalLightUnderParticleParentPublishes() async throws {
         let fixture = try MetalSceneFixture.directionalModelScene(lightingEnabled: true)

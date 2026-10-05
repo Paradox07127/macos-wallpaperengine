@@ -566,6 +566,8 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     public let localOrigin: SIMD3<Double>?
     /// `scale` is parse-time WORLD; `localScale` is this object's own authored scale. A `scale` SceneScript returns LOCAL, so the renderer needs both.
     public let localScale: SIMD3<Double>?
+    /// `angles` is parse-time WORLD; this is the object's own authored rotation, before parent composition.
+    public let localAngles: SIMD3<Double>?
     /// Script-driven alpha/visible on text. The baked `alpha`/`visible` fields are only load-time seeds.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
@@ -612,6 +614,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         parentObjectID: String? = nil,
         localOrigin: SIMD3<Double>? = nil,
         localScale: SIMD3<Double>? = nil,
+        localAngles: SIMD3<Double>? = nil,
         alphaScript: String? = nil,
         alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:],
         visibleScript: String? = nil,
@@ -653,6 +656,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         self.parentObjectID = parentObjectID
         self.localOrigin = localOrigin
         self.localScale = localScale
+        self.localAngles = localAngles
         self.alphaScript = alphaScript
         self.alphaScriptProperties = alphaScriptProperties
         self.visibleScript = visibleScript
@@ -706,6 +710,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
             parentObjectID: parentObjectID,
             localOrigin: localOrigin,
             localScale: localScale,
+            localAngles: localAngles,
             alphaScript: alphaScript,
             alphaScriptProperties: alphaScriptProperties,
             visibleScript: visibleScript,

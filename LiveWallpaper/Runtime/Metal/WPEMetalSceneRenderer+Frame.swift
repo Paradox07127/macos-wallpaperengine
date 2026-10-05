@@ -143,9 +143,11 @@ extension WPEMetalSceneRenderer {
         // Aggregate the complete per-instance cursor burst before claiming a VM job.
         // Hover uses this frame's transformed geometry before every button edge.
         var cursorAttachmentGeometry: [String: WPERenderLayerGeometry] = [:]
+        var cursorScriptObjectIDs: Set<String> = []
+        forEachCursorScriptInstance { objectID, _ in cursorScriptObjectIDs.insert(objectID) }
         if Self.scriptedLayerFollowsAttachment(
             in: framePipeline,
-            isScripted: { layerScriptInstances[$0] != nil || layerAlphaScriptInstances[$0] != nil },
+            isScripted: cursorScriptObjectIDs.contains,
             objectParentByID: executor.parallaxObjectParentByID
         ) {
             let attachments: WPEMetalRenderExecutor.PuppetAttachmentFrameContext
@@ -477,7 +479,7 @@ extension WPEMetalSceneRenderer {
             let hasLayerWritingScripts = !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
                 || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
                 || !effectConstantScriptInstances.isEmpty || !effectVisibilityScriptInstances.isEmpty
-                || !particleRateScriptInstances.isEmpty
+                || !particleRateScriptInstances.isEmpty || !dynamicParallaxDepthScriptInstances.isEmpty
             return hasLayerWritingScripts ? livePresentationOverlay : WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
@@ -664,16 +666,34 @@ extension WPEMetalSceneRenderer {
                 }
             }
         }
+        if !dynamicParallaxDepthScriptInstances.isEmpty || !sharedParallaxReadFans.isEmpty {
+            applyEffectiveParallaxDepths()
+        }
         return transforms
     }
 
-    /// A bound `parallaxDepth` script's Vec2 becomes the layer's live depth; the
-    /// authored-depth map stays in sync so parallax hosts/particles agree.
+    /// Writes only the live depth tables; render depth is resolved per anchor in `applyEffectiveParallaxDepths`.
     private func applyScriptParallaxDepth(_ depth: SIMD2<Double>, objectID: String) {
         guard depth.x.isFinite, depth.y.isFinite else { return }
-        liveLayerPresentation[objectID, default: .init()].parallaxDepth = depth
         parallaxAuthoredDepthByObjectID[objectID] = depth
         executor.parallaxHostDepthByObjectID[objectID] = depth
+    }
+
+    /// A subtree moves by its anchor's depth alone, so a parented object's own scripted depth never renders.
+    private func applyEffectiveParallaxDepths() {
+        let effective = WPERenderGraphBuilder.effectiveParallaxDepths(
+            live: parallaxAuthoredDepthByObjectID,
+            parentByID: objectParentByID,
+            drivenBy: Set(dynamicParallaxDepthScriptInstances.keys).union(sharedParallaxReadFans.keys)
+        )
+        for (objectID, depth) in effective {
+            liveLayerPresentation[objectID, default: .init()].parallaxDepth = depth
+        }
+        for system in particleSystems {
+            if let objectID = system.scriptParticleObjectID, let depth = effective[objectID] {
+                system.parallaxDepth = depth
+            }
+        }
     }
 
     /// Swift fan-out for `return shared.K` scripts that never entered JS.

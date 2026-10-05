@@ -244,10 +244,13 @@ extension WPEMetalSceneRenderer {
         }
         particleTemplateTextures = particleTextures
         particleTemplateNormals = particleNormalTextures
-        particleIndependentSystems = particleSystems.filter { independentIDs.contains(ObjectIdentifier($0)) }
-        particleSystems = particleIndependentSystems
+        let independentSystems = particleSystems.filter { independentIDs.contains(ObjectIdentifier($0)) }
+        // Unpublished while warming: actor-side mutators such as `clearLiveParticles` would race the detached sims.
+        particleSystems = []
         // An event root must not change unrelated roots' existing warm-up/RNG path.
-        await prewarmParticleSystems(skippingObjectIDs: hiddenObjectIDs, on: actor)
+        await prewarmParticleSystems(independentSystems, skippingObjectIDs: hiddenObjectIDs, on: actor)
+        particleIndependentSystems = independentSystems
+        particleSystems = independentSystems
         debugStage("particles.prewarm.done", "independent=\(particleIndependentSystems.count)")
         if !eventRoots.isEmpty {
             particleInstanceCoordinator = WPEParticleInstanceCoordinator(
@@ -272,21 +275,22 @@ extension WPEMetalSceneRenderer {
 
     /// `starttime` is a simulation offset.
     private func prewarmParticleSystems(
+        _ systems: [WPEParticleSystem],
         skippingObjectIDs hiddenObjectIDs: Set<String>,
         on actor: isolated WPEDisplayRenderActor
     ) async {
-        guard !particleSystems.isEmpty else { return }
+        guard !systems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
             ? WPEOracleMode.loadFrameOverride()?.baseTime
             : nil
-        // Each job owns a distinct system; `prewarm` mutates only that
-        // instance's CPU buffers and RNG, so the sims are independent.
+        // Each job owns a distinct system that the caller keeps out of `particleSystems`
+        // until the group drains, so only that job's detached task touches it.
         struct Job: @unchecked Sendable {
             let system: WPEParticleSystem
             let seconds: Double
         }
         var jobs: [Job] = []
-        for system in particleSystems where !(system.scriptParticleObjectID.map(hiddenObjectIDs.contains) ?? false) {
+        for system in systems where !(system.scriptParticleObjectID.map(hiddenObjectIDs.contains) ?? false) {
             guard let seconds = Self.particlePrewarmSeconds(
                 for: system.definition,
                 manualPrewarmEnabled: Self.particlePrewarmEnabled,
@@ -307,7 +311,6 @@ extension WPEMetalSceneRenderer {
                     // Child tasks inherit the render actor's isolation (Swift 6);
                     // detach so the CPU sim actually runs on the global executor.
                     let elapsed = await Task.detached(priority: .userInitiated) { () -> Duration in
-                        guard !Task.isCancelled else { return .zero }
                         let start = ContinuousClock.now
                         job.system.prewarm(simulatedSeconds: job.seconds, presimulateDelay: true)
                         return ContinuousClock.now - start

@@ -608,6 +608,21 @@ struct WPECameraParallaxTests {
         #expect(byID["fpsTriangle"] == SIMD2<Double>(0, 0))
     }
 
+    @Test("Live depths resolve to the anchor's value only for subtrees anchored at a script driver")
+    func effectiveParallaxDepthsFollowDrivenAnchors() {
+        let live: [String: SIMD2<Double>] = [
+            "root": SIMD2(0.4, 0.4), "mid": SIMD2(0.9, 0.9), "leaf": SIMD2(0, 0),
+            "solo": SIMD2(1, 1), "soloKid": SIMD2(0.2, 0.2), "orphan": SIMD2(3, 3),
+        ]
+        let parentByID = ["mid": "root", "leaf": "mid", "soloKid": "solo", "orphan": "ghost"]
+        let effective = WPERenderGraphBuilder.effectiveParallaxDepths(
+            live: live, parentByID: parentByID, drivenBy: ["root", "mid", "orphan"]
+        )
+        #expect(effective == [
+            "root": SIMD2(0.4, 0.4), "mid": SIMD2(0.4, 0.4), "leaf": SIMD2(0.4, 0.4), "orphan": SIMD2(3, 3),
+        ])
+    }
+
     @Test("A group host parses its authored parallaxDepth, envelope included")
     func transformHostParsesParallaxDepth() throws {
         let doc = try parse([

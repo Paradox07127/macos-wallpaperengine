@@ -67,7 +67,7 @@ struct WPERenderGraphBuilder: Sendable {
         // handler attached to a puppet bone). Their geometry is still needed
         // even when they have no children or visible effects to draw.
         let cursorRegionIDs = Set(document.imageObjects.filter {
-            [$0.visibleScript, $0.alphaScript].contains(where: Self.namesCursorHandler)
+            Self.cursorRoutedScripts(of: $0).contains { Self.namesCursorHandler($0) }
         }.map(\.id))
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
@@ -430,6 +430,22 @@ struct WPERenderGraphBuilder: Sendable {
         return current
     }
 
+    /// Render depth for every object whose anchor is in `drivers`: the anchor's live value, never the object's own.
+    static func effectiveParallaxDepths(
+        live: [String: SIMD2<Double>],
+        parentByID: [String: String],
+        drivenBy drivers: Set<String>
+    ) -> [String: SIMD2<Double>] {
+        var result: [String: SIMD2<Double>] = [:]
+        for id in live.keys {
+            let anchor = parallaxAnchorNodeID(of: id, parentByID: parentByID, depthByID: live)
+            if drivers.contains(anchor), let depth = live[anchor] {
+                result[id] = depth
+            }
+        }
+        return result
+    }
+
     static func propagatingParallaxDepthThroughParents(
         _ layers: [WPERenderLayer],
         objectParentByID: [String: String] = [:],
@@ -637,6 +653,17 @@ struct WPERenderGraphBuilder: Sendable {
     private static let cursorHandlerNames = Set([
         WPELayerScriptCursorEvent.move, .down, .up, .click, .rightDown, .rightUp, .enter, .leave,
     ].map { Substring($0.handlerName) })
+
+    /// Every script family the renderer routes cursor events to for this object.
+    private static func cursorRoutedScripts(of object: WPESceneImageObject) -> [String] {
+        let transforms = [
+            object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript,
+        ]
+        let effects = object.effects.flatMap { effect in
+            [effect.visibleScript] + effect.passOverrides.flatMap { $0.constantScripts.values.map(Optional.some) }
+        }
+        return [object.visibleScript, object.alphaScript].compactMap(\.self) + (transforms + effects).compactMap { $0?.script }
+    }
 
     /// Whole identifiers only: `cursorWorldPosition` readers are not hit regions.
     private static func namesCursorHandler(_ script: String?) -> Bool {

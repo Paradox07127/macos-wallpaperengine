@@ -354,6 +354,7 @@ public enum WPESceneDocumentParser {
                    transform: transform,
                    localOrigin: localTransform(in: entry, scriptOrigins: scriptResolvedOrigins).origin,
                    localScale: localTransform(in: entry, scriptOrigins: scriptResolvedOrigins).scale,
+                   localAngles: localTransform(in: entry, scriptOrigins: scriptResolvedOrigins).angles,
                    parentObjectID: entryID.flatMap { objectParentByID[$0] },
                    effectiveVisible: effectiveVisible,
                    diagnostics: &diagnostics
@@ -1190,6 +1191,7 @@ public enum WPESceneDocumentParser {
         transform: SceneObjectTransform,
         localOrigin: SIMD3<Double>? = nil,
         localScale: SIMD3<Double>? = nil,
+        localAngles: SIMD3<Double>? = nil,
         parentObjectID: String? = nil,
         effectiveVisible: Bool? = nil,
         diagnostics: inout [WPESceneDiagnostic]
@@ -1310,6 +1312,7 @@ public enum WPESceneDocumentParser {
             parentObjectID: parentObjectID,
             localOrigin: localOrigin,
             localScale: localScale,
+            localAngles: localAngles,
             alphaScript: alphaScript,
             alphaScriptProperties: alphaScriptProperties,
             visibleScript: visibleScript,
