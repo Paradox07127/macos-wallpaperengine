@@ -380,6 +380,10 @@ extension PlaybackCoordinator {
 
         let expected = liveScreen.runtimeSession
         let screenID = liveScreen.id
+        let fingerprint = liveScreen.displayFingerprint
+        let currentScreen: @MainActor () -> Screen? = { [weak self] in
+            self?.screensProvider().first { $0.id == screenID && $0.displayFingerprint == fingerprint }
+        }
         var outgoingVideoPlayerAtCommit: WallpaperVideoPlayer?
         var parkedForWorkshopMutation: WallpaperPreparationResult?
         let session = VideoWallpaperSession(
@@ -395,18 +399,17 @@ extension PlaybackCoordinator {
             }
         )
         let work = RuntimePreparationWork()
-        let task = Task { @MainActor [weak self, weak liveScreen, weak work] in
-            guard let self, let liveScreen else {
+        let task = Task { @MainActor [weak self, weak work] in
+            guard let self else {
                 session.cleanup()
                 completion?(.cancelled)
                 return
             }
             // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
-            let isCandidateStillCurrent: @MainActor () -> Bool = {
-                [weak self, weak liveScreen] in
-                guard let self, let liveScreen else {
+            let isCandidateStillCurrent: @MainActor () -> Bool = { [weak self] in
+                guard let self else {
                     Logger.notice(
-                        "Video candidate for screen \(screenID) dropped: PlaybackCoordinator or Screen was deallocated",
+                        "Video candidate for screen \(screenID) dropped: PlaybackCoordinator was deallocated",
                         category: .screenManager
                     )
                     return false
@@ -425,9 +428,9 @@ extension PlaybackCoordinator {
                     )
                     return false
                 }
-                if screensProvider().first(where: { $0.id == screenID }) !== liveScreen {
+                if currentScreen() == nil {
                     Logger.notice(
-                        "Video candidate for screen \(screenID) dropped: Screen object was replaced (display refresh during prepare)",
+                        "Video candidate for screen \(screenID) dropped: the physical display was removed or replaced",
                         category: .screenManager
                     )
                     return false
@@ -455,11 +458,12 @@ extension PlaybackCoordinator {
                 replacing: expected,
                 timeout: .seconds(5),
                 isStillCurrent: isCandidateStillCurrent,
-                prepare: { [weak self, weak liveScreen] session, timeout in
+                currentScreen: currentScreen,
+                prepare: { [weak self] session, timeout in
                     let base = await session.prepareForDisplay(timeout: timeout)
                     guard base == .ready,
                           let self,
-                          let liveScreen else { return base }
+                          let liveScreen = currentScreen() else { return base }
                     guard let configuration else {
                         return .ready
                     }
@@ -503,6 +507,7 @@ extension PlaybackCoordinator {
                     self?.claimOpening(screenID)
                 },
                 beforeCommit: {
+                    guard let liveScreen = currentScreen() else { return false }
                     // A rewrite that began after this candidate opened its file: park instead of installing; the bump keeps the veto from surfacing as a load error.
                     if let configuration, let deferred = self.deferDuringWorkshopMutation(liveScreen, configuration, beforeCommit) {
                         parkedForWorkshopMutation = deferred
@@ -514,8 +519,8 @@ extension PlaybackCoordinator {
                     outgoingVideoPlayerAtCommit = expected?.videoPlayer
                     return true
                 },
-                afterCommit: { [weak self, weak liveScreen] in
-                    guard let self, let liveScreen else { return }
+                afterCommit: { [weak self] in
+                    guard let self, let liveScreen = currentScreen() else { return }
                     if let outgoingVideoPlayerAtCommit {
                         self.retireVideoEffectsWork(
                             screenID,

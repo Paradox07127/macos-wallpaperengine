@@ -515,7 +515,11 @@ extension ScreenManager {
                     target.id,
                     fingerprint: target.displayFingerprint
                 )
-                restoreProposedWallpaperSession(for: target, configuration: copy)
+                restoreProposedWallpaperSession(for: target, configuration: copy) { [weak self] in
+                    // Copying is an explicit wallpaper pick. Clear the target's
+                    // old intent only after this replacement has committed.
+                    self?.persistUserPause(false, for: target)
+                }
                 Logger.info("Apply to All: copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
             }
         }

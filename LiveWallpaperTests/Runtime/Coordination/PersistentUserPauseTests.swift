@@ -283,6 +283,56 @@ struct PersistentUserPauseTests {
         }
     }
 
+    @Test("Copying a wallpaper clears only the target's old pause on commit", arguments: [true, false], [true, false])
+    func copiedWallpaperPauseFollowsCommit(commits: Bool, sourcePaused: Bool) throws {
+        let source = UndoTestManager.makeScreen("Pause Copy Source", x: 0)
+        let target = UndoTestManager.makeScreen("Pause Copy Target", x: 800)
+        let original = SettingsManager.shared.loadConfigurations()
+        let originalSettings = SettingsManager.shared.loadGlobalSettings()
+        defer {
+            source.resetRuntimeSession()
+            target.resetRuntimeSession()
+            SettingsManager.shared.replaceAllConfigurations(original)
+            SettingsManager.shared.saveGlobalSettings(originalSettings)
+        }
+        var settings = originalSettings
+        settings.pausedDisplayKeys = ["uuid:unrelated-pause"]
+        SettingsManager.shared.saveGlobalSettings(settings)
+        let descriptor = SceneDescriptor(
+            workshopID: commits ? "pause-copy" : "", cacheRelativePath: "pause-copy",
+            entryFile: "scene.json", capabilityTier: .imageOnly
+        )
+        let template = ScreenConfiguration(screenID: source.id, wallpaper: .scene(descriptor))
+        let previousTarget = Self.configuration(.htmlWithoutSavedVideo, for: target.id)
+        SettingsManager.shared.replaceAllConfigurations([template, previousTarget])
+        let manager = makeManager()
+        defer { manager.tearDownForTermination() }
+        manager.screens = [source, target]
+        commitFreshSession(on: source, in: manager, type: .scene)
+        let outgoing = commitFreshSession(on: target, in: manager)
+        if sourcePaused {
+            manager.togglePlayback(for: source)
+        }
+        manager.togglePlayback(for: target)
+        try #require(persistedPause(manager, target))
+        // Commits synchronously without a renderer. A malformed proposal still
+        // fails before its commit hook, so the old target stays paused.
+        manager.wallpapersGloballyEnabled = false
+
+        manager.applyConfigurationToAllDisplays(from: source)
+
+        #expect(persistedPause(manager, target) == !commits)
+        #expect(persistedPause(manager, source) == sourcePaused)
+        #expect(SettingsManager.shared.loadGlobalSettings().pausedDisplayKeys.contains("uuid:unrelated-pause"))
+        let targetConfiguration = try #require(manager.getConfiguration(for: target))
+        #expect(targetConfiguration.activeWallpaper == (commits ? template.activeWallpaper : previousTarget.activeWallpaper))
+        if !commits {
+            #expect((target.runtimeSession as AnyObject?) === outgoing)
+            #expect(!outgoing.userIntendsToPlay)
+        }
+        #expect(commitFreshSession(on: target, in: manager).userIntendsToPlay == commits)
+    }
+
     @Test("Without a manual pause a rebuilt session keeps playing")
     func unpausedRebuildKeepsPlaying() {
         withConfiguredScreen { manager, screen, _ in

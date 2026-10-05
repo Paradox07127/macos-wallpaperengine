@@ -168,10 +168,11 @@ final class WallpaperPreparationContinuationGate<Value: Sendable> {
 enum WallpaperSessionTransaction {
     static func prepareAndCommit(
         _ candidate: any WallpaperRuntimeSession,
-        to screen: Screen,
+        to initialScreen: Screen,
         replacing expected: (any WallpaperRuntimeSession)?,
         timeout: Duration,
         isStillCurrent: @MainActor () -> Bool,
+        currentScreen: (@MainActor () -> Screen?)? = nil,
         prepare: (@MainActor (
             any WallpaperRuntimeSession,
             Duration
@@ -181,6 +182,15 @@ enum WallpaperSessionTransaction {
         afterCommit: @MainActor () -> Void = {},
         beforeDiscard: @MainActor (WallpaperPreparationResult) async -> Void = { _ in }
     ) async -> WallpaperPreparationResult {
+        var screen = initialScreen
+        // Display refresh replaces snapshots while preserving the physical display and live session.
+        func resolveCommitScreen() -> Screen? {
+            guard let currentScreen else { return initialScreen }
+            guard let live = currentScreen(),
+                  live.id == initialScreen.id,
+                  live.displayFingerprint == initialScreen.displayFingerprint else { return nil }
+            return live
+        }
         let opening = expected == nil && mayPlayOpening(candidate) ? claimOpening() : nil
         if opening != nil {
             candidate.wallpaperWindow?.alphaValue = 0
@@ -221,6 +231,15 @@ enum WallpaperSessionTransaction {
             candidate.cleanup()
             return .cancelled
         }
+        guard let live = resolveCommitScreen() else {
+            barrier?.leave(screen.id, attempt: attempt)
+            candidate.cleanup()
+            return .cancelled
+        }
+        screen = live
+        if currentScreen != nil {
+            candidate.updateFrame(to: screen.frame)
+        }
         if opening != nil {
             // A video window only exists once prepare has built it.
             (candidate.wallpaperWindow ?? candidate.videoPlayer?.playbackWindow)?.alphaValue = 0
@@ -239,6 +258,15 @@ enum WallpaperSessionTransaction {
                 candidate.cleanup()
                 return .cancelled
             }
+        }
+        // The barrier can suspend across another refresh. Resolve again before the synchronous CAS.
+        guard let live = resolveCommitScreen() else {
+            candidate.cleanup()
+            return .cancelled
+        }
+        screen = live
+        if currentScreen != nil {
+            candidate.updateFrame(to: screen.frame)
         }
         var didAttemptCommit = false
         var commitAccepted = false

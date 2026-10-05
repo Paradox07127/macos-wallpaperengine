@@ -355,7 +355,7 @@ extension ScreenManager {
         refreshAppNapAssertion()
     }
 
-    private func persistUserPause(_ paused: Bool, for screen: Screen) {
+    func persistUserPause(_ paused: Bool, for screen: Screen) {
         // A display with no saved wallpaper has no session to restore paused. The fingerprint lookup is avoided because it can stamp the row and advance its revision.
         if paused, configurationStore.get(for: screen.id) == nil { return }
         let key = Self.userPauseKey(screenID: screen.id, fingerprint: screen.displayFingerprint)

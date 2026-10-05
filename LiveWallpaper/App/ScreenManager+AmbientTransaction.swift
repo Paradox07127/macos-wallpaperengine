@@ -44,19 +44,22 @@ extension ScreenManager {
         completion: WallpaperPreparationCompletion? = nil
     ) -> RuntimePreparationWork {
         let screenID = screen.id
+        let fingerprint = screen.displayFingerprint
+        let currentScreen: @MainActor () -> Screen? = { [weak self] in
+            self?.screens.first { $0.id == screenID && $0.displayFingerprint == fingerprint }
+        }
         let work = RuntimePreparationWork()
-        let task = Task { @MainActor [weak self, weak screen, weak work] in
-            guard let self, let screen else {
+        let task = Task { @MainActor [weak self, weak work] in
+            guard let self else {
                 candidate.cleanup()
                 completion?(.cancelled, nil)
                 return
             }
             // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
-            let isCandidateStillCurrent: @MainActor () -> Bool = {
-                [weak self, weak screen] in
-                guard let self, let screen else {
+            let isCandidateStillCurrent: @MainActor () -> Bool = { [weak self] in
+                guard let self else {
                     Logger.notice(
-                        "Wallpaper candidate for screen \(screenID) dropped: ScreenManager or Screen was deallocated",
+                        "Wallpaper candidate for screen \(screenID) dropped: ScreenManager was deallocated",
                         category: .screenManager
                     )
                     return false
@@ -75,9 +78,9 @@ extension ScreenManager {
                     )
                     return false
                 }
-                if !screens.contains(where: { $0 === screen }) {
+                if currentScreen() == nil {
                     Logger.notice(
-                        "Wallpaper candidate for screen \(screenID) dropped: Screen object was replaced (display refresh during prepare)",
+                        "Wallpaper candidate for screen \(screenID) dropped: the physical display was removed or replaced",
                         category: .screenManager
                     )
                     return false
@@ -105,12 +108,13 @@ extension ScreenManager {
                 replacing: expected,
                 timeout: timeout,
                 isStillCurrent: isCandidateStillCurrent,
+                currentScreen: currentScreen,
                 claimOpening: { [weak self] in
                     self?.openingBatch?.claim(screenID)
                 },
                 beforeCommit: beforeCommit,
-                afterCommit: { [weak self, weak screen] in
-                    guard let self, let screen else { return }
+                afterCommit: { [weak self] in
+                    guard let self, let screen = currentScreen() else { return }
                     if let attemptID {
                         wallpaperLoads.clear(for: screen, matching: attemptID)
                     }

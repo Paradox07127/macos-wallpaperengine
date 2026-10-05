@@ -8,6 +8,60 @@ import WebKit
 @Suite("ScreenManager ↔ PlaybackCoordinator coordination")
 @MainActor
 struct ScreenManagerCoordinationTests {
+    @Test("A prepared wallpaper follows a refreshed Screen, but not removal or a newer selection",
+          arguments: [false, true], ["refresh", "disconnect", "new-selection"])
+    func preparedWallpaperFollowsDisplayRefresh(hasOutgoing: Bool, change: String) async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = Screen(nsScreen: display)
+        let refreshed = Screen(nsScreen: display)
+        let registry = FakeDisplayRegistry(screens: [screen])
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: registry,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { manager.tearDownForTermination() }
+        manager.wallpapersGloballyEnabled = true
+        let outgoing = hasOutgoing ? TestRuntimeSession(wallpaperType: .html) : nil
+        if let outgoing {
+            screen.installRuntimeSession(outgoing)
+        }
+        let candidate = TestRuntimeSession(wallpaperType: .html)
+        candidate.prepareAction = {
+            if change == "new-selection" {
+                manager.beginExplicitWallpaperSelection(for: screen)
+            } else {
+                registry.screens = change == "disconnect" ? [] : [refreshed]
+                manager.refreshScreens()
+            }
+            return .ready
+        }
+        let generation = manager.bumpTransition(for: screen.id)
+        let configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("new"), config: .default))
+        var committed = false
+        var completed: WallpaperPreparationResult?
+        let work = manager.beginPreparedAmbientSession(
+            candidate, for: screen, replacing: outgoing, generation: generation,
+            proposedConfiguration: configuration,
+            expectedConfigurationRevision: manager.configurationStore.revision(for: screen.id),
+            timeout: .seconds(2), beforeCommit: { committed = true; return true },
+            afterCommit: {}, completion: { result, _ in completed = result }
+        )
+        await work.task?.value
+        if change == "refresh" {
+            #expect(committed)
+            #expect(completed == .ready)
+            #expect(manager.screens.first === refreshed)
+            #expect((refreshed.runtimeSession as AnyObject?) === candidate)
+            #expect(candidate.cleanupCount == 0)
+        } else {
+            #expect(!committed)
+            #expect(completed == .cancelled)
+            #expect(candidate.cleanupCount == 1)
+        }
+    }
+
     @Test("Wallpaper rendering activity allows idle system sleep")
     func renderingActivityAllowsIdleSystemSleep() {
         let options = WallpaperRenderingActivityPolicy.options
@@ -1786,6 +1840,7 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
     let wallpaperType: WallpaperType
     private(set) var cleanupCount = 0
     private(set) var appliedHTMLConfigs: [HTMLConfig] = []
+    var prepareAction: (@MainActor () async -> WallpaperPreparationResult)?
 
     init(wallpaperType: WallpaperType) {
         self.wallpaperType = wallpaperType
@@ -1806,7 +1861,10 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
     func show() {}
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
     func updateFrame(to frame: CGRect) {}
-    func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult { .ready }
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        await prepareAction?() ?? .ready
+    }
+
     func cleanup() { cleanupCount += 1 }
 
     func applyHTMLConfig(_ config: HTMLConfig) -> Bool {
