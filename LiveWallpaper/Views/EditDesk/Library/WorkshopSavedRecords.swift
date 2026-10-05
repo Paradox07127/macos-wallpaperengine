@@ -25,11 +25,15 @@ enum WorkshopSavedRecords {
     /// `removeImport`, then the entry's saved records once it removed the history entry.
     static func removingImport(
         bookmarks: BookmarkStore = .shared, libraryBookmarks: LibraryBookmarkStore = .shared,
+        history: @escaping @MainActor () -> [WPEHistoryEntry] = { SettingsManager.shared.loadGlobalSettings().recentWPEImports },
         _ removeImport: @escaping @MainActor (WPEHistoryEntry) -> Bool
     ) -> @MainActor (WPEHistoryEntry) -> Bool {
         { entry in
             guard removeImport(entry) else { return false }
-            remove(workshopID: entry.origin.workshopID, bookmarks: bookmarks, libraryBookmarks: libraryBookmarks)
+            // Records are keyed by Workshop id, so a local copy of the same id still owns them.
+            if !history().contains(where: { $0.origin.workshopID == entry.origin.workshopID }) {
+                remove(workshopID: entry.origin.workshopID, bookmarks: bookmarks, libraryBookmarks: libraryBookmarks)
+            }
             return true
         }
     }

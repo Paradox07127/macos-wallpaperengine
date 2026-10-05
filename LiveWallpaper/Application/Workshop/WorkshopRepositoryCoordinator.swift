@@ -18,12 +18,13 @@ final class WorkshopRepositoryCoordinator {
 
     private var mutationTokens: [String: UUID] = [:]
 
-    #if DEBUG
-    // Test-only introspection; no production reader.
+    var hasActiveMutations: Bool {
+        !mutationTokens.isEmpty
+    }
+
     func isMutating(workshopID: String) -> Bool {
         mutationTokens[workshopID] != nil
     }
-    #endif
 
     func withExclusiveMutation<Result: Sendable>(
         workshopID: String,

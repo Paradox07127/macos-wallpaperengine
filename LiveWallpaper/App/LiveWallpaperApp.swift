@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ) ?? false
             }
             WorkshopDownloadCoordinator.shared.afterSteamCMDRun = { [workshopDoctorService] in
-                WorkshopFolderImportCoordinator.shared.pruneSteamDeletedImports(using: workshopDoctorService)
+                await WorkshopFolderImportCoordinator.shared.pruneSteamDeletedImports(using: workshopDoctorService)
             }
             lifecycle.schedule(after: .seconds(2)) {
                 let keepIDs = WPESceneReachability.referencedWorkshopIDs()

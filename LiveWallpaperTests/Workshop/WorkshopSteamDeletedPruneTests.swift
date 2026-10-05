@@ -23,7 +23,7 @@ struct WorkshopSteamDeletedPruneTests {
         }
 
         try library.steamDeletes(0, listing: [kept])
-        library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
 
         #expect(library.importedIDs == [kept])
         #expect(library.bookmarks.bookmarks.map(\.id) == [other.id], "the deleted item's bookmark or saved variant stayed")
@@ -38,9 +38,105 @@ struct WorkshopSteamDeletedPruneTests {
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
 
         try library.steamDeletes(0, listing: [library.ids[1]])
-        library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
 
         #expect(library.importedIDs == [library.ids[1], library.ids[2]])
+    }
+
+    @Test("A held mutation gate skips the whole prune; the next prune after it frees drops the item", arguments: [0, 1])
+    func heldGateSkipsPrune(heldIndex: Int) async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        let gone = library.ids[0]
+        let favorite = try library.bookmarks.add(
+            label: "Favorite", content: .video(bookmarkData: Data([1])), wpeOrigin: #require(library.entry(gone)).origin
+        )
+        library.marks.add("workshop:\(gone)")
+        library.marks.add("bookmark:\(favorite.id)")
+        try library.steamDeletes(0, listing: [library.ids[1]])
+        let hold = GateHold()
+        let held = library.ids[heldIndex]
+        let mutation = Task { [repository = library.repository] in
+            try await repository.withExclusiveMutation(workshopID: held) { await hold.park() }
+        }
+        #expect(await waitUntil { library.repository.isMutating(workshopID: held) })
+
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == Set(library.ids), "a prune during a mutation removed an entry")
+        #expect(library.bookmarks.bookmarks.map(\.id) == [favorite.id])
+        #expect(library.marks.ids == ["workshop:\(gone)", "bookmark:\(favorite.id)"])
+
+        hold.release()
+        try await mutation.value
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        #expect(library.importedIDs == [library.ids[1]])
+    }
+
+    @Test("Pruning keeps an item the user moved out of the Steam library before Steam dropped it")
+    func pruneKeepsMovedFolder() async throws {
+        let library = try PruneLibrary(itemCount: 1)
+        defer { await library.discard() }
+        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SteamDeletedPrune-Moved-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        try FileManager.default.moveItem(at: library.itemFolders[0], to: outside.appendingPathComponent(library.ids[0], isDirectory: true))
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.root)
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == [library.ids[0]])
+    }
+
+    @Test("Pruning removes nothing while the content root can't be listed or searched", arguments: [0o000, 0o444])
+    func unreadableContentRootPrunesNothing(permissions: Int) async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.root)
+        let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: library.root).path(percentEncoded: false)
+        try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: contentRoot)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: contentRoot) }
+
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == Set(library.ids))
+    }
+
+    @Test("Pruning a Steam item keeps the saved records a local copy of the same Workshop id still uses")
+    func pruneKeepsLocalCopyRecords() async throws {
+        let library = try PruneLibrary(itemCount: 1)
+        defer { await library.discard() }
+        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        let id = library.ids[0]
+        let localFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SteamDeletedPrune-Local-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: localFolder) }
+        let manifest = #"{"workshopid":"\#(id)","title":"Local","type":"video","file":"video.mp4"}"#
+        try Data(manifest.utf8).write(to: localFolder.appendingPathComponent("project.json"))
+        try Data([0x00]).write(to: localFolder.appendingPathComponent("video.mp4"))
+        guard case let .ready(_, localOrigin) = try await library.importService.importProject(folder: localFolder) else {
+            Issue.record("the local copy did not import")
+            return
+        }
+        // An earlier importedAt keeps the two entries' delete identities apart.
+        library.manager.recordWPEImport(WPEHistoryEntry(origin: localOrigin, importedAt: Date(timeIntervalSinceNow: -60), lastUsedAt: nil))
+        let local = library.bookmarks.add(label: "Local", content: .video(bookmarkData: Data([1])), wpeOrigin: localOrigin)
+        library.marks.add("workshop:\(id)")
+        library.marks.add("bookmark:\(local.id)")
+
+        try library.steamDeletes(0, listing: [])
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        let history = library.manager.loadGlobalSettings().recentWPEImports
+        #expect(history.count == 1)
+        #expect(history.first?.origin.steamFolderItemID == nil)
+        #expect(library.bookmarks.bookmarks.map(\.id) == [local.id], "the local copy's bookmark went with the Steam item")
+        #expect(library.marks.ids == ["workshop:\(id)", "bookmark:\(local.id)"])
     }
 
     @Test("A download SteamCMD finishes prunes once and keeps the item it just downloaded")
@@ -124,6 +220,21 @@ private final class RunCount {
     var value = 0
 }
 
+/// Holds a mutation gate open from `park()` until `release()`.
+@MainActor
+private final class GateHold {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func park() async {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 @MainActor
 private final class MemoryBookmarks: BookmarkPersisting {
     func load() -> [WallpaperBookmark] {
@@ -180,6 +291,7 @@ private struct PruneLibrary {
     let importService = WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() })
     let bookmarks = BookmarkStore(persistence: MemoryBookmarks())
     let marks: LibraryBookmarkStore
+    let repository = WorkshopRepositoryCoordinator()
     let coordinator: WorkshopFolderImportCoordinator
 
     init(itemCount: Int, function: String = #function) throws {
@@ -209,7 +321,10 @@ private struct PruneLibrary {
             importService: importService,
             settings: manager,
             toastCenter: WorkshopToastCenter(),
-            removeVanishedImport: WorkshopSavedRecords.removingImport(bookmarks: bookmarks, libraryBookmarks: marks) {
+            repositoryCoordinator: repository,
+            removeVanishedImport: WorkshopSavedRecords.removingImport(
+                bookmarks: bookmarks, libraryBookmarks: marks, history: { manager.loadGlobalSettings().recentWPEImports }
+            ) {
                 manager.removeWPEImport(
                     workshopID: $0.origin.workshopID, matchingImportedAt: $0.importedAt, recordingDeleteTombstone: false
                 )
@@ -239,12 +354,12 @@ private struct PruneLibrary {
     func downloads(counting runs: RunCount) -> WorkshopDownloadCoordinator {
         WorkshopDownloadCoordinator(
             importService: importService,
-            repositoryCoordinator: WorkshopRepositoryCoordinator(),
+            repositoryCoordinator: repository,
             settings: manager,
             toasts: WorkshopToastCenter(),
             cancelSteamCMD: { _ in },
             afterSteamCMDRun: { [coordinator, doctor] in
-                coordinator.pruneSteamDeletedImports(using: doctor)
+                await coordinator.pruneSteamDeletedImports(using: doctor)
                 runs.value += 1
             }
         )
