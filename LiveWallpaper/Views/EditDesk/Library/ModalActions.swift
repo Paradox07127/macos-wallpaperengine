@@ -25,6 +25,8 @@ final class ModalActions {
         var deleteInstalled: @MainActor (WPEHistoryEntry, InstalledLibraryModel) -> Void = { _, _ in }
         /// The video a Workshop row plays when its project is one; its still is a frame of that file.
         var workshopVideo: @MainActor (LibraryItem) -> WallpaperContent? = { _ in nil }
+        /// Displays running this very copy as itself; the row's `onDisplays` also counts another copy or a variant.
+        var runningOn: @MainActor (WPEHistoryEntry) -> [CGDirectDisplayID] = { _ in [] }
         #endif
 
         static func live(library: SavedLibraryModel, screenManager: ScreenManager) -> Inputs {
@@ -35,6 +37,12 @@ final class ModalActions {
             }
             #if !LITE_BUILD
             inputs.workshopVideo = { library.workshopVideo(for: $0) }
+            inputs.runningOn = { entry in
+                screenManager.screens.compactMap { screen in
+                    guard let configuration = screenManager.getConfiguration(for: screen) else { return nil }
+                    return SavedLibraryModel.isRunning(entry, in: configuration) ? screen.id : nil
+                }
+            }
             #endif
             return inputs
         }
@@ -187,7 +195,13 @@ final class ModalActions {
     func targets(
         for item: LibraryItem, covers: [CGDirectDisplayID: CGImage] = [:], preferred: CGDirectDisplayID? = nil
     ) -> [ModalDisplayTarget] {
-        Self.targets(displays: inputs.displays(), activeOn: Set(item.onDisplays), covers: covers, preferred: preferred)
+        var activeOn = item.onDisplays
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source {
+            activeOn = inputs.runningOn(entry)
+        }
+        #endif
+        return Self.targets(displays: inputs.displays(), activeOn: Set(activeOn), covers: covers, preferred: preferred)
     }
 
     static func targets(

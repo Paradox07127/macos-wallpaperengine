@@ -221,6 +221,13 @@ final class SavedLibraryModel {
         content.sceneDescriptor?.propertyOverrides.isEmpty ?? true
     }
 
+    /// Whether `configuration` runs `entry` itself: not another copy under its Workshop ID, nor a variant tuning its scene.
+    static func isRunning(_ entry: WPEHistoryEntry, in configuration: ScreenConfiguration) -> Bool {
+        guard let origin = configuration.wpeOrigin, origin.workshopID == entry.origin.workshopID,
+              origin.steamFolderItemID == entry.origin.steamFolderItemID else { return false }
+        return foldsIntoWorkshopRow(configuration.activeWallpaper)
+    }
+
     /// The rows of `installed` Workshop IDs that saved entries fold into, each once, in the entries' order.
     static func foldedBookmarkMarks(_ bookmarks: [WallpaperBookmark], installed: Set<String>) -> [LibraryItem.ID] {
         var marks: [LibraryItem.ID] = []

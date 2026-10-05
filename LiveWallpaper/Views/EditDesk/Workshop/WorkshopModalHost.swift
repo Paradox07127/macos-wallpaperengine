@@ -205,9 +205,12 @@ struct WorkshopModalHost: View {
         let displays = screenManager.screens.map {
             ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame)
         }
-        let activeOn = Set(screenManager.screens
-            .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.matchesWorkshopItem(String(item.id)) == true }
-            .map(\.id))
+        // Applying presses `installedEntry`, so only a display running that very copy is already showing it.
+        let entry = installedEntry.flatMap { $0.origin.matchesWorkshopItem(String(item.id)) ? $0 : nil }
+        let activeOn = Set(screenManager.screens.filter { screen in
+            guard let entry, let configuration = screenManager.getConfiguration(for: screen) else { return false }
+            return SavedLibraryModel.isRunning(entry, in: configuration)
+        }.map(\.id))
         return WorkshopModalTargets.make(displays: displays, activeOn: activeOn)
     }
 
