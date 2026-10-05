@@ -2910,7 +2910,8 @@ final class WPEMetalRenderExecutor {
         hasMask: Bool,
         sourceTexture: MTLTexture? = nil,
         maskTexture: MTLTexture? = nil,
-        materialConstants: [String: WPESceneShaderConstantValue]? = nil
+        materialConstants: [String: WPESceneShaderConstantValue]? = nil,
+        spriteDescriptor: WPETexSpriteSamplingDescriptor? = nil
     ) -> WPEGenericImageUniforms {
         // A submesh's own material replaces the layer's resolved values wholesale; absent names take shader defaults.
         let own = materialConstants.map { constants in
@@ -2952,7 +2953,7 @@ final class WPEMetalRenderExecutor {
         // material's explicit g_Brightness remains a separate shader input.
         let sceneHDR = (frameUniformContext.frameValue(named: "g_SceneHDREnabled")?.numberValue ?? 0) > 0.5
         let brightness = gBrightness * Float(sceneHDR ? layer.geometry.brightness : 1)
-        let sourceUVScale: SIMD2<Float>
+        var sourceUVScale: SIMD2<Float>
         if let extent = layer.compositeSourceExtent, case .material = pass.pass.phase {
             // WPE retains the level-0 crop ratio even when an odd logical extent
             // rounds down at the selected mip (31/32, not 15/16).
@@ -2962,6 +2963,17 @@ final class WPEMetalRenderExecutor {
             sourceUVScale = Self.logicalUVScale(for: sourceTexture)
         }
         let maskUVScale = Self.logicalUVScale(for: maskTexture)
+        // SPRITESHEET materials sample one TEXS atlas frame; the descriptor is
+        // produced per frame by the animated texture source for slot 0.
+        var spriteRotation = SIMD4<Float>(1, 0, 0, 1)
+        var spriteTranslation = SIMD4<Float>.zero
+        if pass.pass.combos.contains(where: { $0.key.uppercased() == "SPRITESHEET" && $0.value != 0 }),
+           let spriteDescriptor {
+            spriteRotation = spriteDescriptor.rotation
+            spriteTranslation = SIMD4<Float>(spriteDescriptor.translation.x, spriteDescriptor.translation.y, 1, 0)
+            // TEXS already maps the whole quad into physical atlas space.
+            sourceUVScale = SIMD2<Float>(repeating: 1)
+        }
         if WPESceneDebugArtifacts.shared.isEnabled {
             WPESceneDebugArtifacts.shared.appendLog(
                 "[imageUniform] layer=\(layer.objectName) id=\(layer.objectID) shader=\(pass.pass.shader) "
@@ -2990,7 +3002,9 @@ final class WPEMetalRenderExecutor {
                 sourceUVScale.y,
                 maskUVScale.x,
                 maskUVScale.y
-            )
+            ),
+            spriteRotation: spriteRotation,
+            spriteTranslation: spriteTranslation
         )
     }
 

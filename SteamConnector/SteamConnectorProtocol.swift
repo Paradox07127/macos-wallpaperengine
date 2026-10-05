@@ -1679,6 +1679,28 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
     private var rejectedExisting: [String]?
     var rejectedExistingPaths: [String] { rejectedExisting ?? [] }
 
+    init(
+        source: SteamCMDBinarySource,
+        canonicalPath: String?,
+        resolutionFailure: String?,
+        sha256: String?,
+        signature: SteamCMDSignatureVerdict?,
+        isQuarantined: Bool,
+        launch: SteamCMDLaunchProbe?,
+        unavailableReason: String?,
+        rejectedExisting: [String]? = nil
+    ) {
+        self.source = source
+        self.canonicalPath = canonicalPath
+        self.resolutionFailure = resolutionFailure
+        self.sha256 = sha256
+        self.signature = signature
+        self.isQuarantined = isQuarantined
+        self.launch = launch
+        self.unavailableReason = unavailableReason
+        self.rejectedExisting = rejectedExisting
+    }
+
     /// Usable means "we ran it and it came back", nothing weaker.
     ///
     /// Deliberately not derived from the file existing, the signature, or a

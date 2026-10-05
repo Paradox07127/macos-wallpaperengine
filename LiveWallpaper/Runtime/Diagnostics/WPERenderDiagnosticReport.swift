@@ -65,22 +65,29 @@ enum WPERenderDiagnosticReport {
             lines.append("No render diagnostics yet (scene not loaded).")
         }
 
-        if let shaders = diagnostics?.shaderErrors, shaders.count > 0 {
+        if let shaders = diagnostics?.shaderErrors {
             lines.append("")
             lines.append(
-                "Shader compile failures: \(shaders.count) (pass skipped — effect not drawn)"
+                "Shader compile failures: \(shaders.count)"
+                    + (shaders.count > 0 ? " (pass skipped — effect not drawn)" : "")
             )
             for entry in shaders.entries.prefix(20) {
                 lines.append("  \(entry.shader): \(entry.reason)")
             }
         }
 
-        if let gpu = diagnostics?.gpuErrors, gpu.count > 0 {
+        if let gpu = diagnostics?.gpuErrors {
             lines.append("")
             lines.append(
                 "GPU errors: \(gpu.count)"
                     + (gpu.last.map { " (last: \($0))" } ?? "")
             )
+        }
+
+        if let summary = diagnostics?.compatibilitySummary, !summary.isEmpty {
+            lines.append("")
+            lines.append("Scene Compatibility")
+            lines.append(summary)
         }
 
         lines.append("")

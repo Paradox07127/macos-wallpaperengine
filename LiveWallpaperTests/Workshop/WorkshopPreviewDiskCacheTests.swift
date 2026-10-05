@@ -248,7 +248,72 @@ struct WorkshopPreviewDiskCacheTests {
         #expect(await script.calls == 2)
     }
 
-    // MARK: - Criterion 7: the directory is tidied without a write happening
+    // MARK: - Criterion 7: a retryable failure is fetched again, a permanent one is not
+
+    @Test("A fetch that returns no data is retried and can still succeed")
+    @MainActor
+    func retryableFetchFailureIsRetried() async {
+        let directory = Fixtures.makeDirectory()
+        defer { Fixtures.remove(directory) }
+        let disk = WorkshopPreviewDiskCache(directoryURL: directory)
+        let counter = FetchCounter()
+        let bytes = GIFTestFixtures.png(width: 24, height: 14)
+        let loader = WorkshopPreviewImageLoader(
+            diskCache: disk,
+            fetch: { _ in
+                await counter.increment()
+                return await counter.count == 1 ? nil : bytes
+            },
+            retryBackoff: [0]
+        )
+
+        #expect(await loader.load(Fixtures.url, size: .tile) != nil)
+        #expect(await counter.count == 2)
+    }
+
+    @Test("Retries are bounded: a fetch that keeps failing still returns nil")
+    @MainActor
+    func exhaustedRetriesReturnNil() async {
+        let directory = Fixtures.makeDirectory()
+        defer { Fixtures.remove(directory) }
+        let disk = WorkshopPreviewDiskCache(directoryURL: directory)
+        let counter = FetchCounter()
+        let loader = WorkshopPreviewImageLoader(
+            diskCache: disk,
+            fetch: { _ in
+                await counter.increment()
+                return nil
+            },
+            retryBackoff: [0, 0]
+        )
+
+        #expect(await loader.load(Fixtures.url, size: .tile) == nil)
+        #expect(await counter.count == 3)
+    }
+
+    /// The control for `retryableFetchFailureIsRetried`: decode failures are
+    /// permanent, so the same body must never be fetched twice.
+    @Test("A body that will not decode is not retried")
+    @MainActor
+    func undecodableBytesAreNotRetried() async {
+        let directory = Fixtures.makeDirectory()
+        defer { Fixtures.remove(directory) }
+        let disk = WorkshopPreviewDiskCache(directoryURL: directory)
+        let counter = FetchCounter()
+        let loader = WorkshopPreviewImageLoader(
+            diskCache: disk,
+            fetch: { _ in
+                await counter.increment()
+                return Data("not an image".utf8)
+            },
+            retryBackoff: [0]
+        )
+
+        #expect(await loader.load(Fixtures.url, size: .tile) == nil)
+        #expect(await counter.count == 1)
+    }
+
+    // MARK: - Criterion 8: the directory is tidied without a write happening
 
     @Test("A first read drops an entry that expired since the last session")
     func firstUseSweepRemovesExpiredEntries() async throws {

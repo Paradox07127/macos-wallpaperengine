@@ -419,5 +419,90 @@ struct WPEWorkshopVaryingReconstructionTests {
         let msl = try translate(shaderName: "workshop/2973943998/effects/iris_movement__", source: Self.irisMovementFragment, comboValues: [:])
         #expect(msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordIris'"))
     }
+
+    /// xray.vert computes v_PointerUV by unprojecting g_PointerPosition through
+    /// g_ModelViewProjectionMatrixInverse — a read fullscreen admission rejects, so
+    /// the fragment must rebuild it from g_EffectTextureProjectionMatrixInverse.
+    /// The UV fallback made the halo sample cursor-independent (workshop 1693976113).
+    private static let xrayFragment = """
+    varying vec4 v_TexCoord;
+    varying vec4 v_PointerUV;
+    uniform float g_Multiply;
+    uniform float g_PointerScale;
+    uniform sampler2D g_Texture0;
+    uniform sampler2D g_Texture1;
+    uniform sampler2D g_Texture2;
+    void main() {
+        vec4 albedo = texSample2D(g_Texture0, v_TexCoord.xy);
+        vec4 mask = texSample2D(g_Texture1, v_TexCoord.zw);
+        float blend = mask.a * g_Multiply;
+        vec2 unprojectedUVs = v_PointerUV.xy / v_PointerUV.z;
+        vec2 texSource = v_TexCoord.xy;
+        texSource.y = 1.0 - texSource.y;
+        unprojectedUVs = saturate(texSource - unprojectedUVs);
+        unprojectedUVs -= 0.5;
+        unprojectedUVs *= g_PointerScale * vec2(1.0, v_PointerUV.w);
+        unprojectedUVs += 0.5;
+        vec2 blendSample = texSample2D(g_Texture2, unprojectedUVs).ra;
+        blend *= blendSample.x * blendSample.y;
+        gl_FragColor = mix(albedo, mask, blend);
+    }
+    """
+
+    @Test("xray rebuilds v_PointerUV from the inverse effect projection, not a screen-UV ramp")
+    func reconstructsXrayPointerUV() throws {
+        let msl = try translate(shaderName: "effects/xray", source: Self.xrayFragment, comboValues: [:])
+        #expect(msl.contains("v_PointerUV = wpe_xray_pointer_uv(g_PointerPosition, g_EffectTextureProjectionMatrixInverse, g_Texture0Resolution)"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_PointerUV'"))
+        // Vertex-only uniforms the reconstruction reads must be injected.
+        #expect(msl.contains("float2 g_PointerPosition"))
+        #expect(msl.contains("g_EffectTextureProjectionMatrixInverse"))
+        #expect(msl.contains("float4 g_Texture1Resolution"))
+        // `.zw` is the Texture1-resolution-scaled mask UV — it must survive the `.xy` downgrade.
+        #expect(msl.contains("v_TexCoord.zw"))
+        try compileMSL(msl)
+    }
+
+    @Test("Non-xray v_PointerUV stays on the diagnosed fallback")
+    func nonXrayPointerUVKeepsDiagnostic() throws {
+        let msl = try translate(shaderName: "effects/tint", source: Self.xrayFragment, comboValues: [:])
+        #expect(msl.contains("WPE-DIAGNOSTIC: varying 'v_PointerUV'"))
+        // The helper is in the shared preamble; only the assignment proves the rule ran.
+        #expect(!msl.contains("v_PointerUV = wpe_xray_pointer_uv("))
+    }
+
+    /// Variant xray.vert (workshops 2439476137, 2840301266, 2964778792) computes the halo
+    /// zoom as a varying: `v_PointerScale = mix(999, 1.0/g_PointerScale, step(0.001, …))`
+    /// instead of reading the g_PointerScale uniform in the fragment.
+    private static let xrayVariantFragment = """
+    varying vec4 v_TexCoord;
+    varying vec4 v_PointerUV;
+    varying float v_PointerScale;
+    uniform float g_Multiply;
+    uniform sampler2D g_Texture0;
+    uniform sampler2D g_Texture1;
+    uniform sampler2D g_Texture2;
+    void main() {
+        vec4 albedo = texSample2D(g_Texture0, v_TexCoord.xy);
+        vec4 mask = texSample2D(g_Texture1, v_TexCoord.zw);
+        float blend = mask.a * g_Multiply;
+        vec2 unprojectedUVs = v_PointerUV.xy / v_PointerUV.z;
+        vec2 texSource = vec2(v_TexCoord.x, 1.0 - v_TexCoord.y);
+        vec2 d = saturate(texSource - unprojectedUVs);
+        vec2 haloUV = 0.5 + v_PointerScale * vec2(1.0, v_PointerUV.w) * (d - 0.5);
+        blend *= texSample2D(g_Texture2, haloUV).r;
+        gl_FragColor = mix(albedo, mask, blend);
+    }
+    """
+
+    @Test("xray variant rebuilds v_PointerScale from g_PointerScale, not a screen-UV ramp")
+    func reconstructsXrayPointerScale() throws {
+        let msl = try translate(shaderName: "effects/xray", source: Self.xrayVariantFragment, comboValues: [:])
+        #expect(msl.contains("v_PointerScale = wpe_glsl_mix(999.0, 1.0 / max(g_PointerScale, 1e-6), step(0.001, g_PointerScale))"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_PointerScale'"))
+        // The frag never declares g_PointerScale — the vertex-only uniform must be injected.
+        #expect(msl.contains("float g_PointerScale"))
+        try compileMSL(msl)
+    }
 }
 #endif

@@ -37,6 +37,37 @@ struct WPEColorDomainProbeTests {
         }
     }
 
+    @Test("A sprite frame in a padded atlas samples its full width")
+    func paddedSpriteAtlasUsesPhysicalUVs() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 8, height: 4, mipmapped: false)
+        descriptor.storageMode = .shared
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let row: [UInt8] = (0 ..< 8).flatMap { x in
+            x < 2 ? [255, 0, 0, 255] : x < 4 ? [0, 255, 0, 255] : [0, 0, 255, 255]
+        }
+        let bytes = Array(repeating: row, count: 4).flatMap(\.self)
+        bytes.withUnsafeBytes {
+            source.replace(region: MTLRegionMake2D(0, 0, 8, 4), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 32)
+        }
+        WPEMetalTextureMetadataRegistry.shared.register(texture: source, imageWidth: 4, imageHeight: 4)
+        let pass = WPERenderPass(id: "sprite", phase: .material, shader: "genericimage2", source: .asset("source"), target: .scene,
+                                 textures: [:], binds: [:], constants: [:], combos: ["SPRITESHEET": 1],
+                                 blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let prepared = WPEPreparedRenderPass(pass: pass, shader: nil, textureBindings: [0: .asset("source")],
+                                             comboValues: [:], uniformValues: [:])
+        let layer = WPERenderLayer(objectID: "sprite", objectName: "sprite", imagePath: "source", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let output = try executor.render(
+            pipeline: .init(layers: [.init(graphLayer: layer, passes: [prepared])]),
+            size: CGSize(width: 4, height: 4), textures: ["source": source],
+            textureSamplingDescriptors: ["source": .init(rotation: SIMD4(0.5, 0, 0, 1), translation: .zero)]
+        )
+        let pixel = try rawPixels(output, coordinates: [[3, 2]], executor: executor)[0]
+        #expect(pixel[1] > 0.99 && pixel[0] < 0.01 && pixel[2] < 0.01)
+    }
+
     @Test("UNORM clamps over-range source before blending while float targets retain HDR")
     func attachmentSourceRangeIsAppliedBeforeBlend() throws {
         for blend in ["normal", "additive"] {

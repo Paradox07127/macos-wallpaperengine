@@ -376,6 +376,10 @@ extension WPEMetalSceneRenderer {
 
     /// `detail` is `@autoclosure` so a normal run never even builds the per-stage interpolated strings.
     func debugStage(_ stage: String, _ detail: @autoclosure () -> String) {
+        if stage == "particle" {
+            let message = detail()
+            if message.hasPrefix("skip ") { recordSceneTestingMessage(message) }
+        }
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         let detail = detail()
         Logger.debug(

@@ -5230,6 +5230,176 @@ struct WPESceneScriptInitializationOrderingTests {
         #expect(token.resourceSnapshot.createdLayers == 0)
     }
 
+    @Test("getLayer().visible reads the authored hidden state so !visible toggles it on")
+    func namedLayerVisibleReadsAuthoredDefault() throws {
+        // Workshop 3809609151: click pads toggle `layer.visible = !layer.visible`
+        // on an authored-hidden pose layer. Reading a phantom `true` wrote
+        // `false` back — every click pinned both poses to the same state.
+        let store = WPESharedScriptState(layers: [
+            .init(id: "pad", name: "Pad", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
+            .init(id: "shown", name: "Shown", size: SIMD2(8, 8), origin: .zero, index: 1, parentName: nil,
+                  initialConfiguration: .object(["visible": .bool(true)])),
+            .init(id: "hidden", name: "Hidden", size: SIMD2(8, 8), origin: .zero, index: 2, parentName: nil,
+                  initialConfiguration: .object(["visible": .bool(false)])),
+            // Property-bound form: resolved default lives in `value`.
+            .init(id: "bound", name: "Bound", size: SIMD2(8, 8), origin: .zero, index: 3, parentName: nil,
+                  initialConfiguration: .object(["visible": .object([
+                      "user": .string("showsecond"), "value": .bool(false),
+                  ])])),
+        ])
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+                                                             export function init(value) {
+                                                                 shared.reads = String(thisScene.getLayer('Hidden').visible)
+                                                                     + ':' + String(thisScene.getLayer('Shown').visible)
+                                                                     + ':' + String(thisScene.getLayer('Bound').visible);
+                                                                 for (const name of ['Hidden', 'Shown', 'Bound']) {
+                                                                     const layer = thisScene.getLayer(name);
+                                                                     layer.visible = !layer.visible;
+                                                                 }
+                                                                 return value;
+                                                             }
+                                                             export function update(value) { return value; }
+                                                             """, seed: .zero, canvasSize: SIMD2(64, 64), ownLayerName: "Pad", ownObjectID: "pad",
+                                                             shared: store, governor: WPESceneScriptExecutionGovernor(limit: 4))
+        #expect(store.get("reads") as? String == "false:true:false")
+        let output = try #require(instance.takeLayerOutput())
+        #expect(output.others["Hidden"]?.visible == true)
+        #expect(output.others["Shown"]?.visible == false)
+        #expect(output.others["Bound"]?.visible == true)
+    }
+
+    @Test("thisObject.getChildren returns authored children in paint order (3812566774 slideshow)")
+    func getChildrenFeedsSlideshowInit() throws {
+        // Workshop 3812566774 (EasyTransitions+): init() does
+        // `thisObject.getChildren()` and fades the returned image layers.
+        // Without getChildren init threw, `images` stayed empty, and update()
+        // early-returned — static topmost image, every setting dead.
+        let store = WPESharedScriptState(layers: [
+            .init(id: "18", name: "Deck", size: .zero, origin: .zero, index: 0, parentName: nil),
+            .init(id: "38", name: "sora (9)", size: SIMD2(8, 8), origin: .zero, index: 1,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "41", name: "sora (10)", size: SIMD2(8, 8), origin: .zero, index: 2,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "44", name: "sora (11)", size: SIMD2(8, 8), origin: .zero, index: 3,
+                  parentName: "Deck", parentID: "18"),
+            // A same-scene sibling that is NOT a child must not leak in.
+            .init(id: "15", name: "sibling", size: SIMD2(8, 8), origin: .zero, index: 4, parentName: nil),
+        ])
+        let instance = try WPELayerScriptInstance(
+            script: """
+            export function init(value) {
+                const kids = thisObject.getChildren();
+                shared.count = kids.length;
+                shared.names = kids.map(function(k) { return k.name; }).join(',');
+                for (const k of kids) { k.alpha = 0; }
+                kids[0].alpha = 1;
+                return value;
+            }
+            export function update(value) { return value; }
+            """,
+            shared: store,
+            outputMode: .layerState,
+            initialVisible: true,
+            ownLayerName: "Deck"
+        )
+        let output = try #require(instance.tick(runtimeSeconds: 1))
+        #expect(store.get("count") as? Double == 3)
+        #expect(store.get("names") as? String == "sora (9),sora (10),sora (11)")
+        #expect(output.others["sora (9)"]?.alpha == 1)
+        #expect(output.others["sora (10)"]?.alpha == 0)
+        #expect(output.others["sora (11)"]?.alpha == 0)
+        #expect(output.others["sibling"] == nil)
+    }
+
+    @Test("scriptProperties overrides reach update(); engine.frametime drives child alpha cycling (3812566774)")
+    func slideshowUpdateCyclesWithOverrides() throws {
+        // Distilled EasyTransitions+ contract: init collects children via
+        // getChildren, update() cross-fades them by elapsed time. Declared
+        // imageDuration=4 would never switch inside this window; the override
+        // (1s) must reach the installed scriptProperties bag for idx to move.
+        let store = WPESharedScriptState(layers: [
+            .init(id: "18", name: "Deck", size: .zero, origin: .zero, index: 0, parentName: nil),
+            .init(id: "38", name: "a", size: SIMD2(8, 8), origin: .zero, index: 1,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "41", name: "b", size: SIMD2(8, 8), origin: .zero, index: 2,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "44", name: "c", size: SIMD2(8, 8), origin: .zero, index: 3,
+                  parentName: "Deck", parentID: "18"),
+        ])
+        let script = """
+        export var scriptProperties = createScriptProperties()
+            .addCheckbox({ name: 'autoSwitch', label: 'Auto', value: false })
+            .addSlider({ name: 'imageSelect', label: 'Select', value: 1, min: 1, max: 50, integer: true })
+            .addSlider({ name: 'imageDuration', label: 'Duration', value: 4, min: 1, max: 10, integer: true })
+            .finish()
+        const images = []
+        let elapsedTime = 0
+        export function init() {
+            for (const img of thisObject.getChildren()) { img.alpha = 0; images.push(img) }
+            if (images.length) images[0].alpha = 1
+        }
+        export function update() {
+            if (!images.length) return
+            const idx = scriptProperties.autoSwitch
+                ? Math.floor(elapsedTime / scriptProperties.imageDuration) % images.length
+                : Math.max(0, Math.min(images.length - 1, scriptProperties.imageSelect - 1))
+            for (const img of images) img.alpha = 0
+            images[idx].alpha = 1
+            elapsedTime += engine.frametime
+        }
+        """
+        let instance = try WPELayerScriptInstance(
+            script: script,
+            scriptProperties: [
+                "autoSwitch": .bool(true),
+                "imageSelect": .number(3),
+                "imageDuration": .number(1),
+            ],
+            shared: store,
+            outputMode: .layerState,
+            ownLayerName: "Deck",
+            ownObjectID: "18"
+        )
+        // elapsed starts at 0: tick 1 shows image 1; by tick 3 elapsed >= 1s
+        // (overridden duration), so image 2 is selected.
+        _ = instance.tick(runtimeSeconds: 0.5)
+        _ = instance.tick(runtimeSeconds: 1.5)
+        let third = try #require(instance.tick(runtimeSeconds: 2.5))
+        #expect(third.others["a"]?.alpha == 0)
+        #expect(third.others["b"]?.alpha == 1)
+        #expect(third.others["c"]?.alpha == 0)
+
+        // Manual mode ignores time entirely and pins imageSelect.
+        let manual = try WPELayerScriptInstance(
+            script: script,
+            scriptProperties: [
+                "autoSwitch": .bool(false),
+                "imageSelect": .number(3),
+                "imageDuration": .number(1),
+            ],
+            shared: WPESharedScriptState(layers: sharedLayersForSlideshow()),
+            outputMode: .layerState,
+            ownLayerName: "Deck",
+            ownObjectID: "18"
+        )
+        let picked = try #require(manual.tick(runtimeSeconds: 0.1))
+        #expect(picked.others["a"]?.alpha == 0)
+        #expect(picked.others["b"]?.alpha == 0)
+        #expect(picked.others["c"]?.alpha == 1)
+    }
+
+    private func sharedLayersForSlideshow() -> [WPESceneScriptLayerInfo] {
+        [
+            .init(id: "18", name: "Deck", size: .zero, origin: .zero, index: 0, parentName: nil),
+            .init(id: "38", name: "a", size: SIMD2(8, 8), origin: .zero, index: 1,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "41", name: "b", size: SIMD2(8, 8), origin: .zero, index: 2,
+                  parentName: "Deck", parentID: "18"),
+            .init(id: "44", name: "c", size: SIMD2(8, 8), origin: .zero, index: 3,
+                  parentName: "Deck", parentID: "18"),
+        ]
+    }
+
     @Test("Retirement and init budget timeout stay fail-closed without repeating the module or init")
     func stagedInitializationContainment() throws {
         // The init() below never returns: it gets a governor/dispatcher no other test shares.

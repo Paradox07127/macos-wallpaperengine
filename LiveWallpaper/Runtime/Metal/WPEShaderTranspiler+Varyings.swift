@@ -221,6 +221,18 @@ extension WPEShaderTranspiler {
         ("u_ratio", "float"),
     ]
 
+    /// Uniforms `xray.vert` declares and `xray.frag` does not; `v_PointerUV`
+    /// and the `.zw` mask-UV scale both reconstruct from these.
+    static let xrayVertexUniforms: [(name: String, glslType: String)] = [
+        ("g_PointerPosition", "vec2"),
+        ("g_EffectTextureProjectionMatrixInverse", "mat4"),
+        ("g_Texture0Resolution", "vec4"),
+        ("g_Texture1Resolution", "vec4"),
+        // Variant xray.vert moves the halo scale into v_PointerScale, so the frag never
+        // declares g_PointerScale; the v_PointerScale reconstruction needs it.
+        ("g_PointerScale", "float"),
+    ]
+
     /// Only a `uniform` declaration counts: a comment or a bare use of the name must not pass.
     static func declaresUniform(_ name: String, in source: String) -> Bool {
         source.range(
@@ -235,6 +247,9 @@ extension WPEShaderTranspiler {
         if texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
            source.contains("v_Distorsion") {
             needed = lensDistortionVertexUniforms
+        } else if texCoordZWFamilyName(shaderName: shaderName) == "xray",
+                  source.contains("v_PointerUV") {
+            needed = xrayVertexUniforms
         } else if bokehBlurStage(inSource: source) != nil {
             needed = bokehBlurVertexUniforms
         } else if isFrameBuilder(inSource: source) {

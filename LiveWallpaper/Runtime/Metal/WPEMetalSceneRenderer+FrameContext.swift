@@ -79,7 +79,8 @@ extension WPEMetalSceneRenderer {
         let clickPointerIsLive = space.clickPointerIsLive
         // Oracle overrides are authored in scene space already.
         let pointer = oracleFrameOverride?.pointer ?? space.pointer
-        if !followPointerIsLive && previousPointerWasLive {
+        let pointerWasLive = previousPointerWasLive
+        if !followPointerIsLive && pointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()
             }
@@ -112,6 +113,7 @@ extension WPEMetalSceneRenderer {
         )
         // Compute once per frame (advances smoothing state); assigned below
         // after the audio path may have rebuilt `uniforms`.
+        cameraParallaxSettings = resolvedCameraParallaxSettings
         let parallaxFrame = cameraParallaxSmoother.frame(
             settings: cameraParallaxSettings,
             pointerPosition: pointer,
@@ -151,9 +153,18 @@ extension WPEMetalSceneRenderer {
                 isDown: false,
                 isRightDown: false
             )
-        uniforms.pointerPositionLast = previousPointer
         uniforms.pointerClick = clickPointerIsLive ? layerScriptPointerFrame : .neutral
-        previousPointer = pointer
+        // `space.pointer` snaps to centre while the pointer is off-scene. Feeding that to
+        // motion-delta consumers (cursorripple's position−last) fakes an edge→centre jump on
+        // every exit and again on re-entry, painting a giant force streak. Hold the last live
+        // position while off-scene and report zero delta on the first frame back.
+        if followPointerIsLive {
+            uniforms.pointerPositionLast = pointerWasLive ? previousPointer : pointer
+            previousPointer = pointer
+        } else {
+            uniforms.pointerPosition = previousPointer
+            uniforms.pointerPositionLast = previousPointer
+        }
         lastRuntimeUniforms = uniforms
         return FrameContext(
             uniforms: uniforms,

@@ -59,6 +59,7 @@ struct DiagnosticLogSheet: View {
     let log: String
     let tint: Color
     let onDismiss: () -> Void
+    var batchLog: (() -> String)?
 
     @State private var didCopy = false
     @State private var rendered: AttributedString?
@@ -89,6 +90,11 @@ struct DiagnosticLogSheet: View {
                     .truncationMode(.middle)
             }
             Spacer()
+            if let batchLog {
+                Button("Copy All Scenes") { copy(batchLog()) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
             Button {
                 copy()
             } label: {
@@ -152,9 +158,13 @@ struct DiagnosticLogSheet: View {
     }
 
     private func copy() {
+        copy(log)
+    }
+
+    private func copy(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(log, forType: .string)
+        pasteboard.setString(text, forType: .string)
         didCopy = true
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)

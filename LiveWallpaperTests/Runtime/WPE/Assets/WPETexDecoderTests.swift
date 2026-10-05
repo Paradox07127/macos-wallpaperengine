@@ -689,6 +689,86 @@ struct WPETexDecoderTests {
 }
 
 extension WPETexDecoderTests {
+    // MARK: - TEXB0004 conditional variants
+
+    @Test("TEXB0004 conditional-variant table parses and the base image still decodes")
+    func conditionalVariantTexB0004DecodesBaseImage() throws {
+        let png = twoByTwoPNGAtlas()
+        let buffer = makeConditionalVariantTexB0004(png: png)
+
+        let image = try WPETexDecoder().decode(data: buffer).get()
+        #expect(image.width == 4 && image.height == 4)
+
+        let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
+        #expect(metadata.bitmap.frames.count == 1)
+        #expect(metadata.bitmap.isVideoPayload == false)
+        let variants = metadata.bitmap.conditionalVariants
+        #expect(variants.map(\.imageID) == [1, 2])
+        #expect(variants[0].condition.contains("blank"))
+        #expect(variants[1].condition.contains("discord"))
+        #expect(variants.map(\.mipmaps.count) == [1, 1])
+        #expect(variants[1].mipmaps[0].x == 1 && variants[1].mipmaps[0].y == 1)
+        #expect(variants[1].mipmaps[0].width == 2 && variants[1].mipmaps[0].height == 2)
+
+        let payload = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        #expect(payload.hasAnimationFrames == false)
+        #expect(payload.mipmaps.first?.width == 4)
+    }
+
+    /// Mirrors `WiiButtonLight.tex` (Workshop 3536863181): a TEXB0004 whose
+    /// third field counts conditional images — a `[1][id][0][condition]`
+    /// table, then one `[1][id][x][y][w][h][fmt][size][payload]` record per
+    /// variant after every base mip.
+    private func makeConditionalVariantTexB0004(png: Data) -> Data {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
+        appendUInt32(&buffer, 0)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 0)
+
+        appendMagic(&buffer, magic: "TEXB0004")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 13)
+        appendInt32(&buffer, 2)
+        for (imageID, condition) in [
+            (1, #"{"condition":{"condition":"blank","name":"buttoniconleft"}}"#),
+            (2, #"{"condition":{"condition":"discord","name":"buttoniconleft"}}"#),
+        ] {
+            appendInt32(&buffer, 1)
+            appendInt32(&buffer, Int32(imageID))
+            appendInt32(&buffer, 0)
+            buffer.append(contentsOf: condition.utf8)
+            buffer.append(0x00)
+        }
+
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, UInt32(png.count))
+        buffer.append(png)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 2)
+        for (imageID, x, y, w, h) in [(1, 0, 0, 4, 4), (2, 1, 1, 2, 2)] {
+            appendInt32(&buffer, 1)
+            appendInt32(&buffer, Int32(imageID))
+            appendInt32(&buffer, Int32(x))
+            appendInt32(&buffer, Int32(y))
+            appendInt32(&buffer, Int32(w))
+            appendInt32(&buffer, Int32(h))
+            appendInt32(&buffer, 13)
+            appendUInt32(&buffer, UInt32(png.count))
+            buffer.append(png)
+        }
+        return buffer
+    }
+
     @Test("TEXS rejects nonfinite time and every geometry lane before publishing either payload",
           arguments: [Float.nan, Float.infinity, -Float.infinity], Array(0 ... 6))
     func rejectsNonfiniteTEXS(value: Float, field: Int) throws {

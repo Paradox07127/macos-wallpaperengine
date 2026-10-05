@@ -213,7 +213,7 @@ extension WPEMetalSceneRenderer {
         }
         forEachCursorScriptInstance { _, instance in
             let canSubmit = !hasPendingAuthoredLayerBatch || pendingOrderedLayerScriptBatch?.hasCompleteAdmission == true
-            if let job = instance.batchCursorEvents(cursorBursts[ObjectIdentifier(instance)] ?? [], allowSubmission: canSubmit) {
+            if let job = instance.enqueueCursorEvents(cursorBursts[ObjectIdentifier(instance)] ?? [], allowSubmission: canSubmit) {
                 pendingSceneScriptBatchJobs.append(job)
             }
         }
@@ -580,10 +580,12 @@ extension WPEMetalSceneRenderer {
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
+            || !dynamicParallaxDepthScriptInstances.isEmpty
             || !sharedOriginReadFans.isEmpty
             || !sharedScaleReadFans.isEmpty
             || !sharedAnglesReadFans.isEmpty
-            || !sharedColorReadFans.isEmpty else { return nil }
+            || !sharedColorReadFans.isEmpty
+            || !sharedParallaxReadFans.isEmpty else { return nil }
         var transforms = LiveScriptTransforms()
         transforms.origins.reserveCapacity(dynamicOriginScriptInstances.count + sharedOriginReadFans.count)
         for (objectID, instance) in dynamicOriginScriptInstances.sorted(by: { $0.key < $1.key }) {
@@ -646,7 +648,32 @@ extension WPEMetalSceneRenderer {
             }
         }
         applySharedReadFans(sharedColorReadFans, into: &transforms.colors)
+        for (objectID, instance) in dynamicParallaxDepthScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let ticked = tickTransformScript(
+                instance,
+                pointer: pointer,
+                runtimeSeconds: time
+            ) {
+                applyScriptParallaxDepth(SIMD2<Double>(ticked.x, ticked.y), objectID: objectID)
+            }
+        }
+        if let shared = sceneScriptSharedState {
+            for (objectID, key) in sharedParallaxReadFans {
+                if let value = WPESharedReadFanAnalysis.vec3(from: shared.get(key)) {
+                    applyScriptParallaxDepth(SIMD2<Double>(value.x, value.y), objectID: objectID)
+                }
+            }
+        }
         return transforms
+    }
+
+    /// A bound `parallaxDepth` script's Vec2 becomes the layer's live depth; the
+    /// authored-depth map stays in sync so parallax hosts/particles agree.
+    private func applyScriptParallaxDepth(_ depth: SIMD2<Double>, objectID: String) {
+        guard depth.x.isFinite, depth.y.isFinite else { return }
+        liveLayerPresentation[objectID, default: .init()].parallaxDepth = depth
+        parallaxAuthoredDepthByObjectID[objectID] = depth
+        executor.parallaxHostDepthByObjectID[objectID] = depth
     }
 
     /// Swift fan-out for `return shared.K` scripts that never entered JS.

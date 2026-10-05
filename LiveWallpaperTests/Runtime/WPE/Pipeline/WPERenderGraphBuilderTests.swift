@@ -2308,6 +2308,57 @@ struct WPERenderGraphBuilderTests {
         #expect(!ids.contains("unrelated"))
     }
 
+    @Test("Angles-script property values keep referenced hidden layers (3809609151 click switches)")
+    func transformScriptPropertyReferencedHiddenLayersSurvivePruning() throws {
+        // The click-to-toggle script lives on `angles` and reads the layer list
+        // from a script property, so neither the script source nor the visible
+        // property alone mentions the toggled layers.
+        let script = """
+        export function init() {
+            for (let name of scriptProperties.targetLayerNames.split(',')) {
+                thisScene.getLayer(name);
+            }
+        }
+        export function update(value) { return value; }
+        export function cursorClick() {}
+        """
+        func band(_ id: String, visible: Bool, anglesScript: WPESceneTransformScript? = nil) -> WPESceneImageObject {
+            WPESceneImageObject(
+                id: id, name: id,
+                imageRelativePath: "materials/\(id).png", materialRelativePath: nil,
+                origin: SIMD3<Double>(0, 0, 0), scale: SIMD3<Double>(1, 1, 1), angles: SIMD3<Double>(0, 0, 0),
+                visible: visible, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1,
+                blendMode: .normal, alignment: .center, size: nil,
+                effects: [], animationLayers: [], anglesScript: anglesScript
+            )
+        }
+        let document = WPESceneDocument(
+            camera: .defaultCamera,
+            general: .defaultGeneral,
+            imageObjects: [
+                band("day", visible: true),
+                band("night", visible: false),
+                band("unrelated", visible: false),
+                band("pad", visible: true, anglesScript: WPESceneTransformScript(
+                    script: script,
+                    scriptProperties: ["targetLayerNames": .string("day,night")],
+                    seed: .zero
+                )),
+            ],
+            diagnostics: []
+        )
+
+        let graph = try WPERenderGraphBuilder(
+            cacheRootURL: FileManager.default.temporaryDirectory
+        ).build(document: document)
+        let ids = Set(graph.layers.map(\.objectID))
+
+        #expect(ids.contains("night"))
+        #expect(ids.contains("day"))
+        #expect(ids.contains("pad"))
+        #expect(!ids.contains("unrelated"))
+    }
+
     @Test("Composite dependency cycle keeps all layers in deterministic scene order")
     func compositeDependencyCycleKeepsAllLayersInDeterministicSceneOrder() throws {
         let root = FileManager.default.temporaryDirectory
@@ -2714,6 +2765,52 @@ struct WPERenderGraphBuilderTests {
         ).build(document: document)
 
         #expect(Set(graph.layers.map(\.objectID)).contains("2"))
+    }
+
+    /// Workshop 3809609151: the parser folds ancestor visibility into `visible`,
+    /// so a nested composelayer under a script-toggled hidden group reads as
+    /// hidden-and-not-live; its subtree was pruned even though the real hidden
+    /// ancestor is live-toggleable.
+    @Test("Nested composelayer descendants survive a script-toggled hidden group")
+    func nestedComposeDescendantsSurviveScriptToggledGroup() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": 1, "name": "switchPad", "image": "models/util/solidlayer.json",
+                    "angles": [
+                        "value": "0 0 0",
+                        "script": "var pose2 = thisScene.getLayer(targetLayers[0]);",
+                        "scriptproperties": ["targetLayers": "pose2,pose1"],
+                    ],
+                ],
+                ["id": 2, "name": "pose2", "type": "image", "image": "models/util/composelayer.json", "visible": false],
+                ["id": 3, "name": "inner", "type": "image", "image": "models/util/composelayer.json", "parent": 2],
+                ["id": 4, "name": "leaf", "type": "image", "image": "models/util/solidlayer.json", "parent": 3],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        // The parser folds ancestor visibility: inner/leaf must parse as hidden here.
+        #expect(document.imageObjects.first(where: { $0.id == "4" })?.visible == false)
+        #expect(document.ownVisibilityByID["4"] == true)
+
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+
+        let byID = Dictionary(graph.layers.map { ($0.objectID, $0) }, uniquingKeysWith: { first, _ in first })
+        #expect(byID["2"]?.groupCompositeSource == "_rt_layerGroup_2")
+        #expect(byID["3"]?.groupRenderTarget == "_rt_layerGroup_2")
+        #expect(byID["4"]?.groupRenderTarget == "_rt_layerGroup_3")
     }
 
     @Test("Underscore-prefixed texture refs route through .fbo regardless of suffix")

@@ -82,8 +82,8 @@ struct WallpaperDistortionShaderTests {
         if texture.pixelFormat == .rgba16Float {
             var halves = [Float16](repeating: 0, count: Self.width * Self.height * 4)
             texture.getBytes(&halves, bytesPerRow: Self.width * 8, from: region, mipmapLevel: 0)
-            return stride(from: 0, to: halves.count, by: 4).map {
-                SIMD4(Float(halves[$0]), Float(halves[$0 + 1]), Float(halves[$0 + 2]), Float(halves[$0 + 3]))
+            return stride(from: 0, to: halves.count, by: 4).map { (i: Int) -> SIMD4<Float> in
+                SIMD4(Float(halves[i]), Float(halves[i + 1]), Float(halves[i + 2]), Float(halves[i + 3]))
             }
         }
         var bytes = [UInt8](repeating: 0, count: Self.width * Self.height * 4)

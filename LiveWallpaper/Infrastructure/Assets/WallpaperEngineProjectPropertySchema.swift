@@ -666,13 +666,11 @@ private enum ConditionEvaluator {
         } else if let includeMatch = evaluateIncludes(clause, values: values) {
             result = includeMatch
         } else if let operands = split(clause, separator: "==", topLevel: false), operands.count == 2 {
-            let key = propertyKey(from: unwrappedOperand(operands[0]))
-            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(unwrappedOperand(operands[1]))
-            result = values[key].matches(expected)
+            guard let matched = looseEquality(operands[0], operands[1], values: values) else { return nil }
+            result = matched
         } else if let operands = split(clause, separator: "!=", topLevel: false), operands.count == 2 {
-            let key = propertyKey(from: unwrappedOperand(operands[0]))
-            let expected = WallpaperEngineProjectPropertyValue.conditionLiteral(unwrappedOperand(operands[1]))
-            result = !values[key].matches(expected)
+            guard let matched = looseEquality(operands[0], operands[1], values: values) else { return nil }
+            result = !matched
         } else {
             let key = propertyKey(from: clause)
             result = values[key].isTruthy
@@ -720,6 +718,55 @@ private enum ConditionEvaluator {
             value = String(value.unicodeScalars.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return value
+    }
+
+    /// One side of a loose `==`/`!=`: a resolved literal/identifier, `nil` for
+    /// JS `undefined`, or `.invalid` for a malformed operand.
+    private enum EqualityOperand {
+        case value(WallpaperEngineProjectPropertyValue?)
+        case invalid
+    }
+
+    /// WPE conditions run as JavaScript, so both `==` operands are expressions:
+    /// quoted text, `true`/`false` and numbers are literals, and any other bare
+    /// token is an identifier resolved against the property values — a miss is
+    /// JS `undefined`, and `undefined == undefined` is true. That is why typo'd
+    /// conditions like `value==ture` still show their property in WPE.
+    /// Returns nil only for malformed operands (a syntax error, not a miss).
+    private static func looseEquality(
+        _ rawLHS: String,
+        _ rawRHS: String,
+        values: [String: WallpaperEngineProjectPropertyValue]
+    ) -> Bool? {
+        guard case let .value(lhs) = equalityOperand(rawLHS, values: values),
+              case let .value(rhs) = equalityOperand(rawRHS, values: values) else { return nil }
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?): return lhs.looselyMatches(rhs)
+        case (nil, nil): return true
+        default: return false
+        }
+    }
+
+    private static func equalityOperand(
+        _ raw: String,
+        values: [String: WallpaperEngineProjectPropertyValue]
+    ) -> EqualityOperand {
+        let operand = unwrappedOperand(raw)
+        guard !operand.isEmpty else { return .invalid }
+        if let quote = operand.utf8.first, quote == 34 || quote == 39 {
+            guard operand.utf8.count >= 2, operand.utf8.last == quote else { return .invalid }
+            return .value(.string(String(operand.unicodeScalars.dropFirst().dropLast())))
+        }
+        if operand.caseInsensitiveCompare("true") == .orderedSame {
+            return .value(.bool(true))
+        }
+        if operand.caseInsensitiveCompare("false") == .orderedSame {
+            return .value(.bool(false))
+        }
+        if let number = Double(operand) {
+            return .value(.number(number))
+        }
+        return .value(values[propertyKey(from: operand)])
     }
 
     private static func primitiveOperand(

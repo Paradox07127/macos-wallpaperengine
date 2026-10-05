@@ -104,6 +104,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var loadTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
+    private var diagnosticPollTask: Task<Void, Never>?
+    private let diagnosticSessionID = UUID()
     private var lifecycleGeneration = 0
     /// Guards clearing loadTask so a finished older task cannot drop a newer one.
     private var loadGeneration = 0
@@ -220,8 +222,30 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 count: snapshot.shaderErrorCount,
                 entries: snapshot.shaderErrors.map { .init(shader: $0.shader, reason: $0.reason) }
             ),
-            gpuErrors: .init(count: snapshot.gpuErrorCount, last: snapshot.gpuErrorLast)
+            gpuErrors: .init(count: snapshot.gpuErrorCount, last: snapshot.gpuErrorLast),
+            compatibilitySummary: snapshot.compatibilitySummary
         )
+        if let descriptor = snapshot.descriptor {
+            let status = loadError.map { "load failed: \($0.errorDescription ?? "unknown")" }
+                ?? (snapshot.failedPresentGeneration == snapshot.currentLoadGeneration
+                    ? "presentation failed"
+                    : (snapshot.hasPresentedFrame ? "frame presented" : "awaiting first frame"))
+            WPESceneTestingReports.shared.record(
+                attempt: .init(session: diagnosticSessionID, generation: snapshot.currentLoadGeneration),
+                descriptor: descriptor, status: status, diagnostics: rendererDiagnostics
+            )
+        }
+    }
+
+    private func startDiagnosticPolling() {
+        guard hasRenderer, diagnosticPollTask == nil else { return }
+        diagnosticPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self, hasRenderer else { return }
+                await pollRendererState()
+            }
+        }
     }
 
     func captureLivePosterFromNextFrame() async -> NSImage? {
@@ -498,6 +522,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func cleanup() {
+        diagnosticPollTask?.cancel()
+        diagnosticPollTask = nil
         lifecycleGeneration += 1
         scenePropertyMutationAuthority.advance()
         hasRenderer = false
@@ -549,6 +575,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         await task.value
         if loadGeneration == generation {
             loadTask = nil
+            await pollRendererState()
+            startDiagnosticPolling()
         }
     }
 
@@ -668,6 +696,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             )
             loadError = await mapLoadFailure(error)
         }
+        await pollRendererState()
+        startDiagnosticPolling()
     }
 
     private func refreshSystemAudioCaptureRequirement() async {
@@ -754,5 +784,6 @@ struct SceneRendererDiagnostics: Sendable {
     let resolution: WPEResolutionDiagnosticsSnapshot
     let shaderErrors: ShaderErrors
     let gpuErrors: GPUErrors
+    var compatibilitySummary = ""
 }
 #endif

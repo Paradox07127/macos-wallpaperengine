@@ -454,7 +454,8 @@ struct WPEMetalShaderDispatcher {
             for: pass,
             layer: layer,
             hasMask: false,
-            sourceTexture: texture
+            sourceTexture: texture,
+            spriteDescriptor: executor.textureSamplingDescriptor(for: reference)
         )
         // The closed source-to-terminal contract stores straight RGBA before
         // the authored effect; other native image paths keep their PMA ABI.
@@ -552,7 +553,8 @@ struct WPEMetalShaderDispatcher {
             layer: layer,
             hasMask: hasMask,
             sourceTexture: primary,
-            maskTexture: hasMask ? mask : nil
+            maskTexture: hasMask ? mask : nil,
+            spriteDescriptor: executor.textureSamplingDescriptor(for: primaryRef)
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {

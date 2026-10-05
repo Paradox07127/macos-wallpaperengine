@@ -96,7 +96,8 @@ struct WPEAlphaPipelineContractTests {
             orthogonalProjection: .init(width: 4, height: 4, auto: true), sceneCamera: .defaultCamera, sceneHDR: hdr
         ))
         let pixel = try rawPixels(output, coordinates: [[2, 2]], executor: executor)[0]
-        for (channel, value) in (hdr ? [2.0, -0.25, 0.1] : [0.6, 0.2, 0.1]).enumerated() {
+        let expected: [Double] = hdr ? [2.0, -0.25, 0.1] : [0.6, 0.2, 0.1]
+        for (channel, value) in expected.enumerated() {
             #expect(abs(pixel[channel] - value) < 2.0 / 255)
         }
     }

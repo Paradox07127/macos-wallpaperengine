@@ -510,6 +510,19 @@ extension WPEShaderTranspiler {
                 t.x *= -1.0;
                 return t.xy * scale * multiplier * 0.001;
             }
+            // xray.vert's v_PointerUV: the pointer unprojected into the effect texture's
+            // space, kept as the authored [-0.5,0.5] local coordinate. The frag derives
+            // `saturate(texSource - unprojected) - 0.5` halo UVs, so the sprite centre must
+            // sit at `texSource - 0.5` — remapping to [0,1] here displaces the disc half a
+            // quad. .z stays the homogeneous w for the frag's xy/z divide, .w is the
+            // authored -height/width sprite aspect.
+            inline float4 wpe_xray_pointer_uv(float2 pointer, float4x4 inverseProjection, float4 texture0Resolution) {
+                float2 c = pointer;
+                c.y = 1.0 - c.y;
+                float4 t = inverseProjection * float4(c * 2.0 - 1.0, 0.0, 1.0);
+                return float4(t.xy * 0.5, t.w,
+                              texture0Resolution.y / -max(texture0Resolution.x, 1e-6));
+            }
             inline float2 wpe_depth_parallax_offset(float2 parallaxPosition, float4x4 inverseProjection) {
                 float3x3 rot = float3x3(inverseProjection[0].xyz, inverseProjection[1].xyz, inverseProjection[2].xyz);
                 float2 dirX = (rot * float3(1.0, 0.0, 0.0)).xy;
@@ -907,6 +920,23 @@ extension WPEShaderTranspiler {
                 in: availableUniforms
                ) {
                 return "wpe_iris_follow_cursor(g_PointerPosition, g_EffectTextureProjectionMatrixInverse, g_CursorScale, g_CursorScaleMultiplier, g_CursorScaleLimit)"
+            }
+        case "v_PointerUV":
+            // xray.vert unprojects the pointer through the layer MVP inverse — the
+            // effect-projection inverse is the same unprojection for this pass.
+            if varying.metalType == "float4",
+               hasUniforms("g_PointerPosition", "g_EffectTextureProjectionMatrixInverse",
+                           "g_Texture0Resolution", in: availableUniforms) {
+                return "wpe_xray_pointer_uv(g_PointerPosition, g_EffectTextureProjectionMatrixInverse, g_Texture0Resolution)"
+            }
+        case "v_PointerScale":
+            // Variant xray.vert: `mix(999, 1.0/g_PointerScale, step(0.001, g_PointerScale))` —
+            // the halo sprite zoom. The generic float fallback (in.uv.x) collapses every
+            // pixel into the halo's bright centre, revealing the whole layer.
+            if varying.metalType == "float",
+               texCoordZWFamilyName(shaderName: shaderName) == "xray",
+               availableUniforms.contains("g_PointerScale") {
+                return "mix(999.0, 1.0 / max(g_PointerScale, 1e-6), step(0.001, g_PointerScale))"
             }
         case "v_TexCoordNoise":
             // foliage variant: tiled noise rotated by g_Direction (needs g_Ratio too).

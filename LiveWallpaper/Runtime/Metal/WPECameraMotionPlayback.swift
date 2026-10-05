@@ -10,6 +10,10 @@ struct WPECameraMotionPlayback: Equatable, Sendable {
     private var hasDrawn = false
     private var evaluatedTime = 0.0
 
+    init(definition: WPESceneCameraMotion) {
+        self.definition = definition
+    }
+
     var needsFrames: Bool {
         definition.needsFrames(at: evaluatedTime)
     }

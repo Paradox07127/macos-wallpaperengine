@@ -123,6 +123,16 @@ enum WPELayerScriptCursorEvent: Sendable, Equatable {
         case .leave: return "cursorLeave"
         }
     }
+
+    /// DOM MouseEvent convention: 0 = left, 2 = right. Scripts gate handlers on
+    /// `event.button !== 0` (workshop 3809609151); an absent field reads as
+    /// `undefined` and fails that check, so it must always be present.
+    var button: Int {
+        switch self {
+        case .rightDown, .rightUp: 2
+        default: 0
+        }
+    }
 }
 
 struct WPELayerScriptCursorHit: Sendable, Equatable {
@@ -1614,6 +1624,7 @@ final class WPELayerScriptInstance {
         ) -> JSValue {
             let object = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             object.setObject(event.handlerName, forKeyedSubscript: "type" as NSString)
+            object.setObject(event.button, forKeyedSubscript: "button" as NSString)
             object.setObject(pointerFrame.isDown, forKeyedSubscript: "leftDown" as NSString)
             object.setObject(pointerFrame.isRightDown, forKeyedSubscript: "rightDown" as NSString)
             let position = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
@@ -2090,8 +2101,46 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let on: @convention(block) (JSValue, JSValue) -> Void = { _, _ in }
         scene.setObject(on, forKeyedSubscript: "on" as NSString)
         cameraBridge.install(on: scene, in: context)
+        installCameraParallaxAccessors(on: scene, in: context)
         context.setObject(scene, forKeyedSubscript: "thisScene" as NSString)
         context.setObject(scene, forKeyedSubscript: "scene" as NSString)
+    }
+
+    /// IScene camera-parallax fields. Bound-property scripts read them to size
+    /// layer depth (`thisScene.cameraparallaxamount` in parallaxDepth init()).
+    /// Reads see the resolved settings — user-prop values included — and writes
+    /// update the shared snapshot so a script's own reads stay consistent.
+    private func installCameraParallaxAccessors(on scene: JSValue, in context: JSContext) {
+        func accessor(
+            _ name: String,
+            read: @escaping (WPESceneCameraParallaxSettings) -> Any,
+            write: @escaping (inout WPESceneCameraParallaxSettings, JSValue) -> Void
+        ) {
+            let get: @convention(block) () -> Any? = { [weak self] in
+                guard let shared = self?.shared else { return nil }
+                return read(shared.cameraParallaxSnapshot())
+            }
+            let set: @convention(block) (JSValue) -> Void = { [weak self] value in
+                self?.shared?.updateCameraParallax { write(&$0, value) }
+            }
+            defineAccessor(on: scene, property: name, get: get, set: set, in: context)
+        }
+        accessor("cameraparallax", read: { $0.enabled }, write: { settings, value in
+            if value.isBoolean {
+                settings.enabled = value.toBool()
+            }
+        })
+        for (name, field) in [
+            ("cameraparallaxamount", \WPESceneCameraParallaxSettings.amount),
+            ("cameraparallaxdelay", \WPESceneCameraParallaxSettings.delay),
+            ("cameraparallaxmouseinfluence", \WPESceneCameraParallaxSettings.mouseInfluence),
+        ] as [(String, WritableKeyPath<WPESceneCameraParallaxSettings, Double>)] {
+            accessor(name, read: { $0[keyPath: field] }, write: { settings, value in
+                if value.isNumber, value.toDouble().isFinite {
+                    settings[keyPath: field] = value.toDouble()
+                }
+            })
+        }
     }
 
     fileprivate func layerKey(_ value: JSValue) -> String? {
@@ -2248,6 +2297,21 @@ class WPELayerScriptBridge: @unchecked Sendable {
             return layerHandle(named: parentName, in: context)
         }
         handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        // Child layers in paint order, matched on the object id — names repeat.
+        // Empty array for phantom/childless layers: `for..of null` throws and
+        // guarded `if (getLayer(x))` blocks still iterate the minted handle.
+        let getChildren: @convention(block) () -> JSValue? = { [weak self, weak context] in
+            guard let self, let context else { return nil }
+            var handles: [JSValue] = []
+            if let info, let shared {
+                handles = shared.layers
+                    .filter { $0.parentID == info.id }
+                    .sorted { $0.index < $1.index }
+                    .map { self.handle(forLayerKey: shared.layerHandleKey($0), in: context) }
+            }
+            return JSValue(object: handles, in: context)
+        }
+        handle.setObject(getChildren, forKeyedSubscript: "getChildren" as NSString)
         let getTransformMatrix: @convention(block) () -> JSValue? = { [weak self, weak context] in
             guard let self, let context, let info = layerInfo(forKey: key) else { return nil }
             let live = shared?.layerTransform(id: info.id)?.transform
@@ -2599,6 +2663,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
             self?.neutralLayerStubCache
         }
         stub.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
+        let getChildren: @convention(block) () -> JSValue? = { [weak context] in
+            guard let context else { return nil }
+            return JSValue(object: [], in: context)
+        }
+        stub.setObject(getChildren, forKeyedSubscript: "getChildren" as NSString)
         _ = neutralAnimationStub(in: context)
         let getAnimationLayer: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
             self?.neutralAnimationStubCache
@@ -2764,14 +2833,41 @@ class WPELayerScriptBridge: @unchecked Sendable {
         pendingVideo.filter { $0.call.layerKey == key }.map(\.call.command)
     }
 
-    /// Neutral defaults for a layer the script never assigned: own layer keeps
-    /// its parsed `visible`/`alpha` seeds, other (named) handles stay shown.
+    /// Named handles use resolved seeds, including user overrides. Hand-built
+    /// layer tables without seeds fall back to their authored configuration.
     fileprivate func defaultVisible(forKey key: String) -> Bool {
-        key == Self.ownKey ? initialOwnVisible : true
+        key == Self.ownKey ? initialOwnVisible
+            : (layerInfo(forKey: key)?.initialVisible
+                ?? authoredScalar(forKey: key, field: "visible").map { $0 != 0 } ?? true)
     }
 
     fileprivate func defaultAlpha(forKey key: String) -> Double {
-        key == Self.ownKey ? initialOwnAlpha : 1
+        key == Self.ownKey ? initialOwnAlpha
+            : (layerInfo(forKey: key)?.initialAlpha ?? authoredScalar(forKey: key, field: "alpha") ?? 1)
+    }
+
+    /// Authored scalar for `visible`/`alpha`, unwrapping `{user, value}` bound
+    /// fields to their baked fallback. nil when the layer or field is absent.
+    private func authoredScalar(forKey key: String, field: String) -> Double? {
+        guard case let .object(configuration)? = layerInfo(forKey: key)?.initialConfiguration else { return nil }
+        func number(_ value: WPESceneJSONValue?) -> Double? {
+            switch value {
+            case let .bool(flag)?: flag ? 1 : 0
+            case let .number(scalar)?: scalar
+            case let .string(text)?:
+                // WPEValueParser.bool's string table plus plain numerics.
+                switch text.lowercased() {
+                case "true", "yes": 1
+                case "false", "no": 0
+                default: Double(text)
+                }
+            default: nil
+            }
+        }
+        if case let .object(bound)? = configuration[field] {
+            return number(bound["value"])
+        }
+        return number(configuration[field])
     }
 
     fileprivate func stateFor(handle _: JSValue?, key: String) -> WPELayerScriptState {

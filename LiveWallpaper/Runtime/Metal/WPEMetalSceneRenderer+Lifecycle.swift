@@ -20,6 +20,9 @@ extension WPEMetalSceneRenderer {
         var scriptProperties: [
             SceneScriptPropertyConsumerKey: [String: WPESceneScriptPropertyValue]
         ] = [:]
+        /// Incremental `general.cameraparallax*` bindings patch the smoother's
+        /// settings in place — no graph rebuild needed for a per-frame term.
+        var cameraParallax: WPESceneCameraParallaxSettings?
     }
 
     // MARK: - Reload & scene property patching
@@ -179,6 +182,25 @@ extension WPEMetalSceneRenderer {
                       let value = patch.newValues[binding.propertyKey]?.numberValue,
                       value.isFinite else { return nil }
                 plan.soundVolume[id] = min(max(value, 0), 1)
+            case (.generalField(let name), .general):
+                guard binding.condition == nil,
+                      let value = patch.newValues[binding.propertyKey] else { return nil }
+                var settings = plan.cameraParallax ?? resolvedCameraParallaxSettings
+                switch name {
+                case "cameraparallax":
+                    guard case .bool(let flag) = value else { return nil }
+                    settings.enabled = flag
+                case "cameraparallaxamount", "cameraparallaxdelay", "cameraparallaxmouseinfluence":
+                    guard case .number(let number) = value, number.isFinite else { return nil }
+                    switch name {
+                    case "cameraparallaxamount": settings.amount = number
+                    case "cameraparallaxdelay": settings.delay = number
+                    default: settings.mouseInfluence = number
+                    }
+                default:
+                    return nil
+                }
+                plan.cameraParallax = settings
             case (.scriptProperty(let target), .scriptProperty):
                 guard binding.condition == nil,
                       hasLiveScriptPropertyConsumer(target),
@@ -211,6 +233,7 @@ extension WPEMetalSceneRenderer {
         beginSceneScriptVideoCommands()
         liveLayerVisibility = plan.layers
         liveTextVisibility = plan.text
+        applyCameraParallaxUpdates(plan)
 
         guard applyLiveScriptPropertyUpdates(plan.scriptProperties) else {
             discardSceneScriptVideoCommands()
@@ -324,6 +347,14 @@ extension WPEMetalSceneRenderer {
         return true
     }
 
+    private func applyCameraParallaxUpdates(_ plan: ScenePropertyPatchPlan) {
+        guard let settings = plan.cameraParallax else { return }
+        cameraParallaxSettings = settings
+        // thisScene.cameraparallax* reads the shared snapshot, so scripts see the
+        // patched values too.
+        sceneScriptSharedState?.seedCameraParallax(settings)
+    }
+
     private func hasLiveScriptPropertyConsumer(
         _ target: WPESceneScriptPropertyTarget
     ) -> Bool {
@@ -336,6 +367,8 @@ extension WPEMetalSceneRenderer {
             return dynamicAnglesScriptInstances[target.objectID] != nil
         case .color:
             return dynamicColorScriptInstances[target.objectID] != nil
+        case .parallaxDepth:
+            return dynamicParallaxDepthScriptInstances[target.objectID] != nil
         case .layerVisible:
             return layerScriptInstances[target.objectID] != nil
         case .layerAlpha:
@@ -388,6 +421,13 @@ extension WPEMetalSceneRenderer {
                     ) == true else { return false }
             case .color:
                 guard dynamicColorScriptInstances[key.objectID]?
+                    .applyScriptPropertiesSuperseding(
+                        properties,
+                        pointerPosition: previousPointer,
+                        runtimeSeconds: runtimeSeconds
+                    ) == true else { return false }
+            case .parallaxDepth:
+                guard dynamicParallaxDepthScriptInstances[key.objectID]?
                     .applyScriptPropertiesSuperseding(
                         properties,
                         pointerPosition: previousPointer,
@@ -558,6 +598,10 @@ extension WPEMetalSceneRenderer {
     /// Static-scene + dynamic-content combos must not short-circuit MTKView into the paused/on-demand path or they freeze after the first frame.
     var needsContinuousFrames: Bool { !frameDemand.isEmpty }
 
+    var resolvedCameraParallaxSettings: WPESceneCameraParallaxSettings {
+        sceneScriptSharedState?.cameraParallaxSnapshot() ?? cameraParallaxSettings
+    }
+
     /// Each bit is "needs the loop RIGHT NOW", not "scene contains this subsystem". A wrong shrink freezes a live animation.
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
@@ -581,10 +625,12 @@ extension WPEMetalSceneRenderer {
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
             || !particleRateScriptInstances.isEmpty
+            || !dynamicParallaxDepthScriptInstances.isEmpty
             || !sharedOriginReadFans.isEmpty
             || !sharedScaleReadFans.isEmpty
             || !sharedAnglesReadFans.isEmpty
             || !sharedColorReadFans.isEmpty
+            || !sharedParallaxReadFans.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty
@@ -603,20 +649,22 @@ extension WPEMetalSceneRenderer {
 
     /// The cursor moves between frames, so anything that consumes it needs a live frame or a static scene never reacts to the mouse again.
     private var pointerDrivenContent: Bool {
+        let settings = resolvedCameraParallaxSettings
         // `!= 0`, not `> 0`: a negative amount/influence is inverted parallax and still needs the pointer. Last-pushed click-capture takes priority over the mailbox, which is written on the main thread and may not have landed.
-        (mouseInteractionEnabled
-            && cameraParallaxSettings.enabled
-            && cameraParallaxSettings.amount != 0
-            && cameraParallaxSettings.mouseInfluence != 0)
+        return (mouseInteractionEnabled
+            && settings.enabled
+            && settings.amount != 0
+            && settings.mouseInfluence != 0)
             || lastPushedClickCaptureEnabled
             ?? mailbox.read().clickCaptureEnabled
     }
 
     /// Conservative: shaders, scripts, and particle attractors can consume the pointer even when `tracksPointer` is false — only a provably pointer-free scene gates monitors off.
     private var scenePointerConsumersPossible: Bool {
-        (cameraParallaxSettings.enabled
-            && cameraParallaxSettings.amount != 0
-            && cameraParallaxSettings.mouseInfluence != 0)
+        let settings = resolvedCameraParallaxSettings
+        return (settings.enabled
+            && settings.amount != 0
+            && settings.mouseInfluence != 0)
             || hasAnimatedShaderPasses
             || !particleSystems.isEmpty
             || !dynamicOriginScriptInstances.isEmpty
@@ -624,6 +672,8 @@ extension WPEMetalSceneRenderer {
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
             || !particleRateScriptInstances.isEmpty
+            || !dynamicParallaxDepthScriptInstances.isEmpty
+            || !sharedParallaxReadFans.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty

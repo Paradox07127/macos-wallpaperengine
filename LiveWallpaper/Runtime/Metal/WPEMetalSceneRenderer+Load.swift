@@ -30,6 +30,8 @@ extension WPEMetalSceneRenderer {
         )
         #endif
         loadGeneration &+= 1
+        sceneTestingObjectSummary = ""
+        sceneTestingMessages = []
         spanFrames?.reset(generation: loadGeneration)
         // Cleared here rather than in `retireRuntimeState`: a failed load's misses must outlive its teardown for the failure report.
         resolutionTracer.reset()
@@ -185,6 +187,12 @@ extension WPEMetalSceneRenderer {
                 descriptor: sceneDescriptor,
                 cacheRootURL: sceneCacheRoot
             )
+            // Repair dropped {"user"} envelopes on cameraparallax* fields when
+            // scripts read them via thisScene and recognized slider labels identify them.
+            let repairedData = (try? WallpaperEngineProjectPropertySchema.read(
+                from: sceneCacheRoot,
+                includeSchemeColor: true
+            )).map { WPESceneParallaxBindingInference.applying(to: data, schema: $0) } ?? data
             // Empty dump ⇒ project.json never loaded and every `{"user":K}` envelope used its baked literal.
             WPESceneDebugArtifacts.shared.recordNoteOnce(
                 name: "user-properties.txt",
@@ -193,9 +201,13 @@ extension WPEMetalSceneRenderer {
                         .map { "\($0.key) = \($0.value)" }
                         .joined(separator: "\n")
             )
-            return try WPESceneDocumentParser.parse(data: data, userValues: userValues)
+            return try WPESceneDocumentParser.parse(data: repairedData, userValues: userValues)
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        sceneTestingObjectSummary = "Declared objects: images=\(parsedDocument.imageObjects.count), particles=\(parsedDocument.particleObjects.count), text=\(parsedDocument.textObjects.count), sounds=\(parsedDocument.soundObjects.count), lights=\(parsedDocument.lightObjects.count)"
+        for diagnostic in parsedDocument.diagnostics {
+            recordSceneTestingMessage("\(diagnostic.severity.rawValue): \(diagnostic.message)")
+        }
         let pathReferences: [String] = if case let .value(references)? = parsedDocument.authoredCamera.paths {
             references
         } else {
@@ -354,12 +366,19 @@ extension WPEMetalSceneRenderer {
         objectParentByID = document.objectParentByID
         ownVisibilityByID = document.ownVisibilityByID
         sceneLightObjects = document.lightObjects
+        // Seed OWN visibility, not the parsed effective (`object.visible` already
+        // folds hidden ancestors). Ancestors fold back in at the frame overlay so
+        // a script/property toggling a parent re-shows its subtree.
         liveLayerVisibility = Dictionary(
-            document.imageObjects.map { ($0.id, $0.visible) },
+            document.imageObjects.map {
+                ($0.id, document.ownVisibilityByID[$0.id] ?? $0.visible)
+            },
             uniquingKeysWith: { first, _ in first }
         )
         liveTextVisibility = Dictionary(
-            document.textObjects.map { ($0.id, $0.visible) },
+            document.textObjects.map {
+                ($0.id, document.ownVisibilityByID[$0.id] ?? $0.visible)
+            },
             uniquingKeysWith: { first, _ in first }
         )
         // Perspective has no authored pixel canvas. Render at drawable size (4K cap, never below authored) so HUD text stays 1:1. Kill switch: WPEMetalPerspectiveNativeResolution -bool NO.
@@ -496,6 +515,7 @@ extension WPEMetalSceneRenderer {
         )
         sceneScriptSharedState?.timelineAnimations.configure(document: document, token: scriptLoadToken)
         sceneScriptSharedState?.seedStaticCamera(document.staticCamera, allowsMutation: !document.general.usesPerspectiveProjection)
+        sceneScriptSharedState?.seedCameraParallax(document.general.cameraParallax)
         sceneScriptSharedState?.setCursorWorldProjection(
             cameraUniforms.usesPerspectiveProjection ? cameraUniforms.viewProjectionMatrix : nil,
             sceneMotion: cameraUniforms.usesPerspectiveProjection ? nil : cameraUniforms.sceneMotion
@@ -701,8 +721,11 @@ extension WPEMetalSceneRenderer {
                 angles: object.angles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                parentID: object.parentObjectID,
                 alignment: object.alignment.rawValue,
                 parallaxDepth: object.parallaxDepth,
+                initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
+                initialAlpha: object.alpha,
                 initialConfiguration: initialConfiguration(object.id)
             ))
         }
@@ -717,6 +740,8 @@ extension WPEMetalSceneRenderer {
                 angles: object.angles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                parentID: object.parentObjectID,
+                initialVisible: document.ownVisibilityByID[object.id],
                 initialConfiguration: initialConfiguration(object.id)
             ))
         }
@@ -731,6 +756,9 @@ extension WPEMetalSceneRenderer {
                 angles: object.angles,
                 index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                parentID: object.parentObjectID,
+                initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
+                initialAlpha: object.alpha,
                 initialConfiguration: initialConfiguration(object.id)
             ))
         }
@@ -740,8 +768,11 @@ extension WPEMetalSceneRenderer {
                 origin: SIMD2(object.origin.x, object.origin.y), originZ: object.origin.z,
                 scale: object.scale, angles: object.angles, index: document.objectPaintOrder[object.id] ?? layers.count,
                 parentName: object.parentObjectID.flatMap { nameByID[$0] },
+                parentID: object.parentObjectID,
                 parallaxDepth: object.parallaxDepth, isParticleSystem: true,
                 particleInstanceSeed: WPEParticleInstanceValues(override: object.instanceOverride),
+                initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
+                initialAlpha: object.alpha,
                 initialConfiguration: initialConfiguration(object.id)
             ))
         }
@@ -749,6 +780,7 @@ extension WPEMetalSceneRenderer {
             layers.append(WPESceneScriptLayerInfo(
                 id: object.id, name: object.name, size: .zero, origin: .zero,
                 index: document.objectPaintOrder[object.id] ?? layers.count, parentName: nil,
+                initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
                 initialConfiguration: initialConfiguration(object.id)
             ))
         }

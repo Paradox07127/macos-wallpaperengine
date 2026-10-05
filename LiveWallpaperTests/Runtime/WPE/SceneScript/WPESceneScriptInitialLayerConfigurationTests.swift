@@ -55,6 +55,31 @@ struct WPESceneScriptInitialLayerConfigurationTests {
         #expect(parsed.imageObjects.first?.alpha == 0.37)
     }
 
+    @Test("Named layer getters read saved user values while initial configuration keeps authored fallbacks")
+    func namedLayerGettersUseResolvedProperties() throws {
+        let source = #"""
+        {"camera":{"center":"32 32 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[{"id":1,"name":"target","image":"models/util/solidlayer.json",
+                     "visible":{"value":false,"user":"show"},"alpha":{"value":0.19,"user":"opacity"}},
+                    {"id":2,"name":"reader","image":"models/util/solidlayer.json"}]}
+        """#
+        let parsed = try WPESceneDocumentParser.parse(
+            data: Data(source.utf8), userValues: ["show": .bool(true), "opacity": .number(0.37)]
+        )
+        let shared = WPESharedScriptState(layers: WPEMetalSceneRenderer.scriptLayerTable(for: parsed))
+        _ = try WPELayerScriptInstance(script: """
+        export function init() {
+            const target = thisScene.getLayer('target');
+            shared.visible = target.visible;
+            shared.alpha = target.alpha;
+            shared.fallback = thisScene.getInitialLayerConfig(target).alpha.value;
+        }
+        """, shared: shared, ownLayerName: "reader", ownObjectID: "2")
+        #expect(shared.get("visible") as? Bool == true)
+        #expect(shared.get("alpha") as? Double == 0.37)
+        #expect(shared.get("fallback") as? Double == 0.19)
+    }
+
     @Test("Configuration conversion preserves authored types and returns detached storage")
     func conversionPreservesTypesAndCopiesNestedValues() throws {
         let context = try #require(JSContext())

@@ -37,9 +37,9 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 42
-    /// Cached stage results must include the scoped local-effect position proof.
-    static let expectedFingerprint = "a68d714c0d273eda7f8d3f7dc3130c16536242b8a6400fc4bb4e4636c260cf1f"
+    static let expectedSchemaVersion = 43
+    /// The combined sprite and publication changes invalidate both prior translation caches.
+    static let expectedFingerprint = "ba3b577cff2e242d27ade36bcb60461debb6536a50987c71dec6108ee851ed55"
 
     @Test("Publication alpha and authored geometry contracts have distinct translation keys")
     func publicationContractsDoNotReuseIncompatibleMSL() {
@@ -70,8 +70,8 @@ struct WPEShaderTranslationCacheSchemaTests {
         #expect(WPEShaderTranslationCache.defaultRootURL != production)
     }
 
-    @Test("Schema 14 payload cannot bypass a fresh translation or poison warm replay")
-    func priorSchemaPayloadRecompilesThenReplaysWarm() throws {
+    @Test("Older cache payloads cannot bypass a fresh translation or poison warm replay", arguments: [14, 41, 42])
+    func priorSchemaPayloadRecompilesThenReplaysWarm(oldSchema: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let cache = WPEShaderTranslationCache(rootURL: root)
@@ -85,7 +85,7 @@ struct WPEShaderTranslationCacheSchemaTests {
         let directory = root.appendingPathComponent("v\(WPEShaderTranslationCache.schemaVersion)")
         let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
         var old = try JSONDecoder().decode(WPEShaderTranslationCache.Payload.self, from: Data(contentsOf: file))
-        old.schemaVersion = 14
+        old.schemaVersion = oldSchema
         old.mslSource = "stale translator payload must not reach Metal"
         try JSONEncoder().encode(old).write(to: file)
         cache.dropMemoryForTesting()

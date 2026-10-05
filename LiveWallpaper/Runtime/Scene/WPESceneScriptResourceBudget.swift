@@ -2,7 +2,8 @@
 import Foundation
 
 extension WPESceneScriptContainmentDefaults {
-    static let maximumCreatedLayersPerScene = 64
+    // A 64-bar visualizer and a music player can legitimately share one scene.
+    static let maximumCreatedLayersPerScene = 128
     static let maximumVideoCommandsPerEvaluation = 256
     static let maximumSharedStateEntries = 1024
     static let maximumQuarantinedEngines = 16

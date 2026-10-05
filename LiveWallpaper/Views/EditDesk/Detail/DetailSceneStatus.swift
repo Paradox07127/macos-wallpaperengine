@@ -39,7 +39,8 @@ struct DetailSceneStatus {
                 descriptor: descriptor, diagnostics: session?.rendererDiagnostics, errorCode: renderFailure?.code
             ),
             tint: renderFailure?.tint ?? .accentColor,
-            onDismiss: onDismiss
+            onDismiss: onDismiss,
+            batchLog: { WPESceneTestingReports.shared.make() }
         )
     }
 }

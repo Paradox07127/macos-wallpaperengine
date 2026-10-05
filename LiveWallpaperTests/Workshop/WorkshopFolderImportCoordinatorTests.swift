@@ -130,7 +130,6 @@ struct WorkshopFolderImportCoordinatorTests {
         let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FolderExit")
         defer { defaults.discard() }
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager) }
         let gate = SuccessfulValidationGate()
         let coordinator = WorkshopFolderImportCoordinator(
             importService: WallpaperEngineImportService(validateVideo: { _ in await gate.park() }, makeBookmark: { Data($0.path.utf8) }),
@@ -156,6 +155,7 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(manager.loadGlobalSettings().scenePresets.isEmpty)
         #expect(finished.batches == 0)
         #expect(!manager.persistenceStatus.hasUnsavedChanges)
+        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("A borrowed download scan cannot publish after shutdown", .timeLimit(.minutes(1)))
@@ -166,7 +166,6 @@ struct WorkshopFolderImportCoordinatorTests {
         defer { defaults.discard() }
         let root = steam.root.appendingPathComponent("settings")
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager) }
         let gate = SuccessfulValidationGate()
         let coordinator = WorkshopFolderImportCoordinator(
             importService: WallpaperEngineImportService(validateVideo: { _ in await gate.park() }, makeBookmark: { Data($0.path.utf8) }),
@@ -183,6 +182,7 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(!manager.persistenceStatus.hasUnsavedChanges)
         await coordinator.ingestExistingDownloads(using: steam.doctor)
         #expect(await gate.entries == 1)
+        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("A rescan of a library past 200 items imports nothing new", .timeLimit(.minutes(1)))
@@ -194,7 +194,6 @@ struct WorkshopFolderImportCoordinatorTests {
         defer { defaults.discard() }
         let root = steam.root.appendingPathComponent("settings")
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager) }
         let toastCenter = WorkshopToastCenter()
         // Real bookmarks: the scan only counts an item as known when its source bookmark resolves.
         let coordinator = WorkshopFolderImportCoordinator(
@@ -218,6 +217,7 @@ struct WorkshopFolderImportCoordinatorTests {
         for entry in recent {
             #expect(entry.importedAt == firstImportedAt[entry.origin.workshopID], "item \(entry.origin.workshopID) was re-imported")
         }
+        await TestScratch.discard(root, flushing: manager)
     }
 
     @Test("Completed wallpaper and preset imports survive the final flush", .timeLimit(.minutes(1)))
@@ -232,7 +232,6 @@ struct WorkshopFolderImportCoordinatorTests {
         defer { defaults.discard() }
         let directory = ConfigurationDirectory(root: root.appendingPathComponent("settings"))
         let manager = SettingsManager(directory: directory, defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager) }
         let coordinator = WorkshopFolderImportCoordinator(
             importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { Data($0.path.utf8) }),
             settings: manager
@@ -246,9 +245,9 @@ struct WorkshopFolderImportCoordinatorTests {
         coordinator.shutdown()
         #expect(await manager.flushPendingWrites())
         let restarted = SettingsManager(directory: directory, defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager, restarted) }
         #expect(restarted.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == ["saved-exit"])
         #expect(restarted.loadGlobalSettings().scenePresets["3471679253"]?.baseWorkshopID == "3470764447")
+        await TestScratch.discard(root, flushing: manager, restarted)
     }
 
     @Test("Directory discovery leaves MainActor responsive", .timeLimit(.minutes(1)))
@@ -277,7 +276,6 @@ struct WorkshopFolderImportCoordinatorTests {
         let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.DiscoveryExit")
         defer { defaults.discard() }
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: defaults.defaults)
-        defer { await TestScratch.discard(root, flushing: manager) }
         let gate = BlockingDiscoveryGate()
         defer { gate.release() }
         let result: [URL]? = outcome == 0 ? nil : outcome == 1 ? [] : [folder]
@@ -307,6 +305,7 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(!manager.persistenceStatus.hasUnsavedChanges)
         #expect(finished.batches == 0)
         #expect(gate.calls == 1)
+        await TestScratch.discard(root, flushing: manager)
     }
 
     // MARK: - One Workshop id, one library entry
@@ -318,7 +317,6 @@ struct WorkshopFolderImportCoordinatorTests {
     )
     func importOfAnIDHeldByAnotherFolderIsAConflict(existing: String, incoming: String) async throws {
         let library = try ConflictLibrary()
-        defer { await library.discard() }
         try library.coordinator.importProjects(from: [library.project(existing, title: "Already held")])
         try await settle { !library.coordinator.isImporting }
         let before = library.manager.loadGlobalSettings().recentWPEImports
@@ -334,12 +332,12 @@ struct WorkshopFolderImportCoordinatorTests {
         let toast = try #require(library.toastCenter.lastEvent)
         #expect(!toast.isSuccess)
         #expect(toast.message.contains("Already held"), "the toast did not name the item already in the library: \(toast.message)")
+        await library.discard()
     }
 
     @Test("Re-importing the folder already in the library refreshes it", .timeLimit(.minutes(1)), arguments: ["local", "steam"])
     func reimportOfTheSameFolderIsNotAConflict(kind: String) async throws {
         let library = try ConflictLibrary()
-        defer { await library.discard() }
         let folder = try library.project(kind, title: "Held")
         library.coordinator.importProjects(from: [folder])
         try await settle { !library.coordinator.isImporting }
@@ -352,16 +350,14 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(imported.batches == 1)
         #expect(library.manager.loadGlobalSettings().recentWPEImports.count == 1)
         #expect(library.toastCenter.lastEvent?.isSuccess == true)
+        await library.discard()
     }
 
     @Test("The download scan brings in a Steam item a local copy holds, beside the copy, once", .timeLimit(.minutes(1)))
     func downloadScanImportsASteamItemOverALocalCopy() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary()
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let steamFolder = steam.itemFolders[0]
         let localCopy = library.root.appendingPathComponent("Wallpapers/copy", isDirectory: true)
         try writeVideoProject(at: localCopy, workshopID: steamFolder.lastPathComponent, title: "Local copy")
@@ -381,16 +377,14 @@ struct WorkshopFolderImportCoordinatorTests {
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
         #expect(library.manager.loadGlobalSettings().recentWPEImports == after, "the second scan imported the Steam item again")
         #expect(library.toastCenter.lastEvent?.token == toast?.token)
+        await library.discard()
     }
 
     @Test("The download scan skips a Steam item another Steam folder already holds, and says so once per launch", .timeLimit(.minutes(1)))
     func downloadScanReportsASteamConflictOnce() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary()
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let id = steam.itemFolders[0].lastPathComponent
         let otherSteamFolder = SteamLibraryPaths.workshopContentRoot(steamRoot: library.root.appendingPathComponent("OtherSteam", isDirectory: true))
             .appendingPathComponent(id, isDirectory: true)
@@ -408,6 +402,7 @@ struct WorkshopFolderImportCoordinatorTests {
 
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
         #expect(library.toastCenter.lastEvent?.token == toast?.token, "the second scan repeated a conflict already shown")
+        await library.discard()
     }
 
     // MARK: - Library scan without the Workshop page
@@ -416,25 +411,20 @@ struct WorkshopFolderImportCoordinatorTests {
     func launchScanImportsTheBoundLibrary() async throws {
         let steam = try SteamDownloads(itemCount: 2)
         let library = try ConflictLibrary()
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         #expect(!steam.doctor.hasBoundBinary)
 
         await library.coordinator.ingestBoundLibraryDownloads(using: steam.doctor)
 
         #expect(library.importedIDs == Set(steam.itemFolders.map(\.lastPathComponent)))
+        await library.discard()
     }
 
     @Test("The launch scan skips a missing or broken library grant", .timeLimit(.minutes(1)), arguments: [false, true])
     func launchScanSkipsAnUnusableGrant(bound: Bool) async throws {
         let library = try ConflictLibrary()
         let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.LaunchScanGrant")
-        defer {
-            suite.discard()
-            await library.discard()
-        }
+        defer { suite.discard() }
         let doctor = SteamCMDDoctorService(defaults: suite.defaults, bookmarkResolver: unscopedSharedLibraryResolver())
         if bound {
             doctor.workdirBookmarkData = Data([0x01])
@@ -444,16 +434,14 @@ struct WorkshopFolderImportCoordinatorTests {
 
         #expect(library.importedIDs.isEmpty)
         #expect(doctor.workdirResolutionFailed == bound)
+        await library.discard()
     }
 
     @Test("Authorizing the Steam library imports its downloads without the Workshop page", .timeLimit(.minutes(1)))
     func successfulBindScansTheLibrary() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary()
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let grant = try #require(steam.doctor.workdirBookmarkData)
         steam.doctor.workdirBookmarkData = nil
         let controller = WorkshopSetupController(
@@ -465,16 +453,14 @@ struct WorkshopFolderImportCoordinatorTests {
 
         #expect(controller.setupError == nil)
         #expect(library.importedIDs == Set(steam.itemFolders.map(\.lastPathComponent)))
+        await library.discard()
     }
 
     @Test("A refused Steam library binding scans nothing", .timeLimit(.minutes(1)))
     func failedBindDoesNotScan() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary()
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let controller = WorkshopSetupController(
             doctor: steam.doctor, defaults: steam.suite.defaults, folderImporter: library.coordinator,
             bindLibrary: { url in throw SteamCMDDoctorError.steamLibraryMissingConfig(url) }
@@ -484,6 +470,7 @@ struct WorkshopFolderImportCoordinatorTests {
 
         #expect(controller.setupError != nil)
         #expect(library.importedIDs.isEmpty, "a refused binding still scanned the previously bound library")
+        await library.discard()
     }
 
     // MARK: - Items Steam deleted
@@ -523,10 +510,7 @@ struct WorkshopFolderImportCoordinatorTests {
     func missingLocalFolderIsKept() async throws {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary(removedIDs: RemovedIDs())
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let local = try library.project("local", title: "Local")
         library.coordinator.importProjects(from: [local])
         try await settle { !library.coordinator.isImporting }
@@ -539,6 +523,7 @@ struct WorkshopFolderImportCoordinatorTests {
 
         #expect(library.importedIDs == [ConflictLibrary.itemID])
         #expect(library.removedIDs?.ids.isEmpty == true)
+        await library.discard()
     }
 
     @Test("installedIDs reads only the WorkshopItemsInstalled block")
@@ -566,10 +551,7 @@ struct WorkshopFolderImportCoordinatorTests {
     ) async throws -> VanishedItemScan {
         let steam = try SteamDownloads()
         let library = try ConflictLibrary(removedIDs: RemovedIDs())
-        defer {
-            steam.discard()
-            await library.discard()
-        }
+        defer { steam.discard() }
         let folder = steam.itemFolders[0]
         let itemID = folder.lastPathComponent
         try writeAppWorkshopACF(appWorkshopACF(installed: [itemID]), steamRoot: steam.root)
@@ -585,6 +567,7 @@ struct WorkshopFolderImportCoordinatorTests {
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
 
         let settings = library.manager.loadGlobalSettings()
+        await library.discard()
         return VanishedItemScan(
             itemID: itemID,
             remaining: settings.recentWPEImports.map(\.origin.workshopID),
