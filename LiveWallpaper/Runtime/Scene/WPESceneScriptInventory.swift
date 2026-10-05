@@ -25,8 +25,8 @@
                         count += 1
                     }
                 }
-            let lightObjectIDs = Set(document.lightObjects.map(\.id))
-            let nonLightHosts = document.transformHostObjects.filter { !lightObjectIDs.contains($0.id) }
+        let lightObjectIDs = Set(document.lightObjects.map(\.id))
+        let nonLightHosts = document.transformHostObjects.filter { !lightObjectIDs.contains($0.id) }
             let transform = document.imageObjects.reduce(into: 0) { count, object in
                 if object.originScript != nil {
                     count += 1
@@ -40,7 +40,7 @@
                 if object.colorScript != nil {
                     count += 1
                 }
-            } + nonLightHosts.reduce(into: 0) { count, object in
+        } + nonLightHosts.reduce(into: 0) { count, object in
                 if object.originScript != nil {
                     count += 1
                 }
@@ -64,11 +64,11 @@
                     count += 1
                 }
             }
-            let lightTransforms = document.lightObjects.reduce(into: 0) { count, object in
-                for field in ["origin", "scale", "angles", "color"] where object.fieldBindings[field]?.script != nil {
-                    count += 1
-                }
+        let lightTransforms = document.lightObjects.reduce(into: 0) { count, object in
+            for field in ["origin", "scale", "angles", "color"] where object.fieldBindings[field]?.script != nil {
+                count += 1
             }
+        }
             // Shader-constant scripts share the transform inventory bucket. There is no instance cap.
             let effectConstants = document.imageObjects.reduce(into: 0) { count, object in
                 for effect in object.effects {
@@ -77,8 +77,8 @@
                     }
                 }
             }
-            let particleRates = document.particleObjects.filter { $0.instanceOverride?.rateScript != nil }.count
-            self.init(text: text, layer: layer, transform: transform + lightTransforms + effectConstants + particleRates)
+        let particleRates = document.particleObjects.filter { $0.instanceOverride?.rateScript != nil }.count
+        self.init(text: text, layer: layer, transform: transform + lightTransforms + effectConstants + particleRates)
         }
 
         /// True if any bound script reads audio. Do not gate on supportsaudioprocessing (corpus omits it).
@@ -111,20 +111,20 @@
                     note(transform?.script)
                 }
             }
-            let lightObjectIDs = Set(document.lightObjects.map(\.id))
-            for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
+        let lightObjectIDs = Set(document.lightObjects.map(\.id))
+        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
                 for transform in [object.originScript, object.scaleScript, object.anglesScript] {
                     note(transform?.script)
                 }
             }
-            for object in document.particleObjects {
-                note(object.instanceOverride?.rateScript?.script)
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
+        for object in document.lightObjects {
+            for field in ["origin", "scale", "angles", "color"] {
+                note(object.fieldBindings[field]?.script)
             }
-            for object in document.lightObjects {
-                for field in ["origin", "scale", "angles", "color"] {
-                    note(object.fieldBindings[field]?.script)
-                }
-            }
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return found
         }
@@ -213,20 +213,20 @@
                     note(transform?.script)
                 }
             }
-            let lightObjectIDs = Set(document.lightObjects.map(\.id))
-            for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
+        let lightObjectIDs = Set(document.lightObjects.map(\.id))
+        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
                 for transform in [object.originScript, object.scaleScript, object.anglesScript] {
                     note(transform?.script)
                 }
             }
-            for object in document.particleObjects {
-                note(object.instanceOverride?.rateScript?.script)
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
+        for object in document.lightObjects {
+            for field in ["origin", "scale", "angles", "color"] {
+                note(object.fieldBindings[field]?.script)
             }
-            for object in document.lightObjects {
-                for field in ["origin", "scale", "angles", "color"] {
-                    note(object.fieldBindings[field]?.script)
-                }
-            }
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return found
         }
@@ -258,20 +258,20 @@
                     note(transform?.script)
                 }
             }
-            let lightObjectIDs = Set(document.lightObjects.map(\.id))
-            for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
+        let lightObjectIDs = Set(document.lightObjects.map(\.id))
+        for object in document.transformHostObjects where !lightObjectIDs.contains(object.id) {
                 for transform in [object.originScript, object.scaleScript, object.anglesScript] {
                     note(transform?.script)
                 }
             }
-            for object in document.particleObjects {
-                note(object.instanceOverride?.rateScript?.script)
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
+        for object in document.lightObjects {
+            for field in ["origin", "scale", "angles", "color"] {
+                note(object.fieldBindings[field]?.script)
             }
-            for object in document.lightObjects {
-                for field in ["origin", "scale", "angles", "color"] {
-                    note(object.fieldBindings[field]?.script)
-                }
-            }
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return (
                 bindings: counts.values.reduce(0, +),
