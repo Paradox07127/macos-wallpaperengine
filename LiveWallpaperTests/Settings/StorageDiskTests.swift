@@ -24,7 +24,10 @@ struct StorageDiskTests {
     }
 
     @Test func calloutsSpreadEvenlyOverTheCardHeightInArcOrder() {
-        let arcs = (0 ..< 5).map { (id: "a\($0)", start: 0.70 + Double($0) * 0.01, end: 0.71 + Double($0) * 0.01) }
+        let arcs: [(id: String, start: Double, end: Double)] = (0 ..< 5).map { index in
+            let offset = Double(index) * 0.01
+            return (id: "a\(index)", start: 0.70 + offset, end: 0.71 + offset)
+        }
         let callouts = StorageCallout.layout(arcs: arcs, center: CGPoint(x: 100, y: 80), radius: 60, height: 160)
         let left = callouts.filter { !$0.isTrailing }
         #expect(left.map(\.id) == ["a4", "a3", "a2", "a1", "a0"])

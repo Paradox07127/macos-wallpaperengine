@@ -724,17 +724,14 @@ struct HTMLWallpaperPermissionTests {
             let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
             let pending = makePendingSnapshot()
             defer { view.cleanup(); pending.cancel() }
-            for webView in [view.webView, pending.webView] {
-                let delegate = try #require(webView.uiDelegate)
-                var decisions: [WKPermissionDecision] = []
-                delegate.webView?(
-                    webView,
-                    requestGeolocationPermissionFor: frame.securityOrigin,
-                    initiatedByFrame: frame,
-                    decisionHandler: { decisions.append($0) }
-                )
-                #expect(decisions == [.deny])
-            }
+            #expect(view.webView.uiDelegate === view)
+            #expect(pending.webView.uiDelegate === pending)
+            var decisions: [WKPermissionDecision] = []
+            view.webView(view.webView, requestGeolocationPermissionFor: frame.securityOrigin,
+                         initiatedByFrame: frame, decisionHandler: { decisions.append($0) })
+            pending.webView(pending.webView, requestGeolocationPermissionFor: frame.securityOrigin,
+                            initiatedByFrame: frame, decisionHandler: { decisions.append($0) })
+            #expect(decisions == [.deny, .deny])
         }
     }
 

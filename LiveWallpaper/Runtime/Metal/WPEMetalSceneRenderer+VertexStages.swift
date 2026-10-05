@@ -170,11 +170,15 @@ extension WPEMetalSceneRenderer {
                     if Task.isCancelled {
                         return .init(key: request.translationCacheKey, result: nil, reason: "prewarm-cancelled")
                     }
-                    do {
-                        return try .init(key: request.translationCacheKey, result: compiler.compile(request, recordFailure: false), reason: nil)
-                    } catch {
-                        return .init(key: request.translationCacheKey, result: nil, reason: String(describing: error))
-                    }
+                    // Detach: task-group children inherit the render actor (Swift 6),
+                    // which would serialize the compiles.
+                    return await Task.detached(priority: .userInitiated) {
+                        do {
+                            return try .init(key: request.translationCacheKey, result: compiler.compile(request, recordFailure: false), reason: nil)
+                        } catch {
+                            return .init(key: request.translationCacheKey, result: nil, reason: String(describing: error))
+                        }
+                    }.value
                 }
                 return true
             }
@@ -236,7 +240,10 @@ extension WPEMetalSceneRenderer {
                 let prewarm = prewarms[next]; next += 1
                 group.addTask {
                     guard !Task.isCancelled else { return nil }
-                    return WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                    // Detach: task-group children inherit the render actor (Swift 6).
+                    return await Task.detached(priority: .userInitiated) {
+                        WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                    }.value
                 }
                 return true
             }

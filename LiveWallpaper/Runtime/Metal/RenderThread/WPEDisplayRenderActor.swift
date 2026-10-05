@@ -611,7 +611,9 @@ actor WPEDisplayRenderActor {
             shaderErrors: shader.entries.map { .init(shader: $0.shader, reason: $0.reason) },
             shaderErrorCount: shader.count,
             gpuErrorCount: gpu.count,
-            gpuErrorLast: gpu.last
+            gpuErrorLast: gpu.last,
+            descriptor: renderer.descriptor,
+            compatibilitySummary: renderer.sceneTestingSummary
         )
     }
     #endif
@@ -655,5 +657,7 @@ struct WPERendererStateSnapshot: Sendable {
     let shaderErrorCount: Int
     let gpuErrorCount: Int
     let gpuErrorLast: String?
+    var descriptor: SceneDescriptor?
+    var compatibilitySummary = ""
 }
 #endif

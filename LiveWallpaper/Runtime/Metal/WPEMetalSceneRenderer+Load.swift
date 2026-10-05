@@ -30,6 +30,8 @@ extension WPEMetalSceneRenderer {
         )
         #endif
         loadGeneration &+= 1
+        sceneTestingObjectSummary = ""
+        sceneTestingMessages = []
         spanFrames?.reset(generation: loadGeneration)
         let generation = loadGeneration
         completedPresentGeneration = nil
@@ -200,6 +202,10 @@ extension WPEMetalSceneRenderer {
             return try WPESceneDocumentParser.parse(data: repairedData, userValues: userValues)
         }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        sceneTestingObjectSummary = "Declared objects: images=\(parsedDocument.imageObjects.count), particles=\(parsedDocument.particleObjects.count), text=\(parsedDocument.textObjects.count), sounds=\(parsedDocument.soundObjects.count), lights=\(parsedDocument.lightObjects.count)"
+        for diagnostic in parsedDocument.diagnostics {
+            recordSceneTestingMessage("\(diagnostic.severity.rawValue): \(diagnostic.message)")
+        }
         let pathReferences: [String] = if case let .value(references)? = parsedDocument.authoredCamera.paths {
             references
         } else {

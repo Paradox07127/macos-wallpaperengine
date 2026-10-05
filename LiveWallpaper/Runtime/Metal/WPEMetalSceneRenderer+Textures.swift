@@ -135,11 +135,15 @@ extension WPEMetalSceneRenderer {
                     next += 1
                     group.addTask(priority: .userInitiated) {
                         try Task.checkCancellation()
-                        // Leave unsupported shaders uncached so the real first-frame compile records them.
-                        guard let result = try? compiler.compile(request, recordFailure: false) else {
-                            return nil
-                        }
-                        return (key: request.translationCacheKey, result: result)
+                        // Child tasks inherit the render actor's isolation (Swift 6);
+                        // detach so compiles actually run on the global executor.
+                        return await Task.detached(priority: .userInitiated) {
+                            // Leave unsupported shaders uncached so the real first-frame compile records them.
+                            guard let result = try? compiler.compile(request, recordFailure: false) else {
+                                return nil
+                            }
+                            return (key: request.translationCacheKey, result: result)
+                        }.value
                     }
                     return true
                 }
@@ -234,7 +238,10 @@ extension WPEMetalSceneRenderer {
                 next += 1
                 group.addTask(priority: .userInitiated) {
                     guard !Task.isCancelled else { return nil }
-                    return WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                    // Detach: task-group children inherit the render actor (Swift 6).
+                    return await Task.detached(priority: .userInitiated) {
+                        WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm)
+                    }.value
                 }
                 return true
             }
@@ -437,6 +444,7 @@ extension WPEMetalSceneRenderer {
         let colorSpace = WPEMetalColorSpace.linear
         try Task.checkCancellation()
         var lastError: Error?
+        var firstResolvedError: Error?
         for candidate in candidates {
             try Task.checkCancellation()
             do {
@@ -463,6 +471,9 @@ extension WPEMetalSceneRenderer {
                         throw CancellationError()
                     } catch {
                         lastError = error
+                        if firstResolvedError == nil, !Self.isMissingCandidateError(error) {
+                            firstResolvedError = error
+                        }
                     }
                 }
                 let resolved = try resolver.resolveImage(
@@ -481,10 +492,13 @@ extension WPEMetalSceneRenderer {
                 throw CancellationError()
             } catch {
                 lastError = error
+                if firstResolvedError == nil, !Self.isMissingCandidateError(error) {
+                    firstResolvedError = error
+                }
             }
         }
         try Task.checkCancellation()
-        throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
+        throw firstResolvedError ?? lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
     /// One texture per image the frame schedule actually references, billed with the same estimator as the texture-cache LRU. `totalUncompressedImageBytes` instead sums every container image at stored payload size, so it over-counts unreferenced images and mis-counts padded/absent mip levels.
@@ -680,6 +694,7 @@ extension WPEMetalSceneRenderer {
         let colorSpace = colorSpace ?? .linear
         try Task.checkCancellation()
         var lastError: Error?
+        var firstResolvedError: Error?
         for candidate in textureCandidates(for: relativePath) {
             try Task.checkCancellation()
             do {
@@ -741,6 +756,9 @@ extension WPEMetalSceneRenderer {
                         throw CancellationError()
                     } catch {
                         lastError = error
+                        if firstResolvedError == nil, !Self.isMissingCandidateError(error) {
+                            firstResolvedError = error
+                        }
                     }
                 }
                 let resolved = try resourceResolver.resolveImage(
@@ -759,10 +777,13 @@ extension WPEMetalSceneRenderer {
                 throw CancellationError()
             } catch {
                 lastError = error
+                if firstResolvedError == nil, !Self.isMissingCandidateError(error) {
+                    firstResolvedError = error
+                }
             }
         }
         try Task.checkCancellation()
-        throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
+        throw firstResolvedError ?? lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
     /// Skipped for two payload shapes the restore path cannot reproduce: mip-chain uploads (only re-uploads level 0), and PNG/JPEG-in-`.tex` animations, whose atlases are rasterized CGImages — the streaming payload hands back the encoded bytes, which would upload as garbage.
@@ -1157,6 +1178,13 @@ extension WPEMetalSceneRenderer {
     private nonisolated static func shouldTryTexturePayload(_ path: String) -> Bool {
         let extensionName = (path as NSString).pathExtension.lowercased()
         return !knownRawImageExtensions.contains(extensionName)
+    }
+
+    /// A `.fileMissing` candidate only proves that path didn't exist; the
+    /// reportable failure is the first error from a file that DID resolve
+    /// (e.g. a `.tex` decode error), not the last bare-name lookup miss.
+    private nonisolated static func isMissingCandidateError(_ error: Error) -> Bool {
+        (error as? SceneResourceResolver.ResolveError) == .fileMissing
     }
 
     /// ImageIO raster extensions taken at face value. A name that merely contains a dot still goes through the materials/ fallback.

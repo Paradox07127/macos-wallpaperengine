@@ -109,7 +109,7 @@ private struct OverlayLayerRowView: View {
             .accessibilityLabel(Text("Remove"))
             .accessibilityValue(Text(verbatim: name))
         case let .toggle(isOn):
-            Toggle("", isOn: Binding(get: { isOn }, set: setEnabled))
+            Toggle("", isOn: Binding(get: { isOn }, set: { setEnabled($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)

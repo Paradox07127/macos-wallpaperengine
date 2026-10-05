@@ -21,7 +21,7 @@ enum WallpaperPreparationFailure {
 @MainActor
 extension ScreenManager {
     /// The first-frame limit for web addresses and scenes, the slowest wallpapers to prepare.
-    nonisolated static let longPreparationTimeout: Duration = .seconds(12)
+    nonisolated static let longPreparationTimeout: Duration = .seconds(20)
 
     #if !LITE_BUILD
     func captureActiveSceneFailure(_ session: any SceneWallpaperRuntime) {

@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import Foundation
+import LiveWallpaperCore
 
 typealias WorkshopPreviewByteFetch = @Sendable (URL) async -> Data?
 
@@ -14,12 +15,17 @@ final class WorkshopPreviewImageLoader {
     /// Tile poster long-edge 800px: 16:9 -> 800x450x4 approx 1.44 MB; 48 MB approx 33 posters so the cost limit binds for tiles.
     nonisolated static let cacheCountLimit = 40
     nonisolated static let cacheCostLimit = 48 * 1024 * 1024
+    /// Delay before each extra fetch of a retryable failure. Without this a
+    /// transient CDN hiccup strands the tile on the placeholder until the view
+    /// is recreated; permanent failures (undecodable, rejected) never retry.
+    nonisolated static let fetchRetryBackoff: [UInt64] = [400_000_000, 1_600_000_000]
 
     /// Keyed by URL and decode size: one preview_url serves tile and hero. Not private (see LocalImageCacheReclaimerTests).
     let assetCache = NSCache<NSString, CachedWorkshopPreviewAsset>()
     private var assetInflight: [String: InflightLoad] = [:]
     private let diskCache: WorkshopPreviewDiskCache
-    private let fetch: WorkshopPreviewByteFetch
+    private let fetch: @Sendable (URL) async -> FetchResult
+    private let retryBackoff: [UInt64]
 
     /// One shared load plus waiter count. The loader task is detached from the view's .task so several tiles can share one fetch; without waiters a sweep would leave every started download running to completion.
     @MainActor
@@ -41,7 +47,8 @@ final class WorkshopPreviewImageLoader {
 
     init(
         diskCache: WorkshopPreviewDiskCache = .shared,
-        fetch: WorkshopPreviewByteFetch? = nil
+        fetch: WorkshopPreviewByteFetch? = nil,
+        retryBackoff: [UInt64] = WorkshopPreviewImageLoader.fetchRetryBackoff
     ) {
         assetCache.countLimit = Self.cacheCountLimit
         assetCache.totalCostLimit = Self.cacheCostLimit
@@ -57,7 +64,16 @@ final class WorkshopPreviewImageLoader {
             delegate: RedirectGuardDelegate(),
             delegateQueue: nil
         )
-        self.fetch = fetch ?? { url in await Self.fetchData(url, session: session) }
+        self.retryBackoff = retryBackoff
+        // An injected byte fetch cannot say why it produced no data, so nil is
+        // treated as retryable — the safer guess for an unknown failure.
+        if let fetch {
+            self.fetch = { url in
+                await fetch(url).map(FetchResult.ok) ?? .retryable("fetch returned no data")
+            }
+        } else {
+            self.fetch = { url in await Self.fetchData(url, session: session) }
+        }
     }
 
     /// Cookieless and cache-less on purpose. Switching urlCache on here would put response headers, and anything cookie-shaped in them, back on disk.
@@ -147,6 +163,22 @@ final class WorkshopPreviewImageLoader {
         NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
+    /// Fetch outcome the retry loop can act on; the reason string is for logs only.
+    private enum FetchResult: Sendable {
+        case ok(Data)
+        case retryable(String)
+        case permanent(String)
+    }
+
+    /// One gated attempt. `.abandoned` is cancellation: the bytes may still be
+    /// stored, but nobody is left to retry on their behalf.
+    private enum LoadVerdict: Sendable {
+        case decoded(WorkshopPreviewAsset)
+        case retryable(String)
+        case permanent(String)
+        case abandoned
+    }
+
     private func performAssetLoad(
         _ url: URL,
         size: WorkshopPreviewSize
@@ -154,23 +186,61 @@ final class WorkshopPreviewImageLoader {
         // Allow-list before anything else, and key the disk entry on the canonical URL: a disk hit never reaches fetchData, so this is the only remaining gate for a host later dropped from the allow-list.
         guard case .allowed(let canonicalURL) =
                 WorkshopCDNHostAllowList.evaluate(url.absoluteString) else { return nil }
+        var attemptIndex = 0
+        while true {
+            switch await attemptLoad(canonicalURL, size: size) {
+            case let .decoded(asset):
+                return asset
+            case .abandoned:
+                return nil
+            case let .retryable(reason) where attemptIndex < retryBackoff.count:
+                logFetchFailure(reason, url: canonicalURL, willRetry: true)
+                // The sleep sits outside the gate so a waiting retry frees its
+                // slot for a visible tile.
+                try? await Task.sleep(nanoseconds: retryBackoff[attemptIndex])
+                attemptIndex += 1
+                guard !Task.isCancelled else { return nil }
+            case let .retryable(reason), let .permanent(reason):
+                logFetchFailure(reason, url: canonicalURL, willRetry: false)
+                return nil
+            }
+        }
+    }
+
+    private func logFetchFailure(_ reason: String, url: URL, willRetry: Bool) {
+        let redacted = WorkshopDiagnosticRedactor.redact(url.absoluteString)
+        let outcome = willRetry ? "retrying" : "giving up"
+        Logger.warning("Workshop preview fetch failed (\(reason), \(outcome)): \(redacted)", category: .workshop)
+    }
+
+    private func attemptLoad(
+        _ canonicalURL: URL,
+        size: WorkshopPreviewSize
+    ) async -> LoadVerdict {
         let diskCache = diskCache
         let fetch = fetch
         return await PreviewWorkGate.shared.run {
             // First act inside the gate: a tile that scrolled away while queued
             // must free its slot rather than make a visible tile wait for it.
-            guard !Task.isCancelled else { return nil }
-            var data = await diskCache.data(for: canonicalURL, size: size)
-            let servedFromDisk = data != nil
-            if servedFromDisk {
+            guard !Task.isCancelled else { return .abandoned }
+            let data: Data
+            let servedFromDisk: Bool
+            if let cached = await diskCache.data(for: canonicalURL, size: size) {
                 PreviewSignpost.event("workshop.diskHit")
+                data = cached
+                servedFromDisk = true
             } else {
+                servedFromDisk = false
                 let fetching = PreviewSignpost.begin("workshop.fetch")
-                data = await fetch(canonicalURL)
+                let result = await fetch(canonicalURL)
                 PreviewSignpost.end("workshop.fetch", fetching)
+                switch result {
+                case let .ok(bytes): data = bytes
+                case let .retryable(reason): return .retryable(reason)
+                case let .permanent(reason): return .permanent(reason)
+                }
             }
             // No cancellation check here: bailing would drop bytes already paid for. A cancelled tile reaches decode and comes back .abandoned, which still stores.
-            guard let data else { return nil }
             let decoding = PreviewSignpost.begin("workshop.decode")
             // Task.detached does not inherit cancellation, so an abandoned tile would hold its gate slot until the decode finished anyway.
             let decode = Task.detached(priority: .userInitiated) { () -> PreviewDecodeOutcome in
@@ -190,8 +260,11 @@ final class WorkshopPreviewImageLoader {
             if !servedFromDisk, outcome.keepsBytes {
                 await diskCache.store(data, for: canonicalURL, size: size)
             }
-            guard case .decoded(let asset) = outcome else { return nil }
-            return asset
+            switch outcome {
+            case let .decoded(asset): return .decoded(asset)
+            case .undecodable: return .permanent("body is not a decodable image")
+            case .abandoned: return .abandoned
+            }
         }
     }
 
@@ -209,9 +282,9 @@ final class WorkshopPreviewImageLoader {
         }
     }
 
-    private nonisolated static func fetchData(_ url: URL, session: URLSession) async -> Data? {
+    private nonisolated static func fetchData(_ url: URL, session: URLSession) async -> FetchResult {
         guard case .allowed(let canonicalURL) = WorkshopCDNHostAllowList.evaluate(url.absoluteString) else {
-            return nil
+            return .permanent("host not allowed")
         }
         var request = URLRequest(url: canonicalURL)
         request.setValue("image/*", forHTTPHeaderField: "Accept")
@@ -222,24 +295,40 @@ final class WorkshopPreviewImageLoader {
         do {
             (bytes, response) = try await session.bytes(for: request)
         } catch {
-            return nil
+            return .retryable("transport error")
         }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let mime = http.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
-              mime.hasPrefix("image/"),
-              http.expectedContentLength <= Int64(maxBytes) else {
-            return nil
+        guard let http = response as? HTTPURLResponse else {
+            return .retryable("non-HTTP response")
+        }
+        guard http.statusCode == 200 else {
+            return isRetryableStatus(http.statusCode)
+                ? .retryable("HTTP \(http.statusCode)")
+                : .permanent("HTTP \(http.statusCode)")
+        }
+        guard let mime = http.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
+              mime.hasPrefix("image/") else {
+            return .permanent("non-image content-type")
+        }
+        guard http.expectedContentLength <= Int64(maxBytes) else {
+            return .permanent("declared content-length over cap")
         }
 
         do {
-            return try await BoundedNetworkFetch.collect(
+            return try await .ok(BoundedNetworkFetch.collect(
                 bytes,
                 expectedContentLength: http.expectedContentLength,
                 byteCap: maxBytes
-            )
+            ))
+        } catch is BoundedNetworkFetch.ResponseTooLarge {
+            return .permanent("body over cap")
         } catch {
-            return nil
+            return .retryable("stream error")
         }
+    }
+
+    /// 408/429/5xx are the statuses a retry can plausibly flip; the rest answer the same way every time.
+    private nonisolated static func isRetryableStatus(_ code: Int) -> Bool {
+        code == 408 || code == 429 || code >= 500
     }
 }
 

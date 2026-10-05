@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import AppKit
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import MetalKit
 
@@ -246,7 +247,7 @@ extension WPEMetalSceneRenderer {
         particleIndependentSystems = particleSystems.filter { independentIDs.contains(ObjectIdentifier($0)) }
         particleSystems = particleIndependentSystems
         // An event root must not change unrelated roots' existing warm-up/RNG path.
-        prewarmParticleSystems(skippingObjectIDs: hiddenObjectIDs)
+        await prewarmParticleSystems(skippingObjectIDs: hiddenObjectIDs, on: actor)
         debugStage("particles.prewarm.done", "independent=\(particleIndependentSystems.count)")
         if !eventRoots.isEmpty {
             particleInstanceCoordinator = WPEParticleInstanceCoordinator(
@@ -270,19 +271,55 @@ extension WPEMetalSceneRenderer {
     }
 
     /// `starttime` is a simulation offset.
-    private func prewarmParticleSystems(skippingObjectIDs hiddenObjectIDs: Set<String>) {
+    private func prewarmParticleSystems(
+        skippingObjectIDs hiddenObjectIDs: Set<String>,
+        on actor: isolated WPEDisplayRenderActor
+    ) async {
         guard !particleSystems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
             ? WPEOracleMode.loadFrameOverride()?.baseTime
             : nil
+        // Each job owns a distinct system; `prewarm` mutates only that
+        // instance's CPU buffers and RNG, so the sims are independent.
+        struct Job: @unchecked Sendable {
+            let system: WPEParticleSystem
+            let seconds: Double
+        }
+        var jobs: [Job] = []
         for system in particleSystems where !(system.scriptParticleObjectID.map(hiddenObjectIDs.contains) ?? false) {
             guard let seconds = Self.particlePrewarmSeconds(
                 for: system.definition,
                 manualPrewarmEnabled: Self.particlePrewarmEnabled,
                 oracleReplaySeconds: oracleReplaySeconds
             ) else { continue }
-            system.prewarm(simulatedSeconds: seconds, presimulateDelay: true)
+            jobs.append(Job(system: system, seconds: seconds))
         }
+        // Serial pre-simulation is a fixed multi-second hit during load
+        // (workshop 2449578435: ~9s for 9 systems → past the prepare deadline).
+        let width = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+        var durations: [(String, Double)] = []
+        await withTaskGroup(of: (String, Double).self) { group in
+            var next = 0
+            func spawn() -> Bool {
+                guard next < jobs.count, !Task.isCancelled else { return false }
+                let job = jobs[next]; next += 1
+                group.addTask {
+                    // Child tasks inherit the render actor's isolation (Swift 6);
+                    // detach so the CPU sim actually runs on the global executor.
+                    let elapsed = await Task.detached(priority: .userInitiated) { () -> Duration in
+                        guard !Task.isCancelled else { return .zero }
+                        let start = ContinuousClock.now
+                        job.system.prewarm(simulatedSeconds: job.seconds, presimulateDelay: true)
+                        return ContinuousClock.now - start
+                    }.value
+                    return (job.system.scriptParticleObjectID ?? "?", Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18)
+                }
+                return true
+            }
+            for _ in 0 ..< width where spawn() {}
+            while let result = await group.next() { durations.append(result); _ = spawn() }
+        }
+        debugStage("particles.prewarm.per-system", "\(durations.map { "\($0.0)=\(String(format: "%.2f", $0.1))s" }.joined(separator: " "))")
     }
 
     /// `layerVisibility` is the live (or pre-script snapshot) override map; an object without an override falls back to its authored `visible`.
@@ -453,7 +490,16 @@ extension WPEMetalSceneRenderer {
         guard let data = try? entryResolver.data(relativePath: particlePath) else {
             return nil
         }
-        return WPEParticleDefinitionParser.parse(data: data)
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: [.allowFragments]) as? [String: Any] else {
+            return nil
+        }
+        var diagnostics: [WPESceneDiagnostic] = []
+        let definition = WPEParticleDefinitionParser.parse(dictionary: json, diagnostics: &diagnostics)
+        for diagnostic in diagnostics {
+            recordSceneTestingMessage("Particle \(particlePath): \(diagnostic.severity.rawValue): \(diagnostic.message)")
+            Logger.log(diagnostic.message, category: .wpeRender, level: diagnostic.severity.logLevel)
+        }
+        return definition
     }
 
     @discardableResult

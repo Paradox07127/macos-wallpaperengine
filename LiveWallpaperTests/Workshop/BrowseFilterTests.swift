@@ -1121,7 +1121,6 @@ struct BrowseRequestShapeTests {
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
-        defer { await model.appearRefresh?.value }
         #expect(model.preferredSort == .mostPopular)
 
         store.settings.workshopDefaultSort = "lastUpdated"
@@ -1134,6 +1133,7 @@ struct BrowseRequestShapeTests {
         // proves the fetch reaches the stub session and not the real network.
         await model.reload()
         #expect(BrowseReloadStub.requestCount(queryType: "21") >= 1)
+        await model.appearRefresh?.value
     }
 
     @Test("Control: a sort picked this session survives a settings change on reappear")
@@ -1145,7 +1145,6 @@ struct BrowseRequestShapeTests {
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
-        defer { await model.appearRefresh?.value }
 
         model.updateSort(.newest)
         store.settings.workshopDefaultSort = "lastUpdated"
@@ -1155,6 +1154,7 @@ struct BrowseRequestShapeTests {
 
         await model.reload()
         #expect(BrowseReloadStub.requestCount(queryType: "1") >= 1)
+        await model.appearRefresh?.value
     }
 
     @Test("Returning after the key was rejected off-page rebuilds Browse for the public page")
@@ -1168,7 +1168,6 @@ struct BrowseRequestShapeTests {
             services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() },
             publicSource: Self.makeStubbedPublicSource()
         )
-        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage && !model.usesKeylessSearch)
 
@@ -1178,6 +1177,7 @@ struct BrowseRequestShapeTests {
         await Task.yield()
 
         #expect(model.currentRequest.numPerPage == WorkshopPublicBrowseURL.itemsPerPage)
+        await model.appearRefresh?.value
     }
 
     @Test("Returning after the presets switch flipped off-page reloads with the new exclusion")
@@ -1189,7 +1189,6 @@ struct BrowseRequestShapeTests {
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
-        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage && model.currentRequest.excludedTags.contains("Preset"))
 
@@ -1198,6 +1197,7 @@ struct BrowseRequestShapeTests {
         await Task.yield()
 
         #expect(!model.currentRequest.excludedTags.contains("Preset"))
+        await model.appearRefresh?.value
     }
 
     @Test("Control: returning with the key path and settings unchanged keeps the loaded page")
@@ -1208,7 +1208,6 @@ struct BrowseRequestShapeTests {
         defer { try? FileManager.default.removeItem(at: servicesDirectory) }
         services.hasWebAPIKey = true
         let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
-        defer { await model.appearRefresh?.value }
         await model.reload()
         try #require(model.hasLoadedPage)
 
@@ -1216,6 +1215,7 @@ struct BrowseRequestShapeTests {
         await Task.yield()
 
         #expect(!model.isLoading, "a reload was started")
+        await model.appearRefresh?.value
     }
 
     // MARK: - W4-B: a rejected key browses keyless (D11 / D23)

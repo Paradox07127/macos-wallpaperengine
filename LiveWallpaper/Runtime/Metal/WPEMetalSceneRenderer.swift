@@ -347,6 +347,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var loadDiagnostics: SceneLoadDiagnostic?
     var renderGraph: WPERenderGraph?
     var renderPipeline: WPEPreparedRenderPipeline?
+    var sceneTestingObjectSummary = ""
+    var sceneTestingMessages: [String] = []
     var lastCanonicalRotation = WPECanonicalCompositeRotationReport(enabled: false, decisions: [:])
     var lastFullFramePassthroughElision = WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:])
     #if DEBUG

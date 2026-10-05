@@ -10,7 +10,6 @@ struct WorkshopSteamDeletedPruneTests {
     @Test("Pruning drops an item Steam deleted with its bookmarks, variants and marks, and records no tombstone")
     func prunedItemTakesItsSavedRecords() async throws {
         let library = try PruneLibrary(itemCount: 2)
-        defer { await library.discard() }
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
         let (gone, kept) = (library.ids[0], library.ids[1])
         let goneOrigin = try #require(library.entry(gone)).origin
@@ -29,24 +28,24 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(library.bookmarks.bookmarks.map(\.id) == [other.id], "the deleted item's bookmark or saved variant stayed")
         #expect(library.marks.ids == ["workshop:\(kept)", "bookmark:\(other.id)"])
         #expect(library.manager.loadGlobalSettings().deletedWorkshopIDs.isEmpty)
+        await library.discard()
     }
 
     @Test("Pruning keeps every present folder, whether or not the acf lists it yet")
     func pruneKeepsPresentFolders() async throws {
         let library = try PruneLibrary(itemCount: 3)
-        defer { await library.discard() }
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
 
         try library.steamDeletes(0, listing: [library.ids[1]])
         library.coordinator.pruneSteamDeletedImports(using: library.doctor)
 
         #expect(library.importedIDs == [library.ids[1], library.ids[2]])
+        await library.discard()
     }
 
     @Test("A download SteamCMD finishes prunes once and keeps the item it just downloaded")
     func successfulRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
-        defer { await library.discard() }
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
         try library.steamDeletes(0, listing: [library.ids[1]])
         let runs = RunCount()
@@ -58,12 +57,12 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(await waitUntil { downloads.phase(for: itemID) == .succeeded })
         #expect(runs.value == 1)
         #expect(library.importedIDs == [library.ids[1]])
+        await library.discard()
     }
 
     @Test("A download SteamCMD fails still prunes once")
     func failedRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
-        defer { await library.discard() }
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
         try library.steamDeletes(0, listing: [library.ids[1]])
         let runs = RunCount()
@@ -75,12 +74,12 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(await waitUntil { downloads.phase(for: itemID) == .failed("scripted failure") })
         #expect(runs.value == 1)
         #expect(library.importedIDs == [library.ids[1]])
+        await library.discard()
     }
 
     @Test("A cancelled download prunes once when SteamCMD returns; the retry the mutation gate refused does not")
     func cancelledRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
-        defer { await library.discard() }
         await library.coordinator.ingestExistingDownloads(using: library.doctor)
         let runs = RunCount()
         let downloads = library.downloads(counting: runs)
@@ -106,6 +105,7 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(library.importedIDs == [library.ids[1]], "the cancelled run's prune skipped the item Steam deleted")
         try await Task.sleep(for: .milliseconds(100))
         #expect(runs.value == 1)
+        await library.discard()
     }
 
     private func waitUntil(_ condition: () -> Bool) async -> Bool {

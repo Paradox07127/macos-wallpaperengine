@@ -267,7 +267,7 @@ struct DeferredApplyCoordinatorTests {
     @Test("Cancelling the initial import rejects its late ready result before library publication")
     func cancelledInitialImportCannotPublish() async throws {
         let fixture = try DownloadAttemptFixture(name: "cancelledInitialImport", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let downloads = fixture.downloads
         let attempt = try #require(downloads.download(itemID: 420_000_042, title: "Initial", using: fixture.downloader))
         let task = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
@@ -287,12 +287,13 @@ struct DeferredApplyCoordinatorTests {
         #expect(downloads.phase(for: 420_000_042) == .idle)
         #expect(!downloads.isBusy(420_000_042))
         #expect(downloads.activeAttempt(for: 420_000_042) == nil)
+        await fixture.discard()
     }
 
     @Test("Late dependency reimport cannot resurrect a deleted item or overwrite a retry", arguments: [false, true])
     func cancelledDependencyReimportCannotPublish(startRetry: Bool) async throws {
         let fixture = try DownloadAttemptFixture(name: "cancelledReimport-\(startRetry)")
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let downloads = fixture.downloads
         let first = try #require(downloads.download(itemID: 420_000_042, title: "Old", using: fixture.downloader))
         let oldTask = try #require(downloads.downloadTaskForTesting(itemID: 420_000_042))
@@ -337,12 +338,13 @@ struct DeferredApplyCoordinatorTests {
         #expect(first.outcome == .cancelled)
         #expect(!downloads.isBusy(420_000_042) && downloads.activeAttempt(for: 420_000_042) == nil)
         #expect(!downloads.fetchingDependencies.contains(420_000_042))
+        await fixture.discard()
     }
 
     @Test("A current dependency reimport publishes the resolved library item and success once")
     func currentDependencyReimportPublishes() async throws {
         let fixture = try DownloadAttemptFixture(name: "currentReimport")
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Current", using: fixture.downloader))
         let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
         let reachedReimport = await fixture.waitForReimport()
@@ -360,12 +362,13 @@ struct DeferredApplyCoordinatorTests {
         #expect(!fixture.downloads.isBusy(420_000_042))
         #expect(fixture.toasts.lastEvent?.isSuccess == true)
         #expect(fixture.toasts.lastEvent?.token == 1)
+        await fixture.discard()
     }
 
     @Test("Downloading an item the library holds from a local copy fails without downloading", .timeLimit(.minutes(1)))
     func downloadOfItemHeldByLocalCopyIsRefused() async throws {
         let fixture = try DownloadAttemptFixture(name: "localCopyConflict", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
         fixture.gate.release()
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader))
@@ -379,12 +382,14 @@ struct DeferredApplyCoordinatorTests {
         #expect(fixture.downloader.requestedIDs.isEmpty)
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
         #expect(fixture.toasts.lastEvent?.isSuccess == false)
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("Updating the library's own Steam copy of an item still downloads it", .timeLimit(.minutes(1)))
     func updateOfLibrarySteamCopyDownloads() async throws {
         let fixture = try DownloadAttemptFixture(name: "steamCopyUpdate", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         try fixture.recordLibraryEntry(in: fixture.itemFolder, title: "Steam copy")
         fixture.gate.release()
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Steam copy", using: fixture.downloader))
@@ -396,12 +401,14 @@ struct DeferredApplyCoordinatorTests {
         }
         #expect(fixture.downloader.requestedIDs == [420_000_042])
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Initial video"])
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("A local copy imported while the download runs keeps the download out of the library", .timeLimit(.minutes(1)))
     func localCopyImportedMidDownloadBlocksRecording() async throws {
         let fixture = try DownloadAttemptFixture(name: "midDownloadConflict", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader))
         let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
         let enteredImport = await fixture.waitForReimport()
@@ -416,12 +423,14 @@ struct DeferredApplyCoordinatorTests {
         #expect(reason.contains("Local copy"))
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
         #expect(fixture.toasts.lastEvent?.isSuccess == false)
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("Downloading over an approved local copy records the Steam item beside it", .timeLimit(.minutes(1)))
     func downloadReplacingApprovedLocalCopyRecordsSteamItem() async throws {
         let fixture = try DownloadAttemptFixture(name: "approvedLocalCopy", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let local = try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
         fixture.gate.release()
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader, replacing: local))
@@ -435,12 +444,14 @@ struct DeferredApplyCoordinatorTests {
         let history = fixture.settings.loadGlobalSettings().recentWPEImports
         #expect(history.contains { $0.origin.steamFolderItemID == "420000042" })
         #expect(history.contains { $0.origin.title == "Local copy" && $0.origin.steamFolderItemID == nil })
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("Another local copy imported while an approved download runs keeps it out of the library", .timeLimit(.minutes(1)))
     func otherLocalCopyImportedMidApprovedDownloadBlocksRecording() async throws {
         let fixture = try DownloadAttemptFixture(name: "approvedMidDownloadConflict", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         let copyA = try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/a", isDirectory: true), title: "Copy A")
         let attempt = try #require(fixture.downloads.download(itemID: 420_000_042, title: "Remote", using: fixture.downloader, replacing: copyA))
         let task = try #require(fixture.downloads.downloadTaskForTesting(itemID: 420_000_042))
@@ -456,12 +467,14 @@ struct DeferredApplyCoordinatorTests {
         #expect(reason.contains("Copy B"))
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Copy B"])
         #expect(fixture.toasts.lastEvent?.isSuccess == false)
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("Passing a Steam entry as the replacement does not approve the download", .timeLimit(.minutes(1)))
     func steamEntryAsReplacementIsRefused() async throws {
         let fixture = try DownloadAttemptFixture(name: "steamReplacement", startsWithDependencies: false)
-        defer { fixture.gate.release(); await fixture.discard(); fixture.defaults.discard() }
+        defer { fixture.gate.release(); fixture.defaults.discard() }
         try fixture.recordLibraryEntry(in: fixture.root.appendingPathComponent("local/copy", isDirectory: true), title: "Local copy")
         let steamEntry = try fixture.libraryEntry(in: fixture.itemFolder, title: "Steam copy")
         try #require(steamEntry.origin.steamFolderItemID == "420000042")
@@ -476,6 +489,8 @@ struct DeferredApplyCoordinatorTests {
         #expect(reason.contains("Local copy"))
         #expect(fixture.downloader.requestedIDs.isEmpty)
         #expect(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Local copy"])
+        fixture.gate.release()
+        await fixture.discard()
     }
 
     @Test("Only a local copy in the library is offered for replacement", .timeLimit(.minutes(1)))

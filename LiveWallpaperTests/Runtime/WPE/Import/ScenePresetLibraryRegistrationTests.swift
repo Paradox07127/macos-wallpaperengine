@@ -30,7 +30,6 @@ struct ScenePresetLibraryRegistrationTests {
     @Test("A re-download refreshes values but keeps the name the user gave it")
     func redownloadPreservesLocalRename() async throws {
         let (sut, root) = try manager()
-        defer { await TestScratch.discard(root, flushing: sut) }
         await sut.registerScenePreset(workshopPreset(name: "Steam Title", values: ["a": .number(1)]))
         sut.renameScenePreset(id: "3471679253", to: "My Night Look")
 
@@ -42,22 +41,22 @@ struct ScenePresetLibraryRegistrationTests {
         // Control: the refresh must still land, or this "fix" would just be
         // pinning presets to whatever was downloaded first.
         #expect(stored.values == ["a": .number(2)])
+        await TestScratch.discard(root, flushing: sut)
     }
 
     @Test("Control: without a rename the incoming title is adopted")
     func titleUpdatesWhenUserNeverRenamed() async throws {
         let (sut, root) = try manager()
-        defer { await TestScratch.discard(root, flushing: sut) }
         await sut.registerScenePreset(workshopPreset(name: "Old Title", values: ["a": .number(1)]))
         await sut.registerScenePreset(workshopPreset(name: "New Title", values: ["a": .number(1)]))
 
         #expect(sut.loadGlobalSettings().scenePresets["3471679253"]?.name == "New Title")
+        await TestScratch.discard(root, flushing: sut)
     }
 
     @Test("The descriptor hook runs after the library write and before observers")
     func thenPersistRunsBetweenWriteAndNotification() async throws {
         let (sut, root) = try manager()
-        defer { await TestScratch.discard(root, flushing: sut) }
         // Written on the main actor and read from the notification observer,
         // which this suite's `@MainActor` isolation posts on the same actor —
         // the ordering under test is exactly what makes the two never overlap.
@@ -76,5 +75,6 @@ struct ScenePresetLibraryRegistrationTests {
 
         #expect(libraryVisibleInsideHook != nil)
         #expect(notifiedBeforeHook == false)
+        await TestScratch.discard(root, flushing: sut)
     }
 }

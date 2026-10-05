@@ -27,6 +27,9 @@ extension WPEMetalSceneRenderer {
         operation: WPESceneScriptOperation,
         token: WPESceneScriptInstanceLimitToken
     ) -> Bool {
+        if isCurrentSceneScriptLoad(token) {
+            recordSceneTestingMessage("SceneScript \(operation.rawValue) failed: \(error)")
+        }
         let reason: WPESceneScriptFailClosedReason
         switch error {
         case WPESceneScriptError.executionTimedOut:
@@ -44,6 +47,7 @@ extension WPEMetalSceneRenderer {
         _ token: WPESceneScriptInstanceLimitToken
     ) -> Bool {
         guard let reason = token.failureReason else { return false }
+        recordSceneTestingMessage("SceneScript disabled; baked presentation retained: \(reason)")
         clearSceneScriptRuntimeState()
         Logger.warning(
             "Scene \(descriptor.workshopID) kept its baked presentation and disabled SceneScript: \(reason)",
