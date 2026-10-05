@@ -92,7 +92,7 @@ WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEA
     WPEBloomContractTests WPESceneModelNormalMatrixTests WPEMetalTextureCopyTests WPEEffectFBOSwapTests \
     WPEAlphaPipelineContractTests WPETexAnimatedTextureSourceSuspendTests WPETexLazyAnimatedTextureSourceTests \
     WPEColorDomainProbeTests WPEBuiltinColorDomainTests WPEOraclePixelProbeTests WPEOnDemandVideoLifecycleTests WPECanonicalUniformTraceTests \
-    WPECanonicalPassRawStorageTests \
+    WPECanonicalPassRawStorageTests WPEVideoOutputCapTests WPEVideoTextureSourceTeardownTests \
     WPEShaderTranslationCacheSchemaTests WPEUniqueEffectHistoryTests \
     WPEUniformResolutionPlanTests WPEMetalSolidSceneRunTests WPERenderGraphBuilderTests \
     WPEMetalSceneRendererTests WPESceneScriptWiringTests WPETransformScriptLayerPresentationTests WPESceneHibernateTests WPEMediaTextureProviderTests \

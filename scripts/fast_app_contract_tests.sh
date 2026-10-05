@@ -30,6 +30,7 @@ PARALLEL_SUITES=(
   # Capture lifecycle resets use fake sources.
   AudioSpectrumBrokerTests
   AudioSpectrumCadenceTests
+  AudioSpectrumProcessorTests
   SettingsPersistenceFailureTests
   SettingsManagerParkedConfigurationTests
   # One grid inset and one column ladder across every library page.
