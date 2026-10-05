@@ -15,11 +15,12 @@ struct WPESceneCustomSettingsCard: View {
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
     @State private var editor = Editor()
     @State private var owner: SceneSettingsOwner?
+    @State private var translator = WPEPropertyLabelTranslator()
 
     var body: some View {
         VStack(spacing: 0) {
             if let owner {
-                SceneSettingsCardContent(owner: owner, isExpanded: $isExpanded)
+                SceneSettingsCardContent(owner: owner, translator: translator, isExpanded: $isExpanded)
             }
         }
         .onAppear {
@@ -29,6 +30,10 @@ struct WPESceneCustomSettingsCard: View {
             } else {
                 makeOwner()
             }
+            translator.enqueue(schema: schema)
+        }
+        .onChange(of: schema) { _, next in
+            translator.enqueue(schema: next)
         }
         .onReceive(NotificationCenter.default.publisher(for: .scenePresetLibraryDidChange)) { _ in
             owner?.reloadPresetLibrary()
@@ -192,6 +197,7 @@ struct WPESceneCustomSettingsCard: View {
 
 struct SceneSettingsCardContent: View {
     let owner: SceneSettingsOwner
+    let translator: WPEPropertyLabelTranslator
     @Binding var isExpanded: Bool
 
     var body: some View {
@@ -206,12 +212,13 @@ struct SceneSettingsCardContent: View {
                 content: {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                         presetWell
-                        SceneSettingsRows(owner: owner)
+                        SceneSettingsRows(owner: owner, translator: translator)
                     }
                 }
             )
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
+        .wpePropertyLabelTranslation(translator)
     }
 
     var presetWell: some View {
@@ -250,6 +257,7 @@ struct SceneSettingsCardContent: View {
 struct SceneSettingsRows: View {
     private typealias ValueLogic = PropertyValueLogic
     let owner: SceneSettingsOwner
+    let translator: WPEPropertyLabelTranslator
     var isConsole = false
     private var editor: WPESceneCustomSettingsCard.Editor {
         owner.editor
@@ -347,7 +355,7 @@ struct SceneSettingsRows: View {
             editor.toggleSection(section.id)
         } label: {
             HStack(spacing: 8) {
-                Text(verbatim: section.title)
+                Text(verbatim: translator.displayText(for: section.title))
                     .font(DesignTokens.Typography.bodyEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -368,6 +376,7 @@ struct SceneSettingsRows: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .wpeAuthorLabelHelp(translator.helpText(for: section.title))
         .accessibilityAddTraits(.isHeader)
     }
 
@@ -379,6 +388,8 @@ struct SceneSettingsRows: View {
         let isChanged = owner.changedKeys.contains(property.key)
         let changedColor = isConsole ? DesignTokens.EditDesk.Colors.warning : DesignTokens.Colors.Status.warning
         let rowIconColor = isChanged ? changedColor : .accentColor
+        let title = translator.displayText(for: property.displayText)
+        let titleHelp = translator.helpText(for: property.displayText)
         // The tint is the visual cue; the badge is what VoiceOver reads.
         let changedBadge: SettingRowTitleBadge? = isChanged
             ? SettingRowTitleBadge(
@@ -393,20 +404,21 @@ struct SceneSettingsRows: View {
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
                 Toggle("", isOn: boolBinding(for: property))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .slider:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
                 if isConsole {
@@ -415,7 +427,7 @@ struct SceneSettingsRows: View {
                         in: ValueLogic.sliderRange(for: property),
                         quantizationStep: ValueLogic.sliderStep(for: property),
                         owner: SliderOwner(scene: owner.sceneIdentity, propertyKey: property.key),
-                        accessibilityLabel: Text(verbatim: property.displayText),
+                        accessibilityLabel: Text(verbatim: title),
                         accessibilityValue: { Text(verbatim: ValueLogic.formattedNumber($0, for: property)) },
                         write: { numberBinding(for: property).wrappedValue = $0 },
                         readout: { value in
@@ -439,7 +451,7 @@ struct SceneSettingsRows: View {
                         )
                         .frame(width: DesignTokens.Inspector.sliderWidth)
                         .controlSize(.small)
-                        .accessibilityLabel(Text(verbatim: property.displayText))
+                        .accessibilityLabel(Text(verbatim: title))
                         .accessibilityValue(Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property)))
 
                         Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property))
@@ -449,13 +461,14 @@ struct SceneSettingsRows: View {
                     }
                 }
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
             let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
                 if property.options.isEmpty {
@@ -469,7 +482,7 @@ struct SceneSettingsRows: View {
                                 .tag(currentValue)
                         }
                         ForEach(property.options) { option in
-                            Text(verbatim: option.displayLabel)
+                            Text(verbatim: translator.displayText(for: option.displayLabel))
                                 .tag(option.value)
                         }
                     }
@@ -479,34 +492,37 @@ struct SceneSettingsRows: View {
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)
                     .layoutPriority(1)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
                 }
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .color:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
                 ColorPicker("", selection: colorBinding(for: property), supportsOpacity: false)
                     .labelsHidden()
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .textinput:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
                 TextField("", text: stringBinding(for: property))
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 132)
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         // Only the interactive types reach here: the presentation's `isInteractive`
         // filter drops file/directory/text/unsupported and turns `group` into a
         // section boundary before any row is built.

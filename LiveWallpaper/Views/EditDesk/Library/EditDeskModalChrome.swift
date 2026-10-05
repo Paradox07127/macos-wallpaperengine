@@ -111,11 +111,13 @@ struct EditDeskModalChrome<Panel: View>: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
-            Text(verbatim: title)
+            Text(verbatim: title.translatedWallpaperName)
                 .font(DesignTokens.EditDesk.Typography.modalTitle)
                 .lineLimit(2)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, minHeight: ModalGeometry.iconButtonSize, alignment: .leading)
+                .help(Text(verbatim: title))
+                .wpeTranslateWallpaperName(title)
             ForEach(actions) { action in
                 GlassIconButton(action.symbol, tint: action.tint, role: action.isDestructive ? .destructive : nil, action: action.perform)
                     .help(Text(verbatim: action.title))

@@ -53,7 +53,8 @@ struct DetailHero<HUD: View>: View {
                 y: DesignTokens.EditDesk.Shadow.workshopCard.y
             )
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text(verbatim: "\(status.title), \(status.kindLine)"))
+            .accessibilityLabel(Text(verbatim: "\(status.title.translatedWallpaperName), \(status.kindLine)"))
+            .wpeTranslateWallpaperName(status.title)
             .contentShape(shape)
             .onContinuousHover { phase in
                 switch phase {
@@ -107,8 +108,9 @@ struct DetailHero<HUD: View>: View {
 
     private var titleChip: some View {
         chip {
-            Text(verbatim: status.title)
+            Text(verbatim: status.title.translatedWallpaperName)
                 .font(DesignTokens.EditDesk.Typography.cardTitle)
+                .help(Text(verbatim: status.title))
             Text(verbatim: status.kindLine)
                 .font(DesignTokens.EditDesk.Typography.metaMono)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))

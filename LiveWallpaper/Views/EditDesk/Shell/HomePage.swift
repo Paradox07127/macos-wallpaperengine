@@ -163,6 +163,9 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .onChange(of: page.library?.visibleItems) { page.syncShelf() }
+                #if !LITE_BUILD
+                .onChange(of: WPEPropertyLabelTranslator.wallpaperNames.translated) { page.syncShelf() }
+                #endif
                 // State refreshes rewrite `stage.displays` without rebuilding the cards, whose capsules wave by it.
                 .onChange(of: page.drawingDisplayIDs) { page.syncShelf() }
                 // The rename path: a display's drawn name comes out of these rows. Watched on the
@@ -819,7 +822,7 @@ struct HomePage: View {
 
     private var hoverCaption: String? {
         guard let id = stage.hoveredCard, let item = library?.items.first(where: { $0.id == id }) else { return nil }
-        return item.title + " · " + item.kind.localizedName
+        return item.title.translatedWallpaperName + " · " + item.kind.localizedName
     }
 
     /// The name rides over the card the pointer is on: inside the thumbnail the card to the right
@@ -959,7 +962,7 @@ struct HomePage: View {
                                     .buttonStyle(.plain)
                                     .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
                                     .contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }
-                                    .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title, kind: item.kind)))
+                                    .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title.translatedWallpaperName, kind: item.kind)))
                                     .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
                                     .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
                                     .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
@@ -1329,6 +1332,9 @@ struct HomePage: View {
     private func syncShelf() {
         guard let library else { return }
         let visible = library.visibleItems
+        #if !LITE_BUILD
+        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: visible.map(\.title))
+        #endif
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         stage.shelfRenderBudget = shelfCapacity
         // The whole library goes on the shelf; the stage builds layers for the slice it draws and
@@ -1336,7 +1342,7 @@ struct HomePage: View {
         stage.shelfItems = visible.map { item in
             StageCard(
                 id: item.id,
-                title: item.title,
+                title: item.title.translatedWallpaperName,
                 metaLine: metaLine(for: item),
                 thumbnail: item.thumbnail.flatMap { thumbnails.cached($0, pixelSize: Self.thumbnailPixelSize, scale: scale) },
                 nowPlaying: NowPlayingBadge(on: item.onDisplays, among: stage.displays),
@@ -1853,10 +1859,11 @@ struct LibraryGridTile: View {
             }
             .allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.title)
+                Text(verbatim: item.title.translatedWallpaperName)
                     .font(DesignTokens.EditDesk.Typography.cardTitle)
                     .foregroundStyle(DesignTokens.Colors.overlayForeground)
                     .lineLimit(1)
+                    .help(Text(verbatim: item.title))
                 if let status = item.statusBadge {
                     Text(verbatim: status)
                         .font(DesignTokens.EditDesk.Typography.metaMono)
@@ -1890,7 +1897,8 @@ struct LibraryGridTile: View {
             isHovering = $0
             preview?.settle(item.id, hovering: $0)
         }
-        .accessibilityLabel(Text(verbatim: item.title))
+        .accessibilityLabel(Text(verbatim: item.title.translatedWallpaperName))
+        .wpeTranslateWallpaperName(item.title)
         // LazyVGrid may keep a scrolled-away tile alive, and any image the tile holds with it.
         .onAppear {
             // Bumped on the way back rather than on the way out, so the id never changes off screen.
