@@ -46,7 +46,7 @@ flowchart TD
 ```
 
 - `LiveWallpaper/App/LiveWallpaperApp.swift` constructs app-lifetime services,
-  manages settings/onboarding windows, and coordinates startup and termination.
+  hosts the management window and its floating tour, and coordinates startup and termination.
 - `LiveWallpaper/App/ScreenManager.swift` and its extensions manage display
   identity, configuration, policy and runtime reconciliation. The class delegates
   playback transitions, automation and persistence to dedicated coordinators.
@@ -58,7 +58,26 @@ flowchart TD
 - Monitor, music and particles have separate window owners and per-display
   settings. Sharing a display does not make them part of the wallpaper decoder.
 
-## Application commands and file layout
+## Management workspace
+
+`SettingsWindowHost` always hosts `EditDeskRoot`; the old UI switch is retired.
+`EditDeskRouter` owns page/display navigation. The root owns window-scoped
+library filters, Workshop browsing, guidance, toasts and undo history.
+
+`HomePage` connects SwiftUI controls to the AppKit/CALayer stage through
+`EditDeskStageModel`. Overview, shelf and expanded library share the stage's
+progress model; display detail is coordinated by `DisplayDetailHost`.
+Wallpaper applies go through `ApplyRouter`, with per-display cancellation and
+an explicit applied/failure outcome. Covers use captures/caches rather than
+creating a second live wallpaper session.
+
+`OverlayEditorSession` connects the common widget/music/clock canvas to product
+setters. Editor composition does not merge their runtime window owners.
+Settings remains a grouped, searchable sidebar inside the same management
+window. The Welcome Tour and page guides are overlays, not separate onboarding
+windows. See [Workspace](workspace.md) for the user workflow.
+
+## Product commands and file layout
 
 `Application/Configuration/DisplayConfigurationController.swift` is the shared
 product commit entry for display configuration. UI and playback callers delegate
@@ -169,7 +188,7 @@ Shared components and tokens live under Core's `UI/`; the contract is
 preserve five-language coverage and accessibility behavior.
 
 `make verify` orders structure/localization, tooling contracts, changed-line
-lint, package tests and the app contract shard. The complete signed Pro suite
-and Lite/archive release checks are separate, broader gates. A passing shard
+lint, package tests, the app contract shard and signed WPE/transition Metal suites.
+The complete signed Pro suite and Lite/archive release checks are separate, broader gates. A passing shard
 is not a full application run. See [Building](building.md) and
 [Releasing](releasing.md) for exact commands.

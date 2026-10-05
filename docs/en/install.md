@@ -53,9 +53,12 @@ leave that feature unavailable; it does not require enabling unrelated features.
 
 ## First-run onboarding
 
-Choose **Import a File**, **Apple Aerials**, or drag a supported file/project
-into the app. With multiple displays, select one or all. You can skip onboarding
-and configure displays in Settings, or reopen **About → Welcome Tour**.
+The floating **Welcome Tour** highlights controls in the management window.
+Close it to start immediately, or reopen **Settings → About → Welcome Tour**.
+In **Overview**, drag a supported file/project onto a display or click a display
+to select a source. **Wallpaper Library** brings your saved content together;
+Apple Aerials use videos already downloaded on your Mac.
+See the [workspace guide](workspace.md) for navigation.
 Workshop setup is separate; see [Quick Start](quick-start.md#8-workshop-setup-pro).
 
 ## Updates

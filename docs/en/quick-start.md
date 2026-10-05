@@ -8,13 +8,18 @@ Install steps live in [install.md](install.md); the full feature ↔ code map in
 
 ## 1) First launch
 
-After [installing](install.md), launch Loomscreen. Onboarding opens:
+After [installing](install.md), launch Loomscreen. A floating **Welcome Tour**
+highlights the controls on the actual workspace. You can close it and start
+using the app, reopen it from **Settings → About → Welcome Tour**, or use a
+page's **Explain This Page** button for a shorter guide.
 
-- **Import a File** → video (`mp4`/`m4v`/`mov`/`avi`), web page (`.html` or a folder), or — on Pro — a Wallpaper Engine scene folder.
-- **Apple Aerials** → pick from the aerial videos already downloaded on your Mac.
-- With multiple displays, apply to one display or choose **All Displays**.
+Start in **Overview**:
 
-Skipping onboarding is fine — everything below works from the Settings window.
+- Drag a video (`mp4`/`m4v`/`mov`/`avi`), web folder or, in Pro, a Wallpaper Engine project onto a display.
+- Open a display to choose a file, enter a web source or choose from **Wallpaper Library**, including Apple Aerials already downloaded on your Mac.
+- Apply to a named display, or use the apply-to-all action for the same wallpaper on every display.
+
+[Workspace guide](workspace.md) explains the overview, shelf, library and display editor.
 
 ## 2) Know the two surfaces
 

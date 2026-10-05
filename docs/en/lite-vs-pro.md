@@ -2,7 +2,7 @@
 
 **English** · [简体中文](../zh-Hans/lite-vs-pro.md)
 
-Both editions are built from one codebase. The split is **which renderers and
+Both editions are free and open source under MIT, built from one codebase. The split is **which renderers and
 tools ship**, not which UI you get — Lite is a lightweight runtime, not a
 stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 
@@ -17,7 +17,7 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | Wallpaper transitions and opening animation | ✅ | ✅ |
 | Saved wallpapers, display schemes and configuration backup | ✅ | ✅ |
 | Particle & weather-reactive overlays | ✅ | ✅ |
-| Monitor board (ten widget types, including Weather and Agent Session) | ✅ | ✅ |
+| Monitor board (eleven widget types, plus independent clock and music layers) | ✅ | ✅ |
 | Now Playing layouts, controls and optional lyrics | ✅ | ✅ |
 | System Wallpaper video provider (macOS 26+, compatibility-gated) | ✅ | ✅ |
 | Global shortcuts | ✅ | ✅ |

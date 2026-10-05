@@ -14,7 +14,7 @@
    make verify
    ```
 
-   覆盖结构、本地化、工具契约、改动行 lint、包测试与应用契约分片，不等于完整应用套件。
+   覆盖结构、本地化、工具契约、改动行 lint、包测试、应用契约分片与签名 WPE/转场 Metal 套件，不等于完整应用套件。
 3. 影响较广应用行为时运行 `scripts/app_tests.sh full`；发版前运行
    `scripts/release_candidate_check.sh`，覆盖完整签名 Pro 套件、Pro/Lite 链接与 archive 矩阵、发布检查。
 

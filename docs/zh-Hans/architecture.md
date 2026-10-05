@@ -41,11 +41,26 @@ flowchart TD
     Export --> Provider[SystemWallpaperProvider]
 ```
 
-- `LiveWallpaper/App/LiveWallpaperApp.swift` 装配应用级服务，管理设置/引导窗口，协调启动和退出。
+- `LiveWallpaper/App/LiveWallpaperApp.swift` 装配应用级服务，承载管理窗口与浮动导览，协调启动和退出。
 - `LiveWallpaper/App/ScreenManager.swift` 及扩展管理显示器身份、配置、策略与运行时协调；播放切换、自动化和持久化交给专用 coordinator。
 - `LiveWallpaper/Runtime/Session/` 管理视频、HTML、场景的准备、激活、暂停、休眠和销毁。
 - 用户意图由每屏 `WallpaperPlaybackStateMachine` 保存。策略暂停不改写播放/暂停选择；切换与配置 generation 拒绝过时的异步结果。
 - 监控、音乐与粒子各有窗口 owner 和逐屏设置，共用显示器不意味着共用壁纸解码器。
+
+## 管理工作台
+
+`SettingsWindowHost` 固定承载 `EditDeskRoot`，旧 UI 开关已经退役。
+`EditDeskRouter` 持有页面/显示器导航；根视图持有窗口级壁纸库筛选、创意工坊浏览状态、
+引导、提示与撤销历史。
+
+`HomePage` 经 `EditDeskStageModel` 连接 SwiftUI 控件与 AppKit/CALayer 舞台。
+全景、壁纸架与展开的壁纸库共用舞台 progress 模型，显示器详情由 `DisplayDetailHost` 协调。
+壁纸应用走 `ApplyRouter`，带逐屏取消与明确的成功/失败结果。
+封面使用截帧或缓存，不再启动第二个实时壁纸会话。
+
+`OverlayEditorSession` 把统一的小组件/音乐/时钟画布连接到产品 setter，
+编辑器合并展示不合并运行时窗口 owner。设置仍是同一管理窗口内的分组可搜索侧栏，
+欢迎导览与当前页指引都是覆盖层，不是独立引导窗口。用户流程见[工作台指南](workspace.md)。
 
 ## 应用命令与文件目录
 
@@ -132,6 +147,6 @@ provider 不兼容时可以关闭自身路径，不替换应用原有壁纸架�
 共享组件与 token 位于 Core 的 `UI/`，契约见
 [DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md)。用户可见改动保持五语与无障碍行为。
 
-`make verify` 按顺序执行结构/本地化、工具契约、改动行 lint、包测试和应用契约分片。
+`make verify` 按顺序执行结构/本地化、工具契约、改动行 lint、包测试、应用契约分片与签名 WPE/转场 Metal 套件。
 完整签名 Pro 套件、Lite/archive 发版检查是范围更广的独立门禁；分片通过不等于全量应用测试。
 具体命令见[构建](building.md)与[发版](releasing.md)。

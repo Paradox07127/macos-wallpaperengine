@@ -85,6 +85,23 @@ trust and notarization are separate future distribution steps, not checks the
 current packaging script performs. Do not substitute the ad-hoc smoke archive
 for a shipping artifact or waive a `get-task-allow` failure.
 
+## Documentation and UI media
+
+Before packaging a release with UI changes:
+
+- Update both root READMEs and matching English/Simplified Chinese guides. Check
+  navigation labels against the built app, including Lite's available pages.
+- Capture the actual release candidate: display overview with shelf, unified
+  library, display playback editor, combined overlay canvas, and Pro Workshop.
+  Record the build and appearance used; check minimum window size and long labels.
+- Use only redistributable wallpaper artwork and inspect captures for local
+  paths, account details, API keys and other private information.
+- Replace or remove obsolete screenshots in README/documentation. Keep prototype
+  HTML and design mockups out of product screenshots. A capture does not prove
+  playback, accessibility or performance correctness.
+- Use [Copy Kit](press-kit.md) for promotional posts; release notes retain the
+  change-only format below.
+
 ## Manual packaging
 
 The tracked, secret-free packaging helper produces:

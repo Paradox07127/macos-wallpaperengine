@@ -10,11 +10,20 @@
 | Menu bar icon missing | Is the app running (Activity Monitor)? Crowded menu bar? | Relaunch from `/Applications`; check login-item restrictions |
 | App won't launch at all | macOS 14.6+? Pro additionally needs Apple Silicon | Lite ships an untested Intel slice; Pro is Apple Silicon only |
 
+## Workspace and navigation
+
+| Problem | Next step |
+|---|---|
+| The old display sidebar or separate Bookmarks/Aerials page is missing | Open **Overview** to choose a display; use **Wallpaper Library** and its filters to browse content. Yellow bookmarks filter local library entries; pink Workshop likes save online items for later. |
+| Controls cannot be clicked during a guide | Close the floating tour with its close button or Esc, then use the workspace. Reopen it from **Settings → About → Welcome Tour**. |
+| Closing the window did not stop the wallpaper | Closing **Manage** leaves the app running; use the menu-bar global switch to hide wallpapers, or **Quit** to exit. |
+| A saved change has not appeared on the desktop | Check the global switch, display playback/pause reason and load failure. A preview cover or saved value alone does not confirm that the wallpaper is rendering. |
+
 ## Rendering
 
 | Problem | Check | Fix |
 |---|---|---|
-| Nothing renders / black wallpaper | Is a source assigned in **Settings → Displays**? Is the global toggle on? | Assign a source; toggle the menu bar master switch off/on |
+| Nothing renders / black wallpaper | Is a source assigned in **Overview → click a display → Wallpaper**? Is the global toggle on? | Assign a source; toggle the menu bar master switch off/on |
 | Wallpaper keeps pausing | Pause rules: full-screen, ≥85 % occlusion, battery, Low Power Mode, app exceptions | The menu bar and the screen's detail header name the rule that is holding it. For discretionary rules, adjust **Settings → Performance** or add a **never pause** exception; safety suspends cannot be overridden |
 | Second display stays blank | Does the source's file permission cover that display's config? | Re-open the display's detail panel and re-assign the source explicitly |
 | Large video stutters | Source resolution/codec, overlays and resource pressure | Try a lower-resolution source, adjust the frame-rate target and disable overlays to isolate; changing preload trades RAM for disk/decoder work |

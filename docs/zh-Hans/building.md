@@ -40,10 +40,12 @@ open LiveWallpaper.xcodeproj
 make verify
 ```
 
-顺序为 `fast` → `contracts` → `lint` → `test-packages` → `test-app`：模块/生命周期/
-本地化、发布工具契约、改动行 lint、Core/ProWPE 包测试，再跑带 Pro/Lite 宿主的无硬件
-应用契约分片。它**不是完整 Pro 应用套件**。单层命令见 `make help`。
-托管 CI 复用这些 make 层，缺少 Lite 签名身份时使用仅 Pro 的 hosted 分片。
+顺序为 `fast` → `contracts` → `lint` → `test-packages` → `test-app` → `test-wpe-metal`：
+模块/生命周期/本地化、发布工具契约、改动行 lint、Core/ProWPE 包测试、带 Pro/Lite 宿主的无硬件
+应用契约分片，最后以签名宿主和 GPU validation 运行 WPE 与转场 Metal 套件。
+Metal 层需要本地图形与签名环境；它不是无硬件检查，也**不是完整 Pro 应用套件**。
+单层命令见 `make help`。托管 CI 选择性运行 make 层，缺少 Lite 签名身份时使用仅 Pro 的 hosted 分片，
+不能代替本地 Metal 门禁。
 
 发版前跑 `scripts/release_candidate_check.sh`，额外覆盖完整签名 Pro 测试、
 Pro/Lite Debug/Release 链接矩阵、archive 冒烟和发布/签名检查。

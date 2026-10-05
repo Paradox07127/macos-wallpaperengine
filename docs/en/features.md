@@ -17,6 +17,7 @@ and the app target's build gates.
   a layer list, an object inspector and an add palette for widgets, clock and music;
   particles and weather response belong to the effect layer. Widget interaction
   receives clicks only over visible widgets; empty desktop areas stay click-through.
+- **Guidance**: a floating Welcome Tour and contextual page guides highlight real controls.
 - **Languages**: English, Simplified Chinese, Traditional Chinese, Japanese and Spanish.
 
 | Settings page | Edition | Contents |
@@ -43,9 +44,10 @@ and the app target's build gates.
 - Auto, sRGB, Display P3, Rec. 2020 HDR and force-SDR color modes.
 - Independent display playback or a video spanned across displays.
 - Configurable per-display RAM preload budget.
-- Frame-rate targets of 15, 30, 60 or **match display**. Controls show the
-  effective rate available on that display; video is also bounded by its source
-  rate. Saved settings from earlier frame-rate formats migrate on load.
+- A frame-rate ceiling with integer input from 1 to the display's current refresh
+  rate, plus **Max**; supported presets include 15/24/30/45/60/120. The control
+  shows the configured ceiling, not measured FPS. Video is also bounded by its
+  source rate. Saved settings from earlier frame-rate formats migrate on load.
 
 ### Web — both editions
 
@@ -154,8 +156,10 @@ and volume changes also reach span displays that are disconnected.
 
 Overlays have per-display configuration and can accompany video, web or scenes.
 Particles and the monitor/music layers can also run over the macOS desktop
-without an active Loomscreen wallpaper session. Preview pages show one overlay
-category at a time.
+without an active Loomscreen wallpaper session. The display's **Overlays** editor
+shows widgets, clock and music together on one canvas, with shared placement,
+selection and object controls; particles and weather response use the effect layer.
+See [Workspace](workspace.md#arrange-overlays).
 
 - **12 particle effects**: Snow, Rain, Bokeh, Fireflies, Dust, Stars, Leaves,
   Sakura, Mist, Embers, Bubbles and Meteors. Includes wind-aware effects,

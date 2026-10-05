@@ -4,7 +4,9 @@
 
 <img src="docs/images/loomscreen-logo.png" width="144" alt="Loomscreen" />
 
-### Wallpaper Engine scenes on macOS — a native Metal renderer, plus video and web wallpapers across every display.
+### A living desktop, arranged your way.
+
+Native macOS live wallpapers, a visual workspace for every display, and widgets, music and weather in one overlay canvas. Pro adds Wallpaper Engine scenes rendered with Metal and Steam Workshop.
 
 ![macOS](https://img.shields.io/badge/macOS-14.6%2B-blue.svg)
 ![Architecture](https://img.shields.io/badge/Apple_Silicon-required_for_Pro-purple.svg)
@@ -20,9 +22,15 @@
 
 </div>
 
-> An independent Metal implementation — not affiliated with Wallpaper Engine. Workshop downloads use your own Steam account and license.
+> Lite and Pro are both free and open source under MIT. The renderer is an independent implementation, not affiliated with Wallpaper Engine; compatibility varies by project. Workshop downloads use your own Steam account and license.
 
-![Loomscreen main UI](docs/images/main.png)
+## Your desktop, in one workspace
+
+1. **See every display** in Overview, arranged like your Mac's desktop.
+2. **Choose a wallpaper** from the shelf or the unified Wallpaper Library, then drag it onto a display or apply it by name.
+3. **Make it yours** in the display editor: tune playback, arrange widgets, clock and music together, and save a display scheme.
+
+The menu bar keeps everyday controls close. Closing the management window keeps wallpapers running. [Explore the workspace](docs/en/workspace.md).
 
 ## Wallpaper types
 
@@ -33,19 +41,13 @@
 | **Web pages** | Lite + Pro | Sandboxed `WKWebView` with JavaScript toggle, tracker blocking, custom CSS, and auto-refresh. |
 | **Apple Aerials** | Lite + Pro | Browse and apply the Apple TV aerial videos already on your Mac. |
 
-## In action
-
-| | |
-|:---:|:---:|
-| ![Video wallpapers](docs/images/video.png) **Video** | ![Web wallpapers](docs/images/web.png) **Web** |
-| ![Wallpaper Engine scenes](docs/images/scene.png) **Scenes (Pro)** | ![Steam Workshop](docs/images/workshop.png) **Workshop (Pro)** |
-
 ## More than a player
 
-- **Per-display control** — every monitor runs its own wallpaper; copy one setup to all screens, or span a single video across them.
+- **Per-display control** — every monitor runs its own wallpaper; apply one wallpaper to all screens, or span a video or Pro scene across them.
 - **Playlists & scheduling** — shuffle, rotation intervals, time-of-day slots, and a bookmark library for one-click swaps.
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
-- **Desktop overlays** — 12 particle effects, live weather response, and a configurable board with eleven widget types, including System Overview, Weather and local AI-agent sessions. An independent Clock section offers a freely resizable transparent Nixie clock. Arrange overlays per display.
+- **One overlay canvas** — arrange eleven widget types, a freely resizable Nixie clock and music per display. Add 12 particle effects and weather response through the effect layer.
+- **Opening & switching animations** — choose how your desktop appears and how wallpapers change, with simpler motion under Reduce Motion and Low Power Mode.
 - **Music layer** — Spotify and Apple Music, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
 - **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.
 - **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.
@@ -68,7 +70,7 @@
 | Music layer, weather widget and saved display schemes | ✅ | ✅ |
 | System Wallpaper video provider (macOS 26+, compatibility-gated) | ✅ | ✅ |
 
-Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelity is identical to Pro. Full matrix: [docs/en/lite-vs-pro.md](docs/en/lite-vs-pro.md).
+Both editions are free and open source. Lite keeps the complete workspace and video, web and Aerials experience while excluding the WPE renderer and Workshop stack. Full matrix: [docs/en/lite-vs-pro.md](docs/en/lite-vs-pro.md).
 
 ## Install
 

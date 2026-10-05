@@ -16,7 +16,7 @@ for module ownership.
    ```
 
    This covers structure, localization, tooling contracts, changed-line lint,
-   package tests and the app contract shard. It is not the complete app suite.
+   package tests, the app contract shard and signed WPE/transition Metal suites. It is not the complete app suite.
 3. Run `scripts/app_tests.sh full` when broader app behavior is affected;
    before release, run `scripts/release_candidate_check.sh` for the full signed
    Pro suite, Pro/Lite link and archive matrix, and release checks.

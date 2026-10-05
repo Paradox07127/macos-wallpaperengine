@@ -2,15 +2,15 @@
 
 **English** · [简体中文](zh-Hans/README.md)
 
-Loomscreen is a menu-bar-first macOS live wallpaper platform: Wallpaper Engine
-scenes rendered natively with Metal (Pro), plus video, web, and Apple Aerials
-wallpapers with per-display settings, saved schemes, playlists and automation.
-Independent weather, widget and music overlays accompany the desktop; macOS
-26+ also has a compatibility-gated system video wallpaper provider.
+Loomscreen is a free, open-source macOS live wallpaper app. Its visual workspace
+connects display overview, wallpaper shelf, unified library and a shared overlay
+canvas. Both editions play video, web and Apple Aerials; Pro adds native Metal
+Wallpaper Engine scenes and Workshop. Everyday control stays in the menu bar.
 
 ## For users
 
 - [quick-start.md](en/quick-start.md) — first wallpaper to daily workflow, including Workshop setup and scene presets.
+- [workspace.md](en/workspace.md) — overview, shelf, display editor, overlay canvas and the new navigation.
 - [install.md](en/install.md) — install, permission prompts, and updates.
 - [troubleshooting.md](en/troubleshooting.md) — common failures and fixes.
 - [lite-vs-pro.md](en/lite-vs-pro.md) — edition capability matrix.
@@ -18,6 +18,7 @@ Independent weather, widget and music overlays accompany the desktop; macOS
 ## For contributors
 
 - [features.md](en/features.md) — current features and edition boundaries.
+- [press-kit.md](en/press-kit.md) — reusable homepage, announcement and demo copy, with claim boundaries.
 - [architecture.md](en/architecture.md) — app/session ownership, packages, rendering, XPC and the system provider.
 - [building.md](en/building.md) — build requirements, schemes, and test gates.
 - [releasing.md](en/releasing.md) — maintainer release checklist.

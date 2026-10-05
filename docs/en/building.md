@@ -43,12 +43,15 @@ Use the repository's ordered entry point:
 make verify
 ```
 
-It runs `fast` → `contracts` → `lint` → `test-packages` → `test-app`:
-module/lifecycle/localization checks, release-tooling contracts, changed-line
-lint, Core/ProWPE package tests, then the hardware-free app contract shard
-with Pro and Lite hosts. It is **not** the complete Pro application suite.
-Use `make help` for individual targets. Hosted CI uses the same make layers,
-with the Pro-only hosted shard where a Lite signing identity is unavailable.
+It runs `fast` → `contracts` → `lint` → `test-packages` → `test-app` →
+`test-wpe-metal`: module/lifecycle/localization checks, release-tooling contracts,
+changed-line lint, Core/ProWPE package tests, the hardware-free app contract shard
+with Pro and Lite hosts, then signed WPE and transition Metal suites with GPU
+validation enabled. The Metal stage requires the local graphics/signing environment;
+it is **not** a hardware-free check or the complete Pro application suite.
+Use `make help` for individual targets. Hosted CI runs selected make layers and
+uses the Pro-only hosted shard where a Lite signing identity is unavailable;
+it does not replace the local Metal gate.
 
 Before a release, run `scripts/release_candidate_check.sh`: it adds the full
 signed Pro tests, Pro/Lite Debug/Release link matrix, archive smokes and

@@ -4,7 +4,9 @@
 
 <img src="docs/images/loomscreen-logo.png" width="144" alt="Loomscreen" />
 
-### 在 macOS 上运行 Wallpaper Engine 场景 —— 原生 Metal 渲染器，另支持视频与网页壁纸，多显示器统一管理。
+### 让桌面动起来，也让它成为你的空间。
+
+原生 macOS 动态壁纸，用全景工作台管理每台显示器，在统一画布上排列小组件、音乐与天气。Pro 另支持 Metal 渲染的 Wallpaper Engine 场景与 Steam 创意工坊。
 
 ![macOS](https://img.shields.io/badge/macOS-14.6%2B-blue.svg)
 ![Architecture](https://img.shields.io/badge/Apple_Silicon-required_for_Pro-purple.svg)
@@ -20,9 +22,15 @@
 
 </div>
 
-> 独立的 Metal 实现，与 Wallpaper Engine 无关联；创意工坊内容通过你自己的 Steam 账号与授权下载。
+> Lite 与 Pro 均免费、MIT 开源。渲染器为独立实现，与 Wallpaper Engine 无关联，兼容程度随项目而异；创意工坊内容通过你自己的 Steam 账号与授权下载。
 
-![Loomscreen 主界面](docs/images/main.png)
+## 在一个工作台里安排桌面
+
+1. **看见每台显示器**——全景按 Mac 的桌面排列展示屏幕。
+2. **选一张壁纸**——从壁纸架或统一壁纸库挑选，拖到显示器上，或按显示器名称应用。
+3. **布置自己的空间**——进入显示器编辑器调整播放，把小组件、时钟与音乐放在同一画布上，再保存整屏方案。
+
+日常控制留在菜单栏，关闭管理窗口后壁纸仍继续运行。[了解工作台](docs/zh-Hans/workspace.md)。
 
 ## 壁纸类型
 
@@ -33,19 +41,13 @@
 | **网页** | Lite + Pro | 沙盒化 `WKWebView`，支持 JavaScript 开关、跟踪器拦截、自定义 CSS、定时自动刷新。 |
 | **Apple 航拍** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
 
-## 实际效果
-
-| | |
-|:---:|:---:|
-| ![视频壁纸](docs/images/video.png) **视频** | ![网页壁纸](docs/images/web.png) **网页** |
-| ![Wallpaper Engine 场景](docs/images/scene.png) **场景（Pro）** | ![Steam 创意工坊](docs/images/workshop.png) **创意工坊（Pro）** |
-
 ## 不只是播放器
 
-- **每屏独立控制** —— 每台显示器运行各自的壁纸；可一键复制到所有屏幕，或让一个视频跨屏铺展。
+- **每屏独立控制** —— 每台显示器运行各自的壁纸；可把一张壁纸应用到所有屏幕，或让视频、Pro 场景跨屏铺展。
 - **播放列表与计划** —— 随机播放、轮换间隔、按时段自动切换，书签库一键换壁纸。
 - **菜单栏优先** —— 全局开关、每屏播放/暂停与上下切换，实时 CPU / GPU / 内存 / 热压力状态条。
-- **桌面叠加层** —— 12 种粒子特效、实时天气联动和可配置监控面板；共十一种组件，包含系统总览、天气与本地 AI agent 会话。独立的时钟分区提供可自由缩放的透明辉光管时钟，支持逐屏排列。
+- **统一叠加层画布** —— 逐屏排列十一种小组件、可自由缩放的辉光管时钟与音乐；效果层提供 12 种粒子特效和天气联动。
+- **开场与换壁纸动画** —— 选择桌面如何出现、壁纸如何切换；减弱动态效果或低电量模式下简化动画。
 - **音乐层** —— 支持 Spotify 与 Apple Music，提供 Poster/Vinyl/Aurora 布局、封面、播放控制和可选同步歌词；Pro 另有系统音频驱动的视觉效果。
 - **系统壁纸（macOS 26+）** —— 把视频交给 macOS 壁纸 provider，Loomscreen 关闭后仍可播放，受 provider 兼容性限制。
 - **节能播放策略** —— 可配置全屏、遮挡、电池与低电量模式规则；锁屏/休眠和资源压力处理保留你的播放/暂停意图。
@@ -68,7 +70,7 @@
 | 音乐层、天气组件和整屏方案 | ✅ | ✅ |
 | 系统壁纸视频 provider（macOS 26+，有兼容性检查） | ✅ | ✅ |
 
-Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、航拍的保真度与 Pro 完全一致。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
+两个版本均免费开源。Lite 保留完整工作台及视频、网页、航拍体验，去掉 WPE 渲染器与创意工坊栈。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
 
 ## 安装
 
