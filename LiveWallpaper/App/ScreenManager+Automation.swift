@@ -50,7 +50,11 @@ extension ScreenManager {
     /// Installed-page CAS delete: only an exact persisted identity match may
     /// disturb live sessions or scrub configuration references.
     @discardableResult
-    func removeWPEImport(workshopID: String, matchingImportedAt importedAt: Date) -> Bool {
+    func removeWPEImport(
+        workshopID: String,
+        matchingImportedAt importedAt: Date,
+        recordingDeleteTombstone: Bool = true
+    ) -> Bool {
         let removed = SettingsManager.shared.loadGlobalSettings().recentWPEImports.first {
             $0.origin.workshopID == workshopID && $0.importedAt == importedAt
         }?.origin
@@ -58,7 +62,8 @@ extension ScreenManager {
               let removed,
               SettingsManager.shared.removeWPEImport(
                   workshopID: workshopID,
-                  matchingImportedAt: importedAt
+                  matchingImportedAt: importedAt,
+                  recordingDeleteTombstone: recordingDeleteTombstone
               ) else { return false }
         // A local copy keeps its manifest's Workshop id, so the id alone would also match the Steam item it was copied from.
         let matchesRemoved = { (origin: WPEOrigin) in SettingsManager.isSameWPEItem(origin, removed) }

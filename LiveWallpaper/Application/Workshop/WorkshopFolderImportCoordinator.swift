@@ -40,12 +40,17 @@ final class WorkshopFolderImportCoordinator {
     /// Ids whose scan conflict was already shown this launch; the scan reruns on every Workshop visit.
     @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
 
+    /// Drops one history entry Steam deleted, without a delete tombstone; true when it was removed.
+    @ObservationIgnored private let removeVanishedImport: @MainActor (WPEHistoryEntry) -> Bool
+
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
         settings: SettingsManager = .shared,
         discoverFolders: (@Sendable (URL) -> [URL]?)? = nil,
-        toastCenter: WorkshopToastCenter = .shared
+        toastCenter: WorkshopToastCenter = .shared,
+        removeVanishedImport: (@MainActor (WPEHistoryEntry) -> Bool)? = nil
     ) {
+        self.removeVanishedImport = removeVanishedImport ?? { _ in false }
         self.importService = importService
         self.discoverFolders = discoverFolders ?? Self.discoverProjectFolders
         self.toastCenter = toastCenter
@@ -180,12 +185,16 @@ final class WorkshopFolderImportCoordinator {
         // Re-import when the stored source bookmark no longer resolves.
         var known = Set<String>()
         var staleIDs = Set<String>()
+        var staleSteamEntries: [WPEHistoryEntry] = []
         // One resolve per entry: each resolve is a ScopedBookmarkAgent request.
         for entry in settings.recentWPEImports {
             if Self.originResolves(entry.origin) {
                 known.insert(entry.origin.workshopID)
             } else {
                 staleIDs.insert(entry.origin.workshopID)
+                if entry.origin.steamFolderItemID != nil {
+                    staleSteamEntries.append(entry)
+                }
             }
         }
         // Skip items the user explicitly deleted so a still-present Steam item
@@ -199,8 +208,9 @@ final class WorkshopFolderImportCoordinator {
         var added = 0
         var repaired = 0
         var conflicts = 0
+        var removed = 0
 
-        // Scan adds/relinks only; never prune on absence (unplugged drive ≠ deleted).
+        // A missing entry is dropped only while the Steam library is online and its acf no longer lists the item.
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
             guard let self, allowsImport else { return }
             let id = folder.lastPathComponent
@@ -238,6 +248,17 @@ final class WorkshopFolderImportCoordinator {
             case .rejected, .unreadable:
                 break
             }
+        } whileLibraryOpen: { [weak self] steamRoot in
+            guard let self else { return }
+            for entry in Self.entriesSteamDeleted(staleSteamEntries, steamRoot: steamRoot) {
+                guard allowsImport else { return }
+                if removeVanishedImport(entry) {
+                    removed += 1
+                }
+            }
+        }
+        if removed > 0 {
+            Logger.info("Removed \(removed) library entries whose Steam Workshop items Steam deleted", category: .workshop)
         }
 
         guard allowsImport, added > 0 || repaired > 0 || conflicts > 0 else { return }
@@ -272,6 +293,36 @@ final class WorkshopFolderImportCoordinator {
         ) else { return false }
         return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
             FileManager.default.fileExists(atPath: resolved.url.path(percentEncoded: false))
+        }
+    }
+
+    /// Entries whose folder under `steamRoot` is gone while Steam's acf no longer lists it; none when the content root or acf can't be read.
+    /// The app's own delete keeps the acf entry, so an unlisted id means Steam removed the item.
+    static func entriesSteamDeleted(_ entries: [WPEHistoryEntry], steamRoot: URL) -> [WPEHistoryEntry] {
+        let fileManager = FileManager.default
+        let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot)
+        let acf = steamRoot.appendingPathComponent(
+            "steamapps/workshop/appworkshop_\(SteamLibraryPaths.wallpaperEngineAppID).acf",
+            isDirectory: false
+        )
+        var isDirectory: ObjCBool = false
+        guard !entries.isEmpty,
+              fileManager.fileExists(atPath: contentRoot.path(percentEncoded: false), isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              fileManager.isReadableFile(atPath: contentRoot.path(percentEncoded: false)),
+              let text = try? String(contentsOf: acf, encoding: .utf8),
+              let installed = SteamWorkshopManifest.installedIDs(fromACF: text)
+        else { return [] }
+        let canonicalContentRoot = contentRoot.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+        return entries.filter { entry in
+            // The stored path, read without resolving the bookmark.
+            guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: entry.origin.sourceFolderBookmark)?.path
+            else { return false }
+            let folder = URL(fileURLWithPath: path, isDirectory: true)
+            return !installed.contains(folder.lastPathComponent)
+                && folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+                    .path(percentEncoded: false) == canonicalContentRoot
+                && !fileManager.fileExists(atPath: path)
         }
     }
 

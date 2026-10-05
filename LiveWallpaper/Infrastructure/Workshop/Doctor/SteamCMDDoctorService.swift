@@ -1162,7 +1162,11 @@ final class SteamCMDDoctorService {
         !Task.isCancelled && accountGeneration == generation && defaultsRevision == bindingRevision
     }
 
-    func enumerateDownloadedItemFolders(_ body: @MainActor (URL) async -> Void) async {
+    /// `whileLibraryOpen` gets the Steam root while its sandbox access is still open; not called when the library is unreachable.
+    func enumerateDownloadedItemFolders(
+        _ body: @MainActor (URL) async -> Void,
+        whileLibraryOpen: @MainActor (URL) -> Void = { _ in }
+    ) async {
         var seen = Set<String>()
         let inventory = workshopFileInventory
 
@@ -1189,6 +1193,7 @@ final class SteamCMDDoctorService {
                 consumedIDs.append(project.lastPathComponent)
                 await body(project)
             }
+            whileLibraryOpen(workdir)
             seen.formUnion(consumedIDs)
         }
     }

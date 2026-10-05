@@ -1190,6 +1190,20 @@ enum SteamWorkshopManifest {
         }
         return ids
     }
+
+    /// Item ids under `WorkshopItemsInstalled` of `appworkshop_<appid>.acf`; nil when that block is missing or incomplete.
+    static func installedIDs(fromACF text: String) -> Set<String>? {
+        guard let key = text.range(of: "\"WorkshopItemsInstalled\"", options: .caseInsensitive) else { return nil }
+        var cursor = key.upperBound
+        guard let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &cursor) else { return nil }
+        var ids: Set<String> = []
+        var entryCursor = block.startIndex
+        while let id = SteamAccountsFile.nextQuoted(in: block, from: &entryCursor) {
+            guard SteamAccountsFile.nextBraceBlock(in: block, from: &entryCursor) != nil else { return nil }
+            ids.insert(id)
+        }
+        return ids
+    }
 }
 
 /// What the connector sees from where it actually runs.

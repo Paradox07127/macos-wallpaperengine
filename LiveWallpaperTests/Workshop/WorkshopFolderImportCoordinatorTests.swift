@@ -486,6 +486,110 @@ struct WorkshopFolderImportCoordinatorTests {
         #expect(library.importedIDs.isEmpty, "a refused binding still scanned the previously bound library")
     }
 
+    // MARK: - Items Steam deleted
+
+    @Test("A Steam item Steam deleted leaves the library on the next scan without a tombstone", .timeLimit(.minutes(1)))
+    func itemSteamDeletedIsRemoved() async throws {
+        let scan = try await scanAfterSteamRemovedItem { _ in appWorkshopACF(installed: ["1"]) }
+        #expect(scan.remaining.isEmpty, "an entry whose folder Steam deleted and no longer lists stayed in the library")
+        #expect(scan.removed == [scan.itemID])
+        #expect(scan.tombstones.isEmpty)
+    }
+
+    @Test("A missing folder Steam still lists stays in the library", .timeLimit(.minutes(1)))
+    func itemStillInACFIsKept() async throws {
+        let scan = try await scanAfterSteamRemovedItem { appWorkshopACF(installed: [$0]) }
+        #expect(scan.remaining == [scan.itemID])
+        #expect(scan.removed.isEmpty)
+    }
+
+    @Test("A Steam library whose content folder is gone keeps every entry", .timeLimit(.minutes(1)))
+    func unpluggedLibraryKeepsEntries() async throws {
+        let scan = try await scanAfterSteamRemovedItem(removingContentRoot: true) { _ in appWorkshopACF(installed: []) }
+        #expect(scan.remaining == [scan.itemID])
+        #expect(scan.removed.isEmpty)
+    }
+
+    @Test("A missing or truncated acf keeps every entry", .timeLimit(.minutes(1)), arguments: [false, true])
+    func unreadableACFKeepsEntries(truncated: Bool) async throws {
+        let scan = try await scanAfterSteamRemovedItem { _ in
+            truncated ? String(appWorkshopACF(installed: ["1"]).prefix(70)) : nil
+        }
+        #expect(scan.remaining == [scan.itemID])
+        #expect(scan.removed.isEmpty)
+    }
+
+    @Test("A missing local folder outside Steam's layout stays in the library", .timeLimit(.minutes(1)))
+    func missingLocalFolderIsKept() async throws {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary(removedIDs: RemovedIDs())
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let local = try library.project("local", title: "Local")
+        library.coordinator.importProjects(from: [local])
+        try await settle { !library.coordinator.isImporting }
+        #expect(library.importedIDs == [ConflictLibrary.itemID])
+        try FileManager.default.removeItem(at: local)
+        try FileManager.default.removeItem(at: steam.itemFolders[0])
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: steam.root)
+
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+
+        #expect(library.importedIDs == [ConflictLibrary.itemID])
+        #expect(library.removedIDs?.ids.isEmpty == true)
+    }
+
+    @Test("installedIDs reads only the WorkshopItemsInstalled block")
+    func acfInstalledIDs() throws {
+        let acf = appWorkshopACF(installed: ["111", "222"])
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: acf) == ["111", "222"])
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: appWorkshopACF(installed: [])) == [])
+        let withoutInstalled = "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"431960\"\n}\n"
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: withoutInstalled) == nil)
+        let installedClose = try #require(acf.range(of: "\t}\n\t\"WorkshopItemDetails\""))
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: String(acf[..<installedClose.lowerBound])) == nil)
+    }
+
+    private struct VanishedItemScan {
+        let itemID: String
+        let remaining: [String]
+        let removed: [String]
+        let tombstones: [String]
+    }
+
+    /// Imports one Steam download, deletes its folder, writes the acf `acf(itemID)` returns (none for nil), and scans again.
+    private func scanAfterSteamRemovedItem(
+        removingContentRoot: Bool = false,
+        acf: (String) -> String?
+    ) async throws -> VanishedItemScan {
+        let steam = try SteamDownloads()
+        let library = try ConflictLibrary(removedIDs: RemovedIDs())
+        defer {
+            steam.discard()
+            await library.discard()
+        }
+        let folder = steam.itemFolders[0]
+        let itemID = folder.lastPathComponent
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+        #expect(library.manager.loadGlobalSettings().recentWPEImports.map { $0.origin.steamFolderItemID } == [itemID])
+
+        try FileManager.default.removeItem(at: removingContentRoot ? folder.deletingLastPathComponent() : folder)
+        if let text = acf(itemID) {
+            try writeAppWorkshopACF(text, steamRoot: steam.root)
+        }
+        await library.coordinator.ingestExistingDownloads(using: steam.doctor)
+
+        let settings = library.manager.loadGlobalSettings()
+        return VanishedItemScan(
+            itemID: itemID,
+            remaining: settings.recentWPEImports.map(\.origin.workshopID),
+            removed: library.removedIDs?.ids ?? [],
+            tombstones: settings.deletedWorkshopIDs
+        )
+    }
+
     private func unscopedSharedLibraryResolver() -> SecurityScopedBookmarkResolver {
         let shared = URL(fileURLWithPath: "/private/tmp/LoomscreenUnscopedLibrary", isDirectory: true)
         return SecurityScopedBookmarkResolver(
@@ -518,6 +622,22 @@ private func writeVideoProject(at folder: URL, workshopID: String, title: String
     let manifest = #"{"workshopid":"\#(workshopID)","title":"\#(title)","type":"video","file":"video.mp4"}"#
     try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
     try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
+}
+
+private func appWorkshopACF(installed ids: [String]) -> String {
+    let items = ids.map { "\t\t\"\($0)\"\n\t\t{\n\t\t\t\"size\"\t\t\"1\"\n\t\t}\n" }.joined()
+    return "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"431960\"\n\t\"WorkshopItemsInstalled\"\n\t{\n\(items)\t}\n"
+        + "\t\"WorkshopItemDetails\"\n\t{\n\(items)\t}\n}\n"
+}
+
+private func writeAppWorkshopACF(_ text: String, steamRoot: URL) throws {
+    try Data(text.utf8).write(to: steamRoot.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf"))
+}
+
+/// Ids the coordinator asked to drop as deleted by Steam.
+@MainActor
+private final class RemovedIDs {
+    var ids: [String] = []
 }
 
 private func writePresetProject(at folder: URL) throws {
@@ -565,15 +685,31 @@ private struct ConflictLibrary {
     let manager: SettingsManager
     let toastCenter = WorkshopToastCenter()
     let coordinator: WorkshopFolderImportCoordinator
+    /// Set when the coordinator may drop entries Steam deleted; it then removes them from `manager` without a tombstone.
+    let removedIDs: RemovedIDs?
 
-    init(function: String = #function) throws {
+    init(removedIDs: RemovedIDs? = nil, function: String = #function) throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderConflict-\(UUID().uuidString)", isDirectory: true)
         suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FolderConflict", function: function)
-        manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: suite.defaults)
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: suite.defaults)
+        self.manager = manager
+        self.removedIDs = removedIDs
         coordinator = WorkshopFolderImportCoordinator(
             importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
             settings: manager,
-            toastCenter: toastCenter
+            toastCenter: toastCenter,
+            removeVanishedImport: { entry in
+                guard let removedIDs else {
+                    Issue.record("the scan removed \(entry.origin.workshopID) where no removal was expected")
+                    return false
+                }
+                removedIDs.ids.append(entry.origin.workshopID)
+                return manager.removeWPEImport(
+                    workshopID: entry.origin.workshopID,
+                    matchingImportedAt: entry.importedAt,
+                    recordingDeleteTombstone: false
+                )
+            }
         )
     }
 
