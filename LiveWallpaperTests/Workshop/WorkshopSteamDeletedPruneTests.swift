@@ -323,12 +323,9 @@ private struct PruneLibrary {
             toastCenter: WorkshopToastCenter(),
             repositoryCoordinator: repository,
             removeVanishedImport: WorkshopSavedRecords.removingImport(
-                bookmarks: bookmarks, libraryBookmarks: marks, history: { manager.loadGlobalSettings().recentWPEImports }
-            ) {
-                manager.removeWPEImport(
-                    workshopID: $0.origin.workshopID, matchingImportedAt: $0.importedAt, recordingDeleteTombstone: false
-                )
-            }
+                bookmarks: bookmarks, libraryBookmarks: marks, history: { manager.loadGlobalSettings().recentWPEImports },
+                { manager.removeWPEImport(workshopID: $0.origin.workshopID, matchingImportedAt: $0.importedAt, recordingDeleteTombstone: false) }
+            )
         )
     }
 

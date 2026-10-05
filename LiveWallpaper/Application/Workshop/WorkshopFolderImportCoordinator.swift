@@ -351,7 +351,7 @@ final class WorkshopFolderImportCoordinator {
 
     /// True when the bookmark still finds the folder, wherever the user moved it.
     private nonisolated static func resolvesToFolder(_ origin: WPEOrigin) -> Bool {
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
+        guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
             origin.sourceFolderBookmark,
             target: .transient
         ) else { return false }
