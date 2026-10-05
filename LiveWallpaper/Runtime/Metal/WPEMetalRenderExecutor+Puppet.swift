@@ -611,6 +611,18 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
+        // Native generic4 scene-model `normal` is opaque (ev197); image-layer
+        // `normal` and translucent model materials retain their separate rules.
+        let authoredModelBlend: String
+        if case .string(let blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
+            authoredModelBlend = blend.lowercased()
+        } else {
+            authoredModelBlend = pass.pass.blending.lowercased()
+        }
+        let opaqueModel = materialShader == .genericImage4
+            && ["normal", "disabled", "premultiplieddisabled"].contains(authoredModelBlend)
+        let modelBlendMode = opaqueModel ? "disabled" : pass.pass.blending
+        let modelAlphaWritePolicy: WPEMetalAlphaWritePolicy = materialShader == .genericImage4 ? .rgbOnly : .all
         var materialUniforms: WPESceneModelGenericUniforms?
         var imageUniforms: WPEGenericImageUniforms?
         var boundComponentMap: MTLTexture?
@@ -637,9 +649,11 @@ extension WPEMetalRenderExecutor {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
                 fragmentName: "wpe_scene_model_generic4_fragment",
-                blendMode: pass.pass.blending,
+                blendMode: modelBlendMode,
+                alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
             ))
             encoder.setFragmentTexture(primary, index: 0)
 
@@ -823,7 +837,7 @@ extension WPEMetalRenderExecutor {
             vertexRows.append(.init(name: "modeAndPadding", type: "vec4", value: meshUniforms.modeAndPadding))
             vertexRows.append(.init(name: "eyeAndPadding", type: "vec4", value: meshUniforms.eyeAndPadding))
             let baseState = WPECanonicalTraceRecorder.NativeRenderState.scenePass(
-                blendMode: pass.pass.blending, alphaWritePolicy: .all, cullMode: pass.pass.cullMode,
+                blendMode: modelBlendMode, alphaWritePolicy: modelAlphaWritePolicy, cullMode: pass.pass.cullMode,
                 depthAttached: depthPixelFormat != .invalid, depthTest: pass.pass.depthTest,
                 depthWrite: pass.pass.depthWrite, reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
             )

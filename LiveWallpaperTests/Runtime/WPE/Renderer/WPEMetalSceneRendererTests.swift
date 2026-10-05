@@ -3416,3 +3416,94 @@ extension WPEMetalSceneRendererTests {
         #expect(hidden.uniformPayload.count == 1, "even an empty light list must bind a valid zero record")
     }
 }
+
+extension WPEMetalSceneRendererTests {
+    @Test("Opaque generic4 keeps padded RGB; translucent generic4 keeps authored alpha")
+    func modelNormalBlendKeepsPaddedRGB() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        func sample(blending: String, paddingAlpha: UInt8) async throws -> ([Float], [Float]) {
+            let fixture = try MetalSceneFixture.directionalModelScene(lightingEnabled: false)
+            defer { fixture.cleanup() }
+            let materialURL = fixture.root.appendingPathComponent("materials/lit.json")
+            var material = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: materialURL)) as? [String: Any])
+            var passes = try #require(material["passes"] as? [[String: Any]])
+            passes[0]["textures"] = ["materials/padded.tex"]
+            passes[0]["blending"] = blending
+            material["passes"] = passes
+            try JSONSerialization.data(withJSONObject: material).write(to: materialURL)
+            var tex = Data()
+            func u32(_ value: UInt32) {
+                var littleEndian = value.littleEndian
+                Swift.withUnsafeBytes(of: &littleEndian) { tex.append(contentsOf: $0) }
+            }
+            func magic(_ value: String) {
+                tex.append(contentsOf: value.utf8)
+                tex.append(0)
+            }
+            magic("TEXV0005")
+            magic("TEXI0001")
+            // Straight RGBA, authored clamp UVs, physical 8x4 / logical 4x4.
+            for value: UInt32 in [0, 2, 8, 4, 4, 4, 0] {
+                u32(value)
+            }
+            magic("TEXB0001")
+            for value: UInt32 in [1, 1, 8, 4, 8 * 4 * 4] {
+                u32(value)
+            }
+            for _ in 0 ..< 4 {
+                for column in 0 ..< 8 {
+                    tex.append(contentsOf: [255, 255, 255, column < 4 ? 255 : paddingAlpha])
+                }
+            }
+            try tex.write(to: fixture.root.appendingPathComponent("materials/padded.tex"))
+            let renderer = try WPEMetalSceneRenderer(
+                descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+                frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+            )
+            defer { renderer.cleanup() }
+            try await renderer.load()
+            let output = try #require(renderer.outputTexture)
+            let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+            func pixel(x: Int) throws -> [Float] {
+                let region = MTLRegionMake2D(x, output.height / 2, 1, 1)
+                switch output.pixelFormat {
+                case .rgba16Float:
+                    var lanes = [UInt16](repeating: 0, count: 4)
+                    lanes.withUnsafeMutableBytes {
+                        staging.getBytes($0.baseAddress!, bytesPerRow: 8, from: region, mipmapLevel: 0)
+                    }
+                    return lanes.map { Float(Float16(bitPattern: $0)) }
+                case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb:
+                    var lanes = [UInt8](repeating: 0, count: 4)
+                    staging.getBytes(&lanes, bytesPerRow: 4, from: region, mipmapLevel: 0)
+                    if output.pixelFormat == .bgra8Unorm || output.pixelFormat == .bgra8Unorm_srgb {
+                        lanes.swapAt(0, 2)
+                    }
+                    return lanes.map { Float($0) / 255 }
+                default:
+                    throw NSError(domain: "WPEModelPaddingFixture", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "Unsupported readback format \(output.pixelFormat)"])
+                }
+            }
+            return try (pixel(x: 20), pixel(x: 44))
+        }
+        for blending in ["normal", "disabled"] {
+            let (opaque, padded) = try await sample(blending: blending, paddingAlpha: 0)
+            try #require(opaque.prefix(3).allSatisfy { $0 > 0.2 }, "Unpadded model coverage control: \(opaque)")
+            for channel in 0 ..< 3 {
+                #expect(abs(padded[channel] - opaque[channel]) < 0.03,
+                        "Opaque material \(blending) must retain padding RGB regardless of source alpha: \(padded), \(opaque)")
+            }
+            #expect(abs(padded[3] - opaque[3]) < 0.01,
+                    "Opaque RGB-only writes must preserve canvas alpha on both samples: \(padded), \(opaque)")
+        }
+        let (opaque, transparent) = try await sample(blending: "translucent", paddingAlpha: 0)
+        try #require(opaque.prefix(3).allSatisfy { $0 > 0.2 }, "Translucent coverage control: \(opaque)")
+        #expect(transparent.prefix(3).allSatisfy { $0 < 0.01 }, "Translucent alpha-zero must reveal black background: \(transparent)")
+        let (_, partial) = try await sample(blending: "translucent", paddingAlpha: 128)
+        for channel in 0 ..< 3 {
+            #expect(partial[channel] > 0.05 && partial[channel] < opaque[channel] - 0.05,
+                    "Translucent material must preserve fractional alpha: \(partial), \(opaque)")
+        }
+    }
+}
