@@ -71,7 +71,7 @@ final class WPESceneSpanPresenter {
                 completion.complete()
             }
         } catch {
-            Logger.warning("Scene span present failed: \(error.localizedDescription)", category: .wpeRender)
+            Logger.repeatedWarning("Scene span present failed: \(error.localizedDescription)", source: .sceneSpanPresent, category: .wpeRender)
         }
     }
 }

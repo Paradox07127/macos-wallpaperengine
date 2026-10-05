@@ -68,6 +68,21 @@ struct LogPrivacyBoundaryTests {
         #expect(LogPrivacyRedactor.scrub(once) == once)
     }
 
+    @Test("Already sanitized logger messages retain the persistent privacy boundary")
+    func sanitizedMessageRoundTrip() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SanitizedMessage-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("runtime.log")
+        _ = FileManager.default.createFile(atPath: file.path, contents: nil)
+        let sink = LogFileSink(fileURL: file)
+        sink.record(category: .fileAccess, level: .error, message: Logger.SanitizedMessage(sensitive), file: "Test.swift", line: 1)
+        let persisted = try String(contentsOf: file, encoding: .utf8)
+        #expect(!persisted.contains("s3cret"))
+        #expect(!persisted.contains("abc123"))
+        #expect(persisted.contains("phase=parse"))
+    }
+
     @Test("NSError metadata allowlists keys but never values")
     func errorMetadataDoesNotRenderUserInfoValues() {
         let error = NSError(

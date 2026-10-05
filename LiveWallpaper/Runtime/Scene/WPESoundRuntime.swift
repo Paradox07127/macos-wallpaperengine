@@ -385,7 +385,7 @@ final class WPESoundRuntime: Sendable {
             do {
                 try state.engine.start()
             } catch {
-                Logger.warning("WPESoundRuntime reconcile: engine.start() failed: \(error.localizedDescription)", category: .wpeRender)
+                Logger.repeatedWarning("WPESoundRuntime reconcile: engine.start() failed: \(error.localizedDescription)", source: .soundEngineStart, category: .wpeRender)
                 return
             }
         }

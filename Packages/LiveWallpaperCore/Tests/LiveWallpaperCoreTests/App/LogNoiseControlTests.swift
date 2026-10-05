@@ -114,6 +114,35 @@ struct LogNoiseControlTests {
 
     // MARK: - Screen count repeat suppression
 
+    @Test("Authored errors suppress duplicates and retain new diagnostics within a bounded window")
+    func authoredErrorsHaveBoundedDistinctBudget() {
+        var budget = Logger.AuthoredErrorBudget()
+        #expect(budget.admit(key: 0, at: 0) == .message(suppressed: 0))
+        #expect(budget.admit(key: 0, at: 1) == .suppressionStarted)
+        #expect(budget.admit(key: 0, at: 2) == nil)
+        for key in 1 ..< 20 {
+            #expect(budget.admit(key: key, at: 2) == .message(suppressed: 0))
+        }
+        #expect(budget.admit(key: 20, at: 3) == nil)
+        #expect(budget.admit(key: 0, at: 10) == .message(suppressed: 3))
+        #expect(budget.admit(key: 20, at: 10) == .message(suppressed: 0))
+    }
+
+    @Test("Byte-limited legacy tails retain complete UTF-8 entries and redact selected failures")
+    func legacyTailSkipsPartialUTF8Line() throws {
+        let (sink, file, directory) = try Self.makeSink()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = String(repeating: "墙纸", count: 200)
+        let failure = "2026-01-01T00:00:00Z [WPERender] [ERROR] Test.swift:1 — code=42 token=legacy-secret\n"
+        try (first + "\n" + failure).write(to: file, atomically: true, encoding: .utf8)
+        for byteLimit in [failure.utf8.count, failure.utf8.count + 1] {
+            let excerpt = sink.recentDiagnosticLines(maxReadBytes: UInt64(byteLimit))
+            #expect(excerpt.count == 1)
+            #expect(excerpt[0].contains("code=42"))
+            #expect(!excerpt[0].contains("legacy-secret"))
+        }
+    }
+
     /// Serialized: the gate is one process-wide static, so parallel cases would
     /// consume each other's transitions.
     @Suite("Screen count repeat suppression", .serialized)

@@ -246,7 +246,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         guard hasRenderer, diagnosticPollTask == nil else { return }
         diagnosticPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 guard let self, hasRenderer else { return }
                 await pollRendererState()
             }

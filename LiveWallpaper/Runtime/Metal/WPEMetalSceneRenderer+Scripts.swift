@@ -794,23 +794,7 @@ extension WPEMetalSceneRenderer {
             deliver(instance, events, pointerFrame)
         }
 
-        if hoverCursorDebugEnabled, let pointerPixels {
-            hoverDebugCounter += 1
-            if hoverDebugCounter % 30 == 1 {
-                for (objectID, geometry) in geometryByID.sorted(by: { $0.key < $1.key }) {
-                    let rect = hoverHitRect(geometry: geometry)
-                    Logger.notice(
-                        "[hover] obj=\(objectID) pointer=(\(Int(pointerPixels.x)),\(Int(pointerPixels.y))) "
-                            + "rect=\(rect.map { "c(\(Int($0.center.x)),\(Int($0.center.y)))±(\(Int($0.half.x)),\(Int($0.half.y)))" } ?? "nil") "
-                            + "inside=\(rect.map { abs(pointerPixels.x - $0.center.x) <= $0.half.x && abs(pointerPixels.y - $0.center.y) <= $0.half.y } ?? false)",
-                        category: .wpeRender
-                    )
-                }
-            }
-        }
     }
-    private static let hoverCursorDebugDefault = UserDefaults.standard.bool(forKey: "WPEHoverCursorDebug")
-    private var hoverCursorDebugEnabled: Bool { Self.hoverCursorDebugDefault }
 
     private func pointerHits(_ pointerPixels: SIMD2<Double>, geometry: WPERenderLayerGeometry) -> Bool {
         guard let rect = hoverHitRect(geometry: geometry) else { return false }

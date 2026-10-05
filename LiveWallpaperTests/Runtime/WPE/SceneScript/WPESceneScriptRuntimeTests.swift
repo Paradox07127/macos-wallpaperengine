@@ -987,7 +987,7 @@ struct WPESceneScriptRuntimeTests {
         #expect(value == SIMD3<Double>(2, 3, 4))
     }
 
-    @Test("Console error converts every argument and returns undefined")
+    @Test("Console error converts arguments and preserves updates under repeated output")
     func sceneScriptConsoleErrorUsesAllArguments() throws {
         let instance = try WPESceneScriptInstance(script: """
         export function update(value) {
@@ -998,7 +998,9 @@ struct WPESceneScriptRuntimeTests {
             return typeof result + ':' + converted.join(',');
         }
         """, initialValue: "seed")
-        #expect(instance.tickString(runtimeSeconds: 0) == "undefined:first,second")
+        for tick in 0 ..< 50 {
+            #expect(instance.tickString(runtimeSeconds: Double(tick) / 60) == "undefined:first,second")
+        }
     }
 
     @Test("A shared dispatcher console error leaves its missing-event return and consumer init intact")

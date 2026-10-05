@@ -181,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppAppearance.stored(in: .appScoped()).apply()
         if let hint = LogFileSink.shared.tailCommandHint {
-            Logger.notice("Tail the runtime log → \(hint)", category: .startup)
+            Logger.info("Tail the runtime log → \(hint)", category: .startup)
         }
 
         let startupPlan = AppStartupPlan(

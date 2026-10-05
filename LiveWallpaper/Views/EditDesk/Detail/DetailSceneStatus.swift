@@ -40,7 +40,7 @@ struct DetailSceneStatus {
             ),
             tint: renderFailure?.tint ?? .accentColor,
             onDismiss: onDismiss,
-            batchLog: { WPESceneTestingReports.shared.make() }
+            batchLog: { await WPESceneTestingReports.shared.export() }
         )
     }
 }

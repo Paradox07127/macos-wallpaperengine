@@ -610,17 +610,6 @@ extension WPEMetalSceneRenderer {
                 transforms.scales[objectID] = scale
             }
         }
-        if audioDebugLogEnabled {
-            audioDiagCounter += 1
-            if audioDiagCounter % 120 == 2, let sample = transforms.scales.sorted(by: { $0.key < $1.key }).first {
-                Logger.notice(
-                    "[AudioCapture] scale scripts: instances=\(dynamicScaleScriptInstances.count)"
-                        + " published=\(transforms.scales.count)"
-                        + " \(sample.key)=\(String(format: "%.4f", sample.value.x))",
-                    category: .audioCapture
-                )
-            }
-        }
         applySharedReadFans(sharedScaleReadFans, into: &transforms.scales)
         transforms.angles.reserveCapacity(dynamicAnglesScriptInstances.count + sharedAnglesReadFans.count)
         for (objectID, instance) in dynamicAnglesScriptInstances.sorted(by: { $0.key < $1.key }) {

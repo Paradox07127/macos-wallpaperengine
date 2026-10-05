@@ -11,6 +11,7 @@ struct ReportBugSheet: View {
     @State private var browserFailed = false
     @State private var copied = false
     @State private var copiedScenes = false
+    @State private var isCopyingScenes = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -107,12 +108,18 @@ struct ReportBugSheet: View {
         ) {
             #if !LITE_BUILD
             Button {
-                NSPasteboard.general.clearContents()
-                copiedScenes = NSPasteboard.general.setString(WPESceneTestingReports.shared.make(), forType: .string)
+                isCopyingScenes = true
+                Task {
+                    let text = await WPESceneTestingReports.shared.export()
+                    NSPasteboard.general.clearContents()
+                    copiedScenes = NSPasteboard.general.setString(text, forType: .string)
+                    isCopyingScenes = false
+                }
             } label: {
                 Label(copiedScenes ? "Copied" : "Copy All Scenes", systemImage: copiedScenes ? "checkmark" : "doc.on.doc")
             }
             .buttonStyle(.bordered)
+            .disabled(isCopyingScenes)
             #endif
             Button {
                 NSPasteboard.general.clearContents()

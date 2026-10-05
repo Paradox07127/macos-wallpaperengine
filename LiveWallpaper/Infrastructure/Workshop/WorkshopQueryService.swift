@@ -614,7 +614,7 @@ actor WorkshopQueryService {
             let page: WorkshopQueryPage
             do {
                 page = try decodeQueryPage(
-                    data, isBrowsePage: request.childPublishedFileID == nil, page: request.page, numPerPage: request.numPerPage
+                    data, page: request.page, numPerPage: request.numPerPage
                 )
             } catch let error as WorkshopQueryError where error == .keyDisabled {
                 authVerdictHandler?(false, Self.keyFingerprint(apiKey))
@@ -800,8 +800,7 @@ actor WorkshopQueryService {
         try await Task.sleep(nanoseconds: UInt64(clamped * 1_000_000_000))
     }
 
-    /// `isBrowsePage` is false for the presets query (`child_publishedfileid`), where zero results is the normal answer, not a warning.
-    private func decodeQueryPage(_ data: Data, isBrowsePage: Bool, page: Int, numPerPage: Int) throws -> WorkshopQueryPage {
+    private func decodeQueryPage(_ data: Data, page: Int, numPerPage: Int) throws -> WorkshopQueryPage {
         let envelope: QueryFilesEnvelope
         do {
             envelope = try JSONDecoder().decode(QueryFilesEnvelope.self, from: data)
@@ -827,11 +826,7 @@ actor WorkshopQueryService {
                 throw WorkshopQueryError.schemaMismatch
             }
             let message = "Workshop query: no publishedfiledetails (total=\(total ?? -1)) — treating as empty page"
-            if isBrowsePage {
-                Logger.warning(message, category: .workshop)
-            } else {
-                Logger.info(message, category: .workshop)
-            }
+            Logger.info(message, category: .workshop)
             return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: total, sourceItemCount: 0, totalPages: totalPages)
         }
         let items = details.compactMap(Self.item(from:))

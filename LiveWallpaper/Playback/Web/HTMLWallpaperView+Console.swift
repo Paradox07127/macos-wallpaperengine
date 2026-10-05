@@ -44,8 +44,7 @@ extension HTMLWallpaperView {
         guard let payload = body as? [String: Any],
               let level = payload["level"] as? String,
               let text = payload["text"] as? String else { return }
-        let scrubbed = LogPrivacyRedactor.scrub(text)
-        let line = "[web page \(level)] \(scrubbed)"
+        let line = "[web page \(level)] \(text)"
         if level == "error" || level == "uncaught" || level == "rejection" {
             Logger.warning(line, category: .screenManager)
         } else {

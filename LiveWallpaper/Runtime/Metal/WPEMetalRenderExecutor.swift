@@ -2901,8 +2901,6 @@ final class WPEMetalRenderExecutor {
     }
     #endif
 
-    private static let imageUniformDebugEnabled = UserDefaults.standard.bool(forKey: "WPEImageUniformDebugLog")
-    private static let loggedImageUniformNames = OSAllocatedUnfairLock<Set<String>>(initialState: [])
 
     func genericImageUniforms(
         for pass: WPEPreparedRenderPass,
@@ -2973,26 +2971,6 @@ final class WPEMetalRenderExecutor {
             spriteTranslation = SIMD4<Float>(spriteDescriptor.translation.x, spriteDescriptor.translation.y, 1, 0)
             // TEXS already maps the whole quad into physical atlas space.
             sourceUVScale = SIMD2<Float>(repeating: 1)
-        }
-        if WPESceneDebugArtifacts.shared.isEnabled {
-            WPESceneDebugArtifacts.shared.appendLog(
-                "[imageUniform] layer=\(layer.objectName) id=\(layer.objectID) shader=\(pass.pass.shader) "
-                    + "color=(\(color.x),\(color.y),\(color.z),\(color.w)) "
-                    + "gAlpha=\(gAlpha) layerAlpha=\(layer.geometry.alpha) alpha=\(alpha) "
-                    + "gBrightness=\(gBrightness) layerBrightness=\(layer.geometry.brightness) brightness=\(brightness) "
-                    + "hasMask=\(hasMask) "
-                    + "uvScale0=(\(sourceUVScale.x),\(sourceUVScale.y)) "
-                    + "uvScale1=(\(maskUVScale.x),\(maskUVScale.y))",
-                level: .notice
-            )
-        }
-        // genericimage shaders do `rgb = sampled.rgb * color.rgb * brightness`, so brightness==0 OR color==0 blacks out the layer while alpha (a separate term) survives.
-        if Self.imageUniformDebugEnabled,
-           Self.loggedImageUniformNames.withLock({ $0.insert(layer.objectName).inserted }) {
-            Logger.notice(
-                "[ImgUniform] \(layer.objectName) shader=\(pass.pass.shader) g_Brightness=\(gBrightness) layerBright=\(layer.geometry.brightness) → brightness=\(brightness) color=(\(color.x),\(color.y),\(color.z)) alpha=\(alpha)",
-                category: .wpeRender
-            )
         }
         return WPEGenericImageUniforms(
             color: color,

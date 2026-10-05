@@ -82,7 +82,7 @@ public struct SecurityScopedBookmarkResolver: Sendable {
                 return Resolution(url: url, isStale: isStale, isSecurityScoped: true)
             } catch {
                 let scopedError = error as NSError
-                Logger.warning(
+                Logger.info(
                     "[bookmark] scoped resolve refused (\(scopedError.domain) \(scopedError.code)); falling back to unscoped resolve",
                     category: .fileAccess
                 )
@@ -122,9 +122,9 @@ public struct SecurityScopedBookmarkResolver: Sendable {
             let resolution = try resolveDetailed(data)
             (url, isStale, isSecurityScoped) = (resolution.url, resolution.isStale, resolution.isSecurityScoped)
         } catch {
-            Logger.warning(
+            Logger.repeatedWarning(
                 "[bookmark/\(target.label)] resolve failed: \(error.localizedDescription)",
-                category: .fileAccess
+                source: .bookmarkResolution, category: .fileAccess
             )
             return .failure(.resolutionFailed(error.localizedDescription))
         }
@@ -144,9 +144,9 @@ public struct SecurityScopedBookmarkResolver: Sendable {
                     category: .fileAccess
                 )
             } catch {
-                Logger.warning(
+                Logger.repeatedWarning(
                     "[bookmark/\(target.label)] stale and refresh failed: \(error.localizedDescription) — current URL still usable but re-grant may be needed next launch",
-                    category: .fileAccess
+                    source: .bookmarkResolution, category: .fileAccess
                 )
             }
         }

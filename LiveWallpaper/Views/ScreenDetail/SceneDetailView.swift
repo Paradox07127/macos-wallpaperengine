@@ -59,11 +59,12 @@ struct DiagnosticLogSheet: View {
     let log: String
     let tint: Color
     let onDismiss: () -> Void
-    var batchLog: (() -> String)?
+    var batchLog: (() async -> String)?
 
     private enum CopyTarget { case scene, allScenes }
 
     @State private var copied: CopyTarget?
+    @State private var isCopyingBatch = false
     @State private var rendered: AttributedString?
 
     var body: some View {
@@ -93,10 +94,18 @@ struct DiagnosticLogSheet: View {
             }
             Spacer()
             if let batchLog {
-                Button(copied == .allScenes ? "Copied" : "Copy All Scenes") { copy(batchLog(), as: .allScenes) }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(copied == .allScenes ? DesignTokens.Colors.Status.active : nil)
+                Button(copied == .allScenes ? "Copied" : "Copy All Scenes") {
+                    isCopyingBatch = true
+                    Task {
+                        let text = await batchLog()
+                        copy(text, as: .allScenes)
+                        isCopyingBatch = false
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(copied == .allScenes ? DesignTokens.Colors.Status.active : nil)
+                .disabled(isCopyingBatch)
             }
             Button {
                 copy(log, as: .scene)

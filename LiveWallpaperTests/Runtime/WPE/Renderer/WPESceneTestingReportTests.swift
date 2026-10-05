@@ -71,5 +71,29 @@ struct WPESceneTestingReportTests {
         #expect(report.contains("Scene 2 ·"))
         #expect(report.contains("Scene 3 ·"))
     }
+
+    @Test("Export uses the latest runtime snapshot and redacts diagnostic fields and environment")
+    func exportUsesLatestDiagnosticSnapshot() async {
+        let reports = WPESceneTestingReports()
+        let attempt = WPESceneTestingReports.Attempt(session: UUID(), generation: 1)
+        reports.record(attempt: attempt, descriptor: descriptor, status: "loading", diagnostics: nil)
+        reports.record(
+            attempt: attempt, descriptor: descriptor, status: "frame presented",
+            diagnostics: SceneRendererDiagnostics(
+                loadDiagnostics: nil, resolution: .init(events: []),
+                shaderErrors: .init(count: 0, entries: []),
+                gpuErrors: .init(count: 5, last: "code=42 token=gpu-secret /Users/someone/private-scene/scene.pkg")
+            )
+        )
+        let report = reports.make(environmentLines: ["token=environment-secret"])
+        let exported = await reports.export(environmentLines: ["token=environment-secret"])
+        #expect(exported == report)
+        #expect(report.contains("GPU errors: 5"))
+        #expect(report.contains("code=42"))
+        #expect(!report.contains("Status: loading"))
+        #expect(!report.contains("gpu-secret"))
+        #expect(!report.contains("environment-secret"))
+        #expect(!report.contains("private-scene"))
+    }
 }
 #endif

@@ -64,16 +64,26 @@ public final class LogFileSink: @unchecked Sendable {
         line: Int
     ) {
         guard Self.admitsToFile(level) else { return }
-        guard let url = fileURL else { return }
+        record(category: category, level: level, message: Logger.SanitizedMessage(message), file: file, line: line)
+    }
 
-        let timestamp = formatter.string(from: Date())
-        let levelTag = Self.levelTag(level)
-        let fileName = (file as NSString).lastPathComponent
-        let safeMessage = Logger.sanitizedBody(message)
-        let entry = "\(timestamp) [\(category.rawValue)] [\(levelTag)] \(fileName):\(line) — \(safeMessage)\n"
+    func record(
+        category: Logger.Category,
+        level: Logger.Level,
+        message: Logger.SanitizedMessage,
+        file: String,
+        line: Int
+    ) {
+        guard Self.admitsToFile(level) else { return }
+        guard let url = fileURL else { return }
 
         lock.lock()
         defer { lock.unlock() }
+        let timestamp = formatter.string(from: Date())
+        let levelTag = Self.levelTag(level)
+        let fileName = (file as NSString).lastPathComponent
+        let entry = "\(timestamp) [\(category.rawValue)] [\(levelTag)] \(fileName):\(line) — \(message.text)\n"
+
         appendUnlocked(entry, to: url)
         rotateIfNeededUnlocked(url: url)
     }
@@ -152,52 +162,66 @@ public final class LogFileSink: @unchecked Sendable {
         maxLineLength: Int = 500
     ) -> [String] {
         guard let url = fileURL else { return [] }
+        let contextLimit = max(0, maxContextLines)
+        let failureLimit = max(0, maxLines)
+        guard contextLimit + failureLimit > 0 else { return [] }
         lock.lock()
-        defer { lock.unlock() }
 
         // A failure landing right on the rotation threshold is already in `runtime.1.log`,
         // so read oldest → newest generation before the current file.
-        var lines: [String] = []
+        var tails: [String] = []
         for index in stride(from: Self.rotationKeepCount, through: 1, by: -1) {
             let rotated = url.deletingPathExtension().appendingPathExtension("\(index).log")
-            lines += Self.tailLines(from: rotated, maxReadBytes: maxReadBytes, maxLineLength: maxLineLength)
+            if let tail = Self.tailText(from: rotated, maxReadBytes: maxReadBytes) {
+                tails.append(tail)
+            }
         }
-        lines += Self.tailLines(from: url, maxReadBytes: maxReadBytes, maxLineLength: maxLineLength)
+        if let tail = Self.tailText(from: url, maxReadBytes: maxReadBytes) {
+            tails.append(tail)
+        }
+        lock.unlock()
 
-        let failures = lines.filter { line in
-            line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]")
+        var context: [String] = []
+        var failures: [String] = []
+        for tail in tails.reversed() {
+            tail.enumerateSubstrings(in: tail.startIndex ..< tail.endIndex, options: [.byLines, .reverse]) { line, _, _, stop in
+                guard let line else { return }
+                if context.count < contextLimit, line.contains("[NOTICE]") {
+                    context.append(line)
+                }
+                if failures.count < failureLimit,
+                   line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]") {
+                    failures.append(line)
+                }
+                stop = context.count >= contextLimit && failures.count >= failureLimit
+            }
+            if context.count >= contextLimit, failures.count >= failureLimit {
+                break
+            }
         }
-        // `[NOTICE]` carries the wallpaper-identity timeline, which is what makes
-        // the failures attributable to a scene.
-        let context = lines.filter { $0.contains("[NOTICE]") }
-        return Array(context.suffix(maxContextLines)) + Array(failures.suffix(maxLines))
+        let selected = Array(context.reversed()) + Array(failures.reversed())
+        return selected.map(Logger.sanitizedBody).map { line in
+            line.count > maxLineLength ? String(line.prefix(max(0, maxLineLength))) + "…" : line
+        }
     }
 
-    private static func tailLines(from url: URL, maxReadBytes: UInt64, maxLineLength: Int) -> [String] {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+    private static func tailText(from url: URL, maxReadBytes: UInt64) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
         let total = (try? handle.seekToEnd()) ?? 0
         let startOffset = total > maxReadBytes ? total - maxReadBytes : 0
         do {
-            try handle.seek(toOffset: startOffset)
+            try handle.seek(toOffset: startOffset > 0 ? startOffset - 1 : 0)
         } catch {
-            return []
+            return nil
         }
-        let data = (try? handle.readToEnd()) ?? Data()
-        guard let text = String(data: data, encoding: .utf8) else { return [] }
-
-        return text
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .map(String.init)
-            // Re-scrub on read so diagnostics written by older app versions
-            // cannot leak when included in a new bug report.
-            .map(Logger.sanitizedBody)
-            .map { line in
-                line.count > maxLineLength
-                    ? String(line.prefix(maxLineLength)) + "…"
-                    : line
-            }
+        var data = (try? handle.readToEnd()) ?? Data()
+        if startOffset > 0 {
+            guard let newline = data.firstIndex(of: 0x0A) else { return nil }
+            data.removeSubrange(data.startIndex ... newline)
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     private static func prepareLogFileURL() -> URL? {

@@ -102,8 +102,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var textFontResolver: WPETextFontResolver?
     var textLayoutCache: [String: WPETextLayoutCacheEntry] = [:]
     var soundRuntime: WPESoundRuntime?
-    let audioDebugLogEnabled = UserDefaults.standard.bool(forKey: "WPEAudioDebugLog")
-    var audioDiagCounter = 0
     var textScriptInstances: [String: WPESceneScriptInstance] = [:]
     var layerScriptInstances: [String: WPELayerScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
@@ -578,7 +576,6 @@ final class WPEMetalSceneRenderer: NSObject {
         return WPECameraParallaxFrame.defaultGain
     }
 
-    var hoverDebugCounter = 0
 
     deinit {
         for observer in sceneScriptLanguageObservers {

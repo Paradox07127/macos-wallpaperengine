@@ -399,7 +399,7 @@ final class ScreenManager {
         absenceRevalidationPollInterval = startupOptions.absenceRevalidationPollInterval
         restoresSavedWallpapersOnScreenRefresh = startupOptions.restoreSavedWallpapers
 
-        Logger.notice("ScreenManager initializing", category: .screenManager)
+        Logger.debug("ScreenManager initializing", category: .screenManager)
         setupPowerMonitoring()
         setupScreenObservers()
         setupMemoryPressureMonitoring()
@@ -441,7 +441,7 @@ final class ScreenManager {
                 startWeatherMonitoring()
             }
         }
-        Logger.notice("ScreenManager initialization complete", category: .screenManager)
+        Logger.debug("ScreenManager initialization complete", category: .screenManager)
     }
 
     // MARK: - Public Interface

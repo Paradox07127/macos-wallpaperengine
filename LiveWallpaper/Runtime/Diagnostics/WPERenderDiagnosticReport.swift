@@ -11,6 +11,18 @@ enum WPERenderDiagnosticReport {
         errorCode: String?,
         environmentLines: [String] = WPERenderDiagnosticEnvironment.lines()
     ) -> String {
+        LogPrivacyRedactor.scrub(lines(
+            descriptor: descriptor, diagnostics: diagnostics, errorCode: errorCode,
+            environmentLines: environmentLines
+        ).joined(separator: "\n"))
+    }
+
+    nonisolated static func lines(
+        descriptor: SceneDescriptor,
+        diagnostics: SceneRendererDiagnostics?,
+        errorCode: String?,
+        environmentLines: [String]
+    ) -> [String] {
         var lines: [String] = [
             "Capability: \(descriptor.capabilityTier.localizedLabel)"
         ]
@@ -92,10 +104,10 @@ enum WPERenderDiagnosticReport {
 
         lines.append("")
         lines.append(contentsOf: environmentLines)
-        return LogPrivacyRedactor.scrub(lines.joined(separator: "\n"))
+        return lines
     }
 
-    private static func resolutionSummaryText(
+    private nonisolated static func resolutionSummaryText(
         _ snapshot: WPEResolutionDiagnosticsSnapshot
     ) -> String {
         let counts = snapshot.resolvedByOrigin
@@ -116,7 +128,7 @@ enum WPERenderDiagnosticReport {
         return "Events: \(snapshot.events.count), resolved: \(snapshot.resolvedCount), \(parts.joined(separator: ", "))"
     }
 
-    private static func fallbackResolvedRefs(
+    private nonisolated static func fallbackResolvedRefs(
         _ snapshot: WPEResolutionDiagnosticsSnapshot
     ) -> [(ref: String, origin: String)] {
         var seen = Set<String>()

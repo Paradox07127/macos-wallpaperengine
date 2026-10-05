@@ -88,6 +88,14 @@ public final class Logger {
         LogPrivacyRedactor.scrub(message)
     }
 
+    struct SanitizedMessage {
+        let text: String
+
+        init(_ raw: String) {
+            text = Logger.sanitizedBody(raw)
+        }
+    }
+
     // MARK: - Convenience Methods
 
     public static func debug(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
@@ -126,7 +134,8 @@ public final class Logger {
         guard shouldEvaluate(level, category: category) else { return }
 
         let fileName = (file as NSString).lastPathComponent
-        let body = sanitizedBody(message())
+        let sanitized = SanitizedMessage(message())
+        let body = sanitized.text
         category.logger.log(
             level: level.osLogType,
             "\(level.prefix, privacy: .public) [\(fileName, privacy: .public):\(line, privacy: .public)] \(function, privacy: .public) - \(body, privacy: .public)"
@@ -134,7 +143,7 @@ public final class Logger {
         LogFileSink.shared.record(
             category: category,
             level: level,
-            message: body,
+            message: sanitized,
             file: file,
             line: line
         )
@@ -150,6 +159,77 @@ public final class Logger {
     }
 
     // MARK: - Lifecycle Logging
+
+    struct AuthoredErrorBudget {
+        enum Admission: Equatable {
+            case message(suppressed: Int)
+            case suppressionStarted
+        }
+
+        private var windowStart: TimeInterval = -.infinity
+        private var keys: Set<Int> = []
+        private var suppressedCount = 0
+
+        mutating func admit(key: Int, at now: TimeInterval) -> Admission? {
+            var previousSuppressed = 0
+            if now - windowStart >= 10 {
+                previousSuppressed = suppressedCount
+                windowStart = now
+                keys.removeAll(keepingCapacity: true)
+                suppressedCount = 0
+            }
+            guard keys.count < 20, keys.insert(key).inserted else {
+                suppressedCount += 1
+                return suppressedCount == 1 ? .suppressionStarted : nil
+            }
+            return .message(suppressed: previousSuppressed)
+        }
+    }
+
+    private static let authoredErrorBudget = OSAllocatedUnfairLock(initialState: AuthoredErrorBudget())
+
+    public enum RepeatedWarningSource: String, Sendable {
+        case bookmarkResolution, sceneSpanPresent, soundEngineStart
+    }
+
+    private static let repeatedWarningBudgets = OSAllocatedUnfairLock(initialState: [RepeatedWarningSource: AuthoredErrorBudget]())
+
+    public static func repeatedWarning(
+        _ message: String, source: RepeatedWarningSource, category: Category,
+        file: String = #file, function: String = #function, line: Int = #line
+    ) {
+        let admission = repeatedWarningBudgets.withLock {
+            $0[source, default: AuthoredErrorBudget()].admit(key: message.hashValue, at: ProcessInfo.processInfo.systemUptime)
+        }
+        switch admission {
+        case let .message(suppressed):
+            if suppressed > 0 {
+                warning("\(source.rawValue): suppressed \(suppressed) repeated/excess messages", category: category, file: file, function: function, line: line)
+            }
+            warning(message, category: category, file: file, function: function, line: line)
+        case .suppressionStarted:
+            warning("\(source.rawValue): repeated/excess messages suppressed; budget is 20 distinct messages per 10 seconds", category: category, file: file, function: function, line: line)
+        case nil:
+            break
+        }
+    }
+
+    public static func authoredScriptError(_ message: String) {
+        let admission = authoredErrorBudget.withLock {
+            $0.admit(key: message.hashValue, at: ProcessInfo.processInfo.systemUptime)
+        }
+        switch admission {
+        case let .message(suppressed):
+            if suppressed > 0 {
+                warning("SceneScript console.error: suppressed \(suppressed) messages in the previous logging window", category: .wpeRender)
+            }
+            error("SceneScript console.error: \(message)", category: .wpeRender)
+        case .suppressionStarted:
+            warning("SceneScript console.error: repeated/excess messages suppressed; budget is 20 distinct messages per 10 seconds", category: .wpeRender)
+        case nil:
+            break
+        }
+    }
 
     public static func functionStart(category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
         #if DEBUG

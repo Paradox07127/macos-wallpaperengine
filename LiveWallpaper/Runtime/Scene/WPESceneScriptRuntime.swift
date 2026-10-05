@@ -325,8 +325,6 @@ final class WPESceneScriptAudioBridge {
     private var buffers: [Buffer] = []
     /// One trailing zero pass after capture stops; later ticks only read isCapturing.
     private var wasSilent = true
-    private static let debugLogEnabled = UserDefaults.standard.bool(forKey: "WPEAudioDebugLog")
-    private var debugTickCounter = 0
 
     func install(in engine: JSValue, context: JSContext) {
         for bands in Self.resolutions {
@@ -347,13 +345,6 @@ final class WPESceneScriptAudioBridge {
             buffer.setObject(average, forKeyedSubscript: "average" as NSString)
             buffer.setObject(left, forKeyedSubscript: "left" as NSString)
             buffer.setObject(right, forKeyedSubscript: "right" as NSString)
-            if Self.debugLogEnabled {
-                Logger.notice(
-                    "[AudioCapture] registerAudioBuffers called bands=\(bands)"
-                        + " bridgeAlive=\(self != nil)",
-                    category: .audioCapture
-                )
-            }
             if let self {
                 let packed = Self.makePackedSnapshot(bands: bands, in: context)
                 let fanOut = packed.flatMap {
@@ -402,23 +393,6 @@ final class WPESceneScriptAudioBridge {
     }
 
     func refresh() {
-        if Self.debugLogEnabled {
-            debugTickCounter += 1
-            if debugTickCounter % 120 == 1, let first = buffers.first {
-                let values = (0..<first.bands).map {
-                    String(format: "%.2f", first.average.atIndex($0)?.toDouble() ?? -1)
-                }
-                let peak = (0..<first.bands)
-                    .map { ($0, first.average.atIndex($0)?.toDouble() ?? 0) }
-                    .max { $0.1 < $1.1 }
-                Logger.notice(
-                    "[AudioCapture] script bridge: bands=\(first.bands)"
-                        + " peakBand=\(peak?.0 ?? -1)@\(String(format: "%.3f", peak?.1 ?? 0))"
-                        + " [\(values.joined(separator: " "))]",
-                    category: .audioCapture
-                )
-            }
-        }
         guard !buffers.isEmpty else { return }
         guard SystemAudioCaptureManager.isCapturing else {
             guard !wasSilent else { return }
@@ -1591,7 +1565,7 @@ final class WPESceneScriptInstance {
         // Official IConsole.error is variadic and returns void. Keep authored diagnostics observable
         // without changing the existing console.log policy or turning a logged error into a JS exception.
         let error: @convention(block) (String) -> Void = { message in
-            Logger.error("SceneScript console.error: \(String(message.prefix(2048)))", category: .wpeRender)
+            Logger.authoredScriptError(String(message.prefix(2048)))
         }
         let installError = context.evaluateScript("""
         (function (writeError) {

@@ -188,7 +188,7 @@ enum WPEImageCacheMeter {
                     return
                 }
                 if let report = shared.report() {
-                    Logger.notice(report, category: .memory)
+                    Logger.debug(report, category: .memory)
                 }
             }
         }

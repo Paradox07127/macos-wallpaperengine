@@ -40,7 +40,7 @@ final class GlobalShortcutManager {
         let settings = SettingsManager.shared.loadGlobalSettings()
         guard settings.globalShortcutsEnabled else {
             // Keep the event handler so re-enable can re-register without reinstall.
-            Logger.notice("Global shortcuts master switch is off", category: .startup)
+            Logger.info("Global shortcuts master switch is off", category: .startup)
             return
         }
 
@@ -55,7 +55,7 @@ final class GlobalShortcutManager {
             guard let binding else { continue }
             register(action: action, binding: binding)
         }
-        Logger.notice(
+        Logger.info(
             "Registered \(registrations.count) global shortcuts",
             category: .startup
         )
