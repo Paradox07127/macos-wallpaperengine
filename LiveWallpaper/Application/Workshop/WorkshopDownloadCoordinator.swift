@@ -50,6 +50,8 @@ final class WorkshopDownloadCoordinator {
     @ObservationIgnored private let cancelSteamCMD: @MainActor (UUID) async -> Void
     @ObservationIgnored private var tasks: [UInt64: Task<Void, Never>] = [:]
     @ObservationIgnored private var activeDownloads: [UInt64: WorkshopDownloadAttempt] = [:]
+    /// Runs once SteamCMD returns from an item's download, whatever its result.
+    @ObservationIgnored var afterSteamCMDRun: @MainActor () async -> Void
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
@@ -58,13 +60,15 @@ final class WorkshopDownloadCoordinator {
         toasts: WorkshopToastCenter = .shared,
         cancelSteamCMD: @escaping @MainActor (UUID) async -> Void = {
             _ = await SteamConnectorClient.cancelActiveSteamCMD(operationID: $0.uuidString)
-        }
+        },
+        afterSteamCMDRun: @escaping @MainActor () async -> Void = {}
     ) {
         self.importService = importService
         self.repositoryCoordinator = repositoryCoordinator
         self.settings = settings
         self.toasts = toasts
         self.cancelSteamCMD = cancelSteamCMD
+        self.afterSteamCMDRun = afterSteamCMDRun
     }
 
     func phase(for itemID: UInt64) -> DownloadPhase {
@@ -177,6 +181,8 @@ final class WorkshopDownloadCoordinator {
                         }
                     )
                 }
+                // Outside the gate; a refused gate ran no SteamCMD. Not skipped on cancel: a cancelled run may already have synced.
+                await afterSteamCMDRun()
             } catch WorkshopRepositoryCoordinator.MutationError.itemAlreadyMutating {
                 result = .failed(reason: String(
                     localized: "This Workshop item is already being updated.",

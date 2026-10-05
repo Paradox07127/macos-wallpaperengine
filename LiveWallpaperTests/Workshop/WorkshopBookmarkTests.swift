@@ -158,9 +158,12 @@ struct WorkshopBookmarkTests {
         let end = try #require(source.range(of: "removeImportIfMatching:", range: start.upperBound ..< source.endIndex))
         let cleanup = String(source[start.lowerBound ..< end.lowerBound])
         #expect(!cleanup.contains("WorkshopBookmark"), "deleting an installed item clears its like")
-        #expect(cleanup.contains("store.removeWPEBookmarks(workshopID: $0)"), "a deleted item's saved library entries stay behind")
-        #expect(cleanup.contains(#"libraryBookmarks.remove("workshop:\($0)")"#), "a deleted item's library bookmark stays behind")
-        #expect(cleanup.contains(#"libraryBookmarks.remove("bookmark:\("#), "a deleted item's saved variants keep their library marks")
+        #expect(cleanup.contains("WorkshopSavedRecords.remove(workshopID: $0"), "a deleted item's saved records stay behind")
+        let records = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WorkshopSavedRecords.swift")
+        #expect(!records.contains("WorkshopBookmark"), "clearing a Workshop item's saved records clears its like")
+        #expect(records.contains("bookmarks.removeWPEBookmarks(workshopID: workshopID)"), "a deleted item's saved library entries stay behind")
+        #expect(records.contains(#"libraryBookmarks.remove("workshop:\(workshopID)")"#), "a deleted item's library bookmark stays behind")
+        #expect(records.contains(#"libraryBookmarks.remove("bookmark:\("#), "a deleted item's saved variants keep their library marks")
     }
 
 }

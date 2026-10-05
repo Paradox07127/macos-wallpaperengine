@@ -232,6 +232,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         #if !LITE_BUILD
         if !runtimeOptions.isTesting, manager.featureCatalog.isEnabled(.wpeImport) {
+            WorkshopFolderImportCoordinator.shared.removeVanishedImport = WorkshopSavedRecords.removingImport { [weak manager] entry in
+                manager?.removeWPEImport(
+                    workshopID: entry.origin.workshopID, matchingImportedAt: entry.importedAt, recordingDeleteTombstone: false
+                ) ?? false
+            }
+            WorkshopDownloadCoordinator.shared.afterSteamCMDRun = { [workshopDoctorService] in
+                WorkshopFolderImportCoordinator.shared.pruneSteamDeletedImports(using: workshopDoctorService)
+            }
             lifecycle.schedule(after: .seconds(2)) {
                 let keepIDs = WPESceneReachability.referencedWorkshopIDs()
                 await WPEVideoTextureDiskCache.shared.collectOrphans(referencedWorkshopIDs: keepIDs)

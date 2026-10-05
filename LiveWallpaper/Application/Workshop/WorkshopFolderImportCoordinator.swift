@@ -41,7 +41,7 @@ final class WorkshopFolderImportCoordinator {
     @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
 
     /// Drops one history entry Steam deleted, without a delete tombstone; true when it was removed.
-    @ObservationIgnored private let removeVanishedImport: @MainActor (WPEHistoryEntry) -> Bool
+    @ObservationIgnored var removeVanishedImport: @MainActor (WPEHistoryEntry) -> Bool
 
     init(
         importService: WallpaperEngineImportService = WallpaperEngineImportService(),
@@ -208,9 +208,7 @@ final class WorkshopFolderImportCoordinator {
         var added = 0
         var repaired = 0
         var conflicts = 0
-        var removed = 0
 
-        // A missing entry is dropped only while the Steam library is online and its acf no longer lists the item.
         await doctor.enumerateDownloadedItemFolders { [weak self] folder in
             guard let self, allowsImport else { return }
             let id = folder.lastPathComponent
@@ -249,16 +247,7 @@ final class WorkshopFolderImportCoordinator {
                 break
             }
         } whileLibraryOpen: { [weak self] steamRoot in
-            guard let self else { return }
-            for entry in Self.entriesSteamDeleted(staleSteamEntries, steamRoot: steamRoot) {
-                guard allowsImport else { return }
-                if removeVanishedImport(entry) {
-                    removed += 1
-                }
-            }
-        }
-        if removed > 0 {
-            Logger.info("Removed \(removed) library entries whose Steam Workshop items Steam deleted", category: .workshop)
+            self?.removeSteamDeleted(staleSteamEntries, steamRoot: steamRoot)
         }
 
         guard allowsImport, added > 0 || repaired > 0 || conflicts > 0 else { return }
@@ -268,6 +257,27 @@ final class WorkshopFolderImportCoordinator {
             message: Self.syncSummary(added: added, repaired: repaired, conflicts: conflicts),
             isSuccess: true
         )
+    }
+
+    /// Drops the Steam entries Steam deleted, importing nothing; SteamCMD removes unsubscribed items whenever it logs in.
+    func pruneSteamDeletedImports(using doctor: SteamCMDDoctorService) {
+        // No originResolves: each is a ScopedBookmarkAgent request, and entriesSteamDeleted checks the folder itself.
+        let candidates = settings.loadGlobalSettings().recentWPEImports.filter { $0.origin.steamFolderItemID != nil }
+        guard !candidates.isEmpty, let access = try? doctor.beginWorkdirAccess() else { return }
+        defer { access.end() }
+        removeSteamDeleted(candidates, steamRoot: access.url)
+    }
+
+    /// Needs `steamRoot`'s sandbox access open. Ignores task cancellation: a cancelled download's SteamCMD run still deleted items.
+    private func removeSteamDeleted(_ candidates: [WPEHistoryEntry], steamRoot: URL) {
+        guard !isTerminated else { return }
+        var removed = 0
+        for entry in Self.entriesSteamDeleted(candidates, steamRoot: steamRoot) where removeVanishedImport(entry) {
+            removed += 1
+        }
+        if removed > 0 {
+            Logger.info("Removed \(removed) library entries whose Steam Workshop items Steam deleted", category: .workshop)
+        }
     }
 
     nonisolated static func syncSummary(added: Int, repaired: Int, conflicts: Int = 0) -> String {
@@ -319,9 +329,9 @@ final class WorkshopFolderImportCoordinator {
             guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: entry.origin.sourceFolderBookmark)?.path
             else { return false }
             let folder = URL(fileURLWithPath: path, isDirectory: true)
+            let parent = folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
             return !installed.contains(folder.lastPathComponent)
-                && folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-                    .path(percentEncoded: false) == canonicalContentRoot
+                && parent.path(percentEncoded: false) == canonicalContentRoot
                 && !fileManager.fileExists(atPath: path)
         }
     }

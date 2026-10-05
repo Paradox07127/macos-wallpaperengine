@@ -1397,7 +1397,7 @@ final class SteamCMDDoctorService {
         return access.url
     }
 
-    private func beginWorkdirAccess() throws -> WorkdirAccess {
+    func beginWorkdirAccess() throws -> WorkdirAccess {
         guard let data = workdirBookmarkData else { throw SteamCMDDoctorError.missingWorkdirBinding }
         switch bookmarkResolver.resolve(data, target: .transient) {
         case .success(let resolved):

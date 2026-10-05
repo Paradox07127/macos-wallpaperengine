@@ -112,16 +112,10 @@ final class ModalActions {
         inputs.deleteInstalled = { entry, model in
             model.performDelete(entry, services: InstalledLibraryModel.DeleteServices(
                 containsBookmark: {
-                    store.containsWPEBookmark(workshopID: $0) || libraryBookmarks.contains("workshop:\($0)")
+                    WorkshopSavedRecords.contains(workshopID: $0, bookmarks: store, libraryBookmarks: libraryBookmarks)
                 },
                 removeBookmarks: {
-                    // removeWPEBookmarks also drops the item's saved variants; their marks go with them.
-                    let before = Set(store.bookmarks.map(\.id))
-                    store.removeWPEBookmarks(workshopID: $0)
-                    for id in before.subtracting(Set(store.bookmarks.map(\.id))) {
-                        libraryBookmarks.remove("bookmark:\(id)")
-                    }
-                    libraryBookmarks.remove("workshop:\($0)")
+                    WorkshopSavedRecords.remove(workshopID: $0, bookmarks: store, libraryBookmarks: libraryBookmarks)
                 },
                 removeImportIfMatching: {
                     screenManager.removeWPEImport(workshopID: $0.workshopID, matchingImportedAt: $0.importedAt)

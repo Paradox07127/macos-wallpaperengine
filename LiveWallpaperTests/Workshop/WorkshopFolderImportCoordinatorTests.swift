@@ -573,7 +573,7 @@ struct WorkshopFolderImportCoordinatorTests {
         let folder = steam.itemFolders[0]
         let itemID = folder.lastPathComponent
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
-        #expect(library.manager.loadGlobalSettings().recentWPEImports.map { $0.origin.steamFolderItemID } == [itemID])
+        #expect(library.manager.loadGlobalSettings().recentWPEImports.map(\.origin.steamFolderItemID) == [itemID])
 
         try FileManager.default.removeItem(at: removingContentRoot ? folder.deletingLastPathComponent() : folder)
         if let text = acf(itemID) {
@@ -624,13 +624,13 @@ private func writeVideoProject(at folder: URL, workshopID: String, title: String
     try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
 }
 
-private func appWorkshopACF(installed ids: [String]) -> String {
+func appWorkshopACF(installed ids: [String]) -> String {
     let items = ids.map { "\t\t\"\($0)\"\n\t\t{\n\t\t\t\"size\"\t\t\"1\"\n\t\t}\n" }.joined()
     return "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"431960\"\n\t\"WorkshopItemsInstalled\"\n\t{\n\(items)\t}\n"
         + "\t\"WorkshopItemDetails\"\n\t{\n\(items)\t}\n}\n"
 }
 
-private func writeAppWorkshopACF(_ text: String, steamRoot: URL) throws {
+func writeAppWorkshopACF(_ text: String, steamRoot: URL) throws {
     try Data(text.utf8).write(to: steamRoot.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf"))
 }
 
