@@ -1863,7 +1863,7 @@ struct LibraryGridTile: View {
                     .font(DesignTokens.EditDesk.Typography.cardTitle)
                     .foregroundStyle(DesignTokens.Colors.overlayForeground)
                     .lineLimit(1)
-                    .help(Text(verbatim: item.title))
+                    .wpeAuthorLabelHelp(item.title.wallpaperNameHelp)
                 if let status = item.statusBadge {
                     Text(verbatim: status)
                         .font(DesignTokens.EditDesk.Typography.metaMono)

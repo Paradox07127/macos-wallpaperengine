@@ -116,7 +116,7 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .lineLimit(2)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, minHeight: ModalGeometry.iconButtonSize, alignment: .leading)
-                .help(Text(verbatim: title))
+                .wpeAuthorLabelHelp(title.wallpaperNameHelp)
                 .wpeTranslateWallpaperName(title)
             ForEach(actions) { action in
                 GlassIconButton(action.symbol, tint: action.tint, role: action.isDestructive ? .destructive : nil, action: action.perform)

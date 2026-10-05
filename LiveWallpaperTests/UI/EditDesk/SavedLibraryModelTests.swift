@@ -421,6 +421,17 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.isEmpty, "the first character of a type's name matched that type's rows")
     }
 
+    #if !LITE_BUILD
+    @Test("A search finds a row by its translated name")
+    func searchFindsTranslatedName() {
+        let title = "夕阳下的海边小镇"
+        WPEPropertyLabelTranslator.wallpaperNames.store([(title, "Seaside town at sunset")])
+        let model = SavedLibraryModel(inputs: inputs([bookmark(title), bookmark("Alpha")]))
+        model.query = "seaside"
+        #expect(model.visibleItems.map(\.title) == [title], "the row is not found by its translated name")
+    }
+    #endif
+
     @Test func aerialsStatusMirrorsInputsOnRefresh() {
         let scanning = SavedLibraryModel.AerialsState(
             assets: [], isAuthorized: false, lastScanError: "scan failed", isScanning: true

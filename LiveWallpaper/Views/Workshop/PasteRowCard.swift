@@ -81,7 +81,7 @@ struct PasteRowCard: View {
                 .font(DesignTokens.Typography.sectionTitle)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .help(Text(verbatim: titleText))
+                .wpeAuthorLabelHelp(titleText.wallpaperNameHelp)
                 .wpeTranslateWallpaperName(titleText)
             statusBadge
         }

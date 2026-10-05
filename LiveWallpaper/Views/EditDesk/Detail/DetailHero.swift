@@ -110,7 +110,7 @@ struct DetailHero<HUD: View>: View {
         chip {
             Text(verbatim: status.title.translatedWallpaperName)
                 .font(DesignTokens.EditDesk.Typography.cardTitle)
-                .help(Text(verbatim: status.title))
+                .wpeAuthorLabelHelp(status.title.wallpaperNameHelp)
             Text(verbatim: status.kindLine)
                 .font(DesignTokens.EditDesk.Typography.metaMono)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))

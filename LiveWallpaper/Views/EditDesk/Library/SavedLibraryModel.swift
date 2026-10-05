@@ -356,7 +356,9 @@ final class SavedLibraryModel {
     #endif
 
     private func matchesQuery(_ item: LibraryItem) -> Bool {
-        if item.title.range(of: query, options: .caseInsensitive) != nil || queryIsWhole(item.kind.localizedName) {
+        if item.title.range(of: query, options: .caseInsensitive) != nil
+            || item.title.translatedWallpaperName.range(of: query, options: .caseInsensitive) != nil
+            || queryIsWhole(item.kind.localizedName) {
             return true
         }
         #if !LITE_BUILD

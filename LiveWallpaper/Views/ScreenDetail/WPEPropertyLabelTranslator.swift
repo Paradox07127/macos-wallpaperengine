@@ -1,12 +1,13 @@
 import SwiftUI
 #if !LITE_BUILD
+import LiveWallpaperCore
 import NaturalLanguage
 
 // `@preconcurrency`: `TranslationSession` is a non-Sendable class whose methods
 // are `@concurrent`; without it Swift 6 rejects every `session.translate` call.
 @preconcurrency import Translation
 
-/// Translates Chinese wallpaper names and property labels into English using
+/// Translates Chinese wallpaper names and property labels into the app language using
 /// the on-device Translation framework. Rows swap to
 /// the translation when it lands and keep the author text in a hover tooltip.
 /// macOS 14 shows the originals: `TranslationSession` requires macOS 15.
@@ -17,8 +18,8 @@ final class WPEPropertyLabelTranslator {
     static let wallpaperNames = WPEPropertyLabelTranslator()
     /// Author text → translation, filled as responses arrive.
     private(set) var translated: [String: String] = [:]
-    /// Attempted labels stay requested after a declined download. Internal
-    /// errors clear their entry so opening the card again can retry.
+    /// Attempted labels stay requested after a declined download or a language pair
+    /// that isn't installed. Internal errors clear their entry so opening the card again can retry.
     @ObservationIgnored private var requested: Set<String> = []
     @ObservationIgnored private var pending: [String] = []
 
@@ -27,13 +28,37 @@ final class WPEPropertyLabelTranslator {
     /// holding `.translationTask`, and `invalidate()` re-runs that task.
     var boxedConfiguration: Any?
 
-    @ObservationIgnored private let targetLanguage: Locale.Language
+    @ObservationIgnored private var targetLanguage: Locale.Language
     /// Detected per language batch — auto-detect fails on 2–4 character
     /// labels, and the session would otherwise show its "choose a language" sheet.
     @ObservationIgnored private var sourceLanguage: Locale.Language?
+    /// Whether a source → target pack is installed. A session for a pair that isn't
+    /// would show the system download sheet on its first `translate`.
+    @ObservationIgnored private let isInstalled: @Sendable (Locale.Language, Locale.Language) async -> Bool
+    /// The in-flight installed-pack check; `nil` when none is running.
+    @ObservationIgnored private(set) var availabilityCheck: Task<Void, Never>?
 
-    init(targetLanguage: Locale.Language = Locale.Language(identifier: "en")) {
+    init(
+        targetLanguage: Locale.Language = effectiveTargetLanguage(),
+        isInstalled: @escaping @Sendable (Locale.Language, Locale.Language) async -> Bool = languagePairIsInstalled
+    ) {
         self.targetLanguage = targetLanguage
+        self.isInstalled = isInstalled
+    }
+
+    /// `preference` is the stored `AppLanguagePreference` raw value; `.system`, missing and
+    /// unknown values follow the bundle's resolved localization.
+    nonisolated static func effectiveTargetLanguage(
+        preference: String? = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey),
+        preferredLocalization: String? = Bundle.main.preferredLocalizations.first
+    ) -> Locale.Language {
+        let explicit = preference.flatMap(AppLanguagePreference.init(rawValue:))?.localeIdentifier
+        return Locale.Language(identifier: explicit ?? preferredLocalization ?? "en")
+    }
+
+    nonisolated static func languagePairIsInstalled(_ source: Locale.Language, _ target: Locale.Language) async -> Bool {
+        guard #available(macOS 15.0, *) else { return false }
+        return await LanguageAvailability().status(from: source, to: target) == .installed
     }
 
     /// The label a row should render.
@@ -67,15 +92,46 @@ final class WPEPropertyLabelTranslator {
         configurePendingTranslation()
     }
 
+    /// Re-translates every label seen so far into `language`.
+    @available(macOS 15.0, *)
+    func retarget(to language: Locale.Language) {
+        guard language != targetLanguage else { return }
+        let seen = requested.union(translated.keys)
+        targetLanguage = language
+        translated = [:]
+        pending = []
+        requested = []
+        availabilityCheck?.cancel()
+        availabilityCheck = nil
+        sourceLanguage = nil
+        // Ends the running `.translationTask`; its results for the old target are dropped in `finish`.
+        configuration = nil
+        enqueue(labels: seen)
+    }
+
     @available(macOS 15.0, *)
     private func configurePendingTranslation() {
-        guard !pending.isEmpty else { return }
+        guard !pending.isEmpty, availabilityCheck == nil else { return }
         let detected = Self.language(of: pending[0])
-        if configuration == nil || detected != sourceLanguage {
-            sourceLanguage = detected
-            boxedConfiguration = TranslationSession.Configuration(source: detected, target: targetLanguage)
-        } else {
+        if configuration != nil, detected == sourceLanguage {
             configuration?.invalidate()
+            return
+        }
+        guard let detected else { return }
+        let target = targetLanguage
+        availabilityCheck = Task { [isInstalled] in
+            let installed = await isInstalled(detected, target)
+            // A retarget cancels this check and has already started its own.
+            guard !Task.isCancelled else { return }
+            self.availabilityCheck = nil
+            if installed {
+                self.sourceLanguage = detected
+                self.configuration = TranslationSession.Configuration(source: detected, target: target)
+            } else {
+                // Left in `requested`, so these stay as authored until the app language changes.
+                self.pending.removeAll { Self.language(of: $0) == detected }
+                self.configurePendingTranslation()
+            }
         }
     }
 
@@ -93,6 +149,14 @@ final class WPEPropertyLabelTranslator {
         }) else { return nil }
         let han = String(String.UnicodeScalarView(text.unicodeScalars.filter(\.properties.isIdeographic)))
         guard !han.isEmpty else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.languageConstraints = [.simplifiedChinese, .traditionalChinese, .japanese]
+        recognizer.processString(text)
+        // Kanji-only Japanese: Japanese-only forms (駅, 気, 桜) score ~1.0, while words
+        // shared with Chinese ("静音", "原神") stay near an even split.
+        if (recognizer.languageHypotheses(withMaximum: 1)[.japanese] ?? 0) > 0.9 {
+            return nil
+        }
         let traditional = NLLanguageRecognizer.dominantLanguage(for: han) == .traditionalChinese
         return Locale.Language(identifier: traditional ? "zh-Hant" : "zh-Hans")
     }
@@ -104,6 +168,10 @@ final class WPEPropertyLabelTranslator {
         let labels = Set(batch)
         pending.removeAll { labels.contains($0) }
         return batch
+    }
+
+    private func takeBatch() -> (labels: [String], target: Locale.Language) {
+        (takePending(), targetLanguage)
     }
 
     @available(macOS 15.0, *)
@@ -118,30 +186,41 @@ final class WPEPropertyLabelTranslator {
     /// one source language; unfinished labels survive task cancellation.
     @available(macOS 15.0, *)
     nonisolated func translateLabels(using session: TranslationSession) async {
-        let batch = await takePending()
+        let (batch, target) = await takeBatch()
+        var finished: [(String, String)] = []
         for (index, source) in batch.enumerated() {
             do {
                 try Task.checkCancellation()
                 let response = try await session.translate(source)
                 if let text = Self.cleanedTargetText(for: source, targetText: response.targetText) {
-                    await store([(source, text)])
+                    finished.append((source, text))
                 }
             } catch {
                 if Task.isCancelled || error is CancellationError {
-                    await restorePending(batch[index...])
+                    await finish(finished, unfinished: batch[index...], target: target)
                     return
                 }
                 await recordFailure(for: source, error: error)
             }
         }
-        await configurePendingTranslation()
+        await finish(finished, unfinished: [], target: target)
     }
 
-    /// Stores finished translations; rows re-render on the next pass.
-    func store(_ pairs: [(String, String)]) {
-        for (source, text) in pairs {
-            translated[source] = text
+    @available(macOS 15.0, *)
+    private func finish(_ pairs: [(String, String)], unfinished: ArraySlice<String>, target: Locale.Language) {
+        // After a retarget these labels are already queued again for the new language.
+        guard target == targetLanguage else { return }
+        store(pairs)
+        if unfinished.isEmpty {
+            configurePendingTranslation()
+        } else {
+            restorePending(unfinished)
         }
+    }
+
+    /// Stores finished translations in one mutation, so observers rebuild once per batch.
+    func store(_ pairs: [(String, String)]) {
+        translated.merge(pairs) { _, new in new }
     }
 
     @available(macOS 15.0, *)
@@ -178,32 +257,33 @@ final class WPEPropertyLabelTranslator {
     }
 }
 
-extension View {
-    /// `help` takes a non-optional `Text`; this skips the modifier entirely
-    /// while a row still shows its author label.
-    @ViewBuilder
-    func wpeAuthorLabelHelp(_ original: String?) -> some View {
-        if let original {
-            help(Text(verbatim: original))
-        } else {
-            self
-        }
-    }
+/// Below macOS 15 there is no Translation framework, so the rows simply render
+/// their author labels. `session` is not `Sendable` — all of its use stays inside the task's closure.
+private struct WPEPropertyLabelTranslation: ViewModifier {
+    let translator: WPEPropertyLabelTranslator
+    @AppStorage(AppLanguagePreference.storageKey) private var languagePreference = AppLanguagePreference.system.rawValue
 
-    /// Attach once at the card level. Below macOS 15 there is no Translation
-    /// framework, so the rows simply render their author labels. `session` is
-    /// not `Sendable` — all of its use stays inside the task's closure.
-    @ViewBuilder
-    func wpePropertyLabelTranslation(_ translator: WPEPropertyLabelTranslator) -> some View {
+    func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
             // A closure literal here inherits MainActor from `View`, which
             // isolates the non-Sendable session and makes its nonisolated
             // methods uncallable — a nonisolated method reference keeps the
             // session in its own region.
-            translationTask(translator.configuration, action: translator.translateLabels)
+            content
+                .translationTask(translator.configuration, action: translator.translateLabels)
+                .onChange(of: languagePreference) { _, preference in
+                    translator.retarget(to: WPEPropertyLabelTranslator.effectiveTargetLanguage(preference: preference))
+                }
         } else {
-            self
+            content
         }
+    }
+}
+
+extension View {
+    /// Attach once at the card level.
+    func wpePropertyLabelTranslation(_ translator: WPEPropertyLabelTranslator) -> some View {
+        modifier(WPEPropertyLabelTranslation(translator: translator))
     }
 }
 #endif
@@ -217,9 +297,30 @@ extension String {
         self
         #endif
     }
+
+    /// The original name for a hover tooltip; `nil` while the row still shows it.
+    @MainActor
+    var wallpaperNameHelp: String? {
+        #if !LITE_BUILD
+        WPEPropertyLabelTranslator.wallpaperNames.helpText(for: self)
+        #else
+        nil
+        #endif
+    }
 }
 
 extension View {
+    /// `help` takes a non-optional `Text`; this skips the modifier entirely
+    /// while a row still shows its author label.
+    @ViewBuilder
+    func wpeAuthorLabelHelp(_ original: String?) -> some View {
+        if let original {
+            help(Text(verbatim: original))
+        } else {
+            self
+        }
+    }
+
     /// Queue a displayed name without changing the stored title or wallpaper identity.
     @ViewBuilder
     func wpeTranslateWallpaperName(_ original: String) -> some View {
