@@ -466,15 +466,17 @@ final class SettingsManager {
 
     /// The entry already holding `workshopID` from another folder that still exists; nil when there is none or
     /// when `sourceFolder` is already some entry's folder (a refresh). An entry whose folder no longer resolves never conflicts.
-    func conflictingWPEImport(workshopID: String, sourceFolder: URL) -> WPEHistoryEntry? {
+    /// `folders` nil resolves each entry as it is reached.
+    func conflictingWPEImport(workshopID: String, sourceFolder: URL, folders: WPESourceFolderPaths? = nil) -> WPEHistoryEntry? {
         let recent = loadGlobalSettings().recentWPEImports
         let sameID = recent.filter { $0.origin.workshopID == workshopID }
         guard !sameID.isEmpty else { return nil }
+        let folders = folders ?? WPESourceFolderPaths(settings: self)
         let target = Self.normalizedFolderPath(sourceFolder)
         var conflict: WPEHistoryEntry?
         // Same-id entries first so a rescan of an imported item stops at its own entry without resolving the rest.
         for entry in sameID + recent.filter({ $0.origin.workshopID != workshopID }) {
-            guard let folder = existingSourceFolderPath(of: entry.origin) else { continue }
+            guard let folder = folders.path(of: entry) else { continue }
             if folder == target {
                 return nil
             }
@@ -486,17 +488,27 @@ final class SettingsManager {
     }
 
     /// Each local copy paired with a Steam item of the same Workshop id whose folder is still on disk.
-    func localCopiesShadowedBySteam() -> [(local: WPEHistoryEntry, steam: WPEHistoryEntry)] {
+    func localCopiesShadowedBySteam(folders: WPESourceFolderPaths? = nil) -> [(local: WPEHistoryEntry, steam: WPEHistoryEntry)] {
         let recent = loadGlobalSettings().recentWPEImports
+        let folders = folders ?? WPESourceFolderPaths(settings: self)
         return recent.compactMap { local in
             guard Self.steamFolderItemID(local.origin) == nil,
                   let steam = recent.first(where: {
                       $0.origin.workshopID == local.origin.workshopID
                           && Self.steamFolderItemID($0.origin) != nil
-                          && existingSourceFolderPath(of: $0.origin) != nil
+                          && folders.path(of: $0) != nil
                   }) else { return nil }
             return (local, steam)
         }
+    }
+
+    /// Resolves every current history entry's bookmark once, for one scan to share.
+    func sourceFolderPaths() -> WPESourceFolderPaths {
+        let folders = WPESourceFolderPaths(settings: self)
+        for entry in loadGlobalSettings().recentWPEImports {
+            _ = folders.path(of: entry)
+        }
+        return folders
     }
 
     /// Unlike `removeWPEImport`, leaves the delete tombstones alone: the item stays in the library as `replacement`.
@@ -886,6 +898,34 @@ final class SettingsManager {
 
     func saveTrustedHosts(_ hosts: [String]) {
         defaults.set(hosts, forKey: Keys.trustedHosts)
+    }
+}
+
+/// History entries' existing folder paths, each entry's bookmark resolved at most once; holds paths, never resolved URLs.
+@MainActor
+final class WPESourceFolderPaths {
+    private struct Key: Hashable {
+        let workshopID: String
+        let importedAt: Date
+        let bookmark: Data
+    }
+
+    private let settings: SettingsManager
+    /// A nil value is an entry whose folder is gone or whose bookmark no longer resolves.
+    private var paths: [Key: String?] = [:]
+
+    init(settings: SettingsManager) {
+        self.settings = settings
+    }
+
+    func path(of entry: WPEHistoryEntry) -> String? {
+        let key = Key(workshopID: entry.origin.workshopID, importedAt: entry.importedAt, bookmark: entry.origin.sourceFolderBookmark)
+        if let known = paths[key] {
+            return known
+        }
+        let path = settings.existingSourceFolderPath(of: entry.origin)
+        paths.updateValue(path, forKey: key)
+        return path
     }
 }
 

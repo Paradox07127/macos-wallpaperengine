@@ -211,9 +211,10 @@ final class WorkshopFolderImportCoordinator {
         var known = Set<String>()
         var staleIDs = Set<String>()
         var staleSteamEntries: [WPEHistoryEntry] = []
-        // One resolve per entry: each resolve is a ScopedBookmarkAgent request.
+        // Every check in this scan shares one resolve per entry: each resolve is a ScopedBookmarkAgent request.
+        let folders = self.settings.sourceFolderPaths()
         for entry in settings.recentWPEImports {
-            if Self.originResolves(entry.origin) {
+            if folders.path(of: entry) != nil {
                 known.insert(entry.origin.workshopID)
             } else {
                 staleIDs.insert(entry.origin.workshopID)
@@ -239,9 +240,9 @@ final class WorkshopFolderImportCoordinator {
             let id = folder.lastPathComponent
             guard !known.contains(id) else {
                 guard !settings.deletedWorkshopIDs.contains(id),
-                      let existing = self.settings.conflictingWPEImport(workshopID: id, sourceFolder: folder) else { return }
+                      let existing = self.settings.conflictingWPEImport(workshopID: id, sourceFolder: folder, folders: folders) else { return }
                 let outcome: ProjectImportOutcome = existing.origin.steamFolderItemID == nil
-                    ? await importOne(folder, deliberate: false, supersedesLocalCopy: true)
+                    ? await importOne(folder, deliberate: false, supersedesLocalCopy: true, folders: folders)
                     : .conflict(title: existing.origin.title)
                 switch outcome {
                 case .imported:
@@ -256,7 +257,7 @@ final class WorkshopFolderImportCoordinator {
                 return
             }
             let isRelink = staleIDs.contains(id)
-            switch await importOne(folder, deliberate: false, preservesHistory: isRelink) {
+            switch await importOne(folder, deliberate: false, preservesHistory: isRelink, folders: folders) {
             case .imported:
                 if isRelink {
                     repaired += 1
@@ -430,11 +431,12 @@ final class WorkshopFolderImportCoordinator {
         deliberate: Bool,
         preservesHistory: Bool = false,
         supersedesLocalCopy: Bool = false,
+        folders: WPESourceFolderPaths? = nil,
         onWallpaperImported: (@MainActor () -> Void)? = nil
     ) async -> ProjectImportOutcome {
         guard allowsImport else { return .unreadable }
         if let project = try? WallpaperEngineProject.read(from: projectFolder),
-           let existing = settings.conflictingWPEImport(workshopID: project.workshopID, sourceFolder: projectFolder),
+           let existing = settings.conflictingWPEImport(workshopID: project.workshopID, sourceFolder: projectFolder, folders: folders),
            !(supersedesLocalCopy && existing.origin.steamFolderItemID == nil) {
             Logger.info("Skipped a project whose Workshop id is already in the library from another folder", category: .workshop)
             return .conflict(title: existing.origin.title)

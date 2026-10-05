@@ -79,6 +79,39 @@ final class WPEEngineAssetsLibrary {
         return resolveAuthorizedRoot(using: DirectoryBookmarks.resolveDirectoryBookmark)
     }
 
+    /// The engine root to show and scan, with the sandbox scope held on the URL of the resolve that found it until `end()`.
+    struct RootAccess {
+        let root: URL
+        /// The resolved URL itself; `root` may be a derived copy that cannot open the scope.
+        let scopedURL: URL
+        let isOpen: Bool
+
+        init(root: URL, scopedURL: URL) {
+            self.root = root
+            self.scopedURL = scopedURL
+            isOpen = scopedURL.startAccessingSecurityScopedResource()
+        }
+
+        func end() {
+            if isOpen {
+                scopedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+    }
+
+    /// `resolveAuthorizedRoot()` with its one resolve's scope kept open; nil when there is no usable root.
+    func beginAuthorizedRootAccess() -> RootAccess? {
+        if let managed = Self.managedInstallRoot() {
+            isAuthorized = true
+            engineRootDisplayName = Self.managedDisplayName
+            lastError = nil
+            return RootAccess(root: managed, scopedURL: managed)
+        }
+        return authorizedRoot(using: DirectoryBookmarks.resolveDirectoryBookmark).map {
+            RootAccess(root: $0.root, scopedURL: $0.resolved)
+        }
+    }
+
     func refresh() {
         _ = resolveAuthorizedRoot()
         if !Self.hasManagedInstall && SettingsManager.shared.loadWPEEngineAssetsBookmark() == nil {
@@ -181,6 +214,11 @@ extension WPEEngineAssetsLibrary {
     typealias DirectoryBookmarkResolver = (Data) throws -> DirectoryBookmarkResolution
 
     func resolveAuthorizedRoot(using resolver: DirectoryBookmarkResolver) -> URL? {
+        authorizedRoot(using: resolver)?.root
+    }
+
+    /// `resolved` is the URL the bookmark resolve returned, the one that can open the scope.
+    private func authorizedRoot(using resolver: DirectoryBookmarkResolver) -> (root: URL, resolved: URL)? {
         guard let bookmarkData = SettingsManager.shared.loadWPEEngineAssetsBookmark() else {
             isAuthorized = false
             engineRootDisplayName = nil
@@ -222,7 +260,7 @@ extension WPEEngineAssetsLibrary {
             isAuthorized = true
             engineRootDisplayName = rootURL.lastPathComponent
             lastError = nil
-            return rootURL
+            return (rootURL, resolution.url)
         } catch {
             let message = "Failed to resolve Wallpaper Engine assets bookmark: \(error.localizedDescription)"
             Logger.error(message, category: .fileAccess)
