@@ -169,7 +169,8 @@ struct WPEPassRenderContract: Equatable, Sendable {
         let straightOutput = !pmaOutput && (isImage || kind == .effectOpacity && primary == .textEffectCarrier)
         return Self(identity: .init(shader: pass.shader, builtin: native, blending: pass.blending,
                                     target: pass.target, references: references, alphaOverride: alphaOverride), inputs: resolved, shaderAlpha: shaderAlpha,
-                    nativeAlpha: .init(input: operation, straightOutput: straightOutput),
+                    nativeAlpha: .init(input: operation, straightOutput: straightOutput,
+                                       independentCoverageInput: native && kind == .effectOpacity && primary == .textEffectCarrier),
                     blend: blend, attachment: attachment, emitted: emitted, stored: stored,
                     diagnostics: diagnostics, outputDeclaration: outputDeclaration)
     }

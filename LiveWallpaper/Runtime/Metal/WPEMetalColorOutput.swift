@@ -8,7 +8,8 @@ enum WPEMetalColorOutput {
         guard let function = library.makeFunction(name: name) else { return nil }
         let constants = function.functionConstantsDictionary
         guard constants["wpe_unorm_target"] != nil || constants["wpe_input_alpha_operation"] != nil
-            || constants["wpe_native_straight_output"] != nil else { return function }
+            || constants["wpe_native_straight_output"] != nil
+            || constants["wpe_independent_coverage_input"] != nil else { return function }
         let values = MTLFunctionConstantValues()
         var clampsSource = switch format {
         case .r8Unorm, .rg8Unorm, .rgba8Unorm, .bgra8Unorm, .rgb10a2Unorm,
@@ -27,6 +28,10 @@ enum WPEMetalColorOutput {
         if constants["wpe_native_straight_output"] != nil {
             var straight = nativeAlpha.straightOutput
             values.setConstantValue(&straight, type: .bool, index: 1021)
+        }
+        if constants["wpe_independent_coverage_input"] != nil {
+            var independent = nativeAlpha.independentCoverageInput
+            values.setConstantValue(&independent, type: .bool, index: 1020)
         }
         return try library.makeFunction(name: name, constantValues: values)
     }

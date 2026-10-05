@@ -1305,4 +1305,126 @@ struct WPEMetalFBOFormatMappingTests {
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "r16f", promoteLDRToHDR: true) == .r16Float)
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "rg1616f", promoteLDRToHDR: true) == .rg16Float)
     }
+
+    @Test("A written FBO preserves raw physical channels and HDR data values",
+          arguments: ["r8", "r16f", "rg1616f", "rgba8888", "rg88"], [0, 1, 2, 3])
+    func authoredFBOPhysicalRawConsumer(format: String, configuration: Int) throws {
+        let hdr = configuration & 1 != 0
+        let disableAliasing = configuration & 2 != 0
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let size = CGSize(width: 8, height: 4)
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_TexCoord;
+        void main() { gl_Position = vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }
+        """
+        let writer = """
+        varying vec2 v_TexCoord;
+        void main() { gl_FragColor = v_TexCoord.x < 0.5 ? vec4(0.375, 0.625, 0.875, 0.0) : vec4(-0.5, 1.5, 0.75, 0.0); }
+        """
+        // Windows custom FBO consumers did not receive TEX0FORMAT in this
+        // fixture. Keep this probe raw: local inferred ABI is not native proof.
+        let consumer = """
+        uniform sampler2D g_Texture0;
+        varying vec2 v_TexCoord;
+        void main() {
+            float cell = floor(v_TexCoord.x * 8.0);
+            vec4 raw = texture2D(g_Texture0, vec2(cell < 4.0 ? 0.25 : 0.75, 0.5));
+            float channel = mod(cell, 4.0);
+            float value = channel < 1.0 ? raw.r :
+                (channel < 2.0 ? raw.g : (channel < 3.0 ? raw.b : raw.a));
+            gl_FragColor = vec4(vec3((value + 1.0) * 0.25), 1.0);
+        }
+        """
+        for (name, fragment) in [("writer", writer), ("consumer", consumer)] {
+            let base = root.appendingPathComponent("shaders/effects/fbo-\(name)")
+            try FileManager.default.createDirectory(at: base.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(vertex.utf8).write(to: base.appendingPathExtension("vert"))
+            try Data(fragment.utf8).write(to: base.appendingPathExtension("frag"))
+        }
+        func pass(_ name: String, source: WPETextureReference, target: WPERenderTarget) -> WPERenderPass {
+            .init(id: "physical-fbo." + name, phase: .effect(file: "effects/probe/effect.json"),
+                  shader: "effects/fbo-" + name, source: source, target: target,
+                  textures: name == "consumer" ? [0: source] : [:], binds: [:], constants: [:], combos: [:],
+                  blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        }
+        let writerPass = pass("writer", source: .asset("source"), target: .fbo(name: "_rt_PhysicalProbe"))
+        let consumerPass = pass("consumer", source: .fbo("_rt_PhysicalProbe"), target: .scene)
+        let layer = WPERenderLayer(
+            objectID: "physical-fbo", objectName: "Physical FBO", imagePath: "source", materialPath: nil,
+            geometry: .init(origin: .init(4, 2, 0), scale: .init(1, 1, 1), angles: .zero, alignment: .center,
+                            size: size, alpha: 1, color: .init(1, 1, 1), brightness: 1),
+            compositeA: "physical-fbo.a", compositeB: "physical-fbo.b",
+            localFBOs: [.init(name: "_rt_PhysicalProbe", scale: 1, format: format, pixelSize: size)],
+            passes: [writerPass, consumerPass]
+        )
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: root).build(
+            graph: .init(layers: [layer]), canonicalCompositeRotationEnabled: false, sceneHDR: hdr
+        )
+        let source = try #require(device.makeTexture(descriptor: .texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false
+        )))
+        var white: [UInt8] = [255, 255, 255, 255]
+        source.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &white, bytesPerRow: 4)
+        // Exercise both production heap aliasing and discrete allocations.
+        let controls = disableAliasing ? ["WPE_DIAGNOSTIC_DISABLE_FBO_ALIASING": "1"] : [:]
+        let executor = try WPEMetalRenderExecutor(device: device, diagnosticControls: .init(environment: controls))
+        let output = try executor.render(pipeline: pipeline, size: size, textures: ["source": source], cameraUniforms: .init(
+            orthogonalProjection: .init(width: 8, height: 4, auto: false), sceneCamera: .defaultCamera, sceneHDR: hdr
+        ))
+        #expect(executor.untranslatableShaderReasonByPassID.isEmpty)
+        #expect(executor.lastDiagnosticFrameStats.plannedAliasIntervalCount > 0)
+        #expect(executor.lastDiagnosticFrameStats.fboAliasingEnabled == !disableAliasing)
+        #expect(disableAliasing ? executor.lastDiagnosticFrameStats.aliasIntervalCount == 0
+            : executor.lastDiagnosticFrameStats.aliasIntervalCount > 0)
+        let actualTarget = try executor.targetPool.texture(for: .fbo(name: "_rt_PhysicalProbe"),
+                                                           layer: layer, sceneSize: size, avoiding: nil)
+        let expectedPhysical: MTLPixelFormat = switch format {
+        case "r8": .r8Unorm
+        case "rg88": .rg8Unorm
+        case "r16f": .r16Float
+        case "rg1616f": .rg16Float
+        default: hdr ? .rgba16Float : .rgba8Unorm
+        }
+        #expect(actualTarget.pixelFormat == expectedPhysical)
+        // Numeric expectations are independently stated from native format
+        // semantics, not generated by the production mapping/swizzle helper.
+        let expected: [Double] = switch format {
+        case "r8": [96.0 / 255, 0, 0, 1, 0, 0, 0, 1]
+        case "rg88": [96.0 / 255, 159.0 / 255, 0, 1, 0, 1, 0, 1]
+        case "r16f": [0.375, 0, 0, 1, -0.5, 0, 0, 1]
+        case "rg1616f": [0.375, 0.625, 0, 1, -0.5, 1.5, 0, 1]
+        default: hdr ? [0.375, 0.625, 0.875, 0, -0.5, 1.5, 0.75, 0] : [96.0 / 255, 159.0 / 255, 223.0 / 255, 0, 0, 1, 191.0 / 255, 0]
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: output.pixelFormat, width: 8, height: 4, mipmapped: false
+        )
+        descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+        let staging = try #require(device.makeTexture(descriptor: descriptor))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: output, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
+                  sourceSize: MTLSize(width: 8, height: 4, depth: 1), to: staging,
+                  destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+        if staging.storageMode == .managed {
+            blit.synchronize(resource: staging)
+        }
+        blit.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.status == .completed)
+        let stride = hdr ? 8 : 4
+        var actual = [UInt8](repeating: 0, count: 8 * 4 * stride)
+        actual.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 8 * stride,
+                                                         from: MTLRegionMake2D(0, 0, 8, 4), mipmapLevel: 0) }
+        for cell in 0 ..< 8 {
+            let offset = (8 + cell) * stride
+            let red = hdr ? Double(Float16(bitPattern: UInt16(actual[offset]) | UInt16(actual[offset + 1]) << 8)) : Double(actual[offset]) / 255
+            #expect(abs(red - (expected[cell] + 1) * 0.25) < (hdr ? 0.001 : 0.006), "\(format) HDR=\(hdr) discrete=\(disableAliasing) cell=\(cell)")
+        }
+    }
 }

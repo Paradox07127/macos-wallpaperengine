@@ -98,7 +98,7 @@ WPE_METAL_SUITES := WPE28ShaderCompatibilityTests WPELinkedShaderStageTests WPEA
     WPEMetalSceneRendererTests WPESceneScriptWiringTests WPETransformScriptLayerPresentationTests WPESceneHibernateTests WPEMediaTextureProviderTests \
     WPEDisplayedFrameCaptureTests WallpaperVideoPlayerDisplayedFrameCaptureTests \
     SceneLoadProgressTests WPEPreparationCancellationTests WPEPuppetSkinningGateTests \
-    WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests \
+    WPEMetalFBOAliasTopologyCacheTests WPEMetalRenderTargetPoolAliasLifetimeTests WPEMetalNamedFBOAliasTests WPEMetalFBOFormatMappingTests \
     WPEPointerEdgeDeliveryTests WPEShaderTextureSlotTests \
     WPEShaderTranslationCacheTests WPEMetalProjectedGeometryCullingTests \
     WPERenderThreadTests WPERenderThreadDrainRuntimeTests

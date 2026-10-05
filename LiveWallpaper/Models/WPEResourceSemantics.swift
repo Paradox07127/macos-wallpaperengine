@@ -67,6 +67,14 @@ enum WPENativeInputAlphaOperation: UInt, Hashable, Codable, Sendable {
 struct WPENativeAlphaPolicy: Equatable, Hashable, Codable, Sendable {
     let input: WPENativeInputAlphaOperation
     let straightOutput: Bool
+    let independentCoverageInput: Bool
+
+    init(input: WPENativeInputAlphaOperation, straightOutput: Bool, independentCoverageInput: Bool = false) {
+        self.input = input
+        self.straightOutput = straightOutput
+        self.independentCoverageInput = independentCoverageInput
+    }
+
     static let compatibility = Self(input: .none, straightOutput: false)
 }
 
