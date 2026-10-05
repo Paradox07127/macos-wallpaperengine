@@ -579,6 +579,7 @@ extension WPEMetalSceneRenderer {
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
+            || !particleRateScriptInstances.isEmpty
             || !sharedOriginReadFans.isEmpty
             || !sharedScaleReadFans.isEmpty
             || !sharedAnglesReadFans.isEmpty
@@ -621,6 +622,7 @@ extension WPEMetalSceneRenderer {
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
+            || !particleRateScriptInstances.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty

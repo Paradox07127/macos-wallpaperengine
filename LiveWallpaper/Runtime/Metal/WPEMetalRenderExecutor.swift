@@ -1923,7 +1923,7 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    private func makeAttachmentFrameContext(
+    func makeAttachmentFrameContext(
         for pipeline: WPEPreparedRenderPipeline,
         runtimeUniforms: WPEMetalRuntimeUniforms,
         sceneSize: CGSize

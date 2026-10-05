@@ -1602,12 +1602,14 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// Deferred warp is for effect-chain puppets so masks align in atlas space. No-effect stays on the direct material-time warp; `WPEPuppetDeferMeshWarp` forces the decision.
+    /// Keep the material/effects in atlas space and deform at the terminal
+    /// composite. A local texture sized for the rest pose clips animated limbs
+    /// just as readily on a puppet with no effects.
     private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer) -> Bool {
         // Without a `.scene` copy pass to land on, deferring would leave the puppet unwarped — even a forced override stays on the direct path.
         guard layerHasDeferredWarpTarget(layer) else { return false }
         if let forced = Self.deferPuppetMeshWarpOverride { return forced }
-        return layerHasEffectChain(layer)
+        return layerHasEffectChain(layer) || layer.meshMaterialTextures.isEmpty
     }
 
     /// Applied by `encodePuppetSceneCompositePassIfNeeded` on a scene-target or composelayer-group-target `copy` pass.

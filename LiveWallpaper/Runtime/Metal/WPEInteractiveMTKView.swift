@@ -88,6 +88,11 @@ final class WPEInteractiveMTKView: MTKView {
         pointerFrame.position = uv(for: event)
         pointerFrame.isRightDown = false
     }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard clickCaptureEnabled else { super.rightMouseDragged(with: event); return }
+        pointerFrame.position = uv(for: event)
+    }
 }
 
 /// Per-frame captured pointer/button state fed into the scene uniforms. Position

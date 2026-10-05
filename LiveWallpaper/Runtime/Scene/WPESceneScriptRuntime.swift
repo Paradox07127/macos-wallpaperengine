@@ -2424,6 +2424,15 @@ final class WPESharedScriptState: @unchecked Sendable {
         if let live = value as? WPESharedLiveScriptValue {
             guard live.virtualMachine === context.virtualMachine else { return nil }
             registerScriptRead(live.publisher, in: context)
+            // A shared closure executes in its defining context. An init-only
+            // animation controller never ticks its own clock, so give its
+            // captured engine the caller's current frame before returning it.
+            if let definingContext = live.value.context, definingContext !== context,
+               let engine = context.objectForKeyedSubscript("engine"), !engine.isUndefined,
+               let runtime = engine.objectForKeyedSubscript("runtime")?.toDouble(), runtime.isFinite,
+               let frameTime = engine.objectForKeyedSubscript("frametime")?.toDouble(), frameTime.isFinite {
+                wpeRefreshEngineClock(in: definingContext, runtime: runtime, frameTime: frameTime)
+            }
             return live.value
         }
         return value

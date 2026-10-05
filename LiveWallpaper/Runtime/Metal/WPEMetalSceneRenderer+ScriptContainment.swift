@@ -60,6 +60,7 @@ extension WPEMetalSceneRenderer {
         dynamicScaleScriptInstances = [:]
         dynamicAnglesScriptInstances = [:]
         dynamicColorScriptInstances = [:]
+        particleRateScriptInstances = [:]
         sharedOriginReadFans = [:]
         sharedScaleReadFans = [:]
         sharedAnglesReadFans = [:]
@@ -120,7 +121,10 @@ extension WPEMetalSceneRenderer {
             "transformScripts.load",
             "origin=\(originScripts.count) scale=\(scaleScripts.count) angles=\(anglesScripts.count) color=\(colorScripts.count) originAnim=\(dynamicOriginAnimations.count) hosts=\(document.transformHostObjects.count)"
         )
-        guard !originScripts.isEmpty || !scaleScripts.isEmpty
+        let rateScripts = document.particleObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.instanceOverride?.rateScript.map { (object.id, $0) }
+        }
+        guard !rateScripts.isEmpty || !originScripts.isEmpty || !scaleScripts.isEmpty
             || !anglesScripts.isEmpty || !colorScripts.isEmpty else { return }
         guard isCurrentSceneScriptLoad(scriptLoadToken),
               scriptLoadToken.allows(.setup) else { return }
@@ -183,6 +187,24 @@ extension WPEMetalSceneRenderer {
         install(scaleScripts, into: &dynamicScaleScriptInstances, fans: &sharedScaleReadFans, label: "ScaleScript")
         install(anglesScripts, into: &dynamicAnglesScriptInstances, fans: &sharedAnglesReadFans, label: "AnglesScript")
         install(colorScripts, into: &dynamicColorScriptInstances, fans: &sharedColorReadFans, label: "ColorScript")
+        for (objectID, script) in rateScripts {
+            do {
+                guard let instance = try constructSceneScript(for: scriptLoadToken, {
+                    try WPEDynamicTransformScriptInstance(
+                        script: script.script, scriptProperties: script.scriptProperties,
+                        seed: script.seed, valueShape: .scalar,
+                        canvasSize: canvasSize, screenSize: screenSize,
+                        ownLayerName: layerNameByID[objectID], ownObjectID: objectID,
+                        shared: sharedState, batchDispatcher: self.sceneScriptBatchDispatcher,
+                        initializationMode: .deferred
+                    )
+                }) else { return }
+                particleRateScriptInstances[objectID] = instance
+            } catch {
+                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
+                Logger.warning("Scene \(descriptor.workshopID) [ParticleRateScript] init failed for \(objectID): \(error)", category: .wpeRender)
+            }
+        }
         debugStage(
             "transformScripts.fans",
             "origin=\(sharedOriginReadFans.count) scale=\(sharedScaleReadFans.count) angles=\(sharedAnglesReadFans.count) color=\(sharedColorReadFans.count)"
@@ -439,6 +461,7 @@ extension WPEMetalSceneRenderer {
         dynamicScaleScriptInstances.removeAll(keepingCapacity: false)
         dynamicAnglesScriptInstances.removeAll(keepingCapacity: false)
         dynamicColorScriptInstances.removeAll(keepingCapacity: false)
+        particleRateScriptInstances.removeAll(keepingCapacity: false)
         sharedOriginReadFans.removeAll(keepingCapacity: false)
         sharedScaleReadFans.removeAll(keepingCapacity: false)
         sharedAnglesReadFans.removeAll(keepingCapacity: false)

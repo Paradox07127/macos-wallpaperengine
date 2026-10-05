@@ -142,6 +142,20 @@ extension WPEMetalSceneRenderer {
         }
         // Aggregate the complete per-instance cursor burst before claiming a VM job.
         // Hover uses this frame's transformed geometry before every button edge.
+        var cursorAttachmentGeometry: [String: WPERenderLayerGeometry] = [:]
+        if framePipeline.layers.contains(where: {
+            $0.graphLayer.attachment != nil
+                && (layerScriptInstances[$0.id] != nil || layerAlphaScriptInstances[$0.id] != nil)
+        }) {
+            let attachments = try executor.makeAttachmentFrameContext(
+                for: framePipeline, runtimeUniforms: uniforms, sceneSize: sceneRenderSize
+            )
+            for layer in framePipeline.layers {
+                cursorAttachmentGeometry[layer.id] = executor.layerApplyingAttachmentFollow(
+                    layer.graphLayer, context: attachments
+                ).geometry
+            }
+        }
         var cursorBursts: [ObjectIdentifier: [WPELayerScriptCursorInvocation]] = [:]
         let deliver: CursorEventDelivery = { instance, events, frame in
             cursorBursts[ObjectIdentifier(instance), default: []].append(contentsOf: events.map {
@@ -163,7 +177,8 @@ extension WPEMetalSceneRenderer {
             )
             dispatchLayerHoverEvents(
                 pointer: space.clickPointerIsLive ? space.pointerFrame.position : nil,
-                pipeline: framePipeline, pointerFrame: space.pointerFrame, deliver: deliver
+                pipeline: framePipeline, pointerFrame: space.pointerFrame,
+                attachmentGeometry: cursorAttachmentGeometry, deliver: deliver
             )
             dispatchPointerButtonEdges(
                 from: previousLayerScriptPointerFrame, to: space.pointerFrame, deliver: deliver
@@ -176,8 +191,10 @@ extension WPEMetalSceneRenderer {
             finalCursorFrame.isRightDown = false
         }
         dispatchLayerHoverEvents(
-            pointer: frameContext.followPointerIsLive ? frameContext.pointer : nil,
-            pipeline: framePipeline, pointerFrame: finalCursorFrame, deliver: deliver
+            pointer: frameContext.clickPointerIsLive ? finalCursorFrame.position
+                : (frameContext.followPointerIsLive ? frameContext.pointer : nil),
+            pipeline: framePipeline, pointerFrame: finalCursorFrame,
+            attachmentGeometry: cursorAttachmentGeometry, deliver: deliver
         )
         // Explicit oracle/manual inputs keep their existing snapshot-only behavior.
         // Mailbox edges own button delivery when a snapshot cursor is present.
@@ -196,6 +213,7 @@ extension WPEMetalSceneRenderer {
         // Before the text tick: a `mediaPropertiesChanged` that landed since the
         // last frame should reach `update()` on THIS frame, not the next one.
         drainMediaEvents(runtimeSeconds: uniforms.time)
+        tickParticleRateScripts(pointer: frameContext.pointer, time: uniforms.time)
         tickEffectConstantScripts(pointer: frameContext.pointer, time: uniforms.time)
         tickEffectVisibilityScripts(pointer: frameContext.pointer, time: uniforms.time)
         drainScriptSoundCommands()

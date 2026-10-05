@@ -758,6 +758,8 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
 public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     public let count: Double?
     public let rate: Double?
+    /// The numeric seed and the bound script are separate authored values.
+    public let rateScript: WPESceneTransformScript?
     public let lifetime: Double?
     public let size: Double?
     public let speed: Double?
@@ -777,6 +779,7 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     public init(
         count: Double? = nil,
         rate: Double? = nil,
+        rateScript: WPESceneTransformScript? = nil,
         lifetime: Double? = nil,
         size: Double? = nil,
         speed: Double? = nil,
@@ -790,6 +793,7 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     ) {
         self.count = count
         self.rate = rate
+        self.rateScript = rateScript
         self.lifetime = lifetime
         self.size = size
         self.speed = speed

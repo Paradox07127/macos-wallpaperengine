@@ -63,10 +63,16 @@ struct WPERenderGraphBuilder: Sendable {
             .union(Self.layerScriptControlledVisibilityIDs(in: document))
         let dynamicCreatedLayerTemplateIDs = Self.createLayerImageTemplateIDs(in: document)
         let noOpFullFrameDrops = Self.noOpFullFramePassthroughIDs(in: document)
+        // Hidden compose layers can be authored hit regions (e.g. a cursorClick
+        // handler attached to a puppet bone). Their geometry is still needed
+        // even when they have no children or visible effects to draw.
+        let cursorRegionIDs = Set(document.imageObjects.filter {
+            [$0.visibleScript, $0.alphaScript].contains { $0?.contains("cursor") == true }
+        }.map(\.id))
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
         ).union(Self.emptyComposeWrapperIDs(in: document, objectByID: objectByID))
-         .union(noOpFullFrameDrops)
+            .union(noOpFullFrameDrops).subtracting(cursorRegionIDs)
         let visibleLayerIDs = Set(document.imageObjects
             .filter { !composeWrappersToDrop.contains($0.id) }
             .filter { !Self.hasHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs) }
@@ -75,7 +81,7 @@ struct WPERenderGraphBuilder: Sendable {
                     || Self.hasLiveToggleableHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs)
             }
             .map(\.id))
-        var layerIDsToBuild = visibleLayerIDs.union(dynamicCreatedLayerTemplateIDs)
+        var layerIDsToBuild = visibleLayerIDs.union(dynamicCreatedLayerTemplateIDs).union(cursorRegionIDs)
         var pendingIDs = Array(layerIDsToBuild)
         var layerIDsRequiredAsComposite = Set<String>()
 

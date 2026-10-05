@@ -16,6 +16,17 @@ extension WPEMetalSceneRenderer {
         }
     }
 
+    /// The returned scalar changes the simulator only after this frame's script transaction commits.
+    func tickParticleRateScripts(pointer: SIMD2<Double>, time: Double) {
+        for (objectID, instance) in particleRateScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let value = tickTransformScript(instance, pointer: pointer, runtimeSeconds: time) {
+                sceneScriptSharedState?.enqueueParticleCommands([
+                    .init(objectID: objectID, command: .modify(.init(property: .rate, value: value))),
+                ])
+            }
+        }
+    }
+
     func synchronizeParticleInstanceBindings() {
         guard let coordinator = particleInstanceCoordinator else { return }
         guard synchronizedParticleCoordinator !== coordinator

@@ -179,6 +179,8 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     /// Kept out of `cachedInstalledScriptLayerIDs` on purpose — particle objects are not static-cacheable layers, so they were never in that exclusion set.
     var particleAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
+    /// Scalar instance time multiplier, published through the particle command transaction.
+    var particleRateScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:]
     /// Last value each of the above returned, applied in `tickParticleSystems`.
     var liveParticleInstanceAlpha: [String: Double] = [:]
     var dynamicOriginScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {

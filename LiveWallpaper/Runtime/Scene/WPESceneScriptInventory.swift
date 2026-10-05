@@ -70,7 +70,8 @@
                     }
                 }
             }
-            self.init(text: text, layer: layer, transform: transform + effectConstants)
+        let particleRates = document.particleObjects.filter { $0.instanceOverride?.rateScript != nil }.count
+        self.init(text: text, layer: layer, transform: transform + effectConstants + particleRates)
         }
 
         /// True if any bound script reads audio. Do not gate on supportsaudioprocessing (corpus omits it).
@@ -108,6 +109,9 @@
                     note(transform?.script)
                 }
             }
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return found
         }
@@ -201,6 +205,9 @@
                     note(transform?.script)
                 }
             }
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return found
         }
@@ -237,6 +244,9 @@
                     note(transform?.script)
                 }
             }
+        for object in document.particleObjects {
+            note(object.instanceOverride?.rateScript?.script)
+        }
             for object in document.scriptHostObjects { note(object.visibleScript) }
             return (
                 bindings: counts.values.reduce(0, +),

@@ -1196,6 +1196,11 @@ struct WPERenderGraphBuilderTests {
                     "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "200 200 0"
                 ],
                 [
+                    "id": "clickRegion", "name": "Hidden Click Zone", "type": "image",
+                    "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "200 200",
+                    "visible": ["value": false, "script": "export function cursorClick() { shared.clicked = true; }"],
+                ],
+                [
                     "id": "group", "name": "Real Group", "type": "image",
                     "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "1000 800 0"
                 ],
@@ -1210,6 +1215,9 @@ struct WPERenderGraphBuilderTests {
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
 
         #expect(!graph.layers.contains { $0.objectID == "hotspot" })
+        let clickRegion = try #require(graph.layers.first { $0.objectID == "clickRegion" })
+        #expect(!clickRegion.visible)
+        #expect(clickRegion.geometry.size == CGSize(width: 200, height: 200))
         #expect(graph.layers.contains { $0.objectID == "group" })
         #expect(graph.layers.contains { $0.objectID == "child" })
     }

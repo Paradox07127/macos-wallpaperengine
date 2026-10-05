@@ -165,6 +165,85 @@ struct WPEPointerEdgeDeliveryTests {
                         isDown: down, isRightDown: false)
     }
 
+    @Test("Hidden childless compose hit regions receive clicks with Follow Cursor on or off", arguments: [true, false])
+    func hiddenComposeRegionReceivesClick(followCursor: Bool) async throws {
+        let scene = try MetalSceneFixture.solidColorScene()
+        defer { scene.cleanup() }
+        for directory in ["models/util", "materials/util"] {
+            try FileManager.default.createDirectory(at: scene.root.appendingPathComponent(directory), withIntermediateDirectories: true)
+        }
+        try Data(#"{"material":"materials/util/composelayer.json"}"#.utf8)
+            .write(to: scene.root.appendingPathComponent("models/util/composelayer.json"))
+        try Data(#"{"passes":[{"shader":"compose","textures":["_rt_FullFrameBuffer"]}]}"#.utf8)
+            .write(to: scene.root.appendingPathComponent("materials/util/composelayer.json"))
+        let path = scene.root.appendingPathComponent("scene.json")
+        var payload = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(payload["objects"] as? [[String: Any]])
+        objects.append([
+            "id": "hit", "name": "Hidden Click Zone", "image": "models/util/composelayer.json",
+            "origin": "32 32 0", "size": "32 32",
+            "visible": ["value": false, "script": Self.buttonEdgeScript],
+        ])
+        payload["objects"] = objects
+        try JSONSerialization.data(withJSONObject: payload).write(to: path)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        defer { renderer.cleanup() }
+        renderer.setMouseInteractionEnabled(followCursor)
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        let region = try #require(renderer.renderPipeline?.layers.first { $0.id == "hit" })
+        #expect(!region.graphLayer.visible)
+        let view = try #require(renderer.nsView as? WPEInteractiveMTKView)
+        try view.mouseDown(with: event(.leftMouseDown))
+        try view.mouseUp(with: event(.leftMouseUp))
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        try await waitForEvents("duc", renderer: renderer)
+        #expect(renderer.liveLayerVisibility["hit"] == false)
+    }
+
+    @Test("Dragging outside the pressed layer still delivers cursorMove without Follow Cursor", arguments: [true, false])
+    func dragRetainsMovesOutsideLayer(followCursor: Bool) async throws {
+        let scene = try fixture(script: """
+        export function init() { shared.dragX = 0; shared.released = false; }
+        export function cursorMove(event) { if (event.leftDown) shared.dragX = event.worldPosition.x; }
+        export function cursorUp() { shared.released = true; }
+        """)
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        renderer.setMouseInteractionEnabled(followCursor)
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        func render(_ down: Bool, x: Double) throws {
+            _ = try renderer.renderCurrentFrame(inputs: WPEFrameInputs(
+                clickCaptureEnabled: true, pointerSample: .inside(SIMD2(x, 0.5)),
+                pointerFrame: pointer(down, x: x), preferredFramesPerSecond: 30
+            ))
+        }
+        try render(true, x: 0.5)
+        try await Task.sleep(for: .milliseconds(20))
+        // x=0.9 is beyond the 32-pixel layer's right edge (UV 0.75).
+        try render(true, x: 0.9)
+        for _ in 0 ..< 100 where renderer.sharedScriptValueForTesting("dragX") as? Double != 57.6 {
+            try await Task.sleep(for: .milliseconds(2))
+            try render(true, x: 0.9)
+        }
+        #expect(renderer.sharedScriptValueForTesting("dragX") as? Double == 57.6)
+        try render(false, x: 0.9)
+        for _ in 0 ..< 100 where renderer.sharedScriptValueForTesting("released") as? Bool != true {
+            try await Task.sleep(for: .milliseconds(2))
+            try render(false, x: 0.9)
+        }
+        #expect(renderer.sharedScriptValueForTesting("released") as? Bool == true)
+    }
+
     private func invocation(_ event: WPELayerScriptCursorEvent, down: Bool,
                             x: Double = 0.5) -> WPELayerScriptCursorInvocation {
         .init(event: event, pointerFrame: pointer(down, x: x), runtimeSeconds: 2)

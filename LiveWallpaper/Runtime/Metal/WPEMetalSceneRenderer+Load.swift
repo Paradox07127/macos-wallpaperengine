@@ -8,7 +8,9 @@ extension WPEMetalSceneRenderer {
     static func permitsEffectGatePublication(in document: WPESceneDocument) -> Bool {
         WPESceneScriptInstanceInventory(document: document).total == 0
             && document.propertyBindings.isEmpty
-            && document.particleObjects.allSatisfy { $0.instanceOverride?.alphaScript == nil }
+            && document.particleObjects.allSatisfy {
+                $0.instanceOverride?.alphaScript == nil && $0.instanceOverride?.rateScript == nil
+            }
     }
 
     // MARK: - Load entry point

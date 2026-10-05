@@ -3,11 +3,104 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import os
 import Testing
 
 @MainActor
 @Suite("SceneScript renderer wiring", .serialized)
 struct WPESceneScriptWiringTests {
+    @Test("A particle rate envelope executes init and requests audio without emitter audio fields")
+    func particleRateEnvelopeBootstraps() async throws {
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        objects[1]["instanceoverride"] = ["alpha": 0.7, "rate": ["value": 0.1, "script": """
+        const audio = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        export function init(value) { shared.rateSeed = value; return value * 2; }
+        """]]
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        #expect(renderer.sceneSupportsAudioProcessing)
+        #expect(renderer.sceneScriptSharedState?.get("rateSeed") as? Double == 0.1)
+        let system = try #require(renderer.particleSystems.first)
+        #expect(abs(system.instanceValues.rate - 0.2) < 0.000001)
+        #expect(system.instanceValues.alpha == 0.7)
+    }
+
+    @Test("Clock pulse rate consumes live low-frequency audio through frame commits",
+          arguments: [Float(0), Float(0.125), Float(1)])
+    func clockPulseRateFollowsAudio(level: Float) async throws {
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let path = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        // The 3811154012 rate template: declared defaults differ from its bound overrides.
+        let script = """
+        export var scriptProperties = createScriptProperties()
+            .addSlider({name:'frequency', value:0}).addSlider({name:'smoothing', value:15})
+            .addSlider({name:'minvalue', value:0.8}).addSlider({name:'maxvalue', value:1.2}).finish();
+        const audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        let smoothValue = 0; let initialValue;
+        export function init(value) { initialValue = (typeof value === 'number') ? value : value.x; }
+        export function update() {
+            const valueDelta = scriptProperties.maxvalue - scriptProperties.minvalue;
+            const audioDelta = audioBuffer.average[scriptProperties.frequency] - smoothValue;
+            smoothValue += audioDelta * Math.min(1.0, engine.frametime * scriptProperties.smoothing);
+            smoothValue = Math.min(1.0, smoothValue);
+            if (shared.throwRate) { thisObject.instance.rate = 99; throw new Error('rate rollback'); }
+            return initialValue * (smoothValue * valueDelta + scriptProperties.minvalue);
+        }
+        """
+        objects[1]["instanceoverride"] = ["alpha": 0.7, "rate": [
+            "value": 0.1, "script": script,
+            "scriptproperties": ["frequency": 0, "smoothing": 15, "minvalue": 1, "maxvalue": 20],
+        ]]
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: path)
+        let renderer = try makeRenderer(fixture)
+        defer { renderer.cleanup() }
+        let now = OSAllocatedUnfairLock(initialState: 0.0)
+        renderer.frameClock = WPEMetalFrameClock(loadTime: 0, currentMediaTime: { now.withLock { $0 } })
+        try await renderer.load()
+        let system = try #require(renderer.particleSystems.first)
+        #expect(renderer.particleRateScriptInstances.count == 1)
+        let capturingBefore = SystemAudioCaptureManager.isCapturing
+        let bins = [Float](repeating: level, count: AudioSpectrumFrame.binCount)
+        SystemAudioCaptureManager.broker.attachAnalyzer(ClockRateSpectrum(
+            frame: AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1)
+        ))
+        SystemAudioCaptureManager.setCapturingForTesting(true)
+        defer {
+            SystemAudioCaptureManager.setCapturingForTesting(capturingBefore)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
+        for frame in 1 ... 40 {
+            now.withLock { $0 = Double(frame) / 30 }
+            _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let expected = 0.1 * (1 + 19 * Double(level))
+        #expect(abs(system.instanceValues.rate - expected) < 0.00001)
+        #expect(system.instanceValues.alpha == 0.7)
+        // A thrown callback discards its instance mutation and retains the last good rate.
+        renderer.sceneScriptSharedState?.set("throwRate", true)
+        for frame in 41 ... 44 {
+            now.withLock { $0 = Double(frame) / 30 }
+            _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(abs(system.instanceValues.rate - expected) < 0.00001)
+        renderer.cleanup()
+        #expect(renderer.particleRateScriptInstances.isEmpty)
+    }
+
     @Test("Alpha families retain their own entry side effects without applying own alpha twice",
           arguments: ["layer", "hidden-layer", "text", "particle"])
     func alphaEntrySideEffects(family: String) async throws {
@@ -450,6 +543,18 @@ struct WPESceneScriptWiringTests {
         }
         data.append(mp4)
         return data
+    }
+}
+
+private final class ClockRateSpectrum: AudioSpectrumAnalyzing, Sendable {
+    let frame: AudioSpectrumFrame
+
+    init(frame: AudioSpectrumFrame) {
+        self.frame = frame
+    }
+
+    func analyzeIfDue(nowNanos _: UInt64) -> AudioSpectrumFrame? {
+        frame
     }
 }
 

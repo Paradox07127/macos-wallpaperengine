@@ -1536,9 +1536,18 @@ public enum WPESceneDocumentParser {
             alphaScript = script
             alphaScriptProperties = scriptPropertyValues(alphaDict["scriptproperties"])
         }
+        let rateScript: WPESceneTransformScript? = {
+            guard let field = dict["rate"] as? [String: Any],
+                  let script = field["script"] as? String, !script.isEmpty else { return nil }
+            return WPESceneTransformScript(
+                script: script, scriptProperties: scriptPropertyValues(field["scriptproperties"]),
+                seed: SIMD3(repeating: parseDouble(unwrap("rate")) ?? 1)
+            )
+        }()
         let value = WPESceneParticleInstanceOverride(
             count: parseDouble(unwrap("count")),
             rate: parseDouble(unwrap("rate")),
+            rateScript: rateScript,
             lifetime: parseDouble(unwrap("lifetime")),
             size: parseDouble(unwrap("size")),
             speed: parseDouble(unwrap("speed")),
@@ -1561,6 +1570,7 @@ public enum WPESceneDocumentParser {
             && value.alphaAnimation == nil
             && value.controlPointOffsets.isEmpty
             && value.alphaScript == nil
+            && value.rateScript == nil
             ? nil
             : value
     }

@@ -120,7 +120,8 @@ extension WPEMetalSceneRenderer {
         publishVideoPlaybackSnapshots()
         guard !visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
                 || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
-                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty else { return }
+                || !particleAlphaScripted.isEmpty || !textScriptInstances.isEmpty
+                || document.particleObjects.contains(where: { $0.instanceOverride?.rateScript != nil }) else { return }
 
         // One `shared` store for the whole scene so WPE's cross-script `shared`
         // global coordinates across the scripts' isolated contexts.
@@ -343,7 +344,7 @@ extension WPEMetalSceneRenderer {
         }
         let dynamicFamilies = [
             dynamicOriginScriptInstances, dynamicScaleScriptInstances,
-            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances, particleRateScriptInstances,
         ]
         for instances in dynamicFamilies {
             for (objectID, instance) in instances.sorted(by: { $0.key < $1.key }) {
@@ -413,7 +414,8 @@ extension WPEMetalSceneRenderer {
             dynamicOriginScriptInstances,
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
-            dynamicColorScriptInstances
+            dynamicColorScriptInstances,
+            particleRateScriptInstances
         ] {
             for (_, instance) in instances.sorted(by: { $0.key < $1.key }) {
                 instance.seedAsyncTick(pointerPosition: neutralPointer)
@@ -703,6 +705,7 @@ extension WPEMetalSceneRenderer {
         pointer: SIMD2<Double>?,
         pipeline: WPEPreparedRenderPipeline,
         pointerFrame: WPEPointerFrame,
+        attachmentGeometry: [String: WPERenderLayerGeometry] = [:],
         deliver: CursorEventDelivery
     ) {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
@@ -714,14 +717,15 @@ extension WPEMetalSceneRenderer {
             if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil
                 || textVisibleScriptInstances[objectID] != nil
                 || textAlphaScriptInstances[objectID] != nil {
-                geometryByID[objectID] = layer.graphLayer.geometry
+                geometryByID[objectID] = attachmentGeometry[objectID] ?? layer.graphLayer.geometry
             }
         }
         let width = Double(max(sceneRenderSize.width, 1))
         let height = Double(max(sceneRenderSize.height, 1))
         let pointerPixels = pointer.map { SIMD2<Double>($0.x * width, $0.y * height) }
 
-        // `cursorMove` only on a real change, and only while the pointer is over the layer: a per-frame broadcast would run every move handler in the scene sixty times a second whether or not the cursor went anywhere.
+        // A pressed layer owns moves through release, including after leaving
+        // its hit region. Without capture, authored drag handlers stop midway.
         let moved = pointerPixels != lastHoverPointerPixels
         lastHoverPointerPixels = pointerPixels
         forEachCursorScriptInstance { objectID, instance in
@@ -737,7 +741,8 @@ extension WPEMetalSceneRenderer {
                 layerHoverStates[objectID] = inside
                 events.append(inside ? .enter : .leave)
             }
-            if moved, inside { events.append(.move) }
+            let captured = layerPressStates[objectID] == true && pointerFrame.isDown
+            if moved, inside || captured { events.append(.move) }
             deliver(instance, events, pointerFrame)
         }
 

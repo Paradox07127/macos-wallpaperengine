@@ -29,7 +29,7 @@ extension WPEMetalSceneRenderer {
         }
         for instances in [
             dynamicOriginScriptInstances, dynamicScaleScriptInstances,
-            dynamicAnglesScriptInstances, dynamicColorScriptInstances,
+            dynamicAnglesScriptInstances, dynamicColorScriptInstances, particleRateScriptInstances,
         ] {
             for (_, instance) in instances.sorted(by: { $0.key < $1.key }) {
                 consumeTransformScriptLayerOutput(instance)
@@ -127,6 +127,7 @@ extension WPEMetalSceneRenderer {
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
+            particleRateScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 _ = instances[key]?.applyGeneralSettings(language: language)
@@ -223,6 +224,9 @@ extension WPEMetalSceneRenderer {
         for instance in dynamicColorScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
+        for instance in particleRateScriptInstances.values {
+            instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+        }
         for instance in effectConstantScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
@@ -293,6 +297,7 @@ extension WPEMetalSceneRenderer {
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
+            particleRateScriptInstances,
         ] {
             for objectID in instances.keys.sorted() {
                 _ = instances[objectID]?.resizeScreen(size)
@@ -338,6 +343,7 @@ extension WPEMetalSceneRenderer {
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
+            particleRateScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 guard let instance = instances[key],
@@ -360,6 +366,7 @@ extension WPEMetalSceneRenderer {
     var hasTransformScriptInstances: Bool {
         !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
+            || !particleRateScriptInstances.isEmpty
             || !effectConstantScriptInstances.isEmpty
             || !effectVisibilityScriptInstances.isEmpty
     }
@@ -377,6 +384,7 @@ extension WPEMetalSceneRenderer {
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
+            particleRateScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 guard let instance = instances[key],

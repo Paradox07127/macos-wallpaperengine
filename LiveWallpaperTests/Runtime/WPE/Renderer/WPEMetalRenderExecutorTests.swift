@@ -2694,8 +2694,8 @@ struct WPEMetalRenderExecutorTests {
         #expect(bounds == PixelBounds(minX: 4, minY: 4, maxX: 11, maxY: 11))
     }
 
-    @Test("Puppet material pass renders all meshes into local composite instead of fullscreen atlas")
-    func puppetMaterialPassRendersMeshesIntoLocalComposite() throws {
+    @Test("Puppet terminal composite keeps every mesh, including geometry beyond the local texture", arguments: [false, true])
+    func puppetMaterialPassRendersMeshesIntoLocalComposite(overflows: Bool) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let input = try makeRGBAInputTexture(
@@ -2748,9 +2748,9 @@ struct WPEMetalRenderExecutorTests {
             WPEPuppetMesh(
                 materialPath: "materials/base.png",
                 vertices: [
-                    WPEPuppetVertex(position: SIMD3<Float>(-4, -4, 0), uv: SIMD2<Float>(0, 1)),
+                    WPEPuppetVertex(position: SIMD3<Float>(overflows ? -6 : -4, -4, 0), uv: SIMD2<Float>(0, 1)),
                     WPEPuppetVertex(position: SIMD3<Float>(0, -4, 0), uv: SIMD2<Float>(1, 1)),
-                    WPEPuppetVertex(position: SIMD3<Float>(-4, 4, 0), uv: SIMD2<Float>(0, 0)),
+                    WPEPuppetVertex(position: SIMD3<Float>(overflows ? -6 : -4, 4, 0), uv: SIMD2<Float>(0, 0)),
                     WPEPuppetVertex(position: SIMD3<Float>(0, 4, 0), uv: SIMD2<Float>(1, 0))
                 ],
                 indices: [0, 1, 2, 2, 1, 3],
@@ -2810,7 +2810,7 @@ struct WPEMetalRenderExecutorTests {
         )
         let bounds = try #require(nonBlackBounds(output))
 
-        #expect(bounds == PixelBounds(minX: 4, minY: 4, maxX: 11, maxY: 11))
+        #expect(bounds == PixelBounds(minX: overflows ? 2 : 4, minY: 4, maxX: 11, maxY: 11))
     }
 
     @Test("Clip puppet with effects defers the mesh warp past local FBO bounds")

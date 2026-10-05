@@ -81,6 +81,21 @@ struct WPESceneScriptRuntimeTests {
         withExtendedLifetime(producer) {}
     }
 
+    @Test("An init-only shared animation closure observes the caller's clock and captured engine")
+    func sharedAnimationClosureUsesCallerClock() throws {
+        let store = WPESharedScriptState()
+        let producer = try WPELayerScriptInstance(script: """
+        const capturedEngine = engine;
+        shared.animation = function() { return capturedEngine.runtime + ':' + capturedEngine.frametime; };
+        """, shared: store)
+        let consumer = try WPESceneScriptInstance(script: """
+        export function update(value) { return shared.animation(); }
+        """, initialValue: "?", shared: store)
+        #expect(consumer.tickString(runtimeSeconds: 10) == "10:10")
+        #expect(consumer.tickString(runtimeSeconds: 10.25) == "10.25:0.25")
+        withExtendedLifetime(producer) {}
+    }
+
     @Test("Transform init publishes a callable before visible applyUserProperties consumes it")
     func sharedCallableTransformToVisibleInitialization() throws {
         let store = WPESharedScriptState()

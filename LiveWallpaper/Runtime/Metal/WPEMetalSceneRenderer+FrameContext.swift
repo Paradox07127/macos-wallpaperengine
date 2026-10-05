@@ -9,6 +9,7 @@ extension WPEMetalSceneRenderer {
         let uniforms: WPEMetalRuntimeUniforms
         let pointer: SIMD2<Double>
         let followPointerIsLive: Bool
+        let clickPointerIsLive: Bool
         let layerScriptPointerFrame: WPEPointerFrame
         let parallaxFrame: WPECameraParallaxFrame
     }
@@ -158,6 +159,7 @@ extension WPEMetalSceneRenderer {
             uniforms: uniforms,
             pointer: pointer,
             followPointerIsLive: followPointerIsLive,
+            clickPointerIsLive: clickPointerIsLive,
             layerScriptPointerFrame: layerScriptPointerFrame,
             parallaxFrame: parallaxFrame
         )
