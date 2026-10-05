@@ -40,7 +40,10 @@ extension ScreenManager {
                 return
             }
             let diagnostics = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: session.rendererDiagnostics, errorCode: cause.code)
-            failWallpaperAttempt(id, for: screen, cause: cause, stage: .runtime, diagnostics: diagnostics)
+            failWallpaperAttempt(
+                id, for: screen, cause: cause, stage: .runtime, diagnostics: diagnostics,
+                missingResources: session.rendererDiagnostics?.resolution.failureMissingResources ?? []
+            )
         }
     }
 
@@ -66,14 +69,22 @@ extension ScreenManager {
         return attempt
     }
 
-    func failWallpaperAttempt(_ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: WallpaperFailureStage, diagnostics: String = "") {
+    func failWallpaperAttempt(
+        _ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: WallpaperFailureStage, diagnostics: String = "",
+        missingResources: [WallpaperFailureMissingResource] = []
+    ) {
         guard let attempt = wallpaperLoads.attempt(for: screen), attempt.id == id else { return }
+        let sourceURL = attempt.sourceURL ?? attempt.origin
+            .flatMap { URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: $0.sourceFolderBookmark)?.path }
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
         let failure = WallpaperFailureSnapshot(
             id: id, title: LogPrivacyRedactor.scrub(attempt.title), workshopID: attempt.origin?.workshopID,
             displayName: LogPrivacyRedactor.scrub(screen.name), stage: stage, cause: cause,
             previousWallpaper: screen.runtimeSession == nil ? nil : wallpaperOriginTitle(for: screen) ?? wallpaperDisplayName(for: screen),
             timestamp: Date(), diagnostics: LogPrivacyRedactor.scrub(diagnostics),
-            wallpaperType: attempt.configuration?.wallpaperType ?? (attempt.origin?.originalType == .scene ? .scene : nil)
+            wallpaperType: attempt.configuration?.wallpaperType ?? (attempt.origin?.originalType == .scene ? .scene : nil),
+            sourceURL: sourceURL, sourceBookmark: attempt.origin?.sourceFolderBookmark, missingDependencyIDs: attempt.origin?.missingDependencyIDs ?? [],
+            missingResources: missingResources
         )
         wallpaperLoads.update(id, for: screen) {
             $0.phase = .failed
