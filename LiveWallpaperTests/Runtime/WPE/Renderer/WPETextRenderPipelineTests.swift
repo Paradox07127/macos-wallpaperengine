@@ -232,6 +232,232 @@ struct WPETextRenderPipelineTests {
         #expect(executor.gpuErrorSink.summary.count == 0)
     }
 
+    /// Opacity changes coverage without scaling independent RGB.
+    @Test("Native opacity distinguishes independent text carrier from PMA",
+          arguments: [UInt8(0), 128], [false, true])
+    func nativeOpacityIndependentTextCarrier(sourceAlpha: UInt8, independent: Bool) throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previous
+        arguments["WPEDumpScenePasses"] = "carrier-opacity"
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.sceneClearColor = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let alphaScale = Double(sourceAlpha) / 255
+        let rgb = independent ? [192, 128, 64] : [192, 128, 64].map { Int((Double($0) * alphaScale).rounded()) }
+        let rgba = rgb.map { UInt8($0) } + [sourceAlpha]
+        let semantics: WPEResourceSemantics = independent ? .textEffectCarrier : .premultipliedColor
+        rgba.withUnsafeBytes {
+            source.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0,
+                           withBytes: $0.baseAddress!, bytesPerRow: 4)
+        }
+        let effectPass = WPERenderPass(
+            id: "carrier-opacity.effect", phase: .effect(file: "effects/opacity/effect.json"),
+            shader: "effects/opacity", source: .asset("carrier"), target: .layerComposite(name: "carrier-opacity.a"),
+            textures: [0: .asset("carrier")], binds: [:], constants: ["g_UserAlpha": .number(0.5)],
+            combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let input = WPEPassInputContract(reference: .asset("carrier"), semantics: semantics, origin: .producer)
+        let contract = WPEPassRenderContract.resolve(
+            pass: effectPass, shader: nil, bindings: effectPass.textures, alphaOverride: nil,
+            inputDeclarations: [0: input], outputDeclaration: semantics
+        )
+        let effect = WPEPreparedRenderPass(
+            pass: effectPass, shader: nil, textureBindings: effectPass.textures,
+            comboValues: [:], uniformValues: effectPass.constants, renderContract: contract
+        )
+        let terminalPass = WPERenderPass(
+            id: "carrier-opacity.final", phase: .material, shader: "commands/copy",
+            source: .fbo("carrier-opacity.a"), target: .scene,
+            textures: [0: .fbo("carrier-opacity.a")], binds: [:], constants: [:], combos: [:],
+            blending: "premultipliednormal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let terminal = WPEPreparedRenderPass(
+            pass: terminalPass, shader: nil, textureBindings: terminalPass.textures, comboValues: [:], uniformValues: [:]
+        )
+        let layer = WPERenderLayer(
+            objectID: "carrier-opacity", objectName: "Carrier opacity", imagePath: "carrier", materialPath: nil,
+            geometry: .identity, compositeA: "carrier-opacity.a", compositeB: "carrier-opacity.b",
+            localFBOs: [], passes: [effectPass, terminalPass]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [effect, terminal])])
+            .resolvingRenderContracts { _ in semantics }
+        #expect(pipeline.layers[0].passes[0].renderContract.nativeAlpha.input == .none)
+        #expect(pipeline.layers[0].passes[0].renderContract.stored == semantics)
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4),
+                                         textures: ["carrier": source], sceneID: "carrier-opacity")
+        try #require(executor.untranslatableShaderReasonByPassID.isEmpty)
+        let intermediate = try #require(executor.scenePassDumps.first { $0.label == effectPass.id || $0.label == "Lcarrier-opacity-" + effectPass.id }?.texture)
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(intermediate))
+        var bytes = [UInt8](repeating: 0, count: staged.width * staged.height * 4)
+        staged.getBytes(&bytes, bytesPerRow: staged.width * 4,
+                        from: MTLRegionMake2D(0, 0, staged.width, staged.height), mipmapLevel: 0)
+        for channel in 0 ..< 3 {
+            let expected = independent ? Int(rgba[channel]) : Int((Double(rgba[channel]) * 0.5).rounded())
+            #expect(abs(Int(bytes[channel]) - expected) <= 1)
+        }
+        #expect(abs(Int(bytes[3]) - Int(sourceAlpha) / 2) <= 1)
+        let final = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        var finalBytes = [UInt8](repeating: 0, count: 64)
+        final.getBytes(&finalBytes, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0)
+        let alpha = Double(sourceAlpha) / 255 * 0.5
+        for channel in 0 ..< 3 {
+            let contribution = Double(rgba[channel]) * (independent ? alpha : 0.5)
+            let expected = Int((contribution + [51.0, 102, 153][channel] * (1 - alpha)).rounded())
+            #expect(abs(Int(finalBytes[channel]) - expected) <= 2)
+        }
+        #expect(finalBytes[3] == 255)
+        #expect(executor.gpuErrorSink.summary.count == 0)
+    }
+
+    @Test("Explicit text effect data FBO keeps its declared role", arguments: ["r8", "rg88"])
+    func textEffectExplicitDataDeclaration(format: String) {
+        let glyph = WPERenderPass(
+            id: "carrier.glyph", phase: .material, shader: WPETextLayerSynthesis.glyphPassShader,
+            source: .fbo("a"), target: .layerComposite(name: "a"), textures: [:], binds: [:],
+            constants: [:], combos: [:], blending: "normal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let effect = WPERenderPass(
+            id: "carrier.data", phase: .effect(file: "probe"), shader: "carrier-data-probe",
+            source: .fbo("a"), target: .fbo(name: "data"), textures: [0: .fbo("a")], binds: [:],
+            constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let program = WPEShaderProgram(name: effect.shader, vertexSource: "", fragmentSource: "", isBuiltin: false)
+        let prepared = [
+            WPEPreparedRenderPass(pass: glyph, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:]),
+            WPEPreparedRenderPass(pass: effect, shader: program, textureBindings: effect.textures,
+                                  comboValues: [:], uniformValues: [:]),
+        ]
+        let layer = WPERenderLayer(
+            objectID: "carrier", objectName: "Carrier data", imagePath: "__wpetext__/offscreen/carrier.layer",
+            materialPath: nil, geometry: .identity, compositeA: "a", compositeB: "b",
+            localFBOs: [WPERenderFBO(name: "data", scale: 1, format: format)], passes: [glyph, effect]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: prepared)]).resolvingRenderContracts()
+        let expected = WPEResourceSemantics.data(format == "r8" ? .mask : .flow)
+        #expect(pipeline.layers[0].passes[1].renderContract.outputDeclaration == expected)
+        #expect(pipeline.layers[0].passes[1].renderContract.stored == expected)
+    }
+
+    @Test("Text carrier copy and opacity preserve physical R8 values across gates",
+          arguments: [UInt8(0), 128], ["copy-disabled-open", "copy-pma-open", "opacity-disabled-open", "opacity-disabled-closed"])
+    func textCarrierPhysicalR8Consumer(sourceAlpha: UInt8, configuration: String) throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previous
+        arguments["WPEDumpScenePasses"] = "carrier-r8"
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let color = SIMD4<Float>(192.0 / 255, 128.0 / 255, 64.0 / 255, 1)
+        executor.sceneClearColor = MTLClearColor(red: Double(color.x), green: Double(color.y), blue: Double(color.z), alpha: 1)
+        let atlas = try #require(device.makeTexture(descriptor: .texture2DDescriptor(
+            pixelFormat: .r8Unorm, width: 2, height: 2, mipmapped: false
+        )))
+        // Equal foreground/background RGB isolates coverage: (181/255)^2 rounds to A128.
+        var coverage = [UInt8](repeating: sourceAlpha == 0 ? 0 : 181, count: 4)
+        atlas.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0, withBytes: &coverage, bytesPerRow: 2)
+        let corners: [SIMD2<Float>] = [.init(0, 0), .init(4, 0), .init(0, 4),
+                                       .init(4, 0), .init(4, 4), .init(0, 4)]
+        var vertices = corners.map { WPETextMeshVertex(position: $0, uv: .init(0.5, 0.5)) }
+        let buffer = try #require(device.makeBuffer(
+            bytes: &vertices, length: MemoryLayout<WPETextMeshVertex>.stride * vertices.count
+        ))
+        let mesh = WPETextMeshPayload(pages: [.init(vertexBuffer: buffer, vertexCount: vertices.count, texture: atlas)], color: color)
+        let gate = WPEPassVisibilityGate(script: .init(script: "return true;", seed: .zero), initialVisible: false)
+        let open = configuration.hasSuffix("open")
+        let opacity = configuration.hasPrefix("opacity")
+        let composite = WPETextureReference.fbo("carrier-r8.a")
+        let data = WPETextureReference.fbo("carrier-r8.data")
+        func pass(_ id: String, shader: String, source: WPETextureReference, target: WPERenderTarget,
+                  phase: WPERenderPassPhase = .material, blend: String = "disabled",
+                  constants: [String: WPESceneShaderConstantValue] = [:], visibilityGate: WPEPassVisibilityGate? = nil) -> WPERenderPass {
+            .init(id: id, phase: phase, shader: shader, source: source, target: target,
+                  textures: [0: source], binds: [:], constants: constants, combos: [:], blending: blend,
+                  cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled", visibilityGate: visibilityGate)
+        }
+        let glyph = pass("carrier-r8.glyph", shader: WPETextLayerSynthesis.glyphPassShader,
+                         source: composite, target: .layerComposite(name: "carrier-r8.a"), blend: "normal")
+        let effect = pass("carrier-r8.effect", shader: opacity ? "effects/opacity" : "commands/copy",
+                          source: composite, target: .fbo(name: "carrier-r8.data"), phase: .effect(file: "probe"),
+                          blend: configuration == "copy-pma-open" ? "premultipliednormal" : "disabled",
+                          constants: opacity ? ["g_UserAlpha": .number(0.5)] : [:], visibilityGate: gate)
+        let observe = pass("carrier-r8.observe", shader: "commands/copy", source: data,
+                           target: .fbo(name: "carrier-r8.observed"))
+        let terminal = pass("carrier-r8.final", shader: "commands/copy", source: composite,
+                            target: .scene, blend: "premultipliednormal")
+        var passes = [glyph]
+        var textures: [String: MTLTexture] = [:]
+        if !open {
+            // Closed named-FBO gates perform no write; retain a real prior data draw.
+            let seed = try #require(device.makeTexture(descriptor: .texture2DDescriptor(
+                pixelFormat: .r8Unorm, width: 1, height: 1, mipmapped: false
+            )))
+            var red: UInt8 = 192
+            seed.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &red, bytesPerRow: 1)
+            textures["r8-seed"] = seed
+            passes.append(pass("carrier-r8.seed", shader: "commands/copy", source: .asset("r8-seed"),
+                               target: .fbo(name: "carrier-r8.data")))
+        }
+        passes += [effect, observe, terminal]
+        let layer = WPERenderLayer(
+            objectID: "carrier-r8", objectName: "Carrier R8", imagePath: "__wpetext__/offscreen/carrier-r8.layer",
+            materialPath: nil, geometry: .init(origin: .init(2, 2, 0), scale: .init(1, 1, 1), angles: .zero,
+                                               alignment: .center, size: CGSize(width: 4, height: 4),
+                                               alpha: 1, color: .init(1, 1, 1), brightness: 1),
+            compositeA: "carrier-r8.a", compositeB: "carrier-r8.b", localFBOs: [
+                WPERenderFBO(name: "carrier-r8.data", scale: 1, format: "r8", pixelSize: CGSize(width: 4, height: 4)),
+                WPERenderFBO(name: "carrier-r8.observed", scale: 1, format: "r8", pixelSize: CGSize(width: 4, height: 4)),
+            ], passes: passes
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: passes.map {
+            .init(pass: $0, shader: nil, textureBindings: $0.textures, comboValues: [:], uniformValues: $0.constants)
+        })]).resolvingRenderContracts { _ in .data(.mask) }
+        let effectContract = try #require(pipeline.layers[0].passes.first { $0.id == effect.id }?.renderContract)
+        let observeContract = try #require(pipeline.layers[0].passes.first { $0.id == observe.id }?.renderContract)
+        #expect(effectContract.inputs[0]?.semantics == .textEffectCarrier)
+        #expect(effectContract.outputDeclaration == .data(.mask))
+        #expect(effectContract.stored == .data(.mask))
+        #expect(observeContract.inputs[0]?.semantics == .data(.mask))
+        #expect(observeContract.stored == .data(.mask))
+        _ = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: textures,
+                                passVisibility: [gate.id: open], sceneID: "carrier-r8", textPayloads: ["carrier-r8": .init(
+                                    mode: .offscreen, mesh: mesh, backgroundColor: nil, copiesSceneBackground: true
+                                )])
+        try #require(executor.untranslatableShaderReasonByPassID.isEmpty)
+        func dumped(_ id: String) -> MTLTexture? {
+            executor.scenePassDumps.first { $0.label == id || $0.label == "Lcarrier-r8-" + id }?.texture
+        }
+        let glyphDump = try #require(dumped(glyph.id))
+        let carrier = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(glyphDump))
+        #expect(carrier.pixelFormat == .rgba8Unorm)
+        var rgba = [UInt8](repeating: 0, count: carrier.width * carrier.height * 4)
+        carrier.getBytes(&rgba, bytesPerRow: carrier.width * 4,
+                         from: MTLRegionMake2D(0, 0, carrier.width, carrier.height), mipmapLevel: 0)
+        for (channel, expected) in [192, 128, 64, Int(sourceAlpha)].enumerated() {
+            #expect(abs(Int(rgba[channel]) - expected) <= 1)
+        }
+        #expect((dumped(effect.id) != nil) == open)
+        let observeDump = try #require(dumped(observe.id))
+        let observed = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(observeDump))
+        #expect(observed.pixelFormat == .r8Unorm)
+        #expect(observed.width == 4 && observed.height == 4)
+        var red = [UInt8](repeating: 0, count: observed.width * observed.height)
+        observed.getBytes(&red, bytesPerRow: observed.width,
+                          from: MTLRegionMake2D(0, 0, observed.width, observed.height), mipmapLevel: 0)
+        #expect(red.allSatisfy { abs(Int($0) - 192) <= 1 })
+        #expect(executor.gpuErrorSink.summary.count == 0)
+    }
+
     @Test("Dynamic clock widths do not retain a guessed maximum")
     func dynamicClockUsesCurrentExtent() {
         let resolver = fonts()

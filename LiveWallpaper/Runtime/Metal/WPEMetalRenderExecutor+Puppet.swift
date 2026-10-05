@@ -611,18 +611,16 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
-        // Native generic4 scene-model `normal` is opaque (ev197); image-layer
-        // `normal` and translucent model materials retain their separate rules.
+        // Scene-model normal is opaque; image-layer and translucent materials retain their separate rules.
         let authoredModelBlend: String
         if case .string(let blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
             authoredModelBlend = blend.lowercased()
         } else {
             authoredModelBlend = pass.pass.blending.lowercased()
         }
-        let opaqueModel = materialShader == .genericImage4
-            && ["normal", "disabled", "premultiplieddisabled"].contains(authoredModelBlend)
+        let opaqueModel = ["normal", "disabled", "premultiplieddisabled"].contains(authoredModelBlend)
         let modelBlendMode = opaqueModel ? "disabled" : pass.pass.blending
-        let modelAlphaWritePolicy: WPEMetalAlphaWritePolicy = materialShader == .genericImage4 ? .rgbOnly : .all
+        let modelAlphaWritePolicy: WPEMetalAlphaWritePolicy = .rgbOnly
         var materialUniforms: WPESceneModelGenericUniforms?
         var imageUniforms: WPEGenericImageUniforms?
         var boundComponentMap: MTLTexture?
@@ -631,9 +629,11 @@ extension WPEMetalRenderExecutor {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
                 fragmentName: "wpe_scene_model_generic2_fragment",
-                blendMode: pass.pass.blending,
+                blendMode: modelBlendMode,
+                alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
             ))
             encoder.setFragmentTexture(primary, index: 0)
             var uniforms = sceneModelGenericUniforms(
@@ -696,9 +696,11 @@ extension WPEMetalRenderExecutor {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
                 fragmentName: "wpe_scene_model_chroma4_fragment",
-                blendMode: pass.pass.blending,
+                blendMode: modelBlendMode,
+                alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
             ))
             encoder.setFragmentTexture(primary, index: 0)
 
@@ -744,9 +746,11 @@ extension WPEMetalRenderExecutor {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
                 fragmentName: "wpe_scene_model_image_fragment",
-                blendMode: pass.pass.blending,
+                blendMode: modelBlendMode,
+                alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
             ))
             encoder.setFragmentTexture(primary, index: 0)
             encoder.setFragmentTexture(primary, index: 1)
@@ -953,8 +957,11 @@ extension WPEMetalRenderExecutor {
             vertexName: "wpe_puppet_mesh_vertex",
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha,
+            blendContract: pass.renderContract.blend
         ))
         encoder.setFragmentTexture(primary, index: 0)
 
@@ -1066,7 +1073,7 @@ extension WPEMetalRenderExecutor {
             pass: pass,
             nativeState: .scenePass(
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .all,
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 cullMode: pass.pass.cullMode,
                 depthAttached: depthPixelFormat != .invalid,
                 depthTest: pass.pass.depthTest,
@@ -1184,11 +1191,14 @@ extension WPEMetalRenderExecutor {
             vertexName: "wpe_puppet_scene_composite_vertex",
             fragmentName: "wpe_copy_fragment",
             blendMode: pass.pass.blending,
+            alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
+            depthPixelFormat: depthPixelFormat,
+            nativeAlpha: pass.renderContract.nativeAlpha,
+            blendContract: pass.renderContract.blend
         ))
         encoder.setFragmentTexture(sourceTexture, index: 0)
-        // Source FBO is already premultiplied; `wpe_copy_fragment` returns it unchanged and `pass.pass.blending` is the graph's `premultiplied*` scene blend.
+        // The resolved copy policy converts the source representation for the destination blend.
         try bindPuppetBonePalette(paletteState.bonePalette, encoder: encoder)
         encoder.setVertexBytes(
             &compositeUniforms,
@@ -1200,7 +1210,7 @@ extension WPEMetalRenderExecutor {
             pass: pass,
             nativeState: .scenePass(
                 blendMode: pass.pass.blending,
-                alphaWritePolicy: .all,
+                alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
                 cullMode: pass.pass.cullMode,
                 depthAttached: depthPixelFormat != .invalid,
                 depthTest: pass.pass.depthTest,
@@ -2094,11 +2104,11 @@ extension WPEMetalRenderExecutor {
                 partSelection: .only(Set(route.partIndices)),
                 destination: clipRT, loadAction: .clear, clearColor: transparentClear,
                 primary: primary, mask: clipMask, clipTexture: nil,
-                vertexName: "wpe_puppet_mesh_clip_vertex", fragmentName: "wpe_puppet_clippingmaskimage4_fragment",
+                vertexName: "wpe_puppet_mesh_clip_vertex", fragmentName: "wpe_puppet_clippingmaskimage4_fragment", role: .sourceMask,
                 blendMode: "disabled", hasMask: true, clipMode: PuppetClipFragmentMode.none,
                 meshUniforms: &meshUniforms, paletteState: paletteState, commandBuffer: commandBuffer
             )
-            frameState.registerWrite(texture: clipRT.texture, targetID: clipRT.id)
+            frameState.registerWrite(texture: clipRT.texture, targetID: clipRT.id, semantics: .data(.mask))
             clipRTByRouteIndex[routeIndex] = clipRT
         }
 
@@ -2119,7 +2129,7 @@ extension WPEMetalRenderExecutor {
                 destination: destination, loadAction: mainLoadAction(),
                 clearColor: clearColor(for: destination.id),
                 primary: primary, mask: primary, clipTexture: nil,
-                vertexName: "wpe_puppet_mesh_vertex", fragmentName: "wpe_genericimage4_fragment",
+                vertexName: "wpe_puppet_mesh_vertex", fragmentName: "wpe_genericimage4_fragment", role: .visibleColor,
                 blendMode: pass.pass.blending, hasMask: false, clipMode: PuppetClipFragmentMode.none,
                 meshUniforms: &meshUniforms, paletteState: paletteState, commandBuffer: commandBuffer
             )
@@ -2138,7 +2148,7 @@ extension WPEMetalRenderExecutor {
                 destination: destination, loadAction: mainLoadAction(),
                 clearColor: clearColor(for: destination.id),
                 primary: primary, mask: primary, clipTexture: clipRT.texture,
-                vertexName: "wpe_puppet_mesh_clip_vertex", fragmentName: "wpe_genericimage4_puppet_clip_fragment",
+                vertexName: "wpe_puppet_mesh_clip_vertex", fragmentName: "wpe_genericimage4_puppet_clip_fragment", role: .visibleColor,
                 blendMode: pass.pass.blending, hasMask: false, clipMode: PuppetClipFragmentMode.target,
                 meshUniforms: &meshUniforms, paletteState: paletteState, commandBuffer: commandBuffer
             )
@@ -2254,7 +2264,7 @@ extension WPEMetalRenderExecutor {
                 primary: processed,
                 mask: authoredMask,
                 clipTexture: nil,
-                fragmentName: "wpe_puppet_clippingmaskimage4_fragment",
+                fragmentName: "wpe_puppet_clippingmaskimage4_fragment", role: .sourceMask,
                 blendMode: "disabled",
                 hasMask: true,
                 clipMode: PuppetClipFragmentMode.none,
@@ -2262,7 +2272,7 @@ extension WPEMetalRenderExecutor {
                 paletteState: paletteState,
                 commandBuffer: commandBuffer
             )
-            frameState.registerWrite(texture: clipRT.texture, targetID: clipRT.id)
+            frameState.registerWrite(texture: clipRT.texture, targetID: clipRT.id, semantics: .data(.mask))
             clipRTByRouteIndex[routeIndex] = clipRT
         }
 
@@ -2287,7 +2297,7 @@ extension WPEMetalRenderExecutor {
                 primary: processed,
                 mask: processed,
                 clipTexture: nil,
-                fragmentName: "wpe_copy_fragment",
+                fragmentName: "wpe_copy_fragment", role: .visibleColor,
                 blendMode: pass.pass.blending,
                 hasMask: false,
                 clipMode: PuppetClipFragmentMode.none,
@@ -2315,7 +2325,7 @@ extension WPEMetalRenderExecutor {
                 primary: processed,
                 mask: processed,
                 clipTexture: clipRT.texture,
-                fragmentName: "wpe_puppet_scene_composite_clip_fragment",
+                fragmentName: "wpe_puppet_scene_composite_clip_fragment", role: .visibleColor,
                 blendMode: pass.pass.blending,
                 hasMask: false,
                 clipMode: PuppetClipFragmentMode.target,
@@ -2327,6 +2337,8 @@ extension WPEMetalRenderExecutor {
         try flushPlainRun()
         return true
     }
+
+    private enum PuppetClipDrawRole { case sourceMask, visibleColor }
 
     private func encodeDeferredPuppetClipDraw(
         pass: WPEPreparedRenderPass,
@@ -2340,6 +2352,7 @@ extension WPEMetalRenderExecutor {
         mask: MTLTexture,
         clipTexture: MTLTexture?,
         fragmentName: String,
+        role: PuppetClipDrawRole,
         blendMode: String,
         hasMask: Bool,
         clipMode: Float,
@@ -2368,12 +2381,20 @@ extension WPEMetalRenderExecutor {
             depthWrite: "disabled",
             reversedZ: false
         ))
+        let isSourceMask = role == .sourceMask
+        let alphaWritePolicy: WPEMetalAlphaWritePolicy = isSourceMask ? .all : WPEAttachmentCoverageContract(destination.id).alphaWritePolicy
+        let actualBlend = isSourceMask ? WPEBlendContract(blendMode) : pass.renderContract.blend
+        let nativeAlpha: WPENativeAlphaPolicy = isSourceMask ? .compatibility
+            : .init(input: pass.renderContract.nativeAlpha.input, straightOutput: pass.renderContract.emitted.alpha == .straight)
         encoder.setRenderPipelineState(try renderPipeline(
             vertexName: "wpe_puppet_scene_composite_clip_vertex",
             fragmentName: fragmentName,
             blendMode: blendMode,
+            alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: .invalid
+            depthPixelFormat: .invalid,
+            nativeAlpha: nativeAlpha,
+            blendContract: actualBlend
         ))
         encoder.setFragmentTexture(primary, index: 0)
         encoder.setFragmentTexture(mask, index: 1)
@@ -2414,6 +2435,7 @@ extension WPEMetalRenderExecutor {
         clipTexture: MTLTexture?,
         vertexName: String,
         fragmentName: String,
+        role: PuppetClipDrawRole,
         blendMode: String,
         hasMask: Bool,
         clipMode: Float,
@@ -2443,12 +2465,19 @@ extension WPEMetalRenderExecutor {
             depthWrite: "disabled",
             reversedZ: false
         ))
+        let isSourceMask = role == .sourceMask
+        let alphaWritePolicy: WPEMetalAlphaWritePolicy = isSourceMask ? .all : WPEAttachmentCoverageContract(destination.id).alphaWritePolicy
+        let actualBlend = isSourceMask ? WPEBlendContract(blendMode) : pass.renderContract.blend
+        let nativeAlpha = isSourceMask ? WPENativeAlphaPolicy.compatibility : pass.renderContract.nativeAlpha
         encoder.setRenderPipelineState(try renderPipeline(
             vertexName: vertexName,
             fragmentName: fragmentName,
             blendMode: blendMode,
+            alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: .invalid
+            depthPixelFormat: .invalid,
+            nativeAlpha: nativeAlpha,
+            blendContract: actualBlend
         ))
         encoder.setFragmentTexture(primary, index: 0)
         encoder.setFragmentTexture(mask, index: 1)

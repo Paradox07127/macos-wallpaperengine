@@ -85,11 +85,27 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         try renderSubmeshes(shader: "generic4", componentMapOnFirstMesh: nil, tintCase: caseIndex)
     }
 
-    private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil) throws {
+    @Test("MODEL normal retains straight RGB through zero and fractional source alpha",
+          arguments: ["generic2", "chroma4", "genericimage2"])
+    func modelNormalKeepsAuthoredColor(shader: String) throws {
+        try renderSubmeshes(shader: shader, componentMapOnFirstMesh: nil, opaquePaddingColor: true, blending: "normal")
+    }
+
+    @Test("MODEL disabled retains straight RGB through zero and fractional source alpha",
+          arguments: ["generic2", "chroma4", "genericimage2"])
+    func modelDisabledKeepsAuthoredColor(shader: String) throws {
+        try renderSubmeshes(shader: shader, componentMapOnFirstMesh: nil, opaquePaddingColor: true)
+    }
+
+    private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil,
+                                 opaquePaddingColor: Bool = false, blending: String = "disabled") throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let red = try solid(device: device, tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [255, 0, 0, 255] : [128, 32, 32, 255]))
-        let green = try solid(device: device, tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [0, 255, 0, 255] : [32, 128, 32, 255]))
+        let red = try solid(device: device, opaquePaddingColor ? [192, 128, 64, 0]
+            : tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [255, 0, 0, 255] : [128, 32, 32, 255]))
+        let green = try solid(device: device, opaquePaddingColor ? [192, 128, 64, 128]
+            : tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [0, 255, 0, 255] : [32, 128, 32, 255]))
+        let reference = opaquePaddingColor ? try solid(device: device, [192, 128, 64, 255]) : red
         let component = try solid(device: device, [0, 0, 0, 255])
 
         func quad(minX: Float, maxX: Float) -> WPEPuppetMesh {
@@ -118,8 +134,8 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             : ["emissivecolor": .vector([1, 1, 1]), "emissivebrightness": .number(1)]
         let pass = WPERenderPass(
             id: "multi.material", phase: .material, shader: shader, source: .asset("red"),
-            target: .scene, textures: baseTextures, binds: [:], constants: materialConstants, combos: [:],
-            blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+            target: .scene, textures: baseTextures, binds: [:], constants: materialConstants, combos: opaquePaddingColor ? ["LIGHTING": 0, "REFLECTION": 0] : [:],
+            blending: blending, cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
         )
         let geometry = WPERenderLayerGeometry(
             origin: SIMD3<Double>(12, 4, -1), scale: SIMD3<Double>(1, 1, 1), angles: .zero,
@@ -130,7 +146,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             objectID: "multi", objectName: "Multi-material mesh", imagePath: "multi.mdl",
             materialPath: "materials/mat0.json", puppetPath: "multi.mdl", geometry: geometry,
             compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass],
-            meshMaterialTextures: [1: middleTextures, 2: [0: .asset("red")]]
+            meshMaterialTextures: [1: middleTextures, 2: [0: .asset(opaquePaddingColor ? "reference" : "red")]]
         )
         var materialPass = pass
         if let tintCase {
@@ -181,7 +197,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         )
 
         let output = try executor.render(
-            pipeline: pipeline, size: size, textures: ["red": red, "green": green, "component": component], cameraUniforms: camera
+            pipeline: pipeline, size: size, textures: ["red": red, "green": green, "reference": reference, "component": component], cameraUniforms: camera
         )
         let pixels = try readPixels(output)
         func pixel(x: Int) -> SIMD4<UInt8> {
@@ -189,7 +205,18 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             return SIMD4(pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3])
         }
         let regions = [pixel(x: 4), pixel(x: 12), pixel(x: 20)]
-        if let tintCase {
+        if opaquePaddingColor {
+            let expected = SIMD4<UInt8>(192, 128, 64, 255)
+            for channel in 0 ..< 3 {
+                try #require(abs(Int(regions[2][channel]) - Int(expected[channel])) <= 2,
+                             "Independent A255 model reference must cover the probe: \(regions[2])")
+                for sample in regions.prefix(2) {
+                    #expect(abs(Int(sample[channel]) - Int(regions[2][channel])) <= 2,
+                            "MODEL \(shader) \(blending) must retain RGB for A0/A128: \(sample), reference \(regions[2])")
+                }
+            }
+            #expect(regions.allSatisfy { $0.w == 255 }, "Scene RGB-only writes must preserve canvas alpha: \(regions)")
+        } else if let tintCase {
             let expectedMiddle: SIMD4<UInt8> = tintCase == 0 ? SIMD4(16, 64, 16, 255)
                 : tintCase == 1 ? SIMD4(64, 64, 64, 255)
                 : tintCase == 2 ? SIMD4(0, 0, 0, 255) : SIMD4(64, 16, 16, 255)

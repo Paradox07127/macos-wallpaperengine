@@ -1332,7 +1332,7 @@ struct WPEDirectionalLight {
     float4 radiance;
 };
 
-float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
+static float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
                          float roughness, float metallic, float3 direction, float3 color) {
     float3 halfVector = view + direction;
     float halfLength = length(halfVector);
@@ -1510,6 +1510,9 @@ float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
         combined *= u.brightnessFlags.x;
         combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
     }
+    if (wpe_native_output_is_straight()) {
+        return half4(wpe_attachment_output(float4(combined, alpha)));
+    }
     return half4(wpe_attachment_premultiply(combined, alpha));
 }
 
@@ -1542,6 +1545,9 @@ float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
         combined *= u.brightnessFlags.x;
     }
     // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
+    if (wpe_native_output_is_straight()) {
+        return half4(wpe_attachment_output(float4(combined, alpha)));
+    }
     return half4(wpe_attachment_premultiply(combined, alpha));
 }
 
@@ -1599,9 +1605,8 @@ float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
     return half4(wpe_native_output_is_straight() ? float4(rgb, alpha) : wpe_attachment_premultiply(rgb, alpha));
 }
 
-// Final deferred puppet clip. The local material + effect chain has already
-// produced premultiplied color in texture0, so this stage only applies the
-// source silhouette coverage; re-running genericimage4 would double tint/alpha.
+// The processed source retains the copy policy's representation. Clipping
+// changes coverage without repeating the material's tint or opacity.
 [[fragment]] half4 wpe_puppet_scene_composite_clip_fragment(
     WPEPuppetClipVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
@@ -1612,7 +1617,11 @@ float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
     float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
     float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float coverage = float(texture8.sample(linearSampler, saturate(in.screenUV)).r);
-    return half4(wpe_attachment_output(float4(half4(sampled * coverage))));
+    sampled.a *= coverage;
+    if (!wpe_native_output_is_straight()) {
+        sampled.rgb *= coverage;
+    }
+    return half4(wpe_attachment_output(sampled));
 }
 
 struct WPEGenericParticleUniforms {
@@ -1919,16 +1928,20 @@ struct WPEParticleSpriteParams {
     sampler particleSampler [[sampler(0)]],
     sampler normalSampler [[sampler(1)]]
 ) {
-    (void)projection;
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     half4 sLo = albedoTex.sample(particleSampler, in.uvCurrent);
     half4 sHi = albedoTex.sample(particleSampler, in.uvNext);
+    if (sprite.grid.w > 0.5) {
+        sLo = half4(1.0h, 1.0h, 1.0h, sLo.r);
+        sHi = half4(1.0h, 1.0h, 1.0h, sHi.r);
+    }
     half4 albedo = mix(sLo, sHi, half(in.frameBlend));
-    // WPE RGBA8888 normal+mask packing: x in alpha, y in green, mask in red.
     half4 nt = normalTex.sample(normalSampler, in.uvCurrent);
-    float nx = float(nt.a) * 2.0 - 1.0;
-    float ny = float(nt.g) * 2.0 - 1.0;
-    float mask = float(nt.r);
+    // padding.w selects RG88 normal packing; RGBA uses alpha/green with a red mask.
+    bool rg88Normal = projection.padding.w > 0.5;
+    float nx = float(rg88Normal ? nt.g : nt.a) * 2.0 - 1.0;
+    float ny = float(rg88Normal ? nt.r : nt.g) * 2.0 - 1.0;
+    float mask = float(rg88Normal ? nt.a : nt.r);
     // Divisor comes from the background texture itself, never from
     // `projection.sceneSize` — that one is the WORLD canvas (the vertex stage
     // needs it for NDC) while `[[position]]` is in the render target's PIXEL
@@ -2032,7 +2045,8 @@ struct WPEOpacityUniforms {
     // `sampled.rgb * alpha` re-multiplied the already-premultiplied rgb by the
     // new alpha (rgb*a^2), collapsing semi-transparent regions to a hole.
     float factor = mask * saturate(uniforms.opacity);
-    return half4(wpe_attachment_output(float4(half4(float4(sampled.rgb * factor, sampled.a * factor)))));
+    float3 rgb = wpe_native_output_is_straight() ? sampled.rgb : sampled.rgb * factor;
+    return half4(wpe_attachment_output(float4(rgb, sampled.a * factor)));
 }
 
 struct WPEScrollUniforms {

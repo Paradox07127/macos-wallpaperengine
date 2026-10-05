@@ -50,10 +50,11 @@ extension WPEPreparedRenderPipeline {
                 let contract = WPEPassRenderContract.resolve(
                     pass: prepared.pass, shader: prepared.shader, bindings: prepared.textureBindings,
                     alphaOverride: prepared.alphaContract, inputDeclarations: inputs,
-                    outputDeclaration: isEffectText && prepared.pass.target != .scene
-                        ? .textEffectCarrier : prepared.renderContract.outputDeclaration ?? declaredTargets[targetKey]
+                    outputDeclaration: declaredTargets[targetKey] ?? prepared.renderContract.outputDeclaration
+                        ?? (isEffectText && prepared.pass.target != .scene ? .textEffectCarrier : nil)
                 )
                 if prepared.pass.visibilityGate != nil,
+                   declaredTargets[targetKey] == nil,
                    contract.inputs[0]?.semantics.alpha != contract.stored.alpha,
                    prepared.pass.target != .scene {
                     resources[targetKey] = .unknown

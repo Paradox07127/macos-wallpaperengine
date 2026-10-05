@@ -774,3 +774,234 @@ private final class UploadConcurrencyProbe: @unchecked Sendable {
         lock.unlock()
     }
 }
+
+extension WPEMetalTextureLoaderTests {
+    private func alphaSweepTexture(
+        _ device: MTLDevice, format: WPETexFormat, width: Int = 1, height: Int = 1,
+        bytes: [UInt8], usage: WPETextureUsage
+    ) async throws -> MTLTexture {
+        let info = WPETexInfo(containerVersion: 5, infoVersion: 1, width: width, height: height,
+                              textureFormatCode: format.rawValue, format: format, mipmapCount: 1, flags: 0)
+        let payload = WPETexTexturePayload(
+            info: info,
+            mipmaps: [.init(index: 0, width: width, height: height, bytes: Data(bytes))],
+            hasAnimationFrames: false
+        )
+        return try await WPEMetalTextureLoader(device: device).makeTexture(
+            from: payload, label: "particle-alpha-sweep-\(format)", colorSpace: .linear, usage: usage
+        )
+    }
+
+    private func alphaSweepDraw(
+        _ device: MTLDevice, sprite: MTLTexture, sheet: WPEParticleSpriteSheet? = nil,
+        normal: MTLTexture? = nil, amount: Float = 0,
+        mask: MTLTexture? = nil, groupTint: SIMD3<Float> = SIMD3(repeating: 1),
+        blend: WPEParticleBlendMode = .translucent,
+        tint: SIMD3<Float> = SIMD3(repeating: 1), particleAlpha: Float = 0.5,
+        gradient: Bool = false, frame: Float = 0
+    ) throws -> [SIMD4<Float>] {
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let definition = WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0,
+                         "distancemin": "0 0 0", "distancemax": "0 0 0"]],
+            "initializer": [["name": "sizerandom", "min": 48, "max": 48],
+                            ["name": "lifetimerandom", "min": 10, "max": 10],
+                            ["name": "rotationrandom", "min": "0 0 0", "max": "0 0 0"],
+                            ["name": "colorrandom", "min": "255 255 255", "max": "255 255 255"],
+                            ["name": "alpharandom", "min": 1, "max": 1]],
+        ])
+        let transform = WPEParticleSceneTransform(
+            sceneSize: SIMD2(32, 32), objectOrigin: SIMD3(16, 16, 0),
+            objectScale: SIMD3(repeating: 1), objectAngleZ: 0
+        )
+        let system = try #require(WPEParticleSystem(
+            definition: definition, device: device, blendMode: blend,
+            sceneTransform: transform, spriteSheet: sheet, seed: 133
+        ))
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        // Freeze draw attributes only, preserving production geometry and uniform binding.
+        let instance = system.instanceBuffer.contents().advanced(by: system.renderBufferOffset)
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)
+        instance[0].color = SIMD4(tint.x, tint.y, tint.z, particleAlpha)
+        instance[0].rotationAndLife.z = frame
+        system.groupTint = groupTint
+        system.groupOpacityMask = mask
+        system.isRefract = normal != nil
+        system.refractAmount = amount
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 32, height: 32, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        var background: [UInt16] = []
+        for y in 0 ..< 32 {
+            for x in 0 ..< 32 {
+                let pixel: [Float] = gradient
+                    ? [Float(x) / 32, Float(y) / 32, 0.25, 1]
+                    : [0.2, 0.4, 0.8, 1]
+                background.append(contentsOf: pixel.map { Float16($0).bitPattern })
+            }
+        }
+        background.withUnsafeBytes {
+            output.replace(region: MTLRegionMake2D(0, 0, 32, 32), mipmapLevel: 0,
+                           withBytes: $0.baseAddress!, bytesPerRow: 32 * 8)
+        }
+        let command = try #require(executor.commandQueue.makeCommandBuffer())
+        let size = CGSize(width: 32, height: 32)
+        var state = WPEMetalFrameState(output: output, sceneSize: size)
+        var normals: [ObjectIdentifier: MTLTexture] = [:]
+        if let normal {
+            normals[ObjectIdentifier(system)] = normal
+        }
+        let encoded = try executor.encodeParticleSystem(
+            system, into: command, output: output, sceneSize: size, cameraParallax: .neutral,
+            texturesByMaterial: [ObjectIdentifier(system): sprite], normalsByMaterial: normals,
+            frameState: &state, traceIndex: 0
+        )
+        try #require(encoded)
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        var result = [UInt16](repeating: 0, count: 32 * 32 * 4)
+        result.withUnsafeMutableBytes {
+            output.getBytes($0.baseAddress!, bytesPerRow: 32 * 8,
+                            from: MTLRegionMake2D(0, 0, 32, 32), mipmapLevel: 0)
+        }
+        return [(16, 16), (14, 16), (18, 16)].map { coordinate in
+            let (x, y) = coordinate
+            let index = (y * 32 + x) * 4
+            return SIMD4(Float(Float16(bitPattern: result[index])),
+                         Float(Float16(bitPattern: result[index + 1])),
+                         Float(Float16(bitPattern: result[index + 2])),
+                         Float(Float16(bitPattern: result[index + 3])))
+        }
+    }
+
+    private func alphaSweepRequire(_ values: [SIMD4<Float>], equals control: [SIMD4<Float>]) throws {
+        try #require(values.count == control.count)
+        for (value, expected) in zip(values, control) {
+            for component in 0 ..< 4 {
+                try #require(abs(value[component] - expected[component]) <= 0.003,
+                             "Positive control must match native formula before judging format consumer")
+            }
+            try #require(value.w == 1)
+        }
+    }
+
+    private func alphaSweepExpect(_ values: [SIMD4<Float>], equals control: [SIMD4<Float>]) {
+        #expect(values.count == control.count)
+        for (value, expected) in zip(values, control) {
+            for component in 0 ..< 4 {
+                #expect(abs(value[component] - expected[component]) <= 0.003,
+                        "component \(component): \(value) != native-format-equivalent \(expected)")
+            }
+            #expect(value.w == 1, "Production scene writeMask must preserve opaque coverage")
+        }
+    }
+
+    @MainActor
+    @Test("Production REFRACT converts R8 coverage identically to RGBA before refraction",
+          arguments: [UInt8(0), 64, 255], [false, true])
+    func alphaSweepR8RefractFormatControl(alpha: UInt8, atlas: Bool) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let width = atlas ? 8 : 1
+        let height = atlas ? 4 : 1
+        let r8Bytes: [UInt8] = (0 ..< width * height).map { index in
+            atlas && index % width >= 4 ? UInt8(255 - Int(alpha)) : alpha
+        }
+        let rgbaBytes: [UInt8] = r8Bytes.flatMap { coverage -> [UInt8] in
+            [255, 255, 255, coverage]
+        }
+        let r8 = try await alphaSweepTexture(device, format: .r8, width: width, height: height,
+                                             bytes: r8Bytes, usage: .color)
+        let rgba = try await alphaSweepTexture(device, format: .rgba8888, width: width, height: height,
+                                               bytes: rgbaBytes, usage: .color)
+        let normal = try await alphaSweepTexture(device, format: .rgba8888,
+                                                 bytes: [255, 128, 0, 128], usage: .normal)
+        let rects: [SIMD4<Float>]? = atlas ? [SIMD4(0, 0, 0.5, 1), SIMD4(0.5, 0, 1, 1)] : nil
+        let maskSheet = WPEParticleSpriteSheet(cols: atlas ? 2 : 1, rows: 1, frameCount: atlas ? 2 : 1,
+                                               baseFrameRate: 0, isAlphaMask: true, frameRects: rects)
+        let rgbaSheet = WPEParticleSpriteSheet(cols: atlas ? 2 : 1, rows: 1, frameCount: atlas ? 2 : 1,
+                                               baseFrameRate: 0, isAlphaMask: false, frameRects: rects)
+        // Halfway interpolation exercises both explicit atlas rects; static uses frame 0.
+        let frame: Float = atlas ? 0.5 : 0
+        for refract in [false, true] {
+            let control = try alphaSweepDraw(device, sprite: rgba, sheet: rgbaSheet,
+                                             normal: refract ? normal : nil, tint: SIMD3(0.75, 0.5, 1), frame: frame)
+            let sampledAlpha = atlas ? Float(0.5) : Float(alpha) / 255
+            let opacity = sampledAlpha * 0.5
+            let background = SIMD3<Float>(0.2, 0.4, 0.8)
+            let tint = SIMD3<Float>(0.75, 0.5, 1)
+            let source = refract ? tint * background : tint
+            let rgb = source * opacity + background * (1 - opacity)
+            let expected = Array(repeating: SIMD4(rgb.x, rgb.y, rgb.z, 1), count: 3)
+            try alphaSweepRequire(control, equals: expected)
+            let actual = try alphaSweepDraw(device, sprite: r8, sheet: maskSheet,
+                                            normal: refract ? normal : nil, tint: tint, frame: frame)
+            alphaSweepExpect(actual, equals: control)
+            if !refract {
+                try alphaSweepRequire(actual, equals: expected)
+            }
+        }
+    }
+
+    @MainActor
+    @Test("Production REFRACT respects native RG88 vector order and independent mask",
+          arguments: [SIMD2<UInt8>(128, 128), SIMD2(64, 192), SIMD2(192, 64)])
+    func alphaSweepRG88NormalFormatControl(channels: SIMD2<UInt8>) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let albedo = try await alphaSweepTexture(device, format: .rgba8888,
+                                                 bytes: [255, 255, 255, 192], usage: .color)
+        let rg = try await alphaSweepTexture(device, format: .rg88,
+                                             bytes: [channels.x, channels.y], usage: .normal)
+        let rgba = try await alphaSweepTexture(device, format: .rgba8888,
+                                               bytes: [255, channels.x, 0, channels.y], usage: .normal)
+        #expect(rg.pixelFormat == .rg8Unorm)
+        #expect(WPEMetalTextureMetadataRegistry.shared.semantics(for: rg) == .data(.normal))
+        let tint = SIMD3<Float>(1, 1, 1)
+        let control = try alphaSweepDraw(device, sprite: albedo, normal: rgba, amount: 0.2,
+                                         tint: tint, particleAlpha: 0.75, gradient: true)
+        // RG88 normal.xy=sample.gr*2-1 with mask=1; native tangents carry amount and particle alpha.
+        let coverage = (Float(192) / 255) * 0.75
+        let dx = (Float(channels.y) * 2 / 255 - 1) * 0.2 * 0.75
+        let dy = (Float(channels.x) * 2 / 255 - 1) * 0.2 * 0.75
+        let expected = [Float(16), 14, 18].map { x in
+            SIMD4<Float>(x / 32 + coverage * dx, 0.5 + coverage * dy, 0.25, 1)
+        }
+        try alphaSweepRequire(control, equals: expected)
+        let noOffset = try alphaSweepDraw(device, sprite: albedo, normal: rgba, amount: 0,
+                                          tint: tint, particleAlpha: 0.75, gradient: true)
+        let delta = abs(control[0].x - noOffset[0].x) + abs(control[0].y - noOffset[0].y)
+        if channels.x == 128, channels.y == 128 {
+            try #require(delta < 0.002, "Quantized neutral normal should retain the backdrop")
+        } else {
+            try #require(delta > 0.02, "Positive control must actually refract")
+        }
+        let actual = try alphaSweepDraw(device, sprite: albedo, normal: rg, amount: 0.2,
+                                        tint: tint, particleAlpha: 0.75, gradient: true)
+        alphaSweepExpect(actual, equals: control)
+    }
+
+    @MainActor
+    @Test("Production ordinary group mask applies opacity once to straight source",
+          arguments: [UInt8(0), 64, 255])
+    func alphaSweepOrdinaryGroupMaskControl(maskValue: UInt8) async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let albedo = try await alphaSweepTexture(device, format: .rgba8888,
+                                                 bytes: [255, 255, 255, 128], usage: .color)
+        let mask = try await alphaSweepTexture(device, format: .r8, bytes: [maskValue], usage: .mask)
+        let tint = SIMD3<Float>(0.75, 0.5, 1)
+        let group = SIMD3<Float>(0.5, 1, 0.25)
+        let actual = try alphaSweepDraw(device, sprite: albedo, mask: mask,
+                                        groupTint: group, tint: tint, particleAlpha: 0.5)
+        let opacity = (Float(128) / 255) * 0.5 * (Float(maskValue) / 255)
+        let background = SIMD3<Float>(0.2, 0.4, 0.8)
+        let expected = tint * group * opacity + background * (1 - opacity)
+        try alphaSweepRequire(actual, equals: Array(repeating: SIMD4(expected.x, expected.y, expected.z, 1), count: 3))
+    }
+}

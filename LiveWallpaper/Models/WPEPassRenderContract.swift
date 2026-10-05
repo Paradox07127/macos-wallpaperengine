@@ -121,12 +121,13 @@ struct WPEPassRenderContract: Equatable, Sendable {
         var operation = WPENativeInputAlphaOperation.none
         if native {
             if isCopy {
-                emitted = primary
+                let isDataOutput = outputDeclaration?.alpha == .data
+                emitted = outputDeclaration ?? primary
                 let requiresCopyPremultiplication = primary.alpha == .straight || primary == .textEffectCarrier
-                if requiresCopyPremultiplication, blend.enabled, blend.shaderPremultiplication {
+                if !isDataOutput, requiresCopyPremultiplication, blend.enabled, blend.shaderPremultiplication {
                     operation = .premultiply
                     emitted = .premultipliedColor
-                } else if primary.alpha == .premultiplied, blend.enabled, blend.sourceRGB == .sourceAlpha {
+                } else if !isDataOutput, primary.alpha == .premultiplied, blend.enabled, blend.sourceRGB == .sourceAlpha {
                     operation = .unpremultiply
                     emitted = .straightColor
                 }
@@ -165,9 +166,10 @@ struct WPEPassRenderContract: Equatable, Sendable {
         if emitted.alpha == .premultiplied, blend.enabled, blend.sourceRGB == .sourceAlpha {
             diagnostics.append("premultiplied-output-with-source-alpha-blend")
         }
+        let straightOutput = !pmaOutput && (isImage || kind == .effectOpacity && primary == .textEffectCarrier)
         return Self(identity: .init(shader: pass.shader, builtin: native, blending: pass.blending,
                                     target: pass.target, references: references, alphaOverride: alphaOverride), inputs: resolved, shaderAlpha: shaderAlpha,
-                    nativeAlpha: .init(input: operation, straightOutput: !pmaOutput && isImage),
+                    nativeAlpha: .init(input: operation, straightOutput: straightOutput),
                     blend: blend, attachment: attachment, emitted: emitted, stored: stored,
                     diagnostics: diagnostics, outputDeclaration: outputDeclaration)
     }

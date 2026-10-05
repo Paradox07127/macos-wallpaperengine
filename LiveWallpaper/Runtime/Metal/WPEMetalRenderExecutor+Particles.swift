@@ -90,6 +90,7 @@ extension WPEMetalRenderExecutor {
             cameraUniforms: frameState.cameraUniforms, isRefract: isRefract
         )
         var projection = uniforms.projection
+        projection.padding.w = refractNormal?.pixelFormat == .rg8Unorm ? 1 : 0
         var sprite = uniforms.sprite
         let groupMask = isRefract ? nil : system.groupOpacityMask
 
