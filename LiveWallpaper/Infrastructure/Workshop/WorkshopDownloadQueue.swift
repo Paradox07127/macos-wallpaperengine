@@ -21,7 +21,8 @@ final class WorkshopDownloadQueue {
     private(set) var current: UInt64?
 
     @ObservationIgnored private let downloads: WorkshopDownloadCoordinator
-    @ObservationIgnored private var requests: [UInt64: Request] = [:]
+    /// `phaseAtEnqueue` tells a success another entry point produced while the item waited from one it already had.
+    @ObservationIgnored private var requests: [UInt64: (request: Request, phaseAtEnqueue: WorkshopDownloadCoordinator.DownloadPhase)] = [:]
     @ObservationIgnored private var walk: Task<Void, Never>?
 
     init(downloads: WorkshopDownloadCoordinator = .shared) {
@@ -32,7 +33,7 @@ final class WorkshopDownloadQueue {
         for request in newRequests {
             let itemID = request.itemID
             guard itemID != current, requests[itemID] == nil, !downloads.isBusy(itemID) else { continue }
-            requests[itemID] = request
+            requests[itemID] = (request, downloads.phase(for: itemID))
             pending.append(itemID)
         }
         guard walk == nil, !pending.isEmpty else { return }
@@ -50,9 +51,8 @@ final class WorkshopDownloadQueue {
 
     /// Also stops a download another entry point started, so a row's cancel works whoever sent it.
     func cancel(_ itemID: UInt64) {
-        if isQueued(itemID) {
-            remove(itemID)
-        } else if itemID == current || downloads.isBusy(itemID) {
+        remove(itemID)
+        if itemID == current || downloads.isBusy(itemID) {
             downloads.cancel(itemID)
         }
     }
@@ -60,7 +60,10 @@ final class WorkshopDownloadQueue {
     private func drain() async {
         while !pending.isEmpty {
             let itemID = pending.removeFirst()
-            guard let request = requests.removeValue(forKey: itemID) else { continue }
+            guard case let (request, phaseAtEnqueue)? = requests.removeValue(forKey: itemID) else { continue }
+            if !downloads.isBusy(itemID), Self.isSuccess(downloads.phase(for: itemID)), !Self.isSuccess(phaseAtEnqueue) {
+                continue
+            }
             current = itemID
             let replacing = request.replacesLocalCopy ? downloads.libraryCopyBlockingDownload(of: itemID) : nil
             if let attempt = downloads.download(
@@ -71,6 +74,13 @@ final class WorkshopDownloadQueue {
             current = nil
         }
         walk = nil
+    }
+
+    private static func isSuccess(_ phase: WorkshopDownloadCoordinator.DownloadPhase) -> Bool {
+        switch phase {
+        case .succeeded, .succeededAsPreset: true
+        default: false
+        }
     }
 }
 #endif

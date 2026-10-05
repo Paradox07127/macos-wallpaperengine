@@ -108,21 +108,89 @@ struct WorkshopDownloadQueueTests {
         #expect(downloader.requestedIDs == [first])
         downloader.releaseAll()
     }
+
+    @Test("Cancelling a queued item also stops the same item started outside the queue")
+    func cancellingQueuedItemStopsOutsideDownload() async {
+        let queue = makeQueue()
+        queue.enqueue([request(first), request(second)])
+        #expect(await waitUntil { downloader.requestedIDs == [first] })
+        downloads.download(itemID: second, title: String(second), using: downloader)
+        #expect(await waitUntil { downloader.requestedIDs == [first, second] })
+
+        queue.cancel(second)
+
+        #expect(!queue.isQueued(second))
+        #expect(!downloads.isBusy(second), "the outside download kept running after its queued request was cancelled")
+        downloader.releaseAll()
+        #expect(await waitUntil { queue.current == nil && queue.pending.isEmpty })
+    }
+
+    @Test("A queued item another entry point already downloaded is not downloaded again")
+    func queuedItemFinishedElsewhereIsSkipped() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadQueue-\(UUID().uuidString)", isDirectory: true)
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.WorkshopDownloadQueue")
+        let settings = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: suite.defaults)
+        defer {
+            suite.discard()
+        }
+        let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(String(second), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(#"{"workshopid":"\#(second)","title":"Item","type":"video","file":"video.mp4"}"#.utf8)
+            .write(to: folder.appendingPathComponent("project.json"))
+        try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
+        downloader.folders[second] = folder
+        let downloads = WorkshopDownloadCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
+            repositoryCoordinator: WorkshopRepositoryCoordinator(),
+            settings: settings,
+            toasts: WorkshopToastCenter(),
+            cancelSteamCMD: { _ in }
+        )
+        let queue = WorkshopDownloadQueue(downloads: downloads)
+
+        queue.enqueue([request(first), request(second)])
+        #expect(await waitUntil { downloader.requestedIDs == [first] })
+        downloads.download(itemID: second, title: String(second), using: downloader)
+        #expect(await waitUntil { downloader.requestedIDs == [first, second] })
+        downloader.release(second)
+        #expect(await waitUntil { downloads.phase(for: second) == .succeeded })
+
+        downloader.release(first)
+        #expect(await waitUntil { queue.pending.isEmpty && downloads.phase(for: first) != .downloading })
+        await settle()
+        #expect(downloader.requestedIDs == [first, second], "the queue downloaded an item that already finished")
+        downloader.releaseAll()
+        #expect(await waitUntil { queue.current == nil })
+        await TestScratch.discard(root, flushing: settings)
+    }
+
+    @Test("A queued row shows Queued instead of a finished phase's action")
+    func queuedRowShowsQueued() {
+        for phase: WorkshopDownloadCoordinator.DownloadPhase in [.idle, .failed("x"), .succeeded] {
+            #expect(PasteRowCard.downloadStatus(phase: phase, isQueued: true, canDownload: false) == .queued)
+        }
+        #expect(PasteRowCard.downloadStatus(phase: .failed("x"), isQueued: false, canDownload: true) == .retry(reason: "x"))
+        #expect(PasteRowCard.downloadStatus(phase: .downloading, isQueued: true, canDownload: false) == .inProgress(importing: false))
+    }
 }
 
 @MainActor
 private final class GatedDownloader: WorkshopItemDownloading {
     private(set) var requestedIDs: [UInt64] = []
+    /// Items imported from these folders once released; others fail.
+    var folders: [UInt64: URL] = [:]
     private var gates: [UInt64: CheckedContinuation<Void, Never>] = [:]
 
     func downloadWorkshopItem<Imported: Sendable>(
         _ itemID: UInt64,
         onProgress _: SteamCMDDoctorService.SteamCMDProgressHandler?,
-        onContentReady _: @MainActor @Sendable (URL) async -> Imported
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
     ) async -> WorkshopItemDownloadResult<Imported> {
         requestedIDs.append(itemID)
         await withCheckedContinuation { gates[itemID] = $0 }
-        return .failed(reason: "released by test")
+        guard let folder = folders[itemID] else { return .failed(reason: "released by test") }
+        return await .imported(onContentReady(folder))
     }
 
     func release(_ itemID: UInt64) {

@@ -238,17 +238,17 @@ struct PasteSheet: View {
 
     // MARK: - Helpers
 
-    /// `nil` hides the button: no id to download, or SteamCMD is not set up and signed in.
+    /// `nil` hides the button: no id to download, already queued, or SteamCMD is not set up and signed in.
     private func downloadAction(for row: WorkshopPasteQueueModel.QueueRow) -> (() -> Void)? {
-        guard let itemID = row.publishedFileID, doctor.isDownloadReady else { return nil }
+        guard let itemID = row.publishedFileID, doctor.isDownloadReady, !queue.isQueued(itemID) else { return nil }
         let title = row.metadata?.title ?? String(itemID)
         return {
             guard let local = downloads.localCopyToReplace(for: itemID) else {
-                downloads.download(itemID: itemID, title: title, using: doctor)
+                queue.enqueue([.init(itemID: itemID, title: title, replacesLocalCopy: false, doctor: doctor)])
                 return
             }
             pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) {
-                downloads.download(itemID: itemID, title: title, using: doctor, replacing: local)
+                queue.enqueue([.init(itemID: itemID, title: title, replacesLocalCopy: true, doctor: doctor)])
             }
         }
     }

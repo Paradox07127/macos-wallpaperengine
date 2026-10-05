@@ -8,7 +8,7 @@ struct PasteRowCard: View {
     let onRemove: () -> Void
     let onOpenInSteam: () -> Void
     let onCopyDiagnostic: () -> Void
-    /// `nil` when this row has no usable id, or SteamCMD isn't ready to download.
+    /// `nil` when this row has no usable id, is already queued, or SteamCMD isn't ready to download.
     var onDownload: (() -> Void)?
     var downloadPhase: WorkshopDownloadCoordinator.DownloadPhase = .idle
     var isQueued = false
@@ -141,26 +141,54 @@ struct PasteRowCard: View {
         }
     }
 
+    enum DownloadStatus: Equatable {
+        case inProgress(importing: Bool)
+        case queued
+        case installed
+        case presetAdded
+        case retry(reason: String)
+        case download
+    }
+
+    /// A queued row shows Queued over a finished phase: a retry from the row would bypass the serial queue.
+    static func downloadStatus(
+        phase: WorkshopDownloadCoordinator.DownloadPhase, isQueued: Bool, canDownload: Bool
+    ) -> DownloadStatus? {
+        switch phase {
+        case .downloading, .importing: .inProgress(importing: phase == .importing)
+        case _ where isQueued: .queued
+        case _ where !canDownload: nil
+        case .succeeded: .installed
+        case .succeededAsPreset: .presetAdded
+        case let .failed(reason): .retry(reason: reason)
+        case .idle: .download
+        }
+    }
+
     @ViewBuilder
     private var downloadAction: some View {
-        if let onDownload {
-            switch downloadPhase {
-            case .downloading, .importing:
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(downloadPhase == .importing ? "Importing…" : "Downloading…")
-                        .font(DesignTokens.Typography.body)
-                        .foregroundStyle(.secondary)
-                }
-            case .succeeded:
-                Label("Installed", systemImage: "checkmark.circle.fill")
+        switch Self.downloadStatus(phase: downloadPhase, isQueued: isQueued, canDownload: onDownload != nil) {
+        case let .inProgress(importing)?:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(importing ? "Importing…" : "Downloading…")
                     .font(DesignTokens.Typography.body)
-                    .foregroundStyle(DesignTokens.Colors.Status.active)
-            case .succeededAsPreset:
-                Label("Preset added", systemImage: "checkmark.circle.fill")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(DesignTokens.Colors.Status.active)
-            case .failed(let reason):
+                    .foregroundStyle(.secondary)
+            }
+        case .queued?:
+            Label("Queued", systemImage: "clock")
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+        case .installed?:
+            Label("Installed", systemImage: "checkmark.circle.fill")
+                .font(DesignTokens.Typography.body)
+                .foregroundStyle(DesignTokens.Colors.Status.active)
+        case .presetAdded?:
+            Label("Preset added", systemImage: "checkmark.circle.fill")
+                .font(DesignTokens.Typography.body)
+                .foregroundStyle(DesignTokens.Colors.Status.active)
+        case let .retry(reason)?:
+            if let onDownload {
                 Button(action: onDownload) {
                     Label("Retry download", systemImage: "arrow.down.circle")
                         .font(DesignTokens.Typography.body)
@@ -168,20 +196,18 @@ struct PasteRowCard: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .help(Text(verbatim: reason))
-            case .idle:
-                if isQueued {
-                    Label("Queued", systemImage: "clock")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button(action: onDownload) {
-                        Label("Download", systemImage: "arrow.down.circle")
-                            .font(DesignTokens.Typography.body)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
             }
+        case .download?:
+            if let onDownload {
+                Button(action: onDownload) {
+                    Label("Download", systemImage: "arrow.down.circle")
+                        .font(DesignTokens.Typography.body)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        case nil:
+            EmptyView()
         }
     }
 
