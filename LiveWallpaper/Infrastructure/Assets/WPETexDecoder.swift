@@ -992,6 +992,9 @@ struct WPETexDecoder: Sendable {
               height <= Int.max / max(width * 4, 1) else {
             throw WPETexDecodeError.invalidDimensions(width: width, height: height)
         }
+        if let bytes = Self.straightRGBA8Bytes(from: image) {
+            return DecodedRGBAImage(width: width, height: height, pixels: bytes)
+        }
         let bytesPerRow = width * 4
         var buffer = Data(count: bytesPerRow * height)
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
@@ -1018,6 +1021,40 @@ struct WPETexDecoder: Sendable {
         }
         WPERasterImageAlpha.unpremultiplyRGBA8(&buffer)
         return DecodedRGBAImage(width: width, height: height, pixels: buffer)
+    }
+
+    /// A premultiplied raster round-trip cannot preserve hidden RGB or low-alpha data channels.
+    static func straightRGBA8Bytes(from image: CGImage) -> Data? {
+        let order = image.bitmapInfo.intersection(.byteOrderMask)
+        guard image.alphaInfo == .last,
+              image.bitsPerComponent == 8, image.bitsPerPixel == 32,
+              !image.bitmapInfo.contains(.floatComponents),
+              order.isEmpty || order == .byteOrder32Big,
+              image.decode == nil,
+              image.colorSpace?.name == CGColorSpace.sRGB,
+              image.width > 0, image.height > 0,
+              image.width <= Int.max / 4 else { return nil }
+        let packedRow = image.width * 4
+        let sourceRow = image.bytesPerRow
+        guard sourceRow >= packedRow, image.height <= Int.max / sourceRow,
+              let providerData = image.dataProvider?.data,
+              CFDataGetLength(providerData) >= sourceRow * image.height,
+              let source = CFDataGetBytePtr(providerData) else { return nil }
+        return withExtendedLifetime(providerData) {
+            if sourceRow == packedRow {
+                return Data(bytes: source, count: packedRow * image.height)
+            }
+            var bytes = Data(count: packedRow * image.height)
+            bytes.withUnsafeMutableBytes { destination in
+                guard let base = destination.baseAddress else { return }
+                for row in 0 ..< image.height {
+                    base.advanced(by: row * packedRow).copyMemory(
+                        from: source.advanced(by: row * sourceRow), byteCount: packedRow
+                    )
+                }
+            }
+            return bytes
+        }
     }
 
     private func normalizedBytes(

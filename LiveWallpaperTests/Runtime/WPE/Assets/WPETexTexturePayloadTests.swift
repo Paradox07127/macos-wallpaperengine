@@ -2,10 +2,11 @@ import Compression
 import CoreGraphics
 import Foundation
 import ImageIO
+@testable import LiveWallpaper
 import LiveWallpaperProWPE
+import Metal
 import Testing
 import UniformTypeIdentifiers
-@testable import LiveWallpaper
 
 @Suite("WPETexDecoder texture payload extraction")
 struct WPETexTexturePayloadTests {
@@ -49,6 +50,86 @@ struct WPETexTexturePayloadTests {
         let firstPixel = Array(mip.bytes.prefix(4))
         #expect(firstPixel[0] >= 0xFE, "R should round-trip near 0xFF (got \(firstPixel[0])); double-premultiply would emit ~0x80")
         #expect(firstPixel[3] == 0x80, "A should preserve 0x80 unchanged")
+    }
+
+    @Test("Embedded PNG preserves zero and low-alpha data channels")
+    func embeddedPNGPreservesDataChannels() throws {
+        let payload = try embeddedDataPayload()
+        let mip = try #require(payload.largestMipmap)
+        #expect(mip.bytes == embeddedDataBytes)
+    }
+
+    @Test("Embedded PNG data channels survive production Metal upload")
+    func embeddedPNGDataChannelsSurviveMetalUpload() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let payload = try embeddedDataPayload()
+        let texture = try WPEMetalTextureLoader.makeTextureSynchronously(
+            from: payload, label: "normal", device: device,
+            capabilities: WPEMetalTextureCapabilities(device: device), usage: .normal
+        )
+        #expect(texture.pixelFormat == .rgba8Unorm)
+        let library = try device.makeLibrary(source: """
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void b4_read(texture2d<float, access::read> input [[texture(0)]],
+                            device float4 *output [[buffer(0)]], uint x [[thread_position_in_grid]]) {
+            output[x] = input.read(uint2(x, 0));
+        }
+        """, options: nil)
+        let function = try #require(library.makeFunction(name: "b4_read"))
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let buffer = try #require(device.makeBuffer(length: 5 * MemoryLayout<SIMD4<Float>>.stride, options: .storageModeShared))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let encoder = try #require(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(texture, index: 0)
+        encoder.setBuffer(buffer, offset: 0, index: 0)
+        encoder.dispatchThreads(MTLSize(width: 5, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        let values = buffer.contents().bindMemory(to: SIMD4<Float>.self, capacity: 5)
+        let expected = Array(embeddedDataBytes)
+        for x in 0 ..< 5 {
+            for channel in 0 ..< 4 {
+                #expect(abs(values[x][channel] - Float(expected[x * 4 + channel]) / 255) < 0.000001)
+            }
+        }
+    }
+
+    @Test("Straight RGBA extraction skips row padding and rejects conversion layouts")
+    func straightRGBAExtractionLayoutBoundaries() throws {
+        let pixels = Data([192, 128, 64, 0, 7, 7, 7, 7, 48, 32, 16, 1, 9, 9, 9, 9])
+        let provider = try #require(CGDataProvider(data: pixels as CFData))
+        let sRGB = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        func image(_ alpha: CGImageAlphaInfo, _ order: CGBitmapInfo, _ space: CGColorSpace) throws -> CGImage {
+            try #require(CGImage(width: 1, height: 2, bitsPerComponent: 8, bitsPerPixel: 32,
+                                 bytesPerRow: 8, space: space,
+                                 bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue).union(order),
+                                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        }
+        let expected = Data([192, 128, 64, 0, 48, 32, 16, 1])
+        #expect(try WPETexDecoder.straightRGBA8Bytes(from: image(.last, [], sRGB)) == expected)
+        #expect(try WPETexDecoder.straightRGBA8Bytes(from: image(.last, .byteOrder32Big, sRGB)) == expected)
+        #expect(try WPETexDecoder.straightRGBA8Bytes(from: image(.premultipliedLast, [], sRGB)) == nil)
+        #expect(try WPETexDecoder.straightRGBA8Bytes(from: image(.first, .byteOrder32Little, sRGB)) == nil)
+        let p3 = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        #expect(try WPETexDecoder.straightRGBA8Bytes(from: image(.last, [], p3)) == nil)
+    }
+
+    private var embeddedDataBytes: Data {
+        Data([0, 1, 2, 8, 255].flatMap { [UInt8(192), 128, 64, UInt8($0)] })
+    }
+
+    private func embeddedDataPayload() throws -> WPETexTexturePayload {
+        // Hand-encoded RGBA PNG avoids fixture authoring through a premultiplied CGContext.
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAUAAAABCAYAAAAW/mTzAAAAF0lEQVR4nGM40ODAAMSMQMwExBxA/B8AVlsIi0RWaPgAAAAASUVORK5CYII="))
+        return try WPETexDecoder().extractTexturePayload(data: makeImage(
+            width: 5, height: 1, formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: png, sourceImageFormatCode: 0
+        )).get()
     }
 
     @Test("Rejects encoded PNG larger than the TEXI header before rasterizing")
