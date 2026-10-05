@@ -50,7 +50,7 @@ public final class ResourceUtilities {
             }
         }
 
-        let primaryOptions = bookmarkCreationOptions
+        let primaryOptions = SecurityScopedBookmarkResolver.creationOptions(bookmarkCreationOptions)
         let snapshotKeys: Set<URLResourceKey> = [.isReadableKey, .fileSizeKey, .contentTypeKey]
 
         if let data = tryBookmark(url, options: primaryOptions, keys: snapshotKeys) {

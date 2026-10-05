@@ -13,7 +13,7 @@ enum DirectoryBookmarks {
     }
 
     static func createReadOnlyBookmark(for url: URL) throws -> Data {
-        let options: URL.BookmarkCreationOptions = [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
+        let options = SecurityScopedBookmarkResolver.creationOptions([.withSecurityScope, .securityScopeAllowOnlyReadAccess])
         let noKeys: Set<URLResourceKey>? = nil
         let noRelativeURL: URL? = nil
         return try url.bookmarkData(

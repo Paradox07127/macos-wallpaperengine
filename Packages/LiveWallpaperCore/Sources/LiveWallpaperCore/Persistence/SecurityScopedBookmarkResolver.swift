@@ -98,6 +98,18 @@ public struct SecurityScopedBookmarkResolver: Sendable {
         self.refreshData = refreshData
     }
 
+    private init(
+        resolveDetailed: @escaping @Sendable (Data) throws -> Resolution,
+        refreshData: @escaping @Sendable (URL) throws -> Data
+    ) {
+        self.resolveDetailed = resolveDetailed
+        resolveData = { data in
+            let resolution = try resolveDetailed(data)
+            return (resolution.url, resolution.isStale)
+        }
+        self.refreshData = refreshData
+    }
+
     public func resolve(_ data: Data?, target: Target) -> Result<Resolved, Failure> {
         guard let data else {
             return .failure(.missing)
@@ -190,8 +202,32 @@ extension SecurityScopedBookmarkResolver {
             )
         }
     )
+}
 
-    public static var shared: SecurityScopedBookmarkResolver { .live }
+public extension SecurityScopedBookmarkResolver {
+    /// Plain resolve and refresh, every URL reported unscoped: never asks ScopedBookmarkAgent.
+    private static let unscoped = SecurityScopedBookmarkResolver(
+        resolveDetailed: { data in
+            var isStale = false
+            let url = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            return Resolution(url: url, isStale: isStale, isSecurityScoped: false)
+        },
+        refreshData: { url in
+            try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        }
+    )
+
+    /// False in the XCTest host, whose many real bookmarks would exhaust the per-user ScopedBookmarkAgent.
+    static let usesSecurityScope = NSClassFromString("XCTestCase") == nil
+
+    /// `options` without the scope flags when `usesSecurityScope` is false; every scoped bookmark creation goes through this.
+    static func creationOptions(_ options: URL.BookmarkCreationOptions) -> URL.BookmarkCreationOptions {
+        usesSecurityScope ? options : options.subtracting([.withSecurityScope, .securityScopeAllowOnlyReadAccess])
+    }
+
+    static var shared: SecurityScopedBookmarkResolver {
+        usesSecurityScope ? .live : .unscoped
+    }
 }
 
 // MARK: - Typed targets shared by all SKUs
