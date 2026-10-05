@@ -263,6 +263,11 @@ PARALLEL_SUITES=(
   ColorAdjustmentsViewResetTests
   OverlaysInspectorPanelPickerTests
   WPESceneTimelineTests
+  # Acf parsing, cache-clear accounting, modal display targets and pass-contract resolution are pure model checks.
+  SteamWorkshopManifestACFTests
+  CacheClearAccountingTests
+  ModalDisplayTargetTests
+  WPERenderContractResolutionTests
 )
 
 # These fail when other suites run beside them: they share process-wide state
@@ -355,6 +360,8 @@ SERIAL_SUITES=(
   WPEUniformSourceTraceTests
   WPEEffectTextureProjectionTests
   WPEEffectTextureProjectionConsumerReplayTests
+  # Subscription sync writes the shared download coordinator's settled phases.
+  WorkshopSubscriptionSyncTests
 )
 
 action="test"
