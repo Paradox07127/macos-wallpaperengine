@@ -143,13 +143,20 @@ extension WPEMetalSceneRenderer {
         // Aggregate the complete per-instance cursor burst before claiming a VM job.
         // Hover uses this frame's transformed geometry before every button edge.
         var cursorAttachmentGeometry: [String: WPERenderLayerGeometry] = [:]
-        if framePipeline.layers.contains(where: {
-            $0.graphLayer.attachment != nil
-                && (layerScriptInstances[$0.id] != nil || layerAlphaScriptInstances[$0.id] != nil)
-        }) {
-            let attachments = try executor.makeAttachmentFrameContext(
-                for: framePipeline, runtimeUniforms: uniforms, sceneSize: sceneRenderSize
-            )
+        if Self.scriptedLayerFollowsAttachment(
+            in: framePipeline,
+            isScripted: { layerScriptInstances[$0] != nil || layerAlphaScriptInstances[$0] != nil },
+            objectParentByID: executor.parallaxObjectParentByID
+        ) {
+            let attachments: WPEMetalRenderExecutor.PuppetAttachmentFrameContext
+            do {
+                attachments = try executor.makeAttachmentFrameContext(
+                    for: framePipeline, runtimeUniforms: uniforms, sceneSize: sceneRenderSize
+                )
+            } catch {
+                signposter.endInterval("scriptTick", scriptState)
+                throw error
+            }
             for layer in framePipeline.layers {
                 cursorAttachmentGeometry[layer.id] = executor.layerApplyingAttachmentFollow(
                     layer.graphLayer, context: attachments
@@ -335,6 +342,32 @@ extension WPEMetalSceneRenderer {
         return rendered
     }
 
+    static func scriptedLayerFollowsAttachment(
+        in pipeline: WPEPreparedRenderPipeline,
+        isScripted: (String) -> Bool,
+        objectParentByID: [String: String]
+    ) -> Bool {
+        guard pipeline.layers.contains(where: { $0.graphLayer.attachment != nil }) else { return false }
+        let layersByObjectID = Dictionary(
+            pipeline.layers.map { ($0.graphLayer.objectID, $0.graphLayer) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        // Same parent walk as `layerApplyingAttachmentFollow`: an attachment anywhere up the chain moves the layer.
+        return pipeline.layers.contains { layer in
+            guard isScripted(layer.id) else { return false }
+            var currentID: String? = layer.graphLayer.objectID
+            var seen: Set<String> = []
+            while let id = currentID, seen.insert(id).inserted, seen.count <= 100 {
+                let node = id == layer.graphLayer.objectID ? layer.graphLayer : layersByObjectID[id]
+                if node?.attachment != nil {
+                    return true
+                }
+                currentID = node?.parentObjectID ?? objectParentByID[id]
+            }
+            return false
+        }
+    }
+
     /// `sampled` is this frame's keyframed camera motion; a channel no script drives keeps it.
     func applyScriptCameraMotion(_ scriptTransforms: LiveScriptTransforms, sampled: WPESceneCameraMotionSample) {
         guard let definition = cameraMotionPlayback?.definition else { return }
@@ -444,6 +477,7 @@ extension WPEMetalSceneRenderer {
             let hasLayerWritingScripts = !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
                 || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
                 || !effectConstantScriptInstances.isEmpty || !effectVisibilityScriptInstances.isEmpty
+                || !particleRateScriptInstances.isEmpty
             return hasLayerWritingScripts ? livePresentationOverlay : WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
