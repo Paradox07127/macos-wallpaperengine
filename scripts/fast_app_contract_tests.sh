@@ -117,6 +117,9 @@ PARALLEL_SUITES=(
   WPESceneScriptSharedLayerOrderTests
   WPESceneScriptVideoBridgeTests
   WPEUploadCancellationOracleTests
+  WPESceneParallaxBindingInferenceTests
+  WPESceneCameraParallaxScriptTests
+  WPESceneTestingReportTests
   InstalledOwnershipCharacterizationTests
   # Persistence/config/storage correctness. Deterministic, hardware-free, and
   # each one covers a defect that shipped: a lost settings generation, a refused

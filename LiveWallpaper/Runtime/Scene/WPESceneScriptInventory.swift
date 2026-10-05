@@ -40,9 +40,9 @@
                 if object.colorScript != nil {
                     count += 1
                 }
-                if object.parallaxDepthScript != nil {
-                    count += 1
-                }
+            if object.parallaxDepthScript != nil {
+                count += 1
+            }
         } + nonLightHosts.reduce(into: 0) { count, object in
                 if object.originScript != nil {
                     count += 1
@@ -96,7 +96,7 @@
             for object in document.imageObjects {
                 note(object.visibleScript)
                 note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
+            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
                     note(transform?.script)
                 }
                 for effect in object.effects {
@@ -198,7 +198,7 @@
             for object in document.imageObjects {
                 note(object.visibleScript)
                 note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
+            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
                     note(transform?.script)
                 }
                 for effect in object.effects {
@@ -243,7 +243,7 @@
             for object in document.imageObjects {
                 note(object.visibleScript)
                 note(object.alphaScript)
-                for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
+            for transform in [object.originScript, object.scaleScript, object.anglesScript, object.colorScript, object.parallaxDepthScript] {
                     note(transform?.script)
                 }
                 for effect in object.effects {
