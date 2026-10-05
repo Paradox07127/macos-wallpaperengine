@@ -23,7 +23,7 @@ extension WPECacheManagementView {
         let protectedRoots = locations.filter {
             [.steamProfiles, .credentials, .application, .configuration, .preferences, .webData, .steamTools, .systemMetadata].contains($0.kind)
         }.map(\.url)
-        let linked = StorageLinkedSources.current(excluding: externalRoots + protectedRoots)
+        let linked = await StorageLinkedSources.current(excluding: externalRoots + protectedRoots)
         let appScan = Task { await StorageLinkedSources.scan(linked.sources, locations: locations, excluding: externalRoots) }
         let scan = Task { await WPEStorageInventory.compute(doctor: doctorService) }
         storageScan = appScan

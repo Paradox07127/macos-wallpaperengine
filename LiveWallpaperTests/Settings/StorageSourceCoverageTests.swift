@@ -16,6 +16,16 @@ struct StorageSourceCoverageTests {
         #expect(Set(roots.map(\.id)) == ["/wallpapers", "/wallpapers-other/video.mp4"])
     }
 
+    @Test func volumeRootContainsEveryPathBeneathIt() {
+        let roots = StorageLinkedSources.distinctRoots([
+            .init(url: URL(fileURLWithPath: "/"), bookmark: Data()),
+            .init(url: URL(fileURLWithPath: "/tmp/x"), bookmark: Data()),
+        ])
+        #expect(roots.map(\.id) == ["/"])
+        #expect(storagePath("/tmp/x", isWithin: "/"))
+        #expect(!storagePath("/wallpapers-other", isWithin: "/wallpapers"))
+    }
+
     @Test @MainActor func linkedFilesAreMeasuredWithoutDoubleCountingOwnedParents() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("wallpaper-storage-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

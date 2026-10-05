@@ -47,6 +47,11 @@ struct AppStorageMeasurement: Sendable, Identifiable {
     }
 }
 
+/// `path` is `root` or lies beneath it; `root` may already end in "/" (the volume root).
+func storagePath(_ path: String, isWithin root: String) -> Bool {
+    path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+}
+
 actor AppStorageScanner {
     static let shared = AppStorageScanner()
     private let fileManager = FileManager()
@@ -88,7 +93,7 @@ actor AppStorageScanner {
         }
         guard rootValues.isDirectory == true else { status = .unavailable; return result() }
         let excludedPaths = exclusions.map(\.standardizedFileURL.path)
-            .filter { $0.hasPrefix(root.path + "/") }
+            .filter { storagePath($0, isWithin: root.path) }
         guard let enumerator = fileManager.enumerator(
             at: root, includingPropertiesForKeys: Array(keys), options: [],
             errorHandler: { _, _ in status = .partial; return true }
@@ -122,7 +127,6 @@ extension AppStorageLocation {
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let library = support.deletingLastPathComponent()
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.loomscreen.pro"
         let configuration = ConfigurationDirectory().root
         let legacy = support.appendingPathComponent("LiveWallpaper", isDirectory: true)
         let realSupport = SystemWallpaperPaths.realHomeDirectory.appendingPathComponent("Library/Application Support/Loomscreen", isDirectory: true)

@@ -7,36 +7,60 @@ enum WPEStoragePaths {
     static let defaultWalkBudget = 200_000
 
     /// Sum of allocated (`du`-equivalent) size of every regular file under `url`. Includes hidden regular files; child symlinks are not followed. Stops when cancelled or `visited` reaches `budget`.
+    /// `complete` turns false when the walk stopped early or any entry could not be enumerated or read.
     static func allocatedBytes(
         at url: URL,
         fileManager fm: FileManager = .default,
         budget: Int,
-        visited: inout Int
+        visited: inout Int,
+        complete: inout Bool
     ) -> UInt64 {
+        var unreadable = false
         // `enumerator(at:)` yields nothing when the root itself is a symlink.
         guard let enumerator = fm.enumerator(
             at: url.standardizedFileURL.resolvingSymlinksInPath(),
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
-            options: []
-        ) else { return 0 }
+            options: [],
+            errorHandler: { _, _ in
+                unreadable = true
+                return true
+            }
+        ) else {
+            complete = false
+            return 0
+        }
+        defer {
+            if unreadable {
+                complete = false
+            }
+        }
         var total: UInt64 = 0
         for case let item as URL in enumerator {
-            guard !Task.isCancelled, visited < budget else { return total }
+            guard !Task.isCancelled, visited < budget else {
+                complete = false
+                return total
+            }
             visited += 1
-            let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey])
-            if values?.isSymbolicLink == true {
+            guard let values = try? item.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+            ) else {
+                complete = false
+                continue
+            }
+            if values.isSymbolicLink == true {
                 enumerator.skipDescendants()
                 continue
             }
-            guard values?.isRegularFile == true else { continue }
-            total += UInt64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
+            guard values.isRegularFile == true else { continue }
+            total += UInt64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
         }
         return total
     }
 
     static func allocatedBytes(at url: URL, fileManager fm: FileManager = .default) -> UInt64 {
         var visited = 0
-        return allocatedBytes(at: url, fileManager: fm, budget: .max, visited: &visited)
+        var complete = true
+        return allocatedBytes(at: url, fileManager: fm, budget: .max, visited: &visited, complete: &complete)
     }
 }
 #endif

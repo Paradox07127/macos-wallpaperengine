@@ -14,7 +14,7 @@ struct StorageLinkedSource: Identifiable, Sendable {
 
 @MainActor
 enum StorageLinkedSources {
-    static func current(excluding roots: [URL]) -> (sources: [StorageLinkedSource], unresolved: Int) {
+    static func current(excluding roots: [URL]) async -> (sources: [StorageLinkedSource], unresolved: Int) {
         let settings = SettingsManager.shared
         var data = Set<Data>()
         func add(_ content: WallpaperContent) {
@@ -66,6 +66,15 @@ enum StorageLinkedSources {
         if let bookmark = settings.loadAerialsDirectoryBookmark() {
             data.insert(bookmark)
         }
+        return await resolve(data, excluding: roots)
+    }
+
+    /// Resolving a bookmark can block on a slow or disconnected volume, so it never runs on the main actor.
+    @concurrent
+    private nonisolated static func resolve(
+        _ data: Set<Data>,
+        excluding roots: [URL]
+    ) async -> (sources: [StorageLinkedSource], unresolved: Int) {
         var byPath: [String: StorageLinkedSource] = [:]
         var unresolved = 0
         let rootPaths = roots.map { $0.standardizedFileURL.resolvingSymlinksInPath().path }
@@ -75,7 +84,7 @@ enum StorageLinkedSources {
                 continue
             }
             let path = resolved.url.standardizedFileURL.resolvingSymlinksInPath().path
-            guard !rootPaths.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else { continue }
+            guard !rootPaths.contains(where: { storagePath(path, isWithin: $0) }) else { continue }
             byPath[path] = StorageLinkedSource(url: URL(fileURLWithPath: path), bookmark: bookmark)
         }
         return (distinctRoots(Array(byPath.values)), unresolved)
@@ -84,14 +93,16 @@ enum StorageLinkedSources {
     nonisolated static func distinctRoots(_ sources: [StorageLinkedSource]) -> [StorageLinkedSource] {
         var roots: [StorageLinkedSource] = []
         for source in sources.sorted(by: { $0.id < $1.id }) {
-            guard !roots.contains(where: { source.id == $0.id || source.id.hasPrefix($0.id + "/") }) else { continue }
+            guard !roots.contains(where: { storagePath(source.id, isWithin: $0.id) }) else { continue }
             roots.append(source)
         }
         return roots
     }
 
     /// Hold the original scoped URL while the scanner reads its canonical target.
-    static func scan(_ sources: [StorageLinkedSource], locations: [AppStorageLocation], excluding roots: [URL]) async -> [AppStorageMeasurement] {
+    /// Every lease opened here is closed by this same call after the scan returns.
+    @concurrent
+    nonisolated static func scan(_ sources: [StorageLinkedSource], locations: [AppStorageLocation], excluding roots: [URL]) async -> [AppStorageMeasurement] {
         var leases: [URL] = []
         var authorized: [AppStorageLocation] = []
         var unavailable: [AppStorageMeasurement] = []

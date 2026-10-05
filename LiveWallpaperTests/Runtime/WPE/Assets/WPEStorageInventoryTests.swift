@@ -43,7 +43,8 @@ struct WPEStorageInventoryTests {
                 await Task.yield()
             }
             var visited = 0
-            return WPEStoragePaths.allocatedBytes(at: directory, budget: .max, visited: &visited)
+            var complete = true
+            return WPEStoragePaths.allocatedBytes(at: directory, budget: .max, visited: &visited, complete: &complete)
         }
         task.cancel()
 
@@ -93,6 +94,27 @@ struct WPEStorageInventoryTests {
 
         #expect(inventory.engineAssetsBytes == 0)
         #expect(inventory.engineAssetsURL == nil)
+    }
+
+    @Test("An unreadable subdirectory marks the inventory incomplete")
+    func unreadableSubdirectoryIsIncomplete() async throws {
+        let directory = try makeFixture(fileCount: 4, bytesPerFile: 16)
+        let locked = directory.appendingPathComponent("locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data(repeating: 0xEF, count: 16).write(to: locked.appendingPathComponent("inside.bin"))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let inventory = await WPEStorageInventoryScanner.shared.scan(
+            roots: WPEStorageInventory.ScanRoots(steamRoot: nil, engineAssetsRoot: directory),
+            budget: .max
+        )
+
+        #expect(inventory.engineAssetsBytes > 0)
+        #expect(inventory.isIncomplete, "an unreadable subtree was reported as an exact total")
     }
 
     /// `steamapps/workshop/content/<appID>/<workshopID>/` is the only shape
