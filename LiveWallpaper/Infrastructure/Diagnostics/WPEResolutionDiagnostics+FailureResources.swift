@@ -9,7 +9,9 @@ extension WPEResolutionDiagnosticsSnapshot {
                 path: event.ref,
                 searchedEngineAssets: event.attempts.contains { $0.origin == .engineAssets },
                 dependencyID: event.attempts.lazy.compactMap { attempt -> String? in
-                    if case let .dependency(id) = attempt.origin { return id }
+                    if case let .dependency(id) = attempt.origin {
+                        return id
+                    }
                     return nil
                 }.first
             )

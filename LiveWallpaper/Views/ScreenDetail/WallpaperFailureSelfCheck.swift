@@ -45,14 +45,13 @@ enum WallpaperFailureSelfCheck {
         var checks: [WallpaperFailureCheck] = []
 
         if let installed = environment.engineAssetsInstalled, !resources.isEmpty || fileMissingCodes.contains(code) {
-            let missingOutcome: WallpaperFailureCheckOutcome
-            if !installed, unscopedMisses.contains(where: { !$0.searchedEngineAssets }) {
-                missingOutcome = .failed
+            let missingOutcome: WallpaperFailureCheckOutcome = if !installed, unscopedMisses.contains(where: { !$0.searchedEngineAssets }) {
+                .failed
             } else if !installed, resources.isEmpty {
                 // Import-stage failures carry only the code, never a lookup record.
-                missingOutcome = .unknown
+                .unknown
             } else {
-                missingOutcome = .passed
+                .passed
             }
             checks.append(WallpaperFailureCheck(kind: .engineAssetsMissing, outcome: missingOutcome))
             if installed {
@@ -63,7 +62,7 @@ enum WallpaperFailureSelfCheck {
 
         var dependencyIDs: [String] = []
         for id in (environment.currentMissingDependencyIDs ?? snapshot.missingDependencyIDs) + resources.compactMap(\.dependencyID)
-        where !dependencyIDs.contains(id) {
+            where !dependencyIDs.contains(id) {
             dependencyIDs.append(id)
         }
         if !snapshot.missingDependencyIDs.isEmpty || resources.contains(where: { $0.dependencyID != nil })
@@ -125,7 +124,9 @@ extension WallpaperFailureSelfCheck {
         let url = resolution.url
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
-            if accessing { url.stopAccessingSecurityScopedResource() }
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue

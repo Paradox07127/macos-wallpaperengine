@@ -142,7 +142,7 @@ struct WallpaperFailureSelfCheckTests {
             WallpaperFailureMissingResource(path: "b.tex", searchedEngineAssets: true, dependencyID: "111"),
         ])
 
-        let many = (0..<30).map {
+        let many = (0 ..< 30).map {
             WPEResolutionEvent(ref: "m\($0).tex", attempts: [.init(origin: .scene, outcome: .fileMissing)], finalOutcome: .fileMissing)
         }
         #expect(WPEResolutionDiagnosticsSnapshot(events: many).failureMissingResources.count == 20)

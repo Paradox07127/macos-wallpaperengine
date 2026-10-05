@@ -45,9 +45,9 @@ struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
     let timestamp: Date
     let diagnostics: String
     var wallpaperType: WallpaperType?
-    var sourceURL: URL? = nil
+    var sourceURL: URL?
     /// The source folder's security-scoped bookmark; nil when the attempt has no WPE origin.
-    var sourceBookmark: Data? = nil
+    var sourceBookmark: Data?
     var missingDependencyIDs: [String] = []
     var missingResources: [WallpaperFailureMissingResource] = []
 
