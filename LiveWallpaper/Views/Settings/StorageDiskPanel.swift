@@ -25,6 +25,24 @@ struct StorageDiskItem: Identifiable {
     func searchTitle(matching marks: SettingsSearchMarks?) -> LocalizedStringKey {
         marks?.rows.first(where: matchesSearchKey).map { LocalizedStringKey($0) } ?? title
     }
+
+    static func summaryStatus(
+        inventoryIncomplete: Bool,
+        componentStatuses: [AppStorageMeasurement.Status],
+        unresolvedSources: Int
+    ) -> AppStorageMeasurement.Status {
+        // `.missing` is a location with no files yet, so it leaves the sum exact.
+        let incomplete = inventoryIncomplete || unresolvedSources > 0
+            || componentStatuses.contains { $0 == .partial || $0 == .unavailable }
+        return incomplete ? .partial : .complete
+    }
+
+    static func abbreviatingHome(_ path: String, home: String) -> String {
+        if path == home {
+            return "~"
+        }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
 }
 
 /// Settings search marks are injected inside the Form, below the page view that builds the rows.
@@ -116,6 +134,8 @@ private struct StorageDonutRing: View {
     /// Turn fraction added to every slice, so the layout can choose where the first slice sits.
     let rotation: Double
     let total: UInt64
+    /// Includes zero-byte items, which `items` leaves out.
+    let isTotalPartial: Bool
     let isLoading: Bool
     let formatBytes: (UInt64) -> String
     @Binding var hoveredItemID: String?
@@ -134,7 +154,7 @@ private struct StorageDonutRing: View {
                 if let item = items.first(where: { $0.id == slice.id }) {
                     let isSelected = selectedItemID == item.id
                     let isHighlighted = hoveredItemID == item.id || (hoveredItemID == nil && isSelected)
-                    let opacity = isHighlighted ? 1.0 : (hoveredItemID != nil ? 0.35 : 0.8)
+                    let opacity = isHighlighted ? 1.0 : (hoveredItemID != nil ? DesignTokens.Opacity.fadedSegment : DesignTokens.Opacity.restingSegment)
                     let wedge = StorageDiskWedge(start: slice.start + rotation, end: slice.end + rotation)
 
                     Button {
@@ -160,7 +180,7 @@ private struct StorageDonutRing: View {
                     ProgressView().controlSize(.small)
                         .accessibilityLabel(Text("Calculating storage footprint…"))
                 } else if let activeItem {
-                    Text(verbatim: formatBytes(activeItem.bytes))
+                    Text(verbatim: (activeItem.status == .partial ? "≥ " : "") + formatBytes(activeItem.bytes))
                         .font(DesignTokens.Typography.bodyEmphasized)
                         .monospacedDigit()
                     Text(activeItem.title)
@@ -171,7 +191,7 @@ private struct StorageDonutRing: View {
                         .font(DesignTokens.Typography.badge)
                         .foregroundStyle(activeItem.color)
                 } else {
-                    Text(verbatim: formatBytes(total))
+                    Text(verbatim: (isTotalPartial ? "≥ " : "") + formatBytes(total))
                         .font(DesignTokens.Typography.pageTitle)
                         .monospacedDigit()
                     Text(title)
@@ -225,7 +245,8 @@ private struct StorageCalloutRing: View {
             let labelWidth = max(0, proxy.size.width / 2 - radius - 28)
 
             ZStack(alignment: .topLeading) {
-                StorageDonutRing(title: spec.title, items: ranked, rotation: rotation, total: total, isLoading: isLoading,
+                StorageDonutRing(title: spec.title, items: ranked, rotation: rotation, total: total,
+                                 isTotalPartial: spec.items.contains { $0.status == .partial }, isLoading: isLoading,
                                  formatBytes: formatBytes, hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
                     .frame(width: diameter, height: diameter)
                     .position(center)

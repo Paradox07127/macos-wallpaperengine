@@ -500,11 +500,11 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Storage",
                     anchor: .storageDashboard,
-                    rows: ["Wallpapers", "Engine Assets", "System Wallpaper", "App Data",
+                    rows: ["Wallpapers", "Engine Assets", "System Wallpaper",
                            "Settings & Library", "Saved Covers", "Legacy Scene Files", "Scene Diagnostics",
                            "Runtime Logs", "Web Wallpaper Data", "App Preferences", "Other App Support",
                            "Temporary Files", "System Wallpaper Metadata", "SteamCMD Installation", "Steam Sign-in Profiles",
-                           "Linked Original Files", "Memory Caches", "Wallpaper Locations", "Workshop Wallpapers",
+                           "Linked Original Files", "Wallpaper Locations", "Workshop Wallpapers",
                            "Local Wallpaper Files", "Credential Files", "Application"],
                     keywords: [
                         "storage", "downloaded projects", "engine assets", "projects",
@@ -515,7 +515,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     label: "Caches",
                     anchor: .storageCaches,
                     rows: ["Scene Video Texture Cache", "Workshop Search Cache", "Workshop Preview Images",
-                           "Shader Translation Cache", "Audio Transcode Cache", "Web Wallpaper Cache", "Other System Caches"],
+                           "Shader Translation Cache", "Audio Transcode Cache", "Web Wallpaper Cache", "Other System Caches",
+                           "Memory Caches"],
                     keywords: [
                         "cache", "caches", "video cache", "scene video texture cache",
                         "clear all caches", "wallpaper engine cache", "shader", "audio", "preview", "WebKit",

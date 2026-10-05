@@ -33,7 +33,11 @@ extension WPECacheManagementView {
                 scopeRootURL: inventory?.projectsScopeRootURL,
                 canRevealInFinder: inventory?.projectsRootURL != nil || !linkedSources.isEmpty || storageMeasurements.contains { $0.location.kind == .legacyScenes && $0.bytes > 0 },
                 canClear: false,
-                status: inventory?.isIncomplete == true ? .partial : .complete,
+                status: StorageDiskItem.summaryStatus(
+                    inventoryIncomplete: inventory?.isIncomplete == true,
+                    componentStatuses: storageMeasurements.filter { [.localWallpapers, .legacyScenes].contains($0.location.kind) }.map(\.status),
+                    unresolvedSources: unresolvedSources
+                ),
                 detail: "Steam downloads, local imports and linked Apple Aerials. Each location is counted once. Choose a location to reveal its files in Finder."
             ),
             StorageDiskItem(
@@ -170,6 +174,7 @@ extension WPECacheManagementView {
                         .font(DesignTokens.Typography.sectionTitle)
                     Spacer()
                     Text("Memory Caches").font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.textSecondary)
+                        .settingsSearchRow("Memory Caches")
                     StorageInfoButton {
                         infoNote("Decoded images, library thumbnails, scene textures, animation frames, compiled Metal pipelines and recent query results live in memory. They do not count toward disk storage and are released by their owners or when Loomscreen quits.")
                     }
@@ -246,7 +251,7 @@ extension WPECacheManagementView {
                     if showsClearSlot {
                         Group {
                             if item.canClear, let measurement = item.measurement {
-                                Button {
+                                Button(role: .destructive) {
                                     pendingCache = measurement
                                 } label: {
                                     Image(systemName: "trash")
@@ -295,6 +300,19 @@ extension WPECacheManagementView {
         .onTapGesture {
             selectedItemID = (selectedItemID == item.id ? nil : item.id)
         }
+        // `.activate` keeps clicks from moving focus; the row only joins the Tab loop under keyboard navigation.
+        .focusable(interactions: .activate)
+        .onKeyPress(keys: [.space, .return]) { _ in
+            selectedItemID = (selectedItemID == item.id ? nil : item.id)
+            return .handled
+        }
+        // A container element, so the trait and action stay off the row's Finder/clear/info buttons.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(item.title))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction {
+            selectedItemID = (selectedItemID == item.id ? nil : item.id)
+        }
     }
 
     private static let actionSlotWidth: CGFloat = 18
@@ -304,7 +322,7 @@ extension WPECacheManagementView {
         let rawPath = url.path(percentEncoded: false)
         // NSHomeDirectory() is the sandbox container; abbreviate only the real home.
         let home = getpwuid(getuid()).map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        return rawPath.hasPrefix(home) ? "~" + rawPath.dropFirst(home.count) : rawPath
+        return StorageDiskItem.abbreviatingHome(rawPath, home: home)
     }
 
     private func shareText(bytes: UInt64, total: UInt64) -> String {
@@ -387,7 +405,7 @@ extension WPECacheManagementView {
                     }
                     Spacer()
                     if item.canClear, let measurement = item.measurement {
-                        Button("Clear Cache") {
+                        Button("Clear Cache", role: .destructive) {
                             pendingCache = measurement
                         }
                         .buttonStyle(.borderless)
@@ -456,7 +474,7 @@ extension WPECacheManagementView {
                 let measurement = storageMeasurements.first { $0.location.kind == .localWallpapers && $0.location.url == source.url }
                 Button {
                     guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(source.bookmark, target: .transient) else { return }
-                    openFolder(source.url, scopeRoot: resolved.url)
+                    openFolder(resolved.url, scopeRoot: resolved.url)
                 } label: {
                     Text(verbatim: source.url.path(percentEncoded: false) + " · " + formattedDiskBytes(measurement?.bytes ?? 0))
                 }

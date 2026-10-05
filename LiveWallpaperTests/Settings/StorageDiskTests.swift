@@ -45,5 +45,22 @@ struct StorageDiskTests {
         #expect(slices[1].start == 0.5)
         #expect(slices[1].end == 1)
     }
+
+    @Test func anyIncompleteWallpaperComponentMakesTheSummaryPartial() {
+        func summary(_ incomplete: Bool, _ statuses: [AppStorageMeasurement.Status], _ unresolved: Int) -> AppStorageMeasurement.Status {
+            StorageDiskItem.summaryStatus(inventoryIncomplete: incomplete, componentStatuses: statuses, unresolvedSources: unresolved)
+        }
+        #expect(summary(false, [.complete, .missing], 0) == .complete)
+        #expect(summary(true, [.complete], 0) == .partial)
+        #expect(summary(false, [.complete, .partial], 0) == .partial)
+        #expect(summary(false, [.unavailable], 0) == .partial)
+        #expect(summary(false, [.complete], 1) == .partial)
+    }
+
+    @Test func homeIsAbbreviatedOnlyAtADirectoryBoundary() {
+        #expect(StorageDiskItem.abbreviatingHome("/Users/ann/x", home: "/Users/ann") == "~/x")
+        #expect(StorageDiskItem.abbreviatingHome("/Users/ann", home: "/Users/ann") == "~")
+        #expect(StorageDiskItem.abbreviatingHome("/Users/anna/x", home: "/Users/ann") == "/Users/anna/x")
+    }
 }
 #endif

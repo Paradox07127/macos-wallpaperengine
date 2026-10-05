@@ -277,6 +277,10 @@ public enum DesignTokens {
         public static let disabledContent: Double = 0.55
         /// Dimmed glyph in its off state; empty-slot strokes.
         public static let dimmedIcon: Double = 0.70
+        /// Chart segment while another segment is hovered.
+        public static let fadedSegment: Double = 0.35
+        /// Chart segment with nothing hovered or selected.
+        public static let restingSegment: Double = 0.80
     }
 
     /// Page-top status bars (storage breakdown, Workshop setup).

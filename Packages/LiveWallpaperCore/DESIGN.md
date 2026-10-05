@@ -108,7 +108,8 @@ Semantic tiers for state-dependent transparency (W2-B5, 2026-08-31). Fills:
 `hoverFill` .05 · `dragFill` .08 · `activeFill` .10 · `selectedFill` .12.
 Strokes: `quietStroke` .28 · `strongStroke` .55 · `alertStroke` .75 ·
 `emphasisStroke` .85. Content: `dimmedContent` .45 · `disabledContent` .55 ·
-`dimmedIcon` .70. New state-dependent opacities use these — never a fresh
+`dimmedIcon` .70. Chart segments: `fadedSegment` .35 (another segment hovered) ·
+`restingSegment` .80 (nothing hovered). New state-dependent opacities use these — never a fresh
 literal. Decorative one-off opacities (shadows, gradient stops, scrims) stay
 literal by design; see the W2-B5 ledger for the adjudication.
 
