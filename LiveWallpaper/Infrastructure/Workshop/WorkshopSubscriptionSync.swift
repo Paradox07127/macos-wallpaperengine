@@ -58,7 +58,8 @@ final class WorkshopSubscriptionSync {
         requiresSignIn = false
         submitted.removeAll { !isActive($0) }
 
-        guard let installed = installedWorkshopIDs(using: doctor) else {
+        // Without the library grant every subscription would read as missing.
+        guard let workdir = try? doctor.resolveWorkdirURL() else {
             fail(String(
                 localized: "Authorize your Steam library folder before checking your subscriptions.",
                 bundle: .appLanguage, comment: "Subscription sync error when the Steam library folder is not authorized."
@@ -75,6 +76,8 @@ final class WorkshopSubscriptionSync {
 
         switch result.outcome {
         case .listed:
+            // Read after the listing: the SteamCMD run behind it can install items.
+            let installed = installedWorkshopIDs(in: workdir)
             let missing = result.workshopIDs.compactMap(UInt64.init).filter { !installed.contains($0) }
             for itemID in missing where !isActive(itemID) {
                 downloads.forgetSettledPhase(itemID)
@@ -160,9 +163,7 @@ final class WorkshopSubscriptionSync {
         phase = .failed(reason)
     }
 
-    /// nil means the library grant could not be resolved — do not report every subscription as missing.
-    private func installedWorkshopIDs(using doctor: SteamCMDDoctorService) -> Set<UInt64>? {
-        guard let workdir = try? doctor.resolveWorkdirURL() else { return nil }
+    private func installedWorkshopIDs(in workdir: URL) -> Set<UInt64> {
         let scope = workdir.startAccessingSecurityScopedResource()
         defer {
             if scope {

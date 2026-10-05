@@ -31,7 +31,12 @@ final class WorkshopFolderImportCoordinator {
         let baseline: SteamPruneBaseline?
     }
 
-    private static let pruneBaselineKey = "loomscreen.workshop.prune.acfBaseline"
+    /// Runs off the main actor with `steamRoot`'s access open; `entriesSteamDeleted` unless a test injects one.
+    typealias SteamDeletedSurveying = @Sendable (
+        _ entries: [WPEHistoryEntry], _ steamRoot: URL, _ baseline: SteamPruneBaseline?, _ identity: String?
+    ) async -> SteamDeletedSurvey?
+
+    static let pruneBaselineKey = "loomscreen.workshop.prune.acfBaseline"
 
     /// Which entry is writing history, presets and tombstones; nil when idle. One slot for both entries.
     private var importer: Importer?
@@ -54,8 +59,11 @@ final class WorkshopFolderImportCoordinator {
     @ObservationIgnored private let toastCenter: WorkshopToastCenter
     @ObservationIgnored private let repositoryCoordinator: WorkshopRepositoryCoordinator
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let surveySteamDeleted: SteamDeletedSurveying
     /// Ids whose scan conflict was already shown this launch; the scan reruns on every Workshop visit.
     @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
+    /// One Steam-deleted pass at a time; one that starts while another surveys is skipped.
+    @ObservationIgnored private var isPruning = false
 
     /// Drops one history entry Steam deleted, without a delete tombstone; true when it was removed.
     @ObservationIgnored var removeVanishedImport: @MainActor (WPEHistoryEntry) -> Bool
@@ -67,9 +75,13 @@ final class WorkshopFolderImportCoordinator {
         toastCenter: WorkshopToastCenter = .shared,
         repositoryCoordinator: WorkshopRepositoryCoordinator = .shared,
         defaults: UserDefaults = .appScoped(),
-        removeVanishedImport: (@MainActor (WPEHistoryEntry) -> Bool)? = nil
+        removeVanishedImport: (@MainActor (WPEHistoryEntry) -> Bool)? = nil,
+        surveySteamDeleted: SteamDeletedSurveying? = nil
     ) {
         self.removeVanishedImport = removeVanishedImport ?? { _ in false }
+        self.surveySteamDeleted = surveySteamDeleted ?? {
+            Self.entriesSteamDeleted($0, steamRoot: $1, baseline: $2, identity: $3)
+        }
         self.importService = importService
         self.discoverFolders = discoverFolders ?? Self.discoverProjectFolders
         self.toastCenter = toastCenter
@@ -293,19 +305,27 @@ final class WorkshopFolderImportCoordinator {
     /// Ignores task cancellation: a cancelled download's SteamCMD run still deleted items.
     private func removeSteamDeleted(_ candidates: [WPEHistoryEntry], using doctor: SteamCMDDoctorService) async {
         // Skips the whole pass while any item mutates: one SteamCMD login touches several items, and the hook reruns after it.
-        guard !isTerminated, !candidates.isEmpty, !repositoryCoordinator.hasActiveMutations,
+        guard !isTerminated, !isPruning, !repositoryCoordinator.hasActiveMutations,
               let access = try? doctor.beginWorkdirAccess() else { return }
-        defer { access.end() }
+        isPruning = true
+        defer {
+            isPruning = false
+            access.end()
+        }
         let steamRoot = access.url
         let baseline = steamPruneBaseline
-        let survey = await Task.detached(priority: .utility) {
-            Self.entriesSteamDeleted(candidates, steamRoot: steamRoot, baseline: baseline, identity: Self.libraryIdentity(of: steamRoot))
+        let epoch = repositoryCoordinator.mutationEpoch
+        let survey = await Task.detached(priority: .utility) { [surveySteamDeleted] in
+            await surveySteamDeleted(candidates, steamRoot, baseline, Self.libraryIdentity(of: steamRoot))
         }.value
-        // The survey ran off the main actor; a mutation or history change since then voids it.
+        // The survey ran off the main actor; any mutation or history change since then voids it, even one already finished.
         let history = settings.loadGlobalSettings().recentWPEImports
-        guard let survey, !isTerminated, !repositoryCoordinator.hasActiveMutations,
+        guard let survey, !isTerminated, repositoryCoordinator.mutationEpoch == epoch,
               survey.deleted.allSatisfy({ entry in
-                  history.contains { $0.origin.workshopID == entry.origin.workshopID && $0.importedAt == entry.importedAt }
+                  history.contains {
+                      $0.origin.workshopID == entry.origin.workshopID && $0.importedAt == entry.importedAt
+                          && $0.origin.sourceFolderBookmark == entry.origin.sourceFolderBookmark
+                  }
               })
         else { return }
         var removed = 0
@@ -361,8 +381,7 @@ final class WorkshopFolderImportCoordinator {
             "steamapps/workshop/appworkshop_\(SteamLibraryPaths.wallpaperEngineAppID).acf",
             isDirectory: false
         )
-        guard !entries.isEmpty,
-              let listing = try? FileManager().contentsOfDirectory(atPath: contentRoot.path(percentEncoded: false)),
+        guard let listing = try? FileManager().contentsOfDirectory(atPath: contentRoot.path(percentEncoded: false)),
               let text = try? String(contentsOf: acf, encoding: .utf8),
               let installed = SteamWorkshopManifest.installedIDs(fromACF: text)
         else { return nil }

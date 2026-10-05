@@ -38,6 +38,19 @@ struct WorkshopSubscriptionSyncTests {
         #expect(fixture.sync.downloadableSelection().isEmpty)
     }
 
+    @Test("An item SteamCMD installs while the subscription list is read is not missing")
+    func installedDuringListingIsNotMissing() async throws {
+        let fixture = try SyncFixture()
+        defer { await fixture.discard() }
+        fixture.listing.ids = [itemID]
+        fixture.listing.installsBeforeAnswering = SteamLibraryPaths.workshopContentRoot(steamRoot: fixture.root)
+            .appendingPathComponent(String(itemID), isDirectory: true)
+
+        await fixture.sync.refresh(using: fixture.doctor)
+
+        #expect(fixture.sync.phase == .ready(missing: []))
+    }
+
     @Test("A check that fails mid-download keeps the download active and cancellable")
     func failedCheckKeepsActiveDownload() async throws {
         let fixture = try SyncFixture(parks: true)
@@ -78,6 +91,8 @@ struct WorkshopSubscriptionSyncTests {
 @MainActor
 private final class SubscriptionListing {
     var ids: [UInt64]?
+    /// A folder the listing creates before it answers, as SteamCMD finishing a download during the read would.
+    var installsBeforeAnswering: URL?
 }
 
 /// Delivers the video project in `folder`; `parks` holds the download until `release()`.
@@ -169,7 +184,10 @@ private final class SyncFixture {
             downloads: downloads,
             queue: WorkshopDownloadQueue(downloads: downloads),
             listSubscriptions: { _ in
-                listing.ids.map { SteamSubscribedItemsResult(outcome: .listed, workshopIDs: $0.map(String.init), diagnosticTail: "") }
+                if let folder = listing.installsBeforeAnswering {
+                    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                }
+                return listing.ids.map { SteamSubscribedItemsResult(outcome: .listed, workshopIDs: $0.map(String.init), diagnosticTail: "") }
             }
         )
     }

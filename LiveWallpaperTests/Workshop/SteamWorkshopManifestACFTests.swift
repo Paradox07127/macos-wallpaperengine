@@ -70,6 +70,25 @@ struct SteamWorkshopManifestACFTests {
         #expect(SteamWorkshopManifest.installedIDs(fromACF: acf(installed: entry111 + "\n\t\t\"222\"")) == nil)
     }
 
+    @Test("A brace inside a line comment does not close the installed block")
+    func commentedBraceDoesNotCloseBlock() {
+        let text = "\"WorkshopItemsInstalled\"\n{\n// } x\n\"111\" { }\n}"
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: text) == ["111"])
+    }
+
+    @Test("The installed key followed by a value instead of a block is rejected")
+    func installedKeyWithValueIsRejected() {
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: "\"WorkshopItemsInstalled\" \"bad\" \"Other\" {}") == nil)
+    }
+
+    @Test("The installed key inside a comment or a value is not the key")
+    func installedKeyOutsideKeyPositionIsIgnored() {
+        let commented = "// \"WorkshopItemsInstalled\" {}\n" + acf(installed: entry111)
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: commented) == ["111"])
+        let asValue = "\"Note\" \"WorkshopItemsInstalled\"\n" + acf(installed: entry111)
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: asValue) == ["111"])
+    }
+
     @Test("The walk stops at the entry budget and counts only what it visited")
     func allocatedBytesStopsAtEntryBudget() throws {
         let root = FileManager.default.temporaryDirectory

@@ -362,6 +362,7 @@ SERIAL_SUITES=(
   WPEEffectTextureProjectionConsumerReplayTests
   # Subscription sync writes the shared download coordinator's settled phases.
   WorkshopSubscriptionSyncTests
+  WorkshopSteamDeletedPruneTests
 )
 
 action="test"

@@ -64,10 +64,9 @@ struct WorkshopSteamDeletedPruneTests {
     func pruneNeedsBaselineListingTheItem(hasBaseline: Bool) async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        if hasBaseline {
-            await library.ingest()
-        } else {
-            await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
+        if !hasBaseline {
+            library.steamSuite.defaults.removeObject(forKey: WorkshopFolderImportCoordinator.pruneBaselineKey)
         }
         try library.steamDeletes(0, listing: [library.ids[1]])
 
@@ -82,6 +81,69 @@ struct WorkshopSteamDeletedPruneTests {
             #expect(library.importedIDs == Set(library.ids), "the second prune removed an id its baseline never listed")
             #expect(library.coordinator.steamPruneBaseline?.listedIDs == [library.ids[1]], "the first prune recorded no baseline")
         }
+    }
+
+    @Test("The download scan records a baseline with no stale entry, so the next prune drops an item Steam deleted")
+    func scanRecordsBaselineWithoutCandidates() async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        #expect(library.coordinator.steamPruneBaseline?.listedIDs == library.ids.sorted(), "a scan with no stale entry recorded no baseline")
+
+        try library.steamDeletes(0, listing: [library.ids[1]])
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == [library.ids[1]])
+    }
+
+    @Test("A mutation that starts and ends while the prune surveys voids that prune")
+    func mutationDuringSurveyVoidsPrune() async throws {
+        let hold = SurveyHold()
+        let library = try PruneLibrary(itemCount: 2, holdingSurveysWith: hold)
+        defer { await library.discard() }
+        await library.ingest()
+        let gone = library.ids[0]
+        let favorite = try library.bookmarks.add(
+            label: "Favorite", content: .video(bookmarkData: Data([1])), wpeOrigin: #require(library.entry(gone)).origin
+        )
+        try library.steamDeletes(0, listing: [library.ids[1]])
+        hold.isArmed = true
+        let prune = Task { [coordinator = library.coordinator, doctor = library.doctor] in
+            await coordinator.pruneSteamDeletedImports(using: doctor)
+        }
+        #expect(await waitUntil { hold.isParked })
+
+        let (folder, steamRoot, ids) = (library.itemFolders[0], library.steamRoot, library.ids)
+        try await library.repository.withExclusiveMutation(workshopID: gone) {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try writeAppWorkshopACF(appWorkshopACF(installed: ids), steamRoot: steamRoot)
+        }
+        hold.release()
+        await prune.value
+
+        #expect(library.importedIDs == Set(library.ids), "a prune surveyed before a redownload removed the redownloaded item")
+        #expect(library.bookmarks.bookmarks.map(\.id) == [favorite.id])
+    }
+
+    @Test("A prune that starts while another surveys does not run")
+    func overlappingPruneDoesNotRun() async throws {
+        let hold = SurveyHold()
+        let library = try PruneLibrary(itemCount: 2, holdingSurveysWith: hold)
+        defer { await library.discard() }
+        await library.ingest()
+        try library.steamDeletes(0, listing: [library.ids[1]])
+        hold.isArmed = true
+        let first = Task { [coordinator = library.coordinator, doctor = library.doctor] in
+            await coordinator.pruneSteamDeletedImports(using: doctor)
+        }
+        #expect(await waitUntil { hold.isParked })
+
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        #expect(hold.surveys == 1, "a second prune surveyed while the first was in flight")
+        hold.release()
+        await first.value
+
+        #expect(library.importedIDs == [library.ids[1]])
     }
 
     @Test("A held mutation gate skips the whole prune; the next prune after it frees drops the item", arguments: [0, 1])
@@ -277,6 +339,31 @@ private final class GateHold {
     }
 }
 
+/// While armed, counts each survey and parks the first after it is computed, until `release()`.
+@MainActor
+private final class SurveyHold {
+    var isArmed = false
+    private(set) var surveys = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    var isParked: Bool {
+        continuation != nil
+    }
+
+    func pass() async {
+        guard isArmed else { return }
+        surveys += 1
+        guard continuation == nil else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        isArmed = false
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 @MainActor
 private final class MemoryBookmarks: BookmarkPersisting {
     func load() -> [WallpaperBookmark] {
@@ -338,7 +425,7 @@ private struct PruneLibrary {
     let repository = WorkshopRepositoryCoordinator()
     let coordinator: WorkshopFolderImportCoordinator
 
-    init(itemCount: Int, function: String = #function) throws {
+    init(itemCount: Int, holdingSurveysWith hold: SurveyHold? = nil, function: String = #function) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SteamDeletedPrune-\(UUID().uuidString)", isDirectory: true)
         self.root = root
@@ -364,6 +451,17 @@ private struct PruneLibrary {
         )
         self.manager = manager
         marks = LibraryBookmarkStore(defaults: librarySuite.defaults)
+        let survey: WorkshopFolderImportCoordinator.SteamDeletedSurveying? = if let hold {
+            { @Sendable entries, steamRoot, baseline, identity in
+                let survey = WorkshopFolderImportCoordinator.entriesSteamDeleted(
+                    entries, steamRoot: steamRoot, baseline: baseline, identity: identity
+                )
+                await hold.pass()
+                return survey
+            }
+        } else {
+            nil
+        }
         coordinator = WorkshopFolderImportCoordinator(
             importService: importService,
             settings: manager,
@@ -373,7 +471,8 @@ private struct PruneLibrary {
             removeVanishedImport: WorkshopSavedRecords.removingImport(
                 bookmarks: bookmarks, libraryBookmarks: marks, history: { manager.loadGlobalSettings().recentWPEImports },
                 { manager.removeWPEImport(workshopID: $0.origin.workshopID, matchingImportedAt: $0.importedAt, recordingDeleteTombstone: false) }
-            )
+            ),
+            surveySteamDeleted: survey
         )
     }
 

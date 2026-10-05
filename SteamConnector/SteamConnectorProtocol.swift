@@ -1131,7 +1131,7 @@ enum SteamAccountsFile {
     }
 
     /// Contents of the next balanced `{ … }`, advancing `cursor` past its close.
-    /// Quoted spans are skipped so a brace inside a value can't unbalance it.
+    /// Quoted spans and `//` line comments are skipped so a brace inside either can't unbalance it.
     static func nextBraceBlock(in text: Substring, from cursor: inout Substring.Index) -> Substring? {
         guard let open = text[cursor...].firstIndex(of: "{") else { return nil }
         var depth = 0
@@ -1147,6 +1147,9 @@ enum SteamAccountsFile {
                 if character == "\"" { insideQuotes = false }
             } else if character == "\"" {
                 insideQuotes = true
+            } else if character == "/", text[index...].hasPrefix("//") {
+                index = text[index...].firstIndex(where: \.isNewline) ?? text.endIndex
+                continue
             } else if character == "{" {
                 depth += 1
             } else if character == "}" {
@@ -1200,9 +1203,7 @@ enum SteamWorkshopManifest {
 
     /// Item ids under `WorkshopItemsInstalled` of `appworkshop_<appid>.acf`; nil when that block is missing or incomplete.
     static func installedIDs(fromACF text: String) -> Set<String>? {
-        guard let key = text.range(of: "\"WorkshopItemsInstalled\"", options: .caseInsensitive) else { return nil }
-        var cursor = key.upperBound
-        guard let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &cursor) else { return nil }
+        guard let block = installedBlock(in: text[...]) else { return nil }
         var ids: Set<String> = []
         var entryCursor = block.startIndex
         // Any token outside `"<digits>" { … }` fails the whole set: it authorizes deleting library records.
@@ -1215,6 +1216,30 @@ enum SteamWorkshopManifest {
             ids.insert(id)
         }
         return ids
+    }
+
+    /// The block of the first `"WorkshopItemsInstalled"` key, matched as a key token rather than inside a comment or as a value;
+    /// nil when that key is followed by anything but `{`, or the text holds an unquoted token.
+    private static func installedBlock(in text: Substring) -> Substring? {
+        var cursor = text.startIndex
+        var expectsKey = true
+        while skipTrivia(in: text, from: &cursor) {
+            switch text[cursor] {
+            case "\"":
+                guard let token = SteamAccountsFile.nextQuoted(in: text, from: &cursor) else { return nil }
+                if expectsKey, token.caseInsensitiveCompare("WorkshopItemsInstalled") == .orderedSame {
+                    guard skipTrivia(in: text, from: &cursor), text[cursor] == "{" else { return nil }
+                    return SteamAccountsFile.nextBraceBlock(in: text, from: &cursor)
+                }
+                expectsKey.toggle()
+            case "{", "}":
+                expectsKey = true
+                cursor = text.index(after: cursor)
+            default:
+                return nil
+            }
+        }
+        return nil
     }
 
     /// Advances past whitespace and `//` line comments; false once `text` is exhausted.
