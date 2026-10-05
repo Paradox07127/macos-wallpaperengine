@@ -72,10 +72,20 @@ struct WPESceneModelSubmeshMaterialRenderTests {
     @Test("Each submesh draw samples its own material texture",
           arguments: ["genericimage2", "generic2", "generic4", "chroma4"])
     func eachSubmeshSamplesItsOwnTexture(shader: String) throws {
+        try renderSubmeshes(shader: shader, componentMapOnFirstMesh: nil)
+    }
+
+    @Test("Component-map emissive enablement follows each submesh binding", arguments: [true, false])
+    func eachSubmeshUsesItsOwnComponentPresence(firstMeshHasMap: Bool) throws {
+        try renderSubmeshes(shader: "generic4", componentMapOnFirstMesh: firstMeshHasMap)
+    }
+
+    private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let red = try solid(device: device, [255, 0, 0, 255])
-        let green = try solid(device: device, [0, 255, 0, 255])
+        let red = try solid(device: device, componentMapOnFirstMesh == nil ? [255, 0, 0, 255] : [128, 32, 32, 255])
+        let green = try solid(device: device, componentMapOnFirstMesh == nil ? [0, 255, 0, 255] : [32, 128, 32, 255])
+        let component = try solid(device: device, [0, 0, 0, 255])
 
         func quad(minX: Float, maxX: Float) -> WPEPuppetMesh {
             WPEPuppetMesh(
@@ -91,9 +101,19 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         let model = WPEPuppetModel(version: 23, meshes: [
             quad(minX: -12, maxX: -4), quad(minX: -4, maxX: 4), quad(minX: 4, maxX: 12),
         ])
+        var baseTextures: [Int: WPETextureReference] = [0: .asset("red")]
+        var middleTextures: [Int: WPETextureReference] = [0: .asset("green")]
+        if componentMapOnFirstMesh == true {
+            baseTextures[2] = .asset("component")
+        }
+        if componentMapOnFirstMesh == false {
+            middleTextures[2] = .asset("component")
+        }
+        let materialConstants: [String: WPESceneShaderConstantValue] = componentMapOnFirstMesh == nil ? [:]
+            : ["emissivecolor": .vector([1, 1, 1]), "emissivebrightness": .number(1)]
         let pass = WPERenderPass(
             id: "multi.material", phase: .material, shader: shader, source: .asset("red"),
-            target: .scene, textures: [0: .asset("red")], binds: [:], constants: [:], combos: [:],
+            target: .scene, textures: baseTextures, binds: [:], constants: materialConstants, combos: [:],
             blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
         )
         let geometry = WPERenderLayerGeometry(
@@ -105,7 +125,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             objectID: "multi", objectName: "Multi-material mesh", imagePath: "multi.mdl",
             materialPath: "materials/mat0.json", puppetPath: "multi.mdl", geometry: geometry,
             compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass],
-            meshMaterialTextures: [1: [0: .asset("green")], 2: [0: .asset("red")]]
+            meshMaterialTextures: [1: middleTextures, 2: [0: .asset("red")]]
         )
         let pipeline = WPEPreparedRenderPipeline(layers: [
             WPEPreparedRenderLayer(
@@ -124,7 +144,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         )
 
         let output = try executor.render(
-            pipeline: pipeline, size: size, textures: ["red": red, "green": green], cameraUniforms: camera
+            pipeline: pipeline, size: size, textures: ["red": red, "green": green, "component": component], cameraUniforms: camera
         )
         let pixels = try readPixels(output)
         func pixel(x: Int) -> SIMD4<UInt8> {
@@ -134,6 +154,11 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         let regions = [pixel(x: 4), pixel(x: 12), pixel(x: 20)]
         #expect(regions.map { $0.x > $0.y } == [true, false, true], "regions (left, middle, right) = \(regions)")
         #expect(regions.map { $0.y > $0.x } == [false, true, false], "regions (left, middle, right) = \(regions)")
+        if let firstHasMap = componentMapOnFirstMesh {
+            #expect(abs(Int(regions[0].z) - (firstHasMap ? 64 : 32)) <= 2, "first mesh emissive = \(regions[0])")
+            #expect(abs(Int(regions[1].z) - (firstHasMap ? 32 : 64)) <= 2, "alternate mesh emissive = \(regions[1])")
+            #expect(abs(Int(regions[2].z) - 32) <= 2, "alternate without component map must remain non-emissive: \(regions[2])")
+        }
     }
 
     private func solid(device: MTLDevice, _ rgba: [UInt8]) throws -> MTLTexture {

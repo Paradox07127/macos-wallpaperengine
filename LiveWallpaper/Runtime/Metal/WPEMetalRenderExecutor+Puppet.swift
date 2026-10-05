@@ -867,6 +867,12 @@ extension WPEMetalRenderExecutor {
             case .genericImage4, .chroma4:
                 let componentMap = own == nil ? boundComponentMap : own?[2].flatMap { try? resolve($0) }
                 encoder.setFragmentTexture(componentMap ?? meshPrimary, index: 1)
+                if var uniforms = materialUniforms {
+                    let emissiveAuthored = pass.pass.constants["emissivecolor"] != nil
+                        || pass.pass.constants["emissivebrightness"] != nil
+                    uniforms.brightnessFlags.y = componentMap != nil && emissiveAuthored ? 1 : 0
+                    encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
+                }
             case .genericImage2:
                 encoder.setFragmentTexture(meshPrimary, index: 1)
             case .generic2:
