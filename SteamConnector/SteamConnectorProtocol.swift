@@ -778,12 +778,19 @@ enum SteamDirectorySize {
         var total: UInt64 = 0
         var visited = 0
         var pending = [root.path(percentEncoded: false)]
-        while let directory = pending.popLast() {
+        while visited < entryLimit, let directory = pending.popLast() {
             var info = stat()
             guard lstat(directory, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
-                  let names = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
-            for name in names {
-                guard visited < entryLimit else { return total }
+                  let stream = opendir(directory) else { continue }
+            defer { closedir(stream) }
+            while visited < entryLimit, let entry = readdir(stream) {
+                let length = Int(entry.pointee.d_namlen)
+                let name = withUnsafePointer(to: entry.pointee.d_name) {
+                    $0.withMemoryRebound(to: CChar.self, capacity: length) {
+                        FileManager.default.string(withFileSystemRepresentation: $0, length: length)
+                    }
+                }
+                guard name != ".", name != ".." else { continue }
                 visited += 1
                 let path = (directory as NSString).appendingPathComponent(name)
                 guard lstat(path, &info) == 0 else { continue }
@@ -1198,11 +1205,31 @@ enum SteamWorkshopManifest {
         guard let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &cursor) else { return nil }
         var ids: Set<String> = []
         var entryCursor = block.startIndex
-        while let id = SteamAccountsFile.nextQuoted(in: block, from: &entryCursor) {
-            guard SteamAccountsFile.nextBraceBlock(in: block, from: &entryCursor) != nil else { return nil }
+        // Any token outside `"<digits>" { … }` fails the whole set: it authorizes deleting library records.
+        while skipTrivia(in: block, from: &entryCursor) {
+            guard block[entryCursor] == "\"",
+                  let id = SteamAccountsFile.nextQuoted(in: block, from: &entryCursor),
+                  !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  skipTrivia(in: block, from: &entryCursor), block[entryCursor] == "{",
+                  SteamAccountsFile.nextBraceBlock(in: block, from: &entryCursor) != nil else { return nil }
             ids.insert(id)
         }
         return ids
+    }
+
+    /// Advances past whitespace and `//` line comments; false once `text` is exhausted.
+    private static func skipTrivia(in text: Substring, from cursor: inout Substring.Index) -> Bool {
+        while cursor < text.endIndex {
+            if text[cursor].isWhitespace {
+                cursor = text.index(after: cursor)
+            } else if text[cursor...].hasPrefix("//") {
+                // `\r\n` is one Character, so matching "\n" alone would swallow the rest of the block.
+                cursor = text[cursor...].firstIndex(where: \.isNewline) ?? text.endIndex
+            } else {
+                return true
+            }
+        }
+        return false
     }
 }
 
