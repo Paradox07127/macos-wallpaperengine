@@ -114,8 +114,8 @@ final class WorkshopSubscriptionSync {
 
     /// The latest check's missing items, then submitted ones still downloading that it did not list.
     var rows: [UInt64] {
-        let missing = self.missing
-        return missing + submitted.filter { !missing.contains($0) && isActive($0) }
+        let listed = missing
+        return listed + submitted.filter { !listed.contains($0) && isActive($0) }
     }
 
     var hasActiveDownloads: Bool {

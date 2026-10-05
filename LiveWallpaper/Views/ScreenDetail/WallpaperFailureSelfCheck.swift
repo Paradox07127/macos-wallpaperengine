@@ -125,7 +125,7 @@ extension WallpaperFailureSelfCheck {
     static func sourceReachability(bookmark: Data?) -> Bool? {
         guard let bookmark else { return nil }
         // A stale bookmark still yields a usable URL (e.g. after a rename); `.transient` keeps any refresh unpersisted.
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient) else { return false }
+        guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient) else { return false }
         let url = resolved.url
         return SecurityScopedBookmarkResolver.withScopedAccess(url) { _ in
             DirectoryBookmarks.directoryExists(url, fileManager: .default)
