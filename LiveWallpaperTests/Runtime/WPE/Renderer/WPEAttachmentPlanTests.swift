@@ -40,12 +40,30 @@ struct WPEAttachmentPlanTests {
         #expect(noGate.historyFBONames.isEmpty)
     }
 
-    @Test func aGatedPrivateProducerCannotEraseThePriorFrameDependency() {
+    @Test func sharedCursorRippleBuffersRetainOnlyTheReadBeforeWriteHistory() {
+        let force = "_rt_EightBuffer1"
+        let simulation = "_rt_EightBuffer2"
+        let plan = WPEAttachmentPlan(layers: [layer([
+            pass("apply", source: .fbo(simulation), target: .fbo(name: force)),
+            pass("simulate", source: .fbo(force), target: .fbo(name: simulation)),
+            pass("combine", source: .fbo(simulation), target: .scene),
+        ], fbos: [
+            .init(name: force, scale: 1, fit: 256, format: "rgba8888"),
+            .init(name: simulation, scale: 1, fit: 256, format: "rgba8888"),
+        ])])
+        #expect(plan.historyFBONames == [simulation])
+        #expect(plan.passes[0].inputs[0].source == .privateHistory(simulation))
+        #expect(plan.passes[1].inputs[0].source == .current(plan.passes[0].output))
+        #expect(plan.passes[2].inputs[0].source == .current(plan.passes[1].output))
+    }
+
+    @Test(arguments: [false, true])
+    func aGatedProducerCannotEraseThePriorFrameDependency(unique: Bool) {
         let gate = WPEPassVisibilityGate(script: .init(script: "return false;", seed: .zero), initialVisible: false)
         let plan = WPEAttachmentPlan(layers: [layer([
             pass("conditional-producer", source: .asset("current"), target: .fbo(name: "history"), gate: gate),
             pass("consumer", source: .fbo("history"), target: .scene),
-        ], fbos: [.init(name: "history", scale: 1, format: "rgba8888", unique: true)])])
+        ], fbos: [.init(name: "history", scale: 1, format: "rgba8888", unique: unique)])])
         #expect(plan.historyFBONames == ["history"])
         #expect(plan.passes[1].inputs[0].source == .conditionalPrivateHistory(plan.passes[0].output, "history"))
     }

@@ -79,8 +79,8 @@ struct WPEUniqueEffectHistoryTests {
         #expect(aliases.contains { $0.key.name == "history" } == !readHistory)
     }
 
-    @Test("Unique feedback survives frames, stays outside the alias heap and resets on resize and reload")
-    func temporalFeedback() throws {
+    @Test("Shared and unique feedback survive frames and reset on resize and reload", arguments: [false, true])
+    func temporalFeedback(unique: Bool) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let size = CGSize(width: 8, height: 8)
@@ -108,7 +108,7 @@ struct WPEUniqueEffectHistoryTests {
                                                   angles: .zero, alignment: .center, size: size, alpha: 1, color: SIMD3(repeating: 1), brightness: 1)
             let graph = WPERenderLayer(objectID: id, objectName: id, imagePath: "unused", materialPath: nil,
                                        geometry: geometry, compositeA: id + "a", compositeB: id + "b", localFBOs: [
-                                           WPERenderFBO(name: history, scale: 1, format: "rgba8888", unique: true),
+                                           WPERenderFBO(name: history, scale: 1, format: "rgba8888", unique: unique),
                                            WPERenderFBO(name: scratch, scale: 1, format: "rgba8888"),
                                        ], passes: passes.map(\.pass))
             return WPEPreparedRenderLayer(graphLayer: graph, passes: passes)

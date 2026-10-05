@@ -252,17 +252,64 @@ public struct WPETexRawMetadata: Sendable, Equatable {
     }
 }
 
+/// One mip level of a TEXB0004 conditional image. Either a full-size
+/// replacement (`x`/`y` = 0 with base dims) or a patch composited onto the
+/// base mip at (`x`, `y`).
+public struct WPETexConditionalVariantMipmap: Sendable, Equatable {
+    public let x: Int
+    public let y: Int
+    public let width: Int
+    public let height: Int
+    /// FreeImage-style payload code (same domain as `TEXB.imageFormat`).
+    public let formatCode: Int
+    public let payload: WPEMappedByteSpan
+
+    public init(x: Int, y: Int, width: Int, height: Int, formatCode: Int, payload: WPEMappedByteSpan) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.formatCode = formatCode
+        self.payload = payload
+    }
+}
+
+/// A TEXB0004 conditional image selected when `condition` matches a scene
+/// user-property value, e.g. `{"condition":{"condition":"discord","name":"buttoniconleft"}}`.
+/// `mipmaps` follow container order: every mip level of every image.
+public struct WPETexConditionalVariant: Sendable, Equatable {
+    public let imageID: Int
+    public let condition: String
+    public let mipmaps: [WPETexConditionalVariantMipmap]
+
+    public init(imageID: Int, condition: String, mipmaps: [WPETexConditionalVariantMipmap]) {
+        self.imageID = imageID
+        self.condition = condition
+        self.mipmaps = mipmaps
+    }
+}
+
 public struct WPETexBitmapBlock: Sendable, Equatable {
     public let version: Int
     public let sourceImageFormatCode: Int?
     public let isVideoPayload: Bool
     public let frames: [[WPETexMipmap]]
+    /// TEXB0004 conditional images declared alongside the base `frames`.
+    /// Consumers render the base image unless a user property selects a variant.
+    public let conditionalVariants: [WPETexConditionalVariant]
 
-    public init(version: Int, sourceImageFormatCode: Int?, isVideoPayload: Bool, frames: [[WPETexMipmap]]) {
+    public init(
+        version: Int,
+        sourceImageFormatCode: Int?,
+        isVideoPayload: Bool,
+        frames: [[WPETexMipmap]],
+        conditionalVariants: [WPETexConditionalVariant] = []
+    ) {
         self.version = version
         self.sourceImageFormatCode = sourceImageFormatCode
         self.isVideoPayload = isVideoPayload
         self.frames = frames
+        self.conditionalVariants = conditionalVariants
     }
 
     public var mipmaps: [WPETexMipmap] {

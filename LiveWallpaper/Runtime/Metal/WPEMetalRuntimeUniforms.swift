@@ -113,7 +113,9 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     /// Official shader global `g_Frametime`: duration of the current logical frame in seconds.
     var frameTime: Double
     let brightness: Double
-    let pointerPosition: SIMD2<Double>
+    /// Held at the last live position while the pointer is off-scene; `space.pointer`'s
+    /// centre snap is for parallax only and would fake a motion delta to shaders.
+    var pointerPosition: SIMD2<Double>
     /// Defaults to current so a fresh frame reports zero motion.
     var pointerPositionLast: SIMD2<Double>
     var pointerClick: WPEPointerFrame = .neutral

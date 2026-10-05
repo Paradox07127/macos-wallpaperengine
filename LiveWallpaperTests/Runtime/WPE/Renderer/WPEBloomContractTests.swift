@@ -66,7 +66,7 @@ struct WPEBloomContractTests {
         for y in 0 ..< 10 {
             for x in 0 ..< 16 {
                 let uv = SIMD2((Double(x) + 0.5) / 16, (Double(y) + 0.5) / 10)
-                let offsets = [SIMD2(1.0 / 16, 1.0 / 10), SIMD2(-1.0 / 16, 1.0 / 10),
+                let offsets: [SIMD2<Double>] = [SIMD2(1.0 / 16, 1.0 / 10), SIMD2(-1.0 / 16, 1.0 / 10),
                                SIMD2(1.0 / 16, -1.0 / 10), SIMD2(-1.0 / 16, -1.0 / 10)]
                 let expected = offsets.reduce(0.0) { $0 + splineImpulse(uv + $1) } * 0.25 * 2
                 let actual = pixel(destination, x: x, y: y)

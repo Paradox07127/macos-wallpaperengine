@@ -310,6 +310,10 @@ struct WPEGenericImageUniforms {
     var alphaMaskUV: SIMD4<Float>
     /// xy = texture0 logical/physical UV scale, zw = texture1 logical/physical UV scale.
     var textureUVScale: SIMD4<Float>
+    /// TEXS sprite-frame basis in texture-UV space (g_Texture0Rotation); identity when unused.
+    var spriteRotation = SIMD4<Float>(1, 0, 0, 1)
+    /// xy = sprite frame origin (g_Texture0Translation), z = 1 when the pass declared SPRITESHEET.
+    var spriteTranslation = SIMD4<Float>.zero
 }
 
 struct WPEObjectQuadUniforms {

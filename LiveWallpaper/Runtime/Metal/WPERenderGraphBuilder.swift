@@ -75,10 +75,20 @@ struct WPERenderGraphBuilder: Sendable {
             .union(noOpFullFrameDrops).subtracting(cursorRegionIDs)
         let visibleLayerIDs = Set(document.imageObjects
             .filter { !composeWrappersToDrop.contains($0.id) }
-            .filter { !Self.hasHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs) }
+            .filter {
+                !Self.hasHiddenAncestor(
+                    $0, objectByID: objectByID,
+                    liveVisibilityIDs: liveVisibilityIDs,
+                    ownVisibilityByID: document.ownVisibilityByID
+                )
+            }
             .filter {
                 Self.compositesToScene($0, liveVisibilityIDs: liveVisibilityIDs)
-                    || Self.hasLiveToggleableHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs)
+                    || Self.hasLiveToggleableHiddenAncestor(
+                        $0, objectByID: objectByID,
+                        liveVisibilityIDs: liveVisibilityIDs,
+                        ownVisibilityByID: document.ownVisibilityByID
+                    )
             }
             .map(\.id))
         var layerIDsToBuild = visibleLayerIDs.union(dynamicCreatedLayerTemplateIDs).union(cursorRegionIDs)
@@ -583,15 +593,24 @@ struct WPERenderGraphBuilder: Sendable {
             || normalizedFile.contains("/effects/scroll/effect.json")
     }
 
+    /// Ancestor hiddenness must be judged on each ancestor's OWN authored `visible`:
+    /// the parser folds ancestor visibility into `object.visible`, so an intermediate
+    /// layer reads hidden merely because a toggleable ancestor above it is. Walking
+    /// folded values would hide a grandchild under a script-controlled group before
+    /// the live-toggleable rescue below ever sees the real culprit.
     static func hasHiddenAncestor(
         _ object: WPESceneImageObject,
         objectByID: [String: WPESceneImageObject],
-        liveVisibilityIDs: Set<String>
+        liveVisibilityIDs: Set<String>,
+        ownVisibilityByID: [String: Bool] = [:]
     ) -> Bool {
         var seen: Set<String> = []
         var current = object.parentObjectID
         while let id = current, seen.insert(id).inserted, let parent = objectByID[id] {
-            if !parent.visible && !liveVisibilityIDs.contains(parent.id) { return true }
+            let ownVisible = ownVisibilityByID[id] ?? parent.visible
+            if !ownVisible, !liveVisibilityIDs.contains(parent.id) {
+                return true
+            }
             current = parent.parentObjectID
         }
         return false
@@ -600,12 +619,16 @@ struct WPERenderGraphBuilder: Sendable {
     static func hasLiveToggleableHiddenAncestor(
         _ object: WPESceneImageObject,
         objectByID: [String: WPESceneImageObject],
-        liveVisibilityIDs: Set<String>
+        liveVisibilityIDs: Set<String>,
+        ownVisibilityByID: [String: Bool] = [:]
     ) -> Bool {
         var seen: Set<String> = []
         var current = object.parentObjectID
         while let id = current, seen.insert(id).inserted, let parent = objectByID[id] {
-            if !parent.visible && liveVisibilityIDs.contains(parent.id) { return true }
+            let ownVisible = ownVisibilityByID[id] ?? parent.visible
+            if !ownVisible, liveVisibilityIDs.contains(parent.id) {
+                return true
+            }
             current = parent.parentObjectID
         }
         return false
@@ -627,12 +650,75 @@ struct WPERenderGraphBuilder: Sendable {
         return ids
     }
 
-    /// `getLayer` args are usually variables, so match any script string literal against a layer name; names never mentioned still prune.
+    /// Every script body that can call `thisScene.getLayer`/`createLayer`, plus string-valued
+    /// script properties — scripts read layer lists from properties (workshop 3809609151 feeds
+    /// `targetLayerNames` into `angles` scripts), not just from literals in the source.
+    private static func allScriptSources(in document: WPESceneDocument) -> [String] {
+        var scripts: [String] = []
+        func note(_ script: String?) {
+            if let script {
+                scripts.append(script)
+            }
+        }
+        func note(_ script: WPESceneTransformScript?) {
+            guard let script else { return }
+            note(script.script)
+            notePropertyStrings(script.scriptProperties)
+        }
+        func notePropertyStrings(_ properties: [String: WPESceneScriptPropertyValue]) {
+            for value in properties.values {
+                if case let .string(string) = value {
+                    scripts.append(string)
+                }
+            }
+        }
+        for object in document.imageObjects {
+            note(object.visibleScript)
+            note(object.alphaScript)
+            notePropertyStrings(object.scriptProperties)
+            notePropertyStrings(object.alphaScriptProperties)
+            note(object.originScript)
+            note(object.scaleScript)
+            note(object.anglesScript)
+            note(object.colorScript)
+            note(object.parallaxDepthScript)
+            for effect in object.effects {
+                note(effect.visibleScript)
+                for override in effect.passOverrides {
+                    for bound in override.constantScripts.values {
+                        note(bound)
+                    }
+                }
+            }
+        }
+        for object in document.textObjects {
+            note(object.textScript)
+            note(object.visibleScript)
+            note(object.alphaScript)
+            notePropertyStrings(object.scriptProperties)
+            notePropertyStrings(object.alphaScriptProperties)
+            notePropertyStrings(object.visibleScriptProperties)
+            note(object.originScript)
+            note(object.scaleScript)
+            note(object.anglesScript)
+            note(object.colorScript)
+        }
+        for object in document.transformHostObjects {
+            note(object.originScript)
+            note(object.scaleScript)
+            note(object.anglesScript)
+        }
+        for object in document.scriptHostObjects {
+            note(object.visibleScript)
+            notePropertyStrings(object.scriptProperties)
+        }
+        return scripts
+    }
+
+    /// `getLayer` args are usually variables or script-property lists, so a plain substring match
+    /// against a layer name is the safe direction: a false positive only retains a hidden layer.
     private static func layerScriptControlledVisibilityIDs(in document: WPESceneDocument) -> Set<String> {
-        // Script hosts are non-renderable script containers that still drive other
-        // layers via getLayer(); mirror createLayerImageTemplateIDs and consult them.
-        let scripts = document.imageObjects.compactMap(\.visibleScript)
-            + document.scriptHostObjects.map(\.visibleScript)
+        let scripts = allScriptSources(in: document)
         guard !scripts.isEmpty else { return [] }
         let combined = scripts.joined(separator: "\n")
         var ids = Set<String>()
@@ -644,7 +730,7 @@ struct WPERenderGraphBuilder: Sendable {
             }
             let name = object.name
             guard !name.isEmpty else { continue }
-            if combined.contains("\"\(name)\"") || combined.contains("'\(name)'") {
+            if combined.contains(name) {
                 ids.insert(object.id)
             }
         }
@@ -652,8 +738,7 @@ struct WPERenderGraphBuilder: Sendable {
     }
 
     private static func createLayerImageTemplateIDs(in document: WPESceneDocument) -> Set<String> {
-        let scripts = document.imageObjects.compactMap(\.visibleScript)
-            + document.scriptHostObjects.map(\.visibleScript)
+        let scripts = allScriptSources(in: document)
         guard !scripts.isEmpty else { return [] }
 
         var imagePaths = Set<String>()

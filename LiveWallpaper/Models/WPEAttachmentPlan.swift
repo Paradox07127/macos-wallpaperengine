@@ -62,15 +62,19 @@ struct WPEAttachmentPlan: Equatable, Sendable {
             }
         }
         targetDeclarations = declarations.values.sorted { $0.name < $1.name }
-        let privateNames = Set(declarations.values.filter {
-            $0.unique && !WPETextureReference.isSceneAliasName($0.name)
-        }.map(\.name))
         let producedNames = Set(layers.flatMap(\.passes).compactMap { pass -> String? in
             if case let .named(name) = WPEMetalTargetID(target: pass.pass.target) {
                 return name
             }
             return nil
         })
+        // `unique` controls effect-instance naming. Shared FBOs also carry history
+        // when read before their producer, as in the cursor ripple's force buffers.
+        let historyCandidates = Set(declarations.values.filter {
+            !WPETextureReference.isSceneAliasName($0.name)
+                && !WPERenderTargetNames.LayerGroup.matches($0.name)
+                && ($0.unique || producedNames.contains($0.name))
+        }.map(\.name))
         var versions: [WPEMetalTargetID: Version] = [:]
         var definitelyWritten: Set<String> = []
         var planned: [Pass] = []
@@ -91,7 +95,7 @@ struct WPEAttachmentPlan: Equatable, Sendable {
             case let .fbo(name):
                 let id = WPEMetalTargetID.named(name)
                 if let current = versions[id] {
-                    if privateNames.contains(name), !definitelyWritten.contains(name) {
+                    if historyCandidates.contains(name), !definitelyWritten.contains(name) {
                         histories.insert(name)
                         return .conditionalPrivateHistory(current, name)
                     }
@@ -100,7 +104,7 @@ struct WPEAttachmentPlan: Equatable, Sendable {
                 if WPETextureReference.isSceneAliasName(name) {
                     return .sceneSnapshot(versions[.scene] ?? Version(target: .scene, revision: 0, producer: nil))
                 }
-                if privateNames.contains(name) {
+                if historyCandidates.contains(name) {
                     return .privateHistory(name)
                 }
                 return declarations[name] != nil || producedNames.contains(name) ? .clearedBootstrap(id) : .unresolvedNamed(name)

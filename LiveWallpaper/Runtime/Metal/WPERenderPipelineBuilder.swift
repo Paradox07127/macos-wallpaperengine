@@ -735,7 +735,9 @@ private struct WPEShaderSourceLoader: Sendable {
     }
     """
 
-    /// SPRITESHEET: mix current/next frame by `g_SpriteFrameBlend` (0..1) so a strip crossfades instead of strobing.
+    /// SPRITESHEET: fold the atlas sub-rect (TEXS rotation/translation) into the
+    /// sample UV. Builtin passes never get an authored vertex stage, so the
+    /// transform lives in the fragment where the uniforms actually resolve.
     private func genericImageProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
         let usesSpriteSheet = combos.contains { key, value in
             key.uppercased() == "SPRITESHEET" && value != 0
@@ -744,36 +746,21 @@ private struct WPEShaderSourceLoader: Sendable {
             return copyProgram(shaderName: shaderName, combos: combos)
         }
 
-        let vertex = """
-        attribute vec3 a_Position;
-        attribute vec2 a_TexCoord;
-        uniform vec2 g_Texture0Translation;
-        uniform vec2 g_Texture0TranslationNext;
-        uniform vec4 g_Texture0Rotation;
-        varying vec2 v_TexCoord;
-        varying vec2 v_TexCoordNext;
-
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-            vec2 frameBasis = a_TexCoord.x * g_Texture0Rotation.xy
-                + a_TexCoord.y * g_Texture0Rotation.zw;
-            v_TexCoord     = g_Texture0Translation     + frameBasis;
-            v_TexCoordNext = g_Texture0TranslationNext + frameBasis;
-        }
-        """
         let fragment = """
         uniform sampler2D g_Texture0;
-        uniform float g_SpriteFrameBlend;
+        uniform vec4 g_Texture0Rotation;
+        uniform vec2 g_Texture0Translation;
         varying vec2 v_TexCoord;
-        varying vec2 v_TexCoordNext;
 
         void main() {
-            vec4 a = texSample2D(g_Texture0, v_TexCoord);
-            vec4 b = texSample2D(g_Texture0, v_TexCoordNext);
-            gl_FragColor = mix(a, b, g_SpriteFrameBlend);
+            vec2 frameUV = g_Texture0Translation
+                + v_TexCoord.x * g_Texture0Rotation.xy
+                + v_TexCoord.y * g_Texture0Rotation.zw;
+            gl_FragColor = texSample2D(g_Texture0, frameUV);
         }
         """
-        return makeBuiltinProgram(shaderName: shaderName, combos: combos, vertex: vertex, fragment: fragment)
+        return makeBuiltinProgram(shaderName: shaderName, combos: combos,
+                                  vertex: Self.texturedQuadVertexSource, fragment: fragment)
     }
 
     private func solidLayerProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {

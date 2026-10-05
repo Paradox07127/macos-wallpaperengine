@@ -1095,10 +1095,23 @@ struct WPEGenericImageUniforms {
     float4 color;        // g_Color (authored channel numbers)
     float4 alphaMaskUV;  // x=alpha multiplier, y=brightness, z=hasMask, w=generic2 straight output / generic4 clip mode
     float4 textureUVScale; // xy=texture0 logical/physical scale, zw=texture1 logical/physical scale
+    float4 spriteRotation;    // TEXS frame basis (g_Texture0Rotation); identity when unused
+    float4 spriteTranslation; // xy=frame origin (g_Texture0Translation), z=1 when SPRITESHEET
 };
 
 static inline float2 wpe_logical_texture_uv(float2 uv, float2 scale) {
     return clamp(uv * max(scale, float2(0.0)), float2(0.0), float2(1.0));
+}
+
+// SPRITESHEET: remap the quad UV into the current atlas frame's sub-rect.
+// TEXS descriptors already use physical atlas space; their source UV scale is 1.
+static inline float2 wpe_sprite_frame_uv(float2 uv, constant WPEGenericImageUniforms& uniforms) {
+    if (uniforms.spriteTranslation.z > 0.5) {
+        return uniforms.spriteTranslation.xy
+            + uv.x * uniforms.spriteRotation.xy
+            + uv.y * uniforms.spriteRotation.zw;
+    }
+    return uv;
 }
 
 static inline half4 wpe_genericimage2_shade(
@@ -1107,7 +1120,8 @@ static inline half4 wpe_genericimage2_shade(
     constant WPEGenericImageUniforms& uniforms
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float2 sourceUV = wpe_logical_texture_uv(uv, uniforms.textureUVScale.xy);
+    float2 sourceUV = wpe_sprite_frame_uv(
+        wpe_logical_texture_uv(uv, uniforms.textureUVScale.xy), uniforms);
     float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
     float alpha = sampled.a * uniforms.color.a * uniforms.alphaMaskUV.x;
@@ -1148,7 +1162,8 @@ static inline half4 wpe_genericimage2_shade(
     constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
+    float2 sourceUV = wpe_sprite_frame_uv(
+        wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy), uniforms);
     float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
     float4 sampled = float4(wpe_native_sample(texture0.sample(linearSampler, sourceUV)));
     float maskAlpha = 1.0;

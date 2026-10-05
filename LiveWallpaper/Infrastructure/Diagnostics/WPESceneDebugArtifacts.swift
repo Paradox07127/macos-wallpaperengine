@@ -574,6 +574,9 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         let sourceFormat = bitmap.sourceImageFormatCode?.description ?? "nil"
         lines.append("bitmapVersion=\(bitmap.version) sourceImageFormatCode=\(sourceFormat) isVideo=\(bitmap.isVideoPayload) usesEncoded=\(bitmap.usesEncodedImagePayload)")
         lines.append("frames=\(bitmap.frames.count)")
+        for variant in bitmap.conditionalVariants {
+            lines.append("  conditional imageID=\(variant.imageID) mips=\(variant.mipmaps.count) condition=\(variant.condition)")
+        }
         for (frameIndex, mipmaps) in bitmap.frames.enumerated() {
             for mipmap in mipmaps {
                 var line = "  frame=\(frameIndex) mip=\(mipmap.index) size=\(mipmap.width)x\(mipmap.height) stored=\(mipmap.storedByteCount) compressed=\(mipmap.isCompressed)"

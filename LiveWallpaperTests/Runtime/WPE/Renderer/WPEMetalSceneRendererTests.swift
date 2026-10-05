@@ -2196,6 +2196,43 @@ struct WPEMetalSceneRendererTests {
         }
         throw CocoaError(.fileReadNoSuchFile)
     }
+
+    /// `space.pointer` snaps to centre off-scene for parallax; the shader pair must not.
+    /// cursorripple reads `g_PointerPosition − g_PointerPositionLast` per frame — a teleport
+    /// fakes a huge delta and paints an edge→centre force streak on every exit/re-entry.
+    @Test("An off-scene pointer holds the last live position for shader delta consumers")
+    func offScenePointerHoldsLastLivePosition() throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        renderer.sceneRenderSize = CGSize(width: 64, height: 64)
+
+        func context(_ sample: WPEMetalPointerSample) -> WPEMetalRuntimeUniforms {
+            renderer.sampleFrameContext(inputs: WPEFrameInputs(
+                clickCaptureEnabled: false, pointerSample: sample,
+                pointerFrame: .neutral, preferredFramesPerSecond: 60
+            )).uniforms
+        }
+
+        let live = context(.inside(SIMD2(0.2, 0.5)))
+        #expect(live.pointerPosition == SIMD2(0.2, 0.5))
+        let moved = context(.inside(SIMD2(0.6, 0.5)))
+        #expect(moved.pointerPosition == SIMD2(0.6, 0.5))
+        #expect(moved.pointerPositionLast == SIMD2(0.2, 0.5))
+
+        let off = context(.inactive)
+        #expect(off.pointerPosition == SIMD2(0.6, 0.5))
+        #expect(off.pointerPositionLast == SIMD2(0.6, 0.5))
+
+        let back = context(.inside(SIMD2(0.1, 0.9)))
+        #expect(back.pointerPosition == SIMD2(0.1, 0.9))
+        #expect(back.pointerPositionLast == SIMD2(0.1, 0.9))
+    }
 }
 
 @MainActor
