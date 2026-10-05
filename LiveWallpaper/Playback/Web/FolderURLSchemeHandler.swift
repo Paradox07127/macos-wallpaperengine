@@ -178,13 +178,20 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         let worker = Task.detached(priority: .userInitiated) { [weak self, source, mime, rangeHeader, url, delivery, taskID, cspHeader, oggAccess] in
             var source = source
             var mime = mime
+            var leasedM4A: URL?
+            defer {
+                if let leasedM4A {
+                    Task { await OggAudioTranscoder.shared.release(leasedM4A) }
+                }
+            }
             do {
                 try Task.checkCancellation()
                 // Wait asynchronously; the decode owns its folder access until it really finishes.
                 if case let .file(oggURL) = source, OggAudioTranscoder.isOggFamily(oggURL) {
                     let pinnedRaw = await MainActor.run { self?.oggServedRaw.contains(oggURL) ?? false }
                     if !pinnedRaw,
-                       let aac = await OggAudioTranscoder.shared.transcodedM4A(forOgg: oggURL, access: oggAccess) {
+                       let aac = await OggAudioTranscoder.shared.leasedM4A(forOgg: oggURL, access: oggAccess) {
+                        leasedM4A = aac
                         source = .file(aac)
                         mime = Self.mimeType(for: aac)
                     } else {

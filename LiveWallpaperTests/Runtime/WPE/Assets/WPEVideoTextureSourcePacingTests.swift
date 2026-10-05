@@ -445,6 +445,68 @@ struct WPEVideoTextureSourcePacingTests {
         }
     }
 
+    @Test("A nonlooping resume first observed after its wrap reports the endpoint, not a stale paused seek")
+    func pausedSeekAcknowledgmentReleasedByWrap() async throws {
+        try await withScriptVideo(durationSeconds: 2) { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            _ = source.driveStagedFrameWorkForTesting()
+            try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+            source.scriptPause()
+            source.scriptSetCurrentTime(0.25)
+            try await pump(source, for: .milliseconds(200))
+            source.scriptSetCurrentTime(1.99)
+            try await pump(source, for: .milliseconds(200))
+            try #require(source.scriptPlaybackSnapshot?.acknowledgedPausedSeekTime == 0.25)
+            source.scriptSetLoop(false)
+            source.scriptPlay()
+            var previous = source.currentPlayheadSeconds
+            var wrapped = false
+            let deadline = ContinuousClock.now.advanced(by: .seconds(4))
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(8))
+                let now = source.currentPlayheadSeconds
+                if now < previous - 0.5 {
+                    wrapped = true
+                    break
+                }
+                previous = now
+            }
+            try #require(wrapped)
+            let ended = try #require(source.scriptPlaybackSnapshot)
+            #expect(ended.acknowledgedPausedSeekTime == nil)
+            #expect(ended.currentTime == ended.duration)
+            #expect(!ended.isPlaying)
+        }
+    }
+
+    @Test("A paused seek landing below its target releases its acknowledgement once playback advances")
+    func approximateSeekBelowTargetReleasesOnAdvance() async throws {
+        try await withScriptVideo(maxKeyFrameInterval: 48) { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            _ = source.driveStagedFrameWorkForTesting()
+            try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+            source.scriptPause()
+            let target = 0.6
+            source.scriptSetCurrentTime(target)
+            try await pump(source, for: .milliseconds(300))
+            let landing = source.currentPlayheadSeconds
+            try #require(landing < target - 0.2, "seek landed at \(landing)")
+            try #require(source.scriptPlaybackSnapshot?.acknowledgedPausedSeekTime == target)
+            source.scriptPlay()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while ContinuousClock.now < deadline, source.currentPlayheadSeconds < landing + 0.1 {
+                try await Task.sleep(for: .milliseconds(8))
+            }
+            try #require(source.currentPlayheadSeconds > landing + 0.05)
+            try #require(source.currentPlayheadSeconds < target)
+            let advanced = try #require(source.scriptPlaybackSnapshot)
+            #expect(advanced.acknowledgedPausedSeekTime == nil)
+            #expect(advanced.currentTime == advanced.decoderCurrentTime)
+        }
+    }
+
     @Test(
         "Stop without a pending acknowledgement reports actual decoder completion",
         .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO") != nil)
@@ -699,10 +761,14 @@ struct WPEVideoTextureSourcePacingTests {
     #endif
 
     private func withScriptVideo(
+        durationSeconds: TimeInterval = 4,
+        maxKeyFrameInterval: Int? = nil,
         _ operation: (WPEVideoTextureSource) async throws -> Void
     ) async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let url = try await SyntheticVideoFixture.writeMP4(durationSeconds: 4, frameRate: 24)
+        let url = try await SyntheticVideoFixture.writeMP4(
+            durationSeconds: durationSeconds, frameRate: 24, maxKeyFrameInterval: maxKeyFrameInterval
+        )
         defer { try? FileManager.default.removeItem(at: url) }
         let source = try WPEVideoTextureSource(device: device, videoURL: url)
         defer { source.invalidate() }
@@ -754,7 +820,8 @@ struct WPEVideoTextureSourcePacingTests {
 private enum SyntheticVideoFixture {
     static func writeMP4(
         durationSeconds: TimeInterval,
-        frameRate: Int32
+        frameRate: Int32,
+        maxKeyFrameInterval: Int? = nil
     ) async throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-pacing-\(UUID().uuidString).mp4")
@@ -773,11 +840,14 @@ private enum SyntheticVideoFixture {
         }
         let width = 64
         let height = 64
-        let videoSettings: [String: Any] = [
+        var videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height
         ]
+        if let maxKeyFrameInterval {
+            videoSettings[AVVideoCompressionPropertiesKey] = [AVVideoMaxKeyFrameIntervalKey: maxKeyFrameInterval]
+        }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
         let pixelAttributes: [String: Any] = [

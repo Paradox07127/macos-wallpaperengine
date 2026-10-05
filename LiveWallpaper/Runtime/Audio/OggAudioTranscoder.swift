@@ -23,6 +23,8 @@ actor OggAudioTranscoder {
     private var pending: [String: Job] = [:]
     private var waiting: [String] = []
     private var running: [UUID: Job] = [:]
+    /// Outstanding reader leases per cached file path; `clearCache` keeps leased files.
+    private var leases: [String: Int] = [:]
     private static let maxCacheBytes: UInt64 = 256 * 1024 * 1024
 
     /// Shared with the blocking worker; every mutable access is protected by this lock.
@@ -86,7 +88,7 @@ actor OggAudioTranscoder {
     func clearCache() throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: cacheDirectory.path) else { return }
-        let protectedPaths = Set(running.values.map(\.destination.path))
+        let protectedPaths = Set(running.values.map(\.destination.path)).union(leases.keys)
         let files = try fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         for file in files {
             guard !file.lastPathComponent.hasPrefix("."), file.pathExtension == "m4a",
@@ -152,6 +154,19 @@ actor OggAudioTranscoder {
         } onCancel: {
             Task { await self.cancelRequest(key: key, requestID: requestID) }
         }
+    }
+
+    /// Like `transcodedM4A`, but the returned file stays leased until `release(_:)`; the lease is
+    /// taken on the actor before returning, so no `clearCache` can run between hand-off and lease.
+    func leasedM4A(forOgg source: URL, access: OggSourceAccess? = nil) async -> URL? {
+        guard let url = await transcodedM4A(forOgg: source, access: access) else { return nil }
+        leases[url.path, default: 0] += 1
+        return url
+    }
+
+    func release(_ url: URL) {
+        guard let count = leases[url.path] else { return }
+        leases[url.path] = count > 1 ? count - 1 : nil
     }
 
     private func startAvailableWork() {
@@ -377,7 +392,7 @@ actor OggAudioTranscoder {
         for file in files.sorted(by: { $0.modified < $1.modified }) {
             if total <= Self.maxCacheBytes { break }
             let key = file.url.deletingPathExtension().lastPathComponent
-            if pending[key] != nil {
+            if pending[key] != nil || leases[file.url.path] != nil {
                 continue
             }
             let previous = memo[key]

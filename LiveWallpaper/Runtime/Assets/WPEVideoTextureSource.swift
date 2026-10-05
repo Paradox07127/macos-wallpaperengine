@@ -380,7 +380,10 @@ final class WPEVideoTextureSource {
     private var scriptLoop = true
     private var scriptAcknowledgedPausedSeekTime: Double?
     private var scriptSeekCompletion: OSAllocatedUnfairLock<Bool?>?
-    private var scriptSeekTarget: Double?
+    /// Loop count when the current seek was issued.
+    private var scriptSeekLoopBaseline = 0
+    /// Playhead first observed after the current seek completed; nil until then. An approximate seek lands on either side of its target.
+    private var scriptSeekPlayheadBaseline: Double?
 
     private func reconcilePlaybackIntent() {
         if playbackRequested, !policySuspended, !scriptHeldAtEnd {
@@ -404,6 +407,7 @@ final class WPEVideoTextureSource {
         playbackRequested = false
         player?.pause()
         scriptHeldAtEnd = true
+        scriptAcknowledgedPausedSeekTime = nil
     }
 
     var scriptPlaybackSnapshot: WPEVideoPlaybackSnapshot? {
@@ -425,10 +429,20 @@ final class WPEVideoTextureSource {
     }
 
     private func observeAcknowledgedSeekResume() {
-        guard scriptAcknowledgedPausedSeekTime != nil, playbackRequested,
-              !policySuspended, !scriptHeldAtEnd, (player?.rate ?? 0) > 0,
+        guard scriptAcknowledgedPausedSeekTime != nil,
               scriptSeekCompletion?.withLock({ $0 }) == true else { return }
-        guard let target = scriptSeekTarget, playheadSeconds > target else { return }
+        // A wrap is progress even though the playhead is now below the seek landing.
+        guard (playerLooper?.loopCount ?? 0) <= scriptSeekLoopBaseline else {
+            scriptAcknowledgedPausedSeekTime = nil
+            return
+        }
+        let playhead = playheadSeconds
+        guard let baseline = scriptSeekPlayheadBaseline else {
+            scriptSeekPlayheadBaseline = playhead
+            return
+        }
+        guard playbackRequested, !policySuspended, !scriptHeldAtEnd, (player?.rate ?? 0) > 0,
+              playhead > baseline else { return }
         scriptAcknowledgedPausedSeekTime = nil
     }
 
@@ -436,7 +450,8 @@ final class WPEVideoTextureSource {
         let completion = OSAllocatedUnfairLock<Bool?>(initialState: nil)
         scriptSeekCompletion = completion
         let target = CMTime(seconds: seconds, preferredTimescale: 600)
-        scriptSeekTarget = CMTimeGetSeconds(target)
+        scriptSeekLoopBaseline = playerLooper?.loopCount ?? 0
+        scriptSeekPlayheadBaseline = nil
         player?.seek(to: target) { succeeded in
             completion.withLock { $0 = succeeded }
         }
