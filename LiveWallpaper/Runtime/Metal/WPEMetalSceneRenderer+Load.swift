@@ -31,6 +31,8 @@ extension WPEMetalSceneRenderer {
         #endif
         loadGeneration &+= 1
         spanFrames?.reset(generation: loadGeneration)
+        // Cleared here rather than in `retireRuntimeState`: a failed load's misses must outlive its teardown for the failure report.
+        resolutionTracer.reset()
         let generation = loadGeneration
         completedPresentGeneration = nil
         failedPresentGeneration = nil

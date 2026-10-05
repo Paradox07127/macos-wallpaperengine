@@ -118,8 +118,9 @@ final class WallpaperLoadState {
     }
 
     func attempt(for screen: Screen) -> WallpaperLoadAttempt? {
+        // A preparing attempt is keyed by physical display: its candidate commits onto whichever Screen a same-display refresh installed.
         guard let attempt = attempts[screen.id], attempt.displayFingerprint == screen.displayFingerprint,
-              attempt.phase == .failed || attempt.screenIdentity == ObjectIdentifier(screen) else { return nil }
+              attempt.phase != .importing || attempt.screenIdentity == ObjectIdentifier(screen) else { return nil }
         return attempt
     }
 

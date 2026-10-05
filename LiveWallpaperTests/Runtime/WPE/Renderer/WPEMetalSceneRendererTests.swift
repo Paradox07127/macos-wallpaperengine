@@ -836,6 +836,52 @@ struct WPEMetalSceneRendererTests {
         #expect(session.summary.activity == .error)
     }
 
+    @Test("A load aborted by a missing texture keeps that load's misses for the failure report")
+    func failedLoadKeepsFailureTimeResolution() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.materialTextureScene(color: CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        defer { fixture.cleanup() }
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("materials/base.png"))
+
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let renderActor = WPEDisplayRenderActor(backing: .main)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            surfaceControl: surface,
+            mailbox: surface.mailbox,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            drawableSize: surface.metalLayer.drawableSize,
+            device: device
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+        defer { session.cleanup() }
+
+        await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
+        await session.beginLoad()
+        #expect(session.loadError != nil)
+        #expect(await session.prepareForDisplay(timeout: .seconds(1)) == .failed)
+        let missingAtFailure = session.rendererDiagnostics?.resolution.failureMissingResources.map(\.path) ?? []
+        #expect(missingAtFailure.contains { $0.hasPrefix("materials/base") })
+
+        await session.pollRendererState()
+        let missingAfterTeardown = session.rendererDiagnostics?.resolution.failureMissingResources.map(\.path) ?? []
+        #expect(missingAfterTeardown == missingAtFailure)
+        let eventCount = session.rendererDiagnostics?.resolution.events.count
+
+        await #expect(throws: (any Error).self) { try await renderActor.reload() }
+        await session.pollRendererState()
+        #expect(session.rendererDiagnostics?.resolution.events.count == eventCount)
+    }
+
     @Test("System audio demand requires scene opt-in and releases during preview suspension")
     func previewSuspensionReconcilesSystemAudioDemand() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

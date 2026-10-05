@@ -129,8 +129,8 @@ extension ScreenManager {
                     self.htmlCoordinator.refreshAudioLeadership()
                     self.notifyWallpaperSessionChanged()
                 },
-                beforeDiscard: { [weak self, weak screen] result in
-                    guard let self, let screen, let attemptID,
+                beforeDiscard: { [weak self] result in
+                    guard let self, let attemptID, let screen = currentScreen(),
                           WallpaperCandidateErrorPolicy.shouldPublish(result, isStillCurrent: isCandidateStillCurrent()) else { return }
                     let error = candidate.runtimeError ?? .wallpaperPreparationFailed(type: candidate.wallpaperType, timedOut: result == .timedOut)
                     var cause = WallpaperFailureCause.runtime(error)
@@ -163,8 +163,9 @@ extension ScreenManager {
                 }
             )
 
+            let attemptScreen = currentScreen() ?? screen
             if result == .cancelled, let attemptID {
-                wallpaperLoads.clear(for: screen, matching: attemptID)
+                wallpaperLoads.clear(for: attemptScreen, matching: attemptID)
             }
             if let error = WallpaperCandidateErrorPolicy.errorToPublish(
                 result,
@@ -172,8 +173,8 @@ extension ScreenManager {
                 candidateError: candidate.runtimeError,
                 fallbackWallpaperType: candidate.wallpaperType
             ) {
-                if let attemptID, wallpaperLoads.attempt(for: screen)?.failure == nil {
-                    failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: .commit)
+                if let attemptID, wallpaperLoads.attempt(for: attemptScreen)?.failure == nil {
+                    failWallpaperAttempt(attemptID, for: attemptScreen, cause: .runtime(error), stage: .commit)
                 }
                 setTransientRuntimeError(error, for: screenID, failedProposal: proposedConfiguration)
                 if attemptID == nil {
@@ -186,7 +187,7 @@ extension ScreenManager {
                     for: screenID
                 )
             }
-            let attempt = wallpaperLoads.attempt(for: screen)
+            let attempt = wallpaperLoads.attempt(for: attemptScreen)
             completion?(result, attempt?.id == attemptID ? attempt?.failure : nil)
         }
         work.task = task

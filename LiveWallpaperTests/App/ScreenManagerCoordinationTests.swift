@@ -62,6 +62,50 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("A preparing attempt follows a same-display refresh to the replacement Screen", arguments: ["commit", "cancel"])
+    func preparingAttemptFollowsDisplayRefresh(outcome: String) async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = Screen(nsScreen: display)
+        let refreshed = Screen(nsScreen: display)
+        let registry = FakeDisplayRegistry(screens: [screen])
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: registry,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { manager.tearDownForTermination() }
+        manager.wallpapersGloballyEnabled = true
+        let attemptID = manager.wallpaperLoads.begin(for: screen, title: "Scene")
+        manager.wallpaperLoads.update(attemptID, for: screen) { $0.phase = .preparing }
+        let candidate = TestRuntimeSession(wallpaperType: .html)
+        var inFlightOnRefreshed: UUID?
+        var orphanedByCancel = false
+        candidate.prepareAction = {
+            registry.screens = [refreshed]
+            manager.refreshScreens()
+            inFlightOnRefreshed = manager.wallpaperLoads.attempt(for: refreshed)?.id
+            if outcome == "cancel" {
+                manager.beginExplicitWallpaperSelection(for: refreshed)
+                orphanedByCancel = !manager.wallpaperLoads.attempts.isEmpty
+            }
+            return .ready
+        }
+        let generation = manager.bumpTransition(for: screen.id)
+        let configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("new"), config: .default))
+        let work = manager.beginPreparedAmbientSession(
+            candidate, for: screen, replacing: nil, generation: generation, attemptID: attemptID,
+            proposedConfiguration: configuration,
+            expectedConfigurationRevision: manager.configurationStore.revision(for: screen.id),
+            timeout: .seconds(2), beforeCommit: { true }, afterCommit: {}
+        )
+        await work.task?.value
+        #expect(inFlightOnRefreshed == attemptID)
+        #expect(!orphanedByCancel)
+        #expect(manager.wallpaperLoads.attempts.isEmpty)
+        #expect(((refreshed.runtimeSession as AnyObject?) === candidate) == (outcome == "commit"))
+    }
+
     @Test("Wallpaper rendering activity allows idle system sleep")
     func renderingActivityAllowsIdleSystemSleep() {
         let options = WallpaperRenderingActivityPolicy.options

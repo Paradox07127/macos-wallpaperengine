@@ -646,6 +646,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         } catch is CancellationError {
             return
         } catch let error as SceneRenderingError {
+            // Before `loadError` publishes: preparation stops polling once it is set, so this is the failure's only diagnostics read.
+            await pollRendererState()
             guard !Task.isCancelled else { return }
             requiresSystemAudioCapture = false
             reconcileSystemAudioCaptureDemand()
@@ -656,6 +658,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             loadFailureCause = SceneFailureCause.make(error)
             loadError = error
         } catch {
+            await pollRendererState()
             guard !Task.isCancelled else { return }
             requiresSystemAudioCapture = false
             reconcileSystemAudioCaptureDemand()

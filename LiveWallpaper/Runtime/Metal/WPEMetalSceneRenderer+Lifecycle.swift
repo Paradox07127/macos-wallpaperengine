@@ -72,7 +72,6 @@ extension WPEMetalSceneRenderer {
         // Retire only after destroy() has synchronously released JSC callbacks; late queued completions would still run.
         sceneScriptLoadState.retireCurrent()
         loadDiagnostics = nil
-        resolutionTracer.reset()
         releaseDynamicTextureSources()
         particleIndependentSystems.removeAll()
         particleInstanceCoordinator = nil
