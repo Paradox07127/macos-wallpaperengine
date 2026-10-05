@@ -18,9 +18,10 @@ struct ModalDisplayTargetTests {
     private func entry(inFolder relativePath: String, under root: URL) throws -> WPEHistoryEntry {
         let folder = root.appendingPathComponent(relativePath, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let bookmark = try #require(ResourceUtilities.createBookmark(for: folder))
         let origin = WPEOrigin(
             workshopID: Self.workshopID, title: "Lunar Tear", originalType: .scene,
-            sourceFolderBookmark: try #require(ResourceUtilities.createBookmark(for: folder)),
+            sourceFolderBookmark: bookmark,
             cacheRelativePath: Self.workshopID, previewFileName: nil
         )
         return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: 1_700_000_000))
