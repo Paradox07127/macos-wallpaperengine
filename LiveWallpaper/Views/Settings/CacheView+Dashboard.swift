@@ -14,20 +14,10 @@ extension WPECacheManagementView {
         storageMeasurements.filter(\.location.kind.canClear).reduce(0) { $0 + $1.bytes }
     }
 
-    var retainedBytes: UInt64 {
-        storageMeasurements.filter {
-            !$0.location.kind.isCache && ![.localWallpapers, .legacyScenes, .application].contains($0.location.kind)
-        }.reduce(0) { $0 + $1.bytes }
-    }
-
     var wallpaperBytes: UInt64 {
         (inventory?.projectsTotalBytes ?? 0) + storageMeasurements.filter {
             [.localWallpapers, .legacyScenes].contains($0.location.kind)
         }.reduce(0) { $0 + $1.bytes }
-    }
-
-    var applicationBytes: UInt64 {
-        storageMeasurements.filter { $0.location.kind == .application }.reduce(0) { $0 + $1.bytes }
     }
 
     var engineAssetBytes: UInt64 {

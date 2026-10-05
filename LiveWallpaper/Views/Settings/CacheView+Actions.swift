@@ -7,6 +7,10 @@ extension WPECacheManagementView {
         await refreshInventory()
     }
 
+    private var storageLocations: [AppStorageLocation] {
+        AppStorageLocation.current(systemWallpaperRoot: exportService.videosDirectory.deletingLastPathComponent())
+    }
+
     private func refreshInventory() async {
         inventoryScan?.cancel()
         storageScan?.cancel()
@@ -14,7 +18,7 @@ extension WPECacheManagementView {
         let generation = inventoryGeneration
         isLoading = true
         isLoadingInventory = true
-        let locations = AppStorageLocation.current(systemWallpaperRoot: exportService.videosDirectory.deletingLastPathComponent())
+        let locations = storageLocations
         let externalRoots = [
             exportService.videosDirectory,
             WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot(),
@@ -45,14 +49,22 @@ extension WPECacheManagementView {
         #endif
     }
 
+    private func measureCaches(_ kinds: Set<AppStorageLocation.Kind>) async -> [AppStorageMeasurement] {
+        let locations = storageLocations
+        let targets = locations.filter { kinds.contains($0.kind) }
+        let others = locations.filter { !kinds.contains($0.kind) }.map(\.url)
+        return await AppStorageScanner.shared.scan(targets, excluding: others)
+    }
+
     func clearCache(_ kind: AppStorageLocation.Kind) async {
         guard !isClearing else { return }
         isClearing = true
         defer { isClearing = false }
-        let before = totalBytes
+        let before = await measureCaches([kind])
         do { try await performClear(kind) } catch { errorMessage = error.localizedDescription }
+        let after = await measureCaches([kind])
+        lastStorageFreedBytes = Self.freedBytes(of: [kind], before: before, after: after)
         await refreshStats()
-        lastStorageFreedBytes = before > totalBytes ? before - totalBytes : 0
     }
 
     private func performClear(_ kind: AppStorageLocation.Kind) async throws {
@@ -73,12 +85,25 @@ extension WPECacheManagementView {
         guard !isClearing else { return }
         isClearing = true
         defer { isClearing = false }
-        let before = totalBytes
+        let kinds = Set(AppStorageLocation.Kind.allCases.filter(\.canClear))
+        let before = await measureCaches(kinds)
         for kind in AppStorageLocation.Kind.allCases where kind.canClear {
             do { try await performClear(kind) } catch { errorMessage = error.localizedDescription }
         }
+        let after = await measureCaches(kinds)
+        lastStorageFreedBytes = Self.freedBytes(of: kinds, before: before, after: after)
         await refreshStats()
-        lastStorageFreedBytes = before > totalBytes ? before - totalBytes : 0
+    }
+
+    /// Sums each target location's shrink only, so caches that grow during the clear do not offset it.
+    static func freedBytes(
+        of kinds: Set<AppStorageLocation.Kind>, before: [AppStorageMeasurement], after: [AppStorageMeasurement]
+    ) -> UInt64 {
+        let remaining = Dictionary(after.map { ($0.id, $0.bytes) }, uniquingKeysWith: +)
+        return before.filter { kinds.contains($0.location.kind) }.reduce(0) { freed, measurement in
+            let left = remaining[measurement.id] ?? 0
+            return freed + (measurement.bytes > left ? measurement.bytes - left : 0)
+        }
     }
 
     func confirmClearAllCaches() {

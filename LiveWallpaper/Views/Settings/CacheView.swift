@@ -15,8 +15,6 @@ struct WPECacheManagementView: View {
     @State var isLoading: Bool = true
     @State var errorMessage: String?
     @State var pendingDestructive: PendingDestructive?
-    /// Applied / bookmarked / recent / deps scene ids.
-    @State var reachableIDs: Set<String> = []
     /// App-managed engine assets only (Steam Workshop tree is external source data).
     @State var inventory: WPEStorageInventory?
     @State var isLoadingInventory: Bool = true
@@ -38,7 +36,6 @@ struct WPECacheManagementView: View {
     @Environment(SteamCMDDoctorService.self) var doctorService
     /// Includes the separate video copies used by macOS System Wallpaper.
     @Environment(WallpaperExportService.self) var exportService
-    @State var workshopCacheBytes: Int64 = 0
 
     init(
         pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)
