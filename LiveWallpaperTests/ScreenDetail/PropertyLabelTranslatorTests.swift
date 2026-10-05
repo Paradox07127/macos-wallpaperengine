@@ -216,5 +216,58 @@ struct PropertyLabelTranslatorTests {
         #expect(translator.displayText(for: label) == "Volume")
         #expect(translator.helpText(for: label) == label)
     }
+
+    @MainActor
+    @Test("A label queued while a session is draining joins its queue instead of restarting the session", .timeLimit(.minutes(1)))
+    func enqueueDuringTranslationKeepsSession() async {
+        guard #available(macOS 15.0, *) else { return }
+        let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
+        translator.enqueue(labels: ["显示触发区域"])
+        await translator.availabilityCheck?.value
+        let version = translator.configuration?.version
+        #expect(version != nil)
+        #expect(translator.takePending() == ["显示触发区域"])
+
+        translator.enqueue(labels: ["音频响应"])
+        #expect(translator.configuration?.version == version, "a new card restarted the running session")
+        #expect(translator.availabilityCheck == nil)
+        #expect(translator.takePending() == ["音频响应"])
+    }
+
+    @MainActor
+    @Test("Chunks hold at most eight labels and the newest queued come out first", .timeLimit(.minutes(1)))
+    func chunksAreNewestFirst() async {
+        guard #available(macOS 15.0, *) else { return }
+        let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
+        let labels = (1 ... 10).map { "显示区域\($0)" }
+        translator.enqueue(labels: labels)
+        await translator.availabilityCheck?.value
+        #expect(translator.takePending() == Array(labels.reversed().prefix(8)))
+        #expect(translator.takePending() == ["显示区域2", "显示区域1"])
+        #expect(translator.takePending().isEmpty)
+    }
+
+    @MainActor
+    @Test("A disabled translator shows author text, opens no session, and queues seen labels once enabled", .timeLimit(.minutes(1)))
+    func disabledTranslatorShowsOriginals() async {
+        guard #available(macOS 15.0, *) else { return }
+        let stored = "显示触发区域"
+        let seen = "音频响应"
+        let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true }, isEnabled: false)
+        translator.store([(stored, "Show trigger area")])
+        #expect(translator.displayText(for: stored) == stored)
+        #expect(translator.helpText(for: stored) == nil)
+        #expect(translator.displayDescription(for: stored) == stored)
+
+        translator.enqueue(labels: [seen])
+        #expect(translator.availabilityCheck == nil)
+        #expect(translator.configuration == nil)
+
+        translator.setEnabled(true)
+        #expect(translator.displayText(for: stored) == "Show trigger area")
+        await translator.availabilityCheck?.value
+        #expect(translator.configuration?.source == simplifiedChinese)
+        #expect(translator.takePending() == [seen])
+    }
 }
 #endif

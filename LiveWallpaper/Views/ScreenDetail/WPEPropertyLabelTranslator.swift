@@ -20,14 +20,27 @@ final class WPEPropertyLabelTranslator {
     static let descriptions = WPEPropertyLabelTranslator()
     /// Posted when a language pack may have been installed; every live translator re-checks.
     static let languagePacksMayHaveChanged = Notification.Name("WPEPropertyLabelTranslator.languagePacksMayHaveChanged")
+    /// `Bool` in `UserDefaults.appScoped()`; a missing value means enabled.
+    nonisolated static let enabledPreferenceKey = "loomscreen.translation.wallpaperText.v1"
+    /// About one visible row of cards: a chunk lands quickly, yet a store isn't one re-render per label.
+    nonisolated static let chunkSize = 8
     /// Author text → translation, filled as responses arrive.
     private(set) var translated: [String: String] = [:]
+    /// While `false`, rows show author text and queued labels only join `requested`; `translated` is kept.
+    private(set) var isEnabled: Bool
     /// Attempted labels stay requested after a declined download or a language pair that isn't
     /// installed (until a re-check). Internal errors clear their entry so opening the card again can retry.
+    /// While disabled it is the set of labels seen, re-queued by `setEnabled(true)`.
     @ObservationIgnored private var requested: Set<String> = []
+    /// Oldest first; chunks are taken from the end so the cards on screen now translate first.
     @ObservationIgnored private var pending: [String] = []
     /// Requested labels whose pair had no installed pack; `recheckLanguagePacks` queues them again.
     @ObservationIgnored private var uninstalled: [String] = []
+    /// A `.translationTask` is draining `sourceLanguage`; new labels only join `pending`, since
+    /// `invalidate()` would cancel it and the restart re-warms the model.
+    @ObservationIgnored private var isTranslating = false
+    /// When each queued label entered `pending`; removed once it is stored or dropped.
+    @ObservationIgnored private var enqueuedAt: [String: ContinuousClock.Instant] = [:]
 
     /// Boxed `TranslationSession.Configuration` so the type compiles against the
     /// macOS 14.6 deployment target. Observed: assigning it re-evaluates the view
@@ -46,10 +59,12 @@ final class WPEPropertyLabelTranslator {
 
     init(
         targetLanguage: Locale.Language = effectiveTargetLanguage(),
-        isInstalled: @escaping @Sendable (Locale.Language, Locale.Language) async -> Bool = languagePairIsInstalled
+        isInstalled: @escaping @Sendable (Locale.Language, Locale.Language) async -> Bool = languagePairIsInstalled,
+        isEnabled: Bool = UserDefaults.appScoped().object(forKey: WPEPropertyLabelTranslator.enabledPreferenceKey) as? Bool ?? true
     ) {
         self.targetLanguage = targetLanguage
         self.isInstalled = isInstalled
+        self.isEnabled = isEnabled
     }
 
     /// `preference` is the stored `AppLanguagePreference` raw value; `.system`, missing and
@@ -69,18 +84,18 @@ final class WPEPropertyLabelTranslator {
 
     /// The label a row should render.
     func displayText(for original: String) -> String {
-        translated[original] ?? original
+        isEnabled ? translated[original] ?? original : original
     }
 
     /// The author label to reveal on hover once a translation replaced it;
     /// `nil` while the row still shows the original.
     func helpText(for original: String) -> String? {
-        translated[original] != nil ? original : nil
+        isEnabled && translated[original] != nil ? original : nil
     }
 
     /// A description with its translated lines swapped in; every other line stays as authored.
     func displayDescription(for original: String) -> String {
-        Self.joinLines(of: original, translated: translated)
+        isEnabled ? Self.joinLines(of: original, translated: translated) : original
     }
 
     /// Descriptions translate line by line, so English paragraphs and URLs are never sent.
@@ -107,9 +122,35 @@ final class WPEPropertyLabelTranslator {
                 && translated[$0] == nil
                 && requested.insert($0).inserted
         }
-        guard !fresh.isEmpty else { return }
+        guard isEnabled, !fresh.isEmpty else { return }
+        let now = ContinuousClock.now
+        for label in fresh {
+            enqueuedAt[label] = now
+        }
         pending.append(contentsOf: fresh)
         configurePendingTranslation()
+    }
+
+    /// Off ends the running session and drops the queue but keeps `translated`;
+    /// on queues every label seen but not yet translated.
+    @available(macOS 15.0, *)
+    func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        isEnabled = enabled
+        if enabled {
+            let seen = requested
+            requested = []
+            enqueue(labels: seen)
+        } else {
+            pending = []
+            uninstalled = []
+            enqueuedAt = [:]
+            availabilityCheck?.cancel()
+            availabilityCheck = nil
+            isTranslating = false
+            sourceLanguage = nil
+            configuration = nil
+        }
     }
 
     /// Re-translates every label seen so far into `language`.
@@ -122,10 +163,12 @@ final class WPEPropertyLabelTranslator {
         pending = []
         requested = []
         uninstalled = []
+        enqueuedAt = [:]
         availabilityCheck?.cancel()
         availabilityCheck = nil
+        isTranslating = false
         sourceLanguage = nil
-        // Ends the running `.translationTask`; its results for the old target are dropped in `finish`.
+        // Ends the running `.translationTask`; its results for the old target are dropped in `storeChunk`.
         configuration = nil
         enqueue(labels: seen)
     }
@@ -142,7 +185,7 @@ final class WPEPropertyLabelTranslator {
 
     @available(macOS 15.0, *)
     private func configurePendingTranslation() {
-        guard !pending.isEmpty, availabilityCheck == nil else { return }
+        guard !isTranslating, !pending.isEmpty, availabilityCheck == nil else { return }
         let detected = Self.language(of: pending[0])
         if configuration != nil, detected == sourceLanguage {
             configuration?.invalidate()
@@ -159,8 +202,12 @@ final class WPEPropertyLabelTranslator {
                 self.sourceLanguage = detected
                 self.configuration = TranslationSession.Configuration(source: detected, target: target)
             } else {
-                self.uninstalled += self.pending.filter { Self.language(of: $0) == detected }
+                let skipped = self.pending.filter { Self.language(of: $0) == detected }
+                self.uninstalled += skipped
                 self.pending.removeAll { Self.language(of: $0) == detected }
+                for label in skipped {
+                    self.enqueuedAt[label] = nil
+                }
                 self.configurePendingTranslation()
             }
         }
@@ -194,61 +241,113 @@ final class WPEPropertyLabelTranslator {
         return Locale.Language(identifier: traditional ? "zh-Hant" : "zh-Hans")
     }
 
-    /// Drains one source language. Called from `.translationTask`'s closure; the session
-    /// itself stays in that closure because it is not `Sendable`.
+    /// Takes the next chunk of `sourceLanguage` labels, newest first, and marks a drain in progress.
     func takePending() -> [String] {
-        let batch = pending.filter { Self.language(of: $0) == sourceLanguage || Self.language(of: $0) == nil }
-        let labels = Set(batch)
-        pending.removeAll { labels.contains($0) }
-        return batch
+        isTranslating = true
+        var chunk: [String] = []
+        for index in pending.indices.reversed() where chunk.count < Self.chunkSize {
+            if Self.language(of: pending[index]) == sourceLanguage {
+                chunk.append(pending.remove(at: index))
+            }
+        }
+        return chunk
     }
 
-    private func takeBatch() -> (labels: [String], target: Locale.Language) {
-        (takePending(), targetLanguage)
+    /// `nil` once `sourceLanguage` has nothing left; the drain then ends and other languages get a session.
+    @available(macOS 15.0, *)
+    private func nextChunk(source: Locale.Language?, target: Locale.Language?) -> (labels: [String], target: Locale.Language)? {
+        // A session whose configuration a retarget already replaced must not drain the new pair's labels,
+        // nor clear `isTranslating` for the session that replaced it.
+        guard source == sourceLanguage, target == targetLanguage else { return nil }
+        let labels = takePending()
+        guard !labels.isEmpty else {
+            isTranslating = false
+            configurePendingTranslation()
+            return nil
+        }
+        return (labels, targetLanguage)
     }
 
+    /// Ends a cancelled drain, putting its untranslated labels back in the queue.
     @available(macOS 15.0, *)
     func restorePending(_ labels: ArraySlice<String>) {
-        pending.insert(contentsOf: labels, at: 0)
+        isTranslating = false
+        pending.append(contentsOf: labels)
         configurePendingTranslation()
     }
 
     /// `.translationTask` action. `nonisolated` so the session — which is not
-    /// `Sendable` — lives here rather than in a MainActor closure. Per-string
-    /// calls: the batch API takes non-Sendable `Request`s. Each session handles
-    /// one source language; unfinished labels survive task cancellation.
+    /// `Sendable` — lives here rather than in a MainActor closure. Drains
+    /// `sourceLanguage` chunk by chunk; unfinished labels survive task cancellation.
     @available(macOS 15.0, *)
     nonisolated func translateLabels(using session: TranslationSession) async {
-        let (batch, target) = await takeBatch()
-        var finished: [(String, String)] = []
-        for (index, source) in batch.enumerated() {
+        while case let (labels, target)? = await nextChunk(source: session.sourceLanguage, target: session.targetLanguage) {
+            var pairs: [(String, String)] = []
             do {
                 try Task.checkCancellation()
-                let response = try await session.translate(source)
-                if let text = Self.cleanedTargetText(for: source, targetText: response.targetText) {
-                    finished.append((source, text))
+                let sources = Dictionary(uniqueKeysWithValues: labels.enumerated().map { (String($0), $1) })
+                let requests = labels.enumerated().map {
+                    TranslationSession.Request(sourceText: $1, clientIdentifier: String($0))
+                }
+                // Responses may arrive in any order; `clientIdentifier` maps each back to its label.
+                for response in try await session.translations(from: requests) {
+                    guard let source = response.clientIdentifier.flatMap({ sources[$0] }),
+                          let text = Self.cleanedTargetText(for: source, targetText: response.targetText) else { continue }
+                    pairs.append((source, text))
+                }
+            } catch where !Self.isCancellation(error) {
+                // One bad label fails the whole batch call; retry singly so the rest still land.
+                for (index, source) in labels.enumerated() {
+                    do {
+                        try Task.checkCancellation()
+                        let response = try await session.translate(source)
+                        if let text = Self.cleanedTargetText(for: source, targetText: response.targetText) {
+                            pairs.append((source, text))
+                        }
+                    } catch {
+                        if Self.isCancellation(error) {
+                            await finish(pairs, chunk: labels[..<index], unfinished: labels[index...], target: target)
+                            return
+                        }
+                        await recordFailure(for: source, error: error)
+                    }
                 }
             } catch {
-                if Task.isCancelled || error is CancellationError {
-                    await finish(finished, unfinished: batch[index...], target: target)
-                    return
-                }
-                await recordFailure(for: source, error: error)
+                await finish([], chunk: [], unfinished: labels[...], target: target)
+                return
             }
+            guard await storeChunk(pairs, chunk: labels[...], target: target) else { return }
         }
-        await finish(finished, unfinished: [], target: target)
+    }
+
+    private nonisolated static func isCancellation(_ error: any Error) -> Bool {
+        Task.isCancelled || error is CancellationError
     }
 
     @available(macOS 15.0, *)
-    private func finish(_ pairs: [(String, String)], unfinished: ArraySlice<String>, target: Locale.Language) {
-        // After a retarget these labels are already queued again for the new language.
-        guard target == targetLanguage else { return }
-        store(pairs)
-        if unfinished.isEmpty {
-            configurePendingTranslation()
-        } else {
-            restorePending(unfinished)
+    private func finish(
+        _ pairs: [(String, String)], chunk: ArraySlice<String>, unfinished: ArraySlice<String>, target: Locale.Language
+    ) {
+        guard storeChunk(pairs, chunk: chunk, target: target) else { return }
+        restorePending(unfinished)
+    }
+
+    /// Stores one chunk's results; `false` when a retarget or switch-off has replaced this session,
+    /// whose labels are then already re-queued or dropped.
+    @available(macOS 15.0, *)
+    private func storeChunk(_ pairs: [(String, String)], chunk: ArraySlice<String>, target: Locale.Language) -> Bool {
+        guard isEnabled, target == targetLanguage else { return false }
+        guard !chunk.isEmpty else { return true }
+        let oldest = chunk.compactMap { enqueuedAt.removeValue(forKey: $0) }.min()
+        if !pairs.isEmpty {
+            store(pairs)
         }
+        let waited = oldest.map { Int((ContinuousClock.now - $0) / .milliseconds(1)) } ?? 0
+        Logger.debug(
+            "Translated \(pairs.count)/\(chunk.count) labels \(sourceLanguage?.minimalIdentifier ?? "?")→\(target.minimalIdentifier); oldest waited \(waited) ms",
+            category: .ui
+        )
+        return true
     }
 
     /// Stores finished translations in one mutation, so observers rebuild once per batch.
@@ -295,6 +394,7 @@ final class WPEPropertyLabelTranslator {
 private struct WPEPropertyLabelTranslation: ViewModifier {
     let translator: WPEPropertyLabelTranslator
     @AppStorage(AppLanguagePreference.storageKey) private var languagePreference = AppLanguagePreference.system.rawValue
+    @AppStorage(WPEPropertyLabelTranslator.enabledPreferenceKey, store: .appScoped()) private var translationEnabled = true
 
     func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
@@ -306,6 +406,10 @@ private struct WPEPropertyLabelTranslation: ViewModifier {
                 .translationTask(translator.configuration, action: translator.translateLabels)
                 .onChange(of: languagePreference) { _, preference in
                     translator.retarget(to: WPEPropertyLabelTranslator.effectiveTargetLanguage(preference: preference))
+                }
+                // `initial`: the shared translators may have been created before the setting last changed.
+                .onChange(of: translationEnabled, initial: true) { _, enabled in
+                    translator.setEnabled(enabled)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     translator.recheckLanguagePacks()
