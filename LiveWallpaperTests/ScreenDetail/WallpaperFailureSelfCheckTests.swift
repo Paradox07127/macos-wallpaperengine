@@ -119,6 +119,25 @@ struct WallpaperFailureSelfCheckTests {
         }
     }
 
+    @Test("A proven fatal cause outranks a failed environment check and offers no fix")
+    func fatalCauseOutranksEnvironment() {
+        for (code, cause) in [("scene.windows_plugin", WallpaperFailureCheckKind.windowsOnly), ("texture.metal_format", .metalUnsupported)] {
+            let result = WallpaperFailureSelfCheck.evaluate(snapshot(code: code), environment: .init(sourceReachable: false))
+            #expect(result.likelyCause == cause, "\(code)")
+            #expect(result.fix == nil, "\(code)")
+            #expect(outcome(.sourceUnreachable, in: result) == .failed, "\(code)")
+            #expect(result.reportLines.contains("Self-check: sourceUnreachable: failed"), "\(code)")
+        }
+    }
+
+    @Test("A fatal code without its own check names no environment failure as the cause")
+    func fatalWithoutCheckHasNoEnvironmentCause() {
+        let result = WallpaperFailureSelfCheck.evaluate(snapshot(code: "scene.unsafe_path"), environment: .init(sourceReachable: false))
+        #expect(result.likelyCause == nil)
+        #expect(result.fix == nil)
+        #expect(outcome(.sourceUnreachable, in: result) == .failed)
+    }
+
     #if !LITE_BUILD
     @Test("Missed refs carry whether engine assets were searched and the first dependency searched")
     func resolutionSnapshotMissingResources() {
@@ -150,6 +169,34 @@ struct WallpaperFailureSelfCheckTests {
         let repeated = WPEResolutionDiagnosticsSnapshot(events: [missedPlain, missedPlain] + many).failureMissingResources
         #expect(repeated.count == 20)
         #expect(repeated.filter { $0.path == "a.tex" }.count == 1)
+    }
+
+    @Test("A decode or format error is not recorded as a missing resource")
+    func otherErrorIsNotMissing() {
+        let missed = WPEResolutionEvent(ref: "a.tex", attempts: [.init(origin: .scene, outcome: .fileMissing)], finalOutcome: .fileMissing)
+        let undecodable = WPEResolutionEvent(
+            ref: "b.tex", attempts: [.init(origin: .scene, outcome: .otherError("decode"))], finalOutcome: .otherError("decode")
+        )
+        let resources = WPEResolutionDiagnosticsSnapshot(events: [missed, undecodable]).failureMissingResources
+        #expect(resources == [WallpaperFailureMissingResource(path: "a.tex", searchedEngineAssets: false, dependencyID: nil)])
+    }
+
+    @Test("A stale but resolvable source bookmark is reachable; a deleted folder is not")
+    func sourceReachabilityToleratesStaleBookmark() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "selfcheck-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let original = root.appending(path: "original", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: original)
+        #expect(WallpaperFailureSelfCheck.sourceReachability(bookmark: bookmark) == true)
+
+        let renamed = root.appending(path: "renamed", directoryHint: .isDirectory)
+        try FileManager.default.moveItem(at: original, to: renamed)
+        #expect(try DirectoryBookmarks.resolveDirectoryBookmark(bookmark).isStale)
+        #expect(WallpaperFailureSelfCheck.sourceReachability(bookmark: bookmark) == true)
+
+        try FileManager.default.removeItem(at: renamed)
+        #expect(WallpaperFailureSelfCheck.sourceReachability(bookmark: bookmark) == false)
     }
     #endif
 }

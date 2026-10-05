@@ -4,7 +4,8 @@ import Foundation
 extension WPEResolutionDiagnosticsSnapshot {
     var failureMissingResources: [WallpaperFailureMissingResource] {
         var seen = Set<String>()
-        return missedRefs.filter { seen.insert($0.ref).inserted }.prefix(20).map { event in
+        // `.otherError` is a decode/format failure: the file exists, so blaming assets or dependencies would misdirect.
+        return missedRefs.filter { $0.finalOutcome == .fileMissing && seen.insert($0.ref).inserted }.prefix(20).map { event in
             WallpaperFailureMissingResource(
                 path: event.ref,
                 searchedEngineAssets: event.attempts.contains { $0.origin == .engineAssets },

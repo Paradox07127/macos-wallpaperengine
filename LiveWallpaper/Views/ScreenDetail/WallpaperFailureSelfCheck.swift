@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 
 struct WallpaperFailureSelfCheckEnvironment: Equatable, Sendable {
     /// nil = not applicable (Lite, or the wpeImport feature is off).
@@ -80,8 +81,11 @@ enum WallpaperFailureSelfCheck {
             checks.append(WallpaperFailureCheck(kind: .metalUnsupported, outcome: .failed))
         }
 
-        let likelyCause = checks.first { $0.outcome == .failed }?.kind
-        let fix: WallpaperFailureRecovery? = switch likelyCause {
+        let provenFatal = checks.first { $0.kind == .windowsOnly || $0.kind == .metalUnsupported }
+        // A fatal code is already the cause; an environment failure beside it must not be shown as one.
+        let likelyCause = provenFatal?.kind
+            ?? (snapshot.cause.failureClass == .fatal ? nil : checks.first { $0.outcome == .failed }?.kind)
+        let fix: WallpaperFailureRecovery? = switch snapshot.cause.failureClass == .fatal ? nil : likelyCause {
         case .engineAssetsMissing, .engineAssetsOutdated: .configureEngineAssets
         case .dependenciesMissing: .copyDependencyIDs(dependencyIDs)
         case .sourceUnreachable: .chooseSource
@@ -118,19 +122,15 @@ extension WallpaperFailureSelfCheck {
 
     #if !LITE_BUILD
     /// Without a bookmark the answer is unknown: a sandboxed read of a bare path fails even for a folder the user can open.
-    private static func sourceReachability(bookmark: Data?) -> Bool? {
+    static func sourceReachability(bookmark: Data?) -> Bool? {
         guard let bookmark else { return nil }
-        guard let resolution = try? DirectoryBookmarks.resolveDirectoryBookmark(bookmark), !resolution.isStale else { return false }
-        let url = resolution.url
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
+        // A stale bookmark still yields a usable URL (e.g. after a rename); `.transient` keeps any refresh unpersisted.
+        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient) else { return false }
+        let url = resolved.url
+        return SecurityScopedBookmarkResolver.withScopedAccess(url) { _ in
+            DirectoryBookmarks.directoryExists(url, fileManager: .default)
+                && FileManager.default.isReadableFile(atPath: url.path(percentEncoded: false))
         }
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
-            && FileManager.default.isReadableFile(atPath: url.path)
     }
     #endif
 }
