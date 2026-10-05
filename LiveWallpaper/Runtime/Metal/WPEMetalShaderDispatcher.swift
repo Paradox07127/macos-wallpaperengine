@@ -589,7 +589,7 @@ struct WPEMetalShaderDispatcher {
         }
 
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
-        let usesObjectQuad = !usesShapeQuad
+        let usesObjectQuad = !usesShapeQuad && pass.publicationVertexRole != .localEffect
             && executor.usesObjectQuadGeometry(for: pass.pass, layer: layer, cameraParallax: frameState.cameraParallax, cameraUniforms: frameState.cameraUniforms)
         var cachedProjection: simd_double4x4?
         var projectionResolved = false

@@ -98,6 +98,16 @@ struct WPEEffectPublicationDescriptor: Equatable, Sendable {
     let scope: WPEEffectPublicationScope
     let baseSceneBlending: String
 
+    var groups: [[Effect]] {
+        effects.reduce(into: [[Effect]]()) { groups, effect in
+            if groups.last?.last?.effectID == effect.effectID {
+                groups[groups.count - 1].append(effect)
+            } else {
+                groups.append([effect])
+            }
+        }
+    }
+
     var permitsActiveSubsets: Bool {
         scope == .nativeSolidChain
     }
@@ -122,11 +132,13 @@ extension WPEPreparedRenderPipeline {
         return Self(layers: layers.map { layer in
             guard let descriptor = layer.effectPublication,
                   let canonical = layer.effectPublicationCanonicalPasses(camera: camera) else { return layer }
-            let active = canonical.effects.filter { prepared in
-                guard let gate = prepared.pass.visibilityGate else { return true }
+            let byID = Dictionary(uniqueKeysWithValues: canonical.effects.map { ($0.id, $0) })
+            let groups = descriptor.groups.map { $0.compactMap { byID[$0.passID] } }
+            let active = groups.filter { group in
+                guard let gate = group.first?.pass.visibilityGate else { return true }
                 return passVisibility[gate.id] ?? gate.initialVisible
             }
-            guard descriptor.permitsActiveSubsets || active.count == canonical.effects.count else { return layer }
+            guard descriptor.permitsActiveSubsets || active.count == groups.count else { return layer }
             let passes: [WPEPreparedRenderPass]
             if active.isEmpty {
                 passes = [layer.effectPublicationPass(canonical.base, source: canonical.base.pass.source,
@@ -136,12 +148,18 @@ extension WPEPreparedRenderPipeline {
                                                             target: .layerComposite(name: layer.graphLayer.compositeA),
                                                             terminal: false)]
                 var predecessor = WPETextureReference.fbo(layer.graphLayer.compositeA)
-                for (index, effect) in active.enumerated() {
-                    let terminal = index == active.count - 1
-                    let target: WPERenderTarget = terminal ? .scene : .layerComposite(
+                for (index, group) in active.enumerated() {
+                    let terminalGroup = index == active.count - 1
+                    let target: WPERenderTarget = terminalGroup ? .scene : .layerComposite(
                         name: index.isMultiple(of: 2) ? layer.graphLayer.compositeB : layer.graphLayer.compositeA
                     )
-                    selected.append(layer.effectPublicationPass(effect, source: predecessor, target: target, terminal: terminal))
+                    let terminalID = group.last(where: { $0.pass.authoredJSON.effectPass?["target"] == nil })?.id
+                    for effect in group {
+                        let explicit = effect.pass.authoredJSON.effectPass?["target"] != nil
+                        selected.append(layer.effectPublicationPass(effect, source: predecessor,
+                                                                    target: explicit ? effect.pass.target : target,
+                                                                    terminal: terminalGroup && effect.id == terminalID))
+                    }
                     predecessor = target.textureReference ?? predecessor
                 }
                 passes = selected
@@ -165,12 +183,21 @@ extension WPEPreparedRenderLayer {
             effectPublicationPass(canonical.base, source: canonical.base.pass.source,
                                   target: .scene, terminal: false, baseScene: true),
         ] : []
+        let terminalIDs = Set(effectPublication?.groups.compactMap { group in
+            group.last(where: { identity in
+                canonical.effects.first(where: { $0.id == identity.passID })?.pass.authoredJSON.effectPass?["target"] == nil
+            })?.passID
+        } ?? [])
         return baseRoles + canonical.effects.flatMap { effect in
             [graphLayer.compositeA, graphLayer.compositeB].flatMap { source in
                 let other = source == graphLayer.compositeA ? graphLayer.compositeB : graphLayer.compositeA
+                let explicit = effect.pass.authoredJSON.effectPass?["target"] != nil
                 return [
-                    effectPublicationPass(effect, source: .fbo(source), target: .layerComposite(name: other), terminal: false),
-                    effectPublicationPass(effect, source: .fbo(source), target: .scene, terminal: true),
+                    effectPublicationPass(effect, source: .fbo(source),
+                                          target: explicit ? effect.pass.target : .layerComposite(name: other), terminal: false),
+                    effectPublicationPass(effect, source: .fbo(source),
+                                          target: explicit ? effect.pass.target : .scene,
+                                          terminal: !explicit && terminalIDs.contains(effect.id)),
                 ]
             }
         }
@@ -210,11 +237,12 @@ extension WPEPreparedRenderLayer {
         let cull = terminal ? (pass.authoredJSON.materialPass?["cullmode"] == .string("nocull") ? "nocull" : "back") : pass.cullMode
         let nativeSolid = descriptor.scope == .nativeSolidChain
         let straight = nativeSolid || descriptor.sourceExtent != nil
+        let explicitBinding = pass.authoredJSON.effectPass?["bind"] != nil
         let rewritten = WPERenderPass(
             id: pass.id, phase: pass.phase, shader: pass.shader,
             source: isEffect ? source : pass.source, target: target,
-            textures: isEffect ? pass.textures.mapValues { _ in source } : pass.textures,
-            binds: isEffect ? pass.binds.mapValues { _ in source } : pass.binds,
+            textures: isEffect && !explicitBinding ? pass.textures.mapValues { _ in source } : pass.textures,
+            binds: isEffect && !explicitBinding ? pass.binds.mapValues { _ in source } : pass.binds,
             constants: pass.constants, combos: pass.combos, userTextureBindings: pass.userTextureBindings,
             authoredJSON: pass.authoredJSON,
             blending: (baseScene || (nativeSolid && terminal)) ? descriptor.baseSceneBlending
@@ -224,7 +252,7 @@ extension WPEPreparedRenderLayer {
         )
         return WPEPreparedRenderPass(
             pass: rewritten, shader: prepared.shader,
-            textureBindings: isEffect ? prepared.textureBindings.mapValues { _ in source } : prepared.textureBindings,
+            textureBindings: isEffect && !explicitBinding ? prepared.textureBindings.mapValues { _ in source } : prepared.textureBindings,
             comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
             materialUniformNames: prepared.materialUniformNames, stageUniformBindings: prepared.stageUniformBindings,
             layerTintOverride: prepared.layerTintOverride,

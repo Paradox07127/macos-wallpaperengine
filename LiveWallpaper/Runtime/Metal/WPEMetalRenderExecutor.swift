@@ -3292,7 +3292,8 @@ final class WPEMetalRenderExecutor {
                 #endif
                 continue
             }
-            if stage == .vertex, vertexExecution == .authoredFullscreen,
+            let localScene = pass.publicationVertexRole == .localEffect && pass.pass.target == .scene
+            if stage == .vertex, vertexExecution == .authoredFullscreen, !localScene,
                u.name == "g_ModelViewProjectionMatrix", u.materialName == nil, u.glslType == "mat4", u.arrayLength == nil {
                 // Fullscreen attributes are already in clip coordinates. This is
                 // a draw producer, never the layer owner's effect projection.

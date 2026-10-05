@@ -1737,7 +1737,7 @@ extension WPERenderGraphBuilder {
             let graph = layer.graphLayer
             let parentModel = graph.parentObjectID == nil ? nil : parentHierarchy?.modelMatrix(for: graph)
             guard !camera.sceneHDR, graph.parentObjectID == nil || parentModel != nil,
-                  graph.localFBOs.isEmpty, graph.groupCompositeSource == nil,
+                  graph.localFBOs.count <= 1, graph.groupCompositeSource == nil,
                   graph.groupRenderTarget == nil, graph.groupLocalGeometry == nil,
                   graph.puppetPath == nil, layer.puppetModel == nil, graph.attachment == nil,
                   graph.geometry.shapePoints == nil, !graph.geometry.isTimeVarying,
@@ -1803,25 +1803,67 @@ extension WPERenderGraphBuilder {
                     }
                 }
             }) else { return layer }
+            let localNames = Set(graph.localFBOs.map(\.name))
+            guard graph.localFBOs.allSatisfy({
+                $0.unique && $0.scale == 1 && $0.fit == nil && $0.swapPartner == nil
+                    && $0.format.lowercased() == "rgba8888"
+            }) else { return layer }
             var identities = Set<String>()
+            var currentIdentity: String?
+            var nextEffectPassIndex = 0
+            var explicitlyWritten = Set<String>()
+            var groupExplicitlyWritten = Set<String>()
+            var groupGate: WPEPassVisibilityGate?
+            var expectedEffectPassCount = 0
+            var explicitlyRead = Set<String>()
             var predecessor = base.pass.target.textureReference
             for effect in effects {
+                guard let identity = effect.pass.authoredJSON.effectIdentity else { return layer }
+                if currentIdentity != identity.stableEffectID {
+                    guard currentIdentity == nil || nextEffectPassIndex == expectedEffectPassCount else { return layer }
+                    guard identities.insert(identity.stableEffectID).inserted else { return layer }
+                    currentIdentity = identity.stableEffectID
+                    nextEffectPassIndex = 0
+                    groupExplicitlyWritten.removeAll(keepingCapacity: true)
+                    groupGate = effect.pass.visibilityGate
+                }
+                guard effect.pass.visibilityGate == groupGate else { return layer }
+                let explicitTarget = effect.pass.authoredJSON.effectPass?["target"] != nil
+                let explicitBinding = effect.pass.authoredJSON.effectPass?["bind"] != nil
+                let expectedInput: WPETextureReference? = explicitBinding ? effect.pass.binds[0] : predecessor
+                guard let expectedInput else { return layer }
+                if explicitTarget {
+                    guard case let .fbo(name) = effect.pass.target, localNames.contains(name),
+                          nextEffectPassIndex == 0, !explicitBinding else { return layer }
+                    explicitlyWritten.insert(name)
+                    groupExplicitlyWritten.insert(name)
+                } else {
+                    guard case let .layerComposite(target) = effect.pass.target,
+                          [graph.compositeA, graph.compositeB].contains(target) else { return layer }
+                }
+                if explicitBinding {
+                    guard nextEffectPassIndex == 1, case let .fbo(name) = expectedInput,
+                          groupExplicitlyWritten.contains(name) else { return layer }
+                    explicitlyRead.insert(name)
+                }
                 guard effect.shader?.isBuiltin == false, case .effect = effect.pass.phase,
-                      case let .layerComposite(target) = effect.pass.target,
-                      [graph.compositeA, graph.compositeB].contains(target),
-                      let identity = effect.pass.authoredJSON.effectIdentity,
-                      identity.objectID == graph.id, identity.effectPassIndex == 0,
-                      identities.insert(identity.stableEffectID).inserted,
-                      case let .array(effectPasses)? = effect.pass.authoredJSON.effectDocument?["passes"], effectPasses.count == 1,
+                      identity.objectID == graph.id, identity.effectPassIndex == nextEffectPassIndex,
+                      case let .array(effectPasses)? = effect.pass.authoredJSON.effectDocument?["passes"],
+                      (1 ... 2).contains(effectPasses.count),
+                      Set(effectPasses.compactMap { value -> String? in
+                          if case let .string(path)? = value["material"] {
+                              return path
+                          }; return nil
+                      }).count == effectPasses.count,
+                      effectPasses.count == 1 || activeSubsets,
                       case let .array(materialPasses)? = effect.pass.authoredJSON.materialDocument?["passes"], materialPasses.count == 1,
                       case let .string(authoredBlend)? = effect.pass.authoredJSON.materialPass?["blending"], authoredBlend.lowercased() == "disabled",
-                      effect.pass.authoredJSON.effectPass?["target"] == nil,
                       effect.pass.authoredJSON.materialPass?["target"] == nil,
                       effect.textureBindings.keys.allSatisfy({ $0 == 0 }),
                       effect.pass.textures.keys.allSatisfy({ $0 == 0 }), effect.pass.binds.keys.allSatisfy({ $0 == 0 }),
                       effect.pass.source == predecessor,
-                      effect.pass.binds.values.allSatisfy({ $0 == predecessor || $0 == .previous }),
-                      effect.textureBindings.values.allSatisfy({ $0 == predecessor }),
+                      effect.pass.binds.values.allSatisfy({ $0 == expectedInput || (!explicitBinding && $0 == .previous) }),
+                      effect.textureBindings.values.allSatisfy({ $0 == expectedInput }),
                       !containsScript(effect.pass.authoredJSON.materialDocument ?? .null),
                       !containsScript(effect.pass.authoredJSON.effectDocument ?? .null),
                       let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: effect, recordFailure: false),
@@ -1845,7 +1887,7 @@ extension WPERenderGraphBuilder {
                       }),
                       link.interface.variables.filter({ $0.glslType.hasPrefix("sampler") }).allSatisfy({
                           (sourceSize != nil || activeSubsets) && $0.key.stage == .fragment && $0.key.name == "g_Texture0" && $0.glslType == "sampler2D"
-                              && effect.textureBindings[0] == predecessor
+                              && effect.textureBindings[0] == expectedInput
                       }),
                       link.interface.variables(stage: .vertex, kind: .attribute).allSatisfy({
                           ($0.key.name == "a_Position" && $0.glslType == "vec3")
@@ -1866,8 +1908,14 @@ extension WPERenderGraphBuilder {
                                       || (activeSubsets && variable.key.stage == .vertex
                                           && link.interface.isVertexUniformProvenUnreferenced(variable.key.name))))
                       }) else { return layer }
-                predecessor = effect.pass.target.textureReference
+                expectedEffectPassCount = effectPasses.count
+                nextEffectPassIndex += 1
+                if !explicitTarget {
+                    predecessor = effect.pass.target.textureReference
+                }
             }
+            guard nextEffectPassIndex == expectedEffectPassCount,
+                  explicitlyWritten == explicitlyRead, explicitlyWritten == localNames else { return layer }
             let baseBlend: String = if case let .string(authored)? = base.pass.authoredJSON.materialPass?["blending"] {
                 authored
             } else {

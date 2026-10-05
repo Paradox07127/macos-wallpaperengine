@@ -8,6 +8,634 @@ import Testing
 
 @Suite("WPE render pipeline builder")
 struct WPERenderPipelineBuilderTests {
+    @Test("Native sibling GPU source and interior probes match gated reopen", .serialized, arguments: ["9000543", "9200544", "9200545"])
+    func nativeEffectSiblingGPU(sceneID: String) throws {
+        let fixture = try nativeSiblingFixture(sceneID: sceneID)
+        defer { fixture.cleanup() }
+        let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: fixture.root.appendingPathComponent("scene.json")))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let raw = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: raw, camera: camera, permitsVisibilityGates: true)
+        let owner = try #require(canonical.layers.first { $0.graphLayer.objectID == "947100" })
+        _ = try #require(owner.effectPublication)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let expected: [String: [[[Int]]]] = [
+            "9000543": [
+                [
+                    [88, 24, 255, 255, 255, 255],
+                    [88, 40, 255, 255, 255, 255],
+                    [112, 40, 255, 255, 255, 255],
+                    [136, 40, 255, 255, 255, 255],
+                    [160, 40, 255, 255, 255, 255],
+                    [184, 40, 255, 255, 255, 255],
+                    [88, 56, 255, 255, 255, 255],
+                    [112, 56, 255, 255, 255, 255],
+                    [136, 56, 255, 255, 255, 255],
+                    [160, 56, 255, 255, 255, 255],
+                    [184, 56, 255, 255, 255, 255],
+                    [208, 56, 255, 255, 255, 255],
+                    [88, 72, 255, 255, 255, 255],
+                    [112, 72, 255, 255, 255, 255],
+                    [136, 72, 255, 255, 255, 255],
+                    [160, 72, 255, 255, 255, 255],
+                    [184, 72, 255, 255, 255, 255],
+                    [208, 72, 255, 255, 255, 255],
+                    [88, 88, 255, 255, 255, 255],
+                    [112, 88, 255, 255, 255, 255],
+                    [136, 88, 255, 255, 255, 255],
+                    [160, 88, 255, 255, 255, 255],
+                    [184, 88, 255, 255, 255, 255],
+                    [208, 88, 255, 255, 255, 255],
+                    [88, 104, 255, 255, 255, 255],
+                    [112, 104, 255, 255, 255, 255],
+                    [136, 104, 255, 255, 255, 255],
+                    [160, 104, 255, 255, 255, 255],
+                    [184, 104, 255, 255, 255, 255],
+                    [208, 104, 255, 255, 255, 255],
+                ],
+                [
+                    [160, 40, 255, 255, 255, 255],
+                    [184, 40, 255, 255, 255, 255],
+                    [208, 40, 255, 255, 255, 255],
+                    [64, 56, 255, 255, 255, 255],
+                    [88, 56, 255, 255, 255, 255],
+                    [112, 56, 255, 255, 255, 255],
+                    [136, 56, 255, 255, 255, 255],
+                    [160, 56, 255, 255, 255, 255],
+                    [184, 56, 255, 255, 255, 255],
+                    [208, 56, 255, 255, 255, 255],
+                    [64, 72, 255, 255, 255, 255],
+                    [88, 72, 255, 255, 255, 255],
+                    [112, 72, 255, 255, 255, 255],
+                    [136, 72, 255, 255, 255, 255],
+                    [160, 72, 255, 255, 255, 255],
+                    [184, 72, 255, 255, 255, 255],
+                    [208, 72, 255, 255, 255, 255],
+                    [64, 88, 255, 255, 255, 255],
+                    [88, 88, 255, 255, 255, 255],
+                    [112, 88, 255, 255, 255, 255],
+                    [136, 88, 255, 255, 255, 255],
+                    [160, 88, 255, 255, 255, 255],
+                    [184, 88, 255, 255, 255, 255],
+                    [208, 88, 255, 255, 255, 255],
+                    [64, 104, 255, 255, 255, 255],
+                    [88, 104, 255, 255, 255, 255],
+                    [112, 104, 255, 255, 255, 255],
+                    [136, 104, 255, 255, 255, 255],
+                    [160, 104, 255, 255, 255, 255],
+                    [184, 104, 255, 255, 255, 255],
+                ],
+                [
+                    [88, 24, 255, 255, 255, 255],
+                    [88, 40, 255, 255, 255, 255],
+                    [112, 40, 255, 255, 255, 255],
+                    [136, 40, 255, 255, 255, 255],
+                    [160, 40, 255, 255, 255, 255],
+                    [184, 40, 255, 255, 255, 255],
+                    [88, 56, 255, 255, 255, 255],
+                    [112, 56, 255, 255, 255, 255],
+                    [136, 56, 255, 255, 255, 255],
+                    [160, 56, 255, 255, 255, 255],
+                    [184, 56, 255, 255, 255, 255],
+                    [208, 56, 255, 255, 255, 255],
+                    [88, 72, 255, 255, 255, 255],
+                    [112, 72, 255, 255, 255, 255],
+                    [136, 72, 255, 255, 255, 255],
+                    [160, 72, 255, 255, 255, 255],
+                    [184, 72, 255, 255, 255, 255],
+                    [208, 72, 255, 255, 255, 255],
+                    [88, 88, 255, 255, 255, 255],
+                    [112, 88, 255, 255, 255, 255],
+                    [136, 88, 255, 255, 255, 255],
+                    [160, 88, 255, 255, 255, 255],
+                    [184, 88, 255, 255, 255, 255],
+                    [208, 88, 255, 255, 255, 255],
+                    [88, 104, 255, 255, 255, 255],
+                    [112, 104, 255, 255, 255, 255],
+                    [136, 104, 255, 255, 255, 255],
+                    [160, 104, 255, 255, 255, 255],
+                    [184, 104, 255, 255, 255, 255],
+                    [208, 104, 255, 255, 255, 255],
+                ],
+            ],
+            "9200544": [
+                [
+                    [88, 24, 64, 20, 36, 255],
+                    [88, 40, 64, 23, 58, 255],
+                    [112, 40, 255, 255, 159, 255],
+                    [136, 40, 255, 255, 159, 255],
+                    [160, 40, 255, 255, 159, 255],
+                    [184, 40, 255, 255, 159, 255],
+                    [88, 56, 64, 26, 80, 255],
+                    [112, 56, 255, 255, 159, 255],
+                    [136, 56, 255, 255, 159, 255],
+                    [160, 56, 255, 255, 159, 255],
+                    [184, 56, 255, 255, 159, 255],
+                    [208, 56, 255, 255, 159, 255],
+                    [88, 72, 64, 29, 102, 255],
+                    [112, 72, 255, 255, 159, 255],
+                    [136, 72, 255, 255, 159, 255],
+                    [160, 72, 255, 255, 159, 255],
+                    [184, 72, 255, 255, 159, 255],
+                    [208, 72, 255, 255, 159, 255],
+                    [88, 88, 85, 57, 128, 255],
+                    [112, 88, 255, 255, 159, 255],
+                    [136, 88, 255, 255, 159, 255],
+                    [160, 88, 255, 255, 159, 255],
+                    [184, 88, 255, 255, 159, 255],
+                    [208, 88, 117, 246, 116, 255],
+                    [88, 104, 255, 255, 159, 255],
+                    [112, 104, 255, 255, 159, 255],
+                    [136, 104, 255, 255, 159, 255],
+                    [160, 104, 255, 255, 159, 255],
+                    [184, 104, 255, 255, 159, 255],
+                    [208, 104, 64, 246, 121, 255],
+                ],
+                [
+                    [88, 24, 255, 255, 159, 255],
+                    [88, 40, 255, 255, 159, 255],
+                    [112, 40, 255, 255, 159, 255],
+                    [136, 40, 255, 255, 159, 255],
+                    [160, 40, 255, 255, 159, 255],
+                    [184, 40, 255, 255, 159, 255],
+                    [88, 56, 255, 255, 159, 255],
+                    [112, 56, 255, 255, 159, 255],
+                    [136, 56, 255, 255, 159, 255],
+                    [160, 56, 255, 255, 159, 255],
+                    [184, 56, 255, 255, 159, 255],
+                    [208, 56, 255, 255, 159, 255],
+                    [88, 72, 255, 255, 159, 255],
+                    [112, 72, 255, 255, 159, 255],
+                    [136, 72, 255, 255, 159, 255],
+                    [160, 72, 255, 255, 159, 255],
+                    [184, 72, 255, 255, 159, 255],
+                    [208, 72, 255, 255, 159, 255],
+                    [88, 88, 255, 255, 159, 255],
+                    [112, 88, 255, 255, 159, 255],
+                    [136, 88, 255, 255, 159, 255],
+                    [160, 88, 255, 255, 159, 255],
+                    [184, 88, 255, 255, 159, 255],
+                    [208, 88, 255, 255, 159, 255],
+                    [88, 104, 255, 255, 159, 255],
+                    [112, 104, 255, 255, 159, 255],
+                    [136, 104, 255, 255, 159, 255],
+                    [160, 104, 255, 255, 159, 255],
+                    [184, 104, 255, 255, 159, 255],
+                    [208, 104, 255, 255, 159, 255],
+                ],
+                [
+                    [88, 24, 64, 20, 36, 255],
+                    [88, 40, 64, 23, 58, 255],
+                    [112, 40, 255, 255, 159, 255],
+                    [136, 40, 255, 255, 159, 255],
+                    [160, 40, 255, 255, 159, 255],
+                    [184, 40, 255, 255, 159, 255],
+                    [88, 56, 64, 26, 80, 255],
+                    [112, 56, 255, 255, 159, 255],
+                    [136, 56, 255, 255, 159, 255],
+                    [160, 56, 255, 255, 159, 255],
+                    [184, 56, 255, 255, 159, 255],
+                    [208, 56, 255, 255, 159, 255],
+                    [88, 72, 64, 29, 102, 255],
+                    [112, 72, 255, 255, 159, 255],
+                    [136, 72, 255, 255, 159, 255],
+                    [160, 72, 255, 255, 159, 255],
+                    [184, 72, 255, 255, 159, 255],
+                    [208, 72, 255, 255, 159, 255],
+                    [88, 88, 85, 57, 128, 255],
+                    [112, 88, 255, 255, 159, 255],
+                    [136, 88, 255, 255, 159, 255],
+                    [160, 88, 255, 255, 159, 255],
+                    [184, 88, 255, 255, 159, 255],
+                    [208, 88, 117, 246, 116, 255],
+                    [88, 104, 255, 255, 159, 255],
+                    [112, 104, 255, 255, 159, 255],
+                    [136, 104, 255, 255, 159, 255],
+                    [160, 104, 255, 255, 159, 255],
+                    [184, 104, 255, 255, 159, 255],
+                    [208, 104, 64, 246, 121, 255],
+                ],
+            ],
+            "9200545": [
+                [
+                    [136, 40, 64, 66, 61, 255],
+                    [160, 40, 64, 42, 86, 255],
+                    [184, 40, 64, 17, 112, 255],
+                    [112, 56, 64, 125, 42, 255],
+                    [136, 56, 64, 100, 68, 255],
+                    [160, 56, 64, 76, 94, 255],
+                    [184, 56, 64, 52, 119, 255],
+                    [208, 56, 64, 27, 144, 255],
+                    [112, 72, 64, 158, 50, 255],
+                    [136, 72, 64, 134, 75, 255],
+                    [160, 72, 64, 110, 101, 255],
+                    [184, 72, 64, 85, 126, 255],
+                    [208, 72, 64, 61, 152, 255],
+                    [112, 88, 64, 192, 57, 255],
+                    [136, 88, 64, 168, 83, 255],
+                    [160, 88, 64, 144, 108, 255],
+                    [184, 88, 64, 119, 134, 255],
+                    [112, 104, 64, 226, 65, 255],
+                    [136, 104, 64, 202, 90, 255],
+                    [160, 104, 64, 177, 116, 255],
+                    [184, 104, 64, 153, 141, 255],
+                ],
+                [
+                    [88, 24, 255, 255, 159, 255],
+                    [88, 40, 255, 255, 159, 255],
+                    [112, 40, 255, 255, 159, 255],
+                    [136, 40, 255, 255, 159, 255],
+                    [160, 40, 255, 255, 159, 255],
+                    [184, 40, 255, 255, 159, 255],
+                    [88, 56, 255, 255, 159, 255],
+                    [112, 56, 255, 255, 159, 255],
+                    [136, 56, 255, 255, 159, 255],
+                    [160, 56, 255, 255, 159, 255],
+                    [184, 56, 255, 255, 159, 255],
+                    [208, 56, 255, 255, 159, 255],
+                    [88, 72, 255, 255, 159, 255],
+                    [112, 72, 255, 255, 159, 255],
+                    [136, 72, 255, 255, 159, 255],
+                    [160, 72, 255, 255, 159, 255],
+                    [184, 72, 255, 255, 159, 255],
+                    [208, 72, 255, 255, 159, 255],
+                    [88, 88, 255, 255, 159, 255],
+                    [112, 88, 255, 255, 159, 255],
+                    [136, 88, 255, 255, 159, 255],
+                    [160, 88, 255, 255, 159, 255],
+                    [184, 88, 255, 255, 159, 255],
+                    [208, 88, 255, 255, 159, 255],
+                    [88, 104, 255, 255, 159, 255],
+                    [112, 104, 255, 255, 159, 255],
+                    [136, 104, 255, 255, 159, 255],
+                    [160, 104, 255, 255, 159, 255],
+                    [184, 104, 255, 255, 159, 255],
+                    [208, 104, 255, 255, 159, 255],
+                ],
+                [
+                    [136, 40, 64, 66, 61, 255],
+                    [160, 40, 64, 42, 86, 255],
+                    [184, 40, 64, 17, 112, 255],
+                    [112, 56, 64, 125, 42, 255],
+                    [136, 56, 64, 100, 68, 255],
+                    [160, 56, 64, 76, 94, 255],
+                    [184, 56, 64, 52, 119, 255],
+                    [208, 56, 64, 27, 144, 255],
+                    [112, 72, 64, 158, 50, 255],
+                    [136, 72, 64, 134, 75, 255],
+                    [160, 72, 64, 110, 101, 255],
+                    [184, 72, 64, 85, 126, 255],
+                    [208, 72, 64, 61, 152, 255],
+                    [112, 88, 64, 192, 57, 255],
+                    [136, 88, 64, 168, 83, 255],
+                    [160, 88, 64, 144, 108, 255],
+                    [184, 88, 64, 119, 134, 255],
+                    [112, 104, 64, 226, 65, 255],
+                    [136, 104, 64, 202, 90, 255],
+                    [160, 104, 64, 177, 116, 255],
+                    [184, 104, 64, 153, 141, 255],
+                ],
+            ],
+        ]
+        #if DEBUG
+        WPESceneDebugArtifacts.shared.setEnabledForTesting(true)
+        defer { WPESceneDebugArtifacts.shared.setEnabledForTesting(nil) }
+        #endif
+        for (step, stage) in [0, 1, 0].enumerated() {
+            #if DEBUG
+            WPECanonicalTraceRecorder.shared.beginScene(workshopID: sceneID, projectJsonPath: nil, descriptor: "native-siblings")
+            #endif
+            let visibility = Dictionary(owner.passes.compactMap { $0.pass.visibilityGate.map { ($0.id, stage == 0) } }, uniquingKeysWith: { a, _ in a })
+            let resolved = canonical.resolvingEffectPublication(passVisibility: visibility, camera: camera)
+            for layer in resolved.layers {
+                for pass in layer.passes where pass.shader?.isBuiltin == false {
+                    let execution = WPEMetalRenderExecutor.authoredVertexExecution(for: pass, layer: layer.graphLayer, camera: camera)
+                    let request = try #require(executor.authoredPrewarmRequest(for: pass, execution: execution))
+                    let compiled = try executor.shaderCompiler.compile(request)
+                    #expect(compiled.vertexStage?.execution == execution)
+                    executor.seedTranslatedShaderCache([(request.translationCacheKey, compiled)])
+                    let prewarm = WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm(
+                        device: device, defaultLibrary: executor.defaultLibrary, result: compiled, vertexName: nil,
+                        blendMode: pass.pass.blending, alphaWritePolicy: pass.renderContract.attachment.alphaWritePolicy,
+                        colorPixelFormat: .rgba8Unorm, depthPixelFormat: .invalid
+                    )
+                    try executor.seedTranslatedPipelines([#require(WPEMetalRenderExecutor.buildTranslatedPipeline(prewarm))])
+                }
+            }
+            executor.adoptPrewarmedAuthoredShaders(for: resolved, camera: camera)
+            let output = try executor.render(pipeline: resolved, size: CGSize(width: 256, height: 128), textures: [:], cameraUniforms: camera)
+            #expect(output.pixelFormat == .rgba8Unorm)
+            let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: output.pixelFormat, width: 256, height: 128, mipmapped: false)
+            desc.storageMode = .shared
+            let staging = try #require(device.makeTexture(descriptor: desc))
+            let command = try #require(executor.textureSourceCommandQueue.makeCommandBuffer())
+            let blit = try #require(command.makeBlitCommandEncoder())
+            blit.copy(from: output, to: staging)
+            blit.endEncoding(); command.commit(); command.waitUntilCompleted()
+            #expect(command.error == nil)
+            var pixels = [UInt8](repeating: 0, count: 256 * 128 * 4)
+            pixels.withUnsafeMutableBytes { staging.getBytes($0.baseAddress!, bytesPerRow: 1024, from: MTLRegionMake2D(0, 0, 256, 128), mipmapLevel: 0) }
+            #if DEBUG
+            let traceData = try #require(WPECanonicalTraceRecorder.shared.finishFrame(outputTexture: staging, runtimeUniforms: nil,
+                                                                                      firstFrameStats: nil, resolutionDiagnostics: .init(events: [])))
+            let trace = try #require(JSONSerialization.jsonObject(with: traceData) as? [String: Any])
+            let records = try #require(trace["passes"] as? [[String: Any]])
+            let custom = records.filter { ($0["layerId"] as? String) == "947100" && ["gradient", "probe-clock", "third"].contains($0["shaderName"] as? String ?? "") }
+            #expect(custom.count == (stage == 1 ? (sceneID == "9000543" ? 0 : 1) : (sceneID == "9000543" ? 2 : 3)))
+            for record in custom {
+                let contract = try #require(record["vertexContract"] as? [String: Any])
+                #expect(contract["authoredVertexExecuted"] as? Bool == true)
+                #expect(contract["fallbackReason"] == nil)
+            }
+            #endif
+            for probe in try #require(expected[sceneID])[step] {
+                let offset = (probe[1] * 256 + probe[0]) * 4
+                #expect((0 ..< 3).allSatisfy { abs(Int(pixels[offset + $0]) - probe[2 + $0]) <= 1 })
+                #expect(Int(pixels[offset + 3]) == probe[5])
+            }
+        }
+    }
+
+    @Test("Native grouped material passes preserve input snapshots and terminal geometry", arguments: ["9000543", "9200544", "9200545"])
+    func nativeEffectSiblingTopology(sceneID: String) throws {
+        let fixture = try nativeSiblingFixture(sceneID: sceneID)
+        defer { fixture.cleanup() }
+        let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: fixture.root.appendingPathComponent("scene.json")))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let raw = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: raw, camera: camera, permitsVisibilityGates: true)
+        let owner = try #require(canonical.layers.first { $0.graphLayer.objectID == "947100" })
+        #expect(owner.passes == raw.layers.first { $0.graphLayer.objectID == "947100" }?.passes)
+        _ = try #require(owner.effectPublication)
+        for stage in [0, 1, 0] {
+            let visibility = Dictionary(owner.passes.compactMap { $0.pass.visibilityGate.map { ($0.id, stage == 0) } }, uniquingKeysWith: { a, _ in a })
+            let resolved = canonical.resolvingEffectPublication(passVisibility: visibility, camera: camera)
+            let layer = try #require(resolved.layers.first { $0.graphLayer.objectID == "947100" })
+            let passes = layer.passes
+            #expect(passes.count == (stage == 1 ? (sceneID == "9000543" ? 1 : 2) : (sceneID == "9000543" ? 3 : 4)))
+            #expect(passes.last?.pass.target == .scene)
+            if stage == 0 {
+                let base = passes[0], a = passes[1], b = passes[2]
+                #expect(a.publicationVertexRole == .localEffect)
+                #expect(b.textureBindings[0] == (sceneID == "9200545" ? a.pass.target.textureReference : base.pass.target.textureReference))
+                if sceneID == "9000543" {
+                    #expect(a.pass.target == .scene && b.pass.target == .scene)
+                    #expect(b.publicationVertexRole == nil)
+                } else {
+                    #expect(b.publicationVertexRole == .localEffect)
+                    #expect(a.pass.target == b.pass.target || sceneID == "9200545")
+                    #expect(passes[3].textureBindings[0] == b.pass.target.textureReference)
+                    #expect(passes[3].publicationVertexRole == nil)
+                }
+            } else if sceneID != "9000543" {
+                #expect(passes.last?.textureBindings[0] == passes.first?.pass.target.textureReference)
+            }
+        }
+    }
+
+    private func nativeSiblingFixture(sceneID: String) throws -> Fixture {
+        var encoded: [String: String] = [
+            "effects/gradient.json": """
+            ewogICJ2ZXJzaW9uIjogMSwKICAibmFtZSI6ICJncmFkaWVudCIsCiAgInBhc3NlcyI6IFsKICAg
+            IHsKICAgICAgIm1hdGVyaWFsIjogIm1hdGVyaWFscy9ncmFkaWVudC5qc29uIgogICAgfQogIF0K
+            fQo=
+            """,
+            "effects/pair.json": """
+            ewogICJ2ZXJzaW9uIjogMSwKICAibmFtZSI6ICJwYWlyIiwKICAicGFzc2VzIjogWwogICAgewog
+            ICAgICAibWF0ZXJpYWwiOiAibWF0ZXJpYWxzL2dyYWRpZW50Lmpzb24iCiAgICB9LAogICAgewog
+            ICAgICAibWF0ZXJpYWwiOiAibWF0ZXJpYWxzL3Byb2JlLmpzb24iCiAgICB9CiAgXQp9Cg==
+            """,
+            "effects/probe.json": """
+            ewogICJ2ZXJzaW9uIjogMSwKICAibmFtZSI6ICJVbnVzZWQgZnJhZ21lbnQgdmFyeWluZyIsCiAg
+            InBhc3NlcyI6IFsKICAgIHsKICAgICAgIm1hdGVyaWFsIjogIm1hdGVyaWFscy9wcm9iZS5qc29u
+            IgogICAgfQogIF0sCiAgImRlcGVuZGVuY2llcyI6IFsKICAgICJtYXRlcmlhbHMvcHJvYmUuanNv
+            biIsCiAgICAic2hhZGVycy9wcm9iZS1jbG9jay52ZXJ0IiwKICAgICJzaGFkZXJzL3Byb2JlLWNs
+            b2NrLmZyYWciCiAgXQp9
+            """,
+            "effects/third.json": """
+            ewogICJ2ZXJzaW9uIjogMSwKICAibmFtZSI6ICJ0aGlyZCIsCiAgInBhc3NlcyI6IFsKICAgIHsK
+            ICAgICAgIm1hdGVyaWFsIjogIm1hdGVyaWFscy90aGlyZC5qc29uIgogICAgfQogIF0KfQo=
+            """,
+            "materials/base.json": """
+            ewogICJwYXNzZXMiOiBbCiAgICB7CiAgICAgICJzaGFkZXIiOiAic29saWRsYXllciIsCiAgICAg
+            ICJibGVuZGluZyI6ICJub3JtYWwiLAogICAgICAiY3VsbG1vZGUiOiAibm9jdWxsIiwKICAgICAg
+            ImRlcHRodGVzdCI6ICJkaXNhYmxlZCIsCiAgICAgICJkZXB0aHdyaXRlIjogImRpc2FibGVkIgog
+            ICAgfQogIF0KfQo=
+            """,
+            "materials/gradient.json": """
+            ewogICJwYXNzZXMiOiBbCiAgICB7CiAgICAgICJzaGFkZXIiOiAiZ3JhZGllbnQiLAogICAgICAi
+            YmxlbmRpbmciOiAiZGlzYWJsZWQiLAogICAgICAiY3VsbG1vZGUiOiAibm9jdWxsIiwKICAgICAg
+            ImRlcHRodGVzdCI6ICJkaXNhYmxlZCIsCiAgICAgICJkZXB0aHdyaXRlIjogImRpc2FibGVkIiwK
+            ICAgICAgInRleHR1cmVzIjogW10KICAgIH0KICBdCn0K
+            """,
+            "materials/gray.tex": """
+            VEVYVjAwMDUAVEVYSTAwMDEAAAAAAAMAAAACAAAAAgAAAAIAAAACAAAAAAAAAFRFWEIwMDAzAAEA
+            AAD/////AQAAAAIAAAACAAAAAAAAABAAAAAQAAAAgICAgICAgICAgICAgICAgA==
+            """,
+            "materials/probe.json": """
+            ewogICJwYXNzZXMiOiBbCiAgICB7CiAgICAgICJibGVuZGluZyI6ICJkaXNhYmxlZCIsCiAgICAg
+            ICJjb21ib3MiOiB7CiAgICAgICAgInZlcnNpb24iOiAyLAogICAgICAgICJNT0RFIjogMQogICAg
+            ICB9LAogICAgICAiY3VsbG1vZGUiOiAibm9jdWxsIiwKICAgICAgImRlcHRodGVzdCI6ICJkaXNh
+            YmxlZCIsCiAgICAgICJkZXB0aHdyaXRlIjogImRpc2FibGVkIiwKICAgICAgInNoYWRlciI6ICJw
+            cm9iZS1jbG9jayIsCiAgICAgICJ0ZXh0dXJlcyI6IFsKICAgICAgICBudWxsCiAgICAgIF0sCiAg
+            ICAgICJjb25zdGFudHNoYWRlcnZhbHVlcyI6IHsKICAgICAgICAib2Zmc2V0IjogIjAuMTMgLTAu
+            MDkiLAogICAgICAgICJzY2FsZSI6ICIwLjc1IDEuMiIsCiAgICAgICAgImFuZ2xlIjogMC4zCiAg
+            ICAgIH0KICAgIH0KICBdCn0K
+            """,
+            "materials/third.json": """
+            ewogICJwYXNzZXMiOiBbCiAgICB7CiAgICAgICJibGVuZGluZyI6ICJkaXNhYmxlZCIsCiAgICAg
+            ICJjb21ib3MiOiB7CiAgICAgICAgInZlcnNpb24iOiAyLAogICAgICAgICJNT0RFIjogMQogICAg
+            ICB9LAogICAgICAiY3VsbG1vZGUiOiAibm9jdWxsIiwKICAgICAgImRlcHRodGVzdCI6ICJkaXNh
+            YmxlZCIsCiAgICAgICJkZXB0aHdyaXRlIjogImRpc2FibGVkIiwKICAgICAgInNoYWRlciI6ICJ0
+            aGlyZCIsCiAgICAgICJ0ZXh0dXJlcyI6IFsKICAgICAgICBudWxsCiAgICAgIF0sCiAgICAgICJj
+            b25zdGFudHNoYWRlcnZhbHVlcyI6IHsKICAgICAgICAib2Zmc2V0IjogIjAuMTMgLTAuMDkiLAog
+            ICAgICAgICJzY2FsZSI6ICIwLjc1IDEuMiIsCiAgICAgICAgImFuZ2xlIjogMC4zCiAgICAgIH0K
+            ICAgIH0KICBdCn0K
+            """,
+            "models/probe.json": """
+            eyJtYXRlcmlhbCI6Im1hdGVyaWFscy9iYXNlLmpzb24ifQo=
+            """,
+            "scene.json": """
+            ewogICJjYW1lcmEiOiB7CiAgICAiZXllIjogIjAgMCAwIiwKICAgICJjZW50ZXIiOiAiMCAwIC0x
+            IiwKICAgICJ1cCI6ICIwIDEgMCIKICB9LAogICJnZW5lcmFsIjogewogICAgIm9ydGhvZ29uYWxw
+            cm9qZWN0aW9uIjogewogICAgICAid2lkdGgiOiAyNTYsCiAgICAgICJoZWlnaHQiOiAxMjgKICAg
+            IH0sCiAgICAiY2xlYXJjb2xvciI6ICIwLjE1IDAuMjUgMC4zNSIsCiAgICAiY2xlYXJlbmFibGVk
+            IjogdHJ1ZSwKICAgICJoZHIiOiBmYWxzZSwKICAgICJibG9vbSI6IGZhbHNlLAogICAgImJsb29t
+            aGRyZmVhdGhlciI6IDEsCiAgICAiYmxvb21oZHJpdGVyYXRpb25zIjogNCwKICAgICJibG9vbWhk
+            cnNjYXR0ZXIiOiAxLAogICAgImJsb29taGRyc3RyZW5ndGgiOiAwLAogICAgImJsb29taGRydGhy
+            ZXNob2xkIjogMTAwLAogICAgImJsb29tc3RyZW5ndGgiOiAwLAogICAgImJsb29tdGhyZXNob2xk
+            IjogMC42NSwKICAgICJibG9vbXRpbnQiOiAiMSAxIDEiLAogICAgImNhbWVyYXBhcmFsbGF4Ijog
+            ZmFsc2UsCiAgICAiem9vbSI6IDEKICB9LAogICJvYmplY3RzIjogWwogICAgewogICAgICAiaWQi
+            OiA5NDcwOTksCiAgICAgICJuYW1lIjogIm5hdGl2ZSBibGFjayBiYWNrZ3JvdW5kIGNhcHR1cmUg
+            c2VudGluZWwiLAogICAgICAiaW1hZ2UiOiAibW9kZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwK
+            ICAgICAgIm9yaWdpbiI6ICIxMjggNjQgMCIsCiAgICAgICJzaXplIjogIjI1NiAxMjgiLAogICAg
+            ICAic2NhbGUiOiAiMSAxIDEiLAogICAgICAiY29sb3IiOiAiMC4xNSAwLjI1IDAuMzUiLAogICAg
+            ICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEKICAgIH0sCiAgICB7CiAgICAgICJp
+            ZCI6IDk0NzEwMCwKICAgICAgIm5hbWUiOiAicHJvZHVjZXIiLAogICAgICAiaW1hZ2UiOiAibW9k
+            ZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwKICAgICAgIm9yaWdpbiI6ICIxNDQgNTIgMCIsCiAg
+            ICAgICJzaXplIjogIjE2MCA5NiIsCiAgICAgICJzY2FsZSI6ICIxLjIgMC44IDEiLAogICAgICAi
+            Y29sb3IiOiAiMSAxIDEiLAogICAgICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEs
+            CiAgICAgICJhbmdsZXMiOiAiMCAwIDAuMTciLAogICAgICAiZWZmZWN0cyI6IFsKICAgICAgICB7
+            CiAgICAgICAgICAiZmlsZSI6ICJlZmZlY3RzL3BhaXIuanNvbiIsCiAgICAgICAgICAiaWQiOiA5
+            NTAwMDMsCiAgICAgICAgICAibmFtZSI6ICJwYWlyIiwKICAgICAgICAgICJ2aXNpYmxlIjogewog
+            ICAgICAgICAgICAidmFsdWUiOiB0cnVlLAogICAgICAgICAgICAic2NyaXB0IjogImV4cG9ydCBm
+            dW5jdGlvbiB1cGRhdGUodmFsdWUpIHsgcmV0dXJuIChOdW1iZXIoZW5naW5lLnVzZXJQcm9wZXJ0
+            aWVzLnN0YWdlKSAmIDEpID09PSAwOyB9IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgXQog
+            ICAgfQogIF0KfQo=
+            """,
+            "shaders/gradient.frag": """
+            dmFyeWluZyB2ZWMyIHZfVGV4Q29vcmQ7CnZvaWQgbWFpbigpe2dsX0ZyYWdDb2xvcj12ZWM0KHZf
+            VGV4Q29vcmQsMC4yNSwxLjApO30K
+            """,
+            "shaders/gradient.vert": """
+            I2luY2x1ZGUgImNvbW1vbi5oIgp1bmlmb3JtIG1hdDQgZ19Nb2RlbFZpZXdQcm9qZWN0aW9uTWF0
+            cml4OwphdHRyaWJ1dGUgdmVjMyBhX1Bvc2l0aW9uOwphdHRyaWJ1dGUgdmVjMiBhX1RleENvb3Jk
+            Owp2YXJ5aW5nIHZlYzIgdl9UZXhDb29yZDsKdm9pZCBtYWluKCkgewogICAgZ2xfUG9zaXRpb24g
+            PSBtdWwodmVjNChhX1Bvc2l0aW9uLCAxLjApLCBnX01vZGVsVmlld1Byb2plY3Rpb25NYXRyaXgp
+            OwogICAgdl9UZXhDb29yZCA9IGFfVGV4Q29vcmQ7Cn0K
+            """,
+            "shaders/probe-clock.frag": """
+            I2luY2x1ZGUgImNvbW1vbi5oIgp1bmlmb3JtIHNhbXBsZXIyRCBnX1RleHR1cmUwOwp2YXJ5aW5n
+            IHZlYzIgdl9UZXhDb29yZDsKdm9pZCBtYWluKCkgewogICAgdmVjNCBjID0gdGV4U2FtcGxlMkQo
+            Z19UZXh0dXJlMCwgdl9UZXhDb29yZCk7CiAgICBnbF9GcmFnQ29sb3IgPSB2ZWM0KGMuZywgYy5y
+            LCBjLmIsIGMuYSk7Cn0K
+            """,
+            "shaders/probe-clock.vert": """
+            DQovLyBbQ09NQk9dIHsibWF0ZXJpYWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19tb2RlIiwiY29t
+            Ym8iOiJNT0RFIiwidHlwZSI6Im9wdGlvbnMiLCJkZWZhdWx0IjowLCJvcHRpb25zIjp7IlZlcnRl
+            eCI6MSwiVVYiOjB9fQ0KDQojaW5jbHVkZSAiY29tbW9uLmgiDQoNCnVuaWZvcm0gbWF0NCBnX01v
+            ZGVsVmlld1Byb2plY3Rpb25NYXRyaXg7DQoNCnVuaWZvcm0gdmVjMiBnX09mZnNldDsgLy8geyJt
+            YXRlcmlhbCI6Im9mZnNldCIsImxhYmVsIjoidWlfZWRpdG9yX3Byb3BlcnRpZXNfb2Zmc2V0Iiwi
+            ZGVmYXVsdCI6IjAgMCJ9DQp1bmlmb3JtIHZlYzIgZ19TY2FsZTsgLy8geyJtYXRlcmlhbCI6InNj
+            YWxlIiwibGFiZWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19zY2FsZSIsImRlZmF1bHQiOiIxIDEi
+            fQ0KdW5pZm9ybSBmbG9hdCBnX0RpcmVjdGlvbjsgLy8geyJtYXRlcmlhbCI6ImFuZ2xlIiwibGFi
+            ZWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19hbmdsZSIsImRlZmF1bHQiOjAsInJhbmdlIjpbMCw2
+            LjI4XSwiZGlyZWN0aW9uIjp0cnVlLCJjb252ZXJzaW9uIjoicmFkMmRlZyJ9DQoNCmF0dHJpYnV0
+            ZSB2ZWMzIGFfUG9zaXRpb247DQphdHRyaWJ1dGUgdmVjMiBhX1RleENvb3JkOw0KDQp2YXJ5aW5n
+            IHZlYzIgdl9UZXhDb29yZDsNCg0KdmVjMiBhcHBseUZ4KHZlYzIgdikgew0KCXYgPSByb3RhdGVW
+            ZWMyKHYgLSBDQVNUMigwLjUpLCAtZ19EaXJlY3Rpb24pOw0KCXJldHVybiAodiArIGdfT2Zmc2V0
+            KSAqIGdfU2NhbGUgKyBDQVNUMigwLjUpOw0KfQ0KDQp2b2lkIG1haW4oKSB7DQoNCgl2ZWMzIHBv
+            c2l0aW9uID0gYV9Qb3NpdGlvbjsNCiNpZiBNT0RFID09IDENCglwb3NpdGlvbi54eSA9IGFwcGx5
+            RngocG9zaXRpb24ueHkpOw0KI2VuZGlmDQoJZ2xfUG9zaXRpb24gPSBtdWwodmVjNChwb3NpdGlv
+            biwgMS4wKSwgZ19Nb2RlbFZpZXdQcm9qZWN0aW9uTWF0cml4KTsNCgkNCgl2X1RleENvb3JkID0g
+            YV9UZXhDb29yZDsNCgkNCiNpZiBNT0RFID09IDANCgl2X1RleENvb3JkID0gYXBwbHlGeCh2X1Rl
+            eENvb3JkKTsNCiNlbmRpZg0KfQ0K
+            """,
+            "shaders/third.frag": """
+            I2luY2x1ZGUgImNvbW1vbi5oIgp1bmlmb3JtIHNhbXBsZXIyRCBnX1RleHR1cmUwOwp2YXJ5aW5n
+            IHZlYzIgdl9UZXhDb29yZDsKdm9pZCBtYWluKCkgewogICAgdmVjNCBjID0gdGV4U2FtcGxlMkQo
+            Z19UZXh0dXJlMCwgdl9UZXhDb29yZCk7CiAgICBnbF9GcmFnQ29sb3IgPSB2ZWM0KGMuYiwgYy5y
+            LCAwLjEyNSArIDAuNSAqIGMuZywgYy5hKTsKfQo=
+            """,
+            "shaders/third.vert": """
+            DQovLyBbQ09NQk9dIHsibWF0ZXJpYWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19tb2RlIiwiY29t
+            Ym8iOiJNT0RFIiwidHlwZSI6Im9wdGlvbnMiLCJkZWZhdWx0IjowLCJvcHRpb25zIjp7IlZlcnRl
+            eCI6MSwiVVYiOjB9fQ0KDQojaW5jbHVkZSAiY29tbW9uLmgiDQoNCnVuaWZvcm0gbWF0NCBnX01v
+            ZGVsVmlld1Byb2plY3Rpb25NYXRyaXg7DQoNCnVuaWZvcm0gdmVjMiBnX09mZnNldDsgLy8geyJt
+            YXRlcmlhbCI6Im9mZnNldCIsImxhYmVsIjoidWlfZWRpdG9yX3Byb3BlcnRpZXNfb2Zmc2V0Iiwi
+            ZGVmYXVsdCI6IjAgMCJ9DQp1bmlmb3JtIHZlYzIgZ19TY2FsZTsgLy8geyJtYXRlcmlhbCI6InNj
+            YWxlIiwibGFiZWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19zY2FsZSIsImRlZmF1bHQiOiIxIDEi
+            fQ0KdW5pZm9ybSBmbG9hdCBnX0RpcmVjdGlvbjsgLy8geyJtYXRlcmlhbCI6ImFuZ2xlIiwibGFi
+            ZWwiOiJ1aV9lZGl0b3JfcHJvcGVydGllc19hbmdsZSIsImRlZmF1bHQiOjAsInJhbmdlIjpbMCw2
+            LjI4XSwiZGlyZWN0aW9uIjp0cnVlLCJjb252ZXJzaW9uIjoicmFkMmRlZyJ9DQoNCmF0dHJpYnV0
+            ZSB2ZWMzIGFfUG9zaXRpb247DQphdHRyaWJ1dGUgdmVjMiBhX1RleENvb3JkOw0KDQp2YXJ5aW5n
+            IHZlYzIgdl9UZXhDb29yZDsNCg0KdmVjMiBhcHBseUZ4KHZlYzIgdikgew0KCXYgPSByb3RhdGVW
+            ZWMyKHYgLSBDQVNUMigwLjUpLCAtZ19EaXJlY3Rpb24pOw0KCXJldHVybiAodiArIGdfT2Zmc2V0
+            KSAqIGdfU2NhbGUgKyBDQVNUMigwLjUpOw0KfQ0KDQp2b2lkIG1haW4oKSB7DQoNCgl2ZWMzIHBv
+            c2l0aW9uID0gYV9Qb3NpdGlvbjsNCiNpZiBNT0RFID09IDENCglwb3NpdGlvbi54eSA9IGFwcGx5
+            RngocG9zaXRpb24ueHkpOw0KI2VuZGlmDQoJZ2xfUG9zaXRpb24gPSBtdWwodmVjNChwb3NpdGlv
+            biwgMS4wKSwgZ19Nb2RlbFZpZXdQcm9qZWN0aW9uTWF0cml4KTsNCgkNCgl2X1RleENvb3JkID0g
+            YV9UZXhDb29yZDsNCgkNCiNpZiBNT0RFID09IDANCgl2X1RleENvb3JkID0gYXBwbHlGeCh2X1Rl
+            eENvb3JkKTsNCiNlbmRpZg0KfQ0K
+            """,
+        ]
+        if sceneID == "9200544" {
+            let overrides: [String: String] = [
+                "scene.json": """
+                ewogICJjYW1lcmEiOiB7CiAgICAiZXllIjogIjAgMCAwIiwKICAgICJjZW50ZXIiOiAiMCAwIC0x
+                IiwKICAgICJ1cCI6ICIwIDEgMCIKICB9LAogICJnZW5lcmFsIjogewogICAgIm9ydGhvZ29uYWxw
+                cm9qZWN0aW9uIjogewogICAgICAid2lkdGgiOiAyNTYsCiAgICAgICJoZWlnaHQiOiAxMjgKICAg
+                IH0sCiAgICAiY2xlYXJjb2xvciI6ICIwLjE1IDAuMjUgMC4zNSIsCiAgICAiY2xlYXJlbmFibGVk
+                IjogdHJ1ZSwKICAgICJoZHIiOiBmYWxzZSwKICAgICJibG9vbSI6IGZhbHNlLAogICAgImJsb29t
+                aGRyZmVhdGhlciI6IDEsCiAgICAiYmxvb21oZHJpdGVyYXRpb25zIjogNCwKICAgICJibG9vbWhk
+                cnNjYXR0ZXIiOiAxLAogICAgImJsb29taGRyc3RyZW5ndGgiOiAwLAogICAgImJsb29taGRydGhy
+                ZXNob2xkIjogMTAwLAogICAgImJsb29tc3RyZW5ndGgiOiAwLAogICAgImJsb29tdGhyZXNob2xk
+                IjogMC42NSwKICAgICJibG9vbXRpbnQiOiAiMSAxIDEiLAogICAgImNhbWVyYXBhcmFsbGF4Ijog
+                ZmFsc2UsCiAgICAiem9vbSI6IDEKICB9LAogICJvYmplY3RzIjogWwogICAgewogICAgICAiaWQi
+                OiA5NDcwOTksCiAgICAgICJuYW1lIjogIm5hdGl2ZSBibGFjayBiYWNrZ3JvdW5kIGNhcHR1cmUg
+                c2VudGluZWwiLAogICAgICAiaW1hZ2UiOiAibW9kZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwK
+                ICAgICAgIm9yaWdpbiI6ICIxMjggNjQgMCIsCiAgICAgICJzaXplIjogIjI1NiAxMjgiLAogICAg
+                ICAic2NhbGUiOiAiMSAxIDEiLAogICAgICAiY29sb3IiOiAiMC4xNSAwLjI1IDAuMzUiLAogICAg
+                ICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEKICAgIH0sCiAgICB7CiAgICAgICJp
+                ZCI6IDk0NzEwMCwKICAgICAgIm5hbWUiOiAicHJvZHVjZXIiLAogICAgICAiaW1hZ2UiOiAibW9k
+                ZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwKICAgICAgIm9yaWdpbiI6ICIxNDQgNTIgMCIsCiAg
+                ICAgICJzaXplIjogIjE2MCA5NiIsCiAgICAgICJzY2FsZSI6ICIxLjIgMC44IDEiLAogICAgICAi
+                Y29sb3IiOiAiMSAxIDEiLAogICAgICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEs
+                CiAgICAgICJhbmdsZXMiOiAiMCAwIDAuMTciLAogICAgICAiZWZmZWN0cyI6IFsKICAgICAgICB7
+                CiAgICAgICAgICAiZmlsZSI6ICJlZmZlY3RzL3BhaXIuanNvbiIsCiAgICAgICAgICAiaWQiOiA5
+                NTAwMDMsCiAgICAgICAgICAibmFtZSI6ICJwYWlyIiwKICAgICAgICAgICJ2aXNpYmxlIjogewog
+                ICAgICAgICAgICAidmFsdWUiOiB0cnVlLAogICAgICAgICAgICAic2NyaXB0IjogImV4cG9ydCBm
+                dW5jdGlvbiB1cGRhdGUodmFsdWUpIHsgcmV0dXJuIChOdW1iZXIoZW5naW5lLnVzZXJQcm9wZXJ0
+                aWVzLnN0YWdlKSAmIDEpID09PSAwOyB9IgogICAgICAgICAgfQogICAgICAgIH0sCiAgICAgICAg
+                ewogICAgICAgICAgImZpbGUiOiAiZWZmZWN0cy90aGlyZC5qc29uIiwKICAgICAgICAgICJpZCI6
+                IDk1MDAwNCwKICAgICAgICAgICJuYW1lIjogInRlcm1pbmFsIHRoaXJkIgogICAgICAgIH0KICAg
+                ICAgXQogICAgfQogIF0KfQo=
+                """,
+            ]
+            encoded.merge(overrides) { _, value in value }
+        }
+        if sceneID == "9200545" {
+            let overrides: [String: String] = [
+                "effects/pair.json": """
+                ewogICJ2ZXJzaW9uIjogMSwKICAibmFtZSI6ICJwYWlyIiwKICAicGFzc2VzIjogWwogICAgewog
+                ICAgICAibWF0ZXJpYWwiOiAibWF0ZXJpYWxzL2dyYWRpZW50Lmpzb24iLAogICAgICAidGFyZ2V0
+                IjogIl9ydF9CMHNjcmF0Y2giCiAgICB9LAogICAgewogICAgICAibWF0ZXJpYWwiOiAibWF0ZXJp
+                YWxzL3Byb2JlLmpzb24iLAogICAgICAiYmluZCI6IFsKICAgICAgICB7CiAgICAgICAgICAiaW5k
+                ZXgiOiAwLAogICAgICAgICAgIm5hbWUiOiAiX3J0X0Iwc2NyYXRjaCIKICAgICAgICB9CiAgICAg
+                IF0KICAgIH0KICBdLAogICJmYm9zIjogWwogICAgewogICAgICAibmFtZSI6ICJfcnRfQjBzY3Jh
+                dGNoIiwKICAgICAgInNjYWxlIjogMSwKICAgICAgImZvcm1hdCI6ICJyZ2JhODg4OCIsCiAgICAg
+                ICJjbGVhciI6ICIwIDAgMCAwIiwKICAgICAgInVuaXF1ZSI6IHRydWUKICAgIH0KICBdCn0K
+                """,
+                "scene.json": """
+                ewogICJjYW1lcmEiOiB7CiAgICAiZXllIjogIjAgMCAwIiwKICAgICJjZW50ZXIiOiAiMCAwIC0x
+                IiwKICAgICJ1cCI6ICIwIDEgMCIKICB9LAogICJnZW5lcmFsIjogewogICAgIm9ydGhvZ29uYWxw
+                cm9qZWN0aW9uIjogewogICAgICAid2lkdGgiOiAyNTYsCiAgICAgICJoZWlnaHQiOiAxMjgKICAg
+                IH0sCiAgICAiY2xlYXJjb2xvciI6ICIwLjE1IDAuMjUgMC4zNSIsCiAgICAiY2xlYXJlbmFibGVk
+                IjogdHJ1ZSwKICAgICJoZHIiOiBmYWxzZSwKICAgICJibG9vbSI6IGZhbHNlLAogICAgImJsb29t
+                aGRyZmVhdGhlciI6IDEsCiAgICAiYmxvb21oZHJpdGVyYXRpb25zIjogNCwKICAgICJibG9vbWhk
+                cnNjYXR0ZXIiOiAxLAogICAgImJsb29taGRyc3RyZW5ndGgiOiAwLAogICAgImJsb29taGRydGhy
+                ZXNob2xkIjogMTAwLAogICAgImJsb29tc3RyZW5ndGgiOiAwLAogICAgImJsb29tdGhyZXNob2xk
+                IjogMC42NSwKICAgICJibG9vbXRpbnQiOiAiMSAxIDEiLAogICAgImNhbWVyYXBhcmFsbGF4Ijog
+                ZmFsc2UsCiAgICAiem9vbSI6IDEKICB9LAogICJvYmplY3RzIjogWwogICAgewogICAgICAiaWQi
+                OiA5NDcwOTksCiAgICAgICJuYW1lIjogIm5hdGl2ZSBibGFjayBiYWNrZ3JvdW5kIGNhcHR1cmUg
+                c2VudGluZWwiLAogICAgICAiaW1hZ2UiOiAibW9kZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwK
+                ICAgICAgIm9yaWdpbiI6ICIxMjggNjQgMCIsCiAgICAgICJzaXplIjogIjI1NiAxMjgiLAogICAg
+                ICAic2NhbGUiOiAiMSAxIDEiLAogICAgICAiY29sb3IiOiAiMC4xNSAwLjI1IDAuMzUiLAogICAg
+                ICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEKICAgIH0sCiAgICB7CiAgICAgICJp
+                ZCI6IDk0NzEwMCwKICAgICAgIm5hbWUiOiAicHJvZHVjZXIiLAogICAgICAiaW1hZ2UiOiAibW9k
+                ZWxzL3V0aWwvc29saWRsYXllci5qc29uIiwKICAgICAgIm9yaWdpbiI6ICIxNDQgNTIgMCIsCiAg
+                ICAgICJzaXplIjogIjE2MCA5NiIsCiAgICAgICJzY2FsZSI6ICIxLjIgMC44IDEiLAogICAgICAi
+                Y29sb3IiOiAiMSAxIDEiLAogICAgICAiYWxwaGEiOiAxLAogICAgICAiYnJpZ2h0bmVzcyI6IDEs
+                CiAgICAgICJhbmdsZXMiOiAiMCAwIDAuMTciLAogICAgICAiZWZmZWN0cyI6IFsKICAgICAgICB7
+                CiAgICAgICAgICAiZmlsZSI6ICJlZmZlY3RzL3BhaXIuanNvbiIsCiAgICAgICAgICAiaWQiOiA5
+                NTAwMDMsCiAgICAgICAgICAibmFtZSI6ICJwYWlyIiwKICAgICAgICAgICJ2aXNpYmxlIjogewog
+                ICAgICAgICAgICAidmFsdWUiOiB0cnVlLAogICAgICAgICAgICAic2NyaXB0IjogImV4cG9ydCBm
+                dW5jdGlvbiB1cGRhdGUodmFsdWUpIHsgcmV0dXJuIChOdW1iZXIoZW5naW5lLnVzZXJQcm9wZXJ0
+                aWVzLnN0YWdlKSAmIDEpID09PSAwOyB9IgogICAgICAgICAgfQogICAgICAgIH0sCiAgICAgICAg
+                ewogICAgICAgICAgImZpbGUiOiAiZWZmZWN0cy90aGlyZC5qc29uIiwKICAgICAgICAgICJpZCI6
+                IDk1MDAwNCwKICAgICAgICAgICJuYW1lIjogInRlcm1pbmFsIHRoaXJkIgogICAgICAgIH0KICAg
+                ICAgXQogICAgfQogIF0KfQo=
+                """,
+            ]
+            encoded.merge(overrides) { _, value in value }
+        }
+        let data = try encoded.mapValues { try #require(Data(base64Encoded: $0, options: .ignoreUnknownCharacters)) }
+        return try makeFixture(dataFiles: data)
+    }
+
     @Test("Independent effect publication preserves canonical gates and reconnects every active subset",
           arguments: [false, true], [2, 3])
     func independentEffectPublication(reverse: Bool, count: Int) throws {

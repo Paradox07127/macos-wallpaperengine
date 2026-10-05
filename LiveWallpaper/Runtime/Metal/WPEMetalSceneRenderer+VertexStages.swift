@@ -55,7 +55,7 @@ extension WPEMetalRenderExecutor {
     static func authoredVertexExecution(
         for pass: WPEPreparedRenderPass, layer: WPERenderLayer, camera: WPEMetalCameraUniforms
     ) -> WPEVertexExecution {
-        if case .scene = pass.pass.target,
+        if pass.publicationVertexRole != .localEffect, case .scene = pass.pass.target,
            layer.geometry != .identity, canSupplyAuthoredObjectQuad(layer: layer, camera: camera) {
             return .authoredObjectQuad
         }
@@ -87,15 +87,15 @@ extension WPEMetalRenderExecutor {
         return Set(pipeline.layers.compactMap { layer -> String? in
             let publicationPasses = layer.effectPublicationPrewarmPasses(camera: camera)
             guard let descriptor = layer.effectPublication,
-                  publicationPasses.count == descriptor.effects.count * 4 + (descriptor.scope == .nativeSolidChain ? 2 : 0),
-                  !descriptor.effects.isEmpty else { return nil }
+                  !descriptor.effects.isEmpty,
+                  Set(publicationPasses.filter { $0.shader?.isBuiltin == false }.map(\.id)) == Set(descriptor.effects.map(\.passID)) else { return nil }
             let variants = Self.authoredPrewarmVariants(for: layer, camera: camera)
             let required = variants.suffix(publicationPasses.count)
             let native = descriptor.scope == .nativeSolidChain ? required.filter {
                 $0.pass.shader?.isBuiltin == true && WPEBuiltinShaderKind(normalizing: $0.pass.pass.shader) == .solidLayer
                     && $0.pass.renderContract.shaderAlpha.premultipliedOutput == false
             } : []
-            guard native.count == (descriptor.scope == .nativeSolidChain ? 2 : 0) else { return nil }
+            guard native.count == publicationPasses.filter({ $0.shader?.isBuiltin == true }).count else { return nil }
             guard native.allSatisfy({ variant in
                 let pass = variant.pass
                 let targetFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(target: pass.pass.target,
@@ -117,10 +117,13 @@ extension WPEMetalRenderExecutor {
                 return hasPrewarmedAuthoredPipeline(for: result, pass: pass, targetID: WPEMetalTargetID(target: pass.pass.target),
                                                     colorPixelFormat: targetFormat, depthPixelFormat: depthFormat)
             }) else { return nil }
-            let localEffectIDs = descriptor.scope == .nativeSolidChain ? Set(descriptor.effects.dropLast().map(\.passID)) : []
+            let terminalOnlyID = descriptor.groups.last?.last(where: { identity in
+                layer.passes.first(where: { $0.id == identity.passID })?.pass.authoredJSON.effectPass?["target"] == nil
+            })?.passID
             guard required
                 .filter({ $0.pass.shader?.isBuiltin == false }).allSatisfy({ variant in
-                    let needsLocalExecution = localEffectIDs.contains(variant.pass.id)
+                    let needsLocalExecution = variant.pass.publicationVertexRole == .localEffect
+                        && variant.pass.id != terminalOnlyID
                     guard variant.vertexExecution == .authoredObjectQuad || needsLocalExecution else { return true }
                     guard let identity = Self.authoredShaderRequestIdentity(for: variant.pass, execution: variant.vertexExecution),
                           let key = authoredRequestKeyByIdentity[identity], let result = translatedShaderCache[key],
