@@ -1261,3 +1261,87 @@ struct WPESceneScriptTimerContainmentTests {
         #expect(freshToken.failureReason == nil)
     }
 }
+
+#if !LITE_BUILD
+    import LiveWallpaperCore
+    import LiveWallpaperProWPE
+
+    extension WPESceneScriptContainmentCharacterizationTests {
+        private static func lightHostScene(lightOrigin: [String: Any]) -> [String: Any] {
+            [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 64, "height": 64, "auto": true]],
+                "objects": [
+                    ["id": 7, "name": "Lamp", "light": "lpoint", "color": "1 1 1", "origin": lightOrigin],
+                    [
+                        "id": 8,
+                        "name": "Child",
+                        "type": "image",
+                        "image": "models/util/solidlayer.json",
+                        "parent": 7,
+                        "color": "0 0 1",
+                        "alpha": 1,
+                        "visible": true,
+                    ],
+                ],
+            ]
+        }
+
+        @MainActor
+        @Test("A keyframed light that parents a layer keeps its origin animation and frame demand")
+        func animatedLightHostKeepsOriginAnimation() async throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("light-host-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let scene = try JSONSerialization.data(withJSONObject: Self.lightHostScene(lightOrigin: [
+                "value": "0 0 0",
+                "animation": [
+                    "c0": [["frame": 0, "value": 0], ["frame": 30, "value": 32]],
+                    "c1": [["frame": 0, "value": 0], ["frame": 30, "value": 16]],
+                    "c2": [["frame": 0, "value": 0], ["frame": 30, "value": 0]],
+                    "options": ["fps": 30, "length": 30, "mode": "loop", "wraploop": true],
+                ],
+            ]), options: [.sortedKeys])
+            try scene.write(to: root.appendingPathComponent("scene.json"))
+            let project = try JSONSerialization.data(withJSONObject: [
+                "workshopid": "light-host-fixture",
+                "type": "scene",
+                "file": "scene.json",
+            ], options: [.sortedKeys])
+            try project.write(to: root.appendingPathComponent("project.json"))
+            let fixture = FrameDemandFixture(
+                root: root,
+                descriptor: SceneDescriptor(
+                    workshopID: "light-host-fixture",
+                    cacheRelativePath: "wpe-cache/light-host-fixture",
+                    entryFile: "scene.json",
+                    capabilityTier: .imageOnly
+                )
+            )
+            defer { fixture.cleanup() }
+            let stack = try FrameDemandRendererStack.make(fixture)
+            let renderer = stack.renderer
+            defer { renderer.cleanup() }
+            try await stack.load()
+
+            #expect(renderer.dynamicOriginAnimations["7"] != nil, "the light's keyframes must move its children")
+            #expect(renderer.frameDemand.contains(.animations))
+        }
+
+        @Test("A light's script-resolved origin survives the ancestor-transform merge")
+        func lightAncestorKeepsScriptResolvedOrigin() throws {
+            let data = try JSONSerialization.data(withJSONObject: Self.lightHostScene(lightOrigin: [
+                "value": "1 2 0",
+                "script": "export function update(value) { value.x = 40; value.y = 50; return value; }",
+            ]))
+            let document = try WPESceneDocumentParser.parse(data: data)
+            let host = try #require(document.transformHostObjects.first { $0.id == "7" })
+            let light = try #require(document.lightObjects.first { $0.id == "7" })
+            #expect(host.localOrigin == SIMD3<Double>(40, 50, 0))
+            #expect(light.localOrigin != host.localOrigin, "fixture must keep the light's baked origin distinct")
+
+            let transforms = WPEMetalSceneRenderer.ancestorLocalTransforms(in: document)
+            #expect(transforms["7"]?.origin == host.localOrigin)
+        }
+    }
+#endif

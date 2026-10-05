@@ -123,7 +123,7 @@ extension WPEMetalSceneRenderer {
         dynamicOriginAnimations = Dictionary(
             document.imageObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
                 object.originAnimation.map { (object.id, $0) }
-            } + nonLightHosts.compactMap { object -> (String, WPESceneAnimatedValue)? in
+            } + document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
                 guard object.id != cameraMotionPlayback?.definition.objectID else { return nil }
                 return object.originAnimation.map { (object.id, $0) }
             },
@@ -401,7 +401,8 @@ extension WPEMetalSceneRenderer {
             uniquingKeysWith: { first, _ in first }
         )
         result.merge(transformHostLocalTransforms(in: document)) { _, host in host }
-        for object in document.lightObjects {
+        // A light's host entry carries the script-resolved origin; its own localOrigin is the baked seed.
+        for object in document.lightObjects where result[object.id] == nil {
             result[object.id] = WPERenderObjectTransform(
                 origin: object.localOrigin, scale: object.localScale, angles: object.localAngles
             )
