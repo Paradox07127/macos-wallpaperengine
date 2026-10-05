@@ -14,6 +14,7 @@ struct WPEProjectCustomSettingsCard: View {
     @AppStorage("Inspector.WPEProjectCustomSettingsExpanded") private var isExpanded = true
     @AppStorage("Web.Interaction.Acknowledged") private var webInteractionAcknowledged = false
     @State private var pendingEnable = false
+    @State private var translator = WPEPropertyLabelTranslator()
 
     var body: some View {
         GroupBox {
@@ -30,6 +31,9 @@ struct WPEProjectCustomSettingsCard: View {
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
+        .wpePropertyLabelTranslation(translator)
+        .onAppear { translator.enqueue(schema: schema) }
+        .onChange(of: schema) { _, next in translator.enqueue(schema: next) }
         .alert("Enable Wallpaper Interaction?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
@@ -114,23 +118,26 @@ struct WPEProjectCustomSettingsCard: View {
         for property: WallpaperEngineProjectPropertySchema.Property,
         values: [String: WallpaperEngineProjectPropertyValue]
     ) -> some View {
+        let title = translator.displayText(for: property.displayText)
+        let titleHelp = translator.helpText(for: property.displayText)
         switch property.type {
         case .bool:
-            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
                 Toggle("", isOn: boolBinding(for: property))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .slider:
-            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
                 CoalescedSlider(
                     value: numberBinding(for: property).wrappedValue,
                     in: ValueLogic.sliderRange(for: property),
                     quantizationStep: ValueLogic.sliderStep(for: property),
                     owner: [AnyHashable(screen.id), AnyHashable(projectKey ?? "")],
-                    accessibilityLabel: Text(verbatim: property.displayText),
+                    accessibilityLabel: Text(verbatim: title),
                     accessibilityValue: { Text(verbatim: ValueLogic.formattedNumber($0, for: property)) },
                     write: { numberBinding(for: property).wrappedValue = $0 },
                     readout: { live in
@@ -141,10 +148,11 @@ struct WPEProjectCustomSettingsCard: View {
                     }
                 )
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
             let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
-            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
                 if property.options.isEmpty {
                     Text(verbatim: currentValue.stringValue)
                         .font(DesignTokens.Typography.code)
@@ -156,7 +164,7 @@ struct WPEProjectCustomSettingsCard: View {
                                 .tag(currentValue)
                         }
                         ForEach(property.options) { option in
-                            Text(verbatim: option.displayLabel)
+                            Text(verbatim: translator.displayText(for: option.displayLabel))
                                 .tag(option.value)
                         }
                     }
@@ -169,29 +177,32 @@ struct WPEProjectCustomSettingsCard: View {
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)
                     .layoutPriority(1)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
                 }
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .color:
-            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
                 ColorPicker("", selection: colorBinding(for: property), supportsOpacity: false)
                     .labelsHidden()
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .textinput:
-            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
                 TextField("", text: stringBinding(for: property))
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 132)
                     .controlSize(.small)
-                    .accessibilityLabel(property.displayText)
+                    .accessibilityLabel(title)
             }
+            .wpeAuthorLabelHelp(titleHelp)
         case .file, .directory, .sceneTexture, .userShortcut:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: .secondary,
-                verbatimTitle: property.displayText,
+                verbatimTitle: title,
                 subtitle: property.type == .userShortcut
                     ? "Disabled for security"
                     : "Not supported on macOS yet"
@@ -200,10 +211,13 @@ struct WPEProjectCustomSettingsCard: View {
             }
             .disabled(true)
             .opacity(DesignTokens.Opacity.disabledContent)
+            .wpeAuthorLabelHelp(titleHelp)
         case .group:
-            WPEProjectTextBlock(text: property.displayText, isHeader: true)
+            WPEProjectTextBlock(text: title, isHeader: true)
+                .wpeAuthorLabelHelp(titleHelp)
         case .text:
-            WPEProjectTextBlock(text: property.displayText, isHeader: false)
+            WPEProjectTextBlock(text: title, isHeader: false)
+                .wpeAuthorLabelHelp(titleHelp)
         case .unsupported:
             EmptyView()
         }

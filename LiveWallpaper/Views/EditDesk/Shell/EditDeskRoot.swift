@@ -61,6 +61,7 @@ struct EditDeskRoot: View {
             .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)
             .onAppear { prepareWindowState() }
             #if !LITE_BUILD
+            .wpePropertyLabelTranslation(WPEPropertyLabelTranslator.wallpaperNames)
             .modifier(RouterNotifications(router: router, screenManager: screenManager, workshopSession: workshopSession))
             #else
             .modifier(RouterNotifications(router: router, screenManager: screenManager))

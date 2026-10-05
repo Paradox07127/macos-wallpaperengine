@@ -77,10 +77,12 @@ struct PasteRowCard: View {
     @ViewBuilder
     private var header: some View {
         HStack(spacing: 8) {
-            Text(verbatim: titleText)
+            Text(verbatim: titleText.translatedWallpaperName)
                 .font(DesignTokens.Typography.sectionTitle)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .help(Text(verbatim: titleText))
+                .wpeTranslateWallpaperName(titleText)
             statusBadge
         }
     }

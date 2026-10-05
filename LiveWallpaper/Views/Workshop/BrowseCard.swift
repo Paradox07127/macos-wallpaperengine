@@ -83,6 +83,7 @@ struct BrowseCard: View, Equatable {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
         .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
+        .wpeTranslateWallpaperName(item.title)
         .contextMenu { contextMenuItems }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityLabelText))
@@ -189,7 +190,7 @@ struct BrowseCard: View, Equatable {
     private var editDeskInfoBand: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
             // One line at rest; hover opens a second and scrolls whatever still overflows.
-            MarqueeText(item.title, lineLimit: isHovered ? 2 : 1, isActive: isHovered)
+            MarqueeText(item.title.translatedWallpaperName, lineLimit: isHovered ? 2 : 1, isActive: isHovered)
                 .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
             if subscriberText != nil || formattedSize != nil {
@@ -362,7 +363,7 @@ struct BrowseCard: View, Equatable {
     }
 
     var accessibilityLabelText: String {
-        var parts: [String] = [item.title]
+        var parts: [String] = [item.title.translatedWallpaperName]
         if let type = item.tags.first(where: { ["scene", "video", "web", "preset"].contains($0.lowercased()) }) {
             parts.append(WorkshopTagLocalization.displayName(type))
         }
