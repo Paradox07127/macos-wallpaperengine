@@ -180,7 +180,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 }

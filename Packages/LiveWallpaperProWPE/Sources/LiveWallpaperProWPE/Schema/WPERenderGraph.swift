@@ -91,6 +91,8 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     /// material differs from `materialPath`; absent meshes draw with the material pass bindings.
     public let meshMaterialTextures: [Int: [Int: WPETextureReference]]
     public let meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]]
+    /// Authored (pre-premultiplied-mapping) blending of the same meshes; absent meshes use the layer pass.
+    public let meshMaterialBlending: [Int: String]
     /// Derived from `imagePath` in `init`, not an init parameter — copies cannot drop it.
     public let utilityModelKind: WPEUtilityModelKind?
 
@@ -119,7 +121,8 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         parallaxDepth: SIMD2<Double> = SIMD2<Double>(0, 0),
         sortIndex: Int = 0,
         meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:],
-        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:]
+        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:],
+        meshMaterialBlending: [Int: String] = [:]
     ) {
         self.objectID = objectID
         self.objectName = objectName
@@ -146,6 +149,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.sortIndex = sortIndex
         self.meshMaterialTextures = meshMaterialTextures
         self.meshMaterialConstants = meshMaterialConstants
+        self.meshMaterialBlending = meshMaterialBlending
         utilityModelKind = WPEUtilityModelKind.classify(imagePath)
     }
 

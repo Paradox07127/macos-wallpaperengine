@@ -1108,7 +1108,8 @@ struct WPERenderGraphBuilder: Sendable {
             parallaxDepth: object.parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: model.meshMaterialTextures,
-            meshMaterialConstants: model.meshMaterialConstants
+            meshMaterialConstants: model.meshMaterialConstants,
+            meshMaterialBlending: model.meshMaterialBlending
         )
     }
 
@@ -1297,14 +1298,15 @@ struct WPERenderGraphBuilder: Sendable {
                 .map(loadPuppetClipMaskNames(path:)) ?? []
             let meshMaterials = explicitMaterial == nil
                 ? meshMaterialInputs(of: model, layerMaterial: material)
-                : (textures: [:], constants: [:])
+                : (textures: [:], constants: [:], blending: [:])
             return WPEModelDescriptor(
                 materialPath: material,
                 puppetPath: object.imageRelativePath,
                 rendersAsSceneModel: true,
                 puppetClipMaskNames: clipMaskNames,
                 meshMaterialTextures: meshMaterials.textures,
-                meshMaterialConstants: meshMaterials.constants
+                meshMaterialConstants: meshMaterials.constants,
+                meshMaterialBlending: meshMaterials.blending
             )
         }
         guard extensionName == "json" else {
@@ -1340,18 +1342,24 @@ struct WPERenderGraphBuilder: Sendable {
     private func meshMaterialInputs(
         of model: WPEPuppetModel,
         layerMaterial: String
-    ) -> (textures: [Int: [Int: WPETextureReference]], constants: [Int: [String: WPESceneShaderConstantValue]]) {
+    ) -> (
+        textures: [Int: [Int: WPETextureReference]],
+        constants: [Int: [String: WPESceneShaderConstantValue]],
+        blending: [Int: String]
+    ) {
         var textures: [Int: [Int: WPETextureReference]] = [:]
         var constants: [Int: [String: WPESceneShaderConstantValue]] = [:]
+        var blending: [Int: String] = [:]
         for (meshIndex, mesh) in model.meshes.enumerated()
             where !mesh.materialPath.isEmpty && mesh.materialPath != layerMaterial {
             // An unreadable submesh material leaves that mesh drawing with the layer material.
             guard let pass = (try? loadMaterial(path: mesh.materialPath))?.passes.first else { continue }
             textures[meshIndex] = pass.textures
             constants[meshIndex] = pass.constants
+            blending[meshIndex] = pass.blending
         }
-        assert(Set(textures.keys) == Set(constants.keys))
-        return (textures, constants)
+        assert(Set(textures.keys) == Set(constants.keys) && Set(textures.keys) == Set(blending.keys))
+        return (textures, constants, blending)
     }
 
     private static func parseModelCropOffset(_ raw: Any?) -> SIMD2<Double>? {
@@ -2456,6 +2464,7 @@ private struct WPEModelDescriptor {
     let sourceJSON: WPESceneJSONValue?
     let meshMaterialTextures: [Int: [Int: WPETextureReference]]
     let meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]]
+    let meshMaterialBlending: [Int: String]
     var requiresFinalSceneComposite: Bool { puppetPath != nil && !rendersAsSceneModel }
 
     init(
@@ -2467,7 +2476,8 @@ private struct WPEModelDescriptor {
         puppetClipMaskNames: [String] = [],
         sourceJSON: WPESceneJSONValue? = nil,
         meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:],
-        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:]
+        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:],
+        meshMaterialBlending: [Int: String] = [:]
     ) {
         self.materialPath = materialPath
         self.puppetPath = puppetPath
@@ -2478,6 +2488,7 @@ private struct WPEModelDescriptor {
         self.sourceJSON = sourceJSON
         self.meshMaterialTextures = meshMaterialTextures
         self.meshMaterialConstants = meshMaterialConstants
+        self.meshMaterialBlending = meshMaterialBlending
     }
 }
 
@@ -2555,7 +2566,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -2588,7 +2600,8 @@ extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -2621,7 +2634,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -2651,7 +2665,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -2699,7 +2714,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -2729,7 +2745,8 @@ private extension WPERenderLayer {
             parallaxDepth: depth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 }

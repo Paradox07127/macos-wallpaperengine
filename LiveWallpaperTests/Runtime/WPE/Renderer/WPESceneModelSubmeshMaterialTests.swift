@@ -36,6 +36,21 @@ struct WPESceneModelSubmeshMaterialGraphTests {
         #expect(layer.meshMaterialTextures.isEmpty)
     }
 
+    @Test("Each submesh carries its own authored blending, defaulting to normal")
+    func submeshesCarryTheirOwnBlending() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeMaterial("materials/mat0.json", texture: "red", blending: "disabled", root: root)
+        try writeMaterial("materials/mat1.json", texture: "green", blending: "translucent", root: root)
+        try writeMaterial("materials/mat2.json", texture: "red", root: root)
+        try writeModel(materials: ["materials/mat0.json", "materials/mat1.json", "materials/mat2.json"], root: root)
+
+        let layer = try buildLayer(root: root)
+
+        #expect(layer.meshMaterialBlending == [1: "translucent", 2: "normal"])
+        #expect(Set(layer.meshMaterialBlending.keys) == Set(layer.meshMaterialConstants.keys))
+    }
+
     private func makeRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESceneModelSubmeshMaterialTests-\(UUID().uuidString)", isDirectory: true)
@@ -44,8 +59,10 @@ struct WPESceneModelSubmeshMaterialGraphTests {
         return root
     }
 
-    private func writeMaterial(_ path: String, texture: String, root: URL) throws {
-        let json: [String: Any] = ["passes": [["shader": "generic4", "textures": [texture]]]]
+    private func writeMaterial(_ path: String, texture: String, blending: String? = nil, root: URL) throws {
+        var pass: [String: Any] = ["shader": "generic4", "textures": [texture]]
+        pass["blending"] = blending
+        let json: [String: Any] = ["passes": [pass]]
         try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent(path))
     }
 
@@ -95,6 +112,82 @@ struct WPESceneModelSubmeshMaterialRenderTests {
           arguments: ["generic2", "chroma4", "genericimage2"])
     func modelDisabledKeepsAuthoredColor(shader: String) throws {
         try renderSubmeshes(shader: shader, componentMapOnFirstMesh: nil, opaquePaddingColor: true)
+    }
+
+    @Test("A translucent submesh composites source-over beside an opaque-class layer material",
+          arguments: ["normal", "disabled", "premultiplieddisabled"])
+    func translucentSubmeshBlendsOverBackground(layerBlending: String) throws {
+        let fringe: [UInt8] = [192, 128, 64]
+        let row = try renderBuiltModel(
+            materials: [
+                ["shader": "genericimage2", "textures": ["background"], "blending": layerBlending],
+                ["shader": "genericimage2", "textures": ["fringe"], "blending": "translucent"],
+            ],
+            meshSpans: [(-12, 12), (0, 12)],
+            textures: ["background": [[32, 64, 160, 255]],
+                       "fringe": [fringe + [0], fringe + [0], fringe + [128], fringe + [128]]]
+        )
+        let alpha = 128.0 / 255.0
+        let background = [32.0, 64.0, 160.0]
+        let over = (0 ..< 3).map { Double(fringe[$0]) * alpha + background[$0] * (1 - alpha) }
+        for channel in 0 ..< 3 {
+            #expect(abs(Double(row[15][channel]) - background[channel]) <= 3,
+                    "\(layerBlending): translucent A0 texel must leave the background: \(row[15])")
+            #expect(abs(Double(row[21][channel]) - over[channel]) <= 3,
+                    "\(layerBlending): translucent A128 texel must composite source-over \(over): \(row[21])")
+            #expect(abs(Double(row[4][channel]) - background[channel]) <= 3,
+                    "\(layerBlending): layer-material mesh must cover the canvas: \(row[4])")
+        }
+    }
+
+    @Test("genericimage2 submesh rebuilds image uniforms from its own constants, fallback restores the layer's")
+    func genericImageSubmeshUsesItsOwnConstants() throws {
+        let row = try renderBuiltModel(
+            materials: [
+                ["shader": "genericimage2", "textures": ["gray"], "blending": "disabled"],
+                ["shader": "genericimage2", "textures": ["gray"], "blending": "disabled", "constantshadervalues": ["color": "0.5 0.5 0.5"]],
+            ],
+            meshMaterialIndices: [0, 1, 0],
+            materialUniformNames: ["color": "g_Color"],
+            meshSpans: [(-12, -4), (-4, 4), (4, 12)],
+            textures: ["gray": [[200, 200, 200, 255]]]
+        )
+        for (actual, expected) in zip([row[4], row[12], row[20]], [200, 100, 200]) {
+            #expect(abs(Int(actual.x) - expected) <= 2, "regions (left, middle, right) = \([row[4], row[12], row[20]])")
+        }
+    }
+
+    @Test("Scene-model PMA primary input unpremultiplies only when every drawable submesh samples it",
+          arguments: [false, true])
+    func modelInputConversionFollowsSubmeshAlbedo(submeshOwnsAlbedo: Bool) throws {
+        let source = WPETextureReference.fbo("producer")
+        let pass = WPERenderPass(
+            id: "multi.material", phase: .material, shader: "generic4", source: source,
+            target: .scene, textures: [:], binds: [:], constants: [:], combos: [:],
+            blending: "premultiplied", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let declared = WPEPassRenderContract.resolve(
+            pass: pass, shader: nil, bindings: [:], alphaOverride: nil,
+            inputDeclarations: [0: WPEPassInputContract(reference: source, semantics: .premultipliedColor, origin: .producer)]
+        )
+        let prepared = WPEPreparedRenderPass(
+            pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:], renderContract: declared
+        )
+        try #require(prepared.renderContract.inputs[0]?.semantics.alpha == .premultiplied)
+        let geometry = WPERenderLayerGeometry(
+            origin: .zero, scale: SIMD3<Double>(1, 1, 1), angles: .zero, alignment: .center,
+            size: CGSize(width: 24, height: 8), alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
+        )
+        // Mesh 2 is not drawable, so its own albedo must not gate the conversion.
+        let layer = WPERenderLayer(
+            objectID: "multi", objectName: "Multi", imagePath: "multi.mdl", materialPath: "materials/mat0.json",
+            puppetPath: "multi.mdl", geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass],
+            meshMaterialTextures: [1: submeshOwnsAlbedo ? [0: .asset("own")] : [2: .asset("mask")], 2: [0: .asset("hidden")]]
+        )
+
+        let input = WPEMetalRenderExecutor.sceneModelNativeAlphaInput(for: prepared, layer: layer, drawableMeshIndices: [0, 1])
+
+        #expect(input == (submeshOwnsAlbedo ? .none : .unpremultiply))
     }
 
     private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil,
@@ -166,7 +259,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
                     constants["color"] = "0 0 0"
                 }
                 let json: [String: Any] = ["passes": [["shader": "generic4", "textures": ["red"],
-                                                       "constantshadervalues": constants, "combos": ["LIGHTING": 0], "blending": "disabled", "cullmode": "nocull"]]]
+                                                       "constantshadervalues": constants, "combos": ["LIGHTING": 0], "blending": blending, "cullmode": "nocull"]]]
                 try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("materials/m\(index).json"))
             }
             try SubmeshMDLVFixture.data(materials: (0 ..< 3).map { "materials/m\($0).json" })
@@ -233,6 +326,81 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             #expect(abs(Int(regions[1].z) - (firstHasMap ? 32 : 64)) <= 2, "alternate mesh emissive = \(regions[1])")
             #expect(abs(Int(regions[2].z) - 32) <= 2, "alternate without component map must remain non-emissive: \(regions[2])")
         }
+    }
+
+    /// Builds the layer from material json through the graph builder, then draws one quad per span; returns row y=4.
+    private func renderBuiltModel(materials: [[String: Any]], meshMaterialIndices: [Int]? = nil,
+                                  materialUniformNames: [String: String] = [:],
+                                  meshSpans: [(Float, Float)], textures: [String: [[UInt8]]]) throws -> [SIMD4<UInt8>] {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("SubmeshBlend-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("materials"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("models"), withIntermediateDirectories: true)
+        for (index, material) in materials.enumerated() {
+            var pass = material
+            pass["cullmode"] = "nocull"
+            try JSONSerialization.data(withJSONObject: ["passes": [pass]])
+                .write(to: root.appendingPathComponent("materials/m\(index).json"))
+        }
+        let indices = meshMaterialIndices ?? Array(materials.indices)
+        try SubmeshMDLVFixture.data(materials: indices.map { "materials/m\($0).json" })
+            .write(to: root.appendingPathComponent("models/multi.mdl"))
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 24, "height": 8, "auto": false]],
+            "objects": [["id": "multi", "name": "Multi", "solid": true, "model": "models/multi.mdl", "origin": "12 4 -1"]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
+        let layer = try #require(WPERenderGraphBuilder(cacheRootURL: root).build(document: document).layers.first)
+        let materialPass = try #require(layer.passes.first)
+
+        let model = WPEPuppetModel(version: 23, meshes: meshSpans.map { minX, maxX in
+            WPEPuppetMesh(
+                materialPath: "unused",
+                vertices: [
+                    WPEPuppetVertex(position: SIMD3<Float>(minX, -4, 0), uv: SIMD2<Float>(0, 1)),
+                    WPEPuppetVertex(position: SIMD3<Float>(maxX, -4, 0), uv: SIMD2<Float>(1, 1)),
+                    WPEPuppetVertex(position: SIMD3<Float>(minX, 4, 0), uv: SIMD2<Float>(0, 0)),
+                    WPEPuppetVertex(position: SIMD3<Float>(maxX, 4, 0), uv: SIMD2<Float>(1, 0)),
+                ], indices: [0, 1, 2, 2, 1, 3], parts: []
+            )
+        })
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: layer,
+                puppetModel: model,
+                passes: [WPEPreparedRenderPass(
+                    pass: materialPass,
+                    shader: WPEShaderProgram(name: materialPass.shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
+                    textureBindings: [:], comboValues: [:], uniformValues: [:], materialUniformNames: materialUniformNames
+                )]
+            ),
+        ])
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 24, height: 8, auto: true),
+            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: 0, perspectiveObjectIDs: []
+        )
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let stripTextures = try textures.mapValues { try strip(device: device, $0) }
+        let output = try executor.render(pipeline: pipeline, size: size, textures: stripTextures, cameraUniforms: camera)
+        let pixels = try readPixels(output)
+        return (0 ..< output.width).map { x in
+            let offset = (4 * output.width + x) * 4
+            return SIMD4(pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3])
+        }
+    }
+
+    private func strip(device: MTLDevice, _ texels: [[UInt8]]) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: texels.count, height: 1, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        texture.replace(region: MTLRegionMake2D(0, 0, texels.count, 1), mipmapLevel: 0,
+                        withBytes: Array(texels.joined()), bytesPerRow: 4 * texels.count)
+        return texture
     }
 
     private func solid(device: MTLDevice, _ rgba: [UInt8]) throws -> MTLTexture {

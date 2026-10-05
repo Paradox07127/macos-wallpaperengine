@@ -111,7 +111,8 @@ extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures.mapValues { $0.mapValues { $0.nativized() } },
-            meshMaterialConstants: meshMaterialConstants.mapValues { nativizedKeys($0) }
+            meshMaterialConstants: meshMaterialConstants.mapValues { nativizedKeys($0) },
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 }

@@ -567,7 +567,8 @@ extension WPEMetalRenderExecutor {
             parallaxDepth: layer.parallaxDepth,
             sortIndex: layer.sortIndex,
             meshMaterialTextures: layer.meshMaterialTextures,
-            meshMaterialConstants: layer.meshMaterialConstants
+            meshMaterialConstants: layer.meshMaterialConstants,
+            meshMaterialBlending: layer.meshMaterialBlending
         )
     }
 
@@ -577,6 +578,39 @@ extension WPEMetalRenderExecutor {
             return layer
         }
         return layer.replacingDrawGeometry(groupLocalGeometry, parallaxDepth: SIMD2<Double>(0, 0))
+    }
+
+    /// The layer draws with one PSO: a translucent drawable submesh moves every mesh to PMA source-over,
+    /// because an opaque-class layer pass may carry `premultipliedDisabled`, which would erase that submesh's A0 texels.
+    static func sceneModelBlend(
+        for pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer,
+        drawableMeshIndices: [Int]
+    ) -> (opaque: Bool, blendMode: String) {
+        let opaqueBlends: Set<String> = ["normal", "disabled", "premultiplieddisabled"]
+        let layerBlend = if case .string(let blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
+            blend.lowercased()
+        } else {
+            pass.pass.blending.lowercased()
+        }
+        guard opaqueBlends.contains(layerBlend) else {
+            return (false, pass.pass.blending)
+        }
+        let meshBlends = drawableMeshIndices.compactMap { layer.meshMaterialBlending[$0]?.lowercased() }
+        return meshBlends.allSatisfy(opaqueBlends.contains) ? (true, "disabled") : (false, "premultiplied")
+    }
+
+    /// A submesh with its own slot-0 albedo samples a straight texture through the shared PSO, so only an all-layer-input model may unpremultiply.
+    static func sceneModelNativeAlphaInput(
+        for pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer,
+        drawableMeshIndices: [Int]
+    ) -> WPENativeInputAlphaOperation {
+        guard pass.renderContract.inputs[0]?.semantics.alpha == .premultiplied,
+              !drawableMeshIndices.contains(where: { layer.meshMaterialTextures[$0]?[0] != nil }) else {
+            return .none
+        }
+        return .unpremultiply
     }
 
     func encodeSceneModelMaterialPassIfNeeded(
@@ -612,14 +646,12 @@ extension WPEMetalRenderExecutor {
             currentTargetID: destination.id
         )
         // Scene-model normal is opaque; image-layer and translucent materials retain their separate rules.
-        let authoredModelBlend: String
-        if case .string(let blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
-            authoredModelBlend = blend.lowercased()
-        } else {
-            authoredModelBlend = pass.pass.blending.lowercased()
-        }
-        let opaqueModel = ["normal", "disabled", "premultiplieddisabled"].contains(authoredModelBlend)
-        let modelBlendMode = opaqueModel ? "disabled" : pass.pass.blending
+        let drawableMeshIndices = drawableMeshes.map(\.offset)
+        let (opaqueModel, modelBlendMode) = Self.sceneModelBlend(for: pass, layer: layer, drawableMeshIndices: drawableMeshIndices)
+        let modelNativeAlpha = WPENativeAlphaPolicy(
+            input: Self.sceneModelNativeAlphaInput(for: pass, layer: layer, drawableMeshIndices: drawableMeshIndices),
+            straightOutput: opaqueModel
+        )
         let modelAlphaWritePolicy: WPEMetalAlphaWritePolicy = .rgbOnly
         var materialUniforms: WPESceneModelGenericUniforms?
         var imageUniforms: WPEGenericImageUniforms?
@@ -633,7 +665,7 @@ extension WPEMetalRenderExecutor {
                 alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
                 depthPixelFormat: depthPixelFormat,
-                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
+                nativeAlpha: modelNativeAlpha
             ))
             encoder.setFragmentTexture(primary, index: 0)
             var uniforms = sceneModelGenericUniforms(
@@ -653,7 +685,7 @@ extension WPEMetalRenderExecutor {
                 alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
                 depthPixelFormat: depthPixelFormat,
-                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
+                nativeAlpha: modelNativeAlpha
             ))
             encoder.setFragmentTexture(primary, index: 0)
 
@@ -700,7 +732,7 @@ extension WPEMetalRenderExecutor {
                 alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
                 depthPixelFormat: depthPixelFormat,
-                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
+                nativeAlpha: modelNativeAlpha
             ))
             encoder.setFragmentTexture(primary, index: 0)
 
@@ -750,7 +782,7 @@ extension WPEMetalRenderExecutor {
                 alphaWritePolicy: modelAlphaWritePolicy,
                 colorPixelFormat: destination.texture.pixelFormat,
                 depthPixelFormat: depthPixelFormat,
-                nativeAlpha: WPENativeAlphaPolicy(input: .none, straightOutput: opaqueModel)
+                nativeAlpha: modelNativeAlpha
             ))
             encoder.setFragmentTexture(primary, index: 0)
             encoder.setFragmentTexture(primary, index: 1)
@@ -903,6 +935,11 @@ extension WPEMetalRenderExecutor {
                 }
             case .genericImage2:
                 encoder.setFragmentTexture(meshPrimary, index: 1)
+                var uniforms = self.genericImageUniforms(
+                    for: pass, layer: layer, hasMask: false, sourceTexture: meshPrimary,
+                    materialConstants: layer.meshMaterialConstants[drawableMeshes[position].offset]
+                )
+                encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
             case .generic2:
                 var uniforms = self.sceneModelGenericUniforms(
                     for: pass, layer: layer, hasComponentMap: false, materialShader: .generic2,
@@ -2645,7 +2682,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 }

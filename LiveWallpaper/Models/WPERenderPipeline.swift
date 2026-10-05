@@ -1067,7 +1067,8 @@ private extension WPERenderLayer {
             parallaxDepth: mutation.parallaxDepth ?? parallaxDepth,
             sortIndex: mutation.sortIndex ?? sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -1149,7 +1150,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 
@@ -1186,7 +1188,8 @@ private extension WPERenderLayer {
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
             meshMaterialTextures: meshMaterialTextures,
-            meshMaterialConstants: meshMaterialConstants
+            meshMaterialConstants: meshMaterialConstants,
+            meshMaterialBlending: meshMaterialBlending
         )
     }
 }
