@@ -86,6 +86,12 @@ final class WorkshopDownloadCoordinator {
         }
     }
 
+    /// A settled phase outlives the item's files; a check that finds the item missing clears it so it can be offered again.
+    func forgetSettledPhase(_ itemID: UInt64) {
+        guard !isBusy(itemID) else { return }
+        phases[itemID] = .idle
+    }
+
     func activeAttempt(for itemID: UInt64) -> WorkshopDownloadAttempt? {
         activeDownloads[itemID]
     }
@@ -133,6 +139,15 @@ final class WorkshopDownloadCoordinator {
         !Task.isCancelled && activeDownloads[itemID]?.id == attemptID
     }
 
+    /// A refused gate throws before SteamCMD runs and skips the hook; a cancelled run still reaches it because it may already have synced.
+    private func withSteamCMDRun<Result: Sendable>(
+        workshopID: String, _ operation: @MainActor @Sendable () async throws -> Result
+    ) async throws -> Result {
+        let result = try await repositoryCoordinator.withExclusiveMutation(workshopID: workshopID, operation: operation)
+        await afterSteamCMDRun()
+        return result
+    }
+
     /// `approved`: the one local copy this attempt may land beside; any other conflicting entry still refuses it.
     private func run(
         itemID: UInt64, title: String, doctor: any WorkshopItemDownloading, attemptID: UUID, approved: WPEHistoryEntry?
@@ -142,9 +157,7 @@ final class WorkshopDownloadCoordinator {
             result = .failed(reason: Self.libraryConflictReason(existing))
         } else {
             do {
-                result = try await repositoryCoordinator.withExclusiveMutation(
-                    workshopID: String(itemID)
-                ) { [weak self] in
+                result = try await withSteamCMDRun(workshopID: String(itemID)) { [weak self] in
                     guard let self else {
                         return .failed(reason: String(
                             localized: "The Workshop download stopped because its owner was released.",
@@ -181,8 +194,6 @@ final class WorkshopDownloadCoordinator {
                         }
                     )
                 }
-                // Outside the gate; a refused gate ran no SteamCMD. Not skipped on cancel: a cancelled run may already have synced.
-                await afterSteamCMDRun()
             } catch WorkshopRepositoryCoordinator.MutationError.itemAlreadyMutating {
                 result = .failed(reason: String(
                     localized: "This Workshop item is already being updated.",
@@ -500,7 +511,7 @@ final class WorkshopDownloadCoordinator {
         }
         let result: WorkshopItemDownloadResult<[String]>
         do {
-            result = try await repositoryCoordinator.withExclusiveMutation(workshopID: workshopID) { [weak self] in
+            result = try await withSteamCMDRun(workshopID: workshopID) { [weak self] in
                 guard let self else { return .failed(reason: "coordinator released") }
                 return await doctor.downloadWorkshopItem(
                     itemID,
@@ -539,7 +550,7 @@ final class WorkshopDownloadCoordinator {
     ) async -> WPEHistoryEntry? {
         let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
         do {
-            result = try await repositoryCoordinator.withExclusiveMutation(workshopID: String(itemID)) { [weak self] in
+            result = try await withSteamCMDRun(workshopID: String(itemID)) { [weak self] in
                 guard let self else {
                     return .failed(reason: String(
                         localized: "The Workshop download stopped because its owner was released.",

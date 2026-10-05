@@ -28,7 +28,7 @@ struct SubscriptionSyncSheet: View {
             }
             .padding(.horizontal, DesignTokens.Spacing.xl)
             .padding(.top, DesignTokens.Spacing.xl)
-            .padding(.bottom, missing.isEmpty ? DesignTokens.Spacing.xl : DesignTokens.Spacing.md)
+            .padding(.bottom, rows.isEmpty ? DesignTokens.Spacing.xl : DesignTokens.Spacing.md)
 
             missingSection
 
@@ -39,7 +39,7 @@ struct SubscriptionSyncSheet: View {
                 cancelTitle: "Done",
                 cancelAction: { dismiss() },
                 leading: {
-                    if hasActiveDownloads {
+                    if sync.hasActiveDownloads {
                         Button("Cancel downloads") { sync.cancelDownloads() }
                             .buttonStyle(.bordered)
                     }
@@ -52,8 +52,8 @@ struct SubscriptionSyncSheet: View {
                 await sync.refresh(using: doctor)
             }
         }
-        .onChange(of: installedIDs, initial: true) { _, installed in
-            sync.selection.subtract(installed)
+        .onChange(of: downloadedIDs, initial: true) { _, downloaded in
+            sync.selection.subtract(downloaded)
         }
         .sheet(isPresented: $showingSignIn) {
             AppLanguageScope(defaults: .appScoped()) {
@@ -101,15 +101,15 @@ struct SubscriptionSyncSheet: View {
 
     @ViewBuilder
     private var missingSection: some View {
-        if !missing.isEmpty {
+        if !rows.isEmpty {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 listHeader
                 GroupBox {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(missing, id: \.self) { itemID in
+                            ForEach(rows, id: \.self) { itemID in
                                 row(for: itemID)
-                                if itemID != missing.last {
+                                if itemID != rows.last {
                                     Divider().padding(.leading, titleInset)
                                 }
                             }
@@ -126,13 +126,13 @@ struct SubscriptionSyncSheet: View {
 
     private var listHeader: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            Toggle(sources: missing.filter(isSelectable).map { selectionBinding(for: $0) }, isOn: \.self) {
+            Toggle(sources: rows.filter(isSelectable).map { selectionBinding(for: $0) }, isOn: \.self) {
                 Text("Select all")
             }
             .toggleStyle(.checkbox)
-            .disabled(!missing.contains(where: isSelectable))
+            .disabled(!rows.contains(where: isSelectable))
 
-            Text("\(selectedCount) of \(missing.count) selected")
+            Text("\(selectedCount) of \(rows.count) selected")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -259,19 +259,20 @@ struct SubscriptionSyncSheet: View {
         return []
     }
 
-    private var installedIDs: Set<UInt64> {
-        Set(missing.filter(isInstalled))
+    private var rows: [UInt64] {
+        sync.rows
+    }
+
+    private var downloadedIDs: Set<UInt64> {
+        Set(rows.filter(wasJustDownloaded))
     }
 
     private var selectedCount: Int {
-        missing.filter { sync.selection.contains($0) && !isInstalled($0) }.count
+        rows.filter { sync.selection.contains($0) }.count
     }
 
-    private var hasActiveDownloads: Bool {
-        missing.contains { queue.isQueued($0) || downloads.isBusy($0) }
-    }
-
-    private func isInstalled(_ itemID: UInt64) -> Bool {
+    /// Only unticks a row that finished; whether it is installed is the latest check's call, so it stays selectable.
+    private func wasJustDownloaded(_ itemID: UInt64) -> Bool {
         switch downloads.phase(for: itemID) {
         case .succeeded, .succeededAsPreset: true
         default: false
@@ -279,12 +280,12 @@ struct SubscriptionSyncSheet: View {
     }
 
     private func isSelectable(_ itemID: UInt64) -> Bool {
-        !isInstalled(itemID) && !downloads.isBusy(itemID)
+        !downloads.isBusy(itemID)
     }
 
     private func selectionBinding(for itemID: UInt64) -> Binding<Bool> {
         Binding(
-            get: { sync.selection.contains(itemID) && !isInstalled(itemID) },
+            get: { sync.selection.contains(itemID) },
             set: { isOn in
                 if isOn {
                     sync.selection.insert(itemID)
