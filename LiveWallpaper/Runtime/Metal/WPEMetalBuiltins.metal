@@ -284,6 +284,29 @@ struct WPEObjectQuadUniforms {
     return half4(wpe_attachment_output(float4(wpe_native_sample(scene.sample(linearSampler, sceneUV)))));
 }
 
+[[fragment]] half4 wpe_text_effect_background_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<half, access::sample> scene [[texture(0)]],
+    constant WPEObjectQuadUniforms& u [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float2 local = float2(
+        (in.uv.x - 0.5) * u.centerAndSize.z,
+        (0.5 - in.uv.y) * u.centerAndSize.w
+    );
+    float c = cos(u.sceneSizeAndRotation.z);
+    float s = sin(u.sceneSizeAndRotation.z);
+    float2 rotated = float2(c * local.x - s * local.y, s * local.x + c * local.y);
+    float2 centered = u.centerAndSize.xy + rotated;
+    float2 halfSize = max(u.sceneSizeAndRotation.xy * 0.5, float2(0.5));
+    float2 oriented = (u.cameraOrientation * float4(centered / halfSize, u.cameraWorldDepth.x, 1.0)).xy;
+    float2 sceneUV = float2(0.5 + oriented.x * 0.5, 0.5 - oriented.y * 0.5);
+    // Native WPE effect-text carrier: sampled backdrop RGB and independent glyph coverage alpha.
+    float4 color = float4(wpe_native_sample(scene.sample(linearSampler, sceneUV)));
+    color.a = 0.0;
+    return half4(wpe_attachment_output(color));
+}
+
 // WPE `effects/skew` MODE=1 (Vertex): displaces the quad corners in the layer's
 // local space BEFORE rotation, turning the rectangle into a parallelogram (the
 // "leaning/standing on the background" look — 3470764447's long audio bar).
@@ -1301,13 +1324,51 @@ static inline float3 wpe_scene_model_reflection(
     return saturate(reflectionColor);
 }
 
+// The official common_pbr_2.h ComputePBRLightShadowInfinite branch without
+// RIMLIGHT/SHADINGGRADIENT/DOUBLESIDED combos. Native ev197 DXBC266–304 confirms
+// direction is to-light. Projected shadows remain unimplemented (shadow=1).
+struct WPEDirectionalLight {
+    float4 direction;
+    float4 radiance;
+};
+
+float3 wpe_directional_pbr(float3 albedo, float3 normal, float3 view,
+                         float roughness, float metallic, float3 direction, float3 color) {
+    float3 halfVector = view + direction;
+    float halfLength = length(halfVector);
+    float3 halfway = halfLength > 0.0 ? halfVector / halfLength : direction;
+    float3 f0 = mix(float3(0.04), albedo, metallic);
+    float hv = max(dot(halfway, view), 0.0);
+    float3 fresnel = f0 + (1.0 - f0) * pow(max(1.0 - hv, 0.001), 5.0);
+    float roughness4 = pow(roughness, 4.0);
+    float nh = max(dot(normal, halfway), 0.0);
+    float denominator = nh * nh * (roughness4 - 1.0) + 1.0;
+    // Official source has no roughness clamp. Define only its singular 0/0
+    // sample as zero NDF; this finite fallback is not a native parity claim.
+    float distribution = denominator != 0.0
+        ? roughness4 / (M_PI_F * denominator * denominator) : 0.0;
+    float k = pow(roughness + 1.0, 2.0) / 8.0;
+    float nv = max(dot(normal, view), 0.001);
+    float nlGeometry = max(dot(normal, direction), 0.001);
+    float geometry = nv / (nv * (1.0 - k) + k)
+        * nlGeometry / (nlGeometry * (1.0 - k) + k);
+    float nl = max(dot(normal, direction), 0.0);
+    float3 specular = distribution * geometry * fresnel
+        / max(4.0 * max(dot(normal, view), 0.0) * nl, 0.001);
+    float3 diffuse = (1.0 - metallic) * (1.0 - fresnel) * albedo / M_PI_F;
+    return (diffuse + specular) * color * nl;
+}
+
+
 [[fragment]] half4 wpe_scene_model_generic4_fragment(
     WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
     texture2d<half, access::sample> texture3 [[texture(3)]],
     constant WPESceneModelGenericUniforms& u [[buffer(0)]],
-    constant WPESceneModelMeshUniforms& mesh [[buffer(1)]]
+    constant WPESceneModelMeshUniforms& mesh [[buffer(1)]],
+    constant WPEDirectionalLight* directionalLights [[buffer(3)]],
+    constant uint4& directionalMetadata [[buffer(4)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 albedo = float4(wpe_native_sample(texture0.sample(linearSampler, in.uv)));
@@ -1319,7 +1380,15 @@ static inline float3 wpe_scene_model_reflection(
     float maskAlpha = u.brightnessFlags.y > 0.5
         ? float(texture1.sample(linearSampler, in.uv).a)
         : 0.0;
-    float3 light = max(float3(0.0), u.emissive.rgb * albedo.rgb * (maskAlpha * u.emissive.w));
+    float3 direct = float3(0.0);
+    if (u.ambientLighting.w > 0.5) {
+        for (uint index = 0; index < directionalMetadata.x; ++index) {
+            direct += wpe_directional_pbr(albedo.rgb, worldNormal, viewVector,
+                u.reflection.y, u.reflection.z,
+                directionalLights[index].direction.xyz, directionalLights[index].radiance.xyz);
+        }
+    }
+    float3 light = max(direct, u.emissive.rgb * albedo.rgb * (maskAlpha * u.emissive.w));
     float3 hemisphere = wpe_lerp(
         u.skylightColor.rgb, u.ambientLighting.rgb, dot(worldNormal, float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
     );

@@ -67,19 +67,27 @@ extension WPEMetalSceneRenderer {
         sharedColorReadFans = [:]
         transformHostLocalTransformsByID = Self.transformHostLocalTransforms(in: document)
         layerAncestorLocalTransformsByID = Self.ancestorLocalTransforms(in: document)
+        // Lights also appear as transform hosts in the parsed document. Give
+        // their typed bindings one owner, rather than installing an engine twice.
+        let lightObjectIDs = Set(document.lightObjects.map(\.id))
+        let nonLightHosts = document.transformHostObjects.filter { !lightObjectIDs.contains($0.id) }
         let originScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.originScript.map { (object.id, $0) }
-        } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+        } + nonLightHosts.compactMap { object -> (String, WPESceneTransformScript)? in
             object.originScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.originScript.map { (object.id, $0) }
+        } + document.lightObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.transformScript(for: "origin").map { (object.id, $0) }
         }
         var scaleScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
-        } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+        } + nonLightHosts.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.scaleScript.map { (object.id, $0) }
+        } + document.lightObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.transformScript(for: "scale").map { (object.id, $0) }
         }
         if let motion = document.cameraMotion, let script = motion.zoomScript {
             scaleScripts.append((WPECameraMotionPlayback.zoomScriptKey, script))
@@ -88,10 +96,12 @@ extension WPEMetalSceneRenderer {
         // (same boundary as the deg→rad conversion in the per-frame tick).
         let anglesScripts = (document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.anglesScript.map { (object.id, $0) }
-        } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+        } + nonLightHosts.compactMap { object -> (String, WPESceneTransformScript)? in
             object.anglesScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.anglesScript.map { (object.id, $0) }
+        } + document.lightObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.transformScript(for: "angles").map { (object.id, $0) }
         }).map { id, script in
             (id, WPESceneTransformScript(
                 script: script.script,
@@ -105,13 +115,15 @@ extension WPEMetalSceneRenderer {
             object.colorScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.colorScript.map { (object.id, $0) }
+        } + document.lightObjects.compactMap { object -> (String, WPESceneTransformScript)? in
+            object.transformScript(for: "color").map { (object.id, $0) }
         }
         // Keyframed origins ride the same live-transform map as the scripts, so a
         // moving transform host composes onto its children exactly the same way.
         dynamicOriginAnimations = Dictionary(
             document.imageObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
                 object.originAnimation.map { (object.id, $0) }
-            } + document.transformHostObjects.compactMap { object -> (String, WPESceneAnimatedValue)? in
+            } + nonLightHosts.compactMap { object -> (String, WPESceneAnimatedValue)? in
                 guard object.id != cameraMotionPlayback?.definition.objectID else { return nil }
                 return object.originAnimation.map { (object.id, $0) }
             },
@@ -389,6 +401,11 @@ extension WPEMetalSceneRenderer {
             uniquingKeysWith: { first, _ in first }
         )
         result.merge(transformHostLocalTransforms(in: document)) { _, host in host }
+        for object in document.lightObjects {
+            result[object.id] = WPERenderObjectTransform(
+                origin: object.localOrigin, scale: object.localScale, angles: object.localAngles
+            )
+        }
         return result
     }
 

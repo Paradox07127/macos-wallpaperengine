@@ -122,7 +122,8 @@ struct WPEPassRenderContract: Equatable, Sendable {
         if native {
             if isCopy {
                 emitted = primary
-                if primary.alpha == .straight, blend.enabled, blend.shaderPremultiplication {
+                let requiresCopyPremultiplication = primary.alpha == .straight || primary == .textEffectCarrier
+                if requiresCopyPremultiplication, blend.enabled, blend.shaderPremultiplication {
                     operation = .premultiply
                     emitted = .premultipliedColor
                 } else if primary.alpha == .premultiplied, blend.enabled, blend.sourceRGB == .sourceAlpha {
@@ -140,7 +141,7 @@ struct WPEPassRenderContract: Equatable, Sendable {
                 diagnostics.append("native-output-override-requires-verification")
             }
         }
-        if native, kind == nil {
+        if native, kind == nil, outputDeclaration == nil {
             emitted = .unknown
             diagnostics.append("unverified-native-output")
         }

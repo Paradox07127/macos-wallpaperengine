@@ -105,6 +105,133 @@ struct WPETextRenderPipelineTests {
         #expect(layer.passes.last?.target == .scene)
     }
 
+    /// Source pinned to 3596044309-full-steady.rdc SHA256 52dcc52060c373199546c0fe2e61284ee5c48b53780c2049347213546f769237.
+    /// Events 1438/1456: copied scene RGB + alpha0, then straight glyph RGB and SrcAlpha alpha blending.
+    /// Padding is deliberately uncovered; the right half has constant atlas coverage128/255.
+    @Test("Native effect text retains coverage through border, pulse, and blur/pulse publication",
+          arguments: ["copy", "border", "pulse", "blur-pulse"])
+    func nativeEffectTextSurfaceCarrier(operatorName: String) throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previous
+        arguments["WPEDumpScenePasses"] = "native-text"
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.sceneClearColor = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        let atlas = try #require(device.makeTexture(descriptor: .texture2DDescriptor(
+            pixelFormat: .r8Unorm, width: 2, height: 2, mipmapped: false
+        )))
+        var coverage = [UInt8](repeating: 128, count: 4)
+        atlas.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                      withBytes: &coverage, bytesPerRow: 2)
+        let corners: [SIMD2<Float>] = [.init(2, 0), .init(4, 0), .init(2, 4),
+                                       .init(4, 0), .init(4, 4), .init(2, 4)]
+        var vertices = corners.map { WPETextMeshVertex(position: $0, uv: .init(0.5, 0.5)) }
+        let buffer = try #require(device.makeBuffer(
+            bytes: &vertices, length: MemoryLayout<WPETextMeshVertex>.stride * vertices.count
+        ))
+        let mesh = WPETextMeshPayload(pages: [.init(vertexBuffer: buffer, vertexCount: vertices.count, texture: atlas)],
+                                      color: .init(1, 1, 1, 1))
+        let composite = WPETextureReference.fbo("native-text.a")
+        let glyph = WPERenderPass(
+            id: "native-text.0", phase: .material, shader: WPETextLayerSynthesis.glyphPassShader,
+            source: composite, target: .layerComposite(name: "native-text.a"), textures: [:], binds: [:],
+            constants: [:], combos: [:], blending: "normal", cullMode: "nocull",
+            depthTest: "disabled", depthWrite: "disabled"
+        )
+        func effectPass(_ index: Int, shader: String, source: WPETextureReference,
+                        target: WPERenderTarget, blend: String = "disabled") -> WPERenderPass {
+            .init(id: "native-text.\(index)", phase: .effect(file: "native-source-pinned"), shader: shader,
+                  source: source, target: target, textures: [0: source], binds: [:], constants: [:], combos: [:],
+                  blending: blend, cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        }
+        let scratch = WPETextureReference.fbo("native-text.b")
+        var effects: [WPERenderPass] = []
+        if operatorName == "blur-pulse" {
+            // Authored Gaussian zero-distance control: every tap reads the same pixel.
+            // This checks the intermediate representation without relying on edge-history coverage.
+            effects.append(effectPass(1, shader: "probe-gaussian-zero", source: composite,
+                                      target: .layerComposite(name: "native-text.b")))
+        }
+        let input = effects.isEmpty ? composite : scratch
+        effects.append(effectPass(effects.count + 1, shader: operatorName == "copy" ? "commands/copy" : "probe-" + operatorName,
+                                  source: input, target: .layerComposite(name: "native-text.a")))
+        let terminal = WPERenderPass(
+            id: "native-text.final", phase: .material, shader: "commands/copy",
+            source: composite, target: .scene, textures: [0: composite], binds: [:], constants: [:], combos: [:],
+            blending: "premultipliednormal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let passes = [glyph] + effects + [terminal]
+        let layer = WPERenderLayer(objectID: "native-text", objectName: "Native text",
+                                   imagePath: "__wpetext__/offscreen/native-text.layer", materialPath: nil,
+                                   geometry: .init(origin: .init(2, 2, 0), scale: .init(1, 1, 1), angles: .zero,
+                                                   alignment: .center, size: CGSize(width: 4, height: 4),
+                                                   alpha: 1, color: .init(1, 1, 1), brightness: 1),
+                                   compositeA: "native-text.a", compositeB: "native-text.b", localFBOs: [], passes: passes)
+        let vertex = "attribute vec3 a_Position;\nvoid main() { gl_Position = vec4(a_Position, 1.0); }"
+        func program(_ pass: WPERenderPass) -> WPEShaderProgram {
+            if pass.shader.hasPrefix("probe-") {
+                let body = if pass.shader == "probe-border" {
+                    // Native event1509: border depends on input alpha, authored RGB is unrelated to backdrop RGB.
+                    "float a = smoothstep(0.1, 0.2, c.a); gl_FragColor = vec4(0.46275, 0.46275, 0.83137, a * 0.5);"
+                } else if pass.shader == "probe-gaussian-zero" {
+                    "gl_FragColor = c;"
+                } else {
+                    // Native event268: Add-mode pulse changes RGB while preserving coverage alpha.
+                    "gl_FragColor = vec4(min(c.rgb + c.rgb, vec3(1.0)), c.a);"
+                }
+                return .init(name: pass.shader, vertexSource: vertex,
+                             fragmentSource: "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\nvoid main() { vec4 c = texture2D(g_Texture0, v_TexCoord); " + body + " }",
+                             isBuiltin: false)
+            }
+            return .init(name: pass.shader, vertexSource: "", fragmentSource: "", isBuiltin: true)
+        }
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: passes.map {
+            .init(pass: $0, shader: program($0), textureBindings: $0.textures, comboValues: [:], uniformValues: [:])
+        })]).resolvingRenderContracts()
+        // A declared independent carrier must remain untouched by shader alpha preprocessing.
+        for prepared in pipeline.layers[0].passes where prepared.pass.shader.hasPrefix("probe-") {
+            #expect(prepared.renderContract.shaderAlpha.unpremultipliedInputSlots.isEmpty)
+            #expect(prepared.renderContract.shaderAlpha.premultipliedOutput == false)
+        }
+        let output = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4), textures: [:],
+                                         sceneID: "native-text", textPayloads: ["native-text": .init(
+                                             mode: .offscreen, mesh: mesh, backgroundColor: nil, copiesSceneBackground: true
+                                         )])
+        try #require(executor.untranslatableShaderReasonByPassID.isEmpty)
+        let surface = try #require(executor.scenePassDumps.first { $0.label == glyph.id }?.texture)
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(surface))
+        var bytes = [UInt8](repeating: 0, count: staged.width * staged.height * 4)
+        staged.getBytes(&bytes, bytesPerRow: staged.width * 4,
+                        from: MTLRegionMake2D(0, 0, staged.width, staged.height), mipmapLevel: 0)
+        #expect(staged.width == 4 && staged.height == 4)
+        #expect(Array(bytes[0 ..< 4]) == [51, 102, 153, 0])
+        let glyphPixel = Array(bytes[12 ..< 16])
+        #expect(abs(Int(glyphPixel[0]) - 153) <= 1)
+        #expect(abs(Int(glyphPixel[1]) - 179) <= 1)
+        #expect(abs(Int(glyphPixel[2]) - 204) <= 1)
+        #expect(abs(Int(glyphPixel[3]) - 64) <= 1)
+        let final = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        var finalBytes = [UInt8](repeating: 0, count: 64)
+        final.getBytes(&finalBytes, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0)
+        // Uncovered padding must preserve the original scene after every authored operator and publication.
+        #expect(Array(finalBytes[0 ..< 4]) == [51, 102, 153, 255])
+        let observed = Array(finalBytes[12 ..< 16])
+        let coverageAlpha = Double(glyphPixel[3]) / 255
+        let rgb: [Double] = operatorName == "border" ? [0.46275, 0.46275, 0.83137]
+            : operatorName == "copy" ? glyphPixel.prefix(3).map { Double($0) / 255 } : [1, 1, 1]
+        let alpha = operatorName == "border" ? 128.0 / 255 : coverageAlpha
+        let backdrop = [0.2, 0.4, 0.6]
+        for channel in 0 ..< 3 {
+            let expected = Int(((rgb[channel] * alpha + backdrop[channel] * (1 - alpha)) * 255).rounded())
+            #expect(abs(Int(observed[channel]) - expected) <= 2)
+        }
+        #expect(observed[3] == 255)
+        #expect(executor.gpuErrorSink.summary.count == 0)
+    }
+
     @Test("Dynamic clock widths do not retain a guessed maximum")
     func dynamicClockUsesCurrentExtent() {
         let resolver = fonts()

@@ -615,7 +615,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         localSize: SIMD2<Float>,
         meshCenter: SIMD2<Float>,
         objectCenterAndSize: SIMD4<Float>?,
-        meshUniformsInFragment: Bool = false
+        meshUniformsInFragment: Bool = false,
+        directionalLighting: WPESceneDirectionalLightingSnapshot? = nil
     ) {
         guard artifacts.isEnabled else { return }
         lock.lock()
@@ -742,6 +743,26 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 "variables": puppetUniformVariables(vertexUniforms),
             ])
         }
+        if let lighting = directionalLighting {
+            let rows = lighting.uniformPayload.enumerated().flatMap { index, light in
+                [PuppetUniformInput(name: "directionalLights[\(index)].direction", type: "vec4", value: light.direction),
+                 PuppetUniformInput(name: "directionalLights[\(index)].radiance", type: "vec4", value: light.radiance)]
+            }
+            let bytes = packedUniformBytes(rows.map(\.value))
+            let resource = "buf-mac-directional-lights-\(ordinal)"
+            resources.buffers[resource] = ["label": "Directional lighting", "byteLength": bytes.count, "sha256": sha256Hex(bytes)]
+            constantBuffers.append(["name": "directional_lights", "stage": "fragment", "slot": 3,
+                                    "resource": resource, "rawBytesSha256": sha256Hex(bytes), "variables": puppetUniformVariables(rows)])
+            var metadata = lighting.metadata
+            let metadataBytes = withUnsafeBytes(of: &metadata) { Data($0) }
+            let metadataResource = "buf-mac-directional-metadata-\(ordinal)"
+            resources.buffers[metadataResource] = ["label": "Directional lighting metadata", "byteLength": metadataBytes.count,
+                                                   "sha256": sha256Hex(metadataBytes)]
+            constantBuffers.append(["name": "directional_metadata", "stage": "fragment", "slot": 4,
+                                    "resource": metadataResource, "rawBytesSha256": sha256Hex(metadataBytes),
+                                    "variables": [["name": "directionalMetadata", "type": "uvec4", "slot": 0, "slotCount": 1,
+                                                   "value": [metadata.x, metadata.y, metadata.z, metadata.w]]]])
+        }
         var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
         state["samplers"] = textureBindings.sorted(by: { $0.slot < $1.slot }).map {
             ["stage": "fragment", "slot": $0.slot, "name": jsonOrNull($0.name)] as [String: Any]
@@ -773,7 +794,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 ]
             }
         ]
-        let passRecord: [String: Any] = [
+        var passRecord: [String: Any] = [
             "ordinal": ordinal,
             "eventId": NSNull(),
             "layerId": layer.objectID,
@@ -789,6 +810,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "puppet": puppet,
             "implementation": nativeImplementationRecord()
         ]
+        if let lighting = directionalLighting {
+            passRecord["directionalLighting"] = [
+                "projectedShadowImplementation": "unimplemented",
+                "unresolvedObjectIDs": lighting.unresolvedObjectIDs,
+                "unsupportedScriptFields": lighting.unsupportedScriptFields,
+                "lights": lighting.lights.map { ["objectID": $0.objectID, "castShadow": $0.castShadow] as [String: Any] },
+            ] as [String: Any]
+        }
         passes.append(passRecord)
     }
 

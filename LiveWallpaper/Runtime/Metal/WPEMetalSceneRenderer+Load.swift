@@ -351,6 +351,7 @@ extension WPEMetalSceneRenderer {
         scenePropertyBindings = document.propertyBindings
         objectParentByID = document.objectParentByID
         ownVisibilityByID = document.ownVisibilityByID
+        sceneLightObjects = document.lightObjects
         liveLayerVisibility = Dictionary(
             document.imageObjects.map { ($0.id, $0.visible) },
             uniquingKeysWith: { first, _ in first }

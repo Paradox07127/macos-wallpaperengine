@@ -116,6 +116,12 @@ extension WPEMetalSceneRenderer {
             layerObjectIDByName[object.name] = object.id
         }
 
+        // Named non-drawable ancestors receive cross-layer writes too; keep drawable name precedence.
+        // Duplicate/empty names retain the shared state's object-ID handle route.
+        for object in document.transformHostObjects where layerObjectIDByName[object.name] == nil {
+            layerObjectIDByName[object.name] = object.id
+        }
+
         // Transform-only hosts also use the same video handles and shared source map.
         publishVideoPlaybackSnapshots()
         guard !visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty

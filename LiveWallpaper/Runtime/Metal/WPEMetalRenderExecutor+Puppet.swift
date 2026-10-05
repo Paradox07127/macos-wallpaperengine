@@ -769,6 +769,10 @@ extension WPEMetalRenderExecutor {
             index: 1
         )
 
+        if materialShader == .genericImage4 {
+            try bindDirectionalLighting(to: encoder)
+        }
+
         #if DEBUG
         if WPECanonicalTraceRecorder.shared.isAccumulating {
             let uniformRows: [WPECanonicalTraceRecorder.PuppetUniformInput]
@@ -841,7 +845,8 @@ extension WPEMetalRenderExecutor {
                 textureBindings: bindings, vertexShaderName: "wpe_scene_model_mesh_vertex", fragmentShaderName: fragmentName,
                 fragmentUniforms: uniformRows, vertexUniforms: vertexRows, bonePalette: paletteState.bonePalette,
                 skinningEnabled: paletteState.skinningEnabled != 0, localSize: .zero, meshCenter: .zero,
-                objectCenterAndSize: nil, meshUniformsInFragment: true
+                objectCenterAndSize: nil, meshUniformsInFragment: true,
+                directionalLighting: materialShader == .genericImage4 ? currentDirectionalLighting : nil
             )
         }
         #endif

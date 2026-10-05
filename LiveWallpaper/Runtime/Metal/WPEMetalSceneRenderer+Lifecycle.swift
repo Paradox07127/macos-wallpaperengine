@@ -91,6 +91,8 @@ extension WPEMetalSceneRenderer {
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
+        sceneLightObjects.removeAll(keepingCapacity: false)
+        lastFrameDirectionalLighting = .empty
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
@@ -823,6 +825,8 @@ extension WPEMetalSceneRenderer {
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
+        sceneLightObjects.removeAll(keepingCapacity: false)
+        lastFrameDirectionalLighting = .empty
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)

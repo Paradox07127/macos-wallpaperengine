@@ -19,6 +19,13 @@ extension WPEPreparedRenderPipeline {
         }
         resources = declaredTargets
         let resolvedLayers = layers.map { layer in
+            let isEffectText = layer.passes.contains { WPETextLayerSynthesis.isGlyphPassShader($0.pass.shader) }
+                && layer.passes.contains {
+                    if case .effect = $0.pass.phase {
+                        return true
+                    }
+                    return false
+                }
             let passes = layer.passes.map { prepared in
                 let targetKey = prepared.pass.target.textureReference?.contractKey ?? "scene"
                 var inputs = prepared.renderContract.inputs
@@ -43,7 +50,8 @@ extension WPEPreparedRenderPipeline {
                 let contract = WPEPassRenderContract.resolve(
                     pass: prepared.pass, shader: prepared.shader, bindings: prepared.textureBindings,
                     alphaOverride: prepared.alphaContract, inputDeclarations: inputs,
-                    outputDeclaration: prepared.renderContract.outputDeclaration ?? declaredTargets[targetKey]
+                    outputDeclaration: isEffectText && prepared.pass.target != .scene
+                        ? .textEffectCarrier : prepared.renderContract.outputDeclaration ?? declaredTargets[targetKey]
                 )
                 if prepared.pass.visibilityGate != nil,
                    contract.inputs[0]?.semantics.alpha != contract.stored.alpha,

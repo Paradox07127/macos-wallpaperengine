@@ -1588,6 +1588,17 @@ final class WPESceneScriptInstance {
         let log: @convention(block) (JSValue) -> Void = { _ in }
         console.setObject(log, forKeyedSubscript: "log" as NSString)
         context.setObject(console, forKeyedSubscript: "console" as NSString)
+        // Official IConsole.error is variadic and returns void. Keep authored diagnostics observable
+        // without changing the existing console.log policy or turning a logged error into a JS exception.
+        let error: @convention(block) (String) -> Void = { message in
+            Logger.error("SceneScript console.error: \(String(message.prefix(2048)))", category: .wpeRender)
+        }
+        let installError = context.evaluateScript("""
+        (function (writeError) {
+            console.error = function (...args) { writeError(args.map(String).join(' ')); };
+        })
+        """)
+        installError?.call(withArguments: [error])
 
         context.setObject(
             WPESceneScriptContextBeacon(),
@@ -3565,6 +3576,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         /// each tick (same shape as `cursorWorldPosition`).
         private var updateArgument: JSValue?
         private var lastRuntimeSeconds: Double?
+        /// One diagnostic per instance, including the actual JS error and its authored source location.
+        private var didLogException = false
         fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
         /// Set on hard quarantine so callers can stop scheduling without a queue hop.
@@ -3844,13 +3857,28 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             if let shared {
                 wpeInstallSharedState(shared, in: context)
             }
-            context.exceptionHandler = { [weak self] _, _ in
-                self?.didThrow = true
-                self?.layerBridge.failEvaluation()
+            // A stable source token distinguishes property scripts on the same object without logging their source or properties.
+            let sourceToken = script.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
+            let sourceURL = URL(string: "loomscreen-scenescript://transform/\(ownObjectID ?? "unbound")/\(String(sourceToken, radix: 16))")
+            context.exceptionHandler = { [weak self] _, exception in
+                guard let self else { return }
+                didThrow = true
+                layerBridge.failEvaluation()
+                guard !didLogException else { return }
+                // Set the latch before reading JS properties: a custom error getter may itself throw.
+                didLogException = true
+                let message = String((exception?.toString() ?? "unknown").prefix(512))
+                let stack = exception?.objectForKeyedSubscript("stack")
+                let stackText = stack?.isString == true ? String((stack?.toString() ?? "").prefix(2048)) : "unavailable"
+                Logger.warning(
+                    "Transform SceneScript raised an uncaught JS exception (logged once) object=\(ownObjectID ?? "unbound") layer=\(ownLayerName ?? "unnamed") shape=\(valueShape) source=\(sourceURL?.absoluteString ?? "unavailable"): \(message); stack=\(stackText)",
+                    category: .wpeRender
+                )
             }
 
             didThrow = false
-            _ = context.evaluateScript(wpeLowerBuiltinImports(script, in: context, acceptsCompletion: acceptsCompletion))
+            _ = context.evaluateScript(wpeLowerBuiltinImports(script, in: context, acceptsCompletion: acceptsCompletion),
+                                       withSourceURL: sourceURL)
             guard !didThrow else { return .setupFailed }
 
             if !scriptProperties.isEmpty {
@@ -3892,7 +3920,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             }
             if didThrow {
                 initialResult = nil
-                Logger.warning("Transform SceneScript init raised an exception; keeping its authored seed and later callbacks", category: .wpeRender)
+                // The exception handler already logged the error once; keep the authored seed and later callbacks.
             }
             return .ready(
                 hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
@@ -3941,7 +3969,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 if reuseUpdateArgument, let existing = updateArgument {
                     object = existing
                 } else {
-                    guard let created = JSValue(newObjectIn: context) else { return nil }
+                    let constructorName = valueShape == .vector3 ? "Vec3" : "Vec2"
+                    let arguments = valueShape == .vector3 ? [value.x, value.y, value.z] : [value.x, value.y]
+                    guard let created = context.objectForKeyedSubscript(constructorName)?.construct(withArguments: arguments) else { return nil }
                     if reuseUpdateArgument {
                         updateArgument = created
                     }
@@ -4131,11 +4161,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func installInput(in context: JSContext) {
             let input = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let cursor = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let world = shared?.projectedCursorWorldPosition(pointer: SIMD2(0.5, 0.5)) ?? seed
-            cursor.setObject(world.x, forKeyedSubscript: "x" as NSString)
-            cursor.setObject(world.y, forKeyedSubscript: "y" as NSString)
-            cursor.setObject(world.z, forKeyedSubscript: "z" as NSString)
+            // Keep this native Vec3 alive across ticks: scripts may capture it before the first input update.
+            let cursor = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [world.x, world.y, world.z])
+                ?? JSValue(nullIn: context)!
             input.setObject(cursor, forKeyedSubscript: "cursorWorldPosition" as NSString)
             context.setObject(input, forKeyedSubscript: "input" as NSString)
             cursorWorldPosition = cursor

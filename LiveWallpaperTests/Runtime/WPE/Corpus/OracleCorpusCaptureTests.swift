@@ -27,6 +27,9 @@ struct OracleCorpusCaptureTests {
         var frames: Int = 1
         var frameStepSeconds: Double = 1.0 / 60.0
         var audioProbeLayer: String?
+        /// Opt-in real-scene diagnostic: the same broker supplies JS and shader audio.
+        var textDiagnosticAudioLevel: Float?
+        var textDiagnosticPassPrefixes: [String] = []
         var jobId: String?
         var replayFrame: [String: Double]?
         var resolution: [Int]?
@@ -48,7 +51,7 @@ struct OracleCorpusCaptureTests {
         private enum CodingKeys: String, CodingKey {
             case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
             case jobId, replayFrame, resolution, captureGPU, videoMode, scriptOrder, authoredVertexExecution, propertyOverridesByScene, pixelProbeCoordinates, captureStages
-            case sourceMipLevel, mediaSnapshot
+            case sourceMipLevel, mediaSnapshot, textDiagnosticAudioLevel, textDiagnosticPassPrefixes
             case propertySequence, sequenceWarmupFrames, sequenceCaptureFrames
         }
 
@@ -62,6 +65,12 @@ struct OracleCorpusCaptureTests {
             dumpPNGs = try container.decodeIfPresent(Bool.self, forKey: .dumpPNGs) ?? false
             memoryAuditLog = try container.decodeIfPresent(Bool.self, forKey: .memoryAuditLog) ?? false
             audioProbeLayer = try container.decodeIfPresent(String.self, forKey: .audioProbeLayer)
+            textDiagnosticAudioLevel = try container.decodeIfPresent(Float.self, forKey: .textDiagnosticAudioLevel)
+            textDiagnosticPassPrefixes = try container.decodeIfPresent([String].self, forKey: .textDiagnosticPassPrefixes) ?? []
+            if let level = textDiagnosticAudioLevel, !level.isFinite || !(0 ... 1).contains(level) {
+                throw DecodingError.dataCorruptedError(forKey: .textDiagnosticAudioLevel, in: container,
+                                                       debugDescription: "Diagnostic audio level must be finite in 0...1")
+            }
             jobId = try container.decodeIfPresent(String.self, forKey: .jobId)
             replayFrame = try container.decodeIfPresent([String: Double].self, forKey: .replayFrame)
             resolution = try container.decodeIfPresent([Int].self, forKey: .resolution)
@@ -145,6 +154,21 @@ struct OracleCorpusCaptureTests {
         let data = try Data(contentsOf: configURL)
         let config = try JSONDecoder().decode(Config.self, from: data)
         let captureStarted = Date()
+        if let level = config.textDiagnosticAudioLevel {
+            SystemAudioCaptureManager.broker.attachAnalyzer(SpectrumAnalyzerStub(AudioSpectrumFrame(
+                validatedLeft: [Float](repeating: level, count: AudioSpectrumFrame.binCount),
+                validatedRight: [Float](repeating: level, count: AudioSpectrumFrame.binCount),
+                timestampNanos: 1
+            )))
+            SystemAudioCaptureManager.setCapturingForTesting(true)
+        }
+        defer {
+            if config.textDiagnosticAudioLevel != nil {
+                SystemAudioCaptureManager.setCapturingForTesting(false)
+                SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+                SystemAudioCaptureManager.broker.resetToSilence()
+            }
+        }
         let defaults = UserDefaults.standard
         let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previousArguments
@@ -239,7 +263,7 @@ struct OracleCorpusCaptureTests {
                 continue
             }
 
-            arguments["WPEDumpScenePasses"] = config.dumpPNGs ? id : ""
+            arguments["WPEDumpScenePasses"] = config.dumpPNGs || !config.textDiagnosticPassPrefixes.isEmpty ? id : ""
             defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             WPEOracleMode.frameAdvanceSeconds = 0
             let descriptor = SceneDescriptor(
@@ -251,6 +275,17 @@ struct OracleCorpusCaptureTests {
             )
             let renderActor = WPEDisplayRenderActor(backing: .main)
             do {
+                if config.textDiagnosticAudioLevel != nil {
+                    // The stored oracle override intentionally silences shader audio.
+                    // Construct with a deterministic clock and no stored override;
+                    // restore oracle mode for JS Date/RNG after construction.
+                    WPEOracleMode.testingOverride = false
+                }
+                let diagnosticClock = WPEMetalFrameClock(
+                    loadTime: 0,
+                    currentMediaTime: { 6 + WPEOracleMode.frameAdvanceSeconds },
+                    currentDate: { WPEOracleMode.frozenWallClock }
+                )
                 let renderer = try WPEMetalSceneRenderer(
                     descriptor: descriptor,
                     cacheRootURL: stage,
@@ -260,11 +295,18 @@ struct OracleCorpusCaptureTests {
                     device: device,
                     // WPE's captured frame carries its own pointer; centring ours
                     // shifts every mouse-driven parallax/effect uniform.
+                    frameClock: config.textDiagnosticAudioLevel == nil ? WPEMetalFrameClock() : diagnosticClock,
                     pointerSampler: .fixed(Self.replayPointer())
                 )
+                WPEOracleMode.testingOverride = true
                 // Config resolution is expressed in pixels. The convenience initializer
                 // receives AppKit points, whose backing scale can otherwise double HDR
                 // captures while SDR scenes hide the mistake behind their canvas cap.
+                if !config.textDiagnosticPassPrefixes.isEmpty {
+                    // Executor cached the collection request. Disable the renderer's bulk PNG export.
+                    arguments["WPEDumpScenePasses"] = ""
+                    defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+                }
                 renderer.updateSurfaceGeometry(drawableSize: CGSize(width: size[0], height: size[1]))
                 renderer.oracleSceneScriptBatchOrder = config.scriptOrder
                 renderer.executor.authoredVertexExecutionEnabled = config.authoredVertexExecution
@@ -320,6 +362,10 @@ struct OracleCorpusCaptureTests {
                     stepSeconds: config.frameStepSeconds,
                     perPass: config.perPass || config.dumpPNGs
                 )
+                if let level = config.textDiagnosticAudioLevel {
+                    try Self.recordTextAudioDiagnostic(renderer, level: level, prefixes: config.textDiagnosticPassPrefixes,
+                                                       outputRoot: outDir, sceneID: id)
+                }
                 if config.captureGPU, config.propertySequence.isEmpty {
                     captureManager.stopCapture()
                 }
@@ -1020,6 +1066,40 @@ struct OracleCorpusCaptureTests {
         let outputURL = outputRoot.appendingPathComponent("\(id)-sequence.json")
         try #require(!FileManager.default.fileExists(atPath: outputURL.path))
         try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]).write(to: outputURL, options: .atomic)
+    }
+
+    @MainActor
+    private static func recordTextAudioDiagnostic(
+        _ renderer: WPEMetalSceneRenderer, level: Float, prefixes: [String], outputRoot: URL, sceneID: String
+    ) throws {
+        let uniforms = try #require(renderer.lastRuntimeUniforms)
+        #expect(uniforms.audioSpectrumLeft.count == AudioSpectrumFrame.binCount)
+        #expect(uniforms.audioSpectrumRight.count == AudioSpectrumFrame.binCount)
+        #expect(uniforms.audioSpectrumLeft.allSatisfy { abs($0 - Double(level)) < 0.00001 })
+        #expect(uniforms.audioSpectrumRight.allSatisfy { abs($0 - Double(level)) < 0.00001 })
+        var outputs: [[String: Any]] = []
+        for entry in renderer.executor.scenePassDumps where prefixes.contains(where: entry.label.hasPrefix) {
+            let texture = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(entry.texture))
+            try #require(texture.pixelFormat == .rgba8Unorm, "Diagnostic requires raw RGBA8 storage")
+            var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
+            texture.getBytes(&bytes, bytesPerRow: texture.width * 4,
+                             from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+            let filename = "\(sceneID)-\(entry.label).rgba8"
+            let raw = Data(bytes)
+            try raw.write(to: outputRoot.appendingPathComponent(filename), options: .atomic)
+            outputs.append(["passID": entry.label, "file": filename, "width": texture.width,
+                            "height": texture.height, "format": "rgba8Unorm", "sha256": Self.sha256(raw)])
+        }
+        try #require(prefixes.isEmpty || !outputs.isEmpty, "No requested text pass was captured")
+        let receipt: [String: Any] = [
+            "schema": 1, "sceneID": sceneID, "requestedAudioLevel": level,
+            "audioSpectrumLeft": uniforms.audioSpectrumLeft,
+            "audioSpectrumRight": uniforms.audioSpectrumRight, "runtimeTime": uniforms.time,
+            "layers": Self.layerInputSnapshots(renderer), "outputs": outputs,
+            "scope": "real broker + authored JS + shader; raw storage; no native alpha expectation",
+        ]
+        try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
+            .write(to: outputRoot.appendingPathComponent("\(sceneID)-text-audio.json"), options: .atomic)
     }
 
     private static func layerInputSnapshots(_ renderer: WPEMetalSceneRenderer) -> [[String: Any]] {

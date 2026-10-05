@@ -154,6 +154,7 @@ final class WPEMetalRenderExecutor {
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
     var frameUniformContext: WPEFrameUniformContext = .empty
+    var currentDirectionalLighting: WPESceneDirectionalLightingSnapshot = .empty
     #if DEBUG
     var uniformSourceTrace: [WPEUniformValueSource]?
     #endif
@@ -707,6 +708,7 @@ final class WPEMetalRenderExecutor {
         dynamicLayerIDs: Set<String> = [],
         runtimeUniforms: WPEMetalRuntimeUniforms = .zero,
         cameraUniforms: WPEMetalCameraUniforms = .identity,
+        directionalLighting: WPESceneDirectionalLightingSnapshot = .empty,
         /// Merged over the authored values; empty for every scene without a bound script.
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:],
         /// A missing entry falls back to the gate's authored seed; empty for every scene without a script-gated effect.
@@ -784,7 +786,11 @@ final class WPEMetalRenderExecutor {
                                                    parallax: runtimeUniforms.cameraParallax, sceneSize: size)
         frameUniformContext = drawUniforms
         frameNeedsReflectionHistory = false
-        defer { frameUniformContext = .empty }
+        currentDirectionalLighting = directionalLighting
+        defer {
+            frameUniformContext = .empty
+            currentDirectionalLighting = .empty
+        }
         currentOutputPixelFormat = cameraUniforms.sceneHDR ? .rgba16Float : Self.outputPixelFormat
         targetPool.promotesLDRFormatsToHDR = cameraUniforms.sceneHDR
         // ONE pixel scale for the whole frame: scene output, every pool target and the alias plan must shrink together or `copyTexture` blits mismatched extents. `size` stays WORLD-sized; only allocations and g_TexelSize go through the scaled-canvas conversion.
@@ -1496,8 +1502,8 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]
-    var textBackgroundPipelineCache: [UInt: MTLRenderPipelineState] = [:]
+    var textGlyphPipelineCache: [String: MTLRenderPipelineState] = [:]
+    var textBackgroundPipelineCache: [String: MTLRenderPipelineState] = [:]
 
     var particlePipelineCache: [ParticlePipelineKey: MTLRenderPipelineState] = [:]
     var refractionBackground: MTLTexture?
@@ -1591,6 +1597,9 @@ final class WPEMetalRenderExecutor {
         let drawLayer = layerForDrawing(pass: pass.pass, layer: layer)
 
         if WPETextLayerSynthesis.isGlyphPassShader(pass.pass.shader) {
+            let effectCarrier = textPayload?.mode == .offscreen && layer.passes.contains {
+                if case .effect = $0.phase { return true }; return false
+            }
             var copiedSceneBackground = false
             if textPayload?.mode == .offscreen,
                textPayload?.copiesSceneBackground == true,
@@ -1607,6 +1616,7 @@ final class WPEMetalRenderExecutor {
                     source: frameState.output,
                     uniforms: backgroundUniforms,
                     output: destination.texture,
+                    effectCarrier: effectCarrier,
                     commandBuffer: commandBuffer
                 )
                 copiedSceneBackground = true
@@ -1635,6 +1645,7 @@ final class WPEMetalRenderExecutor {
             }
             let encoded = try encodeTextMesh(
                 payload: textPayload,
+                effectCarrier: effectCarrier,
                 sceneSize: textCanvasSize,
                 output: destination.texture,
                 clearsOutput: clearsDestination,

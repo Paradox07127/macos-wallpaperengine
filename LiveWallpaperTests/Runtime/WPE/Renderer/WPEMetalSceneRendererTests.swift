@@ -3218,3 +3218,201 @@ struct WPEParticleHostOriginDeltaTests {
         #expect(delta == SIMD2<Float>(240, 0))
     }
 }
+
+extension WPEMetalSceneRendererTests {
+    @Test("A parsed directional light illuminates generic4 with zero ambient and skylight")
+    func directionalLightIlluminatesZeroAmbientModel() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        func sample(lightingEnabled: Bool) async throws -> [Float] {
+            let fixture = try MetalSceneFixture.directionalModelScene(lightingEnabled: lightingEnabled)
+            defer { fixture.cleanup() }
+            let sceneData = try Data(contentsOf: fixture.root.appendingPathComponent("scene.json"))
+            let parsed = try WPESceneDocumentParser.parse(data: sceneData)
+            #expect(parsed.lightObjects.count == 1)
+            #expect(parsed.lightObjects.first?.intensity == 5)
+            #expect(parsed.general.lightAmbientColor == .zero)
+            #expect(parsed.general.lightSkylightColor == .zero)
+            let renderer = try WPEMetalSceneRenderer(
+                descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+                frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device
+            )
+            defer { renderer.cleanup() }
+            try await renderer.load()
+            let output = try #require(renderer.outputTexture)
+            let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+            let region = MTLRegionMake2D(output.width / 2, output.height / 2, 1, 1)
+            let rgba: [Float]
+            switch output.pixelFormat {
+            case .rgba16Float:
+                var pixel = [UInt16](repeating: 0, count: 4)
+                pixel.withUnsafeMutableBytes {
+                    staging.getBytes($0.baseAddress!, bytesPerRow: 8, from: region, mipmapLevel: 0)
+                }
+                rgba = pixel.map { Float(Float16(bitPattern: $0)) }
+            case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb:
+                var pixel = [UInt8](repeating: 0, count: 4)
+                staging.getBytes(&pixel, bytesPerRow: 4, from: region, mipmapLevel: 0)
+                if output.pixelFormat == .bgra8Unorm || output.pixelFormat == .bgra8Unorm_srgb {
+                    pixel.swapAt(0, 2)
+                }
+                rgba = pixel.map { Float($0) / 255 }
+            default:
+                throw NSError(domain: "WPEDirectionalLightingFixture", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Unsupported readback format \(output.pixelFormat)"])
+            }
+            return rgba
+        }
+        let control = try await sample(lightingEnabled: false)
+        try #require(control[0] > 0.2 && control[1] > 0.2 && control[2] > 0.2,
+                     "LIGHTING0 must prove the same model and texture cover this pixel, got \(control)")
+        let rgba = try await sample(lightingEnabled: true)
+        #expect(rgba[0] > 0.05 && rgba[1] > 0.05 && rgba[2] > 0.05,
+                "zero ambient is intentional: generic4 must consume the parsed directional light, got \(rgba)")
+    }
+}
+
+private extension MetalSceneFixture {
+    static func directionalModelScene(lightingEnabled: Bool) throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEDirectionalModel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("models"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("materials"), withIntermediateDirectories: true)
+        try writePNG(at: root.appendingPathComponent("materials/white.png"), color: CGColor(gray: 1, alpha: 1))
+        let material: [String: Any] = ["passes": [["shader": "generic4", "textures": ["materials/white.png"],
+                                                   "constantshadervalues": ["color": "0.5 0.5 0.5", "roughness": 1, "metallic": 0.14],
+                                                   "combos": ["LIGHTING": lightingEnabled ? 1 : 0, "REFLECTION": 0], "blending": "disabled", "cullmode": "nocull",
+                                                   "depthtest": "disabled", "depthwrite": "disabled"]]]
+        try JSONSerialization.data(withJSONObject: material).write(to: root.appendingPathComponent("materials/lit.json"))
+        var mdl = Data("MDLV0016".utf8)
+        func u32(_ value: UInt32) {
+            var v = value.littleEndian; Swift.withUnsafeBytes(of: &v) { mdl.append(contentsOf: $0) }
+        }
+        func f32(_ value: Float) {
+            u32(value.bitPattern)
+        }
+        u32(0x0000_0F00); mdl.append(UInt8(0)); u32(1); u32(1)
+        mdl.append(contentsOf: "materials/lit.json".utf8); mdl.append(UInt8(0))
+        u32(0); u32(0x0000_000F); u32(4 * 12 * 4)
+        // Native directional CB is a vector toward the light (DXBC dot(N,L)
+        // uses it without negation). An unrotated light publishes world -X.
+        // Give the plane a constant -X normal while retaining screen coverage.
+        let vertices: [(Float, Float, Float, Float)] = [(-16, -16, 0, 1), (16, -16, 1, 1), (-16, 16, 0, 0), (16, 16, 1, 0)]
+        for (x, y, u, v) in vertices {
+            for value in [x, y, 0, -1, 0, 0, 0, 0, 1, 1, u, v] {
+                f32(value)
+            }
+        }
+        u32(6 * 2)
+        for index: UInt16 in [0, 1, 2, 2, 1, 3] {
+            var v = index.littleEndian; Swift.withUnsafeBytes(of: &v) { mdl.append(contentsOf: $0) }
+        }
+        try mdl.write(to: root.appendingPathComponent("models/lit.mdl"))
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64, "auto": true],
+                        "ambientcolor": "0 0 0", "skylightcolor": "0 0 0", "hdr": true],
+            "objects": [
+                ["id": "lit-model", "name": "Directional control", "solid": true,
+                 "model": "models/lit.mdl", "origin": "32 32 -1", "scale": "1 1 1"],
+                ["id": "directional", "light": "ldirectional", "angles": "0 0 0", "origin": "0 0 0",
+                 "color": "1 1 1", "intensity": 5, "visible": true],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: scene).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(root: root, descriptor: SceneDescriptor(
+            workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test", entryFile: "scene.json", capabilityTier: .degraded
+        ), dependencyRoot: nil)
+    }
+}
+
+extension WPEMetalSceneRendererTests {
+    @Test("Directional light scripts and full parent matrices publish together in each frame")
+    func directionalLightAndParentScriptsShareFramePublication() async throws {
+        let fixture = try MetalSceneFixture.directionalModelScene(lightingEnabled: true)
+        defer { fixture.cleanup() }
+        let url = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        let angleScript = "export function init(value) { value.z = 90; return value; } export function update(value) { value.z = 90 + Math.max(0, engine.runtime - 1) * 30; return value; }"
+        objects[1]["parent"] = "light-host"
+        objects[1]["angles"] = ["value": "0 0 0", "script": angleScript]
+        objects[1]["color"] = ["value": "1 1 1", "script": "export function init(value) { return new Vec3(0.25, 0.5, 0.75); } export function update(value) { return new Vec3(0.25 + Math.max(0, engine.runtime - 1) * 0.1, 0.5, 0.75); }"]
+        objects[1]["castshadow"] = true
+        objects.append(["id": "light-host", "type": "group", "origin": "10 20 30", "scale": "2 3 4",
+                        "angles": ["value": "0 0 0", "script": angleScript]])
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: url)
+        let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: url))
+        #expect(WPESceneScriptInstanceInventory(document: document).transform == 3)
+        let now = OSAllocatedUnfairLock(initialState: 1.0)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            frameClock: WPEMetalFrameClock(loadTime: 0, currentMediaTime: { now.withLock { $0 } })
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        #expect(renderer.dynamicAnglesScriptInstances["directional"] != nil)
+        #expect(renderer.dynamicColorScriptInstances["directional"] != nil)
+        let initial = try #require(renderer.lastFrameDirectionalLighting.lights.first)
+        #expect(abs(initial.uniforms.direction.x - 1) < 0.001)
+        #expect(abs(initial.uniforms.direction.y) < 0.001)
+        #expect(initial.uniforms.radiance == SIMD4<Float>(1.25, 2.5, 3.75, 0))
+        #expect(initial.castShadow)
+        #expect(renderer.lastFrameDirectionalLighting.metadata.y == 1)
+        now.withLock { $0 = 2 }
+        // One older job may still own an outcome slot. Two completed submissions
+        // ensure time2 has executed before its outputs are consumed below.
+        for _ in 0 ..< 2 {
+            _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            // Existing transform ticks publish asynchronously. Queue barriers after
+            // their submitted work observe actual completion, without an arbitrary sleep.
+            if let completion = renderer.lastOracleSceneScriptBatchCompletion {
+                try #require(completion.wait(timeout: .now() + 1), "script batch did not complete within its bounded wait")
+            } else {
+                try #require(renderer.orderedLayerScriptBatch == nil, "barriers require parallel-worker submission")
+                let barriers = (0 ..< renderer.sceneScriptBatchDispatcher.width).map { _ in
+                    let lane = renderer.sceneScriptBatchDispatcher.reserveLane()
+                    return WPESceneScriptBatchDispatcher.Job(queue: lane.queue, work: {})
+                }
+                let completion = try #require(renderer.sceneScriptBatchDispatcher.submit(barriers, trackingCompletion: true))
+                try #require(completion.wait(timeout: .now() + 1), "script batch did not complete within its bounded wait")
+            }
+        }
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        #expect(abs((renderer.lastStableScriptTransforms.angles["directional"]?.z ?? 0) - 2 * .pi / 3) < 0.001)
+        #expect(abs((renderer.lastStableScriptTransforms.angles["light-host"]?.z ?? 0) - 2 * .pi / 3) < 0.001)
+        let moved = try #require(renderer.lastFrameDirectionalLighting.lights.first)
+        // Both rotations are now 120 degrees. Rz(120)*S(2,3)*Rz(120)*(-X)
+        // is (1.75, 1.25*sqrt(3), 0), before normalization. Translation has no effect.
+        let length = sqrt(7.75)
+        #expect(abs(moved.uniforms.direction.x - Float(1.75 / length)) < 0.001)
+        #expect(abs(moved.uniforms.direction.y - Float(1.25 * sqrt(3) / length)) < 0.001)
+        #expect(abs(moved.uniforms.radiance.x - 1.75) < 0.001)
+        #expect(moved.uniforms.radiance.y == 2.5 && moved.uniforms.radiance.z == 3.75)
+        #expect(renderer.executor.currentDirectionalLighting == .empty, "frame lighting must not leak to an unrelated executor render")
+    }
+}
+
+extension WPEMetalSceneRendererTests {
+    @Test("Directional lighting ABI retains authored color and shadow requests without fabricating a parent")
+    func directionalLightingCPUContract() {
+        #expect(MemoryLayout<WPEMetalDirectionalLightUniforms>.stride == 32)
+        let light = WPESceneLightObject(id: "light", name: "Light", type: .directional, authoredType: "ldirectional",
+                                        origin: .zero, scale: SIMD3(repeating: 1), angles: .zero, color: SIMD3(0.25, 0.5, 0.75),
+                                        intensity: 5, castShadow: true)
+        let resolved = WPESceneDirectionalLightingSnapshot.make(lights: [light], localTransforms: [:],
+                                                                parentByID: [:], ownVisibilityByID: [:])
+        #expect(resolved.lights.first?.uniforms.direction == SIMD4<Float>(-1, 0, 0, 0))
+        #expect(resolved.lights.first?.uniforms.radiance == SIMD4<Float>(1.25, 2.5, 3.75, 0))
+        #expect(resolved.metadata == SIMD4<UInt32>(1, 1, 0, 0))
+        let incomplete = WPESceneDirectionalLightingSnapshot.make(lights: [light], localTransforms: [:],
+                                                                  parentByID: ["light": "missing"], ownVisibilityByID: [:])
+        #expect(incomplete.lights.isEmpty)
+        #expect(incomplete.unresolvedObjectIDs == ["light"])
+        let hidden = WPESceneDirectionalLightingSnapshot.make(lights: [light], localTransforms: [:],
+                                                              parentByID: [:], ownVisibilityByID: ["light": false])
+        #expect(hidden.lights.isEmpty && hidden.metadata.x == 0)
+        #expect(hidden.uniformPayload.count == 1, "even an empty light list must bind a valid zero record")
+    }
+}

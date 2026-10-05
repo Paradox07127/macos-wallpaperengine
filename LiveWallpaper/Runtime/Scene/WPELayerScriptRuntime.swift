@@ -1558,8 +1558,10 @@ final class WPELayerScriptInstance {
 
         private func installInput(in context: JSContext) {
             let input = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let screen = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let world = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            // Native vector prototypes provide copy/arithmetic while the helper keeps their identity stable.
+            let screen = context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [0, 0])
+                ?? JSValue(nullIn: context)!
+            let world = cursorVectorObject(.zero, in: context)
             input.setObject(screen, forKeyedSubscript: "cursorScreenPosition" as NSString)
             input.setObject(world, forKeyedSubscript: "cursorWorldPosition" as NSString)
             context.setObject(input, forKeyedSubscript: "input" as NSString)
@@ -1637,11 +1639,11 @@ final class WPELayerScriptInstance {
         }
 
         private func cursorVectorObject(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
-            let object = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            object.setObject(value.x.isFinite ? value.x : 0, forKeyedSubscript: "x" as NSString)
-            object.setObject(value.y.isFinite ? value.y : 0, forKeyedSubscript: "y" as NSString)
-            object.setObject(value.z.isFinite ? value.z : 0, forKeyedSubscript: "z" as NSString)
-            return object
+            context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [
+                value.x.isFinite ? value.x : 0,
+                value.y.isFinite ? value.y : 0,
+                value.z.isFinite ? value.z : 0,
+            ]) ?? JSValue(nullIn: context)!
         }
 
         private func clampFinite(_ value: Double, lower: Double, upper: Double) -> Double {

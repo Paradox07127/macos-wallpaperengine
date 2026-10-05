@@ -73,6 +73,68 @@ struct WPEParticleScriptVisibilityTests {
         #expect(end.alive > 40)
     }
 
+    @Test("A unique transform host name receives another layer's visibility write", .timeLimit(.minutes(1)))
+    func uniqueTransformHostCanHideParticleChild() async throws {
+        let fixture = try Self.scene(
+            particleVisible: true,
+            script: "export function init() { thisScene.getLayer('PulseHost').visible = false; }",
+            startTime: nil
+        )
+        defer { fixture.cleanup() }
+        let sceneURL = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        let particleIndex = try #require(objects.firstIndex { $0["id"] as? String == "pfx" })
+        objects[particleIndex]["parent"] = "host"
+        // No image/particle: this is an authored transform-only ancestor, not a drawable.
+        objects.append(["id": "host", "name": "PulseHost", "solid": true, "visible": true, "origin": "0 0 0"])
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: sceneURL)
+
+        let wasCapturing = SystemAudioCaptureManager.isCapturing
+        SystemAudioCaptureManager.broker.resetToSilence()
+        SystemAudioCaptureManager.broker.attachAnalyzer(SpectrumAnalyzerStub(AudioSpectrumFrame(
+            validatedLeft: [Float](repeating: 0, count: AudioSpectrumFrame.binCount),
+            validatedRight: [Float](repeating: 0, count: AudioSpectrumFrame.binCount), timestampNanos: 1
+        )))
+        SystemAudioCaptureManager.setCapturingForTesting(true)
+        defer {
+            SystemAudioCaptureManager.setCapturingForTesting(wasCapturing)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
+        let now = OSAllocatedUnfairLock(initialState: 0.0)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice()),
+            frameClock: WPEMetalFrameClock(loadTime: 0, currentMediaTime: { now.withLock { $0 } })
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        let system = try #require(renderer.particleSystems.first)
+        renderer.executor.synchronizeFrameCompletion = true
+        #expect(renderer.objectParentByID["pfx"] == "host")
+        #expect(renderer.liveLayerVisibility["host"] == false, "Cross-layer write must reach the non-drawable host")
+        for ordinal in 1 ... 30 {
+            now.withLock { $0 = Double(ordinal) / 30 }
+            let inputs = renderer.makeFrameInputs()
+            _ = try renderer.renderCurrentFrame(inputs: inputs)
+            let uniforms = try #require(renderer.lastRuntimeUniforms)
+            #expect(uniforms.audioSpectrumLeft.count == AudioSpectrumFrame.binCount)
+            #expect(uniforms.audioSpectrumRight.count == AudioSpectrumFrame.binCount)
+            #expect(uniforms.audioSpectrumLeft.allSatisfy { $0 == 0 })
+            #expect(uniforms.audioSpectrumRight.allSatisfy { $0 == 0 })
+            let production = try #require(renderer.latestFrameProduction)
+            let completed = await withCheckedContinuation { continuation in
+                production.observe { continuation.resume(returning: $0) }
+            }
+            try #require(completed)
+        }
+        #expect(!renderer.particleSystemVisible(system))
+        #expect(system.liveInstanceCount == 0)
+        #expect(renderer.executor.lastDiagnosticFrameStats.particleSystemsEncoded == 0)
+    }
+
     /// Renders 0…4.4 s at 30 fps on a driven clock and records the emitter's live count and executor hand-off per frame.
     private func samples(
         particleVisible: Bool,

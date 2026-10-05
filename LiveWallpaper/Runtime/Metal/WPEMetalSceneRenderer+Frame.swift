@@ -378,6 +378,14 @@ extension WPEMetalSceneRenderer {
             executor.targetPool.discardTextures(named: textFrame.obsoleteTargetNames)
         }
         refreshParallaxRootOrigins(from: transforms)
+        let lighting = WPESceneDirectionalLightingSnapshot.make(
+            lights: sceneLightObjects, localTransforms: layerAncestorLocalTransformsByID,
+            parentByID: objectParentByID, ownVisibilityByID: ownVisibilityByID,
+            origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
+            colors: transforms.colors,
+            visibility: liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
+        )
+        lastFrameDirectionalLighting = lighting
         let frame = try withFrameSignpost("encode") { () throws -> MTLTexture in
             let currentTextures = try texturesForCurrentFrame(
                 time: uniforms.time,
@@ -396,6 +404,7 @@ extension WPEMetalSceneRenderer {
                 dynamicLayerIDs: staticCacheExcludedLayerIDs,
                 runtimeUniforms: uniforms,
                 cameraUniforms: cameraUniforms,
+                directionalLighting: lighting,
                 scriptedConstants: liveEffectConstants,
                 passVisibility: liveEffectVisibility,
                 sceneID: descriptor.workshopID,

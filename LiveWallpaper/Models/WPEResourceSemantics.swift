@@ -25,6 +25,8 @@ struct WPEResourceSemantics: Equatable, Hashable, Codable, Sendable {
     static let straightColor = Self(alpha: .straight, usage: .color)
     static let premultipliedColor = Self(alpha: .premultiplied, usage: .color)
     static let opaqueColor = Self(alpha: .opaque, usage: .color)
+    /// Native effected-text surfaces retain sampled backdrop RGB independently of glyph coverage alpha.
+    static let textEffectCarrier = Self(alpha: .independent, usage: .color)
     static let emission = Self(alpha: .independent, usage: .additive)
 
     static func data(_ usage: WPETextureUsage) -> Self {

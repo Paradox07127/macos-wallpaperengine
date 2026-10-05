@@ -987,6 +987,97 @@ struct WPESceneScriptRuntimeTests {
         #expect(value == SIMD3<Double>(2, 3, 4))
     }
 
+    @Test("Console error converts every argument and returns undefined")
+    func sceneScriptConsoleErrorUsesAllArguments() throws {
+        let instance = try WPESceneScriptInstance(script: """
+        export function update(value) {
+            let converted = [];
+            const first = { toString() { converted.push('first'); return 'diagnostic'; } };
+            const second = { toString() { converted.push('second'); return 'detail'; } };
+            const result = console.error(first, second, 7, false, null, undefined);
+            return typeof result + ':' + converted.join(',');
+        }
+        """, initialValue: "seed")
+        #expect(instance.tickString(runtimeSeconds: 0) == "undefined:first,second")
+    }
+
+    @Test("A shared dispatcher console error leaves its missing-event return and consumer init intact")
+    func sharedConsoleErrorDoesNotInterruptTransformInit() throws {
+        let store = callableTransactionStore()
+        let producer = try WPELayerScriptInstance(script: """
+        class EventDispatcher {
+            constructor() { this.eventTypes = new Map(); }
+            registerListener(eventID) {
+                if (this.eventTypes.get(eventID) === undefined) {
+                    console.error('Event ID "' + eventID + '" does not exist.');
+                    return false;
+                }
+                return true;
+            }
+        }
+        shared.eventDispatcher = new EventDispatcher();
+        """, shared: store)
+        let consumer = try WPEDynamicTransformScriptInstance(script: """
+        export function init(value) {
+            shared.listenerRegistered = shared.eventDispatcher.registerListener('mBgColorUpdate');
+            shared.initFinished = true;
+            return value;
+        }
+        export function update(value) { return value; }
+        """, seed: SIMD3(2, 3, 4), canvasSize: SIMD2(64, 64), shared: store)
+        #expect(store.get("listenerRegistered") as? Bool == false)
+        #expect(store.get("initFinished") as? Bool == true)
+        #expect(consumer.tick(pointerPosition: .zero, runtimeSeconds: 0) == SIMD3(2, 3, 4))
+        withExtendedLifetime(producer) {}
+    }
+
+    @Test("Transform init receives the native vector type and preserves copy arithmetic", arguments: [false, true])
+    func transformInitReceivesNativeVectorValue(vector3: Bool) throws {
+        let vectorType = vector3 ? "Vec3" : "Vec2"
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            let snapshot;
+            export function init(value) {
+                if (!(value instanceof \(vectorType))) throw new Error('wrong vector type');
+                const copied = value.copy();
+                if (!(copied instanceof \(vectorType)) || copied === value) throw new Error('wrong copy');
+                snapshot = copied.add(2).multiply(3);
+                if (value.x !== 2 || value.y !== 3) throw new Error('input mutated');
+                return snapshot;
+            }
+            export function update(value) { return snapshot; }
+            """,
+            seed: SIMD3(2, 3, 4), valueShape: vector3 ? .vector3 : .vector2,
+            canvasSize: SIMD2(64, 64)
+        )
+        let actual = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
+        #expect(actual == SIMD3(12, 15, vector3 ? 18 : 4))
+    }
+
+    @Test("Native vector update methods retain identity without aliasing the init seed", arguments: [false, true])
+    func transformNativeVectorUpdateRetainsIdentity(vector3: Bool) throws {
+        let vectorType = vector3 ? "Vec3" : "Vec2"
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            let initial, firstUpdate;
+            export function init(value) { initial = value; }
+            export function update(value) {
+                if (!(value instanceof \(vectorType))) throw new Error('wrong update vector type');
+                if (value === initial || initial.x !== 2 || initial.y !== 3) throw new Error('init aliased');
+                if (firstUpdate && firstUpdate !== value) throw new Error('update identity changed');
+                firstUpdate = value;
+                return value.copy().add(1);
+            }
+            """,
+            seed: SIMD3(2, 3, 4), valueShape: vector3 ? .vector3 : .vector2,
+            canvasSize: SIMD2(64, 64)
+        )
+        for tick in 0 ..< 3 {
+            let actual = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: Double(tick)))
+            #expect(actual == SIMD3(3 + Double(tick), 4 + Double(tick), vector3 ? 5 + Double(tick) : 4))
+        }
+    }
+
     @Test("Transform update reuses the same argument object across ticks")
     func transformUpdateReusesArgumentObjectAcrossTicks() throws {
         let instance = try WPEDynamicTransformScriptInstance(
@@ -4460,6 +4551,69 @@ export function init(value) {
 
     /// The batched cursor write must assign onto the SAME objects a script may have
     /// captured — a helper that replaced them would silently freeze every reference.
+    @Test("Transform cursor vectors support Launcher subtract and retain captured identity")
+    func transformCursorNativeVectorKeepsIdentity() throws {
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+        let captured = input.cursorWorldPosition;
+        export function update(value) {
+            if (!(captured instanceof Vec3) || captured !== input.cursorWorldPosition) throw new Error('cursor type or identity');
+            const offset = captured.subtract(new Vec3(10, 5, 2));
+            if (!(offset instanceof Vec3) || captured.x !== input.cursorWorldPosition.x) throw new Error('cursor mutation');
+            return offset.copy();
+        }
+        """, seed: SIMD3(0, 0, 7), canvasSize: SIMD2(200, 100))
+        #expect(instance.tick(pointerPosition: SIMD2(0.25, 0.75), runtimeSeconds: 1) == SIMD3(40, 20, 5))
+        #expect(instance.tick(pointerPosition: SIMD2(0.5, 0.25), runtimeSeconds: 2) == SIMD3(90, 70, 5))
+    }
+
+    @Test("Layer cursor input exposes native Vec2 and Vec3 without replacing captured objects")
+    func layerCursorNativeVectorsKeepIdentity() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        let screen = input.cursorScreenPosition, world = input.cursorWorldPosition;
+        export function update() {
+            if (!(screen instanceof Vec2) || !(world instanceof Vec3)) throw new Error('cursor types');
+            if (screen !== input.cursorScreenPosition || world !== input.cursorWorldPosition) throw new Error('cursor identity');
+            const screenOffset = screen.copy().subtract(new Vec2(10, 5));
+            const worldOffset = world.copy().subtract(new Vec3(10, 5, 2));
+            shared.sx = screenOffset.x; shared.sy = screenOffset.y;
+            shared.wx = worldOffset.x; shared.wy = worldOffset.y; shared.wz = worldOffset.z;
+        }
+        """, shared: store, canvasSize: SIMD2(200, 100))
+        for (pointer, expected) in [
+            (SIMD2<Double>(0.25, 0.75), SIMD3<Double>(40, 20, -2)),
+            (SIMD2<Double>(0.5, 0.25), SIMD3<Double>(90, 70, -2)),
+        ] {
+            let frame = WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
+            _ = instance.tick(pointerFrame: frame)
+            #expect(store.get("sx") as? Double == expected.x)
+            #expect(store.get("sy") as? Double == pointer.y * 100 - 5)
+            #expect(store.get("wx") as? Double == expected.x)
+            #expect(store.get("wy") as? Double == expected.y)
+            #expect(store.get("wz") as? Double == expected.z)
+        }
+    }
+
+    @Test("CLOCK cursor event positions expose Vec3 copy and add methods")
+    func cursorEventNativeVectorsSupportClockDrag() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(script: """
+        export function cursorMove(event) {
+            if (!(event.worldPosition instanceof Vec3) || !(event.localPosition instanceof Vec3)) throw new Error('event vector types');
+            const destination = event.worldPosition.add(new Vec3(10, 20, 0));
+            shared.wx = destination.x; shared.wy = destination.y; shared.wz = destination.z;
+            shared.lx = event.localPosition.copy().x;
+        }
+        """, shared: store)
+        let frame = WPEPointerFrame(position: .zero, clickPosition: .zero, isDown: false, isRightDown: false)
+        let hit = WPELayerScriptCursorHit(worldPosition: SIMD3(1, 2, 3), localPosition: SIMD3(4, 5, 6))
+        _ = instance.dispatchCursorEvent(.move, pointerFrame: frame, hit: hit)
+        #expect(store.get("wx") as? Double == 11)
+        #expect(store.get("wy") as? Double == 22)
+        #expect(store.get("wz") as? Double == 3)
+        #expect(store.get("lx") as? Double == 4)
+    }
+
     @Test("Cursor objects captured at init keep observing new values")
     func capturedCursorObjectsKeepTheirIdentityAcrossTicks() throws {
         let store = WPESharedScriptState()

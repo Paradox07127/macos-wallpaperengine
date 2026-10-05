@@ -152,6 +152,58 @@ struct WPESceneModelNormalMatrixTests {
         #expect(try hdrCenter(fresh).z < 0.05)
     }
 
+    @Test("Directional generic4 matches official GGX diffuse and specular with zero ambient")
+    func directionalPBRMatchesOfficialFormula() throws {
+        let actual = try renderDirectionalPBR(roughness: 1)
+        // N=L=V gives G=1, D=1/pi, F=f0. Expected PBR is
+        // ((1-m)*(1-f0)*albedo + f0/4) * lightColor / pi.
+        // This differentiates the captured PBR from a Lambert-only brightening.
+        let expected = SIMD3<Float>(0.654473, 0.207630, 0.036573)
+        #expect(abs(actual.x - expected.x) < 0.005)
+        #expect(abs(actual.y - expected.y) < 0.005)
+        #expect(abs(actual.z - expected.z) < 0.005)
+        #expect(actual.w > 0.99)
+    }
+
+    @Test("Zero roughness at the aligned GGX singularity remains finite")
+    func zeroRoughnessDirectionalLightingRemainsFinite() throws {
+        let actual = try renderDirectionalPBR(roughness: 0)
+        #expect(actual.x.isFinite && actual.y.isFinite && actual.z.isFinite && actual.w.isFinite)
+        #expect(actual.w > 0.99)
+        // Our explicit zero-NDF singular fallback keeps the finite diffuse term;
+        // it does not assert that native WPE defines this singular input likewise.
+        #expect(actual.x > 0.1 && actual.y > 0.1 && actual.z > 0.01)
+    }
+
+    private func renderDirectionalPBR(roughness: Double) throws -> SIMD4<Float> {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let white = try whiteTexture(device: device)
+        let testCase = Case(name: "directional PBR", scale: SIMD3(repeating: 1), angleZ: 0,
+                            localNormal: SIMD3(0, 0, 1), isControl: true)
+        let template = pipeline(testCase).layers[0]
+        let pass = WPERenderPass(
+            id: "pbr.material", phase: .material, shader: "generic4", source: .asset("white"), target: .scene,
+            textures: [0: .asset("white")], binds: [:],
+            constants: ["color": .vector([0.5, 0.25, 0.125]), "roughness": .number(roughness), "metallic": .number(0.14)],
+            combos: ["LIGHTING": 1, "REFLECTION": 0], blending: "disabled", cullMode: "nocull",
+            depthTest: "disabled", depthWrite: "disabled"
+        )
+        let prepared = WPEPreparedRenderLayer(graphLayer: template.graphLayer, puppetModel: template.puppetModel,
+                                              passes: [.init(pass: pass, shader: .init(name: "generic4", vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                                             textureBindings: pass.textures, comboValues: pass.combos, uniformValues: [:])])
+        let lighting = WPESceneDirectionalLightingSnapshot(lights: [.init(objectID: "pbr-light",
+                                                                          uniforms: .init(direction: SIMD4(0, 0, 1, 0), radiance: SIMD4(5, 3, 1, 0)), castShadow: false)])
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 16, height: 16, auto: true),
+            sceneCamera: WPESceneCamera(center: SIMD3(8.5, 8.5, -1), eye: SIMD3(8.5, 8.5, 1000),
+                                        up: SIMD3(0, 1, 0), nearZ: 0.01, farZ: 10000, fov: 50), lightAmbientColor: .zero, lightSkylightColor: .zero, sceneHDR: true
+        )
+        let output = try executor.render(pipeline: .init(layers: [prepared]), size: size, textures: ["white": white],
+                                         cameraUniforms: camera, directionalLighting: lighting)
+        return try hdrCenter(output)
+    }
+
     private func hdrCenter(_ texture: MTLTexture) throws -> SIMD4<Float> {
         #expect(texture.pixelFormat == .rgba16Float)
         let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))

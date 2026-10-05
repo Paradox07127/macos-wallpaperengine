@@ -8,6 +8,7 @@ extension WPEMetalRenderExecutor {
     @discardableResult
     func encodeTextMesh(
         payload: WPETextRenderPayload?,
+        effectCarrier: Bool = false,
         sceneSize: CGSize,
         output: MTLTexture,
         clearsOutput: Bool,
@@ -17,6 +18,7 @@ extension WPEMetalRenderExecutor {
     ) throws -> Bool {
         try encodeTextMeshes(
             payloads: payload?.mesh.map { [$0] } ?? [],
+            effectCarrier: effectCarrier,
             backgroundColor: payload?.backgroundColor,
             sceneSize: sceneSize,
             output: output,
@@ -30,6 +32,7 @@ extension WPEMetalRenderExecutor {
     @discardableResult
     private func encodeTextMeshes(
         payloads: [WPETextMeshPayload],
+        effectCarrier: Bool = false,
         backgroundColor: SIMD4<Float>?,
         sceneSize: CGSize,
         output: MTLTexture,
@@ -40,7 +43,7 @@ extension WPEMetalRenderExecutor {
     ) throws -> Bool {
         guard !payloads.isEmpty || clearsOutput else { return false }
         // Resolve before opening the encoder so a failure never leaks it.
-        let state = try textGlyphPipelineState(colorPixelFormat: output.pixelFormat)
+        let state = try textGlyphPipelineState(colorPixelFormat: output.pixelFormat, effectCarrier: effectCarrier)
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = output
         descriptor.colorAttachments[0].loadAction = clearsOutput ? .clear : .load
@@ -83,9 +86,10 @@ extension WPEMetalRenderExecutor {
         source: MTLTexture,
         uniforms: WPEObjectQuadUniforms,
         output: MTLTexture,
+        effectCarrier: Bool = false,
         commandBuffer: MTLCommandBuffer
     ) throws {
-        let state = try textBackgroundPipelineState(colorPixelFormat: output.pixelFormat)
+        let state = try textBackgroundPipelineState(colorPixelFormat: output.pixelFormat, effectCarrier: effectCarrier)
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = output
         descriptor.colorAttachments[0].loadAction = .clear
@@ -107,11 +111,13 @@ extension WPEMetalRenderExecutor {
     }
 
     private func textBackgroundPipelineState(
-        colorPixelFormat: MTLPixelFormat
+        colorPixelFormat: MTLPixelFormat, effectCarrier: Bool
     ) throws -> MTLRenderPipelineState {
-        if let cached = textBackgroundPipelineCache[colorPixelFormat.rawValue] { return cached }
+        let key = "\(colorPixelFormat.rawValue)|\(effectCarrier)"
+        if let cached = textBackgroundPipelineCache[key] { return cached }
+        let fragmentName = effectCarrier ? "wpe_text_effect_background_fragment" : "wpe_text_background_fragment"
         guard let vertex = defaultLibrary.makeFunction(name: "wpe_fullscreen_vertex"),
-              let fragment = try WPEMetalColorOutput.fragment(library: defaultLibrary, name: "wpe_text_background_fragment", format: colorPixelFormat) else {
+              let fragment = try WPEMetalColorOutput.fragment(library: defaultLibrary, name: fragmentName, format: colorPixelFormat) else {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_text_background_fragment")
         }
         let descriptor = MTLRenderPipelineDescriptor()
@@ -119,12 +125,13 @@ extension WPEMetalRenderExecutor {
         descriptor.fragmentFunction = fragment
         descriptor.colorAttachments[0].pixelFormat = colorPixelFormat
         let state = try device.makeRenderPipelineState(descriptor: descriptor)
-        textBackgroundPipelineCache[colorPixelFormat.rawValue] = state
+        textBackgroundPipelineCache[key] = state
         return state
     }
 
-    private func textGlyphPipelineState(colorPixelFormat: MTLPixelFormat) throws -> MTLRenderPipelineState {
-        if let cached = textGlyphPipelineCache[colorPixelFormat.rawValue] {
+    private func textGlyphPipelineState(colorPixelFormat: MTLPixelFormat, effectCarrier: Bool) throws -> MTLRenderPipelineState {
+        let key = "\(colorPixelFormat.rawValue)|\(effectCarrier)"
+        if let cached = textGlyphPipelineCache[key] {
             return cached
         }
         guard let vertex = defaultLibrary.makeFunction(name: "wpe_text_glyph_vertex"),
@@ -147,10 +154,12 @@ extension WPEMetalRenderExecutor {
         // the background through a second time — thin glyphs wash out.
         attachment.sourceRGBBlendFactor = .one
         attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        attachment.sourceAlphaBlendFactor = .one
+        // Native effected text uses SrcAlpha for alpha too (coverage squared).
+        // RGB is already multiplied by the glyph fragment, equivalent to native straight RGB/SrcAlpha.
+        attachment.sourceAlphaBlendFactor = effectCarrier ? .sourceAlpha : .one
         attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         let state = try device.makeRenderPipelineState(descriptor: descriptor)
-        textGlyphPipelineCache[colorPixelFormat.rawValue] = state
+        textGlyphPipelineCache[key] = state
         return state
     }
 }

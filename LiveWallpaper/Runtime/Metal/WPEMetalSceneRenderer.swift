@@ -359,6 +359,8 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Fold a layer script's `visible` against ancestors' CURRENT visibility so a script cannot show a layer under a hidden ancestor.
     var objectParentByID: [String: String] = [:]
     var ownVisibilityByID: [String: Bool] = [:]
+    var sceneLightObjects: [WPESceneLightObject] = []
+    var lastFrameDirectionalLighting: WPESceneDirectionalLightingSnapshot = .empty
     /// Authored parallax depth/origin for every object, including groups, for the rigid-subtree root walk.
     var parallaxAuthoredDepthByObjectID: [String: SIMD2<Double>] = [:]
     var parallaxAuthoredOriginByObjectID: [String: SIMD2<Double>] = [:]
