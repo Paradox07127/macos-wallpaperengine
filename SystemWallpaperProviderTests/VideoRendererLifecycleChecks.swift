@@ -17,6 +17,16 @@ extension VideoRenderer {
         }
     }
 
+    /// Returns whether the pump continues and whether the terminal latch is now set.
+    func fixturePumpStatus(_ status: AVQueuedSampleBufferRenderingStatus, requiresFlush: Bool) async -> (Bool, Bool) {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                let continues = pumpMayContinue(status: status, requiresFlush: requiresFlush)
+                continuation.resume(returning: (continues, failureReported))
+            }
+        }
+    }
+
     func fixtureNotify() {
         NotificationCenter.default.post(name: AVSampleBufferVideoRenderer.didFailToDecodeNotification, object: renderer)
     }
@@ -111,6 +121,14 @@ private func check(_ condition: Bool, _ message: String) {
         check(restartedSource, "explicit start did not restore the supplied source")
         check(abs(restartedClock) < 0.001, "stop then start retained the previous timeline")
         video.stopSync()
-        print("PASS: 8 controlled VideoRenderer lifecycle assertions; notifications target the real AVSampleBufferVideoRenderer")
+        let reclaimLog = FailureLog()
+        await video.fixtureArm { reclaimLog.record($0) }
+        let (reclaimContinues, reclaimLatched) = await video.fixturePumpStatus(.failed, requiresFlush: true)
+        check(!reclaimContinues, "pump kept feeding a reclaimed decoder")
+        check(!reclaimLatched && reclaimLog.count == 0, "decoder reclaim latched a terminal failure and blocks flush recovery")
+        let (failedContinues, failedLatched) = await video.fixturePumpStatus(.failed, requiresFlush: false)
+        check(!failedContinues && failedLatched && reclaimLog.count == 1, "terminal decode failure was not reported")
+        video.stopSync()
+        print("PASS: 11 controlled VideoRenderer lifecycle assertions; notifications target the real AVSampleBufferVideoRenderer")
     }
 }

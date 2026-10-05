@@ -15,9 +15,6 @@ struct WPECacheManagementView: View {
     @State var isLoading: Bool = true
     @State var errorMessage: String?
     @State var pendingDestructive: PendingDestructive?
-    @State var videoStats: WPEVideoCacheStats?
-    @State var isLoadingVideo: Bool = true
-    @State var lastVideoFreedBytes: UInt64?
     /// Applied / bookmarked / recent / deps scene ids.
     @State var reachableIDs: Set<String> = []
     /// App-managed engine assets only (Steam Workshop tree is external source data).

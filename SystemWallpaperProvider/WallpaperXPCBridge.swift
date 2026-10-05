@@ -2,9 +2,9 @@ import Foundation
 import IOKit.ps
 import os.log
 
-/// Sole home of every private-API touchpoint (plan §2): dlopen of
-/// WallpaperExtensionKit and the NSXPCInterface wiring that speaks its opaque
-/// types. If the runtime layout check fails we accept no connection, so the
+/// Owns the WallpaperExtensionKit touchpoints (plan §2): its dlopen and the
+/// NSXPCInterface wiring that speaks its opaque types. `RemoteContextBridge`
+/// (CAContext) and `VideoRenderer` (a layer selector) hold the other private calls. If the runtime layout check fails we accept no connection, so the
 /// extension quietly disappears from the wallpaper panel rather than crashing
 /// inside WallpaperAgent.
 /// `@unchecked Sendable`: the only mutable state is `handlers`, and every read

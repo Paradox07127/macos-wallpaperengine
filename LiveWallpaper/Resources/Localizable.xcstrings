@@ -4527,66 +4527,6 @@
         }
       }
     },
-    "Across %lld extracted video files" : {
-      "comment" : "WPE video texture cache footer. Placeholder is the file count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Across %lld extracted video file"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Across %lld extracted video files"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "En %lld archivo de vídeo extraído"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "En %lld archivos de vídeo extraídos"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "抽出済み動画ファイル %lld 件全体"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共 %lld 个已提取视频文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共 %lld 個已擷取影片檔案"
-          }
-        }
-      }
-    },
     "Action needed" : {
       "comment" : "Setup step status when the user must do something.",
       "extractionState" : "manual",
@@ -14372,42 +14312,6 @@
         }
       }
     },
-    "Clear Video Cache" : {
-      "comment" : "Destructive button title for clearing extracted scene video cache files.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Video Cache"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Borrar caché de vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画キャッシュを消去"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除视频缓存"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除影片快取"
-          }
-        }
-      }
-    },
     "Clear Wallpaper" : {
       "comment" : "A title for a destructive action that clears the current wallpaper.",
       "extractionState" : "manual",
@@ -14580,42 +14484,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除下載佇列"
-          }
-        }
-      }
-    },
-    "Clear scene video texture cache?" : {
-      "comment" : "Confirmation dialog title for clearing the scene video texture cache on the Storage tab.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear scene video texture cache?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Borrar la caché de vídeo de las escenas?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーン動画キャッシュを消去しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除场景视频缓存？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除場景影片快取？"
           }
         }
       }
@@ -20654,42 +20522,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從這台 Mac 的 Steam 收藏庫和 Loomscreen 刪除「%@」以釋放空間。此操作無法復原，可重新下載；Steam 訂閱不變。"
-          }
-        }
-      }
-    },
-    "Deletes %@ of extracted scene video files. Scenes re-extract the video textures the next time they render." : {
-      "comment" : "Destructive confirm message. Placeholder is a formatted byte size.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletes %@ of extracted scene video files. Scenes re-extract the video textures the next time they render."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elimina %@ de archivos de vídeo extraídos de las escenas. Las escenas volverán a extraer los vídeos la próxima vez que se rendericen."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "展開済みのシーン動画 %@ を削除します。次回描画時に動画が再展開されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除 %@ 已提取的场景视频文件。场景下次渲染时会重新提取视频。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將刪除 %@ 已擷取的場景影片檔案。場景下次渲染時會重新擷取影片。"
           }
         }
       }
@@ -81433,42 +81265,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要你"
-          }
-        }
-      }
-    },
-    "next day" : {
-      "comment" : "Suffix appended to a schedule end-time when the slot wraps past midnight.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "next day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "día siguiente"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翌日"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次日"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隔日"
           }
         }
       }

@@ -18,10 +18,30 @@ struct WindowDragRegion: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             if event.clickCount == 2 {
-                window?.performZoom(nil)
+                switch TitleBarDoubleClickAction(defaults: .standard) {
+                case .zoom: window?.performZoom(nil)
+                case .minimize: window?.performMiniaturize(nil)
+                case .none: break
+                }
             } else {
                 window?.performDrag(with: event)
             }
+        }
+    }
+}
+
+/// The system's "Double-click a window's title bar to" choice in Desktop & Dock.
+enum TitleBarDoubleClickAction: Equatable {
+    case zoom
+    case minimize
+    case none
+
+    /// Fill has no public API, so it zooms like an unset choice.
+    init(defaults: UserDefaults) {
+        switch defaults.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": self = .minimize
+        case "None": self = .none
+        default: self = .zoom
         }
     }
 }

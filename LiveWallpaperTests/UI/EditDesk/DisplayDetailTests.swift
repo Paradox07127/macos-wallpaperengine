@@ -44,6 +44,22 @@ struct DisplayDetailTests {
 
     // MARK: Hero box
 
+    @Test("Title bar double-click follows the system Desktop & Dock choice")
+    func titleBarDoubleClickFollowsSystemChoice() throws {
+        let suite = "DisplayDetailTests.titleBarDoubleClick"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(TitleBarDoubleClickAction(defaults: defaults) == .zoom, "no choice stored zooms")
+        let cases: [(String, TitleBarDoubleClickAction)] = [
+            ("Maximize", .zoom), ("Fill", .zoom), ("Minimize", .minimize), ("None", .none),
+        ]
+        for (stored, expected) in cases {
+            defaults.set(stored, forKey: "AppleActionOnDoubleClick")
+            #expect(TitleBarDoubleClickAction(defaults: defaults) == expected, "\(stored)")
+        }
+    }
+
     @Test("Fingers moving right step back, moving left step forward; vertical and diagonal scrolling stay in place")
     func swipeStepsByFingerDirection() {
         var right = DetailSwipeGesture()

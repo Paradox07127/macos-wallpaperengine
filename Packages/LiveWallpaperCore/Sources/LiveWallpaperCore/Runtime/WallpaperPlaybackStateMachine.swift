@@ -14,7 +14,7 @@ public final class WallpaperPlaybackStateMachine {
     }
 
     /// Split outputs, not one folded bool: downstream predicates differ
-    /// (video particles follow policy alone; play/pause follows intent too).
+    /// (particle overlays follow policy alone; play/pause follows intent too).
     public struct Outputs: Equatable, Sendable {
         /// Policy alone, ignoring intent.
         public var policyProfile: WallpaperPerformanceProfile

@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Inspector pane of the overlay workspace: the selected object's controls, reusing the old detail page's sections.
+/// Inspector pane of the overlay workspace: the selected object's controls.
 struct ObjectInspector: View {
     let session: OverlayEditorSession
     let screen: Screen?

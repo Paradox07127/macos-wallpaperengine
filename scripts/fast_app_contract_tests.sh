@@ -287,6 +287,11 @@ SERIAL_SUITES=(
   WPESceneMediaEventDispatchTests
   MountedGIFHostVisibilityTests
   HTMLWallpaperRuntimeScriptTests
+  # Web isolation enforced by WebKit itself: CSP egress, WebRTC blocker, folder nonce, navigation policy.
+  NetworkIsolationEnforcementTests
+  FolderURLSchemeHandlerIsolationTests
+  HTMLWallpaperViewSourceIsolationTests
+  HTMLWallpaperNavigationPolicyTests
   WPEHoverHitRectTests
   WorkshopFolderImportCoordinatorTests
   WPELocalCopySupersedeTests

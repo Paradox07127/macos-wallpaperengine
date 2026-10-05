@@ -43,19 +43,6 @@ extension WPECacheManagementView {
         #if DEBUG
         await refreshTestArtifacts()
         #endif
-        await refreshVideoStats()
-    }
-
-    private func refreshVideoStats() async {
-        isLoadingVideo = true
-        videoStats = await WPEVideoTextureDiskCache.shared.stats()
-        isLoadingVideo = false
-    }
-
-    private func purgeVideoCache() async {
-        let freed = await WPEVideoTextureDiskCache.shared.purgeAll()
-        lastVideoFreedBytes = freed
-        await refreshVideoStats()
     }
 
     func clearCache(_ kind: AppStorageLocation.Kind) async {
@@ -70,7 +57,7 @@ extension WPECacheManagementView {
 
     private func performClear(_ kind: AppStorageLocation.Kind) async throws {
         switch kind {
-        case .video: lastVideoFreedBytes = await WPEVideoTextureDiskCache.shared.purgeAll()
+        case .video: _ = await WPEVideoTextureDiskCache.shared.purgeAll()
         case .query: await workshopServices.queryCache.clear()
         case .previews: await WorkshopPreviewDiskCache.shared.clear()
         case .shaders:
@@ -98,14 +85,6 @@ extension WPECacheManagementView {
         let size = byteFormatter.string(fromByteCount: Int64(clamping: clearableBytes))
         pendingDestructive = PendingDestructive(.clearAllStorageCaches(byteSize: size)) {
             Task { await clearAllCaches() }
-        }
-    }
-
-    func confirmPurgeVideoCache() {
-        let bytes = videoStats?.totalBytes ?? 0
-        let size = byteFormatter.string(fromByteCount: Int64(bytes))
-        pendingDestructive = PendingDestructive(.clearSceneVideoCache(byteSize: size)) {
-            Task { await purgeVideoCache() }
         }
     }
 }

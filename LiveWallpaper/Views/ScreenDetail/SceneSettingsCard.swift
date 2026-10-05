@@ -10,7 +10,7 @@ struct WPESceneCustomSettingsCard: View {
     var attemptID: UUID?
 
     @Environment(ScreenManager.self) private var screenManager
-    /// Only the Edit Desk provides one; the old detail page records nothing.
+    /// nil = no undo stack in the environment; edits are not recorded.
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
     @State private var editor = Editor()

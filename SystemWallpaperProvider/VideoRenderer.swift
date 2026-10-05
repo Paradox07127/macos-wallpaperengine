@@ -326,16 +326,26 @@ final class VideoRenderer: @unchecked Sendable {
                 }
                 if let shifted = self.shift(sample) {
                     self.renderer.enqueue(shifted)
-                    if renderer.status == .failed {
-                        reportFailure("video.decoderFailed")
-                        return
-                    }
+                    guard pumpMayContinue(
+                        status: renderer.status,
+                        requiresFlush: renderer.requiresFlushToResumeDecoding
+                    ) else { return }
                     if CMSampleBufferGetNumSamples(shifted) > 0 {
                         signalFirstFrameIfNeeded()
                     }
                 }
             }
         }
+    }
+
+    /// False once the pump must stop feeding the current pipeline.
+    private func pumpMayContinue(status: AVQueuedSampleBufferRenderingStatus, requiresFlush: Bool) -> Bool {
+        guard status == .failed else { return true }
+        // Decoder reclaim also reads `.failed`; `handleDecoderLoss` rebuilds it and is skipped once the latch is set.
+        if !requiresFlush {
+            reportFailure("video.decoderFailed")
+        }
+        return false
     }
 
     /// Loop seam: offset every sample past the previous run's end so DTS/PTS

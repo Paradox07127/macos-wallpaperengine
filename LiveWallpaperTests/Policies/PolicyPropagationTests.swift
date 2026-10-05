@@ -86,6 +86,51 @@ struct PolicyPropagationTests {
         #expect(target.applied.last == .suspended, "Effective output folds intent, not just policy")
         #expect(!session.userIntendsToPlay)
     }
+
+    @Test("Releasing a display's runtime session keeps its particle overlay under a standing policy suspend")
+    func releasingTheSessionKeepsTheParticleOverlaySuspended() throws {
+        let nsScreen = try #require(NSScreen.screens.first, "No NSScreen available")
+        let originalSettings = SettingsManager.shared.loadGlobalSettings()
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        defer {
+            SettingsManager.shared.saveGlobalSettings(originalSettings)
+            SettingsManager.shared.replaceAllConfigurations(originalConfigurations)
+        }
+        var settings = originalSettings
+        settings.globalPauseOnBattery = true
+        SettingsManager.shared.saveGlobalSettings(settings)
+
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(initialPowerSource: .battery(level: 0.5)),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(screens: [Screen(nsScreen: nsScreen)]),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { manager.effectsCoordinator.shutdown() }
+        let screen = try #require(manager.screens.first)
+
+        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
+        configuration.particleEffect = .snow
+        configuration.displayFingerprint = screen.displayFingerprint
+        manager.configurationStore.save(configuration)
+        manager.effectsCoordinator.reconcileEnvironmentOverlays()
+        manager.refreshPerformancePolicyForAllScreens()
+
+        let overlay = manager.effectsCoordinator.debugEnvironmentOverlay
+        let before = try #require(overlay.debugSuspensionReasons(screenID: screen.id), "no particle overlay was built")
+        try #require(before.contains(.runtime), "the battery pause never reached the particle overlay")
+
+        manager.releaseRuntimeSession(screen)
+
+        let after = try #require(
+            overlay.debugSuspensionReasons(screenID: screen.id),
+            "the particle overlay should outlive the wallpaper session"
+        )
+        #expect(after.contains(.runtime), "releasing the session resumed particles while the battery pause still stands")
+    }
 }
 
 @MainActor

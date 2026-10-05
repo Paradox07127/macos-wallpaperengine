@@ -10,7 +10,6 @@ public enum DestructiveAction: Identifiable, Equatable {
     case removeScheduleSlot(slotLabel: String)
     case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
-    case clearSceneVideoCache(byteSize: String)
     case applyConfigurationToAllDisplays(otherCount: Int)
     case applyOverlayToAllDisplays(overlayName: String, otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
@@ -39,7 +38,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
         case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
-        case .clearSceneVideoCache(let b): return "clearSceneVideoCache-\(b)"
         case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
         case .applyOverlayToAllDisplays(let n, let c): return "applyOverlayToAllDisplays-\(n)-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
@@ -66,7 +64,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
         case .clearSystemWallpaperLibrary: return "Remove every System Wallpaper?"
-        case .clearSceneVideoCache:       return "Clear scene video texture cache?"
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
         case .applyOverlayToAllDisplays: return "Apply this overlay to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
@@ -144,11 +141,6 @@ public enum DestructiveAction: Identifiable, Equatable {
                 localized: "Removes \(byteSize) of reclaimable cache files. Active wallpapers keep their source assignments and rebuild cached files when needed.",
                 bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is a formatted byte size."
             )
-        case .clearSceneVideoCache(let byteSize):
-            return String(
-                localized: "Deletes \(byteSize) of extracted scene video files. Scenes re-extract the video textures the next time they render.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is a formatted byte size."
-            )
         case .applyConfigurationToAllDisplays(let count):
             return String(
                 localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget, music, and clock overlays are not changed.",
@@ -221,7 +213,6 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"
         case .clearSystemWallpaperLibrary: return "Remove All"
-        case .clearSceneVideoCache:       return "Clear Video Cache"
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
         case .applyOverlayToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"

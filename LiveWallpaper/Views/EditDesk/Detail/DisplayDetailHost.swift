@@ -59,7 +59,6 @@ struct DisplayDetailHost: View {
     #if !LITE_BUILD
     @State private var showsSceneLog = false
     #endif
-    /// Shared with the old detail page so the colour group's disclosure survives switching pages.
     @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
 
     private enum LibraryHandoff {

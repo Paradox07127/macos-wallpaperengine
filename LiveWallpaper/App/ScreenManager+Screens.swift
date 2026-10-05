@@ -164,7 +164,8 @@ extension ScreenManager {
         resetPlaybackStateMachine(for: screen)
         playbackCoordinator.refreshVideoAudioLeadership()
         htmlCoordinator.refreshAudioLeadership()
-        refreshAppNapAssertion()
+        // The reconcile above read the cleared reasons; re-deriving them keeps a standing policy suspend on the particle overlay.
+        applyPerformancePolicy(to: screen)
     }
 
     func tearDownForTermination() {

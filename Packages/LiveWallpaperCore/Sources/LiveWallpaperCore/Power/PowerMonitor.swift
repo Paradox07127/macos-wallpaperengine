@@ -19,22 +19,12 @@ public final class PowerMonitor {
             if case .battery = self { return true }
             return false
         }
-
-        public init(identifier: String) {
-            switch identifier {
-            case kIOPMBatteryPowerKey:
-                self = .battery(level: PowerMonitor.getCurrentBatteryLevel())
-            case kIOPMACPowerKey, kIOPMUPSPowerKey:
-                self = .external
-            default:
-                self = .external
-            }
-        }
     }
 
     // MARK: - Properties
 
     private let powerSourceSubject = CurrentValueSubject<PowerSource, Never>(.external)
+    /// `nonisolated(unsafe)`: set once in init on the main actor; `deinit` is the only other access.
     private nonisolated(unsafe) var runLoopSource: CFRunLoopSource?
     private let readPowerSource: () -> PowerSource?
 
@@ -100,6 +90,8 @@ public final class PowerMonitor {
         powerSourceSubject.send(newSource)
         postPowerChangeNotification(oldSource: oldSource, newSource: newSource)
 
+        // Battery percentage changes also land here; only a source switch is notice-worthy.
+        guard newSource.isOnBattery != oldSource.isOnBattery else { return }
         if case .battery(let level) = newSource {
             Logger.powerSourceChanged(isOnBattery: true, level: level)
         } else {
@@ -127,10 +119,6 @@ public final class PowerMonitor {
             return nil
         }
         return identifier == kIOPMBatteryPowerKey ? .battery(level: getCurrentBatteryLevel(snapshot: snapshot)) : .external
-    }
-
-    private nonisolated static func getCurrentBatteryLevel() -> Double {
-        getCurrentBatteryLevel(snapshot: IOPSCopyPowerSourcesInfo()?.takeRetainedValue())
     }
 
     private nonisolated static func getCurrentBatteryLevel(snapshot: CFTypeRef?) -> Double {
