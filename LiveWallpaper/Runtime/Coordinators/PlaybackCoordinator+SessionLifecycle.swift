@@ -368,12 +368,6 @@ extension PlaybackCoordinator {
             player.setVolume(configuration.videoVolume)
             player.setVideoColorSpace(configuration.videoColorSpace)
             player.setPlaybackSpeed(configuration.playbackSpeed)
-            if configuration.particleEffect != .none {
-                player.setParticleEffect(
-                    configuration.particleEffect,
-                    density: configuration.effectConfig.particleDensity
-                )
-            }
         }
         // Candidate stays silent; leadership restores mute only after commit.
         player.setMuted(true)

@@ -67,16 +67,10 @@ struct LocalImageCacheReclaimerTests {
         ))
     }
 
-    /// Puts a probe entry into each local-source cache through the very cache objects
-    /// production uses; touching them is what forces their lazy creation and registration.
+    /// Seeds the three registered local-source caches used by production.
+    /// Touching them forces their lazy creation and registration.
     private func fillLocalImageCaches() throws {
         let bitmap = try makeBitmap()
-
-        let png = try #require(bitmap.representation(using: .png, properties: [:]))
-        let decoded = try #require(WPEPreviewDecodedImage.decode(png))
-        WPEPreviewDecodedCache.shared.setObject(
-            decoded, forKey: Self.probeKey, cost: decoded.estimatedCost
-        )
 
         WallpaperThumbnailService.shared.cache.setObject(
             NSImage(size: NSSize(width: 8, height: 8)), forKey: Self.probeKey, cost: 8 * 8 * 4
@@ -100,7 +94,6 @@ struct LocalImageCacheReclaimerTests {
     /// names which cache survived.
     private var probesStillCached: [Bool] {
         [
-            WPEPreviewDecodedCache.shared.object(forKey: Self.probeKey) != nil,
             WallpaperThumbnailService.shared.cache.object(forKey: Self.probeKey) != nil,
             SystemWallpaperThumbnails.cache.object(forKey: Self.probeKey) != nil,
             WorkshopPreviewImageLoader.shared.assetCache.object(forKey: Self.probeKey) != nil
@@ -130,9 +123,9 @@ struct LocalImageCacheReclaimerTests {
         #expect(counter.count == 1)
     }
 
-    // MARK: - (b) The last close does fire, and empties all four caches
+    // MARK: - (b) The last close does fire, and empties all three caches
 
-    @Test("The last window closing empties all four local-source caches")
+    @Test("The last window closing empties all three registered local-source caches")
     func lastWindowCloseEmptiesEveryLocalImageCache() async throws {
         try fillLocalImageCaches()
         let reclaimer = LocalImageCacheReclaimer(delay: Self.testDelay) {
@@ -142,11 +135,11 @@ struct LocalImageCacheReclaimerTests {
         let window = makeWindow()
         reclaimer.windowDidOpen(window)
         // Control group: opening a window does not itself empty anything.
-        #expect(probesStillCached == [true, true, true, true])
+        #expect(probesStillCached == [true, true, true])
 
         reclaimer.windowWillClose(window)
-        await waitUntil { probesStillCached == [false, false, false, false] }
-        #expect(probesStillCached == [false, false, false, false])
+        await waitUntil { probesStillCached == [false, false, false] }
+        #expect(probesStillCached == [false, false, false])
     }
 
     // MARK: - (c) Re-opening inside the delay cancels
@@ -239,10 +232,10 @@ struct LocalImageCacheReclaimerTests {
     func purgedCachesRemainUsable() throws {
         try fillLocalImageCaches()
         LocalImageCacheRegistry.shared.purgeAll()
-        #expect(probesStillCached == [false, false, false, false])
+        #expect(probesStillCached == [false, false, false])
 
         try fillLocalImageCaches()
-        #expect(probesStillCached == [true, true, true, true])
+        #expect(probesStillCached == [true, true, true])
         LocalImageCacheRegistry.shared.purgeAll()
     }
 }

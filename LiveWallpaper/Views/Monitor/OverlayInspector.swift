@@ -4,7 +4,7 @@ import SwiftUI
 struct MonitorOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
-    var editBoard: (@MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void)?
+    let editBoard: @MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void
 
 
     private var overlay: MonitorOverlayConfiguration {

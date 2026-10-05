@@ -35,8 +35,8 @@ public final class PowerMonitor {
     // MARK: - Properties
 
     private let powerSourceSubject = CurrentValueSubject<PowerSource, Never>(.external)
-    private var runLoopSource: CFRunLoopSource?
-    private var batteryCheckTimer: Timer?
+    private nonisolated(unsafe) var runLoopSource: CFRunLoopSource?
+    private let readPowerSource: () -> PowerSource?
 
     public var powerSourcePublisher: AnyPublisher<PowerSource, Never> {
         powerSourceSubject.eraseToAnyPublisher()
@@ -48,10 +48,23 @@ public final class PowerMonitor {
 
     // MARK: - Initialization
 
-    private init() {
-        let source = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as? String ?? kIOPMACPowerKey
-        powerSourceSubject.send(PowerSource(identifier: source))
-        setupPowerNotification()
+    private convenience init() {
+        self.init(readPowerSource: Self.readSystemPowerSource, registersNotifications: true)
+    }
+
+    /// The reader seam lets policy tests model power changes without changing the Mac's power state.
+    init(readPowerSource: @escaping () -> PowerSource?, registersNotifications: Bool) {
+        self.readPowerSource = readPowerSource
+        if registersNotifications {
+            setupPowerNotification()
+        }
+        refreshPowerStatus()
+    }
+
+    deinit {
+        if let runLoopSource {
+            CFRunLoopSourceInvalidate(runLoopSource)
+        }
     }
 
     // MARK: - Power Monitoring Setup
@@ -61,49 +74,36 @@ public final class PowerMonitor {
             guard let context else { return }
             let monitor = Unmanaged<PowerMonitor>.fromOpaque(context).takeUnretainedValue()
             Task { @MainActor in
-                monitor.handlePowerSourceChange()
+                monitor.refreshPowerStatus()
             }
         }
 
-        guard let source = IOPSCreateLimitedPowerNotification(
+        // Unlike the limited notification, this also delivers battery percentage changes.
+        guard let source = IOPSNotificationCreateRunLoopSource(
             callback,
             Unmanaged.passUnretained(self).toOpaque()
         )?.takeRetainedValue() else { return }
 
         runLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
-
-        if currentPowerSource.isOnBattery {
-            startBatteryMonitoring()
-        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     }
 
     // MARK: - Power State Management
 
-    private func handlePowerSourceChange() {
-        guard let sourceString = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as? String else { return }
-
-        let newSource = PowerSource(identifier: sourceString)
+    public func refreshPowerStatus() {
+        guard let newSource = readPowerSource() else { return }
         let oldSource = powerSourceSubject.value
 
         guard newSource != oldSource else { return }
 
         Logger.debug("Power source changing from \(oldSource) to \(newSource)", category: .powerMonitor)
-        applyPowerSourceChange(oldSource: oldSource, newSource: newSource)
-    }
-
-    /// `refreshPowerStatus` must route through here: it is the only path that can see a
-    /// battery transition IOPS never notified, and the level timer would never start.
-    private func applyPowerSourceChange(oldSource: PowerSource, newSource: PowerSource) {
         powerSourceSubject.send(newSource)
         postPowerChangeNotification(oldSource: oldSource, newSource: newSource)
 
         if case .battery(let level) = newSource {
             Logger.powerSourceChanged(isOnBattery: true, level: level)
-            startBatteryMonitoring()
         } else {
             Logger.powerSourceChanged(isOnBattery: false, level: nil)
-            stopBatteryMonitoring()
         }
     }
 
@@ -121,8 +121,19 @@ public final class PowerMonitor {
 
     // MARK: - Battery Level Monitoring
 
+    private nonisolated static func readSystemPowerSource() -> PowerSource? {
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let identifier = IOPSGetProvidingPowerSourceType(snapshot)?.takeUnretainedValue() as? String else {
+            return nil
+        }
+        return identifier == kIOPMBatteryPowerKey ? .battery(level: getCurrentBatteryLevel(snapshot: snapshot)) : .external
+    }
+
     private nonisolated static func getCurrentBatteryLevel() -> Double {
-        let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue()
+        getCurrentBatteryLevel(snapshot: IOPSCopyPowerSourcesInfo()?.takeRetainedValue())
+    }
+
+    private nonisolated static func getCurrentBatteryLevel(snapshot: CFTypeRef?) -> Double {
         let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
 
         guard let source = sources?.first,
@@ -133,47 +144,6 @@ public final class PowerMonitor {
         else { return 1.0 }
 
         return Double(currentCapacity) / Double(maxCapacity)
-    }
-
-    private func startBatteryMonitoring() {
-        stopBatteryMonitoring()
-        batteryCheckTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateBatteryLevel()
-            }
-        }
-        batteryCheckTimer?.tolerance = 30
-    }
-
-    private func stopBatteryMonitoring() {
-        batteryCheckTimer?.invalidate()
-        batteryCheckTimer = nil
-    }
-
-    private func updateBatteryLevel() {
-        guard currentPowerSource.isOnBattery else { return }
-        let batteryLevel = Self.getCurrentBatteryLevel()
-        let oldSource = powerSourceSubject.value
-        let newSource = PowerSource.battery(level: batteryLevel)
-
-        guard newSource != oldSource else { return }
-
-        Logger.debug("Battery level updated: \(Int(batteryLevel * 100))%", category: .powerMonitor)
-        powerSourceSubject.send(newSource)
-        postPowerChangeNotification(oldSource: oldSource, newSource: newSource)
-    }
-
-    public func refreshPowerStatus() {
-        guard let sourceString = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as? String else { return }
-
-        let newSource = PowerSource(identifier: sourceString)
-        let oldSource = powerSourceSubject.value
-
-        if newSource != oldSource {
-            applyPowerSourceChange(oldSource: oldSource, newSource: newSource)
-        } else if newSource.isOnBattery {
-            updateBatteryLevel()
-        }
     }
 
 }

@@ -111,49 +111,6 @@ struct VideoSessionLifecycleTests {
         #expect(session.userIntendsToPlay)
     }
 
-    @Test("Video session suspends particles for policy/offscreen without changing manual-pause behavior")
-    func videoSessionSuspendsParticleEffectsForPolicyAndVisibility() {
-        let player = WallpaperVideoPlayer(
-            url: URL(fileURLWithPath: "/tmp/particle-profile-\(UUID().uuidString).mov"),
-            frame: CGRect(x: 0, y: 0, width: 100, height: 100),
-            loadImmediately: false
-        )
-        let session = VideoWallpaperSession(player: player)
-        defer { session.cleanup() }
-
-        session.applyPerformanceProfile(.quality)
-        #expect(!player.particleEffectsSuspended)
-
-        session.applyPerformanceProfile(.suspended)
-        #expect(player.particleEffectsSuspended)
-
-        session.applyPerformanceProfile(.quality)
-        session.pause()
-        #expect(!player.particleEffectsSuspended)
-
-        session.play()
-        #expect(!player.particleEffectsSuspended)
-
-        session.show()
-        #expect(!player.particleEffectsSuspended)
-    }
-
-    @Test("Hidden preparation candidate starts with particle effects suspended")
-    func hiddenCandidateSuspendsParticleEffectsBeforeCommit() {
-        let player = WallpaperVideoPlayer(
-            url: URL(fileURLWithPath: "/tmp/hidden-particles-\(UUID().uuidString).mov"),
-            frame: CGRect(x: 0, y: 0, width: 100, height: 100),
-            startsHidden: true,
-            loadImmediately: false
-        )
-        let session = VideoWallpaperSession(player: player)
-        defer { session.cleanup() }
-
-        #expect(player.particleEffectsSuspended)
-        session.show()
-        #expect(!player.particleEffectsSuspended)
-    }
-
     @Test("Video session cleanup retires current effects work before player teardown exactly once")
     func videoSessionCleanupRetiresEffectsBeforePlayerTeardown() {
         let player = WallpaperVideoPlayer(
@@ -378,7 +335,6 @@ struct VideoSessionLifecycleTests {
         old.setVolume(0.8)
         old.setPlaybackSpeed(1.5)
         old.setVideoFitMode(.aspectFit)
-        old.setParticleEffect(.snow, density: 2)
 
         preparation.resume(with: .ready)
         await retry.value
@@ -392,9 +348,6 @@ struct VideoSessionLifecycleTests {
         #expect(installed.audioVolume == 0.8)
         #expect(installed.currentPlaybackSpeed == 1.5)
         #expect(installed.currentFitMode == .aspectFit)
-        #expect(installed.currentParticleConfiguration.effect == .snow)
-        #expect(installed.currentParticleConfiguration.density == 2)
-        #expect(installed.particleEffectsSuspended)
         #expect(retiredPlayer === old)
     }
 

@@ -203,8 +203,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
             // An absence hibernate that completed while paused stays down on wake: rebuilding only for the pause dwell to tear it down is wasted decode.
             isManualPauseHibernating = true
         }
-        // Particles ride the policy profile only; a manual pause leaves them running.
-        player?.setParticleEffectsSuspended(profile == .suspended)
         // Resource depth only — play/pause below stays the sole owner of intent.
         player?.setSuspended(profile == .suspended || isManualPauseHibernating)
         // After the suspend: the player only arms its own dwell while suspended.
@@ -217,7 +215,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         reconcileManualPauseHibernation()
     }
 
-    /// Pause only: resources stay warm and suspend depth, particles and hibernation still follow policy.
+    /// Pause only: resources stay warm and suspend depth and hibernation still follow policy.
     func setTransitionHold(_ held: Bool) {
         transitionHold = held
         applyPerformanceProfile(currentProfile)
@@ -317,17 +315,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         let latestMuted = oldPlayer.isMuted
         let latestVolume = oldPlayer.audioVolume
         let latestSpeed = oldPlayer.currentPlaybackSpeed
-        let latestParticle = oldPlayer.currentParticleConfiguration
         let latestSpan = oldPlayer.currentSpanRenderConfiguration
         replacement.updateWindowFrame(latestFrame)
         replacement.setVideoFitMode(latestFitMode)
         replacement.setVolume(latestVolume)
         replacement.setPlaybackSpeed(latestSpeed)
         replacement.setSpanRenderConfiguration(latestSpan)
-        replacement.setParticleEffect(
-            latestParticle.effect,
-            density: latestParticle.density
-        )
 
         guard installPreparedRetryPlayer(replacement, replacing: oldPlayer) else {
             replacement.cleanup()

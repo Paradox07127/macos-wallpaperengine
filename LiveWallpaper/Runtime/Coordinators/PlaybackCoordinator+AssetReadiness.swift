@@ -77,10 +77,6 @@ extension PlaybackCoordinator {
               packageEntryName == player.packageEntryName else {
             return false
         }
-        player.setParticleEffect(
-            configuration.particleEffect,
-            density: configuration.effectConfig.particleDensity
-        )
         if configuration.effectConfig.hasActiveEffect {
             applyVideoEffects(liveScreen, configuration)
         } else {

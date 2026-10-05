@@ -32,7 +32,6 @@ struct PolicyPropagationTests {
 
         #expect(!player.shouldAutoplayWhenReady, "The session must drive the player to pause, not just flag itself")
         #expect(player.isSuspended, "Resource depth must follow the suspend")
-        #expect(player.particleEffectsSuspended, "Particles ride the policy profile")
         #expect(!session.isPlaying)
         #expect(session.userIntendsToPlay, "Policy must never rewrite intent")
     }
@@ -47,7 +46,6 @@ struct PolicyPropagationTests {
 
         #expect(player.shouldAutoplayWhenReady, "Recovery must re-arm playback")
         #expect(!player.isSuspended)
-        #expect(!player.particleEffectsSuspended)
         #expect(session.userIntendsToPlay)
     }
 
@@ -62,7 +60,6 @@ struct PolicyPropagationTests {
 
         #expect(!session.userIntendsToPlay)
         #expect(!player.shouldAutoplayWhenReady, "A lifted gate must not overrule the user's pause")
-        #expect(!player.particleEffectsSuspended, "A manual pause leaves particles running")
     }
 
     @Test("An HTML session folds the suspend into its renderer and keeps intent")

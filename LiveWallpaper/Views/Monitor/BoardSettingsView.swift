@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 struct BoardSettingsView: View {
     let screen: Screen
     let screenManager: ScreenManager
-    /// Applies an edit to the latest persisted board through the Edit Desk session; nil writes the draft directly.
-    var editBoard: (@MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void)?
+    /// Applies an edit to the latest persisted board through the Edit Desk session.
+    let editBoard: @MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void
 
     @AppStorage("Monitor.SettingsExpanded") private var isExpanded = true
 
@@ -232,14 +232,7 @@ struct BoardSettingsView: View {
     }
 
     private func commit(_ edit: (inout MonitorBoardConfiguration) -> Void) {
-        if let editBoard {
-            editBoard(edit)
-            return
-        }
-        var next = draft
-        edit(&next)
-        draft = next
-        screenManager.setMonitorOverlayBoard(next, for: screen)
+        editBoard(edit)
     }
 
     // MARK: - Loading

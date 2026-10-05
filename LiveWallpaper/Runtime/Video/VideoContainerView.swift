@@ -60,7 +60,6 @@ final class VideoContainerView: NSView {
     // MARK: - Subviews
 
     private let playerHostView: PlayerHostView
-    private let particleOverlayView: ParticleOverlayView
     private var currentPlayer: AVPlayer?
     private var spanRenderConfiguration: VideoSpanRenderConfiguration?
     /// Holds the last decoded frame after hibernation blanks the player layer so an occluded desktop redraw does not go black. A subview, not a sublayer, so AppKit owns z-order above the player host.
@@ -82,8 +81,6 @@ final class VideoContainerView: NSView {
         let localBounds = NSRect(origin: .zero, size: frameRect.size)
         playerHostView = PlayerHostView(frame: localBounds)
         playerHostView.autoresizingMask = []
-        particleOverlayView = ParticleOverlayView(frame: localBounds)
-        particleOverlayView.autoresizingMask = []
         stillFrameView = StillFrameHostView(frame: localBounds)
         stillFrameView.autoresizingMask = []
 
@@ -103,8 +100,6 @@ final class VideoContainerView: NSView {
         layer?.masksToBounds = true
 
         addSubview(playerHostView)
-        // Retain the compatibility object for player state handoff, but do not
-        // mount it: `EnvironmentOverlayController` owns the rendered particles.
 
         stillFrameView.isHidden = true
         stillFrameView.setContentsGravity(Self.contentsGravity(for: fitMode))
@@ -201,17 +196,6 @@ final class VideoContainerView: NSView {
         }
     }
 
-    // MARK: - Public API — Particles
-
-    func setParticleEffect(_ effect: ParticleEffect, density: Double) {
-        particleOverlayView.setEffect(effect, density: CGFloat(density))
-    }
-
-    func setParticleEffectsSuspended(_ suspended: Bool) {
-        // Runtime gate only — this overlay is never a subview (see `init`); it just mirrors player state across a handoff. Reduce Motion is handled in `EnvironmentOverlayController`.
-        particleOverlayView.setSuspended(suspended, for: .runtime)
-    }
-
     // MARK: - Layout
 
     override func layout() {
@@ -222,7 +206,6 @@ final class VideoContainerView: NSView {
         } else {
             playerHostView.frame = bounds
         }
-        particleOverlayView.frame = bounds
         stillFrameView.frame = playerHostView.frame
     }
 
@@ -240,7 +223,6 @@ final class VideoContainerView: NSView {
         super.viewWillMove(toWindow: newWindow)
         if newWindow == nil {
             playerHostView.setPlayer(nil)
-            particleOverlayView.setEffect(.none, density: 0)
             currentPlayer = nil
             clearStillFrame()
         }

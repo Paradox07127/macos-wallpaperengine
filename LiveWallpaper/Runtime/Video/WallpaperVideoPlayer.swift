@@ -118,9 +118,6 @@ final class WallpaperVideoPlayer {
     var currentSpanRenderConfiguration: VideoSpanRenderConfiguration? {
         pendingSpanRenderConfiguration
     }
-    var currentParticleConfiguration: (effect: ParticleEffect, density: Double) {
-        (currentParticleEffect, currentParticleDensity)
-    }
 
     // MARK: - Private Properties
 
@@ -128,10 +125,6 @@ final class WallpaperVideoPlayer {
     private var videoView: VideoContainerView?
     private var playerLooper: AVPlayerLooper?
     private var templatePlayerItem: AVPlayerItem?
-    private var pendingParticleEffect: (ParticleEffect, Double)?
-    private var currentParticleEffect: ParticleEffect = .none
-    private var currentParticleDensity: Double = 1
-    private(set) var particleEffectsSuspended = false
     private var pendingSpanRenderConfiguration: VideoSpanRenderConfiguration?
     private var cleanupTasks = Set<AnyCancellable>()
     private var loadingTask: Task<Void, Never>?
@@ -251,8 +244,6 @@ final class WallpaperVideoPlayer {
         self.packageEntryName = packageEntryName
         self.startsHidden = startsHidden
         self.hibernationDelay = hibernationDelay
-        // Hidden candidates: dormant particles until `show()` publishes the session.
-        self.particleEffectsSuspended = startsHidden
         self.assetLoaderOverride = assetLoaderOverride
         
         guard !frame.isEmpty else {
@@ -711,12 +702,6 @@ final class WallpaperVideoPlayer {
             installSDRComposition()
         }
 
-        if let pending = pendingParticleEffect {
-            pendingParticleEffect = nil
-            containerView.setParticleEffect(pending.0, density: pending.1)
-        }
-        containerView.setParticleEffectsSuspended(particleEffectsSuspended)
-
         setupPlaybackObservers()
         installQueueItemMaintenanceObserver()
         applyRequestedFrameRateLimitIfReady()
@@ -1005,22 +990,6 @@ final class WallpaperVideoPlayer {
     func setSpanRenderConfiguration(_ configuration: VideoSpanRenderConfiguration?) {
         pendingSpanRenderConfiguration = configuration
         videoView?.setSpanRenderConfiguration(configuration)
-    }
-
-    func setParticleEffect(_ effect: ParticleEffect, density: Double = 1.0) {
-        currentParticleEffect = effect
-        currentParticleDensity = density
-        guard let videoView = videoView else {
-            pendingParticleEffect = (effect, density)
-            return
-        }
-        videoView.setParticleEffect(effect, density: density)
-    }
-
-    func setParticleEffectsSuspended(_ suspended: Bool) {
-        guard particleEffectsSuspended != suspended else { return }
-        particleEffectsSuspended = suspended
-        videoView?.setParticleEffectsSuspended(suspended)
     }
 
     // MARK: - Window Management
@@ -1610,7 +1579,6 @@ final class WallpaperVideoPlayer {
 
         onCurrentItemAvailable = nil
 
-        videoView?.setParticleEffect(.none, density: 0)
         videoView?.clearStillFrame()
 
         window?.close()

@@ -509,8 +509,6 @@ struct ScreenManagerCoordinationTests {
         #expect(applied.particleEffect == .rain)
         #expect(applied.effectConfig.blurRadius == 4)
         #expect(applied.effectConfig.particleDensity == 2)
-        #expect(player.currentParticleConfiguration.effect == .rain)
-        #expect(player.currentParticleConfiguration.density == 2)
     }
 
     @Test("Deferred asset configuration rejects a changed package entry")

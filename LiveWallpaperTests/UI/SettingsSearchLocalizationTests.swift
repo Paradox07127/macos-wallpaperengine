@@ -132,7 +132,7 @@ struct SettingsSearchLocalizationTests {
         for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper/Views/Settings") {
             let source = try String(contentsOf: file, encoding: .utf8)
             titles += try Self.captures(Self.settingRowTitle, in: source).flatMap { try Self.captures(Self.literal, in: $0) }
-            titles += try Self.captures(Self.tileTitle, in: source) + Self.captures(Self.sectionHeader, in: source)
+            titles += try Self.captures(Self.sectionHeader, in: source)
         }
         #expect(titles.count > 60, Comment(rawValue: "The scan found \(titles.count) titles; its patterns or directory drifted"))
 
@@ -201,7 +201,6 @@ struct SettingsSearchLocalizationTests {
     private static let literal = #""((?:[^"\\\n]|\\.)*)""#
     /// Group 1 is the whole `title:` argument, so both branches of a ternary are read.
     private static let settingRowTitle = #"SettingRow\([^{]*?\btitle:\s*((?:"(?:[^"\\\n]|\\.)*"|[^,)"\n])*)"#
-    private static let tileTitle = #"StorageDashboardTile\(\s*title:\s*"# + literal
     private static let sectionHeader = #"SettingsSearchSectionHeader\(\s*"# + literal
 
     private static func captures(_ pattern: String, in source: String) throws -> [String] {

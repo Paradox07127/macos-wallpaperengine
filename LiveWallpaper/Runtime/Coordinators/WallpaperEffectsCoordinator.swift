@@ -368,7 +368,6 @@ final class WallpaperEffectsCoordinator {
     private func applyParticleEffect(
         _ effect: ParticleEffect, density: Double, tiltRadians: Double = 0, to screen: Screen
     ) {
-        screen.videoPlayer?.setParticleEffect(.none, density: density)
         guard WeatherReactivePolicy.shouldDrawParticles(
             effect: effect, wallpapersEnabled: isGloballyEnabled()
         ) else {

@@ -17,18 +17,18 @@ struct WPEImageCacheMeterTests {
     func liveBytesEqualTheSumOfInsertedCosts() {
         let accountant = WPEImageCacheAccountant()
         let cache = Self.makeCache(countLimit: 100)
-        accountant.attach(cache, as: .scenePreviewDecoded)
+        accountant.attach(cache, as: .workshopPreview)
 
         let costs = [1_111, 22_222, 333_333, 4]
         var boxes: [Box] = []
         for (index, cost) in costs.enumerated() {
             let box = Box()
             boxes.append(box)
-            accountant.recordInsert(box, cost: cost, in: .scenePreviewDecoded)
+            accountant.recordInsert(box, cost: cost, in: .workshopPreview)
             cache.setObject(box, forKey: "k\(index)" as NSString, cost: cost)
         }
 
-        let stats = accountant.stats(for: .scenePreviewDecoded)
+        let stats = accountant.stats(for: .workshopPreview)
         #expect(stats.liveBytes == costs.reduce(0, +))
         #expect(stats.liveCount == costs.count)
         #expect(stats.inserted == costs.count)
@@ -41,7 +41,7 @@ struct WPEImageCacheMeterTests {
     func evictionSubtractsExactlyWhatWasInserted() {
         let accountant = WPEImageCacheAccountant()
         let cache = Self.makeCache(countLimit: 2)
-        accountant.attach(cache, as: .scenePreviewDecoded)
+        accountant.attach(cache, as: .workshopPreview)
 
         // Distinct, non-round costs: subtracting the wrong entry cannot land on
         // the right total by coincidence.
@@ -50,14 +50,14 @@ struct WPEImageCacheMeterTests {
         for (index, cost) in costs.enumerated() {
             let box = Box()
             boxes.append(box)
-            accountant.recordInsert(box, cost: cost, in: .scenePreviewDecoded)
+            accountant.recordInsert(box, cost: cost, in: .workshopPreview)
             cache.setObject(box, forKey: "k\(index)" as NSString, cost: cost)
         }
 
         let survivors = costs.indices.filter { cache.object(forKey: "k\($0)" as NSString) != nil }
         #expect(survivors.count < costs.count, "nothing was evicted — this test would prove nothing")
 
-        let stats = accountant.stats(for: .scenePreviewDecoded)
+        let stats = accountant.stats(for: .workshopPreview)
         #expect(stats.liveBytes == survivors.map { costs[$0] }.reduce(0, +))
         #expect(stats.liveCount == survivors.count)
         #expect(stats.evicted == costs.count - survivors.count)
@@ -121,11 +121,11 @@ struct WPEImageCacheMeterTests {
 
         let accountant = WPEImageCacheAccountant()
         let box = Box()
-        accountant.recordInsert(box, cost: 3 * 1024 * 1024, in: .scenePreviewDecoded)
+        accountant.recordInsert(box, cost: 3 * 1024 * 1024, in: .workshopPreview)
 
         let line = try #require(accountant.report())
-        #expect(line == "[imgcache] scenePreview=3.00MiB/1(in:1 ev:0)")
-        for kind in WPEImageCacheKind.allCases where kind != .scenePreviewDecoded {
+        #expect(line == "[imgcache] workshopPreview=3.00MiB/1(in:1 ev:0)")
+        for kind in WPEImageCacheKind.allCases where kind != .workshopPreview {
             #expect(!line.contains(kind.label), Comment(rawValue: kind.label))
         }
         withExtendedLifetime(box) {}
@@ -136,7 +136,6 @@ struct WPEImageCacheMeterTests {
         func cost(of kind: WPEImageCacheKind) -> Int {
             switch kind {
             case .workshopPreview: 11
-            case .scenePreviewDecoded: 222
             case .wallpaperThumbnail: 3_333
             case .systemWallpaperLibrary: 44_444
             }

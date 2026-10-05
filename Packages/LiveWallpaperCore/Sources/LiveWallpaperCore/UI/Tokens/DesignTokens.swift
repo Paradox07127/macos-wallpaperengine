@@ -317,15 +317,6 @@ public enum DesignTokens {
         public static let verticalPadding: CGFloat = 6
     }
 
-    /// Without these floors macOS 26 `NavigationSplitView` squeezes the detail column
-    /// and drops the sidebar's upper sections out of view.
-    public enum LibraryPage {
-        /// Main-column floor (360) plus a fully expanded inspector (`Inspector.maxWidth`,
-        /// 480); `SettingsWindowLayoutTests` pins the relationship.
-        public static let minWidth: CGFloat = 840
-        public static let minHeight: CGFloat = 540
-    }
-
     /// Shared content padding for ContainerGroupBoxStyle and its action tiles.
     public enum GroupBox {
         public static let inset: CGFloat = Spacing.md

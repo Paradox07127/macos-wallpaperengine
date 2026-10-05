@@ -19,21 +19,6 @@ enum WPEPreviewSize {
     }
 }
 
-/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the
-/// purge; every production reader stays in this file.
-enum WPEPreviewDecodedCache {
-    /// NSCache is thread-safe internally; `nonisolated(unsafe)` just suppresses
-    /// the Swift 6 Sendable diagnostic since NSCache isn't formally Sendable.
-    nonisolated(unsafe) static let shared: NSCache<NSString, WPEPreviewDecodedImage> = {
-        let cache = NSCache<NSString, WPEPreviewDecodedImage>()
-        cache.countLimit = 256
-        cache.totalCostLimit = 64 * 1024 * 1024
-        WPEImageCacheMeter.attach(cache, as: .scenePreviewDecoded)
-        LocalImageCacheRegistry.shared.register(cache)
-        return cache
-    }()
-}
-
 /// `@unchecked Sendable`: every stored value is immutable, and `CGImageSource`
 /// reads are free-threaded.
 final class WPEPreviewDecodedImage: @unchecked Sendable {
