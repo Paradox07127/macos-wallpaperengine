@@ -179,7 +179,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 }

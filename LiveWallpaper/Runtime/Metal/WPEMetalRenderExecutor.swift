@@ -2971,11 +2971,13 @@ final class WPEMetalRenderExecutor {
         materialShader: SceneModelMaterialShader = .genericImage4,
         hasReflectionSource: Bool = false,
         reflectionMipCount: Int = 0,
-        noiseTexture: MTLTexture? = nil
+        noiseTexture: MTLTexture? = nil,
+        materialConstants: [String: WPESceneShaderConstantValue]? = nil
     ) -> WPESceneModelGenericUniforms {
+        let constants = materialConstants ?? pass.pass.constants
         func constantVector3(_ names: [String], default def: SIMD3<Float>) -> SIMD3<Float> {
             for name in names {
-                if let v = pass.pass.constants[name]?.vectorValue, v.count >= 3 {
+                if let v = constants[name]?.vectorValue, v.count >= 3 {
                     return SIMD3<Float>(Float(v[0]), Float(v[1]), Float(v[2]))
                 }
             }
@@ -2983,7 +2985,7 @@ final class WPEMetalRenderExecutor {
         }
         func constantScalar(_ names: [String], default def: Float) -> Float {
             for name in names {
-                if let v = pass.pass.constants[name]?.numberValue {
+                if let v = constants[name]?.numberValue {
                     return Float(v)
                 }
             }
@@ -3017,8 +3019,8 @@ final class WPEMetalRenderExecutor {
         let hdrValue = frameUniformContext.frameValue(named: "g_SceneHDREnabled")
             ?? pass.uniformValues["g_SceneHDREnabled"]
         let hdr = (hdrValue?.numberValue ?? 0) > 0.5
-        let emissiveAuthored = pass.pass.constants["emissivecolor"] != nil
-            || pass.pass.constants["emissivebrightness"] != nil
+        let emissiveAuthored = constants["emissivecolor"] != nil
+            || constants["emissivebrightness"] != nil
         let emissiveMapActive = hasComponentMap && emissiveAuthored
 
         // REFLECTION only draws when the mip-mapped scene capture is actually

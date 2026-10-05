@@ -110,7 +110,8 @@ extension WPERenderLayer {
             groupCompositeSource: wpeNativized(groupCompositeSource),
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures.mapValues { $0.mapValues { $0.nativized() } }
+            meshMaterialTextures: meshMaterialTextures.mapValues { $0.mapValues { $0.nativized() } },
+            meshMaterialConstants: meshMaterialConstants.mapValues { nativizedKeys($0) }
         )
     }
 }

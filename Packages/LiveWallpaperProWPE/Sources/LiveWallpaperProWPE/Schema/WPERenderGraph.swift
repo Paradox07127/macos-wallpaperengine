@@ -90,6 +90,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     /// MDLV mesh index → slot → texture from that mesh's own material json, only for meshes whose
     /// material differs from `materialPath`; absent meshes draw with the material pass bindings.
     public let meshMaterialTextures: [Int: [Int: WPETextureReference]]
+    public let meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]]
     /// Derived from `imagePath` in `init`, not an init parameter — copies cannot drop it.
     public let utilityModelKind: WPEUtilityModelKind?
 
@@ -117,7 +118,8 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         groupCompositeSource: String? = nil,
         parallaxDepth: SIMD2<Double> = SIMD2<Double>(0, 0),
         sortIndex: Int = 0,
-        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:]
+        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:],
+        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:]
     ) {
         self.objectID = objectID
         self.objectName = objectName
@@ -143,6 +145,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.parallaxDepth = parallaxDepth
         self.sortIndex = sortIndex
         self.meshMaterialTextures = meshMaterialTextures
+        self.meshMaterialConstants = meshMaterialConstants
         utilityModelKind = WPEUtilityModelKind.classify(imagePath)
     }
 

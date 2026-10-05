@@ -80,11 +80,16 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         try renderSubmeshes(shader: "generic4", componentMapOnFirstMesh: firstMeshHasMap)
     }
 
-    private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?) throws {
+    @Test("Loaded submesh tint, defaults, explicit zero and missing-material fallback", arguments: [0, 1, 2, 3])
+    func eachSubmeshUsesItsOwnTint(caseIndex: Int) throws {
+        try renderSubmeshes(shader: "generic4", componentMapOnFirstMesh: nil, tintCase: caseIndex)
+    }
+
+    private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let red = try solid(device: device, componentMapOnFirstMesh == nil ? [255, 0, 0, 255] : [128, 32, 32, 255])
-        let green = try solid(device: device, componentMapOnFirstMesh == nil ? [0, 255, 0, 255] : [32, 128, 32, 255])
+        let red = try solid(device: device, tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [255, 0, 0, 255] : [128, 32, 32, 255]))
+        let green = try solid(device: device, tintCase != nil ? [64, 64, 64, 255] : (componentMapOnFirstMesh == nil ? [0, 255, 0, 255] : [32, 128, 32, 255]))
         let component = try solid(device: device, [0, 0, 0, 255])
 
         func quad(minX: Float, maxX: Float) -> WPEPuppetMesh {
@@ -121,18 +126,50 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             alignment: .center, size: CGSize(width: 24, height: 8), alpha: 1,
             color: SIMD3<Double>(1, 1, 1), brightness: 1
         )
-        let layer = WPERenderLayer(
+        var layer = WPERenderLayer(
             objectID: "multi", objectName: "Multi-material mesh", imagePath: "multi.mdl",
             materialPath: "materials/mat0.json", puppetPath: "multi.mdl", geometry: geometry,
             compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass],
             meshMaterialTextures: [1: middleTextures, 2: [0: .asset("red")]]
         )
+        var materialPass = pass
+        if let tintCase {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("SubmeshTint-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(at: root.appendingPathComponent("materials"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: root.appendingPathComponent("models"), withIntermediateDirectories: true)
+            for index in 0 ..< 3 where !(tintCase == 3 && index == 1) {
+                var constants: [String: String] = [:]
+                if index == 0 {
+                    constants["color"] = "1 0.25 0.25"
+                }
+                if index == 1, tintCase == 0 {
+                    constants["color"] = "0.25 1 0.25"
+                }
+                if index == 1, tintCase == 2 {
+                    constants["color"] = "0 0 0"
+                }
+                let json: [String: Any] = ["passes": [["shader": "generic4", "textures": ["red"],
+                                                       "constantshadervalues": constants, "combos": ["LIGHTING": 0], "blending": "disabled", "cullmode": "nocull"]]]
+                try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("materials/m\(index).json"))
+            }
+            try SubmeshMDLVFixture.data(materials: (0 ..< 3).map { "materials/m\($0).json" })
+                .write(to: root.appendingPathComponent("models/multi.mdl"))
+            let scene: [String: Any] = [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 24, "height": 8, "auto": false]],
+                "objects": [["id": "multi", "name": "Multi", "solid": true, "model": "models/multi.mdl", "origin": "12 4 -1"]],
+            ]
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
+            layer = try #require(WPERenderGraphBuilder(cacheRootURL: root).build(document: document).layers.first)
+            materialPass = try #require(layer.passes.first)
+        }
         let pipeline = WPEPreparedRenderPipeline(layers: [
             WPEPreparedRenderLayer(
                 graphLayer: layer,
                 puppetModel: model,
                 passes: [WPEPreparedRenderPass(
-                    pass: pass,
+                    pass: materialPass,
                     shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
                     textureBindings: [:], comboValues: [:], uniformValues: [:]
                 )]
@@ -152,8 +189,18 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             return SIMD4(pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3])
         }
         let regions = [pixel(x: 4), pixel(x: 12), pixel(x: 20)]
-        #expect(regions.map { $0.x > $0.y } == [true, false, true], "regions (left, middle, right) = \(regions)")
-        #expect(regions.map { $0.y > $0.x } == [false, true, false], "regions (left, middle, right) = \(regions)")
+        if let tintCase {
+            let expectedMiddle: SIMD4<UInt8> = tintCase == 0 ? SIMD4(16, 64, 16, 255)
+                : tintCase == 1 ? SIMD4(64, 64, 64, 255)
+                : tintCase == 2 ? SIMD4(0, 0, 0, 255) : SIMD4(64, 16, 16, 255)
+            for (actual, expected) in zip(regions, [SIMD4<UInt8>(64, 16, 16, 255), expectedMiddle, SIMD4<UInt8>(64, 64, 64, 255)]) {
+                #expect(abs(Int(actual.x) - Int(expected.x)) <= 2 && abs(Int(actual.y) - Int(expected.y)) <= 2
+                    && abs(Int(actual.z) - Int(expected.z)) <= 2 && actual.w == expected.w, "actual \(actual), expected \(expected)")
+            }
+        } else {
+            #expect(regions.map { $0.x > $0.y } == [true, false, true], "regions (left, middle, right) = \(regions)")
+            #expect(regions.map { $0.y > $0.x } == [false, true, false], "regions (left, middle, right) = \(regions)")
+        }
         if let firstHasMap = componentMapOnFirstMesh {
             #expect(abs(Int(regions[0].z) - (firstHasMap ? 64 : 32)) <= 2, "first mesh emissive = \(regions[0])")
             #expect(abs(Int(regions[1].z) - (firstHasMap ? 32 : 64)) <= 2, "alternate mesh emissive = \(regions[1])")

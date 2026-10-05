@@ -1107,7 +1107,8 @@ struct WPERenderGraphBuilder: Sendable {
             ),
             parallaxDepth: object.parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: model.meshMaterialTextures
+            meshMaterialTextures: model.meshMaterialTextures,
+            meshMaterialConstants: model.meshMaterialConstants
         )
     }
 
@@ -1294,14 +1295,16 @@ struct WPERenderGraphBuilder: Sendable {
             }
             let clipMaskNames = (Self.puppetClipCompositeEnabled ? object.imageRelativePath : nil)
                 .map(loadPuppetClipMaskNames(path:)) ?? []
+            let meshMaterials = explicitMaterial == nil
+                ? meshMaterialInputs(of: model, layerMaterial: material)
+                : (textures: [:], constants: [:])
             return WPEModelDescriptor(
                 materialPath: material,
                 puppetPath: object.imageRelativePath,
                 rendersAsSceneModel: true,
                 puppetClipMaskNames: clipMaskNames,
-                meshMaterialTextures: explicitMaterial == nil
-                    ? meshMaterialTextures(of: model, layerMaterial: material)
-                    : [:]
+                meshMaterialTextures: meshMaterials.textures,
+                meshMaterialConstants: meshMaterials.constants
             )
         }
         guard extensionName == "json" else {
@@ -1334,18 +1337,21 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    private func meshMaterialTextures(
+    private func meshMaterialInputs(
         of model: WPEPuppetModel,
         layerMaterial: String
-    ) -> [Int: [Int: WPETextureReference]] {
-        var result: [Int: [Int: WPETextureReference]] = [:]
+    ) -> (textures: [Int: [Int: WPETextureReference]], constants: [Int: [String: WPESceneShaderConstantValue]]) {
+        var textures: [Int: [Int: WPETextureReference]] = [:]
+        var constants: [Int: [String: WPESceneShaderConstantValue]] = [:]
         for (meshIndex, mesh) in model.meshes.enumerated()
             where !mesh.materialPath.isEmpty && mesh.materialPath != layerMaterial {
             // An unreadable submesh material leaves that mesh drawing with the layer material.
             guard let pass = (try? loadMaterial(path: mesh.materialPath))?.passes.first else { continue }
-            result[meshIndex] = pass.textures
+            textures[meshIndex] = pass.textures
+            constants[meshIndex] = pass.constants
         }
-        return result
+        assert(Set(textures.keys) == Set(constants.keys))
+        return (textures, constants)
     }
 
     private static func parseModelCropOffset(_ raw: Any?) -> SIMD2<Double>? {
@@ -2401,6 +2407,7 @@ private struct WPEModelDescriptor {
     let puppetClipMaskNames: [String]
     let sourceJSON: WPESceneJSONValue?
     let meshMaterialTextures: [Int: [Int: WPETextureReference]]
+    let meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]]
     var requiresFinalSceneComposite: Bool { puppetPath != nil && !rendersAsSceneModel }
 
     init(
@@ -2411,7 +2418,8 @@ private struct WPEModelDescriptor {
         cropOffset: SIMD2<Double>? = nil,
         puppetClipMaskNames: [String] = [],
         sourceJSON: WPESceneJSONValue? = nil,
-        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:]
+        meshMaterialTextures: [Int: [Int: WPETextureReference]] = [:],
+        meshMaterialConstants: [Int: [String: WPESceneShaderConstantValue]] = [:]
     ) {
         self.materialPath = materialPath
         self.puppetPath = puppetPath
@@ -2421,6 +2429,7 @@ private struct WPEModelDescriptor {
         self.puppetClipMaskNames = puppetClipMaskNames
         self.sourceJSON = sourceJSON
         self.meshMaterialTextures = meshMaterialTextures
+        self.meshMaterialConstants = meshMaterialConstants
     }
 }
 
@@ -2497,7 +2506,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 
@@ -2529,7 +2539,8 @@ extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 
@@ -2561,7 +2572,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 
@@ -2590,7 +2602,8 @@ private extension WPERenderLayer {
             groupCompositeSource: source,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 
@@ -2637,7 +2650,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 
@@ -2666,7 +2680,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: depth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 }

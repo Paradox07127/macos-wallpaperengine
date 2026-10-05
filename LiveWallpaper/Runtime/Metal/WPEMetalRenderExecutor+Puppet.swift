@@ -566,7 +566,8 @@ extension WPEMetalRenderExecutor {
             groupCompositeSource: layer.groupCompositeSource,
             parallaxDepth: layer.parallaxDepth,
             sortIndex: layer.sortIndex,
-            meshMaterialTextures: layer.meshMaterialTextures
+            meshMaterialTextures: layer.meshMaterialTextures,
+            meshMaterialConstants: layer.meshMaterialConstants
         )
     }
 
@@ -858,7 +859,7 @@ extension WPEMetalRenderExecutor {
             modelPath: layer.puppetPath ?? layer.imagePath,
             encoder: encoder
         ) { position in
-            guard !layer.meshMaterialTextures.isEmpty else { return }
+            guard !layer.meshMaterialTextures.isEmpty || !layer.meshMaterialConstants.isEmpty else { return }
             // Every mesh rebinds, so a mesh without its own material does not inherit the previous mesh's textures.
             let own = layer.meshMaterialTextures[drawableMeshes[position].offset]
             let meshPrimary = own?[0].flatMap { try? resolve($0) } ?? primary
@@ -867,16 +868,24 @@ extension WPEMetalRenderExecutor {
             case .genericImage4, .chroma4:
                 let componentMap = own == nil ? boundComponentMap : own?[2].flatMap { try? resolve($0) }
                 encoder.setFragmentTexture(componentMap ?? meshPrimary, index: 1)
-                if var uniforms = materialUniforms {
-                    let emissiveAuthored = pass.pass.constants["emissivecolor"] != nil
-                        || pass.pass.constants["emissivebrightness"] != nil
-                    uniforms.brightnessFlags.y = componentMap != nil && emissiveAuthored ? 1 : 0
+                if materialUniforms != nil {
+                    var uniforms = self.sceneModelGenericUniforms(
+                        for: pass, layer: layer, hasComponentMap: componentMap != nil,
+                        materialShader: materialShader, hasReflectionSource: self.reflectionSourceTexture != nil,
+                        reflectionMipCount: self.reflectionSourceTexture?.mipmapLevelCount ?? 0,
+                        noiseTexture: boundNoise,
+                        materialConstants: layer.meshMaterialConstants[drawableMeshes[position].offset]
+                    )
                     encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
                 }
             case .genericImage2:
                 encoder.setFragmentTexture(meshPrimary, index: 1)
             case .generic2:
-                break
+                var uniforms = self.sceneModelGenericUniforms(
+                    for: pass, layer: layer, hasComponentMap: false, materialShader: .generic2,
+                    materialConstants: layer.meshMaterialConstants[drawableMeshes[position].offset]
+                )
+                encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
             }
         }
         return true
@@ -2587,7 +2596,8 @@ private extension WPERenderLayer {
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex,
-            meshMaterialTextures: meshMaterialTextures
+            meshMaterialTextures: meshMaterialTextures,
+            meshMaterialConstants: meshMaterialConstants
         )
     }
 }
