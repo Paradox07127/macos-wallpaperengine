@@ -18,6 +18,8 @@ extension WPEPreparedRenderPipeline {
             }
         }
         resources = declaredTargets
+        // Names with a `resources` entry; aliased reads probe these exactly as runtime binding probes written FBOs.
+        var fboNames = Set(declaredTargets.keys.map { String($0.dropFirst("fbo:".count)) })
         let resolvedLayers = layers.map { layer in
             let isEffectText = layer.passes.contains { WPETextLayerSynthesis.isGlyphPassShader($0.pass.shader) }
                 && layer.passes.contains {
@@ -37,22 +39,36 @@ extension WPEPreparedRenderPipeline {
                     } else {
                         nil
                     }
-                    let semantics = resources[key] ?? sceneAlias ?? externalSemantics(input.reference)
+                    let producerKey: String? = if resources[key] != nil {
+                        key
+                    } else if case let .fbo(name) = input.reference, sceneAlias == nil {
+                        WPEMetalShaderInputs.fuzzyFBOAlias(for: name, in: fboNames).map { "fbo:" + $0 }
+                    } else {
+                        nil
+                    }
+                    let produced = producerKey.flatMap { resources[$0] }
+                    let semantics = produced ?? sceneAlias ?? externalSemantics(input.reference)
                     if let semantics {
                         let role = input.semantics.usage
                         inputs[slot] = WPEPassInputContract(
                             reference: input.reference,
                             semantics: role.isData ? .data(role) : semantics,
-                            origin: resources[key] == nil ? .declaration : .producer
+                            origin: produced == nil ? .declaration : .producer
                         )
                     }
                 }
-                let contract = WPEPassRenderContract.resolve(
+                let resolved = WPEPassRenderContract.resolve(
                     pass: prepared.pass, shader: prepared.shader, bindings: prepared.textureBindings,
                     alphaOverride: prepared.alphaContract, inputDeclarations: inputs,
                     outputDeclaration: declaredTargets[targetKey] ?? prepared.renderContract.outputDeclaration
                         ?? (isEffectText && prepared.pass.target != .scene ? .textEffectCarrier : nil)
                 )
+                let mixedDestination = resolved.blend.enabled && resolved.blend.destinationRGB != .zero
+                    && resources[targetKey].map { $0.alpha != resolved.stored.alpha && $0.alpha != .opaque } == true
+                let contract = mixedDestination ? resolved.appendingDiagnostic("mixed-destination-representation") : resolved
+                if case let .fbo(name)? = prepared.pass.target.textureReference {
+                    fboNames.insert(name)
+                }
                 if prepared.pass.visibilityGate != nil,
                    declaredTargets[targetKey] == nil,
                    contract.inputs[0]?.semantics.alpha != contract.stored.alpha,

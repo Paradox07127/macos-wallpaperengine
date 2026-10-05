@@ -77,6 +77,8 @@ struct WPEPassColorContract: Codable {
     let diagnostics: [String]
     let schema: String
     let inputs: [Input]
+    /// Alpha association the attachment receives, independent of how the shader produced it.
+    let shaderOutputRepresentation: String
     let shaderOutputAlphaOperation: String
     let attachmentSourceRangeOperation: String
     let attachment: WPEPixelColorContract
@@ -112,7 +114,17 @@ struct WPEPassColorContract: Codable {
                          resourceSemantics: binding.texture.map { WPEMetalTextureMetadataRegistry.shared.semantics(for: $0) },
                          declaredSemantics: resolved?.inputs[authored]?.semantics, contractOrigin: resolved?.inputs[authored]?.origin)
         }
-        shaderOutputAlphaOperation = alpha.map { $0.premultipliedOutput ? "premultiply-before-attachment" : "no-injected-premultiply" } ?? "unverified"
+        shaderOutputRepresentation = if builtin, let resolved {
+            resolved.emitted.alpha.rawValue
+        } else {
+            alpha.map { $0.premultipliedOutput ? "premultiplied" : "straight" } ?? "unverified"
+        }
+        // No per-builtin metadata proves what a native kernel does to its output; only translated injection is known.
+        shaderOutputAlphaOperation = if builtin {
+            "unverified"
+        } else {
+            alpha.map { $0.premultipliedOutput ? "premultiply-before-attachment" : "no-injected-premultiply" } ?? "unverified"
+        }
         attachment = WPEPixelColorContract(target.pixelFormat)
         attachmentSourceRangeOperation = switch attachment.storage {
         case .normalized: "clamp-source-rgba-before-blend"

@@ -2,6 +2,7 @@
 import Foundation
 import LiveWallpaperProWPE
 import Metal
+import os
 
 enum WPEAttachmentCoverageContract: Equatable, Sendable {
     case opaqueScene, transparentIntermediate
@@ -51,6 +52,22 @@ struct WPEPassRenderContract: Equatable, Sendable {
         if references[0] == nil {
             references[0] = pass.source
         }
+        let key = WPEPassContractMemo.Key(
+            shader: pass.shader, blending: pass.blending, target: pass.target, references: references,
+            customSource: shader?.isBuiltin == false ? shader?.sourceFingerprint : nil, alphaOverride: alphaOverride,
+            inputDeclarations: inputDeclarations, outputDeclaration: outputDeclaration
+        )
+        return WPEPassContractMemo.current.contract(for: key) {
+            uncached(pass: pass, shader: shader, references: references, alphaOverride: alphaOverride,
+                     inputDeclarations: inputDeclarations, outputDeclaration: outputDeclaration)
+        }
+    }
+
+    private static func uncached(
+        pass: WPERenderPass, shader: WPEShaderProgram?, references: [Int: WPETextureReference],
+        alphaOverride: WPEShaderAlphaContract?, inputDeclarations: [Int: WPEPassInputContract],
+        outputDeclaration: WPEResourceSemantics?
+    ) -> Self {
         var diagnostics: [String] = []
         let blend = WPEBlendContract(pass.blending)
         if !blend.recognized {
@@ -176,11 +193,14 @@ struct WPEPassRenderContract: Equatable, Sendable {
     }
 
     static func textureUsage(shader: String, slot: Int, program: WPEShaderProgram? = nil) -> WPETextureUsage {
-        // A direct invocation of the normal decoder proves data use independently of asset names.
         if let program, !program.isBuiltin {
-            let pattern = #"\bDecompressNormal\s*\(\s*(?:texture|texture2D|textureLod|textureGrad|texelFetch|texSample2D)\s*\(\s*g_Texture"# + String(slot) + #"\b"#
-            if program.fragmentSource.range(of: pattern, options: .regularExpression) != nil {
+            let roles = WPEPassContractMemo.current.roles(for: program)
+            if roles.decodedNormals.contains(slot) {
                 return .normal
+            }
+            // Custom `effects/*` sources share builtin names, so their own annotation outranks the name table.
+            if let annotated = roles.annotated[slot] {
+                return annotated
             }
         }
         guard slot > 0, let kind = WPEBuiltinShaderKind(normalizing: shader) else { return .unknown }
@@ -200,6 +220,118 @@ struct WPEPassRenderContract: Equatable, Sendable {
 
     func inputDeclarations(matching references: [Int: WPETextureReference]) -> [Int: WPEPassInputContract] {
         inputs.filter { references[$0.key] == $0.value.reference }
+    }
+
+    func appendingDiagnostic(_ diagnostic: String) -> Self {
+        Self(identity: identity, inputs: inputs, shaderAlpha: shaderAlpha, nativeAlpha: nativeAlpha, blend: blend,
+             attachment: attachment, emitted: emitted, stored: stored, diagnostics: diagnostics + [diagnostic],
+             outputDeclaration: outputDeclaration)
+    }
+}
+
+/// Sampler roles a custom fragment program proves or declares in its active source.
+struct WPEShaderSourceRoles: Sendable {
+    let decodedNormals: Set<Int>
+    /// Slots whose sampler carries a parseable JSON annotation; `.unknown` when it names no data role.
+    let annotated: [Int: WPETextureUsage]
+
+    init(fragmentSource: String) {
+        let active = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragmentSource)
+        let code = WPEShaderTranspiler.maskComments(active)
+        let decoder = #/\bDecompressNormal\s*\(\s*(?:texture|texture2D|textureLod|textureGrad|texelFetch|texSample2D)\s*\(\s*g_Texture(\d+)\b/#
+        decodedNormals = Set(code.matches(of: decoder).compactMap { Int($0.output.1) })
+        let declaration = #/\s*uniform\s+sampler2D\s+g_Texture(\d+)\s*;/#
+        var annotated: [Int: WPETextureUsage] = [:]
+        for (line, masked) in zip(active.components(separatedBy: "\n"), code.components(separatedBy: "\n")) {
+            guard masked.prefixMatch(of: declaration) != nil, let match = line.prefixMatch(of: declaration),
+                  let slot = Int(match.output.1) else { continue }
+            let comment = line[match.range.upperBound...]
+            guard let start = comment.firstIndex(of: "{"), let end = comment.lastIndex(of: "}"),
+                  let object = try? JSONSerialization.jsonObject(with: Data(comment[start ... end].utf8)),
+                  let metadata = object as? [String: Any] else { continue }
+            annotated[slot] = switch (metadata["mode"] as? String, metadata["format"] as? String) {
+            case ("opacitymask", _): .mask
+            case ("flowmask", _): .flow
+            case (_, "normalmap"): .normal
+            default: .unknown
+            }
+        }
+        self.annotated = annotated
+    }
+}
+
+/// Process-wide memo of pure contract inputs; render threads share it and `state`'s lock orders every access.
+final class WPEPassContractMemo: Sendable {
+    @TaskLocal static var current = WPEPassContractMemo()
+
+    struct Key: Hashable, Sendable {
+        let shader: String
+        let blending: String
+        let target: WPERenderTarget
+        let references: [Int: WPETextureReference]
+        /// Fragment/vertex fingerprint of a custom program; nil for builtin or absent programs.
+        let customSource: String?
+        let alphaOverride: WPEShaderAlphaContract?
+        let inputDeclarations: [Int: WPEPassInputContract]
+        let outputDeclaration: WPEResourceSemantics?
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(shader)
+            hasher.combine(blending)
+            hasher.combine(target.textureReference?.contractKey)
+            hasher.combine(customSource)
+            hasher.combine(outputDeclaration)
+            for slot in references.keys.sorted() {
+                hasher.combine(slot)
+                hasher.combine(references[slot]?.contractKey)
+            }
+        }
+    }
+
+    private struct State {
+        var contracts: [Key: WPEPassRenderContract] = [:]
+        var roles: [String: WPEShaderSourceRoles] = [:]
+        var resolutions = 0
+    }
+
+    private static let limit = 4096
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Contracts computed rather than served from the memo.
+    var resolutions: Int {
+        state.withLock { $0.resolutions }
+    }
+
+    func contract(for key: Key, resolve: () -> WPEPassRenderContract) -> WPEPassRenderContract {
+        if let cached = state.withLock({ $0.contracts[key] }) {
+            return cached
+        }
+        let contract = resolve()
+        state.withLock { state in
+            if state.contracts.count >= Self.limit {
+                state.contracts.removeAll(keepingCapacity: true)
+            }
+            state.contracts[key] = contract
+            state.resolutions += 1
+        }
+        return contract
+    }
+
+    func roles(for program: WPEShaderProgram) -> WPEShaderSourceRoles {
+        guard let fingerprint = program.sourceFingerprint else {
+            return WPEShaderSourceRoles(fragmentSource: program.fragmentSource)
+        }
+        if let cached = state.withLock({ $0.roles[fingerprint] }) {
+            return cached
+        }
+        let roles = WPEShaderSourceRoles(fragmentSource: program.fragmentSource)
+        state.withLock { state in
+            if state.roles.count >= Self.limit {
+                state.roles.removeAll(keepingCapacity: true)
+            }
+            state.roles[fingerprint] = roles
+        }
+        return roles
     }
 }
 #endif

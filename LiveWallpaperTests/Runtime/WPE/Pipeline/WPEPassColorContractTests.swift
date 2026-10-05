@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
 import Metal
 import Testing
 
@@ -26,5 +27,30 @@ struct WPEPassColorContractTests {
         #expect(unknown.storage == .unknown && unknown.hardwareRGBTransfer == .unknown)
         #expect(unknown.alphaTransfer == "unverified")
     }
+
+    #if DEBUG
+    @Test func builtinTraceDoesNotReportOutputRepresentationAsInjectedPremultiply() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        let target = try #require(device.makeTexture(descriptor: descriptor))
+        let pass = WPERenderPass(id: "blur", phase: .material, shader: "effects/blur", source: .fbo("a"),
+                                 target: .layerComposite(name: "b"), textures: [:], binds: [:], constants: [:], combos: [:],
+                                 blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let resolved = WPEPassRenderContract.resolve(pass: pass, shader: nil, bindings: [0: .fbo("a")], alphaOverride: nil)
+        try #require(resolved.shaderAlpha.premultipliedOutput)
+        let state = WPECanonicalTraceRecorder.NativeRenderState.scenePass(
+            blendMode: "disabled", alphaWritePolicy: .all, cullMode: "nocull",
+            depthAttached: false, depthTest: "disabled", depthWrite: "disabled", reversedZ: false
+        )
+        let builtin = WPEPassColorContract(textureBindings: [], alpha: resolved.shaderAlpha, target: target,
+                                           nativeState: state, resolved: resolved, builtin: true)
+        #expect(builtin.shaderOutputAlphaOperation == "unverified")
+        #expect(builtin.shaderOutputRepresentation == "premultiplied")
+        let translated = WPEPassColorContract(textureBindings: [], alpha: resolved.shaderAlpha, target: target,
+                                              nativeState: state, resolved: resolved)
+        #expect(translated.shaderOutputAlphaOperation == "premultiply-before-attachment")
+        #expect(translated.shaderOutputRepresentation == "premultiplied")
+    }
+    #endif
 }
 #endif

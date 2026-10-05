@@ -636,6 +636,25 @@ struct WPERenderPipelineBuilderTests {
         return try makeFixture(dataFiles: data)
     }
 
+    @Test("Consecutive publication frames with unchanged inputs resolve each pass contract once")
+    func publicationFramesReuseResolvedContracts() throws {
+        let (fixture, document) = try effectPublicationFixture(count: 2, reverse: false)
+        defer { fixture.cleanup() }
+        let graph = try WPERenderGraphBuilder(cacheRootURL: fixture.root).build(document: document)
+        let camera = WPEMetalCameraUniforms(orthogonalProjection: document.general.orthogonalProjection, sceneCamera: document.camera)
+        let original = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let canonical = WPERenderGraphBuilder.preparingEffectPublication(in: original, camera: camera, permitsVisibilityGates: true)
+        try #require(canonical.layers.first?.effectPublication != nil)
+        let memo = WPEPassContractMemo()
+        try WPEPassContractMemo.$current.withValue(memo) {
+            let first = canonical.resolvingEffectPublication(passVisibility: [:], camera: camera)
+            let resolutions = memo.resolutions
+            try #require(resolutions > 0)
+            #expect(canonical.resolvingEffectPublication(passVisibility: [:], camera: camera) == first)
+            #expect(memo.resolutions == resolutions)
+        }
+    }
+
     @Test("Independent effect publication preserves canonical gates and reconnects every active subset",
           arguments: [false, true], [2, 3])
     func independentEffectPublication(reverse: Bool, count: Int) throws {

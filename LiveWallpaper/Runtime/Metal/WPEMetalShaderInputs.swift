@@ -133,24 +133,24 @@ enum WPEMetalShaderInputs {
         name: String,
         frameState: WPEMetalFrameState
     ) -> MTLTexture? {
+        guard let alias = fuzzyFBOAlias(for: name, in: frameState.latestNamedTextures.keys),
+              let texture = frameState.latestNamedTextures[alias] else { return nil }
+        logFuzzyFBOHit(requested: name, resolved: alias)
+        return texture
+    }
+
+    /// Shared by runtime binding and contract resolution so both pick the same producer; callers try the exact name first.
+    static func fuzzyFBOAlias(for name: String, in names: some Collection<String>) -> String? {
         let candidates: [String] = [
             "_rt_" + name,
             name.hasPrefix("_rt_") ? String(name.dropFirst(4)) : nil,
             name.hasPrefix("_") ? String(name.dropFirst()) : nil
         ].compactMap { $0 }
-        for candidate in candidates {
-            if let texture = frameState.latestNamedTextures[candidate] {
-                logFuzzyFBOHit(requested: name, resolved: candidate)
-                return texture
-            }
+        if let candidate = candidates.first(where: { names.contains($0) }) {
+            return candidate
         }
         let lowercased = name.lowercased()
-        for (key, texture) in frameState.latestNamedTextures
-        where key != name && key.lowercased() == lowercased {
-            logFuzzyFBOHit(requested: name, resolved: key)
-            return texture
-        }
-        return nil
+        return names.filter { $0 != name && $0.lowercased() == lowercased }.min()
     }
 
     static func floatScalar(
