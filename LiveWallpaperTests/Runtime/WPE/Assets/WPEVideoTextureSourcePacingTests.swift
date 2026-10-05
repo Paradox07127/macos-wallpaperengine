@@ -322,6 +322,173 @@ struct WPEVideoTextureSourcePacingTests {
 
     #if !LITE_BUILD
     @Test(
+        "Paused seek acknowledgment survives a play-pause without an owner update",
+        .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO") != nil)
+    )
+    func pausedSeekAcknowledgmentWithoutPlaybackAdvance() async throws {
+        let fixture = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO"))
+        let fixtureHash = try SHA256.hash(data: Data(contentsOf: fixture)).map { String(format: "%02x", $0) }.joined()
+        try #require(fixtureHash == "9532741c157d1464378042b67436a7fbc33078a874658517ce0315730865a73c")
+        let source = try WPEVideoTextureSource(
+            device: #require(MTLCreateSystemDefaultDevice()), videoURL: fixture, onInvalidate: { _ in }
+        )
+        defer { source.invalidate() }
+        source.scriptPlay()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline {
+            _ = source.texture(at: 0)
+            _ = source.driveStagedFrameWorkForTesting()
+            if source.currentPlayheadSeconds > 0.35,
+               source.scriptPlaybackSnapshot?.hasPresentedFrame == true {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        source.scriptPause()
+        try #require(source.currentPlayheadSeconds > 0.25)
+        try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+        let retained = try #require(source.texture(at: 0))
+        source.scriptSetCurrentTime(0.25)
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.25)
+        try await pump(source, for: .milliseconds(200))
+        source.scriptSetCurrentTime(0.5)
+        try await pump(source, for: .milliseconds(200))
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.25)
+        source.scriptPlay()
+        source.scriptPause()
+        source.scriptSetCurrentTime(0.75)
+        try await pump(source, for: .milliseconds(200))
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.25)
+        #expect(source.scriptPlaybackSnapshot?.isPlaying == false)
+        #expect(source.texture(at: 0) === retained)
+        source.scriptStop()
+        try await pump(source, for: .milliseconds(200))
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.25)
+        #expect(source.texture(at: 0) === retained)
+    }
+    #endif
+
+    #if !LITE_BUILD
+    @Test(
+        "Actual playback re-arms paused seek acknowledgement without a wrap",
+        .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_LONG_VIDEO") != nil)
+    )
+    func pausedSeekAcknowledgmentAfterUnwrappedPlayback() async throws {
+        let fixture = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_LONG_VIDEO"))
+        let fixtureHash = try SHA256.hash(data: Data(contentsOf: fixture)).map { String(format: "%02x", $0) }.joined()
+        try #require(fixtureHash == "e94b0d83397784e4674454af45930190f41f20884db0801189adf0744e22e911")
+        let source = try WPEVideoTextureSource(
+            device: #require(MTLCreateSystemDefaultDevice()), videoURL: fixture, onInvalidate: { _ in }
+        )
+        defer { source.invalidate() }
+        source.scriptPlay()
+        let warmDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < warmDeadline {
+            _ = source.texture(at: 0)
+            _ = source.driveStagedFrameWorkForTesting()
+            if source.currentPlayheadSeconds > 0.35,
+               source.scriptPlaybackSnapshot?.hasPresentedFrame == true {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        try #require(source.scriptPlaybackSnapshot?.duration == 20)
+        try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+        source.scriptPause()
+        try #require(source.currentPlayheadSeconds > 0.25)
+        source.scriptSetCurrentTime(0.25)
+        try await pump(source, for: .milliseconds(200))
+        source.scriptSetCurrentTime(0.5)
+        try await pump(source, for: .milliseconds(200))
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.25)
+        source.scriptPlay()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < deadline, source.currentPlayheadSeconds <= 0.52 {
+            try await Task.sleep(for: .milliseconds(8))
+        }
+        try #require(source.currentPlayheadSeconds > 0.52)
+        try #require(source.currentPlayheadSeconds < 20)
+        let firstOwnerUpdate = try #require(source.scriptPlaybackSnapshot)
+        #expect(firstOwnerUpdate.acknowledgedPausedSeekTime == nil)
+        #expect(firstOwnerUpdate.currentTime > 0.5)
+        _ = source.texture(at: 0)
+        _ = source.driveStagedFrameWorkForTesting()
+        source.scriptPause()
+        source.scriptSetCurrentTime(0.75)
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.75)
+        try await pump(source, for: .milliseconds(200))
+        #expect(source.scriptPlaybackSnapshot?.currentTime == 0.75)
+    }
+    #endif
+
+    #if !LITE_BUILD
+    @Test("Finite unqualified seeks release held source readback", arguments: [-0.25, 0, 4, 5])
+    func unqualifiedSeekReleasesAcknowledgment(_ target: Double) async throws {
+        try await withScriptVideo { source in
+            source.scriptPlay()
+            try await requirePlayheadAdvance(source, after: 0)
+            _ = source.driveStagedFrameWorkForTesting()
+            try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+            source.scriptPause()
+            source.scriptSetCurrentTime(1.5)
+            #expect(source.scriptPlaybackSnapshot?.acknowledgedPausedSeekTime == 1.5)
+            source.scriptSetCurrentTime(.nan)
+            #expect(source.scriptPlaybackSnapshot?.acknowledgedPausedSeekTime == 1.5)
+            source.scriptSetCurrentTime(target)
+            let immediate = try #require(source.scriptPlaybackSnapshot)
+            #expect(immediate.acknowledgedPausedSeekTime == nil)
+            #expect(immediate.currentTime == immediate.decoderCurrentTime)
+            try await pump(source, for: .milliseconds(200))
+            let settled = try #require(source.scriptPlaybackSnapshot)
+            #expect(settled.acknowledgedPausedSeekTime == nil)
+            #expect(settled.currentTime == settled.decoderCurrentTime)
+        }
+    }
+
+    @Test(
+        "Stop without a pending acknowledgement reports actual decoder completion",
+        .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO") != nil)
+    )
+    func stopWithoutAcknowledgmentObservation() async throws {
+        let fixture = try #require(TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO"))
+        let source = try WPEVideoTextureSource(
+            device: #require(MTLCreateSystemDefaultDevice()), videoURL: fixture, onInvalidate: { _ in }
+        )
+        defer { source.invalidate() }
+        source.scriptPlay()
+        try await requirePlayheadAdvance(source, after: 0)
+        _ = source.driveStagedFrameWorkForTesting()
+        try #require(source.scriptPlaybackSnapshot?.hasPresentedFrame == true)
+        source.scriptPause()
+        let before = try #require(source.scriptPlaybackSnapshot)
+        var evaluation = before
+        evaluation.applyEvaluationIntent(.stop)
+        #expect(evaluation.currentTime == 0)
+        source.scriptStop()
+        let immediate = try #require(source.scriptPlaybackSnapshot)
+        #expect(immediate.acknowledgedPausedSeekTime == nil)
+        #expect(immediate.currentTime == immediate.decoderCurrentTime)
+        try await pump(source, for: .milliseconds(200))
+        let settled = try #require(source.scriptPlaybackSnapshot)
+        #expect(abs(settled.currentTime) < 0.05)
+        if let output = TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_OUTPUT") {
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            let record: [String: Any] = [
+                "beforeSourceTime": before.currentTime,
+                "sameEvaluationTime": evaluation.currentTime,
+                "immediateSourceTime": immediate.currentTime,
+                "immediateDecoderTime": immediate.decoderCurrentTime ?? -1,
+                "settledSourceTime": settled.currentTime,
+                "nativeSameEvaluationCompatibility": "source timing separately observed",
+            ]
+            try JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
+                .write(to: output.appendingPathComponent("mac-stop-without-seek.json"), options: .atomic)
+        }
+    }
+    #endif
+
+    #if !LITE_BUILD
+    @Test(
         "Observe exact-fixture paused seek source and VM clocks (opt-in, not native acceptance)",
         .enabled(if: TestScratch.externalFixtureURL(pathKey: "WPE_PAUSED_SEEK_VIDEO") != nil),
         arguments: ["B", "I", "F", "K"]

@@ -10,17 +10,36 @@ struct WPEVideoPlaybackSnapshot: Sendable, Equatable {
     var rate: Double
     var loop: Bool
     let hasPresentedFrame: Bool
+    var acknowledgedPausedSeekTime: Double?
+    var playbackRequested: Bool?
+    var decoderCurrentTime: Double?
 
     mutating func applyEvaluationIntent(_ command: WPELayerVideoCommand) {
         switch command {
-        case .play: isPlaying = true
-        case .pause: isPlaying = false
+        case .play:
+            isPlaying = true
+            playbackRequested = true
+        case .pause:
+            isPlaying = false
+            playbackRequested = false
         case .stop:
             isPlaying = false
-            currentTime = 0
+            playbackRequested = false
+            currentTime = acknowledgedPausedSeekTime ?? 0
         case let .setRate(value): rate = value
         case let .setLoop(value): loop = value
-        case .seek: break
+        case let .seek(seconds):
+            guard seconds.isFinite else { return }
+            guard seconds > 0, seconds < duration else {
+                acknowledgedPausedSeekTime = nil
+                currentTime = decoderCurrentTime ?? currentTime
+                return
+            }
+            guard !(playbackRequested ?? isPlaying), hasPresentedFrame else { return }
+            if acknowledgedPausedSeekTime == nil {
+                acknowledgedPausedSeekTime = seconds
+            }
+            currentTime = acknowledgedPausedSeekTime ?? currentTime
         }
     }
 }

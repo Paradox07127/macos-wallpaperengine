@@ -36,6 +36,114 @@ struct WPESceneScriptVideoBridgeTests {
         #expect(shared.get("loop") as? Double == 1)
     }
 
+    @Test("First paused seek acknowledges its target in the same evaluation", arguments: [0.25, 0.75])
+    func firstPausedSeekReadback(_ target: Double) throws {
+        let shared = WPESharedScriptState(layers: [layer("video", "video")])
+        shared.publishVideoPlayback(["video": snapshot(UUID(), time: 1.5)], sourceKeys: ["video": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+                                                  export function init() {
+                                                      const video = thisLayer.getVideoTexture();
+                                                      shared.before = video.getCurrentTime();
+                                                      video.setCurrentTime(\(target));
+                                                      shared.same = video.getCurrentTime();
+                                                      shared.playing = video.isPlaying();
+                                                  }
+                                                  """, shared: shared, ownLayerName: "video", ownObjectID: "video",
+                                                  governor: WPESceneScriptExecutionGovernor(limit: 1))
+        #expect(shared.get("before") as? Double == 1.5)
+        #expect(shared.get("same") as? Double == target)
+        #expect(shared.get("playing") as? Bool == false)
+        #expect(instance.initialOutput.own.videoCommands == [.seek(target)])
+    }
+
+    @Test("Pending seek acknowledgement survives paused commands and aliases")
+    func pendingSeekReadback() throws {
+        let generation = UUID()
+        var held = snapshot(generation, time: 0.25)
+        held.acknowledgedPausedSeekTime = 0.25
+        held.playbackRequested = false
+        let shared = WPESharedScriptState(layers: [layer("a", "A"), layer("b", "B", index: 1)])
+        shared.publishVideoPlayback(["a": held, "b": held], sourceKeys: ["a": "video.tex", "b": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const a = thisLayer.getVideoTexture(), b = thisScene.getLayer('B').getVideoTexture();
+            a.setCurrentTime(0.5); shared.second = b.getCurrentTime();
+            a.play(); b.pause(); b.setCurrentTime(0.75); shared.third = a.getCurrentTime();
+            b.stop(); shared.stopped = a.getCurrentTime(); shared.playing = a.isPlaying();
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
+        #expect(shared.get("second") as? Double == 0.25)
+        #expect(shared.get("third") as? Double == 0.25)
+        #expect(shared.get("stopped") as? Double == 0.25)
+        #expect(shared.get("playing") as? Bool == false)
+        #expect(!instance.initialOutput.own.videoCommands.isEmpty)
+    }
+
+    @Test("Replacement source facts discard prior evaluation acknowledgement")
+    func replacementSeekReadback() throws {
+        let shared = WPESharedScriptState(layers: [layer("a", "A")])
+        var old = snapshot(UUID(), time: 0.25)
+        old.acknowledgedPausedSeekTime = 0.25
+        shared.publishVideoPlayback(["a": old], sourceKeys: ["a": "video.tex"])
+        let instance = try WPELayerScriptInstance(script: """
+        export function init() {
+            const video = thisLayer.getVideoTexture();
+            video.setCurrentTime(0.5); shared.oldTime = video.getCurrentTime();
+        }
+        export function update() {
+            const video = thisLayer.getVideoTexture();
+            video.setCurrentTime(0.75); shared.newTime = video.getCurrentTime();
+        }
+        """, shared: shared, ownLayerName: "A", ownObjectID: "a", governor: WPESceneScriptExecutionGovernor(limit: 1))
+        #expect(shared.get("oldTime") as? Double == 0.25)
+        shared.publishVideoPlayback(["a": snapshot(UUID(), time: 0.6)], sourceKeys: ["a": "video.tex"])
+        _ = try #require(instance.tick())
+        #expect(shared.get("newTime") as? Double == 0.75)
+    }
+
+    @Test("Unqualified finite seek retires a held acknowledgement to decoder facts", arguments: [-0.25, 0, 2, 3])
+    func heldSeekFallback(_ target: Double) {
+        var state = snapshot(UUID(), time: 0.25)
+        state.acknowledgedPausedSeekTime = 0.25
+        state.decoderCurrentTime = 0.5
+        state.applyEvaluationIntent(.seek(target))
+        #expect(state.acknowledgedPausedSeekTime == nil)
+        #expect(state.currentTime == 0.5)
+    }
+
+    @Test("Non-finite seek does not retire an existing acknowledgement")
+    func heldSeekIgnoresNonFiniteRequest() {
+        for target in [Double.nan, Double.infinity, -Double.infinity] {
+            var state = snapshot(UUID(), time: 0.25)
+            state.acknowledgedPausedSeekTime = 0.25
+            state.decoderCurrentTime = 0.5
+            state.applyEvaluationIntent(.seek(target))
+            #expect(state.acknowledgedPausedSeekTime == 0.25)
+            #expect(state.currentTime == 0.25)
+        }
+    }
+
+    @Test("Cold, policy-paused and unqualified seeks retain existing readback")
+    func unqualifiedSeekReadback() {
+        let generation = UUID()
+        for target in [Double.nan, -Double.infinity, -0.25, 0, 2, 3] {
+            var state = snapshot(generation)
+            state.applyEvaluationIntent(.seek(target))
+            #expect(state.currentTime == 1.5)
+            #expect(state.acknowledgedPausedSeekTime == nil)
+        }
+        var cold = WPEVideoPlaybackSnapshot(sourceGeneration: generation, currentTime: 0,
+                                            duration: 2, isPlaying: false, rate: 1, loop: true, hasPresentedFrame: false)
+        cold.applyEvaluationIntent(.seek(0.25))
+        #expect(cold.currentTime == 0)
+        #expect(cold.acknowledgedPausedSeekTime == nil)
+        var policyPaused = snapshot(generation)
+        policyPaused.playbackRequested = true
+        policyPaused.applyEvaluationIntent(.seek(0.25))
+        #expect(policyPaused.currentTime == 1.5)
+        #expect(policyPaused.acknowledgedPausedSeekTime == nil)
+    }
+
     @Test("Same-source aliases share immediate intent without inventing seek readback")
     func aliasIntent() throws {
         let generation = UUID()

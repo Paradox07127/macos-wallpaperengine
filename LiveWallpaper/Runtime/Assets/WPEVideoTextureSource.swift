@@ -6,6 +6,7 @@ import CoreVideo
 import Foundation
 import LiveWallpaperCore
 import Metal
+import os
 import QuartzCore
 import simd
 
@@ -377,6 +378,9 @@ final class WPEVideoTextureSource {
     private var policySuspended = false
     private var scriptRate = 1.0
     private var scriptLoop = true
+    private var scriptAcknowledgedPausedSeekTime: Double?
+    private var scriptSeekCompletion: OSAllocatedUnfairLock<Bool?>?
+    private var scriptSeekTarget: Double?
 
     private func reconcilePlaybackIntent() {
         if playbackRequested, !policySuspended, !scriptHeldAtEnd {
@@ -393,6 +397,7 @@ final class WPEVideoTextureSource {
 
     private func observeScriptPlaybackBoundary() {
         guard scriptControlled, !isInvalidated else { return }
+        observeAcknowledgedSeekResume()
         let loopCount = playerLooper?.loopCount ?? 0
         defer { scriptLastLoopCount = loopCount }
         guard loopCount > scriptLastLoopCount, playbackRequested, !scriptLoop else { return }
@@ -404,15 +409,37 @@ final class WPEVideoTextureSource {
     var scriptPlaybackSnapshot: WPEVideoPlaybackSnapshot? {
         guard !isInvalidated, player != nil else { return nil }
         observeScriptPlaybackBoundary()
+        let decoderTime = playheadSeconds
         return .init(
             sourceGeneration: scriptSourceGeneration,
-            currentTime: scriptHeldAtEnd ? loopDurationSeconds : playheadSeconds,
+            currentTime: scriptAcknowledgedPausedSeekTime ?? (scriptHeldAtEnd ? loopDurationSeconds : decoderTime),
             duration: loopDurationSeconds,
             isPlaying: playbackRequested && !policySuspended && !scriptHeldAtEnd,
             rate: scriptRate,
             loop: scriptLoop,
-            hasPresentedFrame: latest != nil
+            hasPresentedFrame: latest != nil,
+            acknowledgedPausedSeekTime: scriptAcknowledgedPausedSeekTime,
+            playbackRequested: playbackRequested,
+            decoderCurrentTime: decoderTime
         )
+    }
+
+    private func observeAcknowledgedSeekResume() {
+        guard scriptAcknowledgedPausedSeekTime != nil, playbackRequested,
+              !policySuspended, !scriptHeldAtEnd, (player?.rate ?? 0) > 0,
+              scriptSeekCompletion?.withLock({ $0 }) == true else { return }
+        guard let target = scriptSeekTarget, playheadSeconds > target else { return }
+        scriptAcknowledgedPausedSeekTime = nil
+    }
+
+    private func seekScriptPlayer(to seconds: Double) {
+        let completion = OSAllocatedUnfairLock<Bool?>(initialState: nil)
+        scriptSeekCompletion = completion
+        let target = CMTime(seconds: seconds, preferredTimescale: 600)
+        scriptSeekTarget = CMTimeGetSeconds(target)
+        player?.seek(to: target) { succeeded in
+            completion.withLock { $0 = succeeded }
+        }
     }
 
     private func enterScriptControlledMode() {
@@ -442,20 +469,27 @@ final class WPEVideoTextureSource {
         reconcilePlaybackIntent()
     }
 
-    /// Rewind the logical clock while retaining the presented texture.
+    /// Rewind the decoder while retaining the presented texture.
     func scriptStop() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
         playbackRequested = false
         reconcilePlaybackIntent()
-        player?.seek(to: .zero)
+        seekScriptPlayer(to: 0)
         resetScriptPlayback()
     }
 
     func scriptSetCurrentTime(_ seconds: TimeInterval) {
         guard !isInvalidated, seconds.isFinite else { return }
         enterScriptControlledMode()
-        player?.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
+        if seconds <= 0 || seconds >= loopDurationSeconds {
+            scriptAcknowledgedPausedSeekTime = nil
+        }
+        if !playbackRequested, latest != nil, seconds > 0, seconds < loopDurationSeconds,
+           scriptAcknowledgedPausedSeekTime == nil {
+            scriptAcknowledgedPausedSeekTime = seconds
+        }
+        seekScriptPlayer(to: max(0, seconds))
         resetScriptPlayback()
     }
 
