@@ -580,37 +580,40 @@ extension WPEMetalRenderExecutor {
         return layer.replacingDrawGeometry(groupLocalGeometry, parallaxDepth: SIMD2<Double>(0, 0))
     }
 
-    /// The layer draws with one PSO: a translucent drawable submesh moves every mesh to PMA source-over,
-    /// because an opaque-class layer pass may carry `premultipliedDisabled`, which would erase that submesh's A0 texels.
-    static func sceneModelBlend(
+    struct SceneModelMeshPipeline: Equatable {
+        let blendMode: String
+        let nativeAlpha: WPENativeAlphaPolicy
+    }
+
+    /// `meshBlending` nil = the submesh uses the layer material. Opaque-class materials write straight RGB with blending off so
+    /// A0 padding keeps its colour; a submesh blend other than the layer's composites PMA source-over.
+    static func sceneModelMeshPipeline(
         for pass: WPEPreparedRenderPass,
-        layer: WPERenderLayer,
-        drawableMeshIndices: [Int]
-    ) -> (opaque: Bool, blendMode: String) {
+        meshBlending: String?,
+        meshOwnsAlbedo: Bool
+    ) -> SceneModelMeshPipeline {
         let opaqueBlends: Set<String> = ["normal", "disabled", "premultiplieddisabled"]
-        let layerBlend = if case .string(let blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
+        let layerBlend = if case let .string(blend)? = pass.pass.authoredJSON.materialPass?["blending"] {
             blend.lowercased()
         } else {
             pass.pass.blending.lowercased()
         }
-        guard opaqueBlends.contains(layerBlend) else {
-            return (false, pass.pass.blending)
+        let meshBlend = meshBlending?.lowercased() ?? layerBlend
+        let opaque = opaqueBlends.contains(meshBlend)
+        let blendMode = if opaque {
+            "disabled"
+        } else if meshBlend == layerBlend {
+            pass.pass.blending
+        } else {
+            "premultiplied"
         }
-        let meshBlends = drawableMeshIndices.compactMap { layer.meshMaterialBlending[$0]?.lowercased() }
-        return meshBlends.allSatisfy(opaqueBlends.contains) ? (true, "disabled") : (false, "premultiplied")
-    }
-
-    /// A submesh with its own slot-0 albedo samples a straight texture through the shared PSO, so only an all-layer-input model may unpremultiply.
-    static func sceneModelNativeAlphaInput(
-        for pass: WPEPreparedRenderPass,
-        layer: WPERenderLayer,
-        drawableMeshIndices: [Int]
-    ) -> WPENativeInputAlphaOperation {
-        guard pass.renderContract.inputs[0]?.semantics.alpha == .premultiplied,
-              !drawableMeshIndices.contains(where: { layer.meshMaterialTextures[$0]?[0] != nil }) else {
-            return .none
+        // A submesh's own slot-0 albedo is a straight texture; only the layer's PMA primary may be unpremultiplied.
+        let input: WPENativeInputAlphaOperation = if !meshOwnsAlbedo, pass.renderContract.inputs[0]?.semantics.alpha == .premultiplied {
+            .unpremultiply
+        } else {
+            .none
         }
-        return .unpremultiply
+        return SceneModelMeshPipeline(blendMode: blendMode, nativeAlpha: WPENativeAlphaPolicy(input: input, straightOutput: opaque))
     }
 
     func encodeSceneModelMaterialPassIfNeeded(
@@ -645,28 +648,38 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
-        // Scene-model normal is opaque; image-layer and translucent materials retain their separate rules.
-        let drawableMeshIndices = drawableMeshes.map(\.offset)
-        let (opaqueModel, modelBlendMode) = Self.sceneModelBlend(for: pass, layer: layer, drawableMeshIndices: drawableMeshIndices)
-        let modelNativeAlpha = WPENativeAlphaPolicy(
-            input: Self.sceneModelNativeAlphaInput(for: pass, layer: layer, drawableMeshIndices: drawableMeshIndices),
-            straightOutput: opaqueModel
-        )
+        let fragmentName = switch materialShader {
+        case .generic2: "wpe_scene_model_generic2_fragment"
+        case .genericImage4: "wpe_scene_model_generic4_fragment"
+        case .chroma4: "wpe_scene_model_chroma4_fragment"
+        case .genericImage2: "wpe_scene_model_image_fragment"
+        }
         let modelAlphaWritePolicy: WPEMetalAlphaWritePolicy = .rgbOnly
+        func meshPipeline(_ position: Int, ownsAlbedo: Bool) -> SceneModelMeshPipeline {
+            Self.sceneModelMeshPipeline(
+                for: pass,
+                meshBlending: layer.meshMaterialBlending[drawableMeshes[position].offset],
+                meshOwnsAlbedo: ownsAlbedo
+            )
+        }
+        func bind(_ pipeline: SceneModelMeshPipeline) throws {
+            encoder.setRenderPipelineState(try renderPipeline(
+                vertexName: "wpe_scene_model_mesh_vertex",
+                fragmentName: fragmentName,
+                blendMode: pipeline.blendMode,
+                alphaWritePolicy: modelAlphaWritePolicy,
+                colorPixelFormat: destination.texture.pixelFormat,
+                depthPixelFormat: depthPixelFormat,
+                nativeAlpha: pipeline.nativeAlpha
+            ))
+        }
+        var boundPipeline = meshPipeline(0, ownsAlbedo: layer.meshMaterialTextures[drawableMeshes[0].offset]?[0] != nil)
+        try bind(boundPipeline)
         var materialUniforms: WPESceneModelGenericUniforms?
         var imageUniforms: WPEGenericImageUniforms?
         var boundComponentMap: MTLTexture?
         var boundNoise: MTLTexture?
         if materialShader == .generic2 {
-            encoder.setRenderPipelineState(try renderPipeline(
-                vertexName: "wpe_scene_model_mesh_vertex",
-                fragmentName: "wpe_scene_model_generic2_fragment",
-                blendMode: modelBlendMode,
-                alphaWritePolicy: modelAlphaWritePolicy,
-                colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat,
-                nativeAlpha: modelNativeAlpha
-            ))
             encoder.setFragmentTexture(primary, index: 0)
             var uniforms = sceneModelGenericUniforms(
                 for: pass,
@@ -678,15 +691,6 @@ extension WPEMetalRenderExecutor {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else if materialShader == .genericImage4 {
             // generic4 MODEL differs from the image-layer path: slot 1 is unused normal, slot 2 PBR component map (alpha = emissive mask); tint/emissive come from material constants ("color"/"emissivecolor").
-            encoder.setRenderPipelineState(try renderPipeline(
-                vertexName: "wpe_scene_model_mesh_vertex",
-                fragmentName: "wpe_scene_model_generic4_fragment",
-                blendMode: modelBlendMode,
-                alphaWritePolicy: modelAlphaWritePolicy,
-                colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat,
-                nativeAlpha: modelNativeAlpha
-            ))
             encoder.setFragmentTexture(primary, index: 0)
 
             var componentMap: MTLTexture?
@@ -725,15 +729,6 @@ extension WPEMetalRenderExecutor {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else if materialShader == .chroma4 {
             // Same material vocabulary as generic4; additions are the view-dependent front/back tint and the slot-8 pigment noise.
-            encoder.setRenderPipelineState(try renderPipeline(
-                vertexName: "wpe_scene_model_mesh_vertex",
-                fragmentName: "wpe_scene_model_chroma4_fragment",
-                blendMode: modelBlendMode,
-                alphaWritePolicy: modelAlphaWritePolicy,
-                colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat,
-                nativeAlpha: modelNativeAlpha
-            ))
             encoder.setFragmentTexture(primary, index: 0)
 
             var componentMap: MTLTexture?
@@ -775,15 +770,6 @@ extension WPEMetalRenderExecutor {
             materialUniforms = uniforms
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else {
-            encoder.setRenderPipelineState(try renderPipeline(
-                vertexName: "wpe_scene_model_mesh_vertex",
-                fragmentName: "wpe_scene_model_image_fragment",
-                blendMode: modelBlendMode,
-                alphaWritePolicy: modelAlphaWritePolicy,
-                colorPixelFormat: destination.texture.pixelFormat,
-                depthPixelFormat: depthPixelFormat,
-                nativeAlpha: modelNativeAlpha
-            ))
             encoder.setFragmentTexture(primary, index: 0)
             encoder.setFragmentTexture(primary, index: 1)
             var uniforms = genericImageUniforms(
@@ -873,7 +859,7 @@ extension WPEMetalRenderExecutor {
             vertexRows.append(.init(name: "modeAndPadding", type: "vec4", value: meshUniforms.modeAndPadding))
             vertexRows.append(.init(name: "eyeAndPadding", type: "vec4", value: meshUniforms.eyeAndPadding))
             let baseState = WPECanonicalTraceRecorder.NativeRenderState.scenePass(
-                blendMode: modelBlendMode, alphaWritePolicy: modelAlphaWritePolicy, cullMode: pass.pass.cullMode,
+                blendMode: boundPipeline.blendMode, alphaWritePolicy: modelAlphaWritePolicy, cullMode: pass.pass.cullMode,
                 depthAttached: depthPixelFormat != .invalid, depthTest: pass.pass.depthTest,
                 depthWrite: pass.pass.depthWrite, reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
             )
@@ -882,13 +868,6 @@ extension WPEMetalRenderExecutor {
                 frontCCW: frameState.cameraUniforms.frontFacingWinding(objectID: layer.objectID, modelMatrix: meshUniforms.modelMatrix) == .counterClockwise,
                 depthAttached: baseState.depthAttached, depthCompare: baseState.depthCompare, depthWrite: baseState.depthWrite
             )
-            let fragmentName: String
-            switch materialShader {
-            case .generic2: fragmentName = "wpe_scene_model_generic2_fragment"
-            case .genericImage4: fragmentName = "wpe_scene_model_generic4_fragment"
-            case .chroma4: fragmentName = "wpe_scene_model_chroma4_fragment"
-            case .genericImage2: fragmentName = "wpe_scene_model_image_fragment"
-            }
             WPECanonicalTraceRecorder.shared.recordPuppetPass(
                 pass: pass, nativeState: nativeState, stage: "scene-model-material-mesh", layer: layer,
                 modelPath: layer.puppetPath, meshes: meshes, bones: model.bones, destination: destination,
@@ -917,7 +896,13 @@ extension WPEMetalRenderExecutor {
             guard !layer.meshMaterialTextures.isEmpty || !layer.meshMaterialConstants.isEmpty else { return }
             // Every mesh rebinds, so a mesh without its own material does not inherit the previous mesh's textures.
             let own = layer.meshMaterialTextures[drawableMeshes[position].offset]
-            let meshPrimary = own?[0].flatMap { try? resolve($0) } ?? primary
+            let ownPrimary = own?[0].flatMap { try? resolve($0) }
+            let meshPrimary = ownPrimary ?? primary
+            let pipeline = meshPipeline(position, ownsAlbedo: ownPrimary != nil)
+            if pipeline != boundPipeline {
+                try bind(pipeline)
+                boundPipeline = pipeline
+            }
             encoder.setFragmentTexture(meshPrimary, index: 0)
             switch materialShader {
             case .genericImage4, .chroma4:

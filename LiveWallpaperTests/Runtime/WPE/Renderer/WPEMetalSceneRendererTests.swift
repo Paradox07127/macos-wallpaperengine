@@ -2279,6 +2279,80 @@ struct WPEMetalSceneRendererTests {
         #expect(back.pointerPosition == SIMD2(0.1, 0.9))
         #expect(back.pointerPositionLast == SIMD2(0.1, 0.9))
     }
+
+    @Test("An oracle frame override keeps its pointer while the live pointer is off-scene")
+    func oraclePointerIsNotReplacedByHeldPointer() throws {
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        WPEOracleMode.testingOverride = true
+        let renderer: WPEMetalSceneRenderer
+        do {
+            defer { WPEOracleMode.testingOverride = nil }
+            renderer = try WPEMetalSceneRenderer(
+                descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+                frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+                device: #require(MTLCreateSystemDefaultDevice())
+            )
+        }
+        defer { renderer.cleanup() }
+        renderer.sceneRenderSize = CGSize(width: 64, height: 64)
+        let oraclePointer = try #require(renderer.oracleFrameOverride).pointer
+        renderer.previousPointer = SIMD2(0.9, 0.1)
+        try #require(oraclePointer != renderer.previousPointer)
+
+        let context = renderer.sampleFrameContext(inputs: WPEFrameInputs(
+            clickCaptureEnabled: false, pointerSample: .inactive,
+            pointerFrame: .neutral, preferredFramesPerSecond: 60
+        ))
+
+        #expect(context.pointer == oraclePointer)
+        #expect(context.uniforms.pointerPosition == oraclePointer)
+        #expect(context.uniforms.pointerPositionLast == oraclePointer)
+    }
+
+    @Test("A non-.tex texture path's payload probe does not mask the converted file's decode error")
+    func payloadProbeDoesNotMaskTextureDecodeError() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let materials = root.appendingPathComponent("materials", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("models", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: materials, withIntermediateDirectories: true)
+        try Data(#"{ "material": "materials/hero.json" }"#.utf8)
+            .write(to: root.appendingPathComponent("models/hero.json"))
+        try Data(#"{ "passes": [{ "shader": "genericimage2", "textures": ["materials/foo.variant"] }] }"#.utf8)
+            .write(to: materials.appendingPathComponent("hero.json"))
+        try Data("TEXV0005\0TEXI0001\0corrupt".utf8).write(to: materials.appendingPathComponent("foo.variant.tex"))
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [{ "id": "hero", "name": "Hero Layer", "type": "image", "image": "models/hero.json",
+                        "origin": "0.5 0.5 0", "scale": "1 1 1", "alpha": 1 }]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString, cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json", capabilityTier: .imageOnly
+            ),
+            cacheRootURL: root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+
+        await #expect(throws: (any Error).self) {
+            try await renderer.load()
+        }
+
+        let diagnostic = try #require(renderer.loadDiagnostics)
+        guard case .texture = diagnostic else {
+            Issue.record("Expected the .tex decode failure, got \(diagnostic)")
+            return
+        }
+    }
 }
 
 @MainActor

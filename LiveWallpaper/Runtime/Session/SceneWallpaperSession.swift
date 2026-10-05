@@ -106,6 +106,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var cleanupTask: Task<Void, Never>?
     private var diagnosticPollTask: Task<Void, Never>?
     private let diagnosticSessionID = UUID()
+    /// nil until a renderer poll has recorded a testing-report entry.
+    private(set) var lastRecordedDiagnosticAttempt: WPESceneTestingReports.Attempt?
     private var lifecycleGeneration = 0
     /// Guards clearing loadTask so a finished older task cannot drop a newer one.
     private var loadGeneration = 0
@@ -225,15 +227,18 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             gpuErrors: .init(count: snapshot.gpuErrorCount, last: snapshot.gpuErrorLast),
             compatibilitySummary: snapshot.compatibilitySummary
         )
-        if let descriptor = snapshot.descriptor {
+        // The renderer's own generation also advances on retire/hibernate, so attempts count session loads instead.
+        if !isHibernated, let descriptor = snapshot.descriptor {
             let status = loadError.map { "load failed: \($0.errorDescription ?? "unknown")" }
                 ?? (snapshot.failedPresentGeneration == snapshot.currentLoadGeneration
                     ? "presentation failed"
                     : (snapshot.hasPresentedFrame ? "frame presented" : "awaiting first frame"))
+            let attempt = WPESceneTestingReports.Attempt(session: diagnosticSessionID, generation: loadGeneration)
             WPESceneTestingReports.shared.record(
-                attempt: .init(session: diagnosticSessionID, generation: snapshot.currentLoadGeneration),
+                attempt: attempt,
                 descriptor: descriptor, status: status, diagnostics: rendererDiagnostics
             )
+            lastRecordedDiagnosticAttempt = attempt
         }
     }
 

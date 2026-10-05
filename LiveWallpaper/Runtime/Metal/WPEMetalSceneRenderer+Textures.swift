@@ -1175,9 +1175,10 @@ extension WPEMetalSceneRenderer {
         Self.shouldTryTexturePayload(path)
     }
 
+    /// Mirrors the resolver's payload-path rule (`.json` follows its reference first): any other suffix only fails the
+    /// probe with `unsupportedTexture`, which would mask a later candidate's real error.
     private nonisolated static func shouldTryTexturePayload(_ path: String) -> Bool {
-        let extensionName = (path as NSString).pathExtension.lowercased()
-        return !knownRawImageExtensions.contains(extensionName)
+        ["tex", "json", ""].contains((path as NSString).pathExtension.lowercased())
     }
 
     /// A `.fileMissing` candidate only proves that path didn't exist; the

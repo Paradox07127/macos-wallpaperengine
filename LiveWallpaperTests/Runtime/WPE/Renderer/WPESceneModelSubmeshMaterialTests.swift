@@ -140,6 +140,26 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         }
     }
 
+    @Test("An opaque submesh keeps its A0 padding colour beside a translucent submesh",
+          arguments: ["genericimage2", "generic2", "generic4", "chroma4"])
+    func opaqueSubmeshKeepsPaddingBesideTranslucentSubmesh(shader: String) throws {
+        let paint: [UInt8] = [192, 128, 64]
+        func material(_ texture: String, _ blending: String) -> [String: Any] {
+            ["shader": shader, "textures": [texture], "blending": blending, "combos": ["LIGHTING": 0, "REFLECTION": 0]]
+        }
+        let row = try renderBuiltModel(
+            materials: [material("padding", "normal"), material("fringe", "translucent"), material("reference", "normal")],
+            meshSpans: [(-12, -4), (-4, 4), (4, 12)],
+            textures: ["padding": [paint + [0]], "fringe": [paint + [0]], "reference": [paint + [255]]]
+        )
+        let (padding, reference) = (row[4], row[20])
+        try #require((0 ..< 3).contains { reference[$0] > 32 }, "\(shader): A255 reference mesh must draw: \(reference)")
+        for channel in 0 ..< 3 {
+            #expect(abs(Int(padding[channel]) - Int(reference[channel])) <= 2,
+                    "\(shader): opaque A0 padding lost its RGB: \(padding), reference \(reference)")
+        }
+    }
+
     @Test("genericimage2 submesh rebuilds image uniforms from its own constants, fallback restores the layer's")
     func genericImageSubmeshUsesItsOwnConstants() throws {
         let row = try renderBuiltModel(
@@ -157,7 +177,7 @@ struct WPESceneModelSubmeshMaterialRenderTests {
         }
     }
 
-    @Test("Scene-model PMA primary input unpremultiplies only when every drawable submesh samples it",
+    @Test("Scene-model PMA primary input unpremultiplies only for a submesh that samples it",
           arguments: [false, true])
     func modelInputConversionFollowsSubmeshAlbedo(submeshOwnsAlbedo: Bool) throws {
         let source = WPETextureReference.fbo("producer")
@@ -174,20 +194,32 @@ struct WPESceneModelSubmeshMaterialRenderTests {
             pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:], renderContract: declared
         )
         try #require(prepared.renderContract.inputs[0]?.semantics.alpha == .premultiplied)
-        let geometry = WPERenderLayerGeometry(
-            origin: .zero, scale: SIMD3<Double>(1, 1, 1), angles: .zero, alignment: .center,
-            size: CGSize(width: 24, height: 8), alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
-        )
-        // Mesh 2 is not drawable, so its own albedo must not gate the conversion.
-        let layer = WPERenderLayer(
-            objectID: "multi", objectName: "Multi", imagePath: "multi.mdl", materialPath: "materials/mat0.json",
-            puppetPath: "multi.mdl", geometry: geometry, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass],
-            meshMaterialTextures: [1: submeshOwnsAlbedo ? [0: .asset("own")] : [2: .asset("mask")], 2: [0: .asset("hidden")]]
-        )
 
-        let input = WPEMetalRenderExecutor.sceneModelNativeAlphaInput(for: prepared, layer: layer, drawableMeshIndices: [0, 1])
+        let pipeline = WPEMetalRenderExecutor.sceneModelMeshPipeline(for: prepared, meshBlending: nil, meshOwnsAlbedo: submeshOwnsAlbedo)
 
-        #expect(input == (submeshOwnsAlbedo ? .none : .unpremultiply))
+        #expect(pipeline.nativeAlpha.input == (submeshOwnsAlbedo ? .none : .unpremultiply))
+    }
+
+    @Test("Each submesh's blending picks its own PSO blend and output representation")
+    func submeshBlendingPicksItsOwnPipeline() {
+        func pipeline(layerBlending: String, meshBlending: String?) -> WPEMetalRenderExecutor.SceneModelMeshPipeline {
+            let pass = WPERenderPass(
+                id: "multi.material", phase: .material, shader: "generic4", source: .asset("albedo"),
+                target: .scene, textures: [:], binds: [:], constants: [:], combos: [:],
+                blending: layerBlending, cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+            )
+            let prepared = WPEPreparedRenderPass(pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:])
+            return WPEMetalRenderExecutor.sceneModelMeshPipeline(for: prepared, meshBlending: meshBlending, meshOwnsAlbedo: false)
+        }
+
+        let opaque = pipeline(layerBlending: "normal", meshBlending: nil)
+        #expect(opaque.blendMode == "disabled" && opaque.nativeAlpha.straightOutput)
+        let translucent = pipeline(layerBlending: "normal", meshBlending: "translucent")
+        #expect(translucent.blendMode == "premultiplied" && !translucent.nativeAlpha.straightOutput)
+        let opaqueBesideAdditive = pipeline(layerBlending: "premultipliedAdditive", meshBlending: "disabled")
+        #expect(opaqueBesideAdditive.blendMode == "disabled" && opaqueBesideAdditive.nativeAlpha.straightOutput)
+        let sharedAdditive = pipeline(layerBlending: "premultipliedAdditive", meshBlending: "premultipliedadditive")
+        #expect(sharedAdditive.blendMode == "premultipliedAdditive")
     }
 
     private func renderSubmeshes(shader: String, componentMapOnFirstMesh: Bool?, tintCase: Int? = nil,

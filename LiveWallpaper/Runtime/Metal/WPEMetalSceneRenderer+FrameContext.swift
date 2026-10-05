@@ -161,7 +161,7 @@ extension WPEMetalSceneRenderer {
         if followPointerIsLive {
             uniforms.pointerPositionLast = pointerWasLive ? previousPointer : pointer
             previousPointer = pointer
-        } else {
+        } else if oracleFrameOverride == nil {
             uniforms.pointerPosition = previousPointer
             uniforms.pointerPositionLast = previousPointer
         }
