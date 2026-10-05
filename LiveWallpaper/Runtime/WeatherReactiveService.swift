@@ -220,7 +220,7 @@ final class WeatherReactiveService {
         // Apply a 5-minute cooldown to prevent API spamming unless explicitly forced.
         let now = Date()
         if !force, let last = lastFetchCompletedAt, now.timeIntervalSince(last) < 300 {
-            Logger.info("Skipping weather fetch (within 5m cooldown).", category: .screenManager)
+            Logger.debug("Skipping weather fetch (within 5m cooldown).", category: .screenManager)
             return
         }
 

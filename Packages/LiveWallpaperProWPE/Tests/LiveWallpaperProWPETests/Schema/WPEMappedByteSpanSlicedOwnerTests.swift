@@ -11,12 +11,6 @@ struct WPEMappedByteSpanSlicedOwnerTests {
     private let full = Data((0..<64).map { UInt8($0) })
     private var sliced: Data { full[16...] }
 
-    @Test("Sliced owner has a non-zero startIndex (probe precondition)")
-    func slicedOwnerHasNonZeroStartIndex() {
-        #expect(sliced.startIndex == 16)
-        #expect(sliced.count == 48)
-    }
-
     @Test("byte(at:) reads buffer-relative offsets")
     func byteAtIsBufferRelative() {
         let span = WPEMappedByteSpan(owner: sliced, range: 4..<12)

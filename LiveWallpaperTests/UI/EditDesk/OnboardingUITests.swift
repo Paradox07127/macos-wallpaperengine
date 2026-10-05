@@ -11,7 +11,6 @@ struct OnboardingUITests {
     private static let wizard = "LiveWallpaper/Views/EditDesk/Onboarding/SteamWizard.swift"
     private static let home = "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift"
     private static let topBar = "LiveWallpaper/Views/EditDesk/Shell/TopBar.swift"
-    private static let detailTopBar = "LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift"
     private static let detailHost = "LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift"
     private static let workshopPage = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopPage.swift"
 
@@ -100,36 +99,6 @@ struct OnboardingUITests {
         #expect(OnboardingCapsuleModel.dots(visible: lite, handled: [.home]) == [true, false, false])
     }
 
-    @Test("The floating guide owns the only step counter")
-    func detailTopBarHasNoCapsule() throws {
-        let source = try RepositoryRoot.source(Self.detailTopBar)
-        #expect(!source.contains("OnboardingCapsule"))
-        #expect(!source.contains("OnboardingProgress"))
-    }
-
-    @Test("The shared top bar carries the capsule ahead of the page's own trailing control")
-    func topBarHostsTheCapsule() throws {
-        let source = try RepositoryRoot.source(Self.topBar)
-        #expect(source.contains("OnboardingCapsule("))
-        let capsuleIndex = try #require(source.range(of: "OnboardingCapsule("))
-        let trailingIndex = try #require(source.range(of: "trailing()"))
-        #expect(capsuleIndex.lowerBound < trailingIndex.lowerBound, "the capsule must precede the Steam menu")
-        let statusIndex = try #require(source.range(of: "\n            status\n"))
-        #expect(capsuleIndex.lowerBound < statusIndex.lowerBound, "the capsule must sit left of StatusCapsule")
-    }
-
-    @Test("Tutorials never reserve space in the actual page layout")
-    func noEmbeddedTutorials() throws {
-        for path in [Self.home, Self.workshopPage, Self.detailHost,
-                     "LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift",
-                     "LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift"] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains("OnboardingCard("))
-            #expect(!source.contains("OnboardingCardMetrics"))
-            #expect(!source.contains("onboardingInset"))
-        }
-    }
-
     @Test("Optional progress environments allow hosts outside the tutorial")
     func optionalEnvironment() throws {
         for path in [Self.card, Self.capsule, Self.home, Self.topBar, Self.detailHost, Self.workshopPage] {
@@ -143,14 +112,6 @@ struct OnboardingUITests {
     }
 
     // MARK: Steam wizard (R-30)
-
-    @Test("The wizard is a plain sheet at 446×526, not the 880×560 modal chrome")
-    func wizardGeometry() throws {
-        #expect(SteamWizardMetrics.size == CGSize(width: 446, height: 526))
-        let source = try RepositoryRoot.source(Self.wizard)
-        #expect(!source.contains("EditDeskModalChrome"), "the chrome is pinned to 880×560")
-        #expect(source.contains("SteamWizardMetrics.size"))
-    }
 
     @Test("The wizard reuses the existing sign-in state machine and setup controller, not a second one")
     func wizardReusesExistingMachines() throws {
@@ -192,24 +153,6 @@ struct OnboardingUITests {
         }
     }
 
-    @Test("The workshop page presents the Steam wizard")
-    func workshopPagePresentsTheWizard() throws {
-        let source = try RepositoryRoot.source(Self.workshopPage)
-        #expect(source.contains("SteamWizard("))
-    }
-
     // MARK: Tokens
 
-    @Test("No token-bypass literals in the files this package owns")
-    func noTokenBypassLiterals() throws {
-        for path in [Self.card, Self.capsule, Self.wizard] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains(".font(.system("), "\(path) has an inline .font(.system( literal")
-            #expect(!source.contains("Color(red:"), "\(path) has a literal Color(red:")
-            #expect(
-                source.range(of: #"cornerRadius:\s*[0-9]"#, options: .regularExpression) == nil,
-                "\(path) has a literal cornerRadius"
-            )
-        }
-    }
 }

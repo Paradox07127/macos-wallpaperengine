@@ -166,13 +166,13 @@ class XcodeTestRunnerTests(unittest.TestCase):
 
     def test_missing_required_suite_exits_nonzero(self) -> None:
         self.assertNotEqual(
-            run_main("WallpaperArchitectureTests", "InfrastructureRuntimeBoundaryTests"),
+            run_main("RequiredSuite", "OtherSuite"),
             0,
         )
 
     def test_present_required_suite_exits_zero(self) -> None:
         self.assertEqual(
-            run_main("InfrastructureRuntimeBoundaryTests", "InfrastructureRuntimeBoundaryTests"),
+            run_main("RequiredSuite", "RequiredSuite"),
             0,
         )
 

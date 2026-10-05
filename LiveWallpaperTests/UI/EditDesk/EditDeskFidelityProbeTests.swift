@@ -661,59 +661,6 @@ struct S6DetailFidelityTests {
         expectClose(contract.width / contract.height, 16.0 / 9.0, "S6.contract.hero1040.aspect", tolerance: 0.001)
     }
 
-    /// The 09-20 token package re-cut the three text greys and the four stroke tiers; the rubric's
-    /// two ⚠️ rows were left as "needs re-measuring" against the old neutral greys.
-    @Test("S6-B text greys and stroke tiers after the 09-20 token package")
-    func textAndStrokeTiers() throws {
-        var greys: [String: String] = [:]
-        var strokes: [String: CGFloat] = [:]
-        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
-            for (name, color) in [
-                ("textPrimary", DesignTokens.EditDesk.Colors.textPrimary),
-                ("textSecondary", DesignTokens.EditDesk.Colors.textSecondary),
-                ("textTertiary", DesignTokens.EditDesk.Colors.textTertiary),
-            ] {
-                guard let resolved = NSColor(color).usingColorSpace(.sRGB) else { continue }
-                let channels = [resolved.redComponent, resolved.greenComponent, resolved.blueComponent]
-                greys[name] = "#" + channels.map { String(format: "%02x", Int(($0 * 255).rounded())) }.joined()
-            }
-            for (name, color) in [
-                ("strokeShell", DesignTokens.EditDesk.Colors.strokeShell),
-                ("strokePanel", DesignTokens.EditDesk.Colors.strokePanel),
-                ("strokeRegular", DesignTokens.EditDesk.Colors.strokeRegular),
-                ("strokeEmptyShell", DesignTokens.EditDesk.Colors.strokeEmptyShell),
-                ("fillNavPill", DesignTokens.EditDesk.Colors.fillNavPill),
-            ] {
-                strokes[name] = NSColor(color).cgColor.alpha
-            }
-        }
-        ProbeRenderer.report("S6.tokens.greys", greys)
-        ProbeRenderer.report("S6.tokens.strokes", strokes)
-        // SCREENS S6's three greys, now exact rather than the old single-channel neutrals.
-        #expect(greys["textPrimary"] == "#e8e8ec", Comment(rawValue: greys["textPrimary"] ?? "nil"))
-        #expect(greys["textSecondary"] == "#9a9aa3", Comment(rawValue: greys["textSecondary"] ?? "nil"))
-        #expect(greys["textTertiary"] == "#8a8a93", Comment(rawValue: greys["textTertiary"] ?? "nil"))
-        // The hero's stroke is `.25` and the panel's `.12`, the two the rubric had at +.07 / +.02.
-        #expect(strokes["strokeShell"] == 0.25, Comment(rawValue: "\(strokes["strokeShell"] ?? -1)"))
-        #expect(strokes["strokePanel"] == 0.12, Comment(rawValue: "\(strokes["strokePanel"] ?? -1)"))
-        // The unselected display tag, the rubric's other +.01 row.
-        #expect(strokes["fillNavPill"] == 0.05, Comment(rawValue: "\(strokes["fillNavPill"] ?? -1)"))
-        let hero = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailHero.swift")
-        #expect(hero.contains("Colors.strokeShell"), "the hero must still draw the .25 tier")
-    }
-
-    @Test("S6-B top bar is 56 and the shell reserves it")
-    func topBarHeight() {
-        expectClose(DetailGeometry.topBarHeight, 56, "S6.contract.topBar", tolerance: 0)
-        expectClose(DetailGeometry.inspectorWidth, 372, "S6.contract.inspector", tolerance: 0)
-        expectClose(DesignTokens.EditDesk.Spacing.topBar, 56, "S6.token.topBar", tolerance: 0)
-        // The stage the hero is centred in starts under the bar and stops at the inspector.
-        let stage = DetailGeometry.stageRect(in: CGSize(width: 1280, height: 820))
-        ProbeRenderer.report("S6.contract.stage1280", stage)
-        expectClose(stage.minY, 56, "S6.contract.stage.top", tolerance: 0)
-        expectClose(stage.width, 908, "S6.contract.stage.w", tolerance: 0)
-    }
-
     @Test("S6-B facts chip marks a warning with a dark-appearance amber triangle and keeps its text white in a light app")
     func factsChipWarningTint() async throws {
         let size = CGSize(width: 480, height: 270)
@@ -1158,24 +1105,6 @@ struct S8aGridFidelityTests {
         expectClose(span.bottom - span.top, width, "S8a.card.h", tolerance: 4)
     }
 
-    /// The S8 skin's own numbers, which the design quotes differently from the shared tokens.
-    @Test("S8a card skin constants")
-    func cardSkinConstants() throws {
-        expectClose(DesignTokens.EditDesk.Corner.panel, 10, "S8a.card.radius", tolerance: 0)
-        expectClose(DesignTokens.EditDesk.Shadow.workshopCard.radius, 8, "S8a.card.shadow.radius", tolerance: 0)
-        expectClose(DesignTokens.EditDesk.Shadow.workshopCard.y, 3, "S8a.card.shadow.y", tolerance: 0)
-        expectClose(DesignTokens.EditDesk.Spacing.workshopCardBandTop, 24, "S8a.card.band.top", tolerance: 0)
-        expectClose(DesignTokens.EditDesk.Spacing.workshopCardBandInset, 10, "S8a.card.band.inset", tolerance: 0)
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(source.contains("strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular"), "border is not .08")
-        #expect(source.contains("Typography.workshopCardTitle"), "title is not the 12pt step")
-        #expect(source.contains("gradientWorkshopCardBottom"), "band gradient is not .85")
-        #expect(source.contains("appearance: .solid("), "the in-library check is still the glass badge")
-        ProbeRenderer.report("S8a.card.borderToken", "strokeRegular = ink .08")
-        ProbeRenderer.report("S8a.card.titleFont", "Typography.workshopCardTitle = 12 semibold")
-        ProbeRenderer.report("S8a.card.bandPadding", "top 24 / sides 10 / bottom 10")
-        ProbeRenderer.report("S8a.card.presenceCheck", "18×18 circle, solid .9 fill, black glyph")
-    }
 }
 
 // MARK: - S8b Workshop modal

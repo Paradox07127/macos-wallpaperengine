@@ -189,7 +189,7 @@ final class VideoEffectsApplicationService {
         // Disabling effects is asset-independent; a nil currentItem must still cancel the old build.
         if !hasEffects {
             cancelWork(for: key)
-            Logger.info("Applying effects for screen \(screenID): hasEffects=false", category: .videoPlayer)
+            Logger.debug("Applying effects for screen \(screenID): hasEffects=false", category: .videoPlayer)
             noEffectsHandler()
             completion(true)
             return
@@ -197,7 +197,7 @@ final class VideoEffectsApplicationService {
 
         cancelWork(for: key)
         let generation = advanceGeneration(for: key)
-        Logger.info("Applying effects for screen \(screenID): hasEffects=true", category: .videoPlayer)
+        Logger.debug("Applying effects for screen \(screenID): hasEffects=true", category: .videoPlayer)
 
         guard let asset = assetProvider(player) else {
             let pending = PendingWork(

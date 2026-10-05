@@ -69,40 +69,6 @@ struct SparkleUpdaterOwnershipTests {
         #expect(updater.events == ["start", "start", "check"])
     }
 
-    private static let surfaces = [
-        "LiveWallpaper/Views/Settings/UpdateStatusLine.swift",
-        "LiveWallpaper/Views/MenuBarContent.swift",
-    ]
-
-    @Test("No update surface constructs its own updater")
-    func surfacesUseTheSharedUpdater() throws {
-        for path in Self.surfaces {
-            let source = try RepositoryRoot.source(path)
-            #expect(source.contains("SparkleUpdaterController.shared"), "\(path) does not read the shared updater")
-            #expect(
-                !source.contains("SPUStandardUpdaterController("),
-                "\(path) builds its own Sparkle controller"
-            )
-        }
-    }
-
-    @Test("The menu bar Update button only exists when an update is pending")
-    func menuBarButtonIsGatedOnAvailability() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
-        #expect(source.contains("if updater.availableVersion != nil"))
-        #expect(source.contains("updater.checkForUpdates()"))
-    }
-
-    @Test("A scheduled check shows Sparkle's alert and lights the menu bar")
-    func scheduledChecksShowSparkleAlert() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift")
-        #expect(source.contains("supportsGentleScheduledUpdateReminders: Bool { true }"))
-        #expect(source.contains("standardUserDriverShouldHandleShowingScheduledUpdate"))
-        // The delegate method's body is a bare `true`.
-        #expect(source.contains("    ) -> Bool {\n        true\n    }"))
-        #expect(source.contains("onUpdateFound?(version)"))
-    }
-
     @Test("Both SKUs ship the same EdDSA public key and their own feed", arguments: [
         ("LiveWallpaperInfo.plist", "appcast-pro.xml"),
         ("LoomscreenInfo.plist", "appcast-lite.xml"),

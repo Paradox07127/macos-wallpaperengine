@@ -30,21 +30,6 @@ struct AppLanguagePreferenceTests {
         #expect(AppLanguagePreference.spanish.endonym == "Español")
     }
 
-    @Test("The language picker renders endonyms, not catalog keys")
-    func languagePickerRendersEndonyms() throws {
-        let picker = try RepositoryRoot.source("LiveWallpaper/Views/Settings/GeneralSection.swift")
-        #expect(picker.contains("language.pickerLabel"))
-        #expect(picker.contains("AppLanguagePreference.menuCases"))
-        #expect(!picker.contains("AppLanguagePreference.allCases"))
-        #expect(!picker.contains("language.titleKey"))
-
-        let model = try RepositoryRoot.source(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/AppLanguagePreference.swift"
-        )
-        #expect(model.contains("Text(verbatim: endonym)"))
-        #expect(!model.contains("var titleKey: LocalizedStringKey"))
-    }
-
     @Test("App UI languages map to official Wallpaper Engine language codes")
     func wallpaperEngineLanguageCodesFollowTheResolvedUILanguage() {
         #expect(AppLanguagePreference.english.wallpaperEngineLanguageCode() == "en-us")

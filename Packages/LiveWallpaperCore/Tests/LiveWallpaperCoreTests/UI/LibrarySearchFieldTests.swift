@@ -9,10 +9,6 @@ struct LibrarySearchFieldTests {
     private static let font = NSFont.preferredFont(forTextStyle: .body)
     private static let spanishLong = "Buscar por nombre o etiqueta"
 
-    private static func width(_ text: String) -> CGFloat {
-        NSAttributedString(string: text, attributes: [.font: font]).size().width
-    }
-
     private static func textField(in view: NSView) -> NSTextField? {
         if let field = view as? NSTextField, field.isEditable {
             return field
@@ -35,7 +31,6 @@ struct LibrarySearchFieldTests {
     func promptFitsByMeasuredWidth() {
         let floor = DesignTokens.LibraryFilterBar.searchMinWidth
         let ceiling = DesignTokens.LibraryFilterBar.searchMaxWidth
-        print("SEARCHPROMPT widths es long \(Self.width(Self.spanishLong)), en long \(Self.width("Search by name or tag")), en \(Self.width("Search by name"))")
         #expect(!LibrarySearchField.promptFits(Self.spanishLong, width: floor, font: Self.font))
         // The measured 180pt text plus the shared 8pt gap needs just over 227pt,
         // past the 216pt ceiling. The next whole-point width holds it.

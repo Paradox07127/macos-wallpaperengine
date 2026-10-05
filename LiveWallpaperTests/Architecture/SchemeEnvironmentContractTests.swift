@@ -76,21 +76,4 @@ struct SchemeEnvironmentContractTests {
         }
     }
 
-    @Test("AppIntents stays out of the target graph until a product integration exists")
-    func appIntentsRequiresAnExplicitIntegration() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
-        let reviewedFiles = ["LiveWallpaper", "LiveWallpaperTests", "LiveWallpaperLiteTests", "Packages"]
-            .flatMap { RepositoryRoot.swiftFiles(under: $0) }
-        let importNeedle = ["import", "AppIntents"].joined(separator: " ")
-
-        #expect(!reviewedFiles.isEmpty)
-        #expect(!project.contains("AppIntents.framework"))
-        for file in reviewedFiles {
-            let source = try String(contentsOf: file, encoding: .utf8)
-            #expect(
-                !source.contains(importNeedle),
-                Comment(rawValue: "\(file.path) imports AppIntents without a reviewed product integration")
-            )
-        }
-    }
 }

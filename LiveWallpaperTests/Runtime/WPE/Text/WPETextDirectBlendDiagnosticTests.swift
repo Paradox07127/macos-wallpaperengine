@@ -85,13 +85,7 @@ struct WPETextDirectBlendDiagnosticTests {
             let r = Float(Float16(bitPattern: halves[base]))
             let g = Float(Float16(bitPattern: halves[base + 1]))
             let b = Float(Float16(bitPattern: halves[base + 2]))
-            let a = Float(Float16(bitPattern: halves[base + 3]))
             let coverage = Float(coverageByte) / 255
-            func srgb(_ v: Float) -> Int {
-                let c = max(0, min(1, v))
-                let s = c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055
-                return Int((s * 255).rounded())
-            }
             let ideal = SIMD3<Float>(
                 clock.x * coverage + background.x * (1 - coverage),
                 clock.y * coverage + background.y * (1 - coverage),
@@ -100,11 +94,6 @@ struct WPETextDirectBlendDiagnosticTests {
             #expect(abs(r - ideal.x) < 0.01, "direct blend is not a plain over")
             #expect(abs(g - ideal.y) < 0.01)
             #expect(abs(b - ideal.z) < 0.01)
-            print(String(
-                format: "coverage=%.3f  got=(%.4f,%.4f,%.4f a=%.4f) sRGB=(%d,%d,%d) | ideal sRGB=(%d,%d,%d)",
-                coverage, r, g, b, a, srgb(r), srgb(g), srgb(b),
-                srgb(ideal.x), srgb(ideal.y), srgb(ideal.z)
-            ))
         }
     }
 

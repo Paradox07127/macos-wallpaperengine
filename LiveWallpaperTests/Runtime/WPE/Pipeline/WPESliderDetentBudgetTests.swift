@@ -82,26 +82,6 @@ struct WPESliderDetentBudgetTests {
         #expect(ValueLogic.displaySliderStep(for: fractional) == 0.1)
     }
 
-    @Test("Both settings cards quantize values without enumerating display stops")
-    func settingsCardsUseValueQuantization() throws {
-        for (name, expected) in [
-            ("SceneSettingsCard", "step: ValueLogic.sliderStep(for: property)"),
-            ("ProjectSettingsCard", "quantizationStep: ValueLogic.sliderStep(for: property)"),
-        ] {
-            let source = try RepositoryRoot.source(
-                "LiveWallpaper/Views/ScreenDetail/\(name).swift"
-            )
-            #expect(
-                source.contains(expected) && !source.contains("ValueLogic.displaySliderStep"),
-                "\(name) must use the authored value grid without discrete display stops"
-            )
-            #expect(
-                source.contains("ValueLogic.normalizedSliderValue"),
-                "\(name) must still snap writes to the authored step"
-            )
-        }
-    }
-
     @MainActor
     @Test func numericEditDoesNotPublishUnchangedRows() throws {
         let editor = try makeEditor()

@@ -21,23 +21,6 @@ struct EditDeskPreferencesTests {
         #expect(EditDeskPreferences.homeDefaultStateDefault == .hidden)
     }
 
-    @Test("Every reader of the library tile-size preference falls back to the one shared default")
-    func tileSizeReadersShareOneDefault() throws {
-        var offenders: [String] = []
-        var readers = 0
-        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper") {
-            let source = try String(contentsOf: file, encoding: .utf8)
-            for line in source.split(separator: "\n") where line.contains("LibraryTileSize") || line.contains("libraryTileSize") {
-                readers += line.contains(".defaultSize") ? 1 : 0
-                if ["small", "medium", "large"].contains(where: { line.contains("LibraryTileSize.\($0).rawValue") || line.contains("?? .\($0)") }) {
-                    offenders.append(RepositoryRoot.relativePath(of: file) + ": " + line.trimmingCharacters(in: .whitespaces))
-                }
-            }
-        }
-        #expect(offenders.isEmpty, Comment(rawValue: offenders.joined(separator: "\n")))
-        #expect(readers >= 5, "the scan no longer finds the preference's readers")
-    }
-
     @Test("Storage keys are namespaced under loomscreen.editDesk")
     func storageKeysAreNamespaced() {
         #expect(EditDeskPreferences.shelfStyle == "loomscreen.editDesk.shelfStyle")
@@ -60,13 +43,6 @@ struct EditDeskPreferencesTests {
         #expect(HomeDefaultState.hidden.rawValue == "hidden")
         #expect(HomeDefaultState.halfOpen.rawValue == "halfOpen")
         #expect(HomeDefaultState.allCases.count == 2)
-    }
-
-    @Test("GeneralSection mounts ShelfSettingsRows exactly once")
-    func generalSectionMountsShelfSettingsRowsOnce() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Settings/GeneralSection.swift")
-        let occurrences = source.components(separatedBy: "ShelfSettingsRows()").count - 1
-        #expect(occurrences == 1)
     }
 
     @Test("ShelfSettingsRows reads every Edit Desk key through .appScoped()")

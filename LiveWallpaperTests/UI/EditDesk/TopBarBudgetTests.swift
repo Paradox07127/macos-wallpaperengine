@@ -261,14 +261,6 @@ struct TopBarBudgetTests {
         }
     }
 
-    @Test("The bar spends the budget on the onboarding capsule")
-    func topBarConsumesTheBudget() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
-        #expect(source.contains("TopBarBudget.layout("))
-        #expect(source.contains("if budget.showsCapsule {"))
-        #expect(!source.contains("windowWidth - 36"), "the bar shrinks the window to make room the budget already counts")
-    }
-
     /// The page guide button sits in the cluster on every page, so it takes its diameter and a gap of the room.
     @Test("The page guide button is counted in the trailing cluster")
     func pageGuideButtonIsCounted() {

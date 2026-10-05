@@ -600,7 +600,7 @@ actor WorkshopQueryService {
 
     private func performQuery(_ request: WorkshopQueryRequest, apiKey: String) async throws -> WorkshopQueryPage {
         let url = try buildQueryURL(for: request, apiKey: apiKey)
-        Logger.info("Workshop query started: \(Self.redactedURLString(url))", category: .workshop)
+        Logger.debug("Workshop query started: \(Self.redactedURLString(url))", category: .workshop)
 
         let (data, http) = try await get(url)
 
@@ -621,7 +621,6 @@ actor WorkshopQueryService {
                 throw error
             }
             authVerdictHandler?(true, Self.keyFingerprint(apiKey))
-            Logger.info("Workshop query page handed to caller: \(page.items.count) items", category: .workshop)
             return page
         case 401:
             authVerdictHandler?(false, Self.keyFingerprint(apiKey))

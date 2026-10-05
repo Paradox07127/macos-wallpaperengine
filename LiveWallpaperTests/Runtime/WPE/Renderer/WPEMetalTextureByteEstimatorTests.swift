@@ -114,20 +114,6 @@ struct WPEMetalTextureByteEstimatorTests {
         #expect(underReserved.allocatedBytes == 0)
     }
 
-    @Test("Estimator still owns the LRU, census and animated-texture totals")
-    func estimatorRetainsItsCallers() throws {
-        for path in [
-            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Textures.swift",
-            "LiveWallpaper/Runtime/Metal/WPEMetalTextureMetadataRegistry.swift",
-            "LiveWallpaper/Runtime/Assets/WPETexAnimatedTextureSource.swift",
-        ] {
-            #expect(
-                try RepositoryRoot.source(path).contains("WPEMetalTextureByteEstimator.estimatedBytes(of:"),
-                Comment(rawValue: path)
-            )
-        }
-    }
-
     @Test("Every memory tier ships a bounded texture-cache budget")
     func everyTierIsBounded() {
         for tier in WPEMemoryTier.allCases {

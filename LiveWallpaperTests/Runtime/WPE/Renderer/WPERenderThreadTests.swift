@@ -136,19 +136,6 @@ struct WPERenderThreadTests {
         #expect(completed)
     }
 
-    @Test("render run loop drains an autorelease pool after each handled source")
-    func runLoopUsesIterationAutoreleasePool() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/RenderThread/WPERenderThread.swift"
-        )
-
-        #expect(source.contains("while true {\n                autoreleasepool {\n                    _ = CFRunLoopRunInMode("))
-        #expect(source.contains("60,\n                        true"))
-        #expect(source.contains("if loopState.isStopRequested {\n                    break\n                }"))
-        #expect(!source.contains("CFRunLoopRun()"))
-        #expect(!source.contains("CFRunLoopStop("))
-    }
-
     @Test("stopAndJoin drains queued work, is idempotent, and later work still runs inline")
     func shutdownDrainsAndIdempotent() {
         let thread = WPERenderThread(label: "test.shutdown")

@@ -266,55 +266,6 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         #expect(model.placements.map(\.id) == [firstID, lastID])
     }
 
-    @Test("pointer, keyboard, and accessibility edits route through one command executor")
-    func sharedPlacementCommandSourceContract() throws {
-        let interaction = try source("LiveWallpaper/Monitor/Board/InteractionModel.swift")
-        let chrome = try source("LiveWallpaper/Monitor/Board/EditChrome.swift")
-        let root = try source("LiveWallpaper/Monitor/Board/RootView.swift")
-
-        #expect(interaction.contains("@Published private(set) var placements"))
-        #expect(interaction.contains("enum MonitorBoardPlacementCommand"))
-        #expect(interaction.contains("func perform(_ command: MonitorBoardPlacementCommand)"))
-        #expect(interaction.contains("LayoutEngine.land("))
-        #expect(interaction.contains("LayoutEngine.normalized("))
-        #expect(interaction.contains("perform(.move(id: current.widgetID"))
-        #expect(interaction.contains("func moveWidget("))
-        #expect(interaction.contains("return moveWidget(id: selectedID, direction: direction, distance: distance)"))
-        #expect(interaction.contains("return perform(.move("))
-        #expect(interaction.contains("return perform(.delete(id: selectedID))"))
-        #expect(chrome.contains("model.beginDrag(placement.id"))
-        #expect(chrome.contains("model.updateDrag(pointInBoard:"))
-        #expect(chrome.contains("model.endDrag(bypassSnap:"))
-        #expect(chrome.components(separatedBy: "model.perform(.delete(id: placement.id))").count - 1 == 2)
-        #expect(root.contains(".onMoveCommand(perform: handleMoveCommand)"))
-        #expect(root.contains(".onDeleteCommand"))
-        #expect(root.contains("model.moveSelectedWidget("))
-        #expect(root.contains("model.deleteSelectedWidget()"))
-    }
-
-    @Test("keyboard focus and target-specific VoiceOver placement actions are production entry points")
-    func accessibilityEntryPointSourceContract() throws {
-        let root = try source("LiveWallpaper/Monitor/Board/RootView.swift")
-        let chrome = try source("LiveWallpaper/Monitor/Board/EditChrome.swift")
-        let interaction = try source("LiveWallpaper/Monitor/Board/InteractionModel.swift")
-        let boardUI = root + "\n" + chrome
-
-        #expect(boardUI.contains(".focusable(model.isEditing)"))
-        #expect(boardUI.contains(".focused($boardFocused)"))
-        #expect(boardUI.contains(".accessibilityAction(named:"))
-        #expect(chrome.contains("if model.isEditing"))
-        #expect(chrome.contains("MonitorBoardStrings.moveLeft"))
-        #expect(chrome.contains("MonitorBoardStrings.moveRight"))
-        #expect(chrome.contains("MonitorBoardStrings.moveUp"))
-        #expect(chrome.contains("MonitorBoardStrings.moveDown"))
-        #expect(chrome.contains("model.moveWidget(id: placementID, direction: .left)"))
-        #expect(chrome.contains("model.moveWidget(id: placementID, direction: .right)"))
-        #expect(chrome.contains("model.moveWidget(id: placementID, direction: .up)"))
-        #expect(chrome.contains("model.moveWidget(id: placementID, direction: .down)"))
-        #expect(chrome.contains("model.perform(.delete(id: placementID))"))
-        #expect(interaction.contains("case delete(id: UUID)"))
-    }
-
     @Test("a widget added while a Dock is on screen lands clear of it")
     @MainActor
     func addedWidgetAvoidsTheDock() throws {
@@ -378,9 +329,4 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         abs(lhs - rhs) <= tolerance
     }
 
-    /// Use `RepositoryRoot`, not a count of `deletingLastPathComponent()` calls: the count
-    /// breaks silently when this file moves between directories.
-    private func source(_ relativePath: String) throws -> String {
-        try RepositoryRoot.source(relativePath)
-    }
 }

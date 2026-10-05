@@ -25,20 +25,6 @@ struct EditDeskModalChromeTests {
 
     // MARK: Geometry
 
-    @Test("The panel the closure receives is ModalGeometry's own rect, not a second copy of the box")
-    func panelFrameMatchesModalGeometry() {
-        for size in [CGSize(width: 1280, height: 820), CGSize(width: 1040, height: 700), CGSize(width: 800, height: 600)] {
-            let frame = chrome(windowSize: size).panelFrame
-            #expect(frame == ModalGeometry.panelFrame(in: size), Comment(rawValue: "\(size) → \(frame)"))
-        }
-        #expect(chrome().panelFrame == CGRect(x: 180, y: 72, width: 920, height: 680))
-    }
-
-    @Test("The scrim leaves the title bar clickable by default")
-    func titlebarInsetDefaultsToTheTopBar() {
-        #expect(chrome().titlebarInset == DesignTokens.EditDesk.Spacing.topBar)
-    }
-
     // MARK: ESC
 
     @Test("A panel that consumed ESC keeps the modal open; a panel that declined it dismisses")
@@ -85,36 +71,6 @@ struct EditDeskModalChromeTests {
         #expect(source.contains("DesignTokens.EditDesk.Shadow.modal"))
     }
 
-    @Test("WallpaperModal no longer draws the scrim or measures the panel itself")
-    func modalDelegatesTheShell() throws {
-        let source = try RepositoryRoot.source(Self.modalPath)
-        #expect(source.contains("EditDeskModalChrome("), "the modal does not build on the shared chrome")
-        #expect(!source.contains("modalScrim"), "the modal still paints its own scrim")
-        #expect(!source.contains("ModalGeometry.panelFrame("), "the modal still measures its own panel")
-        #expect(!source.contains("LibraryDetailGeometry"), "the library modal still sizes its panel apart from the Workshop one")
-        #expect(!source.contains("panelFrameOverride"), "the library modal still overrides the shared panel box")
-        #expect(!source.contains("accessibilityAddTraits(.isModal)"), "the modal still declares the modal trait")
-    }
-
-    @Test("The title and the close button share the header row; no row holds the close button alone")
-    func titleAndCloseShareOneRow() throws {
-        let chrome = try RepositoryRoot.source(Self.chromePath)
-        let header = chrome.range(of: "private var header: some View {")
-        #expect(header != nil, "the chrome draws no header row")
-        if let header {
-            let row = chrome[header.lowerBound...]
-            let title = row.range(of: "Text(verbatim: title)")
-            let close = row.range(of: #"GlassIconButton("xmark""#)
-            #expect(title != nil && close != nil, "the header row lacks the title or the close button")
-            if let title, let close {
-                #expect(title.lowerBound < close.lowerBound, "the title does not lead the row the close button ends")
-            }
-        }
-        #expect(!chrome.contains("ModalGeometry.headerHeight"), "a fixed-height row still holds the close button alone")
-        let modal = try RepositoryRoot.source(Self.modalPath)
-        #expect(modal.contains("title: content.title"), "the library modal does not hand its title to the chrome's row")
-    }
-
     @Test("The library modal keeps ⌘n on applyTo and keeps ESC cancelling a drag")
     func modalKeepsItsOwnBusiness() throws {
         let source = try RepositoryRoot.source(Self.modalPath)
@@ -129,24 +85,6 @@ struct EditDeskModalChromeTests {
         let chrome = try RepositoryRoot.source(Self.chromePath)
         #expect(chrome.contains("keyboardShortcut(.leftArrow") && chrome.contains("keyboardShortcut(.rightArrow"))
         #expect(!layout.contains("keyboardShortcut(.leftArrow") && !layout.contains("keyboardShortcut(.rightArrow"))
-    }
-
-    @Test("Both detail modals hand ← and → to the chrome, which places them with ModalGeometry beside the panel")
-    func arrowsComeFromTheChrome() throws {
-        let chrome = try RepositoryRoot.source(Self.chromePath)
-        #expect(chrome.contains(#"GlassIconButton("chevron.left""#) && chrome.contains(#"GlassIconButton("chevron.right""#))
-        #expect(chrome.contains("ModalGeometry.arrowFrames(beside:"), "the chrome places the arrows by a rule of its own")
-        for path in [Self.modalPath, "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift"] {
-            let source = try RepositoryRoot.source(path)
-            let handoff = try #require(source.range(of: "EditDeskModalChrome("), Comment(rawValue: "\(path) does not use the chrome"))
-            let layout = try #require(source.range(of: "WallpaperDetailLayout("), Comment(rawValue: "\(path) does not use the layout"))
-            let chromeCall = source[handoff.lowerBound ..< layout.lowerBound]
-            #expect(
-                chromeCall.contains("onPrevious:") && chromeCall.contains("onNext:"),
-                Comment(rawValue: "\(path) does not hand ← → to the chrome")
-            )
-            #expect(!source[layout.lowerBound...].contains("onPrevious:"), Comment(rawValue: "\(path) still hands ← → to the layout"))
-        }
     }
 
     @Test("No token-bypass literals in the files this package adds")

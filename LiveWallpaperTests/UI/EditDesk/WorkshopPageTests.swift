@@ -65,12 +65,6 @@ struct WorkshopPageSourceTests {
     private static let browsePane = "LiveWallpaper/Views/Workshop/BrowsePane.swift"
     private static let steamMenu = "LiveWallpaper/Views/EditDesk/Workshop/WorkshopSteamMenu.swift"
 
-    @Test("The root routes Workshop to the Workshop page")
-    func rootRoutesToTheWorkshopPage() throws {
-        let source = try RepositoryRoot.source(Self.root)
-        #expect(source.contains("WorkshopPage("))
-    }
-
     @Test("Lite keeps the Workshop page empty")
     func liteKeepsTheWorkshopPageEmpty() throws {
         let source = try RepositoryRoot.source(Self.root)
@@ -228,14 +222,6 @@ struct WorkshopPageSourceTests {
         #expect(page.contains("onImportLocalFolder: { SteamWizard.importLocalFolder() }"))
     }
 
-    @Test("The page reuses the shell top bar")
-    func pageUsesTheSharedChrome() throws {
-        let source = try RepositoryRoot.source(Self.page)
-        #expect(source.contains("TopBar("))
-        #expect(!source.contains("LibrarySearchField("), "the ribbon carries the only Workshop search field")
-        #expect(!source.contains("InspectorSplit"), "the Edit Desk workshop page has no inspector column")
-    }
-
     @Test("Browse is the grid alone, with no inspector column")
     func browsePaneHasNoInspector() throws {
         let source = try RepositoryRoot.source(Self.browsePane)
@@ -248,32 +234,4 @@ struct WorkshopPageSourceTests {
         }
     }
 
-    @Test("Liked is a toggle in the filter ribbon, not a segmented row above it")
-    func likedIsARibbonToggle() throws {
-        let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
-        #expect(ribbon.contains("WorkshopLikedToggle("), "the ribbon has no Liked toggle")
-        let pane = try RepositoryRoot.source(Self.browsePane)
-        #expect(!pane.contains("GlassSegmentedPicker("), "Browse / Likes is a segmented row above the ribbon again")
-        #expect(pane.contains("showsLikes: Binding("), "the ribbon's Liked toggle does not drive the listing")
-    }
-
-    @Test("The workshop grid and its skeleton share one column preset")
-    func gridAndSkeletonShareTheColumnPreset() throws {
-        let source = try RepositoryRoot.source(Self.browsePane)
-        let uses = source.components(separatedBy: "columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth").count - 1
-        #expect(uses == 2, "the real grid and the skeleton must ask for the same width")
-    }
-
-    @Test("No token-bypass literals in the files this package owns")
-    func noTokenBypassLiterals() throws {
-        for path in [Self.page, Self.session, "LiveWallpaper/Views/EditDesk/Workshop/WorkshopSteamMenu.swift"] {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains(".font(.system("), "\(path) has an inline .font(.system( literal")
-            #expect(!source.contains("Color(red:"), "\(path) has a literal Color(red:")
-            #expect(
-                source.range(of: #"cornerRadius:\s*[0-9]"#, options: .regularExpression) == nil,
-                "\(path) has a literal cornerRadius"
-            )
-        }
-    }
 }

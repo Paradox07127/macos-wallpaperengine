@@ -6,60 +6,6 @@ import Testing
 @Suite("UI-08: General Settings ownership characterization", .serialized)
 @MainActor
 struct GeneralSettingsOwnershipCharacterizationTests {
-    @Test("The root state inventory is fully assigned to candidate domain owners")
-    func rootStateInventoryMatchesOwnershipFixture() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Settings/GeneralSettingsView.swift")
-        let actual = try Self.storedPropertyNames(in: source)
-        let fixtureValues = OwnershipFixture.fieldsByDomain.values.flatMap(Array.init)
-
-        #expect(fixtureValues.count == Set(fixtureValues).count, "A state field must have exactly one candidate owner")
-        #expect(actual == Set(fixtureValues))
-        #expect(actual.count == 41, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
-    }
-
-    @Test("Each page mounts only its own system-capability probe")
-    func eachPageMountsOnlyItsOwnSystemCapabilityProbe() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Settings/GeneralSettingsView.swift")
-        let propertyDefaults = try Self.slice(
-            source,
-            from: "struct GeneralSettingsView: View {",
-            until: "private let page"
-        )
-        let initializer = try Self.slice(source, from: "init(page: GeneralSettingsPage = .general) {", until: "var body: some View")
-        let scopes = try Self.slice(
-            source,
-            from: "private var systemStatusScopes: [SystemStatusScope] {",
-            until: "private static func initialLoginItemStatus"
-        )
-
-        #expect(!propertyDefaults.contains("SMAppService.mainApp.status"))
-        #expect(!propertyDefaults.contains("SystemAudioCaptureManager.shared.state"))
-        #expect(!propertyDefaults.contains("CLLocationManager().authorizationStatus"))
-        #expect(initializer.contains("Self.initialLoginItemStatus(for: page)"))
-        #expect(!initializer.contains("SystemAudioCaptureManager"))
-        #expect(initializer.contains("Self.initialLocationAuthorizationStatus(for: page)"))
-        #expect(Self.occurrences(".onAppear { refreshSystemStatusIndicators() }", in: source) == 1)
-
-        for page in [.general, .integrations] as [OwnershipFixture.Page] {
-            #expect(
-                scopes.contains("case .\(page.rawValue):"),
-                "Every Settings page needs an explicit system-probe ownership decision"
-            )
-            #expect(
-                OwnershipFixture.mountCalls(for: page, sku: .pro).settingsReads == 1,
-                "All pages still load the shared GlobalSettings snapshot exactly once"
-            )
-        }
-
-        #expect(scopes.contains("case .general:\n            [.loginItem]"))
-        #expect(scopes.contains("case .integrations:\n            [.weatherLocation]"))
-        #expect(scopes.contains("case .performancePower, .backupRestore, .advanced, .about:\n            []"))
-
-        #expect(OwnershipFixture.mountCalls(for: .general, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 2, audioStateReads: 0, locationStatusReads: 0))
-        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
-        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
-        #expect(OwnershipFixture.mountCalls(for: .backupRestore, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 0))
-    }
 
     @Test("Mirrored and unrelated global settings survive a durable manager restart")
     func settingsRoundTripSurvivesManagerRestart() async throws {
@@ -335,17 +281,6 @@ private extension GeneralSettingsOwnershipCharacterizationTests {
         case missingBoundary(String)
     }
 
-    static func storedPropertyNames(in source: String) throws -> Set<String> {
-        let regex = try NSRegularExpression(
-            pattern: #"(?m)^\s*@(State|AppStorage)[^\n]*\bvar\s+([A-Za-z_][A-Za-z0-9_]*)"#
-        )
-        let range = NSRange(source.startIndex..<source.endIndex, in: source)
-        return Set(regex.matches(in: source, range: range).compactMap { match in
-            guard let nameRange = Range(match.range(at: 2), in: source) else { return nil }
-            return String(source[nameRange])
-        })
-    }
-
     static func slice(_ source: String, from start: String, until end: String) throws -> String {
         guard let startRange = source.range(of: start) else {
             throw FixtureError.missingBoundary(start)
@@ -356,7 +291,4 @@ private extension GeneralSettingsOwnershipCharacterizationTests {
         return String(source[startRange.lowerBound..<endRange.lowerBound])
     }
 
-    static func occurrences(_ needle: String, in haystack: String) -> Int {
-        haystack.components(separatedBy: needle).count - 1
-    }
 }

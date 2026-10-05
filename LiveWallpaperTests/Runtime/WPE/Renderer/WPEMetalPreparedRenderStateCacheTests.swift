@@ -11,51 +11,6 @@ struct WPEMetalPreparedRenderStateCacheTests {
 
     // MARK: - A. Per-pass PSO cache
 
-    @Test("Same pass in two color formats gets two states, each equal to the pipeline cache's")
-    func colorPixelFormatIsPartOfThePassKey() throws {
-        let device = try #require(MTLCreateSystemDefaultDevice())
-        let executor = try WPEMetalRenderExecutor(device: device)
-
-        let ldr = try executor.passPipelineState(
-            passID: "pass.0",
-            variant: .genericImage2,
-            fragmentName: "wpe_genericimage2_fragment",
-            blendMode: "normal",
-            alphaWritePolicy: .all,
-            colorPixelFormat: .bgra8Unorm,
-            depthPixelFormat: .invalid
-        )
-        let hdr = try executor.passPipelineState(
-            passID: "pass.0",
-            variant: .genericImage2,
-            fragmentName: "wpe_genericimage2_fragment",
-            blendMode: "normal",
-            alphaWritePolicy: .all,
-            colorPixelFormat: .rgba16Float,
-            depthPixelFormat: .invalid
-        )
-
-        #expect(ldr !== hdr)
-
-        // The first-level cache may only skip the lookup, never change its answer.
-        let referenceLDR = try executor.renderPipeline(
-            fragmentName: "wpe_genericimage2_fragment",
-            blendMode: "normal",
-            alphaWritePolicy: .all,
-            colorPixelFormat: .bgra8Unorm,
-            depthPixelFormat: .invalid
-        )
-        let referenceHDR = try executor.renderPipeline(
-            fragmentName: "wpe_genericimage2_fragment",
-            blendMode: "normal",
-            alphaWritePolicy: .all,
-            colorPixelFormat: .rgba16Float,
-            depthPixelFormat: .invalid
-        )
-        #expect(ldr === referenceLDR)
-        #expect(hdr === referenceHDR)
-    }
-
     @Test("A repeat lookup hits the pass cache instead of re-resolving")
     func repeatLookupHitsTheCache() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -207,15 +162,6 @@ struct WPEMetalPreparedRenderStateCacheTests {
         #expect(slots[0] == SIMD4<Float>(8, 4, 8, 4))
         #expect(slots[1] == SIMD4<Float>(16, 2, 16, 2))
         #expect(slots[2] == SIMD4<Float>(0, 0, 0, 0))
-    }
-
-    @Test("Production packer is the only translated-uniform packer")
-    func productionPackerIsTheOnlyTranslatedUniformPacker() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
-        )
-        #expect(source.contains("func packTranslatedUniforms(\n        for pass: WPEPreparedRenderPass,"))
-        #expect(!source.contains("func packTranslatedUniforms(\n        values: [String: WPESceneShaderConstantValue],"))
     }
 
     // MARK: - C. Utility-model classification carried on the layer

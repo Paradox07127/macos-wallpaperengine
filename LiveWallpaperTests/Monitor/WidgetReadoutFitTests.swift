@@ -114,27 +114,6 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - Every gauge centre draws the shared readout
 
-    func testGaugeCentresUseTheSharedHeroReadout() throws {
-        let widgets = [
-            "LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift",
-            "LiveWallpaper/Monitor/Widgets/GPUWidgetView.swift",
-            "LiveWallpaper/Monitor/Widgets/MemoryWidgetView.swift",
-            "LiveWallpaper/Monitor/Widgets/PowerWidgetView.swift",
-            "LiveWallpaper/Monitor/Widgets/SystemOverviewWidgetView.swift",
-        ]
-        for path in widgets {
-            let source = try RepositoryRoot.source(path)
-            XCTAssertTrue(
-                source.contains("HeroPercent("),
-                "\(path) stopped drawing its hero reading through HeroPercent"
-            )
-            XCTAssertFalse(
-                source.contains(#"Text(verbatim: "%")"#),
-                "\(path) hand-sizes a \"%\" again instead of using HeroPercent"
-            )
-        }
-    }
-
     func testDigitShrinkStaysWithinHalfTheBaseSize() {
         XCTAssertGreaterThan(Design.threeDigitHeroShrink, 0.5)
         XCTAssertLessThan(Design.threeDigitHeroShrink, 1.0)
@@ -549,18 +528,6 @@ final class WidgetReadoutFitTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(
                 gaugeSide(row), min(CPUWidgetView.gaugeSideCap, row.offeredHeight),
                 "\(row.name): a \(gaugeSide(row)) pt column under a \(row.offeredHeight) pt row"
-            )
-        }
-    }
-
-    func testMediumAndLargeBodiesPinTheirGaugeColumn() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift")
-        for declaration in ["private func mediumBody(", "private func largeBody("] {
-            let body = try XCTUnwrap(Self.declarationBody(declaration, in: source),
-                                     "CPUWidgetView no longer declares \(declaration)")
-            XCTAssertTrue(
-                body.contains("width: Self.gaugeSide("),
-                "\(declaration) no longer pins its gauge column, so the row moves with the ring again"
             )
         }
     }

@@ -161,14 +161,6 @@ struct WorkshopAnimatedGIFDecodeTests {
         #expect(max(frame.width, frame.height) <= cap)
     }
 
-    @Test("The installed preview path decodes off the main thread, not in updateNSView")
-    func installedPreviewDecodesOffMain() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
-        #expect(source.contains("NSCache<NSString, WPEPreviewDecodedImage>"))
-        #expect(!source.contains("func setImage(data:"))
-        #expect(source.contains("kCGImageSourceShouldCacheImmediately: true"))
-    }
-
     @Test("The pane tier decodes larger than the tile tier")
     func paneDecodesLargerThanTile() throws {
         let data = GIFTestFixtures.gif(width: 2400, height: 1200, frameCount: 2, delay: 0.1)

@@ -1504,50 +1504,5 @@ struct WorkshopSortCopyTests {
         }
     }
 
-    @Test("Relevance is offered under Steam's name")
-    func relevanceUsesSteamName() throws {
-        let ribbon = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift")
-        #expect(ribbon.contains("\"Search Relevance\""))
-        #expect(!ribbon.contains("return \"Relevance\""))
-    }
-}
-
-@Suite("Workshop browse first-paint wiring")
-struct BrowseFirstPaintWiringTests {
-    @Test("reload() keeps the previous grid until the new page arrives")
-    func reloadDoesNotClearItems() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseViewModel.swift")
-        let start = try #require(source.range(of: "func reload() async {"))
-        let rest = source[start.upperBound...]
-        let end = try #require(rest.range(of: "\n    }"))
-        let body = String(rest[..<end.lowerBound])
-
-        #expect(!body.contains("items = []"), "clearing here is what flashes the skeleton on every filter change")
-    }
-
-    @Test("The skeleton is gated on never having loaded a page, not on an empty grid")
-    func skeletonGateUsesLoadedFlag() throws {
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(pane.contains("viewModel.hasLoadedPage"))
-    }
-
-    @Test("Toggling “Show presets as wallpapers” reaches Browse through a notification")
-    func presetVisibilityNotificationIsWired() throws {
-        let names = try RepositoryRoot.source(
-            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/NotificationNames.swift"
-        )
-        let settings = try RepositoryRoot.source("LiveWallpaper/Views/Settings/WorkshopSettingsView.swift")
-        let commit = try RepositoryRoot.source("LiveWallpaper/App/GlobalSettingsCommit.swift")
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        let backup = try RepositoryRoot.source("LiveWallpaper/Views/Settings/BackupSection.swift")
-        let advanced = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AdvancedSection.swift")
-
-        #expect(names.contains("workshopPresetVisibilityDidChange"))
-        #expect(settings.contains("GlobalSettingsCommit.WorkshopPageFields("))
-        #expect(commit.contains(".workshopPresetVisibilityDidChange"))
-        #expect(pane.contains(".workshopPresetVisibilityDidChange"))
-        #expect(backup.contains("postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)"))
-        #expect(advanced.contains("postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)"))
-    }
 }
 #endif

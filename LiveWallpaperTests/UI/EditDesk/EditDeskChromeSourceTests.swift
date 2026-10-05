@@ -3,38 +3,6 @@ import Testing
 
 @Suite("Edit Desk home chrome — source contract")
 struct EditDeskChromeSourceTests {
-    private static let ownedFiles = [
-        "LiveWallpaper/Views/EditDesk/Shell/NavPill.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/TopBar.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/EditDeskToastCenter.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/HomeHints.swift",
-        "LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/SchemesPage.swift",
-        "LiveWallpaper/Views/EditDesk/Shell/SystemWallpaperPage.swift",
-    ]
-
-    @Test("NavPill builds on GlassSegmentedPicker's editDesk shell, and the library carries no second pill")
-    func navPillUsesEditDeskShellAlone() throws {
-        let path = "LiveWallpaper/Views/EditDesk/Shell/NavPill.swift"
-        let source = try RepositoryRoot.source(path)
-        #expect(source.contains("GlassSegmentedPicker("), "\(path) does not build on GlassSegmentedPicker")
-        #expect(source.contains("shell: .editDesk"), "\(path) does not request the editDesk shell")
-        let pickers = try RepositoryRoot.swiftFiles(under: "LiveWallpaper/Views").filter { file in
-            try String(contentsOf: file, encoding: .utf8).contains("LibrarySegmentPicker")
-        }
-        #expect(pickers.isEmpty, "the library still opens a second pill: \(pickers.map { RepositoryRoot.relativePath(of: $0) })")
-    }
-
-    @Test("The library page is the wallpaper grid alone; Schemes and System Wallpaper mount as pages of their own")
-    func schemesAndSystemWallpaperArePages() throws {
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(!home.contains("SchemeLibraryView("), "HomePage still embeds the scheme library")
-        #expect(!home.contains("SystemWallpaperLibraryView("), "HomePage still embeds the System Wallpaper library")
-        let root = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
-        #expect(root.contains("SchemesPage(router: router, toasts: toasts)"))
-        #expect(root.contains("SystemWallpaperPage(router: router)"))
-    }
 
     @Test("The status panel closes on an outside click, on Escape and when the app deactivates")
     func statusPanelCarriesEveryDismissalPath() throws {
@@ -51,125 +19,6 @@ struct EditDeskChromeSourceTests {
             source.contains("Button(action: collapse)"),
             "the open panel covers its own trigger, so its headline has to carry the way back"
         )
-    }
-
-    @Test("The performance-settings shortcut is gone from the status panel and from its caller")
-    func performanceSettingsShortcutIsRemoved() throws {
-        let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
-        #expect(!capsule.contains("Performance Settings"))
-        #expect(!capsule.contains("onOpenPerformanceSettings"))
-        #expect(capsule.contains("Displays Configured"), "the footer's remaining line stays")
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(!home.contains("onOpenPerformanceSettings"))
-    }
-
-    @Test("The library chips row is built from FilterChip")
-    func chipsRowUsesFilterChip() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
-        #expect(source.contains("FilterChip("))
-    }
-
-    @Test("The library's search field is LibrarySearchField in the filter row, ahead of sort and import, and the top bar has none")
-    func filterRowCarriesTheSearchField() throws {
-        let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
-        let search = try #require(row.range(of: "LibrarySearchField("), "the filter row has no search field")
-        let sort = try #require(row.range(of: "LibrarySortControl(label: sortLabel)"))
-        #expect(search.upperBound <= sort.lowerBound, "the search field sits after sort and import")
-        #expect(row.contains(".modifier(LibrarySearchReveal(stage: stage))"), "the field does not ride the rise to the library")
-        let bar = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
-        #expect(!bar.contains("LibrarySearchField("), "the top bar still carries a search field")
-    }
-
-    /// Source contract rather than a render probe: the capsule's frame is a fixed 28pt, so a wrapped title
-    /// is clipped inside it and never shows up as height.
-    @Test("The status capsule's headline stays on one line, cut at its tail")
-    func statusHeadlineIsOneLine() throws {
-        let status = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
-        let start = try #require(status.range(of: "Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health)))"))
-        let headline = try #require(String(status[start.upperBound...]).components(separatedBy: "\n            if showsChevron").first)
-        #expect(headline.contains(".lineLimit(1)"), "the headline wraps inside the capsule")
-        #expect(headline.contains(".truncationMode(.tail)"))
-    }
-
-    @Test("The Edit Desk controls moved onto Liquid Glass stay on it, with one prominent button per view")
-    func glassControlsFollowTheContract() throws {
-        /// A member's body, cut at its own closing brace.
-        func member(_ source: String, _ signature: String) throws -> String {
-            let start = try #require(source.range(of: signature), Comment(rawValue: "no \(signature)"))
-            return try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }").first)
-        }
-        let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
-        #expect(row.contains(#"GlassIconButton("plus", size: .large, action: onImport)"#))
-        #expect(row.contains(#".accessibilityLabel(Text("Add to Library"))"#))
-        #expect(row.contains("NativeMenuButton {"))
-        #expect(row.contains(".adaptiveGlassSurface(.capsule, interactive: true)"))
-        #expect(row.contains(".id(stage.snappedIndex)"))
-        #expect(!row.contains(".appLanguagePopover("), "sort choices must use native menu tracking")
-        #expect(!row.contains("\"+ Import\""))
-
-        let status = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/StatusCapsule.swift")
-        let collapsed = try member(status, "private var collapsedCapsule: some View {")
-        #expect(collapsed.contains(".adaptiveGlassSurface(.capsule, interactive: true)"))
-        #expect(collapsed.contains(".buttonStyle(.plain)"))
-        #expect(!collapsed.contains("Capsule().fill("), "a flat fill under the glass hides it")
-        #expect(!collapsed.contains("strokeBorder("))
-
-        let onboarding = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift")
-        let capsule = try member(onboarding, "private func capsule(_ dots: [Bool]) -> some View {")
-        #expect(capsule.contains(".adaptiveGlassSurface(.capsule, interactive: true)"))
-        #expect(!capsule.contains("Capsule().fill("), "a flat fill under the glass hides it")
-        #expect(!capsule.contains("strokePanel"), "only the hover edge stays")
-        #expect(onboarding.contains("NativeMenuButton { menu(progress) }"))
-
-        let float = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
-        let applyAll = try member(float, "private var applyAllTile: some View {")
-        #expect(applyAll.contains(".adaptiveGlassSurface(.roundedRectangle(DesignTokens.EditDesk.Corner.gridCard))"))
-        #expect(!applyAll.contains("fillFloatButton"))
-
-        let detail = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DetailTopBar.swift")
-        let glass = try RepositoryRoot.source("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/AdaptiveGlass.swift")
-        let sections = try member(detail, "private var sectionPicker: some View {")
-        #expect(sections.contains("GlassSegmentedPicker("), "detail tabs bypass the shared segmented chrome")
-        #expect(!sections.contains(".adaptiveGlassSurface("), "detail tabs add a second glass plate")
-        #expect(!sections.contains("Capsule().fill("), "detail tabs hide the shared glass behind a painted plate")
-        #expect(!detail.contains("preferMaterial"), "the section picker is forced back onto material")
-        #expect(!glass.contains("preferMaterial"))
-
-        // Read leniently: before the shared button row exists this must fail on an expectation, not a missing file.
-        let buttons = (try? RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/ModalDisplayButtons.swift")) ?? ""
-        #expect(buttons.contains("applyButton(primary).adaptiveGlassButton(.prominent, size: .large)"))
-        #expect(buttons.contains("applyButton(target).adaptiveGlassButton(.regular, size: .large)"))
-        #expect(!buttons.contains(".tint(target.isPrimary"))
-
-        // The Workshop modal's bottom row is the library's: it styles no button of its own.
-        let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        #expect(workshop.contains("ModalDisplayButtons("), "the Workshop modal draws its own bottom buttons")
-        #expect(!workshop.contains(".adaptiveGlassButton("), "the Workshop modal styles a button the shared row should draw")
-        #expect(buttons.contains(".adaptiveGlassButton(.regular, size: .large)"))
-        #expect(!workshop.contains("WorkshopBarButton"))
-        #expect(!workshop.contains("Opacity.dimmedIcon"), "a disabled glass button dims itself")
-
-        let banner = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/WallpapersOffBanner.swift")
-        #expect(banner.contains(".adaptiveGlassButton(.prominent, size: .small)"))
-        #expect(!banner.contains(".buttonStyle(.borderedProminent)"))
-
-        for (name, source) in [("ModalDisplayButtons", buttons), ("WallpapersOffBanner", banner)] {
-            let prominent = source.components(separatedBy: ".adaptiveGlassButton(.prominent").count - 1
-            #expect(prominent == 1, Comment(rawValue: "\(name) has \(prominent) prominent buttons"))
-        }
-    }
-
-    @Test("No token-bypass literals in the files this package owns")
-    func noTokenBypassLiterals() throws {
-        for path in Self.ownedFiles {
-            let source = try RepositoryRoot.source(path)
-            #expect(!source.contains(".font(.system("), "\(path) has an inline .font(.system( literal")
-            #expect(!source.contains("Color(red:"), "\(path) has a literal Color(red:")
-            #expect(
-                source.range(of: #"cornerRadius:\s*[0-9]"#, options: .regularExpression) == nil,
-                "\(path) has a literal cornerRadius"
-            )
-        }
     }
 
     @Test("The nav pill routes through the router instead of writing the page directly")
@@ -251,17 +100,6 @@ struct EditDeskChromeSourceTests {
         #expect(stage.upperBound <= highlight.lowerBound, "declared under the stage, the band's light hides behind the cards")
     }
 
-    @Test("Local and Workshop applies announce success with the same line")
-    func applySuccessTextIsShared() throws {
-        for path in [
-            "LiveWallpaper/Views/EditDesk/Shell/HomePage.swift",
-            "LiveWallpaper/Views/EditDesk/Workshop/DeferredApplyToasts.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(source.contains("ApplyOutcome.appliedText(on:"), "\(path) words its success toast on its own")
-        }
-    }
-
     @Test("Orphan covers are swept once, when the window builds the library model, sparing those undo can bring back")
     func libraryModelSweepsCoversOnce() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
@@ -273,18 +111,6 @@ struct EditDeskChromeSourceTests {
         )
         let homeSweeps = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift").contains("prepareLibrary(")
         #expect(!homeSweeps, "the sweep would run again each time a page switch remounts HomePage")
-    }
-
-    @Test("The grid's and shelf's context menus draw the … rows; the modal draws the same actions as title-row buttons")
-    func libraryMenusShareOneSource() throws {
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(modal.contains("actions.headerActions("), "the modal's buttons do not come from the shared actions")
-        #expect(!modal.contains("WallpaperMenuRows(items: actions.menuItems("), "the modal still draws the … menu")
-        #expect(!modal.contains("Menu(\"Apply to\")"), "the modal lists its own rows again")
-        #expect(home.contains(".contextMenu { WallpaperMenuRows(items: libraryMenu(for: item)) }"))
-        #expect(home.contains("stage.cardMenu = { id in library?.items.first { $0.id == id }.map { [libraryMenu(for: $0)] } ?? [] }"))
-        #expect(home.contains("modalActions?.menuItems("))
     }
 
     @Test("The library's delete confirmation and rename alert have one presenter, which finds the entry by the ID it opened for")
@@ -332,99 +158,6 @@ struct EditDeskChromeSourceTests {
         #expect(!chromeBody.contains("stage.progress"))
     }
 
-    @Test("The filter row sits under the shelf's cards but over the library grid")
-    func chipRowSitsOverTheGrid() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let start = try #require(source.range(of: "        ZStack(alignment: .top) {"))
-        let tree = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n        }").first)
-        let grid = try #require(tree.range(of: "libraryLayer"))
-        let chips = try #require(tree.range(of: "shelfChrome"))
-        #expect(grid.upperBound <= chips.lowerBound, "declared under the grid, the row vanishes behind it as it rides through")
-        #expect(tree.contains("shelfChrome\n                .zIndex(landedOnLibrary ? 0 : -1)"), "the row has to drop under the cards off the library")
-        #expect(tree.contains("EditDeskShelfScrim(stage: stage)\n                .zIndex(-1)"), "the scrim has to stay under the row it backs")
-    }
-
-    @Test("Home's transport is the detail page's glass buttons, right over the stage and hidden from VoiceOver")
-    func homeTransportUsesTheDetailButtons() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let start = try #require(source.range(of: "private var hoverPlayback: some View {"), "HomePage draws no transport of its own")
-        let overlay = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
-        #expect(overlay.contains("HStack(spacing: 12) {"))
-        #expect(overlay.contains(#"GlassIconButton("backward.end.fill")"#))
-        #expect(overlay.contains("GlassIconButton(playback.glyph)"))
-        #expect(overlay.contains(#"GlassIconButton("forward.end.fill")"#))
-        // VoiceOver presses these through the display's own actions on the stage; exposed here, each would be listed twice.
-        #expect(overlay.contains(".accessibilityHidden(true)"))
-        let tree = try #require(source.range(of: "        ZStack(alignment: .top) {").map { String(source[$0.lowerBound...]) })
-        #expect(tree.contains("EditDeskStageRepresentable(model: stage)\n            hoverPlayback\n"), "the buttons have to sit right over the stage")
-    }
-
-    @Test("The library grid cross-fades in on its own layer, at once under Reduce Motion")
-    func libraryGridFadesOnItsOwnLayer() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(source.contains("private static let libraryFadeDuration: TimeInterval = 0.10"))
-        let start = try #require(source.range(of: "private var libraryLayer: some View {"))
-        let layer = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n    }\n").first)
-        #expect(layer.contains(
-            ".animation(DesignTokens.motion(reduceMotion, .easeOut(duration: Self.libraryFadeDuration)), value: isLibraryOpen)"
-        ))
-        // Anywhere above the layer it would also drive the top bar, and the nav pill would lose its own slide.
-        #expect(source.components(separatedBy: "value: isLibraryOpen)").count - 1 == 1)
-    }
-
-    @Test("A swipe that lands on another page slides the nav pill the way a click does")
-    func swipeSlidesTheNavPill() throws {
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let picker = try RepositoryRoot.source("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/GlassSegmentedPicker.swift")
-        let slide = ".snappy(duration: 0.18)"
-        #expect(picker.contains("withAnimation(DesignTokens.motion(reduceMotion, \(slide)))"), "the pill's click animation changed; match it here")
-        let start = try #require(home.range(of: "case let .snapped(index):"))
-        let snapped = try #require(String(home[start.upperBound...]).components(separatedBy: "case let .playbackTapped").first)
-        let animated = try #require(snapped.range(of: "withAnimation(DesignTokens.motion(stage.reduceMotion, \(slide))) {"))
-        let selects = snapped.components(separatedBy: "router.select(").count - 1
-        #expect(selects == 2)
-        #expect(snapped[animated.upperBound...].components(separatedBy: "router.select(").count - 1 == selects)
-    }
-
-    @Test("The filter row rides the shelf by drawing, not by re-laying-out, and never re-mounts")
-    func shelfChromeRidesWithoutRelayout() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let start = try #require(source.range(of: "struct ShelfChromeRide: ViewModifier {"))
-        let ride = try #require(String(source[start.lowerBound...]).components(separatedBy: "\n}").first)
-        #expect(ride.contains(".offset(y: StageGeometry.chipRowTop("), "a per-frame padding re-runs layout")
-        #expect(!ride.contains(".padding(.top"))
-        #expect(!ride.contains(".animation("), "the stage's spring already drives this; a second one lags it")
-        #expect(ride.contains(".allowsHitTesting(opacity > Self.interactiveOpacity)"))
-        #expect(ride.contains(".accessibilityHidden(opacity <= Self.interactiveOpacity)"))
-        #expect(!source.contains("if stage.showsShelf {"), "the row stays mounted and fades instead")
-        #expect(!ride.contains(".transition("), "a transition on a mounted view jumps at the threshold again")
-    }
-
-    @Test("Bars in the title-bar strip are stacked above the content laid out below them")
-    func titleBarStripBarsSitOnTop() throws {
-        // TitleBarStripHitTests is the behavioural check; it needs a window, so it stays out of this shard.
-        let detail = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift")
-        let topBar = try #require(detail.range(of: "DetailTopBar(tags:"))
-        let workspace = try #require(detail.range(of: "\n            workspace\n", range: topBar.upperBound ..< detail.endIndex))
-        #expect(detail[topBar.upperBound ..< workspace.lowerBound].contains(".zIndex(1)"), "the settings column would take the top bar's clicks")
-
-        let root = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
-        let settings = try #require(root.range(of: "case .settings:"))
-        let columns = try #require(root.range(of: "HStack(spacing: 0) {", range: settings.upperBound ..< root.endIndex))
-        #expect(root[settings.upperBound ..< columns.lowerBound].contains(".zIndex(1)"), "the settings column would cover the page tabs")
-
-        // The two library pages stack their bar after the content, as home and Workshop do.
-        for (path, content) in [
-            ("LiveWallpaper/Views/EditDesk/Shell/SchemesPage.swift", "SchemeLibraryView("),
-            ("LiveWallpaper/Views/EditDesk/Shell/SystemWallpaperPage.swift", "SystemWallpaperLibraryView("),
-        ] {
-            let page = try RepositoryRoot.source(path)
-            let library = try #require(page.range(of: content))
-            let bar = try #require(page.range(of: "TopBar("))
-            #expect(library.upperBound <= bar.lowerBound, "\(path): the library's scroll view would take the top bar's clicks")
-        }
-    }
-
     @Test("Aerials are matched by the file their bookmark resolves to, never by the bookmark's bytes")
     func aerialsAreNeverMatchedByBookmarkBytes() throws {
         // Every scan bookmarks each file anew; `SavedLibraryModel.aerial(_:matches:)` is the one comparison.
@@ -448,18 +181,4 @@ struct EditDeskChromeSourceTests {
         #expect(source.contains("screenObserver.map(NotificationCenter.default.removeObserver)"))
     }
 
-    @Test("Grid tiles and Workshop cards draw now-playing as the capsule, whose waveform holds still under Reduce Motion")
-    func nowPlayingIsTheCapsuleEverywhere() throws {
-        let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/NowPlayingCapsule.swift")
-        let effect = try #require(capsule.range(of: ".symbolEffect(.variableColor"), "the waveform no longer animates by variable colour")
-        let call = String(capsule[effect.lowerBound...].prefix { $0 != "\n" })
-        #expect(call.contains("isActive:") && call.contains("reduceMotion"), Comment(rawValue: "the waveform ignores Reduce Motion: \(call)"))
-        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        let tile = try String(home[#require(home.range(of: "struct LibraryGridTile: View")).lowerBound...])
-        #expect(tile.contains("NowPlayingCapsule(badge: nowPlaying, animates: nowPlaying.isLive)"), "the grid tile draws no capsule")
-        #expect(!tile.contains("ThumbnailBadge(verbatim:"), "the grid tile still draws now-playing as a plain badge")
-        let browse = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(browse.contains("NowPlayingCapsule(badge: inUseBadge, animates: false)"), "the Workshop card draws no capsule, or one that moves")
-        #expect(!browse.contains("ThumbnailBadge(verbatim: inUseBadge"), "the Workshop card still draws now-playing as a plain badge")
-    }
 }

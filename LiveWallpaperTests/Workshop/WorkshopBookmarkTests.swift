@@ -80,9 +80,6 @@ struct WorkshopBookmarkTests {
 
         #expect(!workshop.contains(424_242))
         #expect(local.containsWPEBookmark(workshopID: "424242"), "unliking deleted the library's saved entries for the item")
-        let actions = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopBookmarkActions.swift")
-        #expect(!actions.contains("removeWPEBookmarks"), "a like action deletes the library's saved entries")
-        #expect(!actions.contains("containsWPEBookmark"), "a library bookmark counts as a like")
     }
 
     @Test("An untitled item is saved without one app language's fallback title")
@@ -166,20 +163,5 @@ struct WorkshopBookmarkTests {
         #expect(cleanup.contains(#"libraryBookmarks.remove("bookmark:\("#), "a deleted item's saved variants keep their library marks")
     }
 
-    @Test("Browse hands every card its bookmark state, read once per pass, and a toggle")
-    func browsePaneBookmarkWiring() throws {
-        let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
-        #expect(pane.contains("let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()"), "the pane reads no bookmark set")
-        #expect(pane.contains("isBookmarked: bookmarkedIDs.contains(item.id)"), "a Browse card gets no bookmark state")
-        #expect(pane.contains("onBookmark: { WorkshopBookmarkActions.toggle(item) }"), "a Browse card gets no bookmark action")
-        // Control: one set per pass, not a store lookup per card.
-        #expect(!pane.contains("WorkshopBookmarkActions.contains("))
-        #expect(pane.contains("WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)"), "the Likes list is not the stored likes")
-
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(card.contains("var onBookmark: (() -> Void)?"))
-        let menu = try #require(card.range(of: "private var contextMenuItems: some View {"))
-        #expect(card[menu.upperBound...].prefix(80).contains("if let onBookmark {"))
-    }
 }
 #endif

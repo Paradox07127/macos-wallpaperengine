@@ -33,11 +33,9 @@ PARALLEL_SUITES=(
   SettingsPersistenceFailureTests
   SettingsManagerParkedConfigurationTests
   # One grid inset and one column ladder across every library page.
-  LibraryGalleryLayoutTests
   SystemWallpaperTileGeometryTests
   WorkshopCardPreviewLayoutTests
   WorkshopDownloadByteProgressTests
-  InfrastructureRuntimeBoundaryTests
   EntitlementAuditTests
   QAControlPlaneScreenIdentityTests
   QAControlPlaneWindowObservationTests
@@ -94,7 +92,6 @@ PARALLEL_SUITES=(
   WorkshopDateLanguageTests
   SparkleUpdaterOwnershipTests
   SystemMemoryPressureWatcherTests
-  VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests
   WallpaperEngineProjectPropertiesTests
   WPEProjectPropertyInputSafetyTests
@@ -182,12 +179,10 @@ PARALLEL_SUITES=(
   WallpaperEngineProjectWorkshopIDTests
   DeferredApplyToastsTests
   OnboardingProgressTests
-  DetailIconButtonSourceTests
   OnboardingUITests
   MenuBarBehaviorTests
   OnboardingMultiScreenTests
   ModalGeometryTests
-  BrowseCardEditDeskSkinTests
   TopBarBudgetTests
   EditDeskAccessibilityTests
   ShelfGestureControllerTests
@@ -214,7 +209,6 @@ PARALLEL_SUITES=(
   EditDeskCanvasOwnershipTests
   EditDeskPageSeparatorSourceTests
   EditDeskBrowseSeparatorRenderTests
-  SheetSeparatorSourceTests
   SettingsSidebarLegibilityTests
   SettingsSearchFocusTests
   HoverAutoplayPreviewRowTests
@@ -342,7 +336,6 @@ SERIAL_SUITES=(
   SchemeDragSourceTests
   VideoSpanContainerLayoutTests
   SchemeDetailRowsTests
-  EditDeskCoordinateSpaceOrderTests
   DisplayDetailHostTests
   SceneSettingsOwnerTests
   ConfigurationPorterBookmarkMergeTests

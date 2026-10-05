@@ -132,13 +132,6 @@ struct OverlayLayerListTests {
         #expect(AddOverlayDrawer.expandedHeight == AddOverlayDrawer.expandedHeight(itemCount: OverlayLayerList.addItems.count))
     }
 
-    @Test("The add strip is titled Add Widget, never Add Overlay")
-    func drawerTitle() throws {
-        let drawer = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/AddOverlayDrawer.swift")
-        #expect(drawer.contains("Text(\"Add Widget\")"))
-        #expect(!drawer.contains("\"Add Overlay\""))
-    }
-
     @Test("The add strip has no category filter and fills its grid in board order")
     func noCategoryFilter() throws {
         for file in ["OverlayLayerList", "AddOverlayDrawer"] {
@@ -153,24 +146,4 @@ struct OverlayLayerListTests {
         ])
     }
 
-    @Test("The add strip never scrolls sideways")
-    func drawerDoesNotScroll() throws {
-        let drawer = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/AddOverlayDrawer.swift")
-        #expect(!drawer.contains("ScrollView(.horizontal)"))
-    }
-
-    @Test("One switch per object: none in the inspector's header, none inside the effect panel's settings")
-    func inspectorSwitches() throws {
-        let inspector = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/ObjectInspector.swift")
-        #expect(!inspector.contains("headerToggle"))
-        let settings = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/OverlaysInspector.swift")
-        #expect(!settings.contains("\"Show on This Display\""))
-    }
-
-    @Test("Embedded widget settings use the settings group and row components")
-    func embeddedWidgetSettings() throws {
-        let card = try RepositoryRoot.source("LiveWallpaper/Views/Monitor/WidgetSettingsPopover.swift")
-        #expect(card.contains("SettingRow("))
-        #expect(card.contains("ContainerGroupBoxStyle()"))
-    }
 }

@@ -67,6 +67,8 @@ contracts:
 # granularity, so only lines this change touched are judged. A whole-repo gate
 # would either stay red forever or bury every semantic diff under a reformat.
 lint:
+	@echo "== UI style guard regression probes =="
+	python3 scripts/check_ui_lint_probes.py
 	@echo "== Lint changed lines (base: $(BASE)) =="
 	python3 scripts/lint_changed_lines.py --base "$(BASE)"
 

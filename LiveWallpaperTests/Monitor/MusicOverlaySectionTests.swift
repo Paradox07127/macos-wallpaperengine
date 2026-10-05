@@ -160,48 +160,4 @@ final class MusicOverlaySectionTests: XCTestCase {
 
     // MARK: Preview wiring (source contracts)
 
-    /// The transport row must stay an overlay: mounted inside a style's stack it can be
-    /// pushed past the widget rect, which is the exact region the overlay window hit-tests.
-    func testTransportControlsStayOutOfTheLayoutFlow() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Monitor/Widgets/NowPlayingWidgetView.swift"
-        )
-        XCTAssertTrue(
-            source.contains(".overlay { transportOverlay(state: state, in: geo.size) }"),
-            "controls must be mounted as an overlay on the tile"
-        )
-        for stackCall in ["controlsRow(state: state, side:"] {
-            XCTAssertFalse(
-                source.contains(stackCall),
-                "a stack-mounted control row re-introduces the overflow bug"
-            )
-        }
-        // Top-trailing is the only corner no style draws a scrubbable line in; centred, the
-        // pill covers the progress line vinyl and aurora put there.
-        XCTAssertTrue(source.contains("maxHeight: .infinity, alignment: .topTrailing)"))
-        // Both halves are needed: the tile rect is the frame plus this inset, and without the
-        // inset the row can reach the edge the hit test stops at.
-        XCTAssertTrue(source.contains("maxWidth: .infinity, maxHeight: .infinity, alignment:"))
-        XCTAssertTrue(source.contains(".padding(max(6, side * 0.26))"))
-    }
-
-    /// The paused dim reaches the cover only; the opacity dial still reaches the whole
-    /// layer, type included.
-    func testPausedDimNoLongerMultipliesTheWholeTile() throws {
-        let source = try RepositoryRoot.source(
-            "LiveWallpaper/Monitor/Widgets/NowPlayingWidgetView.swift"
-        )
-        XCTAssertFalse(
-            source.contains(".opacity(layout.dimmed ? 0.55 : 1)"),
-            "a tile-wide pause dim takes the type down with the cover"
-        )
-        XCTAssertTrue(
-            source.contains(".opacity(visibility.art)"),
-            "the pause dim must still reach the cover"
-        )
-        XCTAssertTrue(
-            source.contains(".opacity(visibility.layer)"),
-            "the opacity dial stays a whole-layer dial, type included"
-        )
-    }
 }

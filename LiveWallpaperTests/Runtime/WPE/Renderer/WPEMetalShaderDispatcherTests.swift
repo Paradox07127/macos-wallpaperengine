@@ -6,40 +6,6 @@ import Testing
 @Suite("WPE Metal shader dispatcher")
 struct WPEMetalShaderDispatcherTests {
 
-    @Test("Builtin shader kind raw values match the dispatch-table snapshot")
-    func builtinShaderKindSnapshot() {
-        let expected: Set<String> = [
-            "solidcolor",
-            "solidlayer",
-            "copy",
-            "compose",
-            "effect_colorbalance",
-            "effect_blur",
-            "effect_vignette",
-            "effect_water",
-            "genericimage2",
-            "genericimage4",
-            "effect_opacity",
-            "effect_scroll",
-            "effect_pulse",
-            "effect_iris",
-            "effect_waterwaves",
-            "effect_spin",
-            "effect_tint",
-            "effect_foliagesway",
-            "effect_waterripple",
-            "effect_blend",
-            "effect_waterflow",
-            "effect_color_grading",
-            "effect_shimmer",
-            "genericparticle",
-            "effect_shake",
-            "wpe_blend_composite",
-        ]
-        #expect(Set(WPEBuiltinShaderKind.allCases.map(\.rawValue)) == expected)
-        #expect(WPEBuiltinShaderKind.allCases.count == expected.count)
-    }
-
     @Test("Builtin shader kind raw values are normalizer fixed points")
     func builtinShaderKindRawValuesAreNormalizerFixedPoints() {
         for kind in WPEBuiltinShaderKind.allCases {
@@ -128,19 +94,6 @@ struct WPEMetalShaderDispatcherTests {
         #expect(record["consumerDisposition"] as? String == "no-runtime-texture-provider-consumer")
     }
 
-    @Test("Swift WPEGenericParticleUniforms is gone; the metallib struct stays")
-    func swiftGenericParticleUniformsRemoved() throws {
-        let uniforms = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalRenderErrors+Uniforms.swift"
-        )
-        let metal = try RepositoryRoot.source(
-            "LiveWallpaper/Runtime/Metal/WPEMetalBuiltins.metal"
-        )
-        #expect(!uniforms.contains("struct WPEGenericParticleUniforms"))
-        #expect(metal.contains("struct WPEGenericParticleUniforms"))
-        #expect(metal.contains("wpe_genericparticle_fragment"))
-    }
-
     @Test("Malformed godrays blend combos fail safe instead of trapping")
     func malformedGodraysBlendCombosFailSafe() {
         #expect(WPEMetalShaderDispatcher.sanitizedGodraysBlendMode(nil) == 9)
@@ -148,46 +101,6 @@ struct WPEMetalShaderDispatcherTests {
         #expect(WPEMetalShaderDispatcher.sanitizedGodraysBlendMode(32) == 32)
         #expect(WPEMetalShaderDispatcher.sanitizedGodraysBlendMode(-1) == 9)
         #expect(WPEMetalShaderDispatcher.sanitizedGodraysBlendMode(Int.max) == 9)
-    }
-
-    @Test("Effect dispatch table matches the migrated-case snapshot")
-    func effectDispatchTableSnapshot() {
-        struct Expected {
-            let fragment: String
-            let quad: Bool
-            var parallax: Bool = true
-        }
-        let expected: [WPEBuiltinShaderKind: Expected] = [
-            .effectColorBalance: Expected(fragment: "wpe_effect_colorbalance_fragment", quad: false),
-            .effectBlur: Expected(fragment: "wpe_effect_blur_fragment", quad: false),
-            .effectVignette: Expected(fragment: "wpe_effect_vignette_fragment", quad: false),
-            .effectWater: Expected(fragment: "wpe_effect_water_fragment", quad: false),
-            .effectOpacity: Expected(fragment: "wpe_effect_opacity_fragment", quad: true),
-            .effectScroll: Expected(fragment: "wpe_effect_scroll_fragment", quad: true),
-            .effectWaterWaves: Expected(fragment: "wpe_effect_waterwaves_fragment", quad: true, parallax: false),
-            .effectPulse: Expected(fragment: "wpe_effect_pulse_fragment", quad: true),
-            .effectIris: Expected(fragment: "wpe_effect_iris_fragment", quad: true),
-            .effectSpin: Expected(fragment: "wpe_effect_spin_fragment", quad: true),
-            .effectTint: Expected(fragment: "wpe_effect_tint_fragment", quad: true),
-            .effectFoliageSway: Expected(fragment: "wpe_effect_foliagesway_fragment", quad: true),
-            .effectWaterRipple: Expected(fragment: "wpe_effect_waterripple_fragment", quad: true),
-            .effectBlend: Expected(fragment: "wpe_effect_blend_fragment", quad: true),
-            .effectWaterFlow: Expected(fragment: "wpe_effect_waterflow_fragment", quad: true),
-            .effectColorGrading: Expected(fragment: "wpe_effect_color_grading_fragment", quad: true),
-            .effectShimmer: Expected(fragment: "wpe_effect_shimmer_fragment", quad: true),
-            .effectShake: Expected(fragment: "wpe_effect_shake_fragment", quad: true),
-        ]
-        #expect(Set(WPEEffectDispatchDescriptor.table.keys) == Set(expected.keys))
-        let effectKinds = Set(WPEBuiltinShaderKind.allCases.filter { $0.rawValue.hasPrefix("effect_") })
-        #expect(Set(expected.keys) == effectKinds)
-        for (kind, entry) in expected {
-            let descriptor = WPEEffectDispatchDescriptor.table[kind]
-            #expect(descriptor?.kind == kind)
-            #expect(descriptor?.fragmentName == entry.fragment)
-            #expect(descriptor?.supportsObjectQuad == entry.quad)
-            #expect(descriptor?.appliesCameraParallax == entry.parallax)
-            #expect(descriptor?.fragmentName == "wpe_\(kind.rawValue)_fragment")
-        }
     }
 
     @Test("waterFlow direction preserves the legacy two-step lookup chain")

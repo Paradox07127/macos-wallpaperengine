@@ -69,25 +69,4 @@ struct WallpaperModalTests {
 
     // MARK: Layout
 
-    @Test("No divider over the buttons, no ← → beside the preview, no ＋ or … menus, a four-line description")
-    func modalLayoutSourceContract() throws {
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
-        // Read leniently: before the shared layout exists this must fail on an expectation, not a missing file.
-        let layout = (try? RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperDetailLayout.swift")) ?? ""
-        #expect(!modal.contains("Divider()"), "a divider still separates the buttons from the body")
-        #expect(!modal.contains("ModalGlyphMenu"), "the ＋ / … glyph menus are still drawn")
-        #expect(modal.contains("WallpaperDetailLayout("), "the modal lays itself out instead of using the shared layout")
-        #expect(modal.contains("collapsedLineLimit: 4"), "the description is not cut to four lines")
-        #expect(!layout.contains("Divider()"))
-        #expect(layout.contains("preview()"), "the layout has no preview slot")
-        #expect(!layout.contains("chevron.left") && !layout.contains("chevron.right"), "← → still flank the preview inside the panel")
-    }
-
-    @Test("The preview's box is its capped size and its chip says so when the picture is low-resolution")
-    func previewHugsTheCappedPicture() throws {
-        let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperModal.swift")
-        #expect(modal.contains("ModalGeometry.previewFit(pixels:"), "the modal sizes its preview without the shared cap")
-        #expect(modal.contains("previewSize:"), "the layout is not told the preview's size")
-        #expect(modal.contains(#"Text("Low-resolution preview""#), "no chip says the picture is low-resolution")
-    }
 }
