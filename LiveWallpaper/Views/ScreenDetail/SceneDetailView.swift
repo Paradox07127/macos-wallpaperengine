@@ -61,7 +61,9 @@ struct DiagnosticLogSheet: View {
     let onDismiss: () -> Void
     var batchLog: (() -> String)?
 
-    @State private var didCopy = false
+    private enum CopyTarget { case scene, allScenes }
+
+    @State private var copied: CopyTarget?
     @State private var rendered: AttributedString?
 
     var body: some View {
@@ -91,19 +93,20 @@ struct DiagnosticLogSheet: View {
             }
             Spacer()
             if let batchLog {
-                Button("Copy All Scenes") { copy(batchLog()) }
+                Button(copied == .allScenes ? "Copied" : "Copy All Scenes") { copy(batchLog(), as: .allScenes) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .tint(copied == .allScenes ? DesignTokens.Colors.Status.active : nil)
             }
             Button {
-                copy()
+                copy(log, as: .scene)
             } label: {
-                Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-                    .animation(.snappy, value: didCopy)
+                Label(copied == .scene ? "Copied" : "Copy", systemImage: copied == .scene ? "checkmark" : "doc.on.doc")
+                    .animation(.snappy, value: copied)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .tint(didCopy ? DesignTokens.Colors.Status.active : tint)
+            .tint(copied == .scene ? DesignTokens.Colors.Status.active : tint)
             Button("Done", action: onDismiss)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -157,18 +160,16 @@ struct DiagnosticLogSheet: View {
         return DesignTokens.Colors.Log.neutral
     }
 
-    private func copy() {
-        copy(log)
-    }
-
-    private func copy(_ text: String) {
+    private func copy(_ text: String, as target: CopyTarget) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        didCopy = true
+        copied = target
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            didCopy = false
+            if copied == target {
+                copied = nil
+            }
         }
     }
 }

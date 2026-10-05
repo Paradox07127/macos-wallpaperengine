@@ -186,9 +186,15 @@ extension WPECacheManagementView {
                         .disabled(isLoading || isClearing || clearableBytes == 0)
                 }
                 .padding(.bottom, DesignTokens.Spacing.xs)
-                if let freed = lastStorageFreedBytes {
-                    Text("Freed \(Int64(clamping: freed), format: .byteCount(style: .file)).")
-                        .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.textSecondary)
+                if let cleared = lastStorageFreedBytes {
+                    Group {
+                        if let freed = cleared {
+                            Text("Freed \(Int64(clamping: freed), format: .byteCount(style: .file)).")
+                        } else {
+                            Text("Freed space could not be measured.")
+                        }
+                    }
+                    .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.textSecondary)
                 }
 
                 ForEach(Array(cacheDiskItems.enumerated()), id: \.element.id) { index, item in

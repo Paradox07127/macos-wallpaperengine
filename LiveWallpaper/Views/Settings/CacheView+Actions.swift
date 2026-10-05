@@ -28,6 +28,7 @@ extension WPECacheManagementView {
             [.steamProfiles, .credentials, .application, .configuration, .preferences, .webData, .steamTools, .systemMetadata].contains($0.kind)
         }.map(\.url)
         let linked = await StorageLinkedSources.current(excluding: externalRoots + protectedRoots)
+        guard generation == inventoryGeneration, !Task.isCancelled else { return }
         let appScan = Task { await StorageLinkedSources.scan(linked.sources, locations: locations, excluding: externalRoots) }
         let scan = Task { await WPEStorageInventory.compute(doctor: doctorService) }
         storageScan = appScan
@@ -96,11 +97,16 @@ extension WPECacheManagementView {
     }
 
     /// Sums each target location's shrink only, so caches that grow during the clear do not offset it.
+    /// nil = a target could not be read in full before or after the clear, so no figure is exact.
     static func freedBytes(
         of kinds: Set<AppStorageLocation.Kind>, before: [AppStorageMeasurement], after: [AppStorageMeasurement]
-    ) -> UInt64 {
-        let remaining = Dictionary(after.map { ($0.id, $0.bytes) }, uniquingKeysWith: +)
-        return before.filter { kinds.contains($0.location.kind) }.reduce(0) { freed, measurement in
+    ) -> UInt64? {
+        let targets = before.filter { kinds.contains($0.location.kind) }
+        let targetsAfter = after.filter { kinds.contains($0.location.kind) }
+        guard !targets.contains(where: { $0.status == .unavailable }),
+              !targetsAfter.contains(where: { $0.status == .partial || $0.status == .unavailable }) else { return nil }
+        let remaining = Dictionary(targetsAfter.map { ($0.id, $0.bytes) }, uniquingKeysWith: +)
+        return targets.reduce(0) { freed, measurement in
             let left = remaining[measurement.id] ?? 0
             return freed + (measurement.bytes > left ? measurement.bytes - left : 0)
         }

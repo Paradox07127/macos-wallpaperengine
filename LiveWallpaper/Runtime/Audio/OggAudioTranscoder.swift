@@ -40,7 +40,7 @@ actor OggAudioTranscoder {
         }
     }
 
-    /// Waiters and timeout are actor-confined. The GCD worker reads only immutable
+    /// Waiters, leased waiters and timeout are actor-confined. The GCD worker reads only immutable
     /// inputs and the lock-protected cancellation flag.
     private final class Job: @unchecked Sendable {
         let id = UUID()
@@ -50,6 +50,8 @@ actor OggAudioTranscoder {
         let access: OggSourceAccess?
         let cancellation = Cancellation()
         var waiters: [UUID: CheckedContinuation<URL?, Never>] = [:]
+        /// Waiters whose success must take a reader lease before they are resumed.
+        var leasedWaiters: Set<UUID> = []
         var timeout: Task<Void, Never>?
         /// Re-arming bumps this; a timer that already woke before its cancellation landed must not expire the re-armed job.
         var timeoutGeneration = 0
@@ -110,7 +112,8 @@ actor OggAudioTranscoder {
     }
 
     /// The access lease is acquired before detaching from the folder owner and retained by the actual worker.
-    func transcodedM4A(forOgg source: URL, access: OggSourceAccess? = nil) async -> URL? {
+    /// With `lease`, a returned file is leased on the actor before the caller resumes; see `leasedM4A`.
+    func transcodedM4A(forOgg source: URL, access: OggSourceAccess? = nil, lease: Bool = false) async -> URL? {
         guard !Task.isCancelled, Self.isOggFamily(source), let key = cacheKey(for: source) else { return nil }
         if !didSweepCache {
             didSweepCache = true
@@ -120,6 +123,9 @@ actor OggAudioTranscoder {
         switch memo[key] {
         case let .ready(url):
             if FileManager.default.fileExists(atPath: url.path) {
+                if lease {
+                    takeLease(on: url)
+                }
                 return url
             }
             memo[key] = nil
@@ -128,6 +134,9 @@ actor OggAudioTranscoder {
         }
         if FileManager.default.fileExists(atPath: destination.path) {
             memo[key] = .ready(destination)
+            if lease {
+                takeLease(on: destination)
+            }
             return destination
         }
         let requestID = UUID()
@@ -136,6 +145,9 @@ actor OggAudioTranscoder {
                 guard !Task.isCancelled else { continuation.resume(returning: nil); return }
                 if let job = pending[key] {
                     job.waiters[requestID] = continuation
+                    if lease {
+                        job.leasedWaiters.insert(requestID)
+                    }
                     return
                 }
                 // Overflow is transient: not memoised, so the file is tried again once the queue drains.
@@ -145,6 +157,9 @@ actor OggAudioTranscoder {
                 }
                 let job = Job(key: key, source: source, destination: destination, access: access)
                 job.waiters[requestID] = continuation
+                if lease {
+                    job.leasedWaiters.insert(requestID)
+                }
                 pending[key] = job
                 waiting.append(key)
                 // Bounds the wait behind stuck decodes; restarted once the job itself runs.
@@ -156,12 +171,14 @@ actor OggAudioTranscoder {
         }
     }
 
-    /// Like `transcodedM4A`, but the returned file stays leased until `release(_:)`; the lease is
-    /// taken on the actor before returning, so no `clearCache` can run between hand-off and lease.
+    /// Like `transcodedM4A`, but the returned file stays leased until `release(_:)`. A fresh decode
+    /// takes the lease before resuming the waiter, so a `clearCache` queued meanwhile keeps the file.
     func leasedM4A(forOgg source: URL, access: OggSourceAccess? = nil) async -> URL? {
-        guard let url = await transcodedM4A(forOgg: source, access: access) else { return nil }
+        await transcodedM4A(forOgg: source, access: access, lease: true)
+    }
+
+    private func takeLease(on url: URL) {
         leases[url.path, default: 0] += 1
-        return url
     }
 
     func release(_ url: URL) {
@@ -207,6 +224,7 @@ actor OggAudioTranscoder {
 
     private func cancelRequest(key: String, requestID: UUID) {
         guard let job = pending[key], let waiter = job.waiters.removeValue(forKey: requestID) else { return }
+        job.leasedWaiters.remove(requestID)
         waiter.resume(returning: nil)
         guard job.waiters.isEmpty else { return }
         // Cancellation has not served raw bytes, so a later request may try again.
@@ -233,6 +251,11 @@ actor OggAudioTranscoder {
             try? FileManager.default.removeItem(at: staged.appendingPathExtension("partial"))
             running[job.id] = nil
             startAvailableWork()
+            #if DEBUG
+            if clearsCacheOnCompleteForTesting {
+                try? clearCache()
+            }
+            #endif
         }
         // A job the watchdog already retired (pending cleared, waiters resumed with nil) can still
         // commit its file: the next request then finds it instead of re-decoding or giving up.
@@ -264,14 +287,25 @@ actor OggAudioTranscoder {
     private func finishWaiters(_ job: Job, result: URL?) {
         job.timeout?.cancel()
         job.timeout = nil
-        let waiters = job.waiters.values
+        let waiters = job.waiters
+        let leasedWaiters = job.leasedWaiters
         job.waiters.removeAll()
-        for waiter in waiters {
+        job.leasedWaiters.removeAll()
+        for (id, waiter) in waiters {
+            if let result, leasedWaiters.contains(id) {
+                takeLease(on: result)
+            }
             waiter.resume(returning: result)
         }
     }
 
     #if DEBUG
+    /// Models a `clearCache` that was queued behind the decode: it runs before any resumed waiter is back on the actor.
+    private var clearsCacheOnCompleteForTesting = false
+    func clearCacheOnCompleteForTesting() {
+        clearsCacheOnCompleteForTesting = true
+    }
+
     func sweepCacheForTesting() {
         enforceSizeLimit()
     }

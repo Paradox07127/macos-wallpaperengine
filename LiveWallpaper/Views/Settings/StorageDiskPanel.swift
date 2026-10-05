@@ -97,6 +97,12 @@ struct StorageRingSpec: Identifiable {
     let id: String
     let title: LocalizedStringKey
     let items: [StorageDiskItem]
+
+    var isTotalPartial: Bool {
+        StorageDiskItem.summaryStatus(
+            inventoryIncomplete: false, componentStatuses: items.map(\.status), unresolvedSources: 0
+        ) == .partial
+    }
 }
 
 /// One label beside a ring, joined to its segment by a leader line.
@@ -246,7 +252,7 @@ private struct StorageCalloutRing: View {
 
             ZStack(alignment: .topLeading) {
                 StorageDonutRing(title: spec.title, items: ranked, rotation: rotation, total: total,
-                                 isTotalPartial: spec.items.contains { $0.status == .partial }, isLoading: isLoading,
+                                 isTotalPartial: spec.isTotalPartial, isLoading: isLoading,
                                  formatBytes: formatBytes, hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
                     .frame(width: diameter, height: diameter)
                     .position(center)

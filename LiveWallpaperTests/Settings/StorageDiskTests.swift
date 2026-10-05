@@ -60,6 +60,18 @@ struct StorageDiskTests {
         #expect(summary(false, [.complete], 1) == .partial)
     }
 
+    @Test func ringTotalIsPartialWheneverARowIs() {
+        func ring(_ statuses: [AppStorageMeasurement.Status]) -> StorageRingSpec {
+            let items = statuses.enumerated().map { index, status in
+                StorageDiskItem(id: "\(index)", title: "Storage", bytes: 1, color: .accentColor, status: status)
+            }
+            return StorageRingSpec(id: "ring", title: "Storage", items: items)
+        }
+        #expect(!ring([.complete, .missing]).isTotalPartial)
+        #expect(ring([.complete, .partial]).isTotalPartial)
+        #expect(ring([.complete, .unavailable]).isTotalPartial)
+    }
+
     @Test func homeIsAbbreviatedOnlyAtADirectoryBoundary() {
         #expect(StorageDiskItem.abbreviatingHome("/Users/ann/x", home: "/Users/ann") == "~/x")
         #expect(StorageDiskItem.abbreviatingHome("/Users/ann", home: "/Users/ann") == "~")

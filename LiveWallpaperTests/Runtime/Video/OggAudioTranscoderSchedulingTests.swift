@@ -254,6 +254,20 @@ struct OggAudioTranscoderSchedulingTests {
         #expect(!FileManager.default.fileExists(atPath: leased.path))
     }
 
+    @Test("A lease taken on a fresh decode is in place before the waiter is resumed")
+    func leaseOutlivesClearRacingTheResume() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let gate = DecodeGate()
+        gate.release()
+        let transcoder = fixture.transcoder(gate: gate)
+        await transcoder.clearCacheOnCompleteForTesting()
+        let leased = try #require(await transcoder.leasedM4A(forOgg: fixture.source))
+        #expect(gate.starts == 1)
+        #expect(FileManager.default.fileExists(atPath: leased.path), "a clear queued behind the decode deleted the file before its lease landed")
+        await transcoder.release(leased)
+    }
+
     private func poll(_ condition: () async -> Bool) async throws {
         for _ in 0 ..< 400 {
             if await condition() {

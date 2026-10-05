@@ -40,6 +40,23 @@ struct CacheInventoryArbitrationTests {
         }
     }
 
+    @Test("A superseded refresh starts no scans once linked sources resolve")
+    func supersededRefreshStartsNoScans() throws {
+        let source = try RepositoryRoot.source(Self.path)
+        let body = try #require(
+            Self.body(after: "private func refreshInventory() async {", in: source),
+            "refreshInventory has been renamed or restructured — re-derive this guard"
+        )
+        let resolve = try #require(body.range(of: "await StorageLinkedSources.current"), "linked sources are no longer awaited")
+        let recheck = try #require(
+            body.range(of: "guard generation == inventoryGeneration, !Task.isCancelled else { return }"),
+            "a refresh superseded while resolving linked sources still starts its scans"
+        )
+        let firstScan = try #require(body.range(of: "Task {"), "the scans are no longer started as tasks")
+        #expect(resolve.lowerBound < recheck.lowerBound, "rechecked before the await that can go stale")
+        #expect(recheck.lowerBound < firstScan.lowerBound, "a scan starts before the recheck")
+    }
+
     private static func body(after declaration: String, in source: String) -> String? {
         guard let start = source.range(of: declaration) else { return nil }
         var depth = 1
