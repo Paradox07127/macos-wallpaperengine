@@ -53,6 +53,10 @@ final class WorkshopPreviewDiskCache: Sendable {
         await disk.sizeBytes()
     }
 
+    func clear() async {
+        await disk.clear()
+    }
+
     /// Size is part of the key, not just of the decode: Steam serves one preview_url for tile and hero, decoded to different pixel caps.
     static func fileName(for url: URL, size: WorkshopPreviewSize) -> String {
         let key = "v1|\(size.rawValue)|\(url.absoluteString)"
@@ -63,7 +67,7 @@ final class WorkshopPreviewDiskCache: Sendable {
     }
 
     /// .cachesDirectory rather than Application Support: previews are re-downloadable, and the system reclaims Caches under disk pressure.
-    private static func defaultDirectoryURL() -> URL {
+    static func defaultDirectoryURL() -> URL {
         let fileManager = FileManager.default
         let caches = (try? fileManager.url(
             for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true

@@ -170,20 +170,13 @@ private struct ShortcutRow: View {
     @State private var isCapturing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Text(action.displayNameKey)
-                        .font(DesignTokens.Typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityHint(Text(action.displayDescriptionKey))
-                    if let scopeInfo {
-                        InfoTooltipButton(text: scopeInfo)
-                    }
-                }
-
-                Spacer()
-
+        SettingRow(
+            icon: action.iconName,
+            iconColor: action.iconColor,
+            title: action.displayNameKey,
+            info: scopeInfo
+        ) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
                 ShortcutCaptureField(
                     binding: binding,
                     isCapturing: $isCapturing,
@@ -211,8 +204,7 @@ private struct ShortcutRow: View {
                 .accessibilityLabel(Text("More options for \(action.displayName)", comment: "Shortcut row menu a11y label. The placeholder is the shortcut action name."))
             }
         }
-        .padding(.vertical, DesignTokens.Spacing.xs)
-        .settingsSearchRow(action.displayNameKey)
+        .accessibilityHint(Text(action.displayDescriptionKey))
     }
 
     private var scopeInfo: String.LocalizationValue? {
@@ -225,6 +217,33 @@ private struct ShortcutRow: View {
             "Controls cursor tracking in scenes and mouse interaction on web pages."
         default:
             nil
+        }
+    }
+}
+
+private extension GlobalShortcutAction {
+    var iconName: String {
+        switch self {
+        case .togglePlayback: "playpause.fill"
+        case .nextWallpaper: "forward.fill"
+        case .previousWallpaper: "backward.fill"
+        case .toggleMute: "speaker.slash.fill"
+        case .toggleMouseInteraction: "cursorarrow.rays"
+        case .toggleWallpapers: "macwindow"
+        case .reloadWallpapers: "arrow.clockwise"
+        case .openSettings: "gearshape"
+        }
+    }
+
+    var iconColor: Color {
+        switch self {
+        case .togglePlayback: .purple
+        case .nextWallpaper, .previousWallpaper: .blue
+        case .toggleMute: .pink
+        case .toggleMouseInteraction: .cyan
+        case .toggleWallpapers: .indigo
+        case .reloadWallpapers: .teal
+        case .openSettings: .orange
         }
     }
 }

@@ -6,7 +6,7 @@ enum WPEStoragePaths {
     /// Entries one inventory pass may visit before it stops early; the walk grows with the user's library.
     static let defaultWalkBudget = 200_000
 
-    /// Sum of allocated (`du`-equivalent) size of every regular file under `url`. Hidden files skipped. Stops when cancelled or `visited` reaches `budget`.
+    /// Sum of allocated (`du`-equivalent) size of every regular file under `url`. Includes hidden regular files; child symlinks are not followed. Stops when cancelled or `visited` reaches `budget`.
     static func allocatedBytes(
         at url: URL,
         fileManager fm: FileManager = .default,
@@ -16,14 +16,19 @@ enum WPEStoragePaths {
         // `enumerator(at:)` yields nothing when the root itself is a symlink.
         guard let enumerator = fm.enumerator(
             at: url.standardizedFileURL.resolvingSymlinksInPath(),
-            includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
-            options: [.skipsHiddenFiles]
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
+            options: []
         ) else { return 0 }
         var total: UInt64 = 0
         for case let item as URL in enumerator {
             guard !Task.isCancelled, visited < budget else { return total }
             visited += 1
-            let values = try? item.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey])
+            let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey])
+            if values?.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values?.isRegularFile == true else { continue }
             total += UInt64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
         }
         return total

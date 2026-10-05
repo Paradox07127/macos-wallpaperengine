@@ -49,7 +49,7 @@ actor WorkshopQueryCache {
         await disk.clear()
     }
 
-    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+    nonisolated static func defaultDirectoryURL(fileManager: FileManager = .default) -> URL {
         let applicationSupport = (try? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

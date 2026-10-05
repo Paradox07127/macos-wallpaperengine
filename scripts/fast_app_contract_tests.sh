@@ -219,6 +219,9 @@ PARALLEL_SUITES=(
   DetailTransitionTests
   SettingsSearchLocalizationTests
   NavigationTests
+  StorageDiskTests
+  StorageSourceCoverageTests
+  AppStorageInventoryTests
   InspectorResizeStepTests
   WorkshopDetailCopyTests
   SettingsConfirmationSourceTests

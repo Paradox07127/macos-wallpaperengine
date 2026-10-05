@@ -67,15 +67,40 @@ actor OggAudioTranscoder {
         deadline: TimeInterval = 6,
         decode: Decode? = nil
     ) {
-        let caches = (try? FileManager.default.url(
-            for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-        )) ?? FileManager.default.temporaryDirectory
-        self.cacheDirectory = cacheDirectory ?? caches.appendingPathComponent("OggTranscode", isDirectory: true)
+        self.cacheDirectory = cacheDirectory ?? Self.defaultCacheDirectory
         self.maximumConcurrent = max(1, maximumConcurrent)
         self.maximumPending = max(1, maximumPending)
         self.deadline = max(0.001, deadline)
         decodeOverride = decode
         try? FileManager.default.createDirectory(at: self.cacheDirectory, withIntermediateDirectories: true)
+    }
+
+    nonisolated static var defaultCacheDirectory: URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return caches.appendingPathComponent("OggTranscode", isDirectory: true)
+    }
+
+    /// Keep worker staging files and destinations of in-flight jobs. Completed
+    /// cache entries can be regenerated; an open reader retains its descriptor.
+    func clearCache() throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: cacheDirectory.path) else { return }
+        let protectedPaths = Set(running.values.map(\.destination.path))
+        let files = try fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        for file in files {
+            guard !file.lastPathComponent.hasPrefix("."), file.pathExtension == "m4a",
+                  !protectedPaths.contains(file.path) else { continue }
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            try fm.removeItem(at: file)
+        }
+        memo = memo.filter { _, outcome in
+            if case .unavailable = outcome {
+                return true
+            }
+            return false
+        }
     }
 
     nonisolated static func isOggFamily(_ url: URL) -> Bool {

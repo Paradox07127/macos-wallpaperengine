@@ -500,7 +500,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Storage",
                     anchor: .storageDashboard,
-                    rows: ["Wallpapers", "Engine Assets", "System Wallpaper"],
+                    rows: ["Wallpapers", "Engine Assets", "System Wallpaper", "App Data",
+                           "Settings & Library", "Saved Covers", "Legacy Scene Files", "Scene Diagnostics",
+                           "Runtime Logs", "Web Wallpaper Data", "App Preferences", "Other App Support",
+                           "Temporary Files", "System Wallpaper Metadata", "SteamCMD Installation", "Steam Sign-in Profiles",
+                           "Linked Original Files", "Memory Caches", "Wallpaper Locations", "Workshop Wallpapers",
+                           "Local Wallpaper Files", "Credential Files", "Application"],
                     keywords: [
                         "storage", "downloaded projects", "engine assets", "projects",
                         "archives", "download archives", "reclaim",
@@ -509,10 +514,11 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Caches",
                     anchor: .storageCaches,
-                    rows: ["Scene Video Texture Cache"],
+                    rows: ["Scene Video Texture Cache", "Workshop Search Cache", "Workshop Preview Images",
+                           "Shader Translation Cache", "Audio Transcode Cache", "Web Wallpaper Cache", "Other System Caches"],
                     keywords: [
                         "cache", "caches", "video cache", "scene video texture cache",
-                        "clear all caches", "wallpaper engine cache"
+                        "clear all caches", "wallpaper engine cache", "shader", "audio", "preview", "WebKit",
                     ]
                 )
             ]
@@ -599,7 +605,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     anchor: .systemWallpaperMaintenance,
                     rows: [
                         "Inspect Registrations", "Restart Wallpaper Service",
-                        "Automatically recover stalled connections",
+                        "Automatically recover stalled connections", "Use This App's Extension",
                     ],
                     keywords: []
                 ),

@@ -1,10 +1,17 @@
 #if !LITE_BUILD
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
-import AppKit
 
 @MainActor
 struct WPECacheManagementView: View {
+    @State var linkedSources: [StorageLinkedSource] = []
+    @State var unresolvedSources = 0
+    @State var storageMeasurements: [AppStorageMeasurement] = []
+    @State var storageScan: Task<[AppStorageMeasurement], Never>?
+    @State var isClearing = false
+    @State var pendingCache: AppStorageMeasurement?
+    @State var lastStorageFreedBytes: UInt64?
     @State var isLoading: Bool = true
     @State var errorMessage: String?
     @State var pendingDestructive: PendingDestructive?
@@ -21,6 +28,9 @@ struct WPECacheManagementView: View {
     @State var inventoryScan: Task<WPEStorageInventory, Never>?
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
+    @State var hoveredItemID: String?
+    @State var selectedItemID: String?
+
     #if DEBUG
     @State var testArtifacts: TestTempArtifacts.Summary = .empty
     @State var lastTestArtifactFreedBytes: UInt64?
@@ -33,11 +43,6 @@ struct WPECacheManagementView: View {
     @Environment(WallpaperExportService.self) var exportService
     @State var workshopCacheBytes: Int64 = 0
 
-    let dashboardColumns = [
-        GridItem(.flexible(minimum: 220), spacing: DesignTokens.Spacing.md),
-        GridItem(.flexible(minimum: 220), spacing: DesignTokens.Spacing.md)
-    ]
-
     init(
         pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)
     ) {
@@ -46,9 +51,7 @@ struct WPECacheManagementView: View {
 
     var body: some View {
         Form {
-            storageDashboardSection
-
-
+            storageSection
             testArtifactsSection
         }
         .settingsFormChrome()
@@ -60,21 +63,52 @@ struct WPECacheManagementView: View {
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             Task { await refreshStats() }
         }
+        .onDisappear {
+            inventoryGeneration &+= 1
+            inventoryScan?.cancel()
+            storageScan?.cancel()
+        }
+        .confirmationDialog("Clear this cache?", isPresented: Binding(
+            get: { pendingCache != nil },
+            set: {
+                if !$0 {
+                    pendingCache = nil
+                }
+            }
+        ), titleVisibility: .visible, presenting: pendingCache) { measurement in
+            Button("Clear Cache") {
+                pendingCache = nil
+                Task { await clearCache(measurement.location.kind) }
+            }
+            Button("Cancel", role: .cancel) { pendingCache = nil }
+        } message: { measurement in
+            Text(measurement.location.kind.title)
+                + Text(verbatim: " · " + byteFormatter.string(fromByteCount: Int64(clamping: measurement.bytes)))
+                + Text(verbatim: "\n\n")
+                + Text(measurement.location.kind.detail)
+        }
         .confirmDestructive($pendingDestructive)
         .errorAlert("Cache Error", message: $errorMessage)
     }
 
-    @ViewBuilder
     func infoNote(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(DesignTokens.Typography.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DesignTokens.Colors.textSecondary)
             .frame(maxWidth: 300, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    private static let storageByteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
+        return formatter
+    }()
+
     var byteFormatter: ByteCountFormatter {
-        WorkshopByteFormatter.kilobytesAndUp
+        Self.storageByteFormatter
     }
 }
 #endif

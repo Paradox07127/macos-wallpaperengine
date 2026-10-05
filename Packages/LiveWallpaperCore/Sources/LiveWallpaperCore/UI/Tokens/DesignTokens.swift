@@ -347,9 +347,8 @@ public enum DesignTokens {
     public enum Settings {
         public static let formHorizontalMargin: CGFloat = 18
         public static let formVerticalMargin: CGFloat = Spacing.md
-        /// The widest row this window builds: icon tile + a wrapping subtitle column
-        /// + `sliderWidth`. Past this the subtitles run to an unreadable measure.
-        public static let maxContentWidth: CGFloat = 740
+        /// Widest the centered settings column grows in a wide window.
+        public static let maxContentWidth: CGFloat = 1100
         /// Longer throw than `Inspector.sliderWidth` on purpose: this window has no 268pt
         /// panel floor, and these tracks are dragged for a value rather than nudged.
         public static let sliderWidth: CGFloat = 240

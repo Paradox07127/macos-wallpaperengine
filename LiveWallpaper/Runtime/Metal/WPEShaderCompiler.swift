@@ -359,6 +359,25 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         try? fileManager.removeItem(at: url)
     }
 
+    /// Compiled libraries in active render sessions are independent of these
+    /// translated source payloads. Concurrent stores may repopulate the cache.
+    func clearCache() throws {
+        lock.lock()
+        memory.removeAll(keepingCapacity: false)
+        memoryLRU.removeAll(keepingCapacity: false)
+        memoryBytes = 0
+        lock.unlock()
+        let base = rootURL.deletingLastPathComponent()
+        guard fileManager.fileExists(atPath: base.path) else { return }
+        let versions = try fileManager.contentsOfDirectory(at: base, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        for version in versions {
+            guard version.lastPathComponent.hasPrefix("v"),
+                  Int(version.lastPathComponent.dropFirst()) != nil,
+                  try version.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { continue }
+            try fileManager.removeItem(at: version)
+        }
+    }
+
     #if DEBUG
     func dropMemoryForTesting() {
         lock.lock()

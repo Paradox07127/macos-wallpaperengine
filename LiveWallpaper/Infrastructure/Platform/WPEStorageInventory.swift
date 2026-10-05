@@ -19,10 +19,12 @@ struct WPEStorageInventory: Sendable {
     let projectsRootURL: URL?
     /// The bookmarked Steam library `projectsRootURL` sits under. Revealing the
     /// tree needs its scope, and a derived child URL cannot open one itself.
-    let projectsScopeRootURL: URL?
+    var projectsScopeRootURL: URL?
     /// Footprint of the linked Wallpaper Engine assets, 0 when none is linked.
     let engineAssetsBytes: UInt64
     let engineAssetsURL: URL?
+    var engineAssetsScopeRootURL: URL?
+    var isIncomplete = false
 
     struct ScanRoots: Sendable {
         let steamRoot: URL?
@@ -32,20 +34,29 @@ struct WPEStorageInventory: Sendable {
     @MainActor
     static func compute(doctor: SteamCMDDoctorService) async -> WPEStorageInventory {
         let steamRoot = try? doctor.resolveWorkdirURL()
-        let engineAssetsRoot = WPEEngineAssetsLibrary.managedInstallRoot()
-        let steamScope = steamRoot?.startAccessingSecurityScopedResource() ?? false
-        let assetsScope = engineAssetsRoot?.startAccessingSecurityScopedResource() ?? false
+        let engineAssetsRoot = WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
+        let steamScopeRoot = doctor.workdirBookmarkData.flatMap { bookmark in
+            try? SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get().url
+        } ?? steamRoot
+        let steamScope = steamScopeRoot?.startAccessingSecurityScopedResource() ?? false
+        let assetsScopeRoot = SettingsManager.shared.loadWPEEngineAssetsBookmark().flatMap { bookmark in
+            try? SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get().url
+        } ?? engineAssetsRoot
+        let assetsScope = assetsScopeRoot?.startAccessingSecurityScopedResource() ?? false
         defer {
             if steamScope {
-                steamRoot?.stopAccessingSecurityScopedResource()
+                steamScopeRoot?.stopAccessingSecurityScopedResource()
             }
             if assetsScope {
-                engineAssetsRoot?.stopAccessingSecurityScopedResource()
+                assetsScopeRoot?.stopAccessingSecurityScopedResource()
             }
         }
-        return await WPEStorageInventoryScanner.shared.scan(
+        var inventory = await WPEStorageInventoryScanner.shared.scan(
             roots: ScanRoots(steamRoot: steamRoot, engineAssetsRoot: engineAssetsRoot)
         )
+        inventory.engineAssetsScopeRootURL = assetsScopeRoot
+        inventory.projectsScopeRootURL = steamScopeRoot
+        return inventory
     }
 }
 
@@ -85,7 +96,8 @@ actor WPEStorageInventoryScanner {
             projectsRootURL: root,
             projectsScopeRootURL: roots.steamRoot,
             engineAssetsBytes: assetsBytes,
-            engineAssetsURL: assetsURL
+            engineAssetsURL: assetsURL,
+            isIncomplete: assetsVisited >= budget || projectsVisited >= budget
         )
     }
 

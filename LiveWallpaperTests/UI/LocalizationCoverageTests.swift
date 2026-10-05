@@ -450,7 +450,7 @@ struct LocalizationCoverageTests {
         let actionModel = try Self.projectFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Schema/GlobalShortcutAction.swift")
 
         #expect(!shortcutView.contains("Text(verbatim: action.displayName)"))
-        #expect(shortcutView.contains("Text(action.displayNameKey)"))
+        #expect(shortcutView.contains("title: action.displayNameKey"))
         #expect(shortcutView.contains("Text(action.displayDescriptionKey)"))
         #expect(actionModel.contains("var displayNameKey: LocalizedStringKey"))
         #expect(actionModel.contains("var displayDescriptionKey: LocalizedStringKey"))
