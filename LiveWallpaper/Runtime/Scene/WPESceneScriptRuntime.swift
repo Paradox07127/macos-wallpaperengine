@@ -3171,7 +3171,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private var lastAsyncInner: SIMD3<Double>?
     private var hasAsyncOutcome = false
     private var pendingMediaEvents: [WPESceneMediaEvent] = []
-    private var pendingCursorEvents: [WPELayerScriptCursorInvocation] = []
+    private let cursorInbox = WPELayerScriptCursorInbox()
+    /// Cursor handlers the module exports; other events are never queued.
+    private var cursorHandlers: Set<WPELayerScriptCursorEvent> = []
     /// The arity WPE authored for the bound property. Vec3 is the transform
     /// default; shader constants are usually scalars.
     private let valueShape: WPEScriptValueShape
@@ -3198,9 +3200,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             case .setupFailed:
                 isPoisoned = true
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, initialResult, media):
+            case let .ready(hasUpdate, initialResult, media, cursor):
                 hasUpdateFunction = hasUpdate
                 mediaHandlers = media
+                cursorHandlers = cursor
                 if let initialResult {
                     lastValue = initialResult
                     lastAsyncInner = initialResult
@@ -3285,9 +3288,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 throw WPESceneScriptError.contextUnavailable
             case .setupFailed:
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case let .ready(hasUpdate, initialResult, media):
+            case let .ready(hasUpdate, initialResult, media, cursor):
                 self.mediaHandlers = media
                 self.hasUpdateFunction = hasUpdate
+                cursorHandlers = cursor
                 // Publish init's return as the first completed outcome so the first frame does not show the baked transform; nil leaves the authored seed.
                 if let initialResult {
                     lastValue = initialResult
@@ -3342,25 +3346,26 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     }
 
     /// Property scripts export cursor handlers too (click-to-switch poses on an
-    /// `angles` script, workshop 3809609151). A refused batch stays pending and
-    /// the next frame's drain retries it, like pendingMediaEvents.
+    /// `angles` script, workshop 3809609151). Same bounded inbox as layer scripts.
     func enqueueCursorEvents(
         _ events: [WPELayerScriptCursorInvocation],
         allowSubmission: Bool = true
     ) -> WPESceneScriptBatchDispatcher.Job? {
-        guard !requiresInitialization, !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else {
-            pendingCursorEvents.removeAll(keepingCapacity: true)
+        guard !requiresInitialization else { return nil }
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, engine.allows(.event) else {
+            cursorInbox.close()
             return nil
         }
-        pendingCursorEvents.append(contentsOf: events)
-        guard allowSubmission, !pendingCursorEvents.isEmpty, engine.allows(.event),
-              let work = engine.makeCursorEventsBatch(pendingCursorEvents) else { return nil }
-        pendingCursorEvents.removeAll(keepingCapacity: true)
-        return WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work)
+        cursorInbox.append(events.filter { cursorHandlers.contains($0.event) })
+        guard allowSubmission, let claim = cursorInbox.claim() else { return nil }
+        return WPESceneScriptBatchDispatcher.Job(
+            queue: engine.queue,
+            work: engine.makeCursorBatch(claim: claim, inbox: cursorInbox)
+        )
     }
 
     func cancelPendingCursorEvents() {
-        pendingCursorEvents.removeAll(keepingCapacity: true)
+        cursorInbox.cancel()
     }
 
 
@@ -3502,6 +3507,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     func destroy() -> Bool {
         guard !isDestroyed else { return false }
         isDestroyed = true
+        cursorInbox.close()
         guard !requiresInitialization, !isPoisoned, !engine.hasRuntimeFault,
               engine.allows(.event) else {
             engine.discardPreparedResources()
@@ -3589,7 +3595,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
         enum SetupOutcome {
-            case ready(hasUpdate: Bool, initialResult: SIMD3<Double>?, media: WPESceneMediaHandlerSet)
+            case ready(
+                hasUpdate: Bool,
+                initialResult: SIMD3<Double>?,
+                media: WPESceneMediaHandlerSet,
+                cursor: Set<WPELayerScriptCursorEvent>
+            )
             case contextUnavailable
             case setupFailed
         }
@@ -3820,34 +3831,45 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return true
         }
 
-        /// Host-side admission for a frame's aggregated cursor burst, so a
-        /// refused job leaves the instance's pending events intact. Returned as
-        /// work so the renderer can chain it inside its ordered batch.
-        func makeCursorEventsBatch(
-            _ events: [WPELayerScriptCursorInvocation]
-        ) -> (@Sendable () -> Void)? {
-            guard !events.isEmpty, allows(.event) else { return nil }
-            guard let safety = asyncExecutionSafety.begin(
-                sceneToken: instanceLimitToken,
-                operation: .event
-            ) else { return nil }
-            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
-                asyncExecutionSafety.complete(safety)
-                return nil
-            }
-            return { @Sendable [self] in
+        /// Mirrors the layer engine's `makeCursorBatch`.
+        func makeCursorBatch(
+            claim: WPELayerScriptCursorInbox.Claim,
+            inbox: WPELayerScriptCursorInbox
+        ) -> @Sendable () -> Void {
+            { @Sendable [self] in
+                guard allows(.event) else { inbox.complete(claim); return }
+                // Reserve on the VM worker: a reservation taken while building the frame would refuse this lane's earlier tick.
+                guard let safety = asyncExecutionSafety.begin(
+                    sceneToken: instanceLimitToken, operation: .event
+                ) else {
+                    if shared?.isAuthoredLayerOrderingEnabled == true {
+                        inbox.complete(claim)
+                        return
+                    }
+                    if inbox.isCurrent(claim) {
+                        queue.asyncAfter(deadline: .now() + .milliseconds(1),
+                                         execute: makeCursorBatch(claim: claim, inbox: inbox))
+                    } else if let next = inbox.complete(claim, reclaimPending: true) {
+                        queue.async(execute: makeCursorBatch(claim: next, inbox: inbox))
+                    }
+                    return
+                }
                 defer {
                     asyncExecutionSafety.complete(safety)
-                    permit.release()
+                    if let next = inbox.complete(claim, reclaimPending: shared?.isAuthoredLayerOrderingEnabled != true) {
+                        queue.async(execute: makeCursorBatch(claim: next, inbox: inbox))
+                    }
                 }
+                guard let events = inbox.take(claim) else { return }
                 for event in events {
-                    guard acceptsCompletion() else { return }
+                    guard inbox.isCurrent(claim), acceptsCompletion() else { return }
                     dispatchCursorEventOnQueue(
                         event.event,
                         pointerFrame: event.pointerFrame,
                         hit: event.hit,
                         runtimeSeconds: event.runtimeSeconds
                     )
+                    inbox.didDeliver(event)
                 }
             }
         }
@@ -3986,14 +4008,19 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return initializeOnQueue()
             }
             return .ready(hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers, initialResult: nil,
-                          media: WPESceneMediaHandlerSet(in: context))
+                          media: WPESceneMediaHandlerSet(in: context), cursor: Self.cursorHandlers(in: context))
+        }
+
+        private static func cursorHandlers(in context: JSContext) -> Set<WPELayerScriptCursorEvent> {
+            Set(WPELayerScriptCursorEvent.allCases.filter { wpeExportsFunction(named: $0.handlerName, in: context) })
         }
 
         private func initializeOnQueue() -> SetupOutcome {
             guard let context else { return .contextUnavailable }
             guard !didInitialize else {
                 return .ready(hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
-                              initialResult: nil, media: WPESceneMediaHandlerSet(in: context))
+                              initialResult: nil, media: WPESceneMediaHandlerSet(in: context),
+                              cursor: Self.cursorHandlers(in: context))
             }
             didInitialize = true
             didThrow = false
@@ -4013,7 +4040,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return .ready(
                 hasUpdate: updateFunction != nil || timerScheduler?.hasPendingTimers == true,
                 initialResult: initialResult,
-                media: WPESceneMediaHandlerSet(in: context)
+                media: WPESceneMediaHandlerSet(in: context),
+                cursor: Self.cursorHandlers(in: context)
             )
         }
 
@@ -4052,8 +4080,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         ) {
             layerBridge.beginEvaluation()
             defer { publishLayerOutput() }
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
             updateInput(pointerFrame.position)
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else { return }
@@ -4163,9 +4191,10 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             defer { publishLayerOutput() }
             guard let context else { return nil }
             audioBridge?.refresh()
+            // Before timers: a timer-only module has no update() but its callbacks read input.
+            updateInput(pointerPosition)
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let updateFunction else { return nil }
-            updateInput(pointerPosition)
 
             didThrow = false
             guard let argument = jsValue(for: currentValue, in: context, reuseUpdateArgument: true) else { return nil }
@@ -4338,7 +4367,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func installInput(in context: JSContext) {
             let input = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            let screen = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+            let screen = context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [0, 0])
+                ?? JSValue(nullIn: context)!
             let world = shared?.projectedCursorWorldPosition(pointer: SIMD2(0.5, 0.5)) ?? seed
             // Keep this native Vec3 alive across ticks: scripts may capture it before the first input update.
             let cursor = context.objectForKeyedSubscript("Vec3")?.construct(withArguments: [world.x, world.y, world.z])
@@ -4358,6 +4388,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 """,
                 targets: [screen, cursor]
             )
+            updateInput(SIMD2(0.5, 0.5))
         }
 
         private func installLayerBridge(in context: JSContext) {

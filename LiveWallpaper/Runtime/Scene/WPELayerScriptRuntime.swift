@@ -100,7 +100,7 @@ enum WPELayerScriptOutputMode: Sendable, Equatable {
     case returnedAlpha(initialValue: Double)
 }
 
-enum WPELayerScriptCursorEvent: Sendable, Equatable {
+enum WPELayerScriptCursorEvent: Sendable, Equatable, CaseIterable {
     case move
     case down
     case up
@@ -1725,6 +1725,9 @@ class WPELayerScriptBridge: @unchecked Sendable {
     private var publishesOwnEntry = true
     private var localEvaluationFailed = false
     private var pendingSound: [(String, WPELayerSoundCommand)] = []
+    fileprivate typealias CameraParallaxEdit = (inout WPESceneCameraParallaxSettings) -> Void
+    /// Keyed by `thisScene` property name, so only each field's last write survives.
+    fileprivate var cameraParallaxEdits: [String: CameraParallaxEdit] = [:]
     private struct CreatedHandleSnapshot {
         let image: JSValue
         let color: JSValue
@@ -1825,6 +1828,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
         )
         particleBridge.beginEvaluation()
         cameraBridge.beginEvaluation()
+        cameraParallaxEdits.removeAll(keepingCapacity: true)
         evaluationResourceBudget.beginEvaluation()
     }
 
@@ -1847,6 +1851,15 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let commit = commit && !localEvaluationFailed
         particleBridge.finishEvaluation(commit: commit)
         cameraBridge.finishEvaluation(commit: commit)
+        if commit, !cameraParallaxEdits.isEmpty {
+            let edits = cameraParallaxEdits.values
+            shared?.updateCameraParallax { settings in
+                for edit in edits {
+                    edit(&settings)
+                }
+            }
+        }
+        cameraParallaxEdits.removeAll(keepingCapacity: true)
         if commit {
             for (layer, command) in pendingSound {
                 shared?.enqueueSoundCommand(layer: layer, command)
@@ -2108,37 +2121,42 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     /// IScene camera-parallax fields. Bound-property scripts read them to size
     /// layer depth (`thisScene.cameraparallaxamount` in parallaxDepth init()).
-    /// Reads see the resolved settings — user-prop values included — and writes
-    /// update the shared snapshot so a script's own reads stay consistent.
+    /// Reads see the resolved settings — user-prop values included — plus this
+    /// entry's own writes; the writes publish only when the entry commits.
     private func installCameraParallaxAccessors(on scene: JSValue, in context: JSContext) {
         func accessor(
             _ name: String,
             read: @escaping (WPESceneCameraParallaxSettings) -> Any,
-            write: @escaping (inout WPESceneCameraParallaxSettings, JSValue) -> Void
+            write: @escaping (JSValue) -> CameraParallaxEdit?
         ) {
             let get: @convention(block) () -> Any? = { [weak self] in
-                guard let shared = self?.shared else { return nil }
-                return read(shared.cameraParallaxSnapshot())
+                guard let self, let shared else { return nil }
+                var settings = shared.cameraParallaxSnapshot()
+                for edit in cameraParallaxEdits.values {
+                    edit(&settings)
+                }
+                return read(settings)
             }
             let set: @convention(block) (JSValue) -> Void = { [weak self] value in
-                self?.shared?.updateCameraParallax { write(&$0, value) }
+                guard let self, let edit = write(value) else { return }
+                cameraParallaxEdits[name] = edit
             }
             defineAccessor(on: scene, property: name, get: get, set: set, in: context)
         }
-        accessor("cameraparallax", read: { $0.enabled }, write: { settings, value in
-            if value.isBoolean {
-                settings.enabled = value.toBool()
-            }
+        accessor("cameraparallax", read: { $0.enabled }, write: { value in
+            guard value.isBoolean else { return nil }
+            let enabled = value.toBool()
+            return { $0.enabled = enabled }
         })
         for (name, field) in [
             ("cameraparallaxamount", \WPESceneCameraParallaxSettings.amount),
             ("cameraparallaxdelay", \WPESceneCameraParallaxSettings.delay),
             ("cameraparallaxmouseinfluence", \WPESceneCameraParallaxSettings.mouseInfluence),
         ] as [(String, WritableKeyPath<WPESceneCameraParallaxSettings, Double>)] {
-            accessor(name, read: { $0[keyPath: field] }, write: { settings, value in
-                if value.isNumber, value.toDouble().isFinite {
-                    settings[keyPath: field] = value.toDouble()
-                }
+            accessor(name, read: { $0[keyPath: field] }, write: { value in
+                let number = value.toDouble()
+                guard value.isNumber, number.isFinite else { return nil }
+                return { $0[keyPath: field] = number }
             })
         }
     }

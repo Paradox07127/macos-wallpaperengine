@@ -5046,6 +5046,33 @@ export function init(value) {
         #expect(store.get("language") == nil)
         #expect(store.get("destroyed") == nil)
     }
+
+    @Test("Transform scripts see input.cursorScreenPosition as a finite Vec2 from init")
+    func transformCursorScreenPositionIsVec2() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+        export function init(value) {
+            const s = input.cursorScreenPosition;
+            shared.isVec2 = s instanceof Vec2 && isFinite(s.x) && isFinite(s.y);
+            return value;
+        }
+        """, seed: .zero, canvasSize: SIMD2(100, 100), shared: store, governor: isolatedGovernor)
+        #expect(store.get("isVec2") as? Bool == true)
+        withExtendedLifetime(instance) {}
+    }
+
+    @Test("A timer-only transform script reads this tick's cursor input")
+    func timerOnlyTransformScriptSeesFreshCursor() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPEDynamicTransformScriptInstance(script: """
+        export function init(value) {
+            setTimeout(function () { shared.cursorX = input.cursorScreenPosition.x; }, 0);
+            return value;
+        }
+        """, seed: .zero, canvasSize: SIMD2(100, 100), shared: store, governor: isolatedGovernor)
+        _ = instance.tick(pointerPosition: SIMD2(0.25, 0.5), runtimeSeconds: 1)
+        #expect(store.get("cursorX") as? Double == 25)
+    }
 }
 
 @Suite(.serialized, .timeLimit(.minutes(1)))

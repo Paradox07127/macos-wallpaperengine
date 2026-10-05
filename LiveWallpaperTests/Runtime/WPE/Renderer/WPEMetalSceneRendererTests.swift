@@ -15,6 +15,18 @@ import UniformTypeIdentifiers
 @MainActor
 @Suite("WPE Metal scene renderer")
 struct WPEMetalSceneRendererTests {
+    @Test("Script layer table gives sound entries their authored parent")
+    func scriptLayerTableSoundEntryKeepsParent() throws {
+        let source = #"""
+        {"camera":{"center":"0 0 0"},"general":{"orthogonalprojection":{"width":64,"height":64}},
+         "objects":[{"id":1,"name":"group","image":"models/util/solidlayer.json"},
+                    {"id":2,"name":"Loop","type":"sound","sound":["sounds/loop.mp3"],"parent":1}]}
+        """#
+        let document = try WPESceneDocumentParser.parse(data: Data(source.utf8))
+        let table = WPEMetalSceneRenderer.scriptLayerTable(for: document)
+        #expect(table.first { $0.id == "2" }?.parentID == "1")
+    }
+
     #if DEBUG
     @Test("Oracle media configuration is renderer-local and immutable once loading starts")
     func oracleMediaConfigurationIsLoadScoped() async throws {

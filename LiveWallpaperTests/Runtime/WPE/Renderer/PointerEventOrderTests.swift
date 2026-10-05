@@ -616,6 +616,89 @@ struct WPEPointerEdgeDeliveryTests {
         #expect(try #require(inbox.take(fresh)).map(\.event) == [.down, .up, .click])
     }
 
+    @Test("Pointer moves over a transform-scripted layer do not starve its update()", arguments: [false, true])
+    func cursorMovesDoNotStarveTransformTicks(exportsCursorMove: Bool) async throws {
+        let handler = exportsCursorMove ? "export function cursorMove() { shared.moves = (shared.moves || 0) + 1; }" : ""
+        let scene = try fixture(script: """
+        export function update(v) { shared.n = (shared.n || 0) + 1; return v; }
+        \(handler)
+        """, property: "angles", value: "0 0 0")
+        defer { scene.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: scene.descriptor, cacheRootURL: scene.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        renderer.setMouseInteractionEnabled(true)
+        renderer.setClickCaptureEnabled(true)
+        try await renderer.load()
+        func ticks() -> Double {
+            renderer.sharedScriptValueForTesting("n") as? Double ?? 0
+        }
+        let before = ticks()
+        for frame in 0 ..< 10 {
+            let x = 0.4 + Double(frame) * 0.02
+            let started = ticks()
+            _ = try renderer.renderCurrentFrame(inputs: WPEFrameInputs(
+                clickCaptureEnabled: true, pointerSample: .inside(SIMD2(x, 0.5)),
+                pointerFrame: pointer(false, x: x), preferredFramesPerSecond: 30
+            ))
+            for _ in 0 ..< 50 where ticks() == started {
+                try await Task.sleep(for: .milliseconds(2))
+            }
+        }
+        #expect(ticks() - before >= 9, "the frame's cursor batch took the safety slot before this frame's tick ran")
+    }
+
+    @Test("A transform script's refused cursor bursts stay bounded")
+    func transformCursorBacklogIsBounded() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let script = """
+        export function init(value) { shared.moves = 0; return value; }
+        export function cursorMove() { shared.moves += 1; }
+        """
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: script, seed: .zero, canvasSize: SIMD2(100, 100), shared: shared,
+            governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher
+        )
+        defer { _ = instance.destroy() }
+        for _ in 0 ..< 2000 {
+            _ = instance.enqueueCursorEvents([invocation(.move, down: false)], allowSubmission: false)
+        }
+        let job = try #require(instance.enqueueCursorEvents([], allowSubmission: true))
+        let completion = try #require(dispatcher.submit([job], trackingCompletion: true))
+        #expect(completion.wait(timeout: .now() + 2))
+        dispatcher.reserveLane().queue.sync {}
+        let moves = try #require(shared.get("moves") as? Double)
+        #expect(moves > 0 && moves <= 1024, "refused bursts accumulated without a bound")
+    }
+
+    @Test("Cancelling input fences a transform script's already admitted cursor burst")
+    func cancelledTransformCursorBurstCannotRun() throws {
+        let dispatcher = WPESceneScriptBatchDispatcher(width: 1)
+        let shared = WPESharedScriptState()
+        let script = """
+        export function init(value) { shared.events = ''; return value; }
+        export function cursorDown() { shared.events += 'd'; }
+        export function cursorUp() { shared.events += 'u'; }
+        export function cursorClick() { shared.events += 'c'; }
+        """
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: script, seed: .zero, canvasSize: SIMD2(100, 100), shared: shared,
+            governor: WPESceneScriptExecutionGovernor(limit: 1), batchDispatcher: dispatcher
+        )
+        defer { _ = instance.destroy() }
+        let job = try #require(instance.enqueueCursorEvents([
+            invocation(.down, down: true), invocation(.up, down: false), invocation(.click, down: false),
+        ], allowSubmission: true))
+        instance.cancelPendingCursorEvents()
+        let completion = try #require(dispatcher.submit([job], trackingCompletion: true))
+        #expect(completion.wait(timeout: .now() + 1))
+        dispatcher.reserveLane().queue.sync {}
+        #expect(shared.get("events") as? String == "", "a burst admitted before the cancel still ran")
+    }
+
     @Test("Right down/up between samples reaches authored callbacks exactly once")
     func rapidRightClickBetweenFrames() async throws {
         let scene = try fixture()

@@ -72,6 +72,34 @@ struct WPESceneCameraParallaxScriptTests {
         withExtendedLifetime(other) {}
     }
 
+    @Test("cameraparallax* writes publish only when the callback completes")
+    func cameraParallaxWritesCommitWithTheEvaluation() throws {
+        let shared = sharedState(parallax: .init(
+            enabled: false, amount: 0.5, delay: 0.1, mouseInfluence: 0.5
+        ))
+        let failing = try WPEDynamicTransformScriptInstance(
+            script: "export function init(value) { thisScene.cameraparallaxamount = 5; throw new Error('boom'); }",
+            seed: .zero, canvasSize: SIMD2(64, 64), shared: shared,
+            governor: WPESceneScriptExecutionGovernor(limit: 2)
+        )
+        #expect(shared.cameraParallaxSnapshot().amount == 0.5, "a throwing callback published its half-done write")
+        let reader = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function init(value) {
+                thisScene.cameraparallaxamount = 0.75;
+                shared.readBack = thisScene.cameraparallaxamount;
+                return value;
+            }
+            """,
+            seed: .zero, canvasSize: SIMD2(64, 64), shared: shared,
+            governor: WPESceneScriptExecutionGovernor(limit: 2)
+        )
+        #expect(shared.get("readBack") as? Double == 0.75)
+        #expect(shared.cameraParallaxSnapshot().amount == 0.75)
+        withExtendedLifetime(failing) {}
+        withExtendedLifetime(reader) {}
+    }
+
     /// Workshop 3810519013 / 3811736073: init() sizes the horizontal depth so the
     /// cursor can sweep exactly the image's padded width.
     @Test("parallaxDepth init() computes depth from thisScene + thisLayer + canvas")

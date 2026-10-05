@@ -780,6 +780,7 @@ extension WPEMetalSceneRenderer {
             layers.append(WPESceneScriptLayerInfo(
                 id: object.id, name: object.name, size: .zero, origin: .zero,
                 index: document.objectPaintOrder[object.id] ?? layers.count, parentName: nil,
+                parentID: document.objectParentByID[object.id],
                 initialVisible: document.ownVisibilityByID[object.id] ?? object.visible,
                 initialConfiguration: initialConfiguration(object.id)
             ))
