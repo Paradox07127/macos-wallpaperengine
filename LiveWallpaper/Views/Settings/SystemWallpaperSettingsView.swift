@@ -158,7 +158,7 @@ private struct SystemWallpaperMaintenanceSection: View {
 
             SettingRow(
                 icon: "magnifyingglass",
-                iconColor: .indigo,
+                iconColor: DesignTokens.Colors.SettingsIcon.inspectRegistrations,
                 title: "Inspect Registrations"
             ) {
                 HStack(spacing: DesignTokens.Spacing.sm) {
@@ -173,7 +173,7 @@ private struct SystemWallpaperMaintenanceSection: View {
 
             SettingRow(
                 icon: "arrow.clockwise",
-                iconColor: .orange,
+                iconColor: DesignTokens.Colors.SettingsIcon.restartService,
                 title: "Restart Wallpaper Service",
                 info: "Restarting briefly redraws all system wallpapers for your account. Repair removes the reviewed registrations, keeps this app, and preserves app files and videos."
             ) {
@@ -189,7 +189,7 @@ private struct SystemWallpaperMaintenanceSection: View {
 
             SettingRow(
                 icon: "bolt.shield",
-                iconColor: .teal,
+                iconColor: DesignTokens.Colors.SettingsIcon.automaticRecovery,
                 title: "Automatically recover stalled connections",
                 info: "Automatic recovery runs while Loomscreen is open, waits for persistent failure, and restarts at most once every five minutes."
             ) {
@@ -230,7 +230,7 @@ private struct SystemWallpaperMaintenanceSection: View {
                 if report.outcome == .inspected || report.copies.contains(where: \.willUnregister) {
                     SettingRow(
                         icon: "wrench.and.screwdriver",
-                        iconColor: .indigo,
+                        iconColor: DesignTokens.Colors.SettingsIcon.repairExtension,
                         title: "Use This App's Extension",
                         info: "The registrations marked for removal will be unregistered. This app becomes the preferred provider and the system wallpaper service restarts."
                     ) {

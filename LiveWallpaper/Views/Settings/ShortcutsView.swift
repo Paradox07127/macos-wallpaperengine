@@ -237,13 +237,13 @@ private extension GlobalShortcutAction {
 
     var iconColor: Color {
         switch self {
-        case .togglePlayback: .purple
-        case .nextWallpaper, .previousWallpaper: .blue
-        case .toggleMute: .pink
-        case .toggleMouseInteraction: .cyan
-        case .toggleWallpapers: .indigo
-        case .reloadWallpapers: .teal
-        case .openSettings: .orange
+        case .togglePlayback: DesignTokens.Colors.SettingsIcon.playback
+        case .nextWallpaper, .previousWallpaper: DesignTokens.Colors.SettingsIcon.wallpaperNavigation
+        case .toggleMute: DesignTokens.Colors.SettingsIcon.mute
+        case .toggleMouseInteraction: DesignTokens.Colors.SettingsIcon.mouseInteraction
+        case .toggleWallpapers: DesignTokens.Colors.SettingsIcon.wallpaperVisibility
+        case .reloadWallpapers: DesignTokens.Colors.SettingsIcon.reload
+        case .openSettings: DesignTokens.Colors.SettingsIcon.openSettings
         }
     }
 }

@@ -67,6 +67,21 @@ public enum DesignTokens {
             public static let schemes = Color(nsColor: .systemPurple)
         }
 
+        /// `SettingRow` icon tints, one per settings purpose.
+        public enum SettingsIcon {
+            public static let playback = Color.purple
+            public static let wallpaperNavigation = Color.blue
+            public static let mute = Color.pink
+            public static let mouseInteraction = Color.cyan
+            public static let wallpaperVisibility = Color.indigo
+            public static let reload = Color.teal
+            public static let openSettings = Color.orange
+            public static let inspectRegistrations = Color.indigo
+            public static let restartService = Color.orange
+            public static let automaticRecovery = Color.teal
+            public static let repairExtension = Color.indigo
+        }
+
         /// Deliberately softer than `Status.*`: paired with a thin ring, the always-busy
         /// gauges would read harshly otherwise.
         public enum Gauge {
