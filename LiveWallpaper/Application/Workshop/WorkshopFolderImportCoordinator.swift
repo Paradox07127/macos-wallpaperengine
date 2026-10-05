@@ -18,6 +18,21 @@ final class WorkshopFolderImportCoordinator {
 
     private enum Importer { case folders, downloadScan }
 
+    /// The acf ids the last completed prune read, and the identity of the library it read them from.
+    struct SteamPruneBaseline: Codable, Equatable, Sendable {
+        let libraryIdentity: String
+        let listedIDs: [String]
+    }
+
+    /// One readable survey of the Steam library.
+    struct SteamDeletedSurvey: Sendable {
+        let deleted: [WPEHistoryEntry]
+        /// nil when the library's identity can't be read; the baseline then stays as it was.
+        let baseline: SteamPruneBaseline?
+    }
+
+    private static let pruneBaselineKey = "loomscreen.workshop.prune.acfBaseline"
+
     /// Which entry is writing history, presets and tombstones; nil when idle. One slot for both entries.
     private var importer: Importer?
     /// True from a folder request until the last queued batch ends, including while it waits for the download scan.
@@ -38,6 +53,7 @@ final class WorkshopFolderImportCoordinator {
     @ObservationIgnored private let discoverFolders: @Sendable (URL) -> [URL]?
     @ObservationIgnored private let toastCenter: WorkshopToastCenter
     @ObservationIgnored private let repositoryCoordinator: WorkshopRepositoryCoordinator
+    @ObservationIgnored private let defaults: UserDefaults
     /// Ids whose scan conflict was already shown this launch; the scan reruns on every Workshop visit.
     @ObservationIgnored private var reportedScanConflictIDs: Set<String> = []
 
@@ -50,6 +66,7 @@ final class WorkshopFolderImportCoordinator {
         discoverFolders: (@Sendable (URL) -> [URL]?)? = nil,
         toastCenter: WorkshopToastCenter = .shared,
         repositoryCoordinator: WorkshopRepositoryCoordinator = .shared,
+        defaults: UserDefaults = .appScoped(),
         removeVanishedImport: (@MainActor (WPEHistoryEntry) -> Bool)? = nil
     ) {
         self.removeVanishedImport = removeVanishedImport ?? { _ in false }
@@ -57,7 +74,12 @@ final class WorkshopFolderImportCoordinator {
         self.discoverFolders = discoverFolders ?? Self.discoverProjectFolders
         self.toastCenter = toastCenter
         self.repositoryCoordinator = repositoryCoordinator
+        self.defaults = defaults
         self.settings = settings
+    }
+
+    var steamPruneBaseline: SteamPruneBaseline? {
+        defaults.data(forKey: Self.pruneBaselineKey).flatMap { try? JSONDecoder().decode(SteamPruneBaseline.self, from: $0) }
     }
 
     /// One pass for every folder: a request made while another import or the download scan runs waits for it.
@@ -274,19 +296,24 @@ final class WorkshopFolderImportCoordinator {
               let access = try? doctor.beginWorkdirAccess() else { return }
         defer { access.end() }
         let steamRoot = access.url
-        let deleted = await Task.detached(priority: .utility) {
-            Self.entriesSteamDeleted(candidates, steamRoot: steamRoot)
+        let baseline = steamPruneBaseline
+        let survey = await Task.detached(priority: .utility) {
+            Self.entriesSteamDeleted(candidates, steamRoot: steamRoot, baseline: baseline, identity: Self.libraryIdentity(of: steamRoot))
         }.value
         // The survey ran off the main actor; a mutation or history change since then voids it.
         let history = settings.loadGlobalSettings().recentWPEImports
-        guard !isTerminated, !repositoryCoordinator.hasActiveMutations,
-              deleted.allSatisfy({ entry in
+        guard let survey, !isTerminated, !repositoryCoordinator.hasActiveMutations,
+              survey.deleted.allSatisfy({ entry in
                   history.contains { $0.origin.workshopID == entry.origin.workshopID && $0.importedAt == entry.importedAt }
               })
         else { return }
         var removed = 0
-        for entry in deleted where removeVanishedImport(entry) {
+        for entry in survey.deleted where removeVanishedImport(entry) {
             removed += 1
+        }
+        // Advanced only here: a skipped or voided pass must leave the removal it missed to the next one.
+        if let next = survey.baseline, let data = try? JSONEncoder().encode(next) {
+            defaults.set(data, forKey: Self.pruneBaselineKey)
         }
         if removed > 0 {
             Logger.info("Removed \(removed) library entries whose Steam Workshop items Steam deleted", category: .workshop)
@@ -319,10 +346,15 @@ final class WorkshopFolderImportCoordinator {
         }
     }
 
-    /// Entries whose folder is missing from `steamRoot`'s content root listing while Steam's acf no longer lists it and whose
-    /// bookmark no longer resolves; none when the content root can't be listed or the acf can't be read. Needs `steamRoot`'s access open.
-    /// The app's own delete keeps the acf entry, so an unlisted id means Steam removed the item.
-    nonisolated static func entriesSteamDeleted(_ entries: [WPEHistoryEntry], steamRoot: URL) -> [WPEHistoryEntry] {
+    /// Entries whose folder is missing from the content root listing, unlisted by the acf though `baseline` listed them for this same
+    /// `identity`, and whose bookmark no longer resolves; nil when the content root can't be listed or the acf can't be read. Needs
+    /// `steamRoot`'s access open. The app's own delete keeps the acf entry, so an unlisted id means Steam removed the item.
+    nonisolated static func entriesSteamDeleted(
+        _ entries: [WPEHistoryEntry],
+        steamRoot: URL,
+        baseline: SteamPruneBaseline?,
+        identity: String?
+    ) -> SteamDeletedSurvey? {
         let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot)
         let acf = steamRoot.appendingPathComponent(
             "steamapps/workshop/appworkshop_\(SteamLibraryPaths.wallpaperEngineAppID).acf",
@@ -332,10 +364,15 @@ final class WorkshopFolderImportCoordinator {
               let listing = try? FileManager().contentsOfDirectory(atPath: contentRoot.path(percentEncoded: false)),
               let text = try? String(contentsOf: acf, encoding: .utf8),
               let installed = SteamWorkshopManifest.installedIDs(fromACF: text)
-        else { return [] }
+        else { return nil }
+        let listedBefore: Set<String> = if let baseline, baseline.libraryIdentity == identity {
+            Set(baseline.listedIDs)
+        } else {
+            []
+        }
         let present = Set(listing)
         let canonicalContentRoot = contentRoot.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
-        return entries.filter { entry in
+        let deleted = entries.filter { entry in
             // The stored path, read without resolving the bookmark.
             guard let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: entry.origin.sourceFolderBookmark)?.path
             else { return false }
@@ -343,10 +380,24 @@ final class WorkshopFolderImportCoordinator {
             let parent = folder.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
             // Resolved last so only these few entries cost a ScopedBookmarkAgent request.
             return !installed.contains(folder.lastPathComponent)
+                && listedBefore.contains(folder.lastPathComponent)
                 && parent.path(percentEncoded: false) == canonicalContentRoot
                 && !present.contains(folder.lastPathComponent)
                 && !resolvesToFolder(entry.origin)
         }
+        return SteamDeletedSurvey(
+            deleted: deleted,
+            baseline: identity.map { SteamPruneBaseline(libraryIdentity: $0, listedIDs: installed.sorted()) }
+        )
+    }
+
+    /// The library folder's volume and file id; a folder rebuilt at the same path gets a new one. nil when either can't be read.
+    nonisolated static func libraryIdentity(of steamRoot: URL) -> String? {
+        guard let values = try? steamRoot.resourceValues(forKeys: [.volumeUUIDStringKey, .fileIdentifierKey]),
+              let volume = values.volumeUUIDString,
+              let file = values.fileIdentifier
+        else { return nil }
+        return "\(volume):\(file)"
     }
 
     /// True when the bookmark still finds the folder, wherever the user moved it.

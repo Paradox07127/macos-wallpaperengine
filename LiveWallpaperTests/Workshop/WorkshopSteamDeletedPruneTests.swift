@@ -11,7 +11,7 @@ struct WorkshopSteamDeletedPruneTests {
     func prunedItemTakesItsSavedRecords() async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         let (gone, kept) = (library.ids[0], library.ids[1])
         let goneOrigin = try #require(library.entry(gone)).origin
         let keptOrigin = try #require(library.entry(kept)).origin
@@ -35,7 +35,7 @@ struct WorkshopSteamDeletedPruneTests {
     func pruneKeepsPresentFolders() async throws {
         let library = try PruneLibrary(itemCount: 3)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
 
         try library.steamDeletes(0, listing: [library.ids[1]])
         await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
@@ -43,11 +43,52 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(library.importedIDs == [library.ids[1], library.ids[2]])
     }
 
+    @Test("Pruning removes nothing after the Steam library is renamed away and rebuilt empty at its old path")
+    func rebuiltLibraryPrunesNothing() async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        await library.ingest()
+        let before = try #require(library.coordinator.steamPruneBaseline)
+        #expect(Set(before.listedIDs) == Set(library.ids))
+
+        try library.rebuildLibrary()
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == Set(library.ids), "a prune against a rebuilt library removed entries")
+        let after = try #require(library.coordinator.steamPruneBaseline)
+        #expect(after.libraryIdentity != before.libraryIdentity, "the baseline still names the renamed library")
+        #expect(after.listedIDs.isEmpty)
+    }
+
+    @Test("Without an acf baseline a prune removes nothing, and neither does the next; with one listing the item it goes", arguments: [false, true])
+    func pruneNeedsBaselineListingTheItem(hasBaseline: Bool) async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        if hasBaseline {
+            await library.ingest()
+        } else {
+            await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        }
+        try library.steamDeletes(0, listing: [library.ids[1]])
+
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        let afterFirst = library.importedIDs
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        if hasBaseline {
+            #expect(afterFirst == [library.ids[1]])
+        } else {
+            #expect(afterFirst == Set(library.ids), "the first prune, with no baseline, removed an entry")
+            #expect(library.importedIDs == Set(library.ids), "the second prune removed an id its baseline never listed")
+            #expect(library.coordinator.steamPruneBaseline?.listedIDs == [library.ids[1]], "the first prune recorded no baseline")
+        }
+    }
+
     @Test("A held mutation gate skips the whole prune; the next prune after it frees drops the item", arguments: [0, 1])
     func heldGateSkipsPrune(heldIndex: Int) async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         let gone = library.ids[0]
         let favorite = try library.bookmarks.add(
             label: "Favorite", content: .video(bookmarkData: Data([1])), wpeOrigin: #require(library.entry(gone)).origin
@@ -67,6 +108,7 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(library.importedIDs == Set(library.ids), "a prune during a mutation removed an entry")
         #expect(library.bookmarks.bookmarks.map(\.id) == [favorite.id])
         #expect(library.marks.ids == ["workshop:\(gone)", "bookmark:\(favorite.id)"])
+        #expect(library.coordinator.steamPruneBaseline?.listedIDs.contains(gone) == true, "the skipped prune advanced the baseline")
 
         hold.release()
         try await mutation.value
@@ -78,14 +120,14 @@ struct WorkshopSteamDeletedPruneTests {
     func pruneKeepsMovedFolder() async throws {
         let library = try PruneLibrary(itemCount: 1)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         let outside = FileManager.default.temporaryDirectory
             .appendingPathComponent("SteamDeletedPrune-Moved-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: outside) }
 
         try FileManager.default.moveItem(at: library.itemFolders[0], to: outside.appendingPathComponent(library.ids[0], isDirectory: true))
-        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.root)
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.steamRoot)
         await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
 
         #expect(library.importedIDs == [library.ids[0]])
@@ -95,9 +137,9 @@ struct WorkshopSteamDeletedPruneTests {
     func unreadableContentRootPrunesNothing(permissions: Int) async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
-        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.root)
-        let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: library.root).path(percentEncoded: false)
+        await library.ingest()
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: library.steamRoot)
+        let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: library.steamRoot).path(percentEncoded: false)
         try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: contentRoot)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: contentRoot) }
 
@@ -110,7 +152,7 @@ struct WorkshopSteamDeletedPruneTests {
     func pruneKeepsLocalCopyRecords() async throws {
         let library = try PruneLibrary(itemCount: 1)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         let id = library.ids[0]
         let localFolder = FileManager.default.temporaryDirectory
             .appendingPathComponent("SteamDeletedPrune-Local-\(UUID().uuidString)", isDirectory: true)
@@ -143,7 +185,7 @@ struct WorkshopSteamDeletedPruneTests {
     func successfulRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         try library.steamDeletes(0, listing: [library.ids[1]])
         let runs = RunCount()
         let downloads = library.downloads(counting: runs)
@@ -160,7 +202,7 @@ struct WorkshopSteamDeletedPruneTests {
     func failedRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         try library.steamDeletes(0, listing: [library.ids[1]])
         let runs = RunCount()
         let downloads = library.downloads(counting: runs)
@@ -177,7 +219,7 @@ struct WorkshopSteamDeletedPruneTests {
     func cancelledRunPrunesOnce() async throws {
         let library = try PruneLibrary(itemCount: 2)
         defer { await library.discard() }
-        await library.coordinator.ingestExistingDownloads(using: library.doctor)
+        await library.ingest()
         let runs = RunCount()
         let downloads = library.downloads(counting: runs)
         let itemID = try #require(UInt64(library.ids[1]))
@@ -283,6 +325,8 @@ private final class ScriptedDownloader: WorkshopItemDownloading {
 @MainActor
 private struct PruneLibrary {
     let root: URL
+    /// Inside `root`, apart from the settings, so the library can be renamed away on its own.
+    let steamRoot: URL
     let itemFolders: [URL]
     let steamSuite: TestScratch.DefaultsSuite
     let librarySuite: TestScratch.DefaultsSuite
@@ -298,9 +342,11 @@ private struct PruneLibrary {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SteamDeletedPrune-\(UUID().uuidString)", isDirectory: true)
         self.root = root
+        let steamRoot = root.appendingPathComponent("Steam", isDirectory: true)
+        self.steamRoot = steamRoot
         let firstID = UInt64.random(in: 9_000_000_000 ... 9_899_999_999)
         itemFolders = (0 ..< UInt64(itemCount)).map {
-            SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(String(firstID + $0), isDirectory: true)
+            SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot).appendingPathComponent(String(firstID + $0), isDirectory: true)
         }
         for folder in itemFolders {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -308,10 +354,11 @@ private struct PruneLibrary {
             try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
             try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
         }
+        try writeAppWorkshopACF(appWorkshopACF(installed: itemFolders.map(\.lastPathComponent)), steamRoot: steamRoot)
         steamSuite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.SteamDeletedPrune.Steam", function: function)
         librarySuite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.SteamDeletedPrune.Library", function: function)
         doctor = SteamCMDDoctorService(defaults: steamSuite.defaults)
-        doctor.workdirBookmarkData = try root.bookmarkData()
+        doctor.workdirBookmarkData = try steamRoot.bookmarkData()
         let manager = SettingsManager(
             directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: librarySuite.defaults
         )
@@ -322,6 +369,7 @@ private struct PruneLibrary {
             settings: manager,
             toastCenter: WorkshopToastCenter(),
             repositoryCoordinator: repository,
+            defaults: steamSuite.defaults,
             removeVanishedImport: WorkshopSavedRecords.removingImport(
                 bookmarks: bookmarks, libraryBookmarks: marks, history: { manager.loadGlobalSettings().recentWPEImports },
                 { manager.removeWPEImport(workshopID: $0.origin.workshopID, matchingImportedAt: $0.importedAt, recordingDeleteTombstone: false) }
@@ -341,10 +389,26 @@ private struct PruneLibrary {
         manager.loadGlobalSettings().recentWPEImports.first { $0.origin.workshopID == id }
     }
 
+    /// Imports the downloads, then prunes once as a SteamCMD run would, so the next prune has an acf baseline.
+    func ingest() async {
+        await coordinator.ingestExistingDownloads(using: doctor)
+        await coordinator.pruneSteamDeletedImports(using: doctor)
+    }
+
     /// Steam removes item `index`'s folder and rewrites its acf to list only `listing`.
     func steamDeletes(_ index: Int, listing: [String]) throws {
         try FileManager.default.removeItem(at: itemFolders[index])
-        try writeAppWorkshopACF(appWorkshopACF(installed: listing), steamRoot: root)
+        try writeAppWorkshopACF(appWorkshopACF(installed: listing), steamRoot: steamRoot)
+    }
+
+    /// Renames the library away, empties the renamed copy so no old bookmark resolves, and binds a new empty library at the old path.
+    func rebuildLibrary() throws {
+        let renamed = root.appendingPathComponent("Steam.bak", isDirectory: true)
+        try FileManager.default.moveItem(at: steamRoot, to: renamed)
+        try FileManager.default.removeItem(at: SteamLibraryPaths.workshopContentRoot(steamRoot: renamed))
+        try FileManager.default.createDirectory(at: SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot), withIntermediateDirectories: true)
+        try writeAppWorkshopACF(appWorkshopACF(installed: []), steamRoot: steamRoot)
+        doctor.workdirBookmarkData = try steamRoot.bookmarkData()
     }
 
     /// Each SteamCMD run prunes through this library's coordinator, then counts.

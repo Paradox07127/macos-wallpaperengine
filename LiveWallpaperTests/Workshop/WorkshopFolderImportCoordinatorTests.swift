@@ -559,7 +559,7 @@ struct WorkshopFolderImportCoordinatorTests {
         let tombstones: [String]
     }
 
-    /// Imports one Steam download, deletes its folder, writes the acf `acf(itemID)` returns (none for nil), and scans again.
+    /// Imports one Steam download with an acf listing it, deletes its folder, writes the acf `acf(itemID)` returns (keeps the listing for nil), and scans again.
     private func scanAfterSteamRemovedItem(
         removingContentRoot: Bool = false,
         acf: (String) -> String?
@@ -572,8 +572,11 @@ struct WorkshopFolderImportCoordinatorTests {
         }
         let folder = steam.itemFolders[0]
         let itemID = folder.lastPathComponent
+        try writeAppWorkshopACF(appWorkshopACF(installed: [itemID]), steamRoot: steam.root)
         await library.coordinator.ingestExistingDownloads(using: steam.doctor)
         #expect(library.manager.loadGlobalSettings().recentWPEImports.map(\.origin.steamFolderItemID) == [itemID])
+        // Records the baseline listing the item, as the prune after its download would.
+        await library.coordinator.pruneSteamDeletedImports(using: steam.doctor)
 
         try FileManager.default.removeItem(at: removingContentRoot ? folder.deletingLastPathComponent() : folder)
         if let text = acf(itemID) {
@@ -698,6 +701,7 @@ private struct ConflictLibrary {
             importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
             settings: manager,
             toastCenter: toastCenter,
+            defaults: suite.defaults,
             removeVanishedImport: { entry in
                 guard let removedIDs else {
                     Issue.record("the scan removed \(entry.origin.workshopID) where no removal was expected")
