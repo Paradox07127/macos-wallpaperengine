@@ -183,14 +183,21 @@ struct WPEPassRenderContract: Equatable, Sendable {
         if emitted.alpha == .premultiplied, blend.enabled, blend.sourceRGB == .sourceAlpha {
             diagnostics.append("premultiplied-output-with-source-alpha-blend")
         }
-        let straightOutput = !pmaOutput && (isImage || kind == .effectOpacity && primary == .textEffectCarrier)
+        let carrierInput = primary == .textEffectCarrier && kind.map(Self.independentCoverageKinds.contains) == true
+        // The blend composite always associates its output, so it never takes a straight-output carrier.
+        let straightOutput = !pmaOutput && (isImage || carrierInput && kind != .blendComposite)
         return Self(identity: .init(shader: pass.shader, builtin: native, blending: pass.blending,
                                     target: pass.target, references: references, alphaOverride: alphaOverride), inputs: resolved, shaderAlpha: shaderAlpha,
                     nativeAlpha: .init(input: operation, straightOutput: straightOutput,
-                                       independentCoverageInput: native && kind == .effectOpacity && primary == .textEffectCarrier),
+                                       independentCoverageInput: native && carrierInput),
                     blend: blend, attachment: attachment, emitted: emitted, stored: stored,
                     diagnostics: diagnostics, outputDeclaration: outputDeclaration)
     }
+
+    /// Native fragments that read a text carrier's RGB as-is under `wpe_independent_coverage_input`.
+    static let independentCoverageKinds: Set<WPEBuiltinShaderKind> = [
+        .effectOpacity, .effectColorBalance, .effectColorGrading, .blendComposite,
+    ]
 
     static func textureUsage(shader: String, slot: Int, program: WPEShaderProgram? = nil) -> WPETextureUsage {
         if let program, !program.isBuiltin {

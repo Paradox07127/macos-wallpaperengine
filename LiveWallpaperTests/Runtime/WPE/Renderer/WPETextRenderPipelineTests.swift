@@ -318,6 +318,83 @@ struct WPETextRenderPipelineTests {
         #expect(executor.gpuErrorSink.summary.count == 0)
     }
 
+    @Test("Native colour balance grades a text carrier's RGB directly and keeps PMA inputs on the PMA path",
+          arguments: [false, true])
+    func nativeColorBalanceIndependentTextCarrier(independent: Bool) throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previous
+        arguments["WPEDumpScenePasses"] = "carrier-balance"
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let source = try #require(device.makeTexture(descriptor: descriptor))
+        let coverage = 128.0 / 255
+        let rgb = independent ? [192, 128, 64] : [192, 128, 64].map { Int((Double($0) * coverage).rounded()) }
+        let rgba = rgb.map { UInt8($0) } + [128]
+        let semantics: WPEResourceSemantics = independent ? .textEffectCarrier : .premultipliedColor
+        rgba.withUnsafeBytes {
+            source.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0,
+                           withBytes: $0.baseAddress!, bytesPerRow: 4)
+        }
+        let effectPass = WPERenderPass(
+            id: "carrier-balance.effect", phase: .effect(file: "effects/colorbalance/effect.json"),
+            shader: "effects/colorbalance", source: .asset("carrier"), target: .layerComposite(name: "carrier-balance.a"),
+            textures: [0: .asset("carrier")], binds: [:], constants: ["brightness": .number(0.25)],
+            combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let input = WPEPassInputContract(reference: .asset("carrier"), semantics: semantics, origin: .producer)
+        let effect = WPEPreparedRenderPass(
+            pass: effectPass, shader: nil, textureBindings: effectPass.textures,
+            comboValues: [:], uniformValues: effectPass.constants, renderContract: WPEPassRenderContract.resolve(
+                pass: effectPass, shader: nil, bindings: effectPass.textures, alphaOverride: nil,
+                inputDeclarations: [0: input], outputDeclaration: semantics
+            )
+        )
+        let terminalPass = WPERenderPass(
+            id: "carrier-balance.final", phase: .material, shader: "commands/copy",
+            source: .fbo("carrier-balance.a"), target: .scene,
+            textures: [0: .fbo("carrier-balance.a")], binds: [:], constants: [:], combos: [:],
+            blending: "premultipliednormal", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+        )
+        let terminal = WPEPreparedRenderPass(
+            pass: terminalPass, shader: nil, textureBindings: terminalPass.textures, comboValues: [:], uniformValues: [:]
+        )
+        let layer = WPERenderLayer(
+            objectID: "carrier-balance", objectName: "Carrier balance", imagePath: "carrier", materialPath: nil,
+            geometry: .identity, compositeA: "carrier-balance.a", compositeB: "carrier-balance.b",
+            localFBOs: [], passes: [effectPass, terminalPass]
+        )
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: layer, passes: [effect, terminal])])
+            .resolvingRenderContracts { _ in semantics }
+        let contract = pipeline.layers[0].passes[0].renderContract
+        #expect(contract.nativeAlpha.independentCoverageInput == independent)
+        #expect(contract.stored == semantics)
+        _ = try executor.render(pipeline: pipeline, size: CGSize(width: 4, height: 4),
+                                textures: ["carrier": source], sceneID: "carrier-balance")
+        try #require(executor.untranslatableShaderReasonByPassID.isEmpty)
+        let intermediate = try #require(executor.scenePassDumps.first { $0.label == effectPass.id || $0.label == "Lcarrier-balance-" + effectPass.id }?.texture)
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(intermediate))
+        var bytes = [UInt8](repeating: 0, count: staged.width * staged.height * 4)
+        staged.getBytes(&bytes, bytesPerRow: staged.width * 4,
+                        from: MTLRegionMake2D(0, 0, staged.width, staged.height), mipmapLevel: 0)
+        for channel in 0 ..< 3 {
+            // A carrier is graded as stored; PMA is graded in straight RGB and re-associated.
+            let straight = independent ? Double(rgba[channel]) / 255 : Double(rgba[channel]) / 255 / coverage
+            let graded = min(max(straight + 0.25, 0), 1)
+            let expected = Int((graded * (independent ? 1 : coverage) * 255).rounded())
+            #expect(abs(Int(bytes[channel]) - expected) <= 1, "channel \(channel): \(bytes) vs \(expected)")
+        }
+        #expect(abs(Int(bytes[3]) - 128) <= 1)
+        #expect(executor.gpuErrorSink.summary.count == 0)
+    }
+
     @Test("Explicit text effect data FBO keeps its declared role", arguments: ["r8", "rg88"])
     func textEffectExplicitDataDeclaration(format: String) {
         let glyph = WPERenderPass(

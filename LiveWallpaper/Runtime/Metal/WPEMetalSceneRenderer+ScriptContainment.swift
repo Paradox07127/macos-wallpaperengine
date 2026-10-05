@@ -73,6 +73,7 @@ extension WPEMetalSceneRenderer {
         sharedParallaxReadFans = [:]
         transformHostLocalTransformsByID = Self.transformHostLocalTransforms(in: document)
         layerAncestorLocalTransformsByID = Self.ancestorLocalTransforms(in: document)
+        lightingLocalTransformsByID = Self.lightingLocalTransforms(in: document)
         // Lights also appear as transform hosts in the parsed document. Give
         // their typed bindings one owner, rather than installing an engine twice.
         let lightObjectIDs = Set(document.lightObjects.map(\.id))
@@ -419,6 +420,24 @@ extension WPEMetalSceneRenderer {
             result[object.id] = WPERenderObjectTransform(
                 origin: object.localOrigin, scale: object.localScale, angles: object.localAngles
             )
+        }
+        return result
+    }
+
+    /// A light may hang under any object, so text and particles join the drawn-layer ancestors here.
+    nonisolated static func lightingLocalTransforms(
+        in document: WPESceneDocument
+    ) -> [String: WPERenderObjectTransform] {
+        var result = ancestorLocalTransforms(in: document)
+        // Overrides the synthetic text image, whose origin is the anchored block centre, not the text origin.
+        for object in document.textObjects {
+            result[object.id] = WPERenderObjectTransform(
+                origin: object.localOrigin ?? object.origin, scale: object.localScale ?? object.scale, angles: object.angles
+            )
+        }
+        // A particle stores only its parse-time world transform; that is its local one only without a parent.
+        for object in document.particleObjects where result[object.id] == nil && document.objectParentByID[object.id] == nil {
+            result[object.id] = WPERenderObjectTransform(origin: object.origin, scale: object.scale, angles: object.angles)
         }
         return result
     }

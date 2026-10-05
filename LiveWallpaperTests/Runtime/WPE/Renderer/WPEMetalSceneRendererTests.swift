@@ -3498,6 +3498,66 @@ extension WPEMetalSceneRendererTests {
         #expect(hidden.lights.isEmpty && hidden.metadata.x == 0)
         #expect(hidden.uniformPayload.count == 1, "even an empty light list must bind a valid zero record")
     }
+
+    @Test("Directional lights resolve through text and particle parents; missing or cyclic parents still reject")
+    func directionalLightingResolvesTextAndParticleParents() throws {
+        let quarterTurn = "0 0 \(Double.pi / 2)"
+        let scene: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 64, "height": 64]],
+            "objects": [
+                ["id": "label", "text": "A", "origin": "4 5 0", "angles": quarterTurn],
+                ["id": "emitter", "particle": "particles/none.json", "origin": "6 7 0", "angles": quarterTurn],
+                ["id": "text-light", "light": "ldirectional", "parent": "label", "color": "1 1 1", "intensity": 1],
+                ["id": "particle-light", "light": "ldirectional", "parent": "emitter", "color": "1 1 1", "intensity": 1],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene))
+        let transforms = WPEMetalSceneRenderer.lightingLocalTransforms(in: document)
+        let lighting = WPESceneDirectionalLightingSnapshot.make(
+            lights: document.lightObjects, localTransforms: transforms,
+            parentByID: document.objectParentByID, ownVisibilityByID: [:]
+        )
+        #expect(lighting.unresolvedObjectIDs.isEmpty)
+        #expect(Set(lighting.lights.map(\.objectID)) == ["text-light", "particle-light"])
+        for light in lighting.lights {
+            // Rz(90°) turns the local -X basis into world -Y.
+            #expect(abs(light.uniforms.direction.x) < 0.001 && abs(light.uniforms.direction.y + 1) < 0.001, "\(light.objectID)")
+        }
+        let light = try #require(document.lightObjects.first { $0.id == "text-light" })
+        let missing = WPESceneDirectionalLightingSnapshot.make(
+            lights: [light], localTransforms: transforms, parentByID: ["text-light": "ghost"], ownVisibilityByID: [:]
+        )
+        #expect(missing.lights.isEmpty && missing.unresolvedObjectIDs == ["text-light"])
+        let cyclic = WPESceneDirectionalLightingSnapshot.make(
+            lights: [light], localTransforms: transforms,
+            parentByID: ["text-light": "label", "label": "emitter", "emitter": "label"], ownVisibilityByID: [:]
+        )
+        #expect(cyclic.lights.isEmpty && cyclic.unresolvedObjectIDs == ["text-light"])
+    }
+
+    @Test("A directional light parented to a particle emitter contributes in the rendered frame")
+    func directionalLightUnderParticleParentPublishes() async throws {
+        let fixture = try MetalSceneFixture.directionalModelScene(lightingEnabled: true)
+        defer { fixture.cleanup() }
+        let url = fixture.root.appendingPathComponent("scene.json")
+        var scene = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var objects = try #require(scene["objects"] as? [[String: Any]])
+        objects[1]["parent"] = "emitter"
+        objects.append(["id": "emitter", "particle": "particles/none.json", "origin": "0 0 0", "angles": "0 0 \(Double.pi / 2)"])
+        scene["objects"] = objects
+        try JSONSerialization.data(withJSONObject: scene).write(to: url)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor, cacheRootURL: fixture.root, dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: #require(MTLCreateSystemDefaultDevice())
+        )
+        defer { renderer.cleanup() }
+        try await renderer.load()
+        _ = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+        #expect(renderer.lastFrameDirectionalLighting.unresolvedObjectIDs.isEmpty)
+        let light = try #require(renderer.lastFrameDirectionalLighting.lights.first)
+        #expect(abs(light.uniforms.direction.x) < 0.001 && abs(light.uniforms.direction.y + 1) < 0.001)
+    }
 }
 
 extension WPEMetalSceneRendererTests {

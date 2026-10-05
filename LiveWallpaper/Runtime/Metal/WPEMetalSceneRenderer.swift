@@ -227,6 +227,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var transformHostLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
     /// Kept separate from the transform-host map so particle host offsets keep reading transform hosts only.
     var layerAncestorLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
+    /// Lighting-only superset of the ancestor map: drawn layers would otherwise start composing through text and particle parents.
+    var lightingLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
     /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
     var layerObjectIDByName: [String: String] = [:]

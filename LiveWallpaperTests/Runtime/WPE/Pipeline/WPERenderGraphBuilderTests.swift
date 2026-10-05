@@ -1222,6 +1222,34 @@ struct WPERenderGraphBuilderTests {
         #expect(graph.layers.contains { $0.objectID == "child" })
     }
 
+    @Test("A hidden empty compose layer that only reads the cursor position is not a cursor region")
+    func cursorPositionReaderIsNotCursorRegion() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+        func hiddenCompose(_ id: String, script: String) -> [String: Any] {
+            ["id": id, "name": id, "type": "image", "image": "models/util/composelayer.json",
+             "origin": "500 400 0", "size": "200 200", "visible": ["value": false, "script": script]]
+        }
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                hiddenCompose("positionReader", script: "export function update(value) { return input.cursorWorldPosition.x > 500; }"),
+                hiddenCompose("clickRegion", script: "export function cursorClick() { shared.clicked = true; }"),
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        #expect(!graph.layers.contains { $0.objectID == "positionReader" })
+        #expect(graph.layers.contains { $0.objectID == "clickRegion" })
+    }
+
     @Test("Visible cursor regions on dropped utility wrappers keep geometry without compositing to scene")
     func visibleCursorRegionWrappersDoNotCompositeToScene() throws {
         let root = FileManager.default.temporaryDirectory

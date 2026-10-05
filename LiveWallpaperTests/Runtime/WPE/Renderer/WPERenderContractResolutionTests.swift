@@ -81,6 +81,28 @@ struct WPERenderContractResolutionTests {
         #expect(passes[2].renderContract.inputs[0]?.semantics == .textEffectCarrier)
     }
 
+    @Test("Native colour and blend-composite consumers take a text carrier's coverage separately", arguments: [false, true])
+    func carrierColourConsumersDeclareIndependentCoverage(carrier: Bool) {
+        let semantics: WPEResourceSemantics = carrier ? .textEffectCarrier : .premultipliedColor
+        // The blend composite always associates its output, so only colour effects may stay straight.
+        let cases: [(shader: String, straightCarrierOutput: Bool)] = [
+            ("effects/colorbalance", true), ("effects/color_grading", true), ("wpe_blend_composite", false),
+        ]
+        for item in cases {
+            let pass = WPERenderPass(id: "probe", phase: .material, shader: item.shader, source: .asset("src"),
+                                     target: .layerComposite(name: "a"), textures: [0: .asset("src")], binds: [:],
+                                     constants: [:], combos: [:], blending: "disabled", cullMode: "nocull",
+                                     depthTest: "disabled", depthWrite: "disabled")
+            let contract = WPEPassRenderContract.resolve(
+                pass: pass, shader: nil, bindings: pass.textures, alphaOverride: nil,
+                inputDeclarations: [0: .init(reference: .asset("src"), semantics: semantics, origin: .producer)],
+                outputDeclaration: semantics
+            )
+            #expect(contract.nativeAlpha.independentCoverageInput == carrier, "\(item.shader)")
+            #expect(contract.nativeAlpha.straightOutput == (carrier && item.straightCarrierOutput), "\(item.shader)")
+        }
+    }
+
     private func carrierProducer(name: String, independent: Bool) -> WPEPreparedRenderPass {
         let raw = prepared("producer-" + name, shader: "genericimage2", source: .asset("src"), target: .fbo(name: name),
                            alpha: .init(unpremultipliedInputSlots: [], premultipliedOutput: false))

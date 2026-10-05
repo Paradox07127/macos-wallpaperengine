@@ -67,7 +67,7 @@ struct WPERenderGraphBuilder: Sendable {
         // handler attached to a puppet bone). Their geometry is still needed
         // even when they have no children or visible effects to draw.
         let cursorRegionIDs = Set(document.imageObjects.filter {
-            [$0.visibleScript, $0.alphaScript].contains { $0?.contains("cursor") == true }
+            [$0.visibleScript, $0.alphaScript].contains(where: Self.namesCursorHandler)
         }.map(\.id))
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
@@ -632,6 +632,17 @@ struct WPERenderGraphBuilder: Sendable {
             current = parent.parentObjectID
         }
         return false
+    }
+
+    private static let cursorHandlerNames = Set([
+        WPELayerScriptCursorEvent.move, .down, .up, .click, .rightDown, .rightUp, .enter, .leave,
+    ].map { Substring($0.handlerName) })
+
+    /// Whole identifiers only: `cursorWorldPosition` readers are not hit regions.
+    private static func namesCursorHandler(_ script: String?) -> Bool {
+        guard let script else { return false }
+        return script.split { !($0.isLetter || $0.isNumber || $0 == "_" || $0 == "$") }
+            .contains(where: cursorHandlerNames.contains)
     }
 
     private static func userToggleableVisibilityIDs(in document: WPESceneDocument) -> Set<String> {

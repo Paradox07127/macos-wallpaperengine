@@ -412,7 +412,7 @@ extension WPEMetalSceneRenderer {
         }
         refreshParallaxRootOrigins(from: transforms)
         let lighting = WPESceneDirectionalLightingSnapshot.make(
-            lights: sceneLightObjects, localTransforms: layerAncestorLocalTransformsByID,
+            lights: sceneLightObjects, localTransforms: lightingLocalTransformsByID,
             parentByID: objectParentByID, ownVisibilityByID: ownVisibilityByID,
             origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
             colors: transforms.colors,
