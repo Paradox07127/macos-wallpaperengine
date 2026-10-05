@@ -5992,35 +5992,6 @@
         }
       }
     },
-    "After you download the Chinese and %@ translation languages, Chinese wallpaper names, settings, and descriptions appear in %@." : {
-      "comment" : "Translate wallpaper text row. Both placeholders are the app language name, such as English.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Después de descargar los idiomas de traducción chino y %@, los nombres, los ajustes y las descripciones en chino de los fondos se mostrarán en %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "中国語と%@の翻訳言語をダウンロードすると、中国語の壁紙名、設定項目、説明が%@で表示されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载中文和%@的翻译语言后，中文的壁纸名称、设置项和描述将显示为%@。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下載中文和%@的翻譯語言後，中文的桌布名稱、設定項目和描述將顯示為%@。"
-          }
-        }
-      }
-    },
     "Afternoon" : {
       "comment" : "Default schedule slot name.",
       "localizations" : {
@@ -22738,6 +22709,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載大小"
+          }
+        }
+      }
+    },
+    "Download the translation languages for Chinese and %@ to show Chinese wallpaper names, settings, and descriptions in %@." : {
+      "comment" : "Translate wallpaper text row. Both placeholders are the app language name, such as English.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Después de descargar los idiomas de traducción chino y %@, los nombres, los ajustes y las descripciones en chino de los fondos se mostrarán en %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国語と%@の翻訳言語をダウンロードすると、中国語の壁紙名、設定項目、説明が%@で表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载中文和%@的翻译语言后，中文的壁纸名称、设置项和描述将显示为%@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載中文和%@的翻譯語言後，中文的桌布名稱、設定項目和描述將顯示為%@。"
           }
         }
       }

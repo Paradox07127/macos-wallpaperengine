@@ -341,7 +341,7 @@ private struct TranslationLanguageDownloadRows<Language: View>: View {
         let code = target.languageCode?.identifier ?? target.minimalIdentifier
         let name = Locale(identifier: target.minimalIdentifier).localizedString(forLanguageCode: code) ?? code
         return String(
-            localized: "After you download the Chinese and \(name) translation languages, Chinese wallpaper names, settings, and descriptions appear in \(name).",
+            localized: "Download the translation languages for Chinese and \(name) to show Chinese wallpaper names, settings, and descriptions in \(name).",
             bundle: .appLanguage, comment: "Translate wallpaper text row. Both placeholders are the app language name, such as English."
         )
     }
