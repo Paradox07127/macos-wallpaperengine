@@ -297,10 +297,12 @@ private struct SteamWorkshopMetadataView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !metadata.shortDescription.isEmpty {
-                Text(verbatim: metadata.shortDescription)
+                Text(verbatim: metadata.shortDescription.translatedWallpaperDescription)
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .wpeAuthorLabelHelp(metadata.shortDescription.wallpaperDescriptionHelp)
+                    .wpeTranslateWallpaperDescription(metadata.shortDescription)
             }
             HStack(spacing: 8) {
                 if let size = metadata.fileSizeBytes {

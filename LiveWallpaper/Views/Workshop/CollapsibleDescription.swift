@@ -62,10 +62,11 @@ struct CollapsibleDescription: View {
             limitedHeight = 0
             isExpanded = false
         }
+        .wpeTranslateWallpaperDescription(text)
     }
 
     private func description(collapsed: Bool) -> some View {
-        Text(verbatim: text)
+        Text(verbatim: text.translatedWallpaperDescription)
             .font(.body)
             .foregroundStyle(.secondary)
             .lineLimit(collapsed ? collapsedLineLimit : nil)
@@ -81,6 +82,7 @@ struct CollapsibleDescription: View {
             )
             .clipped()
             .mask(collapsed && collapsedLineLimit == nil ? AnyView(fadeMask) : AnyView(Rectangle()))
+            .wpeAuthorLabelHelp(text.wallpaperDescriptionHelp)
     }
 
     /// Hidden copies rather than a reader on the visible text: `lineLimit` shortens what the
@@ -97,7 +99,7 @@ struct CollapsibleDescription: View {
     }
 
     private func ruler(lineLimit: Int?, report: @escaping (CGFloat) -> Void) -> some View {
-        Text(verbatim: text)
+        Text(verbatim: text.translatedWallpaperDescription)
             .font(.body)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)

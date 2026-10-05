@@ -2,6 +2,7 @@
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import os
 import Testing
 @preconcurrency import Translation
 
@@ -10,6 +11,7 @@ struct PropertyLabelTranslatorTests {
     private let english = Locale.Language(identifier: "en")
     private let simplifiedChinese = Locale.Language(identifier: "zh-Hans")
     private let japanese = Locale.Language(identifier: "ja")
+    private let traditionalChinese = Locale.Language(identifier: "zh-Hant")
 
     @MainActor
     @Test("Mixed Chinese labels use a Chinese source and an English target", arguments: [
@@ -52,6 +54,19 @@ struct PropertyLabelTranslatorTests {
         #expect(!WPEPropertyLabelTranslator.needsTranslation("显示触发区域", target: simplifiedChinese))
         // Traditional label for a Simplified reader still translates.
         #expect(WPEPropertyLabelTranslator.needsTranslation("顯示觸發區域", target: simplifiedChinese))
+    }
+
+    @Test("Short Simplified titles are not mistaken for Traditional", arguments: [
+        "柠檬味少女/Lemon Giri [4k 60FPS]", "麻匪 夏日影", "麻匪 Elisa", "土星 | Saturn - Sykm",
+        "Blue Archive-Plana 普拉娜 祈福", "Summer Rain 夏之雨——夜莺Night", "【4K】雨(Make It Rain)",
+    ])
+    func shortSimplifiedTitles(title: String) {
+        #expect(WPEPropertyLabelTranslator.needsTranslation(title, target: traditionalChinese))
+    }
+
+    @Test("Traditional text is told apart by its characters")
+    func traditionalTextDetected() {
+        #expect(!WPEPropertyLabelTranslator.needsTranslation("顯示觸發區域並啟用音頻響應", target: traditionalChinese))
     }
 
     @Test("The target follows the app language, then the bundle localization, then English")
@@ -99,6 +114,27 @@ struct PropertyLabelTranslatorTests {
     }
 
     @MainActor
+    @Test("Labels skipped for a missing pack queue again once a re-check finds it installed")
+    func recheckRequeuesSkippedLabels() async {
+        guard #available(macOS 15.0, *) else { return }
+        let label = "显示触发区域"
+        let installed = OSAllocatedUnfairLock(initialState: false)
+        let translator = WPEPropertyLabelTranslator(
+            targetLanguage: english, isInstalled: { _, _ in installed.withLock { $0 } }
+        )
+        translator.enqueue(labels: [label])
+        await translator.availabilityCheck?.value
+        #expect(translator.configuration == nil)
+
+        installed.withLock { $0 = true }
+        translator.recheckLanguagePacks()
+        await translator.availabilityCheck?.value
+        #expect(translator.configuration?.source == simplifiedChinese)
+        #expect(translator.configuration?.target == english)
+        #expect(translator.takePending() == [label])
+    }
+
+    @MainActor
     @Test("Changing the app language clears translations and re-queues every seen label for the new target")
     func retargetRequeuesSeenLabels() async {
         guard #available(macOS 15.0, *) else { return }
@@ -116,6 +152,19 @@ struct PropertyLabelTranslatorTests {
         await translator.availabilityCheck?.value
         #expect(translator.configuration?.target == simplifiedChinese)
         #expect(translator.takePending() == [traditional])
+    }
+
+    @Test("Descriptions split into lines, queue only the Chinese ones, and rejoin in order")
+    func descriptionLines() {
+        typealias Translator = WPEPropertyLabelTranslator
+        let description = "夏日海边的黄昏\nA seaside town at dusk.\n\nhttps://example.com/wallpaper\n支持音频响应"
+        let lines = Translator.descriptionLines(of: description)
+        #expect(lines == ["夏日海边的黄昏", "A seaside town at dusk.", "", "https://example.com/wallpaper", "支持音频响应"])
+        #expect(lines.filter { Translator.needsTranslation($0, target: english) } == ["夏日海边的黄昏", "支持音频响应"])
+
+        #expect(Translator.joinLines(of: description, translated: [:]) == description)
+        #expect(Translator.joinLines(of: description, translated: ["支持音频响应": "Supports audio response"])
+            == "夏日海边的黄昏\nA seaside town at dusk.\n\nhttps://example.com/wallpaper\nSupports audio response")
     }
 
     @Test("Response cleanup drops empties and echoes")

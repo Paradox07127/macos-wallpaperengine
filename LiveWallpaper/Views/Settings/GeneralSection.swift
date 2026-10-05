@@ -1,14 +1,23 @@
 import LiveWallpaperCore
 import ServiceManagement
 import SwiftUI
+#if !LITE_BUILD
+@preconcurrency import Translation
+#endif
 
 extension GeneralSettingsView {
     @ViewBuilder
     var generalSection: some View {
         Section {
-            SettingRow(icon: "globe", iconColor: .teal, title: "Language") {
-                languagePicker
+            #if !LITE_BUILD
+            if #available(macOS 15.0, *) {
+                TranslationLanguageDownloadRows(appLanguage: appLanguageRawValue) { languageRow }
+            } else {
+                languageRow
             }
+            #else
+            languageRow
+            #endif
 
             SettingRow(
                 icon: "circle.righthalf.filled",
@@ -131,6 +140,12 @@ extension GeneralSettingsView {
             WallpaperTransitionSettingRow()
         } header: {
             SettingsSearchSectionHeader("Wallpaper", anchor: .generalWallpaper)
+        }
+    }
+
+    private var languageRow: some View {
+        SettingRow(icon: "globe", iconColor: .teal, title: "Language") {
+            languagePicker
         }
     }
 
@@ -284,3 +299,93 @@ extension GeneralSettingsView {
         }
     }
 }
+
+#if !LITE_BUILD
+/// The Language row, followed by a download row while Chinese → app language is supported but not
+/// installed. The checks ride on the Language row: a hidden row would run none of them.
+@available(macOS 15.0, *)
+private struct TranslationLanguageDownloadRows<Language: View>: View {
+    /// Stored `AppLanguagePreference` raw value.
+    let appLanguage: String
+    @ViewBuilder let language: Language
+    @State private var offer = TranslationPackOffer()
+
+    var body: some View {
+        language
+            .task(id: appLanguage) { await offer.refresh(target: target) }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                Task { await offer.refresh(target: target) }
+            }
+            .translationTask(offer.configuration, action: offer.prepare)
+        if offer.offersDownload {
+            SettingRow(
+                icon: "translate",
+                iconColor: .blue,
+                verbatimTitle: String(
+                    localized: "Translate wallpaper text",
+                    bundle: .appLanguage, comment: "Settings row offering the translation languages for Chinese wallpaper text."
+                ),
+                verbatimSubtitle: subtitle
+            ) {
+                Button("Download") { offer.requestDownload(target: target) }
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var target: Locale.Language {
+        WPEPropertyLabelTranslator.effectiveTargetLanguage(preference: appLanguage)
+    }
+
+    private var subtitle: String {
+        let code = target.languageCode?.identifier ?? target.minimalIdentifier
+        let name = Locale(identifier: target.minimalIdentifier).localizedString(forLanguageCode: code) ?? code
+        return String(
+            localized: "After you download the Chinese and \(name) translation languages, Chinese wallpaper names, settings, and descriptions appear in \(name).",
+            bundle: .appLanguage, comment: "Translate wallpaper text row. Both placeholders are the app language name, such as English."
+        )
+    }
+}
+
+@available(macOS 15.0, *)
+@MainActor
+@Observable
+private final class TranslationPackOffer {
+    private static let chinese = Locale.Language(identifier: "zh-Hans")
+    private(set) var offersDownload = false
+    private(set) var configuration: TranslationSession.Configuration?
+
+    func refresh(target: Locale.Language) async {
+        guard target.languageCode != .chinese else {
+            offersDownload = false
+            return
+        }
+        offersDownload = await LanguageAvailability().status(from: Self.chinese, to: target) == .supported
+    }
+
+    func requestDownload(target: Locale.Language) {
+        if configuration?.target == target {
+            configuration?.invalidate()
+        } else {
+            configuration = TranslationSession.Configuration(source: Self.chinese, target: target)
+        }
+    }
+
+    /// `.translationTask` action; `nonisolated` for the same reason as `WPEPropertyLabelTranslator.translateLabels`.
+    nonisolated func prepare(using session: TranslationSession) async {
+        do {
+            try await session.prepareTranslation()
+        } catch {
+            Logger.notice("Translation language download did not finish: \(error.localizedDescription)", category: .settings)
+        }
+        await finishDownload()
+    }
+
+    private func finishDownload() async {
+        if let target = configuration?.target {
+            await refresh(target: target)
+        }
+        NotificationCenter.default.post(name: WPEPropertyLabelTranslator.languagePacksMayHaveChanged, object: nil)
+    }
+}
+#endif

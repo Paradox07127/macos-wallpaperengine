@@ -414,10 +414,12 @@ private struct WorkshopPresetRow: View {
             }
 
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Text(preset.title)
+                Text(verbatim: preset.title.translatedWallpaperName)
                     .font(DesignTokens.Typography.body)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .wpeAuthorLabelHelp(preset.title.wallpaperNameHelp)
+                    .wpeTranslateWallpaperName(preset.title)
                 if let author = preset.creatorPersonaName {
                     Text(author)
                         .font(DesignTokens.Typography.caption)

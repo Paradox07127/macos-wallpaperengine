@@ -16,12 +16,18 @@ import NaturalLanguage
 final class WPEPropertyLabelTranslator {
     /// One queue for names across library tiles and Workshop cards.
     static let wallpaperNames = WPEPropertyLabelTranslator()
+    /// Description lines, kept apart so long text doesn't hold up the names.
+    static let descriptions = WPEPropertyLabelTranslator()
+    /// Posted when a language pack may have been installed; every live translator re-checks.
+    static let languagePacksMayHaveChanged = Notification.Name("WPEPropertyLabelTranslator.languagePacksMayHaveChanged")
     /// Author text → translation, filled as responses arrive.
     private(set) var translated: [String: String] = [:]
-    /// Attempted labels stay requested after a declined download or a language pair
-    /// that isn't installed. Internal errors clear their entry so opening the card again can retry.
+    /// Attempted labels stay requested after a declined download or a language pair that isn't
+    /// installed (until a re-check). Internal errors clear their entry so opening the card again can retry.
     @ObservationIgnored private var requested: Set<String> = []
     @ObservationIgnored private var pending: [String] = []
+    /// Requested labels whose pair had no installed pack; `recheckLanguagePacks` queues them again.
+    @ObservationIgnored private var uninstalled: [String] = []
 
     /// Boxed `TranslationSession.Configuration` so the type compiles against the
     /// macOS 14.6 deployment target. Observed: assigning it re-evaluates the view
@@ -72,6 +78,20 @@ final class WPEPropertyLabelTranslator {
         translated[original] != nil ? original : nil
     }
 
+    /// A description with its translated lines swapped in; every other line stays as authored.
+    func displayDescription(for original: String) -> String {
+        Self.joinLines(of: original, translated: translated)
+    }
+
+    /// Descriptions translate line by line, so English paragraphs and URLs are never sent.
+    nonisolated static func descriptionLines(of text: String) -> [String] {
+        text.components(separatedBy: "\n")
+    }
+
+    nonisolated static func joinLines(of text: String, translated: [String: String]) -> String {
+        descriptionLines(of: text).map { translated[$0] ?? $0 }.joined(separator: "\n")
+    }
+
     /// Queue every label the schema can render: property texts, combo option
     /// labels, and group headers (which become section titles).
     func enqueue(schema: WallpaperEngineProjectPropertySchema) {
@@ -101,12 +121,23 @@ final class WPEPropertyLabelTranslator {
         translated = [:]
         pending = []
         requested = []
+        uninstalled = []
         availabilityCheck?.cancel()
         availabilityCheck = nil
         sourceLanguage = nil
         // Ends the running `.translationTask`; its results for the old target are dropped in `finish`.
         configuration = nil
         enqueue(labels: seen)
+    }
+
+    /// Queues the labels skipped for a missing pack again, so a pack installed since can translate them.
+    @available(macOS 15.0, *)
+    func recheckLanguagePacks() {
+        guard !uninstalled.isEmpty else { return }
+        let labels = uninstalled
+        uninstalled = []
+        requested.subtract(labels)
+        enqueue(labels: labels)
     }
 
     @available(macOS 15.0, *)
@@ -128,7 +159,7 @@ final class WPEPropertyLabelTranslator {
                 self.sourceLanguage = detected
                 self.configuration = TranslationSession.Configuration(source: detected, target: target)
             } else {
-                // Left in `requested`, so these stay as authored until the app language changes.
+                self.uninstalled += self.pending.filter { Self.language(of: $0) == detected }
                 self.pending.removeAll { Self.language(of: $0) == detected }
                 self.configurePendingTranslation()
             }
@@ -157,7 +188,9 @@ final class WPEPropertyLabelTranslator {
         if (recognizer.languageHypotheses(withMaximum: 1)[.japanese] ?? 0) > 0.9 {
             return nil
         }
-        let traditional = NLLanguageRecognizer.dominantLanguage(for: han) == .traditionalChinese
+        // The recognizer calls short Simplified titles Traditional; ICU's Traditional → Simplified
+        // mapping only changes text that has Traditional-only characters.
+        let traditional = han.applyingTransform(StringTransform("Hant-Hans"), reverse: false).map { $0 != han } ?? false
         return Locale.Language(identifier: traditional ? "zh-Hant" : "zh-Hans")
     }
 
@@ -274,6 +307,12 @@ private struct WPEPropertyLabelTranslation: ViewModifier {
                 .onChange(of: languagePreference) { _, preference in
                     translator.retarget(to: WPEPropertyLabelTranslator.effectiveTargetLanguage(preference: preference))
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    translator.recheckLanguagePacks()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: WPEPropertyLabelTranslator.languagePacksMayHaveChanged)) { _ in
+                    translator.recheckLanguagePacks()
+                }
         } else {
             content
         }
@@ -307,6 +346,21 @@ extension String {
         nil
         #endif
     }
+
+    @MainActor
+    var translatedWallpaperDescription: String {
+        #if !LITE_BUILD
+        WPEPropertyLabelTranslator.descriptions.displayDescription(for: self)
+        #else
+        self
+        #endif
+    }
+
+    /// The original description for a hover tooltip; `nil` while no line is translated.
+    @MainActor
+    var wallpaperDescriptionHelp: String? {
+        translatedWallpaperDescription == self ? nil : self
+    }
 }
 
 extension View {
@@ -327,6 +381,18 @@ extension View {
         #if !LITE_BUILD
         onChange(of: original, initial: true) { _, name in
             WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [name])
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// Queue a displayed description's Chinese lines.
+    @ViewBuilder
+    func wpeTranslateWallpaperDescription(_ original: String) -> some View {
+        #if !LITE_BUILD
+        onChange(of: original, initial: true) { _, text in
+            WPEPropertyLabelTranslator.descriptions.enqueue(labels: WPEPropertyLabelTranslator.descriptionLines(of: text))
         }
         #else
         self

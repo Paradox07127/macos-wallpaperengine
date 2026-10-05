@@ -62,6 +62,7 @@ struct EditDeskRoot: View {
             .onAppear { prepareWindowState() }
             #if !LITE_BUILD
             .wpePropertyLabelTranslation(WPEPropertyLabelTranslator.wallpaperNames)
+            .wpePropertyLabelTranslation(WPEPropertyLabelTranslator.descriptions)
             .modifier(RouterNotifications(router: router, screenManager: screenManager, workshopSession: workshopSession))
             #else
             .modifier(RouterNotifications(router: router, screenManager: screenManager))

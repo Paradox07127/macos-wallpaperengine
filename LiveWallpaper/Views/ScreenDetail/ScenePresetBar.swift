@@ -35,6 +35,10 @@ struct ScenePresetBar: View {
             saveButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Menu items never appear on screen as views, so they can't queue their own names.
+        .onChange(of: workshopPresets.map(\.name), initial: true) { _, names in
+            WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: names)
+        }
         .confirmationDialog(
             Text("Delete this preset?"),
             isPresented: Binding(
@@ -84,7 +88,7 @@ struct ScenePresetBar: View {
                     Section {
                         ForEach(workshopPresets) { preset in
                             Label {
-                                Text(verbatim: preset.name)
+                                Text(verbatim: preset.name.translatedWallpaperName)
                             } icon: {
                                 Image(systemName: "arrow.down.circle")
                             }
@@ -151,7 +155,8 @@ struct ScenePresetBar: View {
     private var menuLabel: some View {
         Label {
             if let activePreset {
-                Text(verbatim: activePreset.name)
+                // A local preset's name is the user's own text and is never translated.
+                Text(verbatim: activePreset.source == .local ? activePreset.name : activePreset.name.translatedWallpaperName)
             } else {
                 Text("No preset")
             }
