@@ -8,6 +8,7 @@ inline float4 wpe_attachment_output(float4 color) {
 }
 constant uint wpe_input_alpha_operation [[function_constant(1022)]];
 constant bool wpe_native_straight_output [[function_constant(1021)]];
+constant bool wpe_independent_coverage_input [[function_constant(1020)]];
 inline float4 wpe_native_sample(float4 color) {
     uint operation = is_function_constant_defined(wpe_input_alpha_operation) ? wpe_input_alpha_operation : 0u;
     if (operation == 1u) { color.rgb *= color.a; }
@@ -2040,13 +2041,17 @@ struct WPEOpacityUniforms {
         float2 maskUV = in.uv * float2(uniforms.maskScaleX, uniforms.maskScaleY);
         mask = float(texture1.sample(linearSampler, maskUV).r);
     }
-    // Input is premultiplied; scale rgb and alpha by the same factor so the
-    // premultiplied invariant holds (rgb stays = straightRGB * alpha). The old
-    // `sampled.rgb * alpha` re-multiplied the already-premultiplied rgb by the
-    // new alpha (rgb*a^2), collapsing semi-transparent regions to a hole.
     float factor = mask * saturate(uniforms.opacity);
+    float alpha = sampled.a * factor;
+    // A text carrier retains backdrop RGB independently of glyph coverage.
+    // Associate only the final coverage, after the attachment source clamp.
+    if (is_function_constant_defined(wpe_independent_coverage_input) && wpe_independent_coverage_input
+        && !wpe_native_output_is_straight()) {
+        return half4(wpe_attachment_premultiply(sampled.rgb, alpha));
+    }
+    // PMA inputs scale both components; local independent outputs retain RGB.
     float3 rgb = wpe_native_output_is_straight() ? sampled.rgb : sampled.rgb * factor;
-    return half4(wpe_attachment_output(float4(rgb, sampled.a * factor)));
+    return half4(wpe_attachment_output(float4(rgb, alpha)));
 }
 
 struct WPEScrollUniforms {

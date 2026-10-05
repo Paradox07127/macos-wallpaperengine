@@ -215,8 +215,8 @@ final class WPEMetalRenderTargetPool {
         if let cached = zeroPlaceholderTextures[name] { return cached }
 
         let pixelFormat = Self.pixelFormat(forFBOFormat: spec.format, promoteLDRToHDR: promotesLDRFormatsToHDR)
-        // 1×1: a zero texture samples to (0,0,0,0) at every UV, so the stand-in's
-        // literal size is irrelevant to a normalized read; a scene-sized `.shared`
+        // Zero stored components; single/dual-channel sampling supplies alpha1.
+        // The 1×1 size is irrelevant to a normalized read; a scene-sized `.shared`
         // allocation would pin tens of MB for a dummy history buffer.
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat,
@@ -247,9 +247,10 @@ final class WPEMetalRenderTargetPool {
 
     private static func bytesPerTexel(_ format: MTLPixelFormat) -> Int {
         switch format {
-        case .r8Unorm: return 1
-        case .rgba16Float: return 8
-        default: return 4 // rgba8Unorm(_srgb) / bgra8Unorm
+        case .r8Unorm: 1
+        case .rg8Unorm, .r16Float: 2
+        case .rgba16Float: 8
+        default: 4 // rgba8Unorm(_srgb) / bgra8Unorm
         }
     }
 
@@ -721,21 +722,23 @@ final class WPEMetalRenderTargetPool {
         return remainder == 0 ? size : size + alignment - remainder
     }
 
-    /// HDR scenes promote 8-bit color targets to `.rgba16Float`; otherwise >1 emissive dies at the first layer-composite copy. Alpha masks (`r8`) stay 8-bit.
+    /// HDR scenes promote 8-bit color targets to `.rgba16Float`; otherwise >1 emissive dies at the first layer-composite copy. Single/dual-channel formats retain their authored precision.
     static func pixelFormat(forFBOFormat format: String, promoteLDRToHDR: Bool) -> MTLPixelFormat {
         switch format.lowercased() {
         case "rgba16f", "rgba_half", "rgba16161616f":
-            return .rgba16Float
+            .rgba16Float
         case "r8", "r8unorm":
-            return .r8Unorm
+            .r8Unorm
+        case "rg88":
+            .rg8Unorm
         // Official effects author these (fluidsimulation pressure/velocity
         // buffers); already float, so HDR promotion must not touch them.
         case "r16f":
-            return .r16Float
+            .r16Float
         case "rg1616f":
-            return .rg16Float
+            .rg16Float
         default:
-            return promoteLDRToHDR ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
+            promoteLDRToHDR ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
         }
     }
 }
