@@ -101,9 +101,10 @@ final class ShelfThumbnailCache {
         #if !LITE_BUILD
         var scene: @MainActor (WPEOrigin, CGSize) async -> CGImage? = { origin, pixelSize in
             await Task.detached(priority: .utility) { () -> CGImage? in
-                guard let url = origin.sourcePreviewURL,
+                guard origin.previewFileName != nil,
                       let resolved = try? SecurityScopedBookmarkResolver.shared
-                      .resolve(origin.sourceFolderBookmark, target: .transient).get() else { return nil }
+                      .resolve(origin.sourceFolderBookmark, target: .transient).get(),
+                      let url = origin.sourcePreviewURL(in: resolved.url) else { return nil }
                 return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
                     guard WPEPreviewImageDecodeBudget.acceptsFile(at: url),
                           let source = CGImageSourceCreateWithURL(url as CFURL, WPEPreviewImageDecodeBudget.sourceOptions) else { return nil }

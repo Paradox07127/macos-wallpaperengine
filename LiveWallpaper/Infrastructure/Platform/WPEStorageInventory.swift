@@ -33,20 +33,16 @@ struct WPEStorageInventory: Sendable {
 
     @MainActor
     static func compute(doctor: SteamCMDDoctorService) async -> WPEStorageInventory {
-        let steamRoot = try? doctor.resolveWorkdirURL()
+        let steamAccess = try? doctor.beginWorkdirAccess()
+        let steamRoot = steamAccess?.url
         let engineAssetsRoot = WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
-        let steamScopeRoot = doctor.workdirBookmarkData.flatMap { bookmark in
-            try? SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get().url
-        } ?? steamRoot
-        let steamScope = steamScopeRoot?.startAccessingSecurityScopedResource() ?? false
+        let steamScopeRoot = steamAccess?.scopedURL
         let assetsScopeRoot = SettingsManager.shared.loadWPEEngineAssetsBookmark().flatMap { bookmark in
             try? SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get().url
         } ?? engineAssetsRoot
         let assetsScope = assetsScopeRoot?.startAccessingSecurityScopedResource() ?? false
         defer {
-            if steamScope {
-                steamScopeRoot?.stopAccessingSecurityScopedResource()
-            }
+            steamAccess?.end()
             if assetsScope {
                 assetsScopeRoot?.stopAccessingSecurityScopedResource()
             }

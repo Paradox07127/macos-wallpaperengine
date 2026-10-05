@@ -3,19 +3,19 @@ import LiveWallpaperCore
 
 extension WPEOrigin {
     public var sourcePreviewURL: URL? {
-        guard let previewFileName,
+        guard previewFileName != nil,
               let sourceFolder = try? SecurityScopedBookmarkResolver.shared.resolve(sourceFolderBookmark, target: .transient).get().url else {
             return nil
         }
-        return WPEPathSafety.resourceURL(root: sourceFolder, relativePath: previewFileName)
+        return sourcePreviewURL(in: sourceFolder)
     }
 
     public var sourceEntryURL: URL? {
-        guard let entryFile,
+        guard entryFile != nil,
               let sourceFolder = try? SecurityScopedBookmarkResolver.shared.resolve(sourceFolderBookmark, target: .transient).get().url else {
             return nil
         }
-        return WPEPathSafety.resourceURL(root: sourceFolder, relativePath: entryFile)
+        return sourceEntryURL(in: sourceFolder)
     }
 
     /// Best-effort check.
@@ -70,7 +70,7 @@ extension WPEOrigin {
         switch origin.originalType {
         case .video:
             // Loose video: bookmark points at the entry file in the folder.
-            if let expected = origin.sourceEntryURL, resolvedPath == expected.path {
+            if let expected = origin.sourceEntryURL(in: source), resolvedPath == expected.path {
                 return true
             }
             // In-place packaged video: bookmark points at the source
@@ -85,5 +85,17 @@ extension WPEOrigin {
         case .scene, .application, .unknown:
             return false
         }
+    }
+}
+
+public extension WPEOrigin {
+    /// The preview inside an already resolved source folder; saves a second resolve of the same bookmark.
+    func sourcePreviewURL(in sourceFolder: URL) -> URL? {
+        previewFileName.flatMap { WPEPathSafety.resourceURL(root: sourceFolder, relativePath: $0) }
+    }
+
+    /// The entry file inside an already resolved source folder.
+    func sourceEntryURL(in sourceFolder: URL) -> URL? {
+        entryFile.flatMap { WPEPathSafety.resourceURL(root: sourceFolder, relativePath: $0) }
     }
 }

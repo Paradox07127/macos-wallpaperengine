@@ -17,9 +17,10 @@ struct ShelfPreviewFrames: Sendable {
         return nil
         #else
         return await PreviewWorkGate.shared.runDetached {
-            guard let url = origin.sourcePreviewURL,
+            guard origin.previewFileName != nil,
                   let folder = try? SecurityScopedBookmarkResolver.shared
-                  .resolve(origin.sourceFolderBookmark, target: .transient).get() else { return nil }
+                  .resolve(origin.sourceFolderBookmark, target: .transient).get(),
+                  let url = origin.sourcePreviewURL(in: folder.url) else { return nil }
             return SecurityScopedBookmarkResolver.withScopedAccess(folder.url) { _ in
                 guard let data = WPEPreviewImageDecodeBudget.readData(from: url) else { return nil }
                 return decode(data, maxPixelSize: maxPixelSize)

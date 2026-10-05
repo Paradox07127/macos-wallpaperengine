@@ -157,7 +157,7 @@ final class SteamCMDDoctorService {
             folder.appendPathComponent(workshopID, isDirectory: true)
             guard fileManager.fileExists(atPath: folder.path(percentEncoded: false)) else { return nil }
             return try? folder.bookmarkData(
-                options: [.withSecurityScope],
+                options: SecurityScopedBookmarkResolver.creationOptions([.withSecurityScope]),
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
@@ -1371,7 +1371,8 @@ final class SteamCMDDoctorService {
     struct WorkdirAccess {
         let url: URL
         let isOpen: Bool
-        private let scopedURL: URL
+        /// The resolved URL itself; `url` is a derived copy that cannot open the scope.
+        let scopedURL: URL
 
         init(url: URL, scopedURL: URL) {
             self.url = url
@@ -1442,9 +1443,9 @@ final class SteamCMDDoctorService {
 
     private static func makeBookmark(for url: URL, readOnly: Bool) throws -> Data {
         do {
-            let options: URL.BookmarkCreationOptions = readOnly
-                ? [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
-                : [.withSecurityScope]
+            let options = SecurityScopedBookmarkResolver.creationOptions(
+                readOnly ? [.withSecurityScope, .securityScopeAllowOnlyReadAccess] : [.withSecurityScope]
+            )
             return try SecurityScopedBookmarkResolver.withScopedAccess(url) { _ in
                 try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
             }
