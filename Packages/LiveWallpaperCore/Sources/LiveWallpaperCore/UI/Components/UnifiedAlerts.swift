@@ -8,12 +8,6 @@ extension View {
         modifier(StringErrorAlertModifier(title: title, message: message))
     }
 
-    public func errorAlert<E: Error>(
-        _ title: LocalizedStringKey,
-        error: Binding<E?>
-    ) -> some View {
-        modifier(TypedErrorAlertModifier(title: title, error: error))
-    }
 }
 
 private struct StringErrorAlertModifier: ViewModifier {
@@ -31,34 +25,6 @@ private struct StringErrorAlertModifier: ViewModifier {
             Button("OK", role: .cancel) { message = nil }
         } message: {
             Text(verbatim: message ?? "")
-        }
-    }
-}
-
-private struct TypedErrorAlertModifier<E: Error>: ViewModifier {
-    let title: LocalizedStringKey
-    @Binding var error: E?
-
-    func body(content: Content) -> some View {
-        content.alert(
-            title,
-            isPresented: Binding(
-                get: { error != nil },
-                set: { if !$0 { error = nil } }
-            ),
-            presenting: error
-        ) { _ in
-            Button("OK", role: .cancel) { error = nil }
-        } message: { value in
-            if let localized = value as? LocalizedError,
-               let suggestion = localized.recoverySuggestion {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                    Text(verbatim: localized.errorDescription ?? value.localizedDescription)
-                    Text(verbatim: suggestion).font(DesignTokens.Typography.caption)
-                }
-            } else {
-                Text(verbatim: value.localizedDescription)
-            }
         }
     }
 }

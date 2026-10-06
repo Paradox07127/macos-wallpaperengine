@@ -413,32 +413,6 @@ struct MenuBarPlaybackControlTests {
     }
 }
 
-@Suite("PlaylistEntry identity")
-struct PlaylistEntryIdentityTests {
-    @Test("Two entries with the same bookmark but different indices get distinct IDs")
-    func duplicateBookmarkAtDifferentIndicesDiverge() {
-        let bookmark = Data([0x01, 0x02, 0x03, 0x04])
-        let first = PlaylistEntry(
-            id: "\(bookmark.base64EncodedString())::0",
-            bookmark: bookmark, isPrimary: true, isPlaying: false, name: "A"
-        )
-        let second = PlaylistEntry(
-            id: "\(bookmark.base64EncodedString())::1",
-            bookmark: bookmark, isPrimary: false, isPlaying: false, name: "A copy"
-        )
-        #expect(first.id != second.id)
-    }
-
-    @Test("Entry ID is stable across primary/playing flips at the same index")
-    func entryIDStableUnderFlagFlip() {
-        let bookmark = Data([0x05, 0x06])
-        let id = "\(bookmark.base64EncodedString())::2"
-        let before = PlaylistEntry(id: id, bookmark: bookmark, isPrimary: false, isPlaying: false, name: "X")
-        let after = PlaylistEntry(id: id, bookmark: bookmark, isPrimary: true, isPlaying: true, name: "X")
-        #expect(before.id == after.id)
-    }
-}
-
 @Suite("WeatherReactivePolicy")
 struct WeatherReactivePolicyTests {
     @Test("Weather refresh cadence is one hour")
