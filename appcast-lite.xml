@@ -7,34 +7,43 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.3</title>
-      <pubDate>Sun, 04 Oct 2026 15:47:29 +0000</pubDate>
-      <sparkle:version>0.8.3</sparkle:version>
-      <sparkle:shortVersionString>0.8.3</sparkle:shortVersionString>
+      <title>Version 0.8.4</title>
+      <pubDate>Tue, 06 Oct 2026 04:37:17 +0000</pubDate>
+      <sparkle:version>0.8.4</sparkle:version>
+      <sparkle:shortVersionString>0.8.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>The Wallpaper Automation sheet has an Explain This Page guide</li>
+<li>Pro: Chinese wallpaper names, descriptions, controls and Workshop preset names can be machine-translated into the app language; Settings has a Translate wallpaper text switch and a language pack download</li>
+<li>Pro: a downloading Workshop item shows how many bytes have arrived</li>
+<li>Pro: you can select and cancel subscription downloads, and batch downloads run one at a time</li>
+<li>A wallpaper that fails to load lists the missing files and names the likely cause</li>
+<li>Settings has a new Appearance page for window and library appearance</li>
+<li>In the detail sheet, pressing a display that already shows the wallpaper opens that display's page</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Pro: Sync subscribed wallpapers reads the subscription list Steam keeps for your account, so subscribe and unsubscribe changes made on Steam show up</li>
-<li>Pro: scenes with many particles use less CPU</li>
+<li>The Storage page shows both rings with a full-name legend, lists every location with its path and actions, and can clear preview, shader, audio and web caches</li>
+<li>Pro: library entries whose Workshop items Steam deleted are removed after each SteamCMD run</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: Workshop items whose file names contain ".." download and import again, and a failed import shows the real reason</li>
-<li>Pro: if Loomscreen loses access to your Steam library, it says so instead of showing an empty Workshop, and it rescans the library at launch and right after you choose it again</li>
-<li>Pro: a scene script that never finishes no longer freezes the app when Multithreaded rendering is turned off</li>
-<li>Pro: linked scene timelines move together, and animations that start paused stay paused until a script plays them</li>
-<li>Pro: origin animations that move only some axes play, and transform scripts can show, hide or fade other layers</li>
-<li>Pro: god-ray effects no longer show a small copy of the scene through transparent areas</li>
-<li>Pro: puppet characters whose intro animation plays once settle into their normal pose instead of keeping part of the intro</li>
+<li>Pro: scene scripts receive cursor input again, and parallax, cursor regions and audio-driven particle rates work again</li>
+<li>Pro: clock highlights no longer turn white, and transparent layers no longer get darker</li>
+<li>Pro: 3D models keep their own material per mesh, translucent parts stay blended, and padded textures no longer show seams</li>
+<li>Pro: lights under text and top-level particles, sprite UVs and text effects render closer to Windows</li>
+<li>Pro: textures with conditional variants load and show their base image</li>
+<li>Pro: Sync subscribed wallpapers no longer reports every subscription as missing</li>
+<li>Pro: removing Steam-deleted items no longer touches items that are downloading, moved, or in a renamed Steam library</li>
+<li>A wallpaper applied while displays connect or disconnect is no longer lost</li>
+<li>A paused video keeps its seek position</li>
+<li>Clearing caches skips files that are still in use</li>
+<li>The title-bar double-click setting is honored</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.3">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.4">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.4">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.3/Loomscreen-0.8.3.dmg" type="application/octet-stream" sparkle:edSignature="X4as2LC5aTc/8lfqvab+5b+YORAdG3u70PTsdPErKvxeiFw/BVIcN/i/aAJCc3q02ORbC1LB4sg2dcz3/mbHAg==" length="18966099" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.4/Loomscreen-0.8.4.dmg" type="application/octet-stream" sparkle:edSignature="2ddWJXeS+PNk9RgrD6XP7FLbW5xsAu3RQl/QPHgj2jDw/TMI5aCeYGzVGnP+wDSY6AldLrGUMTeFIsVKrRHmCw==" length="19055912" />
     </item>
   </channel>
 </rss>
