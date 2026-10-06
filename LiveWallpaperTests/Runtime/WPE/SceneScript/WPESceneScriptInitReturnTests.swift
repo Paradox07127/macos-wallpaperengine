@@ -366,25 +366,6 @@ struct WPESceneScriptInitReturnTests {
         #expect(instance.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(100, 200, 0))
     }
 
-    @Test("An unknown layer name yields the neutral zero-origin handle")
-    func unknownLayerNameYieldsNeutralHandle() throws {
-        let shared = WPESharedScriptState(layers: [
-            WPESceneScriptLayerInfo(
-                id: "only", name: "Background", size: SIMD2(10, 10),
-                origin: SIMD2(100, 200), index: 0, parentName: nil
-            ),
-        ])
-        #expect(shared.layerTransform(named: "NoSuchLayer") == nil)
-
-        let instance = try transform(
-            script: "export function init(value) { return thisScene.getLayer('NoSuchLayer').origin; }",
-            seed: SIMD3(5, 5, 5),
-            ownLayerName: "Background",
-            shared: shared
-        )
-        #expect(instance.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(0, 0, 0))
-    }
-
     // MARK: - Part 3: unnamed own layer resolves by object ID
 
     @Test("An unnamed own layer resolves thisLayer by object ID")

@@ -266,6 +266,15 @@ struct WPESceneScriptRuntimeTests {
         withExtendedLifetime(producer) {}
     }
 
+    /// Explicit authored identities for fixtures that operate on sibling layers.
+    private func namedLayerStore(_ names: [String]) -> WPESharedScriptState {
+        WPESharedScriptState(layers: names.enumerated().map { index, name in
+            WPESceneScriptLayerInfo(
+                id: name, name: name, size: .zero, origin: .zero, index: index, parentName: nil
+            )
+        })
+    }
+
     private func callableTransactionStore() -> WPESharedScriptState {
         WPESharedScriptState(layers: [
             .init(id: "producer", name: "Producer", size: SIMD2(8, 8), origin: .zero, index: 0, parentName: nil),
@@ -2388,7 +2397,7 @@ export function init(value) {
 
     @Test("ISoundLayer calls reach the renderer as drained commands, addressed by layer")
     func soundLayerCallsEnqueueCommands() throws {
-        let store = WPESharedScriptState()
+        let store = namedLayerStore(["trackA", "trackB"])
         let instance = try WPELayerScriptInstance(
             script: """
             export function update() {
@@ -3457,7 +3466,7 @@ export function init(value) {
         }
         export function update() {}
         """
-        let instance = try WPELayerScriptInstance(script: script)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(["千咲入场动画"]))
         let other = try #require(instance.initialOutput.others["千咲入场动画"])
         #expect(other.visible == false)
         #expect(other.alpha == 0)
@@ -3472,7 +3481,7 @@ export function init(value) {
         export function init() { thisScene.getLayer('B').visible = false; throw 1; }
         export function update() { thisLayer.alpha = 0.5; }
         """
-        let instance = try WPELayerScriptInstance(script: script, initialAlpha: 0.8)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(["B"]), initialAlpha: 0.8)
         let hidden = try #require(instance.initialOutput.others["B"])
         #expect(hidden.visibleAssigned)
         #expect(hidden.visible == false)
@@ -3490,7 +3499,7 @@ export function init(value) {
         export function init() { thisScene.getLayer('B').visible = false;\(initTail) }
         export function update() { return 'B=' + thisScene.getLayer('B').visible; }
         """
-        let instance = try WPESceneScriptInstance(script: script, initialValue: "seed")
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "seed", shared: namedLayerStore(["B"]))
         let hidden = try #require(instance.takeLayerOutput()?.others["B"])
         #expect(hidden.visibleAssigned)
         #expect(hidden.visible == false)
@@ -3505,6 +3514,8 @@ export function init(value) {
                   initialConfiguration: .object(["text": .string("Day")])),
             .init(id: "2", name: "Date", size: .zero, origin: .zero, index: 1, parentName: nil,
                   initialConfiguration: .object(["text": .object(["value": .string("Date"), "script": .string("")])])),
+            .init(id: "3", name: "Ghost", size: .zero, origin: .zero, index: 2, parentName: nil,
+                  initialConfiguration: .object(["text": .string("")])),
         ])
         let script = """
         export function update(value) {
@@ -3537,7 +3548,7 @@ export function init(value) {
         }
         export function update() {}
         """
-        let instance = try WPELayerScriptInstance(script: script)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(["playerprogexception", "dial"]))
         let transforms = instance.initialOutput.otherTransforms
 
         #expect(transforms["playerprogexception"]?.origin != nil)
@@ -3592,7 +3603,7 @@ export function init(value) {
             thisScene.getLayer('面具花').visible = true;
         }
         """
-        let instance = try WPELayerScriptInstance(script: script)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(["中面具身体背景", "面具花"]))
         let output = try #require(instance.tick())
         #expect(output.others["中面具身体背景"] == nil)
         #expect(output.others["面具花"]?.visible == true)
@@ -3605,7 +3616,7 @@ export function init(value) {
         'use strict';
         export function update() { thisScene.getLayer('fade').alpha = 0.25; }
         """
-        let instance = try WPELayerScriptInstance(script: script)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(["fade"]))
         let output = try #require(instance.tick())
         let fade = try #require(output.others["fade"])
         #expect(fade.alpha == 0.25)
@@ -3713,7 +3724,7 @@ export function init(value) {
         }
         """
         let bands = ["morning", "day", "dusk", "night", "mddn"]
-        let instance = try WPELayerScriptInstance(script: script)
+        let instance = try WPELayerScriptInstance(script: script, shared: namedLayerStore(bands))
 
         #expect(bands.allSatisfy { instance.initialOutput.others[$0] == nil })
         let beforeProps = try #require(instance.tick())
@@ -4008,13 +4019,13 @@ export function init(value) {
             thisLayer.origin = new Vec3(4, 5, 6);
             shared.aliasUpdated = alias.x;
             shared.sameObject = alias === thisLayer.origin;
-            shared.unknownNeutral = thisScene.getLayer('not-in-scene').origin.x;
+            shared.unknownIsNull = thisScene.getLayer('not-in-scene') === null;
         }
         """, shared: shared, ownLayerName: "MAIN")
         #expect(shared.get("afterCopy") as? Double == 1)
         #expect(shared.get("aliasUpdated") as? Double == 4)
         #expect(shared.get("sameObject") as? Bool == true)
-        #expect(shared.get("unknownNeutral") as? Double == 0)
+        #expect(shared.get("unknownIsNull") as? Bool == true)
     }
 
     @Test("Document-order sound slots survive sorting and retired scripts cannot leak order")

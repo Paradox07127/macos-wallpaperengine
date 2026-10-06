@@ -1986,6 +1986,11 @@ class WPELayerScriptBridge: @unchecked Sendable {
         let scene = JSValue(newObjectIn: context)!
         let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
             guard let self, let context, let key = layerKey(value) else { return nil }
+            // Native WPE returns null for an absent name, not a fabricated layer.
+            if value.isString, layerInfo(forKey: key) == nil, key != ownLayerName,
+               !createdLayers.contains(where: { $0.key == key }) {
+                return JSValue(nullIn: context)
+            }
             return handle(forLayerKey: key, in: context)
         }
         scene.setObject(getLayer, forKeyedSubscript: "getLayer" as NSString)
