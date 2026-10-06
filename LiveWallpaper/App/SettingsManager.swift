@@ -63,7 +63,19 @@ final class SettingsManager {
     static let shared = SettingsManager()
 
     private var cachedGlobalSettings: GlobalSettings?
-    private var cachedConfigurations: [ScreenConfiguration]?
+    private var cachedConfigurations: [ScreenConfiguration]? {
+        didSet {
+            guard let oldValue, oldValue != cachedConfigurations else { return }
+            let before = Dictionary(grouping: oldValue, by: \.screenID)
+            let after = Dictionary(grouping: cachedConfigurations ?? [], by: \.screenID)
+            for id in Set(before.keys).union(after.keys) where before[id] != after[id] {
+                configurationMemoryRevisions[id, default: 0] &+= 1
+            }
+        }
+    }
+
+    // Memory changes fence prepared work; disk retries/generations do not.
+    private var configurationMemoryRevisions: [CGDirectDisplayID: UInt64] = [:]
     private var cachedWallpaperBookmarks: [WallpaperBookmark]?
     private var cachedScreenSchemes: [ScreenScheme]?
 
@@ -270,6 +282,11 @@ final class SettingsManager {
 
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
         loadConfigurations().first { $0.screenID == screenID }
+    }
+
+    func configurationMemoryRevision(for screenID: CGDirectDisplayID) -> UInt64 {
+        _ = loadConfigurations() // Establish the snapshot before issuing a prepare fence.
+        return configurationMemoryRevisions[screenID] ?? 0
     }
 
     /// Updates the in-memory cache synchronously so MainActor readers observe
@@ -688,7 +705,6 @@ final class SettingsManager {
     func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
         var configs = loadConfigurations()
         configs.removeAll { $0.screenID == screenID }
-        cachedConfigurations = configs
         persistConfigurations(configs)
     }
 

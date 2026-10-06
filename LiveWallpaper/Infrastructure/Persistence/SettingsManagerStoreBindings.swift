@@ -51,6 +51,10 @@ extension TrustedHostStore {
 struct SettingsManagerScreenConfigurationPersistence: ScreenConfigurationPersisting {
     var manager: SettingsManager = .shared
 
+    func configurationRevision(for screenID: CGDirectDisplayID) -> UInt64? {
+        manager.configurationMemoryRevision(for: screenID)
+    }
+
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
         manager.getConfiguration(for: screenID)
     }
