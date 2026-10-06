@@ -16,10 +16,10 @@ private final class SidebarSelection {
 @Suite("Settings sidebar legibility", .serialized)
 @MainActor
 struct SettingsSidebarLegibilityTests {
-    /// Table rows: the Setup header, then General, Display Defaults, Shortcuts.
+    /// Table rows: the Setup header, then General, Appearance, Display Defaults, Shortcuts.
     private static let headerRow = 0
-    private static let displayDefaultsRow = 2
-    private static let shortcutsRow = 3
+    private static let displayDefaultsRow = 3
+    private static let shortcutsRow = 4
 
     private static let size = CGSize(width: 480, height: 640)
 
@@ -106,10 +106,10 @@ struct SettingsSidebarLegibilityTests {
         window.close()
     }
 
-    @Test("Setup lists General, Display Defaults and Shortcuts first, the rows these tests read")
+    @Test("Setup lists General, Appearance, Display Defaults and Shortcuts first, the rows these tests read")
     func setupGroupOrder() {
         let setup = SettingsNavigation.availableItems(capabilities: .unconfigured).filter { $0.group == .setup }
-        #expect(setup.prefix(3).map(\.destination) == [.general, .displayDefaults, .shortcuts])
+        #expect(setup.prefix(4).map(\.destination) == [.general, .appearance, .displayDefaults, .shortcuts])
     }
 
     @Test("Without a navigation container the category rows keep the primary label colour", arguments: [true, false])

@@ -55,12 +55,15 @@ struct SettingsSearchRowEmphasisTests {
     }
 
     /// The app's settings window opened on General, parked off every display.
-    private static func withSettingsWindow(_ body: (NSWindow, NSView) async throws -> Void) async throws {
+    private static func withSettingsWindow(
+        featureCatalog: FeatureCatalog = .unconfigured,
+        _ body: (NSWindow, NSView) async throws -> Void
+    ) async throws {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
             powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
             playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(),
-            featureCatalog: .unconfigured
+            featureCatalog: featureCatalog
         ))
         defer { manager.tearDownForTermination() }
         let doctor = SteamCMDDoctorService()
@@ -141,8 +144,9 @@ struct SettingsSearchRowEmphasisTests {
 
     @Test("Picking a result scrolls the matching row of a long page into view and marks that row, not its section title")
     func resultMarksItsRow() async throws {
-        let query = "Show wallpaper in screen captures"
-        try await Self.withSettingsWindow { window, root in
+        let query = "Follow Cursor"
+        // Pro, for the Video, Web and Scene sections that make Display Defaults taller than the window.
+        try await Self.withSettingsWindow(featureCatalog: FeatureCatalog(capabilities: .pro)) { window, root in
             #expect(root.isFlipped, "control: the page rect below is read top-down, as the bitmap is")
             let search = try await Self.search(query, in: window, root: root)
             #expect(search.rows == 2, "control: expected the Search Results header and one result, found \(search.rows) rows")

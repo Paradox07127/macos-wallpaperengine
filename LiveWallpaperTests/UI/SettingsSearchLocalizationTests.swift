@@ -104,20 +104,20 @@ struct SettingsSearchLocalizationTests {
         for style in ["Facing In", "Crate", "Folders", "Fan", "Focus Row"] {
             let query = style.localized(in: bundle)
             let anchor = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
-                .first { $0.destination == .general }?.anchor
+                .first { $0.destination == .appearance }?.anchor
             #expect(
-                anchor == .generalAppearance,
+                anchor == .appearanceLibrary,
                 Comment(rawValue: "\(language): `\(query)` (\(style)) lands on \(anchor?.rawValue ?? "nothing")")
             )
         }
     }
 
-    @Test("A retired shelf style name no longer reaches General")
+    @Test("A retired shelf style name no longer reaches Appearance")
     func retiredShelfStyleNamesAreNotIndexed() {
         for query in ["cover flow", "封面流"] {
-            let reachesGeneral = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
-                .contains { $0.destination == .general }
-            #expect(!reachesGeneral, Comment(rawValue: "`\(query)` still reaches General"))
+            let reachesAppearance = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
+                .contains { $0.destination == .appearance }
+            #expect(!reachesAppearance, Comment(rawValue: "`\(query)` still reaches Appearance"))
         }
     }
 

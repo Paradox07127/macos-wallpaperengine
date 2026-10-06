@@ -25,6 +25,20 @@ struct NavigationTests {
         #expect(!items.map(\.destination).contains(.general))
     }
 
+    @Test("Appearance terms land on the Appearance page; language stays on General")
+    func appearanceAndLanguageLandOnTheirOwnPages() {
+        let cases: [(query: String, destination: SettingsNavigation, anchor: SettingsSearchAnchor)] = [
+            ("dark", .appearance, .appearanceWindow),
+            ("shelf style", .appearance, .appearanceLibrary),
+            ("language", .general, .generalLanguage),
+        ]
+        for (query, destination, anchor) in cases {
+            let result = SettingsNavigation.filteredResults(matching: query, capabilities: .pro)
+                .first { $0.destination == destination }
+            #expect(result?.anchor == anchor, "`\(query)` lands on \(String(describing: result?.anchor)) of \(destination)")
+        }
+    }
+
     @Test("Settings navigation stays scoped to settings tasks")
     func settingsNavigationStaysScopedToSettingsTasks() {
         let titles = SettingsNavigation.availableItems(

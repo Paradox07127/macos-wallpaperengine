@@ -17,7 +17,7 @@ struct SettingsSearchFocusTests {
     func languageLandsOnItsRow() throws {
         for query in ["Language", "语言"] {
             let focus = try Self.focus(.general, query)
-            #expect(focus?.anchor == .generalAppearance, Comment(rawValue: query))
+            #expect(focus?.anchor == .generalLanguage, Comment(rawValue: query))
             #expect(focus?.rows == ["Language"], Comment(rawValue: query))
             #expect(focus?.scrollRow == "Language", Comment(rawValue: query))
         }

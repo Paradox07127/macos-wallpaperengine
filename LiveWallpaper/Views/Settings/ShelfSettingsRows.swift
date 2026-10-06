@@ -1,13 +1,9 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Owns its `@AppStorage` fields itself so `GeneralSettingsView`'s locked root state count
-/// (UI-08) does not grow.
 struct ShelfSettingsRows: View {
     @AppStorage(EditDeskPreferences.shelfStyle, store: .appScoped())
     private var shelfStyleRaw = EditDeskPreferences.shelfStyleDefault.rawValue
-    @AppStorage(EditDeskPreferences.background, store: .appScoped())
-    private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
     @AppStorage(EditDeskPreferences.shelfCapacity, store: .appScoped())
     private var shelfCapacity = EditDeskPreferences.shelfCapacityDefault
     @AppStorage(EditDeskPreferences.statusCapsuleContent, store: .appScoped())
@@ -23,10 +19,6 @@ struct ShelfSettingsRows: View {
     private var rows: some View {
         SettingRow(icon: "shippingbox", iconColor: .brown, title: "Shelf style") {
             shelfStylePicker
-        }
-
-        SettingRow(icon: "circle.lefthalf.filled", iconColor: .indigo, title: "Main window background") {
-            backgroundPicker
         }
 
         SettingRow(
@@ -81,25 +73,6 @@ struct ShelfSettingsRows: View {
         }
     }
 
-    private var backgroundPicker: some View {
-        GlassSegmentedPicker(
-            selection: choice($backgroundRaw, or: EditDeskPreferences.backgroundDefault),
-            values: EditDeskBackground.allCases,
-            shell: .flat,
-            title: { Self.backgroundTitle($0) }
-        )
-        .frame(width: 200)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Main window background"))
-    }
-
-    private static func backgroundTitle(_ background: EditDeskBackground) -> LocalizedStringKey {
-        switch background {
-        case .opaque: "Solid"
-        case .frosted: "Frosted"
-        }
-    }
-
     private var shelfCapacityStepper: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Text(verbatim: "\(shelfCapacity)")
@@ -148,6 +121,39 @@ struct ShelfSettingsRows: View {
         switch state {
         case .hidden: "Hidden shelf"
         case .halfOpen: "Half-open shelf"
+        }
+    }
+}
+
+struct MainWindowBackgroundRow: View {
+    @AppStorage(EditDeskPreferences.background, store: .appScoped())
+    private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
+
+    var body: some View {
+        SettingRow(icon: "circle.lefthalf.filled", iconColor: .indigo, title: "Main window background") {
+            backgroundPicker
+        }
+    }
+
+    private var backgroundPicker: some View {
+        GlassSegmentedPicker(
+            selection: Binding(
+                get: { EditDeskBackground(rawValue: backgroundRaw) ?? EditDeskPreferences.backgroundDefault },
+                set: { backgroundRaw = $0.rawValue }
+            ),
+            values: EditDeskBackground.allCases,
+            shell: .flat,
+            title: { Self.backgroundTitle($0) }
+        )
+        .frame(width: 200)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Main window background"))
+    }
+
+    private static func backgroundTitle(_ background: EditDeskBackground) -> LocalizedStringKey {
+        switch background {
+        case .opaque: "Solid"
+        case .frosted: "Frosted"
         }
     }
 }

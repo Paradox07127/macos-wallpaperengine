@@ -105,6 +105,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         // Sidebar order is grouped: Setup, Playback, Content, Data, Support.
         let common: [SettingsNavigation] = [
             .general,
+            .appearance,
             .displayDefaults,
             .shortcuts,
             .performancePower,
@@ -127,6 +128,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(SettingsNavigation.availableItems(capabilities: .unconfigured).map(\.destination) == common)
         #expect(shippingPro == [
             .general,
+            .appearance,
             .displayDefaults,
             .shortcuts,
             .performancePower,
@@ -140,6 +142,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         ])
         #expect(directPro == [
             .general,
+            .appearance,
             .displayDefaults,
             .shortcuts,
             .performancePower,

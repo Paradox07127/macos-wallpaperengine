@@ -16,6 +16,9 @@ struct SettingsDetailContent: View {
             case .general:
                 GeneralSettingsView(page: .general)
                     .settingsSearchAnchorScroller(page: .general, pendingSearchAnchor: $pendingSearchAnchor)
+            case .appearance:
+                AppearanceSettingsView()
+                    .settingsSearchAnchorScroller(page: .appearance, pendingSearchAnchor: $pendingSearchAnchor)
             case .displayDefaults:
                 DisplayDefaultsView(pendingSearchAnchor: $pendingSearchAnchor)
             case .systemWallpaper:

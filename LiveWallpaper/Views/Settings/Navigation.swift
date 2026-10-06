@@ -3,9 +3,11 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
-    case generalAppearance
+    case generalLanguage
     case generalStartup
     case generalWallpaper
+    case appearanceWindow
+    case appearanceLibrary
     case displayDefaultsArrangement
     case displayDefaultsVideo
     case displayDefaultsWeb
@@ -86,6 +88,7 @@ enum SettingsNavigationGroup: String, CaseIterable, Hashable, Identifiable {
 
 enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     case general
+    case appearance
     case displayDefaults
     case systemWallpaper
     case performancePower
@@ -180,6 +183,16 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 "Show wallpaper in screen captures", "screenshots", "recording", "screen sharing",
                 "在截屏与共享中显示壁纸", "在截圖與共享中顯示桌布",
                 "画面キャプチャに壁紙を表示", "Mostrar el fondo en capturas de pantalla",
+            ]
+        ),
+        SettingsNavigationItem(
+            destination: .appearance,
+            group: .setup,
+            title: "Appearance",
+            systemImage: "paintbrush",
+            keywords: [
+                "theme", "dark", "light", "background", "tile size", "shelf style",
+                "外观", "外觀", "外観", "apariencia", "架子样式",
             ]
         ),
         SettingsNavigationItem(
@@ -392,21 +405,10 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         case .general:
             return [
                 SettingsNavigationSearchTarget(
-                    label: "General",
-                    anchor: .generalAppearance,
-                    rows: [
-                        "Language", "Appearance", "Light", "Dark", "Library tile size", "Shelf style",
-                        "Main window background", "Cards rendered at once", "Autoplay preview on hover",
-                        "Status capsule shows", "Home opens as",
-                    ],
-                    keywords: [
-                        "language", "appearance", "theme", "dark", "light", "tile size", "library",
-                        "shelf style", "facing in", "crate", "folders", "fan", "focus row", "cards rendered",
-                        "shelf capacity", "autoplay preview", "hover", "status capsule", "system health", "home default",
-                        "架子样式", "两侧朝中", "木箱", "文件夹", "扇形", "焦点横排", "状态胶囊", "主界面默认态",
-                        "兩側朝中", "資料夾", "焦點橫排", "内向き", "クレート", "フォルダ", "フォーカス",
-                        "hacia dentro", "cajón", "carpetas", "abanico", "fila con foco",
-                    ]
+                    label: "Language",
+                    anchor: .generalLanguage,
+                    rows: ["Language"],
+                    keywords: ["language"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Startup",
@@ -421,6 +423,31 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     keywords: [
                         "lock", "lock screen", "capture", "screenshot", "screen capture",
                         "recording", "sharing", "desktop picture", "transition", "animation", "crossfade",
+                    ]
+                ),
+            ]
+        case .appearance:
+            return [
+                SettingsNavigationSearchTarget(
+                    label: "Window",
+                    anchor: .appearanceWindow,
+                    rows: ["Appearance", "Light", "Dark", "Main window background"],
+                    keywords: ["appearance", "theme", "dark", "light", "background"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Library & Shelf",
+                    anchor: .appearanceLibrary,
+                    rows: [
+                        "Library tile size", "Shelf style", "Cards rendered at once", "Autoplay preview on hover",
+                        "Status capsule shows", "Home opens as",
+                    ],
+                    keywords: [
+                        "tile size", "library",
+                        "shelf style", "facing in", "crate", "folders", "fan", "focus row", "cards rendered",
+                        "shelf capacity", "autoplay preview", "hover", "status capsule", "system health", "home default",
+                        "架子样式", "两侧朝中", "木箱", "文件夹", "扇形", "焦点横排", "状态胶囊", "主界面默认态",
+                        "兩側朝中", "資料夾", "焦點橫排", "内向き", "クレート", "フォルダ", "フォーカス",
+                        "hacia dentro", "cajón", "carpetas", "abanico", "fila con foco",
                     ]
                 ),
             ]
@@ -636,12 +663,16 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         guard landing != nil || !hits.isEmpty else { return nil }
 
         let landingRows = hits.filter { $0.anchor == landing?.anchor }.map(\.key)
-        let landingRow: String? = if landing?.hasLabel(equalTo: wholeQuery) == true {
+        let exactRow = landingRows.first { row in
+            row.localizedInEveryLanguage.contains { $0.localizedCaseInsensitiveCompare(wholeQuery) == .orderedSame }
+        }
+        // A row named exactly like its section (General's "Language") still wins over the section.
+        let landingRow: String? = if let exactRow {
+            exactRow
+        } else if landing?.hasLabel(equalTo: wholeQuery) == true {
             nil
         } else {
-            landingRows.first { row in
-                row.localizedInEveryLanguage.contains { $0.localizedCaseInsensitiveCompare(wholeQuery) == .orderedSame }
-            } ?? landingRows.first
+            landingRows.first
         }
         let everyRow = targets.flatMap(\.rows) + rows
         let isUnique = landingRow.map { key in everyRow.filter { $0 == key }.count == 1 } ?? false

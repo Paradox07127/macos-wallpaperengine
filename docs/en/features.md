@@ -22,7 +22,8 @@ and the app target's build gates.
 
 | Settings page | Edition | Contents |
 |---|---|---|
-| General | both | Language, appearance, library tile size, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility, opening animation, wallpaper transition |
+| General | both | Language, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility, opening animation, wallpaper transition |
+| Appearance | both | Light/dark appearance, main window background, library tile size, shelf style and shelf options |
 | Display Defaults | both | Display arrangement and renaming; playback, frame rate, fit, color and interaction defaults |
 | Shortcuts | both | Master switch and eight bindable actions |
 | Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate, render threads and, on supported hardware, MetalFX upscaling and HDR output |
