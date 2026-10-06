@@ -851,6 +851,12 @@ struct S7OverlayFidelityTests {
     /// A title that wraps grows its row, so the music card's first group keeps its height only if nothing wrapped.
     @Test("At its 340pt minimum the music inspector wraps no row")
     func inspectorMinimumWidth() async {
+        // With Audio Response off the music card adds a footer that wraps at 340pt by design.
+        let original = SettingsManager.shared.loadGlobalSettings()
+        defer { SettingsManager.shared.saveGlobalSettings(original) }
+        var settings = original
+        settings.audioResponseEnabled = true
+        SettingsManager.shared.saveGlobalSettings(settings)
         let fixture = S7OverlayFixture()
         fixture.session.select(.music)
         var heights: [CGFloat] = []

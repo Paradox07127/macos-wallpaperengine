@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
@@ -70,16 +71,12 @@ struct AppleAerialsFastPathTests {
         }
 
         let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: mov)
-        var stale = false
-        let resolved = try URL(
-            resolvingBookmarkData: bookmark,
-            options: [.withSecurityScope],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        )
-        #expect(resolved.standardizedFileURL == mov.standardizedFileURL)
-        let ok = resolved.startAccessingSecurityScopedResource()
-        defer { if ok { resolved.stopAccessingSecurityScopedResource() } }
+        let resolved = try SecurityScopedBookmarkResolver.shared.resolve(bookmark, target: .transient).get()
+        #expect(resolved.url.standardizedFileURL == mov.standardizedFileURL)
+        // The XCTest host creates unscoped bookmarks, so the grant is only checkable for a scoped resolution.
+        guard resolved.isSecurityScoped else { return }
+        let ok = resolved.url.startAccessingSecurityScopedResource()
+        defer { if ok { resolved.url.stopAccessingSecurityScopedResource() } }
         #expect(ok, "resolved security-scoped bookmark should grant access")
     }
 
