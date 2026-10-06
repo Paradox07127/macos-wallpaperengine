@@ -54,9 +54,9 @@ struct AppearanceSettingsView: View {
 
     private static func appearanceTitle(_ appearance: AppAppearance) -> LocalizedStringKey {
         switch appearance {
-        case .system: return "System"
-        case .light: return "Light"
-        case .dark: return "Dark"
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
         }
     }
 
