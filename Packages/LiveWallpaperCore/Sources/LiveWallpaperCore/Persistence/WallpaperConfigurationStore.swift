@@ -3,6 +3,8 @@ import CoreGraphics
 
 @MainActor
 public protocol ScreenConfigurationPersisting {
+    /// Latest in-memory row, independent of disk durability; nil opts out.
+    func configurationRevision(for screenID: CGDirectDisplayID) -> UInt64?
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration?
     func saveConfiguration(_ configuration: ScreenConfiguration)
     func cleanSettingsForScreen(_ screenID: CGDirectDisplayID)
@@ -10,11 +12,18 @@ public protocol ScreenConfigurationPersisting {
     func replaceAllConfigurations(_ configurations: [ScreenConfiguration])
 }
 
+public extension ScreenConfigurationPersisting {
+    func configurationRevision(for _: CGDirectDisplayID) -> UInt64? {
+        nil
+    }
+}
+
 @MainActor
 public final class WallpaperConfigurationStore {
     private var cache: [CGDirectDisplayID: ScreenConfiguration] = [:]
     /// Semantic revision for prepared wallpaper CAS; advances even on equal value.
     private var revisions: [CGDirectDisplayID: UInt64] = [:]
+    private var persistenceRevisions: [CGDirectDisplayID: UInt64] = [:]
     private let persistence: any ScreenConfigurationPersisting
 
     public init(persistence: any ScreenConfigurationPersisting) {
@@ -22,6 +31,7 @@ public final class WallpaperConfigurationStore {
     }
 
     public func get(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
+        synchronizePersistenceRevision(for: screenID)
         if let cached = cache[screenID] {
             return cached
         }
@@ -92,6 +102,7 @@ public final class WallpaperConfigurationStore {
         persistence.replaceAllConfigurations(all)
         cache[migrated.screenID] = migrated
         bumpRevision(for: migrated.screenID)
+        acknowledgePersistenceRevision(for: migrated.screenID)
         return true
     }
 
@@ -136,9 +147,11 @@ public final class WallpaperConfigurationStore {
 
         cache[screenID] = match
         bumpRevision(for: screenID)
+        acknowledgePersistenceRevision(for: screenID)
         if oldScreenID != screenID {
             cache.removeValue(forKey: oldScreenID)
             bumpRevision(for: oldScreenID)
+            acknowledgePersistenceRevision(for: oldScreenID)
         }
         return match
     }
@@ -147,17 +160,38 @@ public final class WallpaperConfigurationStore {
         bumpRevision(for: config.screenID)
         cache[config.screenID] = config
         persistence.saveConfiguration(config)
+        acknowledgePersistenceRevision(for: config.screenID)
     }
 
     public func remove(for screenID: CGDirectDisplayID) {
         bumpRevision(for: screenID)
         cache.removeValue(forKey: screenID)
         persistence.cleanSettingsForScreen(screenID)
+        acknowledgePersistenceRevision(for: screenID)
     }
 
     /// CAS snapshot for async wallpaper prepare; commit only if revision still matches.
     public func revision(for screenID: CGDirectDisplayID) -> UInt64 {
-        revisions[screenID] ?? 0
+        synchronizePersistenceRevision(for: screenID)
+        return revisions[screenID] ?? 0
+    }
+
+    private func synchronizePersistenceRevision(for screenID: CGDirectDisplayID) {
+        guard let current = persistence.configurationRevision(for: screenID) else { return }
+        if let previous = persistenceRevisions.updateValue(current, forKey: screenID), previous != current {
+            cache.removeValue(forKey: screenID)
+            bumpRevision(for: screenID)
+        }
+    }
+
+    private func acknowledgePersistenceRevision(for screenID: CGDirectDisplayID) {
+        persistenceRevisions[screenID] = persistence.configurationRevision(for: screenID)
+    }
+
+    private func synchronizePersistenceRevisions() {
+        for screenID in Set(cache.keys).union(revisions.keys).union(persistenceRevisions.keys) {
+            synchronizePersistenceRevision(for: screenID)
+        }
     }
 
     private func bumpRevision(for screenID: CGDirectDisplayID) {
@@ -170,6 +204,10 @@ public final class WallpaperConfigurationStore {
 
     public func loadAll() -> [ScreenConfiguration] {
         let configs = persistence.loadConfigurations()
+        synchronizePersistenceRevisions()
+        for config in configs {
+            acknowledgePersistenceRevision(for: config.screenID)
+        }
         cache = Self.cacheKeyedByScreenID(configs)
         return configs
     }
@@ -207,10 +245,12 @@ public final class WallpaperConfigurationStore {
             invalidScreenIDs: invalidIDs
         )
 
+        synchronizePersistenceRevisions()
         cache = Self.cacheKeyedByScreenID(pruned)
         persistence.replaceAllConfigurations(pruned)
         for screenID in invalidIDs {
             bumpRevision(for: screenID)
+            acknowledgePersistenceRevision(for: screenID)
         }
 
         return Array(invalidIDs)

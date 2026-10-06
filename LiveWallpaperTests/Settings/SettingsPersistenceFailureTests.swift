@@ -58,6 +58,13 @@ struct SettingsPersistenceFailureTests {
         }
         #expect(configurations.get(for: 91) == config)
         #expect(configurations.loadAll() == [config]) // Previously repopulated its cache from old disk.
+        let beforeRefresh = configurations.revision(for: 91)
+        config = config.withUpdatedActiveBookmark(Data([4]))
+        manager.saveConfiguration(config) // Out-of-band refresh must also retain failed latest memory.
+        await manager.waitForPendingWrites()
+        #expect(configurations.get(for: 91) == config)
+        #expect(configurations.revision(for: 91) == beforeRefresh + 1)
+        #expect(configurations.loadAll() == [config])
         bookmarks.reload()
         schemes.reload()
         #expect(bookmarks.bookmarks == expectedBookmarks)
