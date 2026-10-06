@@ -5,7 +5,7 @@ import Testing
 import WebKit
 @testable import LiveWallpaper
 
-@Suite("ScreenManager ↔ PlaybackCoordinator coordination")
+@Suite("ScreenManager ↔ PlaybackCoordinator coordination", .serialized)
 @MainActor
 struct ScreenManagerCoordinationTests {
     @Test("Display refresh preserves a live session unless a reload is explicitly requested", arguments: [false, true])
@@ -782,6 +782,33 @@ struct ScreenManagerCoordinationTests {
 
     // MARK: - ScreenManager → PlaybackCoordinator setter forwarding
 
+    @Test("Notification capture ignores foreign same-display traffic and receives the real setter's queued post")
+    func configurationNotificationScopeKeepsRealSetter() async throws {
+        try await Self.runWithSeededConfiguration { manager, screen in
+            let capture = Self.attachConfigurationObserver()
+            defer { capture.detach() }
+            CoordinationNotificationScope.$current.withValue(nil) {
+                NotificationCenter.default.post(
+                    name: .wallpaperConfigurationDidChange, object: nil,
+                    userInfo: ["screenID": screen.id]
+                )
+            }
+            #expect(capture.notifications.isEmpty)
+
+            let speed = Self.differentValue(
+                from: manager.getConfiguration(for: screen)?.playbackSpeed,
+                options: [0.5, 1.5]
+            )
+            manager.updatePlaybackSpeed(speed, for: screen)
+            // The production controller deliberately posts on its next main-actor tick.
+            #expect(capture.notifications.isEmpty)
+            try await capture.waitForNotifications(count: 1, timeout: .seconds(3))
+            #expect(capture.notifications.count == 1)
+            #expect(capture.notifications.first?.screenID == screen.id)
+            #expect(manager.getConfiguration(for: screen)?.playbackSpeed == speed)
+        }
+    }
+
     @Test("updatePlaybackSpeed mutates configuration and posts a change notification")
     func updatePlaybackSpeedForwardsThroughCoordinator() async throws {
         try await Self.runWithSeededConfiguration { manager, screen in
@@ -1470,16 +1497,20 @@ struct ScreenManagerCoordinationTests {
         }
         @MainActor final class CommitGroups { var byScreen: [CGDirectDisplayID: WallpaperSwitchGroup?] = [:] }
         let commits = CommitGroups()
+        let notificationScope = UUID()
         // Queue nil: the commit's save posts from a task it spawned, which inherits the commit's task-locals.
         let observer = NotificationCenter.default.addObserver(
             forName: .wallpaperConfigurationDidChange, object: nil, queue: nil
         ) { notification in
-            guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
+            guard CoordinationNotificationScope.current == notificationScope,
+                  let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
             MainActor.assumeIsolated { commits.byScreen[id] = WallpaperSwitchGroup.current }
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        manager.applyConfigurationToAllDisplays(from: source)
+        CoordinationNotificationScope.$current.withValue(notificationScope) {
+            manager.applyConfigurationToAllDisplays(from: source)
+        }
         try await Self.waitUntil(timeout: .seconds(20)) { targets.allSatisfy { commits.byScreen[$0.id] != nil } }
 
         let groups = targets.map { commits.byScreen[$0.id] ?? nil }
@@ -1522,16 +1553,20 @@ struct ScreenManagerCoordinationTests {
         }
         @MainActor final class CommitGroups { var byScreen: [CGDirectDisplayID: WallpaperSwitchGroup?] = [:] }
         let commits = CommitGroups()
+        let notificationScope = UUID()
         // Queue nil: the commit's save posts from a task it spawned, which inherits the commit's task-locals.
         let observer = NotificationCenter.default.addObserver(
             forName: .wallpaperConfigurationDidChange, object: nil, queue: nil
         ) { notification in
-            guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
+            guard CoordinationNotificationScope.current == notificationScope,
+                  let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
             MainActor.assumeIsolated { commits.byScreen[id] = WallpaperSwitchGroup.current }
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        manager.applyConfigurationToAllDisplays(from: source)
+        CoordinationNotificationScope.$current.withValue(notificationScope) {
+            manager.applyConfigurationToAllDisplays(from: source)
+        }
         try await Self.waitUntil(timeout: .seconds(20)) { targets.allSatisfy { commits.byScreen[$0.id] != nil } }
 
         let group = try #require(commits.byScreen[targets[0].id] ?? nil, "the targets committed outside any switch group")
@@ -1583,10 +1618,12 @@ struct ScreenManagerCoordinationTests {
             let serials = Serials()
             let fingerprint = screen.displayFingerprint
             let screenID = screen.id
+            let notificationScope = CoordinationNotificationScope.current
             let observer = NotificationCenter.default.addObserver(
-                forName: .wallpaperConfigurationDidChange, object: nil, queue: .main
+                forName: .wallpaperConfigurationDidChange, object: nil, queue: nil
             ) { notification in
-                guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screenID else { return }
+                guard CoordinationNotificationScope.current == notificationScope,
+                      notification.userInfo?["screenID"] as? CGDirectDisplayID == screenID else { return }
                 MainActor.assumeIsolated {
                     serials.seen.append(manager.automaticSwitchMark(for: fingerprint)?.serial)
                 }
@@ -1656,7 +1693,10 @@ struct ScreenManagerCoordinationTests {
             return
         }
 
-        try await body(manager, screen)
+        defer { manager.tearDownForTermination() }
+        try await CoordinationNotificationScope.$current.withValue(UUID()) {
+            try await body(manager, screen)
+        }
     }
 
     private static func runWithHTMLConfiguration(
@@ -1690,7 +1730,10 @@ struct ScreenManagerCoordinationTests {
         ))
 
         defer { screen.resetRuntimeSession() }
-        try await body(manager, screen)
+        defer { manager.tearDownForTermination() }
+        try await CoordinationNotificationScope.$current.withValue(UUID()) {
+            try await body(manager, screen)
+        }
     }
 
     private static func runWithVideoConfiguration(
@@ -1719,7 +1762,10 @@ struct ScreenManagerCoordinationTests {
         ))
 
         defer { screen.resetRuntimeSession() }
-        try await body(manager, screen)
+        defer { manager.tearDownForTermination() }
+        try await CoordinationNotificationScope.$current.withValue(UUID()) {
+            try await body(manager, screen)
+        }
     }
 
     private static func runWithSceneConfiguration(
@@ -1748,7 +1794,10 @@ struct ScreenManagerCoordinationTests {
         ))
 
         defer { screen.resetRuntimeSession() }
-        try await body(manager, screen)
+        defer { manager.tearDownForTermination() }
+        try await CoordinationNotificationScope.$current.withValue(UUID()) {
+            try await body(manager, screen)
+        }
     }
 
     private static func makeTemporaryVideoBookmark(prefix: String) throws -> (url: URL, bookmark: Data) {
@@ -1795,7 +1844,10 @@ struct ScreenManagerCoordinationTests {
     }
 
     private static func attachConfigurationObserver() -> ConfigurationNotificationCapture {
-        ConfigurationNotificationCapture(name: .wallpaperConfigurationDidChange)
+        guard let scope = CoordinationNotificationScope.current else {
+            preconditionFailure("Configuration observers must run inside their fixture's notification scope")
+        }
+        return ConfigurationNotificationCapture(name: .wallpaperConfigurationDidChange, scope: scope)
     }
 
     private static func drainMainQueue() async {
@@ -1844,17 +1896,25 @@ private final class AssetReadinessConfigurationPersistence: ScreenConfigurationP
     }
 }
 
+/// The product posts on an unstructured main-actor Task, which inherits this
+/// test-only token. queue:nil keeps that token visible to the synchronous observer;
+/// a dispatch-queued observer would lose it. No product controller is substituted.
+private enum CoordinationNotificationScope {
+    @TaskLocal static var current: UUID?
+}
+
 private final class ConfigurationNotificationCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [ScreenChangeRecord] = []
     private var observer: NSObjectProtocol?
 
-    init(name: Notification.Name) {
+    init(name: Notification.Name, scope: UUID) {
         observer = NotificationCenter.default.addObserver(
             forName: name,
             object: nil,
             queue: nil
         ) { [weak self] notification in
+            guard CoordinationNotificationScope.current == scope else { return }
             let record = ScreenChangeRecord(
                 screenID: ConfigurationNotificationCapture.screenID(from: notification)
             )

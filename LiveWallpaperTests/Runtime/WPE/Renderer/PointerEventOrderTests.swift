@@ -632,6 +632,9 @@ struct WPEPointerEdgeDeliveryTests {
         renderer.setMouseInteractionEnabled(true)
         renderer.setClickCaptureEnabled(true)
         try await renderer.load()
+        // Each pointer sample needs a successful frame submission. A completed
+        // JS tick alone does not release the GPU's in-flight frame slot.
+        renderer.executor.synchronizeFrameCompletion = true
         func ticks() -> Double {
             renderer.sharedScriptValueForTesting("n") as? Double ?? 0
         }

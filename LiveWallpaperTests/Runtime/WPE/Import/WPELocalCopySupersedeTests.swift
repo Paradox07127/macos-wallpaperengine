@@ -142,6 +142,27 @@ struct WPELocalCopySupersedeTests {
         }
     }
 
+    @Test("Reading a host display cannot migrate the synthetic fixture's configuration")
+    func hostDisplayReadsPreserveSyntheticConfiguration() async throws {
+        let fixture = try SupersedeFixture()
+        defer { fixture.discard() }
+        try await withHeadlessManager(fixture) { manager, screen in
+            manager.saveConfiguration(fixture.configuration(on: screen))
+            let original = try #require(manager.configurationStore.get(for: screen.id))
+            let revision = manager.configurationStore.revision(for: screen.id)
+            let ownerRevision = SettingsManager.shared.configurationMemoryRevision(for: screen.id)
+            let hostStore = WallpaperConfigurationStore(persistence: SettingsManagerScreenConfigurationPersistence())
+            for nsScreen in NSScreen.screens {
+                let host = Screen(nsScreen: nsScreen)
+                #expect(hostStore.get(for: host.id, fingerprint: host.displayFingerprint) == nil)
+            }
+            #expect(SettingsManager.shared.getConfiguration(for: screen.id) == original)
+            #expect(manager.configurationStore.get(for: screen.id) == original)
+            #expect(SettingsManager.shared.configurationMemoryRevision(for: screen.id) == ownerRevision)
+            #expect(manager.configurationStore.revision(for: screen.id) == revision)
+        }
+    }
+
     @Test("An HTML page keeps its settings when its content moves to the Steam item")
     func htmlSettingsSurvive() async throws {
         let fixture = try SupersedeFixture(type: .web)
@@ -288,6 +309,12 @@ struct WPELocalCopySupersedeTests {
         SettingsManager.shared.recordWPEImport(fixture.local)
 
         let screen = Screen(nsScreen: SupersedeTestNSScreen())
+        try #require(screen.displayFingerprint.isUnknownDisplayFingerprint)
+        try #require(screen.legacyDisplayFingerprint == nil)
+        try #require(!NSScreen.screens.contains { host in
+            let hostID = host.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            return hostID == screen.id || host.displayFingerprint == screen.displayFingerprint
+        }, "The synthetic display must not share a host display's identity")
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
             powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
@@ -416,7 +443,9 @@ private final class SupersedeTestNSScreen: NSScreen {
     }
 
     override var deviceDescription: [NSDeviceDescriptionKey: Any] {
-        [NSDeviceDescriptionKey("NSScreenNumber"): UInt32(0xEDA0_5E01)]
+        // An invented CGDisplayID can resolve to a host fingerprint. Omit it so
+        // Screen uses its fallback ID and this fixture keeps an unknown identity.
+        [:]
     }
 
     override var localizedName: String {
