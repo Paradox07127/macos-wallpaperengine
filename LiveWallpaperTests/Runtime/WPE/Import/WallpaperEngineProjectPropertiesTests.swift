@@ -174,6 +174,35 @@ struct WallpaperEngineProjectPropertiesTests {
         ))
     }
 
+    @Test("Loose equality compares a number and a numeric string by value")
+    func looseEqualityNumericStrings() {
+        for condition in ["value == '2.0'", "value == '02'", "value == \"2\"", "'2.0' == value.value"] {
+            #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: ["value": .number(2)]
+            ), "\(condition)")
+        }
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value != '2.0'", values: ["value": .number(2)]
+        ))
+        #expect(WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value == 2", values: ["value": .string("2.0")]
+        ))
+        #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+            condition: "value == 'two'", values: ["value": .number(2)]
+        ))
+    }
+
+    @Test("Unsupported equality operands fail closed instead of reading as undefined")
+    func looseEqualityUnsupportedExpressions() {
+        let values: [String: WallpaperEngineProjectPropertyValue] = ["speed": .number(1), "threshold": .number(2)]
+        for condition in ["speed.value + 1 == threshold.value + 1", "authorCall() == otherCall()",
+                          "a b == c d", "speed.value + 1 != threshold.value"] {
+            #expect(!WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
+                condition: condition, values: values
+            ), "\(condition)")
+        }
+    }
+
     @Test("Boolean groups preserve precedence, unary negation and atomic includes calls")
     func parenthesizedConditionGroups() {
         let values: [String: WallpaperEngineProjectPropertyValue] = ["a": .bool(true), "b": .bool(false),

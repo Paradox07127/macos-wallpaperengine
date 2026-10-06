@@ -18,6 +18,23 @@ struct WPEStorageInventoryTests {
         #expect(inventory.engineAssetsURL == directory)
     }
 
+    @Test("A linked engine root is measured by its assets folder only")
+    func linkedEngineRootMeasuresAssetsChild() async throws {
+        let root = try makeFixture(fileCount: 1, bytesPerFile: 64 * 1024)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let assets = root.appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 16).write(to: assets.appendingPathComponent("shader.frag"))
+
+        let inventory = await WPEStorageInventoryScanner.shared.scan(
+            roots: .linked(steamRoot: nil, engineRoot: root),
+            budget: .max
+        )
+
+        #expect(inventory.engineAssetsURL == assets)
+        #expect(inventory.engineAssetsBytes == WPEStoragePaths.allocatedBytes(at: assets))
+    }
+
     @Test("A budget smaller than the tree stops the walk short")
     func budgetStopsTheWalkShort() async throws {
         let directory = try makeFixture(fileCount: 40, bytesPerFile: 16)

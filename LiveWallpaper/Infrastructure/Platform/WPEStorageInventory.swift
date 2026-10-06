@@ -29,6 +29,11 @@ struct WPEStorageInventory: Sendable {
     struct ScanRoots: Sendable {
         let steamRoot: URL?
         let engineAssetsRoot: URL?
+
+        /// `engineRoot` is the folder holding `assets/`; an assets-only grant does not cover the rest of it.
+        static func linked(steamRoot: URL?, engineRoot: URL?) -> ScanRoots {
+            ScanRoots(steamRoot: steamRoot, engineAssetsRoot: engineRoot?.appendingPathComponent("assets", isDirectory: true))
+        }
     }
 
     @MainActor
@@ -42,7 +47,7 @@ struct WPEStorageInventory: Sendable {
             assetsAccess?.end()
         }
         var inventory = await WPEStorageInventoryScanner.shared.scan(
-            roots: ScanRoots(steamRoot: steamRoot, engineAssetsRoot: assetsAccess?.root)
+            roots: .linked(steamRoot: steamRoot, engineRoot: assetsAccess?.root)
         )
         inventory.engineAssetsScopeRootURL = assetsAccess?.scopedURL
         inventory.projectsScopeRootURL = steamScopeRoot

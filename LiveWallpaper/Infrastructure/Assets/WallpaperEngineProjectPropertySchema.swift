@@ -732,7 +732,7 @@ private enum ConditionEvaluator {
     /// token is an identifier resolved against the property values — a miss is
     /// JS `undefined`, and `undefined == undefined` is true. That is why typo'd
     /// conditions like `value==ture` still show their property in WPE.
-    /// Returns nil only for malformed operands (a syntax error, not a miss).
+    /// Returns nil for malformed operands and unsupported expressions, not a miss.
     private static func looseEquality(
         _ rawLHS: String,
         _ rawRHS: String,
@@ -741,6 +741,10 @@ private enum ConditionEvaluator {
         guard case let .value(lhs) = equalityOperand(rawLHS, values: values),
               case let .value(rhs) = equalityOperand(rawRHS, values: values) else { return nil }
         switch (lhs, rhs) {
+        case let (.number(number)?, .string(text)?), let (.string(text)?, .number(number)?):
+            // JS `==` converts the string to a number, so 2 == '2.0'.
+            guard let coerced = numericValue(.string(text)) else { return false }
+            return WallpaperEngineProjectPropertyValue.number(number).looselyMatches(.number(coerced))
         case let (lhs?, rhs?): return lhs.looselyMatches(rhs)
         case (nil, nil): return true
         default: return false
@@ -766,7 +770,15 @@ private enum ConditionEvaluator {
         if let number = Double(operand) {
             return .value(.number(number))
         }
-        return .value(values[propertyKey(from: operand)])
+        if let value = values[propertyKey(from: operand)] {
+            return .value(value)
+        }
+        // Only a dotted identifier path can be JS `undefined`; `a + 1` or `f()` is an unsupported expression.
+        let isIdentifierPath = operand.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { part in
+            guard let first = part.first, !first.isNumber else { return false }
+            return part.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "$" }
+        }
+        return isIdentifierPath ? .value(nil) : .invalid
     }
 
     private static func primitiveOperand(
