@@ -149,7 +149,7 @@ and volume changes also reach span displays that are disconnected.
 - **Shortcuts**: play/pause, next, previous, mute, mouse interaction, global
   wallpaper visibility, reload and settings — eight configurable actions.
 - **Backup**: `.lwconfig` carries configurations, global settings, bookmarks
-  and schemes. It does not package media files, Steam credentials or API keys.
+  and schemes, plus Workshop likes in Pro. It does not package media files, Steam credentials or API keys.
   File grants are machine-specific; files may need to be selected again after
   moving a backup. Lite cannot play Pro-only scene configurations in a backup.
 

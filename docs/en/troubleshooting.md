@@ -35,7 +35,7 @@
 
 | Problem | Check | Fix |
 |---|---|---|
-| Schedule doesn't switch | Overlapping slots? Bookmark still valid? App paused at that time? | Fix highlighted conflicts; re-save the slot; note that automation sleeps while the screen is locked or asleep and reconciles **once** on wake — missed slots don't fire retroactively |
+| Schedule doesn't switch | Overlapping slots? Wallpaper file still accessible? App paused at that time? | Fix highlighted conflicts; re-save the slot; note that automation sleeps while the screen is locked or asleep and reconciles **once** on wake — missed slots don't fire retroactively |
 | Playlist interval ignored | At least two valid entries? Playlist mode on? | Reset the interval and re-save. Picking a wallpaper yourself, applying a scheme or applying a Workshop item restarts the countdown. While you are away the countdown freezes, then continues from what was left |
 | A wallpaper is marked **Skipped** | It failed to load twice. **Skipped wallpapers** in **Wallpaper Automation** shows the reason | Fix the source, then click **Enable Again** |
 

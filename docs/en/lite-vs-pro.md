@@ -15,7 +15,7 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | Playlists, shuffle, rotation, Library Shuffle | ✅ | ✅ |
 | Time-of-day schedule automation | ✅ | ✅ |
 | Wallpaper transitions and opening animation | ✅ | ✅ |
-| Saved wallpapers, display schemes and configuration backup | ✅ | ✅ |
+| Bookmarks, display schemes and configuration backup | ✅ | ✅ |
 | Particle & weather-reactive overlays | ✅ | ✅ |
 | Monitor board (eleven widget types, plus independent clock and music layers) | ✅ | ✅ |
 | Now Playing layouts, controls and optional lyrics | ✅ | ✅ |
@@ -72,6 +72,6 @@ untested widget.
 
 ## Licensing
 
-- **Lite** is MIT and distributed here on GitHub Releases.
+- **Lite** is MIT. Both editions are distributed here on GitHub Releases.
 - **Pro** is the full edition. The MIT [`LICENSE`](../../LICENSE) covers the entire
   repository, including the Pro-only modules.
