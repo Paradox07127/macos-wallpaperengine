@@ -5,17 +5,17 @@ import LiveWallpaperCore
 import Testing
 
 @MainActor
-@Suite("Persistent per-display user pause")
+@Suite("Persistent per-display user pause", .serialized)
 struct PersistentUserPauseTests {
     private static let inlineHTML = HTMLSource.inline("<html></html>")
 
-    private func makeManager() -> ScreenManager {
+    private func makeManager(playableVideoLoader: FakePlayableVideoLoader = FakePlayableVideoLoader()) -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
             powerMonitor: FakePowerMonitor(),
             fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: FakePlayableVideoLoader(),
+            playableVideoLoader: playableVideoLoader,
             displayRegistry: FakeDisplayRegistry(),
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
@@ -59,31 +59,56 @@ struct PersistentUserPauseTests {
         }
     }
 
+    @MainActor
+    private struct ConfiguredScreen {
+        let manager: ScreenManager
+        let screen: Screen
+        let session: PauseFakePlaybackController
+        let originalConfigurations: [ScreenConfiguration]
+        let originalSettings: GlobalSettings
+
+        func cleanUp() {
+            // Cancel owned work and observers before restoring the process-wide snapshot.
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+            SettingsManager.shared.replaceAllConfigurations(originalConfigurations)
+            SettingsManager.shared.saveGlobalSettings(originalSettings)
+        }
+    }
+
+    private func configuredScreen(
+        _ seed: Seed,
+        sessionType: WallpaperType = .video,
+        playableVideoLoader: FakePlayableVideoLoader = FakePlayableVideoLoader()
+    ) -> ConfiguredScreen? {
+        guard let nsScreen = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for test")
+            return nil
+        }
+        let screen = Screen(nsScreen: nsScreen)
+        let original = SettingsManager.shared.loadConfigurations()
+        let originalSettings = SettingsManager.shared.loadGlobalSettings()
+        var cleared = originalSettings
+        cleared.pausedDisplayKeys = []
+        SettingsManager.shared.saveGlobalSettings(cleared)
+        SettingsManager.shared.replaceAllConfigurations([Self.configuration(seed, for: screen.id)])
+        let manager = makeManager(playableVideoLoader: playableVideoLoader)
+        manager.screens = [screen]
+        let session = commitFreshSession(on: screen, in: manager, type: sessionType)
+        return ConfiguredScreen(
+            manager: manager, screen: screen, session: session,
+            originalConfigurations: original, originalSettings: originalSettings
+        )
+    }
+
     private func withConfiguredScreen(
         _ seed: Seed = .htmlWithoutSavedVideo,
         sessionType: WallpaperType = .video,
         _ body: (ScreenManager, Screen, PauseFakePlaybackController) throws -> Void
     ) rethrows {
-        guard let nsScreen = NSScreen.screens.first else {
-            Issue.record("No NSScreen available for test")
-            return
-        }
-        let screen = Screen(nsScreen: nsScreen)
-        let original = SettingsManager.shared.loadConfigurations()
-        let originalSettings = SettingsManager.shared.loadGlobalSettings()
-        defer {
-            screen.resetRuntimeSession()
-            SettingsManager.shared.replaceAllConfigurations(original)
-            SettingsManager.shared.saveGlobalSettings(originalSettings)
-        }
-        var cleared = originalSettings
-        cleared.pausedDisplayKeys = []
-        SettingsManager.shared.saveGlobalSettings(cleared)
-        SettingsManager.shared.replaceAllConfigurations([Self.configuration(seed, for: screen.id)])
-        let manager = makeManager()
-        manager.screens = [screen]
-        let session = commitFreshSession(on: screen, in: manager, type: sessionType)
-        try body(manager, screen, session)
+        guard let fixture = configuredScreen(seed, sessionType: sessionType) else { return }
+        defer { fixture.cleanUp() }
+        try body(fixture.manager, fixture.screen, fixture.session)
     }
 
     private func persistedPause(_ manager: ScreenManager, _ screen: Screen) -> Bool {
@@ -110,6 +135,7 @@ struct PersistentUserPauseTests {
             manager.togglePlayback(for: screen)
 
             let reconnected = makeManager()
+            defer { reconnected.tearDownForTermination() }
             reconnected.screens = [screen]
             let session = commitFreshSession(on: screen, in: reconnected)
             #expect(!session.userIntendsToPlay)
@@ -125,6 +151,7 @@ struct PersistentUserPauseTests {
             #expect(SettingsManager.shared.loadGlobalSettings().pausedDisplayKeys == [screen.displayFingerprint])
 
             let reconnected = makeManager()
+            defer { reconnected.tearDownForTermination() }
             reconnected.screens = [screen]
             #expect(!reconnected.playbackStateMachine(for: screen.id).userIntendsToPlay)
             #expect(!commitFreshSession(on: screen, in: reconnected).userIntendsToPlay)
@@ -485,6 +512,40 @@ struct PersistentUserPauseTests {
         #expect(commits + failures == 1)
         #expect((store.get(for: screen.id)?.videoBookmarkData == video.bookmark) == !validationFails)
         return commits
+    }
+
+    @Test("ScreenManager clears a paused display only after its new video passes validation and commits", .timeLimit(.minutes(1)))
+    func screenManagerVideoCommitClearsPersistentPause() async throws {
+        let loader = FakePlayableVideoLoader(suspendsValidation: true)
+        let fixture = try #require(configuredScreen(.video, playableVideoLoader: loader))
+        defer { fixture.cleanUp() }
+        let video = try Self.temporaryVideo()
+        defer { try? FileManager.default.removeItem(at: video.url) }
+        // If an assertion exits before the resume below, unblock validation after
+        // teardown has cancelled the manager's owned work.
+        defer { Task { await loader.resumeAllValidations() } }
+        let manager = fixture.manager
+        let screen = fixture.screen
+        manager.togglePlayback(for: screen)
+        try #require(persistedPause(manager, screen))
+        manager.wallpapersGloballyEnabled = false
+
+        manager.setVideo(url: video.url, bookmarkData: video.bookmark, for: screen)
+        let deadline = ContinuousClock.now + .seconds(50)
+        while await loader.pendingValidationCount == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(await loader.pendingValidationCount == 1)
+        #expect(persistedPause(manager, screen), "a candidate still awaiting validation must preserve the old pause")
+        #expect(manager.getConfiguration(for: screen)?.videoBookmarkData != video.bookmark)
+
+        await loader.resumeAllValidations()
+        while persistedPause(manager, screen), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!persistedPause(manager, screen), "the real ScreenManager onCommit callback must clear the pause")
+        #expect(manager.getConfiguration(for: screen)?.videoBookmarkData == video.bookmark)
+        #expect(commitFreshSession(on: screen, in: manager).userIntendsToPlay)
     }
 
     @Test("A video pick whose candidate fails never runs the commit hook that clears the pause", .timeLimit(.minutes(1)))

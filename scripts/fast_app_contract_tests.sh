@@ -90,7 +90,6 @@ PARALLEL_SUITES=(
   SteamCachedLoginVerdictTests
   SteamCMDOutputStreamTests
   DesktopPictureFrameExtractorTests
-  WorkshopDateLanguageTests
   SparkleUpdaterOwnershipTests
   SystemMemoryPressureWatcherTests
   WPECorpusManifestTests
@@ -173,7 +172,6 @@ PARALLEL_SUITES=(
   WorkshopSessionTests
   BrowsePaginationMetadataTests
   BrowseRequestShapeTests
-  BrowseFilterTests
   WorkshopBookmarkTests
   WorkshopBookmarkMetadataTests
   WorkshopMetadataBatchTests
@@ -187,7 +185,6 @@ PARALLEL_SUITES=(
   MenuBarBehaviorTests
   OnboardingMultiScreenTests
   ModalGeometryTests
-  TopBarBudgetTests
   EditDeskAccessibilityTests
   ShelfGestureControllerTests
   CodexAgentSourceTests
@@ -197,7 +194,6 @@ PARALLEL_SUITES=(
   WallpaperAutomationSwitchGroupTests
   WallpaperManualSwitchGroupTests
   VolumeMountReloadTests
-  PersistentUserPauseTests
   HTMLWebTransformLayoutTests
   WPESceneModelSubmeshMaterialGraphTests
   WPEParticleSpawnFailureTests
@@ -221,8 +217,6 @@ PARALLEL_SUITES=(
   WorkshopCoverSaveTimeTests
   DisplayDetailTests
   DetailTransitionTests
-  SettingsSearchLocalizationTests
-  NavigationTests
   StorageDiskTests
   StorageSourceCoverageTests
   AppStorageInventoryTests
@@ -251,10 +245,6 @@ PARALLEL_SUITES=(
   # music tile's type as well as its cover, so a dialled-down overlay went
   # unreadable the moment playback stopped.
   NowPlayingVisibilityTests
-  # Glyph-width arithmetic against the measured gauge centre: a CPU at 100%
-  # needed a 0.561 scale against a 0.6 floor and rendered as "1...".
-  WidgetReadoutFitTests
-  CPUWidgetTests
   # Source probes over the widget headers: which tiles carry an icon, where it
   # comes from, and that the gauge column cannot strand width beside the ring.
   MonitorWidgetChromeTests
@@ -274,7 +264,22 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  # ScreenManager owns shared settings across await; scope tokens isolate notifications,
+  # while this pass keeps its persistence snapshots exclusive from parallel suites.
+  PersistentUserPauseTests
+  ScreenManagerCoordinationTests
   DefaultsIsolationTests
+  # AppLanguageOverride writes the process-wide argument domain. Its lock orders
+  # writers, but unscoped localized UI readers in the parallel pass do not take it.
+  WorkshopDateLanguageTests
+  BrowseFilterTests
+  CPUWidgetTests
+  # Glyph-width arithmetic against the measured gauge centre: a CPU at 100%
+  # needed a 0.561 scale against a 0.6 floor and rendered as "1...".
+  WidgetReadoutFitTests
+  NavigationTests
+  TopBarBudgetTests
+  SettingsSearchLocalizationTests
   # Native menu localization reads process-wide language changed by parallel fixtures.
   EditDeskWindowHostTests
   # These fixtures mutate global render defaults/language or need prompt AppKit/decoder delivery.
