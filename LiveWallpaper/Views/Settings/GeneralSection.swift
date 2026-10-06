@@ -289,17 +289,35 @@ private struct TranslationLanguageDownloadRows<Language: View>: View {
 @available(macOS 15.0, *)
 @MainActor
 @Observable
-private final class TranslationPackOffer {
+final class TranslationPackOffer {
     private static let chinese = Locale.Language(identifier: "zh-Hans")
     private(set) var offersDownload = false
     private(set) var configuration: TranslationSession.Configuration?
+    /// True when the pair is supported but its languages are not installed yet.
+    private let isDownloadable: @Sendable (_ source: Locale.Language, _ target: Locale.Language) async -> Bool
 
+    init(isDownloadable: @escaping @Sendable (Locale.Language, Locale.Language) async -> Bool = {
+        await LanguageAvailability().status(from: $0, to: $1) == .supported
+    }) {
+        self.isDownloadable = isDownloadable
+    }
+
+    /// The app language of the latest check; nil until the first check.
+    private var currentTarget: Locale.Language?
+    private var checkGeneration = 0
+
+    /// Only the latest check commits: checks for an earlier app language can finish after it.
     func refresh(target: Locale.Language) async {
+        currentTarget = target
+        checkGeneration &+= 1
+        let generation = checkGeneration
         guard target.languageCode != .chinese else {
             offersDownload = false
             return
         }
-        offersDownload = await LanguageAvailability().status(from: Self.chinese, to: target) == .supported
+        let offers = await isDownloadable(Self.chinese, target)
+        guard generation == checkGeneration else { return }
+        offersDownload = offers
     }
 
     func requestDownload(target: Locale.Language) {
@@ -320,9 +338,9 @@ private final class TranslationPackOffer {
         await finishDownload()
     }
 
-    private func finishDownload() async {
-        if let target = configuration?.target {
-            await refresh(target: target)
+    func finishDownload() async {
+        if let currentTarget {
+            await refresh(target: currentTarget)
         }
         NotificationCenter.default.post(name: WPEPropertyLabelTranslator.languagePacksMayHaveChanged, object: nil)
     }
