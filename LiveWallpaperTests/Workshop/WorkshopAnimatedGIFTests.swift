@@ -416,6 +416,93 @@ struct MountedGIFHostVisibilityTests {
     private func post(_ name: Notification.Name, object: Any? = nil) {
         NotificationCenter.default.post(name: name, object: object)
     }
+
+    @Test("Mounted hidden previews defer loading, reject cancelled results, and reload when their size changes")
+    func mountedHiddenPreviewLoadLifecycle() async throws {
+        let controller = GIFAnimationController()
+        let asset = GIFTestFixtures.staticAsset()
+        var requestedSizes: [WorkshopPreviewSize] = []
+        var releases: [CheckedContinuation<WorkshopPreviewAsset?, Never>] = []
+        func thumbnail(presented: Bool, size: WorkshopPreviewSize = .tile) -> AnyView {
+            AnyView(AnimatedGIFThumbnail(
+                url: URL(fileURLWithPath: "/visibility.png"), previewSize: size,
+                controller: controller, loadAsset: { _, size in
+                    requestedSizes.append(size)
+                    return await withCheckedContinuation { releases.append($0) }
+                }
+            ).environment(\.inspectorContentIsVisible, presented)
+                .environment(\._accessibilityReduceMotion, false))
+        }
+        let host = NSHostingView(rootView: thumbnail(presented: false))
+        let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; controller.stop(); window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(requestedSizes.isEmpty, "A mounted, collapsed inspector must not fetch a preview")
+
+        host.rootView = thumbnail(presented: true)
+        await GIFTestFixtures.waitUntil { releases.count == 1 }
+        try #require(releases.count == 1)
+        host.rootView = thumbnail(presented: false)
+        try await Task.sleep(for: .milliseconds(100))
+        releases[0].resume(returning: asset)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(controller.displayedFrame == nil, "A hidden preview must not publish its cancelled load")
+        #expect(requestedSizes.count == 1)
+
+        host.rootView = thumbnail(presented: true)
+        await GIFTestFixtures.waitUntil { releases.count == 2 }
+        try #require(releases.count == 2)
+        releases[1].resume(returning: asset)
+        await GIFTestFixtures.waitUntil { controller.displayedFrame != nil }
+        #expect(controller.displayedFrame != nil)
+
+        host.rootView = thumbnail(presented: true, size: .hero)
+        await GIFTestFixtures.waitUntil { releases.count == 3 }
+        try #require(releases.count == 3)
+        #expect(requestedSizes == [.tile, .tile, .hero])
+        releases[2].resume(returning: asset)
+    }
+
+    @Test("A cached animation resumes when the mounted inspector returns")
+    func cachedAnimationRestoresAfterInspectorReturns() async {
+        let controller = GIFAnimationController()
+        let asset = GIFTestFixtures.animatedAsset(frameCount: 3)
+        var requests = 0
+        func thumbnail(presented: Bool) -> AnyView {
+            AnyView(AnimatedGIFThumbnail(
+                url: URL(fileURLWithPath: "/cached.gif"), playbackMode: .autoPlay,
+                controller: controller, loadAsset: { _, _ in requests += 1; return asset }
+            ).environment(\.inspectorContentIsVisible, presented)
+                .environment(\._accessibilityReduceMotion, false))
+        }
+        let host = NSHostingView(rootView: thumbnail(presented: true))
+        let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; controller.stop(); window.close() }
+        host.layoutSubtreeIfNeeded()
+        await GIFTestFixtures.waitUntil { controller.hasAnimatedAsset }
+        try? await Task.sleep(for: .milliseconds(100))
+        post(NSApplication.didBecomeActiveNotification)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+
+        host.rootView = thumbnail(presented: false)
+        await GIFTestFixtures.waitUntil { !controller.isAnimating }
+        #expect(!controller.isAnimating)
+        let previousRequests = requests
+        host.rootView = thumbnail(presented: true)
+        await GIFTestFixtures.waitUntil { requests > previousRequests }
+        try? await Task.sleep(for: .milliseconds(100))
+        post(NSApplication.didBecomeActiveNotification)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating, "An immediate cache hit still needs a fresh host visibility result")
+    }
 }
 
 @Suite("GIF controller stale frame task", .serialized)

@@ -70,14 +70,22 @@ struct LibraryModalHost: View {
         }
         .onChange(of: reduceMotion, initial: true) { drag.reduceMotion = reduceMotion }
         .task(id: presentedItemID) { await load() }
-        .onChange(of: library.items) {
+        .onChange(of: library.items) { previous, _ in
+            guard let requestedID = presentedItemID else { return }
             // The shown item can be removed from under the modal (Remove from Wallpaper Library, delete): the
             // modal has nothing left to show and the stage must not stay blocked behind it.
-            if presentedItemID != nil, presentedItem == nil {
+            guard let shown = presentedItem else {
                 presentedItemID = nil
-            } else {
-                Task { await load() }
+                return
             }
+            // Probing or renaming a different row should not re-read this item's
+            // manifest and decode its preview. Navigation can still be loading
+            // another item, so keep both the shown and requested rows current.
+            let previousShown = previous.first { $0.id == shown.id }
+            let requested = shown.id == requestedID ? shown : requestedItem
+            let previousRequested = shown.id == requestedID ? previousShown : previous.first { $0.id == requestedID }
+            guard shown != previousShown || requested != previousRequested else { return }
+            Task { await load() }
         }
         #if !LITE_BUILD
         .onChange(of: downloadKey) { Task { await load() } }

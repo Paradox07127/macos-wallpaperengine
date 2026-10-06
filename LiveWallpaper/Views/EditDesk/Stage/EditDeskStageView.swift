@@ -29,6 +29,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private var displays: [StageDisplay] = []
     private var cards: [StageCard] = []
+    /// Identity/order changes rebuild this; presentation changes read fresh values from `cards`.
+    private var cardIndexByID: [StageCard.ID: Int] = [:]
+    #if DEBUG
+    private(set) var debugCardLookupRebuildCount = 0
+    #endif
     /// Slice of `cards` the row draws; the row is as long as the whole library.
     private var cardWindow = 0 ..< 0
     /// Slice the grid draws while the shelf flies to p = 2, empty otherwise. Kept apart from
@@ -214,7 +219,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             styleFocusID = cards[min(max(index, 0), cards.count - 1)].id
         }
-        let changed = displays != nextDisplays || cards != nextCards
+        let cardsChanged = cards != nextCards
+        let cardIDsChanged = cardsChanged && !cards.elementsEqual(nextCards, by: { $0.id == $1.id })
+        let changed = displays != nextDisplays || cardsChanged
         if displays.map(\.frame) != nextDisplays.map(\.frame) {
             arrangementCache = nil
         }
@@ -236,9 +243,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 shell.update(display: display, dropHint: model.dropHintText, palette: palette)
             }
         }
-        let live = Set(nextCards.map(\.id))
-        for id in Array(cardLayers.keys) where !live.contains(id) {
-            cardLayers.removeValue(forKey: id)?.layer.removeFromSuperlayer()
+        if cardIDsChanged {
+            let live = Set(nextCards.lazy.map(\.id))
+            for id in Array(cardLayers.keys) where !live.contains(id) {
+                cardLayers.removeValue(forKey: id)?.layer.removeFromSuperlayer()
+            }
         }
         if cards.count != nextCards.count {
             for spare in reserve {
@@ -246,16 +255,23 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             reserve.removeAll()
         }
-        for card in nextCards where cardLayers[card.id] != nil {
-            if cards.first(where: { $0.id == card.id }) != card {
-                cardLayers[card.id]?.update(card: card, palette: palette)
+        if cardsChanged {
+            for nextCard in nextCards where cardLayers[nextCard.id] != nil {
+                if card(for: nextCard.id) != nextCard {
+                    cardLayers[nextCard.id]?.update(card: nextCard, palette: palette)
+                }
             }
         }
-        if cards.map(\.id) != nextCards.map(\.id) {
+        if cardIDsChanged {
             // Identity, not count: swapping ten cards for ten others left the window equal, so the
             // reconcile bailed out after the old layers were already gone and the shelf went blank.
             let focusedID = focusedCardIndex.map { cards[$0].id }
-            focusedCardIndex = nextCards.firstIndex { $0.id == focusedID }
+            cardIndexByID = Dictionary(nextCards.enumerated().map { ($0.element.id, $0.offset) },
+                                       uniquingKeysWith: { first, _ in first })
+            focusedCardIndex = focusedID.flatMap { cardIndexByID[$0] }
+            #if DEBUG
+            debugCardLookupRebuildCount += 1
+            #endif
             cardWindow = 0 ..< 0
             gridWindow = 0 ..< 0
         }
@@ -279,7 +295,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             shelfStyle = model.shelfStyle
             gesture.reset()
             jumpRow(to: 0)
-            if let index = cards.firstIndex(where: { $0.id == styleFocusID }) {
+            if let index = styleFocusID.flatMap({ cardIndexByID[$0] }) {
                 focusedCardIndex = index
                 if shelfStyle.isCentred {
                     jumpRow(to: -Double(index) * StageGeometry.metrics(for: shelfStyle).pitch)
@@ -335,7 +351,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else if registeredDraggedTypes.isEmpty {
             registerForDraggedTypes([.fileURL])
         }
-        if let source = ghost.source, !cards.contains(where: { $0.id == source }) {
+        if let source = ghost.source, cardIndexByID[source] == nil {
             if dragging {
                 model.emit(.dropCancelled(card: source))
             }
@@ -540,10 +556,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func syncPreviewPlayback() {
         let hovered = window != nil && !dragging && !model.reduceMotion && shelfAtRest ? model.hoveredCard : nil
         // The GIF check is part of the target, not only of `previewPlays`: a picture landing under a still pointer must start it.
-        let target = hovered.flatMap { id in cards.first { $0.id == id && ShelfPreviewPlayback.displaysGIF($0) }?.id }
-        guard target != previewPlayer.cardID else { return }
+        let targetCard = card(for: hovered).flatMap { ShelfPreviewPlayback.displaysGIF($0) ? $0 : nil }
+        guard targetCard?.id != previewPlayer.cardID else { return }
         previewPlayer.stop()
-        guard let target, let card = cards.first(where: { $0.id == target }), let tile = cardLayers[target] else { return }
+        guard let card = targetCard, let tile = cardLayers[card.id] else { return }
+        let target = card.id
         let scale = window?.backingScaleFactor ?? 2
         let maxPixelSize = Int((max(StageGeometry.cardSize.width, StageGeometry.cardSize.height) * scale).rounded())
         previewPlayer.play(card, on: tile.thumbnail, maxPixelSize: maxPixelSize) { [weak self] in
@@ -552,7 +569,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     private func previewPlays(_ id: StageCard.ID) -> Bool {
-        guard let card = cards.first(where: { $0.id == id }) else { return false }
+        guard let card = card(for: id) else { return false }
         return ShelfPreviewPlayback.plays(
             displaysGIF: ShelfPreviewPlayback.displaysGIF(card),
             hoverSettled: model.hoveredCard == id,
@@ -1389,7 +1406,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     private var hoveredIndex: Int? {
-        model.hoveredCard.flatMap { id in cards.firstIndex { $0.id == id } }
+        model.hoveredCard.flatMap { cardIndexByID[$0] }
+    }
+
+    private func card(for id: StageCard.ID?) -> StageCard? {
+        guard let id, let index = cardIndexByID[id] else { return nil }
+        return cards[index]
     }
 
     /// 0…1 for how close the pointer is to the card row at rest, easing in over `waveApproach`
@@ -1599,7 +1621,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard !model.interactionBlocked else { return }
         let point = convert(event.locationInWindow, from: nil)
         withoutActions {
-            if !dragging, gesture.shouldStartDrag(at: point), let card = cards.first(where: { $0.id == pressedCard }), card.isDraggable {
+            if !dragging, gesture.shouldStartDrag(at: point), let card = card(for: pressedCard), card.isDraggable {
                 // A snap still flying to the grid hands the page to SwiftUI when it lands, which
                 // would cover the drag; the press becomes a cancelled click instead.
                 guard progress.target != 2 || progress.isSettled else {
@@ -1934,7 +1956,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             let id = card.id
             let preview: @MainActor @Sendable () -> Bool = { [weak self] in
                 guard let self, !model.interactionBlocked, progress.value >= StageGeometry.cardTapMinimumProgress,
-                      cards.contains(where: { $0.id == id }) else { return false }
+                      cardIndexByID[id] != nil else { return false }
                 model.emit(.cardTapped(id))
                 return true
             }
@@ -1946,7 +1968,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 element.setAccessibilityCustomActions([
                     StageAccessibilityElement.customAction(name: String(localized: "Apply", bundle: .appLanguage)) { [weak self] in
                         guard let self, !model.interactionBlocked, progress.value >= StageGeometry.cardTapMinimumProgress,
-                              cards.contains(where: { $0.id == id }) else { return false }
+                              cardIndexByID[id] != nil else { return false }
                         model.emit(.cardApplyRequested(id))
                         return true
                     },
@@ -1998,6 +2020,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     var debugFocusedCardIndex: Int? {
         focusedCardIndex
+    }
+
+    var debugHoveredCardIndex: Int? {
+        hoveredIndex
     }
 
     var debugFocusRingFrame: CGRect? {

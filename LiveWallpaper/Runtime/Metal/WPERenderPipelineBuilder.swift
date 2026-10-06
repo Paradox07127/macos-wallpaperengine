@@ -121,9 +121,11 @@ struct WPERenderPipelineBuilder: Sendable {
         var rotationReport = WPECanonicalCompositeRotationReport(enabled: false, decisions: [:])
         if canonicalCompositeRotationEnabled ?? (environment["WPE_CANONICAL_COMPOSITE_ROTATION"] != "0") {
             let rotation = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: pipeline, sceneHDR: sceneHDR)
+            #if DEBUG
             for (objectID, decision) in rotation.decisions.sorted(by: { $0.key < $1.key }) {
-                Logger.info("[WPE canonical rotation] object=\(objectID) decision=\(decision)", category: .wpeRender)
+                Logger.debug("[WPE canonical rotation] object=\(objectID) decision=\(decision)", category: .wpeRender)
             }
+            #endif
             pipeline = rotation.pipeline
             rotationReport = WPECanonicalCompositeRotationReport(enabled: true, decisions: rotation.decisions)
         }
@@ -131,9 +133,11 @@ struct WPERenderPipelineBuilder: Sendable {
         var elisionReport = WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:])
         if fullFramePassthroughElisionEnabled ?? (environment["WPE_FULLFRAME_PASSTHROUGH_ELISION"] != "0") {
             let elision = WPERenderGraphBuilder.elidingFullFramePassthroughs(in: pipeline, sceneHDR: sceneHDR)
+            #if DEBUG
             for (objectID, decision) in elision.decisions.sorted(by: { $0.key < $1.key }) {
-                Logger.info("[WPE passthrough elision] object=\(objectID) decision=\(decision)", category: .wpeRender)
+                Logger.debug("[WPE passthrough elision] object=\(objectID) decision=\(decision)", category: .wpeRender)
             }
+            #endif
             pipeline = elision.pipeline
             elisionReport = WPEFullFramePassthroughElisionReport(enabled: true, decisions: elision.decisions)
         }

@@ -29,15 +29,15 @@ extension ScreenManager {
         Logger.screensDetected(newScreens.count)
 
         let oldScreens = screens
-        let oldScreenIDs = Set(oldScreens.map(\.id))
-        let newScreenIDs = Set(newScreens.map(\.id))
-        let oldFingerprintsByID = Dictionary(
-            oldScreens.map { ($0.id, $0.displayFingerprint) },
+        let oldScreensByID = Dictionary(
+            oldScreens.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        let oldScreenIDs = Set(oldScreensByID.keys)
+        let newScreenIDs = Set(newScreens.map(\.id))
 
         for screenID in oldScreenIDs.subtracting(newScreenIDs) {
-            if let screen = oldScreens.first(where: { $0.id == screenID }) {
+            if let screen = oldScreensByID[screenID] {
                 Logger.info("Cleaning up removed screen \(screenID)", category: .screenManager)
                 releaseRuntimeSession(screen)
             }
@@ -46,8 +46,8 @@ extension ScreenManager {
 
         // A recycled/repurposed CGDirectDisplayID (same ID, different physical panel) reports a new displayFingerprint.
         let identityChangedIDs = Set(newScreens.compactMap { newScreen -> CGDirectDisplayID? in
-            guard let oldFingerprint = oldFingerprintsByID[newScreen.id],
-                  oldFingerprint != newScreen.displayFingerprint else { return nil }
+            guard let oldScreen = oldScreensByID[newScreen.id],
+                  oldScreen.displayFingerprint != newScreen.displayFingerprint else { return nil }
             return newScreen.id
         })
         for screen in oldScreens where identityChangedIDs.contains(screen.id) {
@@ -57,25 +57,21 @@ extension ScreenManager {
 
         var forcedReloadIDs: Set<CGDirectDisplayID> = []
         if !preserveRuntimeSessions {
-            for screen in oldScreens where newScreenIDs.contains(screen.id) {
+            for screen in oldScreens where newScreenIDs.contains(screen.id)
+                && !identityChangedIDs.contains(screen.id) {
                 releaseRuntimeSession(screen)
             }
             forcedReloadIDs = oldScreenIDs.intersection(newScreenIDs)
         }
 
-        var updatedScreens = [Screen]()
-
-        for newScreen in newScreens {
-            if preserveRuntimeSessions,
-               !identityChangedIDs.contains(newScreen.id),
-               let existingScreen = oldScreens.first(where: { $0.id == newScreen.id }) {
+        if preserveRuntimeSessions {
+            for newScreen in newScreens where !identityChangedIDs.contains(newScreen.id) {
+                guard let existingScreen = oldScreensByID[newScreen.id] else { continue }
                 newScreen.adoptRuntimeSession(from: existingScreen)
             }
-
-            updatedScreens.append(newScreen)
         }
 
-        screens = updatedScreens
+        screens = newScreens
 
         let reloadIDs = newScreenIDs.subtracting(oldScreenIDs).union(identityChangedIDs).union(forcedReloadIDs)
         for screen in newScreens where reloadIDs.contains(screen.id) {

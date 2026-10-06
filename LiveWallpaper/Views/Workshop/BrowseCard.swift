@@ -168,13 +168,7 @@ struct BrowseCard: View, Equatable {
             )
         }
         .overlay(alignment: .topLeading) {
-            if showsEditDeskTopRow {
-                EditDeskTopRow(
-                    inUseBadge: showsInUseBadge ? inUseBadge : nil, rating: shouldBlur ? nil : editDeskMarks.rating,
-                    resolution: shouldBlur ? nil : editDeskMarks.resolution, status: editDeskStatus, like: likeMark
-                )
-                .padding(DesignTokens.Spacing.sm)
-            }
+            topBadgeRow
         }
         .overlay(alignment: .bottom) {
             if !shouldBlur {
@@ -188,13 +182,15 @@ struct BrowseCard: View, Equatable {
 
     /// SCREENS S8: the title over subscribers and size, on a gradient that fades into the picture.
     private var editDeskInfoBand: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+        let subscribers = subscriberText
+        let size = formattedSize
+        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
             // One line at rest; hover opens a second and scrolls whatever still overflows.
             MarqueeText(item.title.translatedWallpaperName, lineLimit: isHovered ? 2 : 1, isActive: isHovered)
                 .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
-            if subscriberText != nil || formattedSize != nil {
-                EditDeskStatsRow(subscribers: subscriberText, size: formattedSize)
+            if subscribers != nil || size != nil {
+                EditDeskStatsRow(subscribers: subscribers, size: size)
             }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.workshopCardBandInset)
@@ -211,7 +207,11 @@ struct BrowseCard: View, Equatable {
     }
 
     private var editDeskMarks: (rating: String?, resolution: String?) {
-        Self.editDeskMarks(rating: ratingValue, resolution: resolutionLabel, preferences: cardPreferences)
+        Self.editDeskMarks(
+            rating: ratingValue,
+            resolution: cardPreferences.showsResolution ? resolutionLabel : nil,
+            preferences: cardPreferences
+        )
     }
 
     /// The rating and the resolution the top row badges; nil where there is none or its switch is off.
@@ -234,10 +234,18 @@ struct BrowseCard: View, Equatable {
         return nil
     }
 
-    /// The heart stays up on a blurred card too: it marks the user's choice, not the picture.
-    private var showsEditDeskTopRow: Bool {
-        likeMark != nil
-            || (!shouldBlur && (showsInUseBadge || editDeskMarks.rating != nil || editDeskMarks.resolution != nil || editDeskStatus != nil))
+    /// The heart stays up on a blurred card too. Derive the visible row once,
+    /// so testing for its presence does not repeat tag parsing and formatting.
+    @ViewBuilder
+    private var topBadgeRow: some View {
+        let marks: (rating: String?, resolution: String?) = shouldBlur ? (nil, nil) : editDeskMarks
+        let inUse = showsInUseBadge ? inUseBadge : nil
+        let status = editDeskStatus
+        let like = likeMark
+        if like != nil || inUse != nil || marks.rating != nil || marks.resolution != nil || status != nil {
+            EditDeskTopRow(inUseBadge: inUse, rating: marks.rating, resolution: marks.resolution, status: status, like: like)
+                .padding(DesignTokens.Spacing.sm)
+        }
     }
 
     /// Always up once liked; offered on hover otherwise, except on a banned item, which cannot be liked.

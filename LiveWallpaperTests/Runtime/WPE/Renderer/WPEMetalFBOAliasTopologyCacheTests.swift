@@ -388,6 +388,42 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
 
     // MARK: - 1. Steady state
 
+    @Test("Grouping parents reuse topology and follow parent or graph scene-pass changes")
+    func groupingParentsFollowStructuralChanges() throws {
+        let executor = try executor()
+        let scenePass = aliasPass(id: "child.scene", target: .scene)
+        let fboPass = aliasPass(id: "child.fbo", target: .fbo(name: "buffer"))
+        func pipeline(parent: String?, graphPasses: [WPERenderPass]) -> WPEPreparedRenderPipeline {
+            let layer = aliasLayer(objectID: "child", parentObjectID: parent, passes: graphPasses)
+            // Keep prepared passes fixed: grouping reads the graph's original
+            // passes, including passes eliminated during pipeline preparation.
+            return WPEPreparedRenderPipeline(layers: [layer.replacing(passes: [preparedAliasPass(fboPass)])])
+        }
+
+        let first = pipeline(parent: "group-a", graphPasses: [scenePass, fboPass])
+        let topology = executor.validatedFBOAliasTopology(for: first)
+        #expect(topology.groupingContainerObjectIDs == ["group-a"])
+        for _ in 0 ..< 8 {
+            #expect(executor.validatedFBOAliasTopology(for: first).groupingContainerObjectIDs == ["group-a"])
+        }
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        #expect(try metrics(executor).structuralScans == 0)
+
+        let tinted = first.applyingFrameOverlay(WPEFrameOverlay(alpha: ["child": 0.5]))
+        #expect(executor.validatedFBOAliasTopology(for: tinted).groupingContainerObjectIDs == ["group-a"])
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+
+        for (parent, passes, expected, rebuilds) in [
+            ("group-b" as String?, [scenePass, fboPass], Set(["group-b"]), 2),
+            ("group-b" as String?, [fboPass], Set<String>(), 3),
+            (nil, [scenePass, fboPass], Set<String>(), 3),
+        ] {
+            let changed = pipeline(parent: parent, graphPasses: passes)
+            #expect(executor.validatedFBOAliasTopology(for: changed).groupingContainerObjectIDs == expected)
+            #expect(executor.fboAliasTopologyRebuildCount == rebuilds)
+        }
+    }
+
     @Test("Re-presenting the same pipeline value costs no walk and no rescan")
     func identicalPipelineValueSkipsEveryScan() throws {
         let executor = try executor()
@@ -699,6 +735,7 @@ private func preparedAliasPass(_ pass: WPERenderPass) -> WPEPreparedRenderPass {
 private func aliasLayer(
     objectID: String,
     imagePath: String = "materials/base.png",
+    parentObjectID: String? = nil,
     geometry: WPERenderLayerGeometry = .identity,
     localFBOs: [WPERenderFBO] = [],
     passes: [WPERenderPass]
@@ -708,6 +745,7 @@ private func aliasLayer(
         objectName: objectID,
         imagePath: imagePath,
         materialPath: nil,
+        parentObjectID: parentObjectID,
         geometry: geometry,
         compositeA: "_rt_imageLayerComposite_\(objectID)_a",
         compositeB: "_rt_imageLayerComposite_\(objectID)_b",

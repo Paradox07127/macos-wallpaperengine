@@ -98,8 +98,7 @@ final class MetadataService {
         guard let tracks = try? await asset.loadTracks(withMediaType: .video),
               let track = tracks.first
         else { return nil }
-        guard let size = try? await track.load(.naturalSize),
-              let transform = try? await track.load(.preferredTransform)
+        guard let (size, transform) = try? await track.load(.naturalSize, .preferredTransform)
         else { return nil }
         let transformed = size.applying(transform)
         return CGSize(width: abs(transformed.width), height: abs(transformed.height))

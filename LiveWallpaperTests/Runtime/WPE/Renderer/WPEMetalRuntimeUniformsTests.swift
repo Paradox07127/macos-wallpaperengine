@@ -166,6 +166,23 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(abs(uv.y - 0.75) < 0.0001)
     }
 
+    @Test("Mailbox sampler reuses frame input snapshot while custom samplers remain independent")
+    func pointerSamplerReusesMatchingMailboxSnapshot() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.publishGeometry(.init(viewFrameInScreen: CGRect(x: 0, y: 0, width: 100, height: 100)))
+        mailbox.publishMouseLocation(CGPoint(x: 25, y: 75), timestampNanos: 1)
+        let reading = mailbox.read()
+        let sampler = WPEMetalPointerSampler.mailbox(mailbox)
+        mailbox.publishMouseLocation(CGPoint(x: 75, y: 25), timestampNanos: 2)
+
+        #expect(sampler.sample(using: reading, from: mailbox) == .inside(SIMD2<Double>(0.25, 0.25)))
+        #expect(sampler.sample() == .inside(SIMD2<Double>(0.75, 0.75)))
+        #expect(sampler.sample(using: reading, from: WPEPointerMailbox()) == sampler.sample())
+        #expect(WPEMetalPointerSampler.fixed(SIMD2<Double>(0.1, 0.9))
+            .sample(using: reading, from: mailbox) == .inside(SIMD2<Double>(0.1, 0.9)))
+        #expect(WPEMetalPointerSampler.fixedOutside().sample(using: reading, from: mailbox) == .inactive)
+    }
+
     @Test("Pointer sampler marks locations outside the renderer view inactive")
     func pointerSamplerMarksLocationsOutsideRendererViewInactive() throws {
         let window = NSWindow(

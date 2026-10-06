@@ -1,7 +1,10 @@
 #if !LITE_BUILD
+import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
+import SwiftUI
 import Testing
 
 @Suite("Workshop bookmarks")
@@ -130,6 +133,53 @@ struct WorkshopBookmarkTests {
         #expect(items.map(\.id) == [1, 2])
     }
 
+    @Test("A hosted Likes grid follows loaded metadata and like actions without rebuilding its host")
+    func hostedLikesGridRefreshesAfterMetadataAndLikeChanges() async throws {
+        let (_, workshop, suite) = try Self.stores("hostedLikes")
+        defer { suite.discard() }
+        for id: UInt64 in [1, 2] {
+            workshop.add(WorkshopBookmark(
+                id: id, rawTitle: "Rain", previewImageURL: nil, tags: [],
+                createdAt: Date(timeIntervalSince1970: Double(id) * 100)
+            ))
+        }
+        let input = WorkshopLikesRefreshInput()
+        input.browseItems = [Self.queryItem(2, rawTitle: "Loaded first"), Self.queryItem(2, rawTitle: "Loaded duplicate")]
+        let host = NSHostingView(rootView: WorkshopLikesRefreshGrid(store: workshop, input: input)
+            .frame(width: 640, height: 260))
+        let window = ParkedTestWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 640, height: 260),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        @MainActor func rendered(_ ids: [UInt64], titles: [String?]) async -> Bool {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                if input.renderedItems.map(\.id) == ids, input.renderedItems.map(\.rawTitle) == titles {
+                    return true
+                }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return false
+        }
+        #expect(await rendered([2, 1], titles: ["Loaded first", "Rain"]))
+
+        input.browseItems = [Self.queryItem(1, rawTitle: "New remote title")]
+        #expect(await rendered([2, 1], titles: ["Rain", "New remote title"]))
+        WorkshopBookmarkActions.toggle(Self.queryItem(2), workshopStore: workshop)
+        #expect(await rendered([1], titles: ["New remote title"]))
+        WorkshopBookmarkActions.toggle(Self.queryItem(3, rawTitle: "New like"), workshopStore: workshop)
+        #expect(await rendered([3, 1], titles: ["New like", "New remote title"]))
+    }
+
     @Test("A card wired the way Browse wires it saves its item on the first click and removes it on the second")
     func browseCardTogglesTheBookmark() throws {
         let (_, workshop, suite) = try Self.stores("card")
@@ -166,5 +216,30 @@ struct WorkshopBookmarkTests {
         #expect(records.contains(#"libraryBookmarks.remove("bookmark:\("#), "a deleted item's saved variants keep their library marks")
     }
 
+}
+
+@MainActor @Observable
+private final class WorkshopLikesRefreshInput {
+    var browseItems: [WorkshopQueryItem] = []
+    @ObservationIgnored var renderedItems: [WorkshopQueryItem] = []
+}
+
+private struct WorkshopLikesRefreshGrid: View {
+    let store: WorkshopBookmarkStore
+    let input: WorkshopLikesRefreshInput
+
+    var body: some View {
+        let items = WorkshopBookmarkActions.likedItems(browseItems: input.browseItems, workshopStore: store)
+        LibraryGalleryGrid(size: .small, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth) {
+            ForEach(items) { item in
+                BrowseCard(
+                    item: item, cardPreferences: GalleryCardPreferences(), reduceMotion: true,
+                    isBookmarked: true, onBookmark: { WorkshopBookmarkActions.toggle(item, workshopStore: store) }
+                )
+                .equatable()
+            }
+        }
+        .onChange(of: items, initial: true) { _, shown in input.renderedItems = shown }
+    }
 }
 #endif

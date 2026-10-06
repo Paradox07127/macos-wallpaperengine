@@ -228,8 +228,15 @@ extension WPEMetalRenderExecutor {
         struct SignatureEntry: Equatable {
             let objectID: String
             let imagePath: String
+            let sceneParentObjectID: String?
             let localFBOs: [WPERenderFBO]
             let passes: [PassSignature]
+
+            static func sceneParentObjectID(for layer: WPEPreparedRenderLayer) -> String? {
+                guard let parentID = layer.graphLayer.parentObjectID,
+                      layer.graphLayer.passes.contains(where: { $0.target == .scene }) else { return nil }
+                return parentID
+            }
         }
 
         /// Fields `keyDimensions` reads. Alpha/color/origin never reach a pool key, so an animated tint or a moved (but unscaled) layer must not invalidate the interval memo.
@@ -286,6 +293,8 @@ extension WPEMetalRenderExecutor {
         let swapFBONames: Set<String>
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
+        /// Structural parent routing, shared by every frame using this topology.
+        let groupingContainerObjectIDs: Set<String>
         /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
         let sizingLayerIndices: [Int]
 
@@ -314,6 +323,7 @@ extension WPEMetalRenderExecutor {
             historyFBONames = attachmentPlan.historyFBONames.subtracting(swapFBONames)
             self.itemIndicesByKeyName = itemIndicesByKeyName
             self.signature = signature
+            groupingContainerObjectIDs = Set(signature.compactMap(\.sceneParentObjectID))
             self.sizingLayerIndices = sizingLayerIndices
             validatedLayers = layers
             sizingGeometry = sizingLayerIndices.map {
@@ -358,6 +368,7 @@ extension WPEMetalRenderExecutor {
                 let entry = signature[index]
                 if entry.objectID != layer.graphLayer.objectID
                     || entry.imagePath != layer.graphLayer.imagePath
+                    || entry.sceneParentObjectID != SignatureEntry.sceneParentObjectID(for: layer)
                     || entry.localFBOs != layer.graphLayer.localFBOs
                     || entry.passes.count != layer.passes.count {
                     return false
@@ -393,6 +404,7 @@ extension WPEMetalRenderExecutor {
             signature.append(FBOAliasTopology.SignatureEntry(
                 objectID: layer.graphLayer.objectID,
                 imagePath: layer.graphLayer.imagePath,
+                sceneParentObjectID: FBOAliasTopology.SignatureEntry.sceneParentObjectID(for: layer),
                 localFBOs: layer.graphLayer.localFBOs,
                 passes: layer.passes.map {
                     FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target, access: $0.access, gate: $0.pass.visibilityGate)

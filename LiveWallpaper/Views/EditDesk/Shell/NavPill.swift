@@ -19,10 +19,10 @@ struct NavPill: View {
                 workshopAvailable: workshopAvailable, systemWallpaperAvailable: EditDeskRouter.systemWallpaperSupported
             ),
             shell: .editDesk
-        ) { item, isSelected in
+        ) { item, _ in
             let label = Text(Self.title(for: item))
                 .font(DesignTokens.EditDesk.Typography.navItem)
-                .foregroundStyle(isSelected ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textCapsule)
+                .foregroundStyle(DesignTokens.Colors.textPrimary)
             if item == .schemes {
                 label
                     .help(Text("Display setups you saved"))

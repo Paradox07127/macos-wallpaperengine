@@ -134,8 +134,8 @@ final class HostView: NSView {
         interactionModel.apply(configuration: configuration)
         pointerScope = Self.pointerScope(for: configuration, isEditing: interactionModel.isEditing)
         reduceMotionOverride = configuration.reduceMotionOverride
-        reduceMotion = reduceMotionOverride ?? reduceMotionWatcher.isReduced
-        rebuildRootView()
+        // The observed model publishes configuration changes; only a changed environment needs a new root.
+        systemReduceMotionDidChange()
     }
 
     func setWeatherService(_ service: WeatherReactiveService?) {
@@ -152,6 +152,8 @@ final class HostView: NSView {
     }
 
     #if DEBUG
+    private(set) var debugRootViewRebuildCount = 0
+
     var debugReduceMotion: Bool {
         hostingView.rootView.reduceMotion
     }
@@ -197,6 +199,9 @@ final class HostView: NSView {
     }
 
     private func rebuildRootView() {
+        #if DEBUG
+        debugRootViewRebuildCount += 1
+        #endif
         hostingView.rootView = MonitorBoardRootContainer(
             model: interactionModel,
             data: dataModel,

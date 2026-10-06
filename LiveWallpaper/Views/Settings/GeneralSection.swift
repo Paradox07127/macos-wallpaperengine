@@ -256,7 +256,7 @@ private struct TranslationLanguageDownloadRows<Language: View>: View {
             subtitle: offersDownload
                 ? "Download the translation languages for Chinese and \(languageName) to show Chinese wallpaper names, settings, and descriptions in \(languageName)."
                 : nil,
-            info: offersDownload ? nil : "Shows Chinese wallpaper names, settings, and descriptions in the app language. Translation runs on this Mac."
+            info: offersDownload ? nil : "Translates wallpaper titles, settings, and descriptions into the app language. Requires the matching translation languages, downloaded in System Settings."
         ) {
             HStack(spacing: 8) {
                 if offersDownload {

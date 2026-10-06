@@ -34,10 +34,13 @@ enum WorkshopBookmarkActions {
     static func likedItems(
         browseItems: [WorkshopQueryItem], workshopStore: WorkshopBookmarkStore = .shared
     ) -> [WorkshopQueryItem] {
+        let bookmarks = workshopStore.bookmarks
+        guard !bookmarks.isEmpty else { return [] }
+        let browseByID = Dictionary(browseItems.lazy.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // Backup import appends old likes at the end, so store order is not like order.
-        workshopStore.bookmarks.reversed().sorted { $0.createdAt > $1.createdAt }.map { bookmark in
+        return bookmarks.reversed().sorted { $0.createdAt > $1.createdAt }.map { bookmark in
             let saved = queryItem(bookmark)
-            return browseItems.first { $0.id == bookmark.id }?.preservingDetails(from: saved) ?? saved
+            return browseByID[bookmark.id]?.preservingDetails(from: saved) ?? saved
         }
     }
 

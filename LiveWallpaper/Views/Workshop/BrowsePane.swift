@@ -236,17 +236,18 @@ struct BrowsePane: View {
     }
 
     private var populatedGrid: some View {
-        ScrollViewReader { proxy in
+        let displayed = viewModel.displayedItems
+        return ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 0).id(Self.gridTopAnchor)
 
                     if viewModel.items.isEmpty {
                         filteredPageNote
-                    } else if viewModel.displayedItems.isEmpty {
+                    } else if displayed.isEmpty {
                         scopeEmptyNote
                     } else {
-                        cardGrid(viewModel.displayedItems)
+                        cardGrid(displayed)
                     }
 
                     paginationBar

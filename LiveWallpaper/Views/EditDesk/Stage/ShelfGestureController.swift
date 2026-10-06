@@ -282,9 +282,17 @@ final class ShelfGestureController {
     /// Row cards overlap, so the hit is the one drawn on top at that point — the one the user can
     /// actually see there. `order` is each card's `depthOrder`, index breaking ties.
     static func card(at point: CGPoint, shapes: [StageGeometry.CardShape], order: [CGFloat]) -> Int? {
-        shapes.indices
-            .filter { shapes[$0].contains(point) }
-            .max { (order[$0], $0) < (order[$1], $1) }
+        var hit: Int?
+        for index in shapes.indices where shapes[index].contains(point) {
+            guard let current = hit else {
+                hit = index
+                continue
+            }
+            if (order[current], current) < (order[index], index) {
+                hit = index
+            }
+        }
+        return hit
     }
 
     static func display(at point: CGPoint, frames: [(StageDisplay.ID, CGRect)]) -> StageDisplay.ID? {

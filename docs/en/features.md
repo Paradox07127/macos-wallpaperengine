@@ -22,7 +22,7 @@ and the app target's build gates.
 
 | Settings page | Edition | Contents |
 |---|---|---|
-| General | both | Language, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility, opening animation, wallpaper transition |
+| General | both | Language, wallpaper text translation switch (Pro only), login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility, opening animation, wallpaper transition |
 | Appearance | both | Light/dark appearance, main window background, library tile size, shelf style and shelf options |
 | Display Defaults | both | Display arrangement and renaming; playback, frame rate, fit, color and interaction defaults |
 | Shortcuts | both | Master switch and eight bindable actions |

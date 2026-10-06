@@ -906,12 +906,7 @@ final class WPEMetalRenderExecutor {
             diagnostics.sceneAliasDirectBinds = frameState.sceneAliasDirectBinds
         }
         currentSceneSize = size
-        groupingContainerObjectIDs = preparedPipeline.layers.reduce(into: Set<String>()) { parents, layer in
-            guard let parentID = layer.graphLayer.parentObjectID,
-                  layer.graphLayer.passes.contains(where: { $0.target == .scene })
-            else { return }
-            parents.insert(parentID)
-        }
+        groupingContainerObjectIDs = validatedFBOAliasTopology(for: preparedPipeline).groupingContainerObjectIDs
         parallaxRootCenterByObjectID = Self.parallaxRootCenters(
             for: preparedPipeline.layers.lazy.map(\.graphLayer),
             sceneSize: size,

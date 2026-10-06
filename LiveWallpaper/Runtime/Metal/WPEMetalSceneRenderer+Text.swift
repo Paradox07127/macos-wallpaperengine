@@ -27,12 +27,13 @@ extension WPEMetalSceneRenderer {
         }
 
         let layerByID = Dictionary(
-            pipeline.layers.map { ($0.graphLayer.objectID, $0.graphLayer) },
+            pipeline.layers.lazy.map { ($0.graphLayer.objectID, $0.graphLayer) },
             uniquingKeysWith: { first, _ in first }
         )
         var updates: [String: (layout: WPETextLayoutSnapshot, initial: WPETextLayoutSnapshot)] = [:]
         var payloads: [String: WPETextRenderPayload] = [:]
         var obsoleteTargetNames: Set<String> = []
+        var groupFBOsByName: [String: WPERenderFBO]?
 
         for plan in textRenderPlans {
             guard let layer = layerByID[plan.object.id] else { continue }
@@ -86,11 +87,16 @@ extension WPEMetalSceneRenderer {
             let placement: WPETextMeshPlacement?
             switch plan.mode {
             case .direct:
+                // Many text objects may share a group. Build its declaration
+                // lookup once per frame, only when grouped text needs it.
+                if layer.groupRenderTarget != nil, groupFBOsByName == nil {
+                    groupFBOsByName = Dictionary(
+                        pipeline.layers.lazy.flatMap { $0.graphLayer.localFBOs }.map { ($0.name, $0) },
+                        uniquingKeysWith: { first, _ in first }
+                    )
+                }
                 let groupSize = layer.groupRenderTarget.flatMap { target in
-                    pipeline.layers.lazy
-                        .flatMap { $0.graphLayer.localFBOs }
-                        .first { $0.name == target }?
-                        .pixelSize
+                    groupFBOsByName?[target]?.pixelSize
                 }
                 placement = directTextPlacement(
                     layer: layer,
@@ -270,8 +276,11 @@ extension WPEMetalSceneRenderer {
         _ colors: [String: SIMD3<Double>]
     ) -> [String: SIMD3<Double>] {
         guard !textRenderPlans.isEmpty, !colors.isEmpty else { return colors }
-        let textIDs = Set(textRenderPlans.map { $0.object.id })
-        return colors.filter { !textIDs.contains($0.key) }
+        var layerColors = colors
+        for plan in textRenderPlans {
+            layerColors.removeValue(forKey: plan.object.id)
+        }
+        return layerColors
     }
 
     // MARK: - Loading

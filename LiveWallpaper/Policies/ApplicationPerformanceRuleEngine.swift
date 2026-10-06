@@ -5,24 +5,40 @@ import LiveWallpaperCore
 enum ApplicationPerformanceRuleEngine {
     /// Evaluates configured application rules without enumerating processes unless required.
     @MainActor
-    static func isActive(for settings: GlobalSettings) -> Bool {
+    static func evaluate(for settings: GlobalSettings) -> (shouldPause: Bool, frontmostExcluded: Bool) {
         let rules = settings.applicationPerformanceRules
-        guard !rules.isEmpty else { return false }
-        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let running: Set<String> = rules.contains(where: { $0.trigger == .running })
-            ? Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-            : []
-        return shouldPause(frontmostBundleID: frontmost, runningBundleIDs: running, rules: rules)
+        guard !rules.isEmpty else { return (false, false) }
+        return evaluate(
+            frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            rules: rules,
+            runningBundleIDs: { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
+        )
     }
 
-    @MainActor
-    static func isFrontmostExcluded(for settings: GlobalSettings) -> Bool {
-        let rules = settings.applicationPerformanceRules
-        guard rules.contains(where: { $0.trigger == .neverPause }) else { return false }
-        return frontmostIsExcluded(
-            frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            rules: rules
-        )
+    /// Snapshot running processes at most once, and only if no frontmost rule already pauses.
+    static func evaluate(
+        frontmostBundleID: String?,
+        rules: [ApplicationPerformanceRule],
+        runningBundleIDs: () -> Set<String>
+    ) -> (shouldPause: Bool, frontmostExcluded: Bool) {
+        var pause = false
+        var excluded = false
+        var needsRunningApps = false
+        for rule in rules {
+            switch rule.trigger {
+            case .frontmost:
+                pause = pause || rule.bundleID == frontmostBundleID
+            case .neverPause:
+                excluded = excluded || rule.bundleID == frontmostBundleID
+            case .running:
+                needsRunningApps = true
+            }
+        }
+        if !pause, needsRunningApps {
+            let running = runningBundleIDs()
+            pause = rules.contains { $0.trigger == .running && running.contains($0.bundleID) }
+        }
+        return (pause, excluded)
     }
 
     static func frontmostIsExcluded(frontmostBundleID: String?, rules: [ApplicationPerformanceRule]) -> Bool {

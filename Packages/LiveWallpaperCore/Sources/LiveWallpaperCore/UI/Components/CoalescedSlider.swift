@@ -148,6 +148,7 @@ public struct CoalescedSlider<Readout: View>: View {
         Binding(
             get: { value },
             set: { next in
+                guard next != value else { return }
                 draggingValue = next
                 scheduleCommit(next)
             }
@@ -159,7 +160,7 @@ public struct CoalescedSlider<Readout: View>: View {
         let final = draggingValue ?? committedValue
         draggingValue = nil
         cancelPendingCommit()
-        guard final != lastWrittenValue else {
+        guard final != (lastWrittenValue ?? committedValue) else {
             lastWrittenValue = nil
             return
         }
@@ -173,6 +174,7 @@ public struct CoalescedSlider<Readout: View>: View {
             try? await Task.sleep(for: quietWindow)
             guard !Task.isCancelled else { return }
             commitTask = nil
+            guard next != (lastWrittenValue ?? committedValue) else { return }
             lastWrittenValue = next
             write(next)
         }

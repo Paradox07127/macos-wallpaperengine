@@ -152,7 +152,8 @@ struct LibrarySortControl<Content: View>: View {
                     .imageScale(.small)
             }
             .font(DesignTokens.EditDesk.Typography.body)
-            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+            // Menu's relative .primary can inherit a light native trigger style.
+            .foregroundStyle(DesignTokens.Colors.textPrimary)
             .padding(.horizontal, DesignTokens.Spacing.sm)
             .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
             .adaptiveGlassSurface(.capsule, interactive: true)

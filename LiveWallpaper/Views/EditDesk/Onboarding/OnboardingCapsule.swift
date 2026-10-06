@@ -57,7 +57,7 @@ struct OnboardingCapsule: View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
             Text("Get Started")
                 .font(DesignTokens.EditDesk.Typography.badgeMono)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+                .foregroundStyle(DesignTokens.Colors.textPrimary)
             HStack(spacing: DesignTokens.Spacing.xs) {
                 ForEach(Array(dots.enumerated()), id: \.offset) { _, isHandled in
                     Circle()

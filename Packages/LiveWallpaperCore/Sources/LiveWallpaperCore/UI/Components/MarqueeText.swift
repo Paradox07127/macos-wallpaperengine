@@ -22,16 +22,23 @@ public struct MarqueeText: View {
         self.isActive = isActive
     }
 
-    private var overflow: CGFloat { max(0, contentHeight - windowHeight) }
-    private var shouldScroll: Bool { isActive && !reduceMotion && overflow > 0.5 }
+    private var overflow: CGFloat {
+        max(0, contentHeight - windowHeight)
+    }
+
+    private var shouldScroll: Bool {
+        isActive && !reduceMotion && windowHeight > 0 && overflow > 0.5
+    }
 
     /// Distance is in the plan so a resize restarts the crawl; rounded to half a point
     /// so measurement jitter can't restart it every frame.
     private var plan: ScrollPlan {
-        ScrollPlan(isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
+        ScrollPlan(text: text, lineLimit: lineLimit, isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
     }
 
     private struct ScrollPlan: Equatable {
+        let text: String
+        let lineLimit: Int
         let isScrolling: Bool
         let distance: CGFloat
     }
@@ -54,25 +61,30 @@ public struct MarqueeText: View {
                     .accessibilityHidden(true)
             }
             .clipped()
-            .onChange(of: plan) { _, _ in restart() }
-            .onChange(of: text) { _, _ in offset = 0 }
+            .task(id: plan) { await restart(for: plan) }
             .accessibilityElement()
             .accessibilityLabel(Text(verbatim: text))
     }
 
-    private func restart() {
-        guard shouldScroll else {
-            guard offset != 0 else { return }
-            withAnimation(.easeOut(duration: 0.25)) { offset = 0 }
+    private func restart(for plan: ScrollPlan) async {
+        // Cancel the previous presentation animation without inheriting the
+        // card's hover transition. The reading pause must precede the target
+        // mutation: resetting and retargeting in one update coalesces them.
+        var reset = Transaction(animation: nil)
+        reset.disablesAnimations = true
+        withTransaction(reset) { offset = 0 }
+        guard plan.isScrolling else { return }
+        do {
+            try await Task.sleep(for: .seconds(startDelay))
+        } catch {
             return
         }
-        offset = 0
+        guard !Task.isCancelled else { return }
         withAnimation(
-            .linear(duration: Double(overflow / speed))
-                .delay(startDelay)
+            .linear(duration: Double(plan.distance / speed))
                 .repeatForever(autoreverses: true)
         ) {
-            offset = -overflow
+            offset = -plan.distance
         }
     }
 }

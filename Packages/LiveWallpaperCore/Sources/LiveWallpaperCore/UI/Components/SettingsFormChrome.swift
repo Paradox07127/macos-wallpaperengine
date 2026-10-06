@@ -18,9 +18,9 @@ private struct SettingsFormChrome: ViewModifier {
             .contentMargins(.horizontal, DesignTokens.Settings.formHorizontalMargin, for: .scrollContent)
             .contentMargins(.vertical, DesignTokens.Settings.formVerticalMargin, for: .scrollContent)
             .frame(minWidth: minWidth, minHeight: minHeight)
-            // Two frames on purpose: the first bounds the form, the second re-expands
-            // the slot so the bounded form centers and the background still fills it.
-            .frame(maxWidth: DesignTokens.Settings.maxContentWidth)
+            // Two frames on purpose: the first sizes the form, the second re-expands
+            // the slot so the narrower form centers and the background still fills it.
+            .containerRelativeFrame(.horizontal) { width, _ in width * DesignTokens.Settings.contentWidthFraction }
             .frame(maxWidth: .infinity)
             .contentColumnBackground()
     }

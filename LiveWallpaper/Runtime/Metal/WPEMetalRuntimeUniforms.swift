@@ -171,6 +171,9 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     }
 
     private static func normalized(_ bins: [Double]) -> [Double] {
+        if bins.count == 64 {
+            return bins
+        }
         if bins.count >= 64 { return Array(bins.prefix(64)) }
         return bins + [Double](repeating: 0, count: 64 - bins.count)
     }
@@ -314,9 +317,22 @@ struct WPEMetalPointerSample: Equatable, Sendable {
 
 struct WPEMetalPointerSampler {
     let sample: @Sendable () -> WPEMetalPointerSample
+    private var sourceMailbox: WPEPointerMailbox?
+
+    init(sample: @escaping @Sendable () -> WPEMetalPointerSample) {
+        self.sample = sample
+    }
+
+    /// Reuse the frame's coherent snapshot when it came from this sampler's
+    /// mailbox. Fixed/custom samplers keep their independent test inputs.
+    func sample(using reading: WPEPointerMailbox.Reading, from mailbox: WPEPointerMailbox) -> WPEMetalPointerSample {
+        sourceMailbox === mailbox ? reading.pointerSample : sample()
+    }
 
     static func mailbox(_ mailbox: WPEPointerMailbox) -> WPEMetalPointerSampler {
-        WPEMetalPointerSampler { mailbox.read().pointerSample }
+        var sampler = WPEMetalPointerSampler { mailbox.read().pointerSample }
+        sampler.sourceMailbox = mailbox
+        return sampler
     }
 
     static func fixed(_ uv: SIMD2<Double>) -> WPEMetalPointerSampler {

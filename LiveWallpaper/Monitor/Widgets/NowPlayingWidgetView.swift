@@ -1130,6 +1130,7 @@ private struct NowPlayingMarqueeText: View {
     private let speed: Double = 30
     /// Blank run between the tail of one pass and the head of the next.
     private let gap: CGFloat = 44
+    private let startDelay: TimeInterval = 0.5
 
     @State private var naturalWidth: CGFloat = 0
     @State private var clippedWidth: CGFloat = 0
@@ -1137,7 +1138,22 @@ private struct NowPlayingMarqueeText: View {
 
     /// The truncating label reports `min(natural, proposed)`, so a ghost at its
     /// full width is all that is needed to know whether the text overflows.
-    private var overflows: Bool { naturalWidth > clippedWidth + 0.5 }
+    private var overflows: Bool {
+        clippedWidth > 0 && naturalWidth > clippedWidth + 0.5
+    }
+
+    private var plan: ScrollPlan {
+        ScrollPlan(text: text, isScrolling: overflows,
+                   distance: ((naturalWidth + gap) * 2).rounded() / 2,
+                   windowWidth: (clippedWidth * 2).rounded() / 2)
+    }
+
+    private struct ScrollPlan: Equatable {
+        let text: String
+        let isScrolling: Bool
+        let distance: CGFloat
+        let windowWidth: CGFloat
+    }
 
     var body: some View {
         label
@@ -1159,9 +1175,7 @@ private struct NowPlayingMarqueeText: View {
                 }
             }
             .clipped()
-            .onAppear { restart() }
-            .onChange(of: overflows) { _, _ in restart() }
-            .onChange(of: naturalWidth) { _, _ in restart() }
+            .task(id: plan) { await restart(for: plan) }
     }
 
     private var label: some View {
@@ -1176,14 +1190,19 @@ private struct NowPlayingMarqueeText: View {
         }
     }
 
-    private func restart() {
-        var reset = Transaction()
+    private func restart(for plan: ScrollPlan) async {
+        var reset = Transaction(animation: nil)
         reset.disablesAnimations = true
         withTransaction(reset) { offset = 0 }
-        guard overflows, naturalWidth > 0 else { return }
-        let distance = naturalWidth + gap
-        withAnimation(.linear(duration: Double(distance) / speed).repeatForever(autoreverses: false)) {
-            offset = -distance
+        guard plan.isScrolling else { return }
+        do {
+            try await Task.sleep(for: .seconds(startDelay))
+        } catch {
+            return
+        }
+        guard !Task.isCancelled else { return }
+        withAnimation(.linear(duration: Double(plan.distance) / speed).repeatForever(autoreverses: false)) {
+            offset = -plan.distance
         }
     }
 }

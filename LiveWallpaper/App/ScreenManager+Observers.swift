@@ -308,11 +308,12 @@ extension ScreenManager {
     @discardableResult
     func applyPerformancePolicy(to screen: Screen) -> WallpaperPerformanceProfile {
         let settings = SettingsManager.shared.loadGlobalSettings()
+        let applicationRules = ApplicationPerformanceRuleEngine.evaluate(for: settings)
         let profile = resolveAndApplyPerformanceState(
             to: screen,
             settings: settings,
-            applicationRuleActive: currentApplicationRuleActive(settings),
-            frontmostExcluded: ApplicationPerformanceRuleEngine.isFrontmostExcluded(for: settings)
+            applicationRuleActive: applicationRules.shouldPause,
+            frontmostExcluded: applicationRules.frontmostExcluded
         )
         refreshAppNapAssertion()
         return profile
@@ -431,21 +432,16 @@ extension ScreenManager {
             || (session as? AmbientWallpaperSession)?.wallpaperType == .html)
     }
 
-    private func currentApplicationRuleActive(_ globalSettings: GlobalSettings) -> Bool {
-        ApplicationPerformanceRuleEngine.isActive(for: globalSettings)
-    }
-
     func refreshPerformancePolicyForAllScreens() {
         revalidateUserAbsence()
         let settings = SettingsManager.shared.loadGlobalSettings()
-        let applicationRuleActive = currentApplicationRuleActive(settings)
-        let frontmostExcluded = ApplicationPerformanceRuleEngine.isFrontmostExcluded(for: settings)
+        let applicationRules = ApplicationPerformanceRuleEngine.evaluate(for: settings)
         for screen in screens {
             resolveAndApplyPerformanceState(
                 to: screen,
                 settings: settings,
-                applicationRuleActive: applicationRuleActive,
-                frontmostExcluded: frontmostExcluded
+                applicationRuleActive: applicationRules.shouldPause,
+                frontmostExcluded: applicationRules.frontmostExcluded
             )
         }
         refreshAppNapAssertion()

@@ -57,7 +57,8 @@ struct WPECachedContentResolver {
     }
 
     private func sourceFolderContent(for origin: WPEOrigin) -> WallpaperContent? {
-        guard let entryFile = origin.entryFile, !entryFile.isEmpty else { return nil }
+        guard origin.originalType == .video || origin.originalType == .web,
+              let entryFile = origin.entryFile, !entryFile.isEmpty else { return nil }
         guard let folderURL = try? SecurityScopedBookmarkResolver.shared
             .resolve(origin.sourceFolderBookmark, target: .transient).get().url
         else { return nil }
@@ -67,20 +68,21 @@ struct WPECachedContentResolver {
         let looseEntryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: entryFile)
         let looseEntryExists = looseEntryURL.map { fileManager.fileExists(atPath: $0.path) } ?? false
         let pkgURL = folderURL.appendingPathComponent("scene.pkg")
-        let packagedEntryExists = fileManager.fileExists(atPath: pkgURL.path)
-            && Self.packageContainsEntry(pkgURL, relativePath: entryFile)
 
         switch origin.originalType {
         case .video:
             if looseEntryExists, let entryURL = looseEntryURL, let bookmark = makeBookmark(entryURL) {
                 return .video(bookmarkData: bookmark)
             }
-            if packagedEntryExists, let bookmark = makeBookmark(pkgURL) {
+            if fileManager.fileExists(atPath: pkgURL.path),
+               Self.packageContainsEntry(pkgURL, relativePath: entryFile),
+               let bookmark = makeBookmark(pkgURL) {
                 return .video(bookmarkData: bookmark, packageEntryName: entryFile)
             }
             return nil
         case .web:
-            guard looseEntryExists || packagedEntryExists,
+            guard looseEntryExists || (fileManager.fileExists(atPath: pkgURL.path)
+                && Self.packageContainsEntry(pkgURL, relativePath: entryFile)),
                   let bookmark = makeBookmark(folderURL) else { return nil }
             return .html(
                 source: .folder(bookmarkData: bookmark, indexFileName: entryFile),

@@ -436,6 +436,11 @@ struct ShelfGestureControllerTests {
         let shell = StageGeometry.shellRect(content: arrangement.contentRects[0], isBuiltin: false)
         #expect(ShelfGestureController.display(at: CGPoint(x: shell.midX, y: shell.midY), frames: [(7, shell)]) == 7)
         #expect(ShelfGestureController.card(at: .zero, shapes: shapes, order: order) == nil)
+        let overlap = Array(repeating: StageGeometry.CardShape(rect: CGRect(x: 10, y: 10, width: 50, height: 50)), count: 3)
+        let point = CGPoint(x: 30, y: 30)
+        #expect(ShelfGestureController.card(at: point, shapes: overlap, order: [1, 3, 3]) == 2)
+        #expect(ShelfGestureController.card(at: point, shapes: overlap, order: [1, 3, 2]) == 1)
+        #expect(ShelfGestureController.card(at: point, shapes: [], order: []) == nil)
 
         // Tilted row cards overlap; the card to the right lies on top, so the sliver is on the left.
         let row = (0 ..< 14).map {

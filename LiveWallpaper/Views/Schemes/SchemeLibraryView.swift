@@ -27,36 +27,37 @@ struct SchemeLibraryView: View {
     }
 
     var body: some View {
-        content
+        let types = availableTypes
+        let visible = filteredSchemes(availableTypes: types)
+        content(visible: visible, availableTypes: types)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .confirmDestructive($pendingDestructive)
             .onAppear { details.requestApply = { requestApply($0, to: $1) } }
             // The presenter outlives this view on the page's @State; a kept closure would retain the view.
             .onDisappear { details.requestApply = { _, _ in } }
-            .onChange(of: filteredSchemes, initial: true) { details.run = $1 }
+            .onChange(of: visible, initial: true) { details.run = $1 }
     }
 
     // MARK: - Content
 
     /// Keep search available when no schemes match so the filter can be cleared.
     @ViewBuilder
-    private var content: some View {
+    private func content(visible: [ScreenScheme], availableTypes: Set<WallpaperType>) -> some View {
         if store.schemes.isEmpty {
             emptyState
         } else {
-            let visible = filteredSchemes
             VStack(spacing: 0) {
-                filterBar
+                filterBar(availableTypes: availableTypes)
                 gallery(visible)
                 LibraryStatusBar(summary: statusSummary(shown: visible.count))
             }
         }
     }
 
-    private var filterBar: some View {
+    private func filterBar(availableTypes: Set<WallpaperType>) -> some View {
         LibraryToolbarRow {
-            if showsTypeChips {
-                typeChipRow
+            if availableTypes.count > 1 {
+                typeChipRow(availableTypes: availableTypes)
             }
         } search: {
             LibrarySearchField(text: $searchText, prompt: "Search schemes")
@@ -109,7 +110,7 @@ struct SchemeLibraryView: View {
             : Text("\(shown) of \(total) shown")
     }
 
-    private var typeChipRow: some View {
+    private func typeChipRow(availableTypes: Set<WallpaperType>) -> some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             FilterChip(title: Text("All"),
                        isSelected: typeFilter == .all,
@@ -182,17 +183,13 @@ struct SchemeLibraryView: View {
 
     // MARK: - Filtering
 
-    private var showsTypeChips: Bool {
-        availableTypes.count > 1
-    }
-
     private var availableTypes: Set<WallpaperType> {
         Set(store.schemes.map(\.configuration.activeWallpaper.wallpaperType))
     }
 
-    private var filteredSchemes: [ScreenScheme] {
+    private func filteredSchemes(availableTypes: Set<WallpaperType>) -> [ScreenScheme] {
         var result = store.schemes
-        if showsTypeChips, case let .type(type) = typeFilter, availableTypes.contains(type) {
+        if availableTypes.count > 1, case let .type(type) = typeFilter, availableTypes.contains(type) {
             result = result.filter { $0.configuration.activeWallpaper.wallpaperType == type }
         }
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)

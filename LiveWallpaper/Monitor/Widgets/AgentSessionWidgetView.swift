@@ -9,19 +9,24 @@ struct AgentSessionWidgetView: View {
         context.reduceMotion
     }
 
-    /// Nil when the runtime is not sampling agents.
-    private var sessions: [MonitorAgentSessionState]? {
-        context.snapshot.agents
-    }
-
     private var options: [String: MonitorWidgetOptionValue] {
         context.placement.options
     }
 
-    /// Sessions after the provider filter — the set every count / row derives from
-    /// so a filtered board's aggregate matches its rows.
-    private var visibleSessions: [MonitorAgentSessionState] {
-        Self.filtered(sessions ?? [], provider: Self.providerFilter(options))
+    private let sessionCount: Int
+    private let ordered: [MonitorAgentSessionState]
+    private let counts: Self.Counts
+    private let totals: Self.Totals
+
+    init(context: MonitorWidgetContext) {
+        self.context = context
+        // The live tile supplies a new value context for each observed snapshot/clock tick.
+        // Share these derivations across the header and every ViewThatFits candidate.
+        let visible = Self.filtered(context.snapshot.agents ?? [], provider: Self.providerFilter(context.placement.options))
+        sessionCount = visible.count
+        ordered = Self.sorted(visible, mode: Self.sortMode(context.placement.options))
+        counts = Self.counts(visible)
+        totals = Self.totals(visible, now: context.now.timeIntervalSince1970)
     }
 
     var body: some View {
@@ -42,20 +47,6 @@ struct AgentSessionWidgetView: View {
         }
     }
 
-    // MARK: - Derived agent-session state
-
-    private var ordered: [MonitorAgentSessionState] {
-        Self.sorted(visibleSessions, mode: Self.sortMode(options))
-    }
-
-    private var counts: Self.Counts {
-        Self.counts(visibleSessions)
-    }
-
-    private func totals(now: Double) -> Self.Totals {
-        Self.totals(visibleSessions, now: now)
-    }
-
     // MARK: - M (364×170) — action strip + up to 3 single-line rows
 
     @ViewBuilder
@@ -63,7 +54,7 @@ struct AgentSessionWidgetView: View {
         let scale = AgentTypeScale(cellHeight: cellHeight)
         let cap = Self.rowCap(options, fallback: Self.mediumRowCap)
         let rows = Self.mediumRows(ordered, cap: cap)
-        let hiddenCount = visibleSessions.count - rows.count
+        let hiddenCount = sessionCount - rows.count
         shell(scale: scale, cellHeight: cellHeight) {
             if !rows.isEmpty {
                 VStack(alignment: .leading, spacing: scale.gap) {
@@ -77,8 +68,8 @@ struct AgentSessionWidgetView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else if !visibleSessions.isEmpty {
-                idleSummary(scale: scale, now: now)
+            } else if sessionCount > 0 {
+                idleSummary(scale: scale)
             } else {
                 quietState(scale: scale)
             }
@@ -100,7 +91,7 @@ struct AgentSessionWidgetView: View {
                     ViewThatFits(in: .vertical) {
                         ForEach(Array((1 ... rows.count).reversed()), id: \.self) { count in
                             VStack(alignment: .leading, spacing: scale.gap) {
-                                actionStrip(scale: scale, now: now)
+                                actionStrip(scale: scale)
                                 ForEach(Array(rows.prefix(count).enumerated()), id: \.element.id) { index, session in
                                     AgentSessionFullRow(session: session, now: now, isLead: index == 0,
                                                         reduceMotion: reduceMotion, scale: scale)
@@ -111,8 +102,8 @@ struct AgentSessionWidgetView: View {
                     }
                     .frame(width: area.size.width, height: area.size.height, alignment: .topLeading)
                 }
-            } else if !visibleSessions.isEmpty {
-                idleSummary(scale: scale, now: now)
+            } else if sessionCount > 0 {
+                idleSummary(scale: scale)
             } else {
                 quietState(scale: scale)
             }
@@ -142,7 +133,7 @@ struct AgentSessionWidgetView: View {
                     .foregroundStyle(Design.signalCoral)
                     .help(Text("Session source needs attention"))
             }
-            Text(verbatim: AgentSessionStrings.agentCount(visibleSessions.count))
+            Text(verbatim: AgentSessionStrings.agentCount(sessionCount))
                 .font(Design.subFont(size: scale.label))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
@@ -158,9 +149,9 @@ struct AgentSessionWidgetView: View {
     // MARK: - Action strip (aggregate one-liner)
 
     @ViewBuilder
-    private func actionStrip(scale: AgentTypeScale, now: Double) -> some View {
+    private func actionStrip(scale: AgentTypeScale) -> some View {
         let c = counts
-        let t = totals(now: now)
+        let t = totals
         let alert = c.needsInput > 0 || t.anyWarn
         HStack(spacing: scale.label * 0.6) {
             if c.needsInput > 0 {
@@ -254,10 +245,10 @@ struct AgentSessionWidgetView: View {
     // MARK: - Nothing worth a row (only idle / ended left)
 
     @ViewBuilder
-    private func idleSummary(scale: AgentTypeScale, now: Double) -> some View {
+    private func idleSummary(scale: AgentTypeScale) -> some View {
         let c = counts
         VStack(alignment: .leading, spacing: scale.gap) {
-            actionStrip(scale: scale, now: now)
+            actionStrip(scale: scale)
             HStack(spacing: scale.body * 0.5) {
                 if c.idle > 0 {
                     countChip(Design.signalIdle, c.idle, AgentSessionStrings.idleKeyword, scale)
@@ -826,7 +817,7 @@ extension AgentSessionWidgetView {
 
     nonisolated static func mediumRows(_ sorted: [MonitorAgentSessionState],
                                        cap: Int) -> [MonitorAgentSessionState] {
-        Array(sorted.filter { $0.status != .idle }.prefix(max(cap, 0)))
+        Array(sorted.lazy.filter { $0.status != .idle }.prefix(max(cap, 0)))
     }
 
     nonisolated static func largeRows(_ sorted: [MonitorAgentSessionState],

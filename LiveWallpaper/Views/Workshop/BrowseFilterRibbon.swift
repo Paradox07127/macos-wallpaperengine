@@ -392,7 +392,7 @@ struct WorkshopFilterChip: View {
                 }
             }
             .font(DesignTokens.Typography.caption)
-            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            .foregroundStyle(DesignTokens.Colors.textPrimary)
             .opacity(isSelected || isOptIn ? 1 : 0.5)
             .padding(.horizontal, 10)
             .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)

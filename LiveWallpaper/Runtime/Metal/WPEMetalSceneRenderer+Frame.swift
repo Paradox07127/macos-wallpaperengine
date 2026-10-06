@@ -27,7 +27,7 @@ extension WPEMetalSceneRenderer {
         let pointer = mailbox.read()
         return WPEFrameInputs(
             clickCaptureEnabled: pointer.clickCaptureEnabled,
-            pointerSample: pointerSampler.sample(),
+            pointerSample: pointerSampler.sample(using: pointer, from: mailbox),
             pointerFrame: pointer.pointerFrame,
             preferredFramesPerSecond: effectiveFPS,
             buttonCursor: pointer.buttonCursor,

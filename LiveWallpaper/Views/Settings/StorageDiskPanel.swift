@@ -231,8 +231,8 @@ private struct StorageLegendRing: View {
                     .imageScale(.small)
                 Text(item.title)
                     .foregroundStyle(isActive ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: DesignTokens.Spacing.sm)
                 Text(verbatim: formatBytes(item.bytes))
                     .foregroundStyle(DesignTokens.Colors.textPrimary)
@@ -246,6 +246,7 @@ private struct StorageLegendRing: View {
         .settledHover { isHov in
             hoveredItemID = isHov ? item.id : (hoveredItemID == item.id ? nil : hoveredItemID)
         }
+        .help(Text(item.title))
         .accessibilityLabel(Text(item.title))
         .accessibilityValue(Text(verbatim: formatBytes(item.bytes)))
         .accessibilityAddTraits(selectedItemID == item.id ? .isSelected : [])
@@ -261,13 +262,14 @@ struct StorageRingsCard: View {
 
     var body: some View {
         GroupBox {
-            VStack(spacing: DesignTokens.Spacing.md) {
+            HStack(alignment: .top, spacing: DesignTokens.Spacing.md) {
                 ForEach(Array(rings.enumerated()), id: \.element.id) { index, spec in
                     if index > 0 {
                         Divider()
                     }
                     StorageLegendRing(spec: spec, isLoading: isLoading, formatBytes: formatBytes,
                                       hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
+                        .frame(maxWidth: .infinity)
                 }
             }
         }

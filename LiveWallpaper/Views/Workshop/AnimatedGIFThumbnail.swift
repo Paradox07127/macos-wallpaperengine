@@ -35,6 +35,16 @@ struct AnimatedGIFThumbnail: View {
 
     private enum LoadPhase { case loading, ready, failed, empty }
 
+    private struct LoadKey: Hashable {
+        let url: URL?
+        let size: WorkshopPreviewSize
+        let isPresented: Bool
+    }
+
+    private var loadKey: LoadKey {
+        LoadKey(url: url, size: previewSize, isPresented: inspectorContentIsVisible)
+    }
+
     private var playbackGate: ThumbnailPlaybackGate {
         ThumbnailPlaybackGate(
             isVisible: isVisible,
@@ -96,10 +106,13 @@ struct AnimatedGIFThumbnail: View {
                     // Resign/activate can coalesce into one SwiftUI update after the coordinator stopped us.
                     applyPlaybackGate(hostAllowsPlayback: allowed)
                 }
-                .id(url)
+                .id(loadKey)
             }
         }
-        .task(id: url) { await load() }
+        .task(id: loadKey) {
+            guard inspectorContentIsVisible, !Task.isCancelled else { return }
+            await load()
+        }
         .onAppear {
             isVisible = true
             applyPlaybackGate()

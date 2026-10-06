@@ -197,6 +197,74 @@ struct EditDeskStageViewTests {
         #expect(last.minX > StageGeometry.designWindow.width, Comment(rawValue: "\(last)"))
     }
 
+    @Test("A large library shares its identity lookup across frames and presentation updates")
+    func cardLookupStaysColdAcrossFrames() throws {
+        let model = makeModel()
+        model.shelfItems = (0 ..< 512).map {
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, nowPlaying: nil, isDraggable: true)
+        }
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        model.report(hoveredCard: "card-511")
+        let rebuilds = view.debugCardLookupRebuildCount
+        #expect(rebuilds == 1)
+
+        for _ in 0 ..< 120 {
+            view.advance(dt: 1.0 / 60)
+            #expect(view.debugHoveredCardIndex == 511)
+        }
+        for _ in 0 ..< 8 {
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+        }
+        model.shelfItems[0].title = "Updated title"
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(try #require(view.cardLayers["card-0"]).card?.title == "Updated title")
+        #expect(view.debugCardLookupRebuildCount == rebuilds)
+    }
+
+    @Test("Card lookup follows reordering, same-count replacement, removal, and keyboard focus")
+    func cardLookupFollowsIdentityChanges() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        model.report(hoveredCard: "card-3")
+        try view.keyDown(with: key(124))
+        let focusedIndex = try #require(view.debugFocusedCardIndex)
+        let focusedID = model.shelfItems[focusedIndex].id
+
+        model.shelfItems.reverse()
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(view.debugHoveredCardIndex == 10)
+        #expect(view.debugFocusedCardIndex == model.shelfItems.firstIndex { $0.id == focusedID })
+        #expect(view.debugCardLookupRebuildCount == 2)
+
+        model.shelfItems[10] = StageCard(
+            id: "replacement", title: "Replacement", metaLine: "Meta",
+            thumbnail: nil, nowPlaying: nil, isDraggable: true
+        )
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(view.debugHoveredCardIndex == nil)
+        #expect(view.debugCardLookupRebuildCount == 3)
+        model.report(hoveredCard: "replacement")
+        #expect(view.debugHoveredCardIndex == 10)
+
+        model.shelfItems.remove(at: 10)
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(view.debugHoveredCardIndex == nil)
+        #expect(view.debugCardLookupRebuildCount == 4)
+    }
+
     @Test("Flipping the appearance re-resolves the CALayer palette but not the on-media colours")
     func paletteFollowsAppearance() throws {
         let model = makeModel()

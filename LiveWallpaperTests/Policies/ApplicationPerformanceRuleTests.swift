@@ -6,6 +6,57 @@ import Testing
 @Suite("Application performance rules")
 struct ApplicationPerformanceRuleTests {
 
+    @Test("Rule evaluation skips process enumeration when frontmost already matches", arguments: [false, true])
+    func frontmostMatchSkipsRunningSnapshot(hasExclusion: Bool) {
+        var rules = [
+            ApplicationPerformanceRule(bundleID: "com.example.background", displayName: "Background", trigger: .running),
+            ApplicationPerformanceRule(bundleID: "com.example.front", displayName: "Front", trigger: .frontmost),
+        ]
+        if hasExclusion {
+            rules.append(ApplicationPerformanceRule(bundleID: "com.example.front", displayName: "Front", trigger: .neverPause))
+        }
+        var snapshots = 0
+        let result = ApplicationPerformanceRuleEngine.evaluate(frontmostBundleID: "com.example.front", rules: rules) {
+            snapshots += 1
+            return []
+        }
+        #expect(result.shouldPause)
+        #expect(result.frontmostExcluded == hasExclusion)
+        #expect(snapshots == 0)
+    }
+
+    @Test("Running rules share one snapshot and preserve the independent exclusion")
+    func runningRulesShareSnapshot() {
+        let rules = [
+            ApplicationPerformanceRule(bundleID: "com.example.missing", displayName: "Missing", trigger: .running),
+            ApplicationPerformanceRule(bundleID: "com.example.background", displayName: "Background", trigger: .running),
+            ApplicationPerformanceRule(bundleID: "com.example.front", displayName: "Front", trigger: .neverPause),
+        ]
+        var snapshots = 0
+        let result = ApplicationPerformanceRuleEngine.evaluate(frontmostBundleID: "com.example.front", rules: rules) {
+            snapshots += 1
+            return ["com.example.background"]
+        }
+        #expect(result.shouldPause)
+        #expect(result.frontmostExcluded)
+        #expect(snapshots == 1)
+    }
+
+    @Test("Empty and frontmost-only rules never enumerate running processes", arguments: [false, true])
+    func rulesWithoutRunningSkipSnapshot(hasExclusion: Bool) {
+        let rules = hasExclusion
+            ? [ApplicationPerformanceRule(bundleID: "com.example.front", displayName: "Front", trigger: .neverPause)]
+            : []
+        var snapshots = 0
+        let result = ApplicationPerformanceRuleEngine.evaluate(frontmostBundleID: "com.example.front", rules: rules) {
+            snapshots += 1
+            return []
+        }
+        #expect(!result.shouldPause)
+        #expect(result.frontmostExcluded == hasExclusion)
+        #expect(snapshots == 0)
+    }
+
     @Test("Empty rule list never pauses")
     func emptyNeverPauses() {
         #expect(!ApplicationPerformanceRuleEngine.shouldPause(

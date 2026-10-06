@@ -83,12 +83,6 @@ final class WallpaperThumbnailService {
 
     func videoFormatInfo(for url: URL, cacheKey: String) async -> VideoFormatInfo? {
         await formatRequests.value(for: cacheKey) {
-            let didStart = url.startAccessingSecurityScopedResource()
-            defer {
-                if didStart {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
             return try? await PlayableVideoLoader.detectFormat(at: url)
         }
     }

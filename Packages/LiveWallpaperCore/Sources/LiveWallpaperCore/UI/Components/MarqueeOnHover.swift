@@ -92,7 +92,7 @@ private struct MarqueeOnHover: ViewModifier {
                 if isHovering { visible(content) }
             }
             .clipped()
-            .onChange(of: plan) { _, _ in restart() }
+            .task(id: plan) { await restart(for: plan) }
             .onHover { hovering in
                 isHovering = hovering
                 // The full-width copy is unmounted on exit, so its last reported
@@ -115,19 +115,22 @@ private struct MarqueeOnHover: ViewModifier {
         }
     }
 
-    private func restart() {
-        guard shouldScroll else {
-            guard offset != 0 else { return }
-            withAnimation(.easeOut(duration: 0.25)) { offset = 0 }
+    private func restart(for plan: ScrollPlan) async {
+        var reset = Transaction(animation: nil)
+        reset.disablesAnimations = true
+        withTransaction(reset) { offset = 0 }
+        guard plan.isScrolling else { return }
+        do {
+            try await Task.sleep(for: .seconds(MarqueeMetrics.startDelay))
+        } catch {
             return
         }
-        offset = 0
+        guard !Task.isCancelled else { return }
         withAnimation(
-            .linear(duration: MarqueeMetrics.duration(overflow: overflow))
-                .delay(MarqueeMetrics.startDelay)
+            .linear(duration: MarqueeMetrics.duration(overflow: plan.distance))
                 .repeatForever(autoreverses: true)
         ) {
-            offset = -overflow
+            offset = -plan.distance
         }
     }
 }

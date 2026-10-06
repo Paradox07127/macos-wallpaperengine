@@ -203,16 +203,9 @@ final class WallpaperAutomationOrchestrator {
               config.canNavigatePlaylist else { return }
         let queue = config.effectiveWallpaperQueue
         let current = max(0, min(config.playlistCursorIndex ?? 0, queue.count - 1))
-        var indices = queue.indices.filter { $0 != current }
-        if config.shufflePlaylist {
-            indices.shuffle()
-        } else {
-            indices.sort { lhs, rhs in
-                let left = lhs - current + queue.count
-                let right = rhs - current + queue.count
-                return left % queue.count < right % queue.count
-            }
-        }
+        let indices = config.shufflePlaylist
+            ? queue.indices.filter { $0 != current }.shuffled()
+            : (1 ..< queue.count).map { (current + $0) % queue.count }
         startAutomaticSelection(indices.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
     }
 
@@ -221,16 +214,9 @@ final class WallpaperAutomationOrchestrator {
               config.canNavigatePlaylist else { return }
         let queue = config.effectiveWallpaperQueue
         let current = max(0, min(config.playlistCursorIndex ?? 0, queue.count - 1))
-        var indices = queue.indices.filter { $0 != current }
-        if config.shufflePlaylist {
-            indices.shuffle()
-        } else {
-            indices.sort { lhs, rhs in
-                let left = current - lhs + queue.count
-                let right = current - rhs + queue.count
-                return left % queue.count < right % queue.count
-            }
-        }
+        let indices = config.shufflePlaylist
+            ? queue.indices.filter { $0 != current }.shuffled()
+            : (1 ..< queue.count).map { (current - $0 + queue.count) % queue.count }
         startAutomaticSelection(indices.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
     }
 

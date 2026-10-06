@@ -77,7 +77,7 @@ final class WorkshopDiskCacheStore: Sendable {
             return true
         }
         guard claimed else { return }
-        queue.async { try? self.enforceCap(fileManager: .default) }
+        queue.async { self.enforceCap(fileManager: .default) }
     }
 
     // MARK: - Disk
@@ -135,7 +135,7 @@ final class WorkshopDiskCacheStore: Sendable {
             // `rename(2)` is atomic: a concurrent reader sees either the previous
             // complete entry or the new complete entry, never a splice of both.
             try Self.renameItem(at: tempURL, to: destination)
-            try enforceCap(fileManager: fileManager)
+            enforceCap(fileManager: fileManager)
         } catch {
             return
         }
@@ -157,18 +157,19 @@ final class WorkshopDiskCacheStore: Sendable {
         try? fileManager.removeItem(at: tombstone)
     }
 
-    private func enforceCap(fileManager: FileManager) throws {
-        removeOrphanedTempFiles(fileManager: fileManager)
-
-        var entries = entriesSync()
+    private func enforceCap(fileManager: FileManager) {
+        var entries = entriesSync(removingOrphanedTemps: true)
         let expiryCutoff = now().addingTimeInterval(-timeToLive)
+        var total: Int64 = 0
         entries.removeAll { entry in
-            guard entry.expiryStamp <= expiryCutoff else { return false }
-            try? fileManager.removeItem(at: entry.url)
-            return true
+            if entry.expiryStamp <= expiryCutoff {
+                try? fileManager.removeItem(at: entry.url)
+                return true
+            }
+            total += entry.sizeBytes
+            return false
         }
 
-        var total = entries.reduce(Int64(0)) { $0 + $1.sizeBytes }
         guard total > capBytes else { return }
         entries.sort { $0.usedAt < $1.usedAt }
         for entry in entries {
@@ -180,32 +181,27 @@ final class WorkshopDiskCacheStore: Sendable {
         }
     }
 
-    private func removeOrphanedTempFiles(fileManager: FileManager) {
-        let cutoff = now().addingTimeInterval(-Self.orphanTempGrace)
-        let urls = (try? fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        for url in urls where url.pathExtension == "tmp" {
-            guard let modified = (try? fileManager.attributesOfItem(
-                atPath: url.path(percentEncoded: false)
-            ))?[.modificationDate] as? Date, modified < cutoff else { continue }
-            try? fileManager.removeItem(at: url)
-        }
-    }
-
-    private func entriesSync() -> [Entry] {
+    /// Cap housekeeping shares the entry listing; fresh attributes keep TTL/LRU
+    /// accurate without retaining URL resource values across requests.
+    private func entriesSync(removingOrphanedTemps: Bool = false) -> [Entry] {
         let fileManager = FileManager.default
+        let tempCutoff = removingOrphanedTemps ? now().addingTimeInterval(-Self.orphanTempGrace) : nil
         let urls = (try? fileManager.contentsOfDirectory(
             at: directoryURL,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )) ?? []
         return urls.compactMap { url in
-            guard url.pathExtension == fileExtension else { return nil }
+            let isOrphanCandidate = tempCutoff != nil && url.pathExtension == "tmp"
+            guard url.pathExtension == fileExtension || isOrphanCandidate else { return nil }
             let path = url.path(percentEncoded: false)
-            guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+            guard let attributes = try? fileManager.attributesOfItem(atPath: path) else { return nil }
+            if isOrphanCandidate, let tempCutoff,
+               let modified = attributes[.modificationDate] as? Date, modified < tempCutoff {
+                try? fileManager.removeItem(at: url)
+                return nil
+            }
+            guard url.pathExtension == fileExtension,
                   let expiryStamp = attributes[expiryClock.attributeKey] as? Date,
                   let used = attributes[.modificationDate] as? Date,
                   let byteCount = (attributes[.size] as? NSNumber)?.int64Value else {

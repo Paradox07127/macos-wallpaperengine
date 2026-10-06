@@ -38,7 +38,7 @@ public struct FilterChip: View {
             title
                 .font(DesignTokens.EditDesk.Typography.body)
                 .lineLimit(1)
-                .foregroundStyle(isSelected ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
+                .foregroundStyle(DesignTokens.Colors.textPrimary)
                 .padding(.horizontal, DesignTokens.Spacing.md)
                 .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
                 .filterChipBackground(isSelected: isSelected)

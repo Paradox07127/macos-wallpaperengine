@@ -3521,6 +3521,8 @@ extension WPEMetalSceneRendererTests {
         )
         defer { renderer.cleanup() }
         try await renderer.load()
+        // Script barriers do not wait for GPU completion; finish each manually advanced frame before claiming another slot.
+        renderer.executor.synchronizeFrameCompletion = true
         #expect(renderer.dynamicAnglesScriptInstances["directional"] != nil)
         #expect(renderer.dynamicColorScriptInstances["directional"] != nil)
         let initial = try #require(renderer.lastFrameDirectionalLighting.lights.first)

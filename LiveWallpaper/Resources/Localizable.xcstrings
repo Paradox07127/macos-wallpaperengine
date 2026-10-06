@@ -59091,41 +59091,6 @@
         }
       }
     },
-    "Shows Chinese wallpaper names, settings, and descriptions in the app language. Translation runs on this Mac." : {
-      "comment" : "Info for the Translate wallpaper text switch in General settings.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows Chinese wallpaper names, settings, and descriptions in the app language. Translation runs on this Mac."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra los nombres, los ajustes y las descripciones en chino de los fondos en el idioma de la app. La traducción se realiza en este Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "中国語の壁紙名、設定項目、説明をアプリの言語で表示します。翻訳はこの Mac 上で行われます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按 App 语言显示中文的壁纸名称、设置项和描述。翻译在本机完成。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按 App 語言顯示中文的桌布名稱、設定項目和描述。翻譯在這台 Mac 上完成。"
-          }
-        }
-      }
-    },
     "Shuffle" : {
       "localizations" : {
         "en" : {
@@ -71621,6 +71586,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轉譯後的著色器原始碼，每個格式版本上限 64 MB；場景需要時重新編譯。"
+          }
+        }
+      }
+    },
+    "Translates wallpaper titles, settings, and descriptions into the app language. Requires the matching translation languages, downloaded in System Settings." : {
+      "comment" : "Info for the Translate wallpaper text switch in General settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translates wallpaper titles, settings, and descriptions into the app language. Requires the matching translation languages, downloaded in System Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traduce los títulos, los ajustes y las descripciones de los fondos al idioma de la app. Requiere descargar los idiomas de traducción correspondientes en Ajustes del Sistema."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙のタイトル、設定項目、説明などのテキストをアプリの言語に翻訳します。対応する翻訳言語をシステム設定でダウンロードしておく必要があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将壁纸标题、设置项和介绍等文字翻译为 App 语言。需要先在系统设置中下载对应的翻译语言。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將桌布標題、設定項目和介紹等文字翻譯為 App 語言。需要先在系統設定中下載對應的翻譯語言。"
           }
         }
       }

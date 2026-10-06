@@ -36,6 +36,7 @@ struct SettingsSidebar: View {
     }
 
     var body: some View {
+        let searchResults = results
         VStack(spacing: 0) {
             SettingsSidebarSearchField(text: $searchText)
             .padding(.horizontal, DesignTokens.Spacing.md)
@@ -46,17 +47,17 @@ struct SettingsSidebar: View {
                 // grouping them would scatter the best match down the column.
                 if isSearching {
                     Section {
-                        if results.isEmpty {
+                        if searchResults.isEmpty {
                             emptySearchRow
                         } else {
-                            rows(for: results)
+                            rows(for: searchResults)
                         }
                     } header: {
                         SidebarSectionHeader(title: "Search Results")
                     }
                 } else {
                     ForEach(SettingsNavigationGroup.allCases) { group in
-                        let groupResults = results.filter { $0.item.group == group }
+                        let groupResults = searchResults.filter { $0.item.group == group }
                         if !groupResults.isEmpty {
                             Section {
                                 rows(for: groupResults)
@@ -77,7 +78,7 @@ struct SettingsSidebar: View {
         )
         .onAppear {
             if selection == nil {
-                selection = results.first?.destination ?? .general
+                selection = searchResults.first?.destination ?? .general
             }
         }
     }

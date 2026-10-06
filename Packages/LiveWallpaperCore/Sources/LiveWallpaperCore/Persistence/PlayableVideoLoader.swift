@@ -53,10 +53,9 @@ public struct PlayableVideoLoader: PlayableVideoLoading, Sendable {
             return VideoFormatInfo()
         }
 
-        let descs = try await track.load(.formatDescriptions)
-        let size = try await track.load(.naturalSize)
-        let transform = try await track.load(.preferredTransform)
-        let frameRate = try await track.load(.nominalFrameRate)
+        let (descs, size, transform, frameRate) = try await track.load(
+            .formatDescriptions, .naturalSize, .preferredTransform, .nominalFrameRate
+        )
 
         let codec = descs.first.map { CMFormatDescriptionGetMediaSubType($0).fourCharString }
         let transfer = descs.first.flatMap { transferFunction(of: $0) }

@@ -221,9 +221,10 @@ extension MonitorHistorySnapshot {
         _ series: [Double?], times: [Double], in window: MonitorChartWindow
     ) -> [MonitorHistoryPoint] {
         guard times.count == series.count else { return [] }
-        return zip(times, series)
-            .filter { window.contains($0.0) }
-            .map { MonitorHistoryPoint(time: $0.0, value: $0.1) }
+        return zip(times, series).compactMap { time, value in
+            guard window.contains(time) else { return nil }
+            return MonitorHistoryPoint(time: time, value: value)
+        }
     }
 
     /// The last `seconds` of a series aligned with `sampleTimes`, absent samples
@@ -234,7 +235,7 @@ extension MonitorHistorySnapshot {
             return series.suffix(max(seconds, minimumPoints)).compactMap(\.self)
         }
         let cutoff = last - Double(seconds)
-        return zip(sampleTimes, series).filter { $0.0 >= cutoff }.compactMap(\.1)
+        return zip(sampleTimes, series).compactMap { time, value in time >= cutoff ? value : nil }
     }
 
     static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
@@ -248,7 +249,10 @@ extension MonitorHistorySnapshot {
 
     private static func medianStep(_ times: [Double]) -> Double? {
         guard times.count >= 2 else { return nil }
-        let steps = zip(times.dropFirst(), times).map { $0 - $1 }.filter { $0 > 0 }.sorted()
+        let steps = zip(times.dropFirst(), times).compactMap { next, previous -> Double? in
+            let step = next - previous
+            return step > 0 ? step : nil
+        }.sorted()
         guard !steps.isEmpty else { return nil }
         return steps[steps.count / 2]
     }
@@ -373,7 +377,7 @@ final class MonitorHistoryStore: ObservableObject {
     }
 
     private static func peak(_ series: [Double?]) -> Double {
-        series.compactMap(\.self).max() ?? 0
+        series.lazy.compactMap(\.self).max() ?? 0
     }
 
     private func trim<T>(_ array: inout [T]) {

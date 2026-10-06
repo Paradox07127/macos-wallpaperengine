@@ -156,7 +156,7 @@ struct PlaylistSection: View {
         } label: {
             Image(systemName: "timer")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isActive ? Color.white : .secondary)
+                .foregroundStyle(isActive ? DesignTokens.Colors.onAccentFill : DesignTokens.Colors.textPrimary)
                 .frame(width: 28, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)

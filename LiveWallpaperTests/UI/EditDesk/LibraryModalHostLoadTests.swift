@@ -34,6 +34,77 @@ private final class NoBookmarks: BookmarkPersisting {
 @MainActor
 @Suite("Library modal host load")
 struct LibraryModalHostLoadTests {
+    @Test("An open modal ignores other library rows changing but reloads its own changed item")
+    func unrelatedLibraryRefreshDoesNotReloadTheOpenItem() async throws {
+        func entry(_ id: String, importedAt: Double = 1_727_000_000) -> WPEHistoryEntry {
+            WPEHistoryEntry(origin: WPEOrigin(
+                workshopID: id, title: "Scene \(id)", originalType: .scene,
+                sourceFolderBookmark: Data([4]), cacheRelativePath: nil, previewFileName: nil
+            ), importedAt: Date(timeIntervalSince1970: importedAt))
+        }
+        var entries = [entry("100")]
+        var source = SavedLibraryModel.Inputs()
+        source.history = { entries }
+        let library = SavedLibraryModel(inputs: source)
+        let item = try #require(library.items.first)
+        var reads = 0
+        var inputs = ModalActions.Inputs()
+        inputs.item = { id in library.items.first { $0.id == id } }
+        inputs.localInfo = { _ in reads += 1; return nil }
+        let actions = ModalActions(
+            inputs: inputs, bookmarks: BookmarkStore(persistence: NoBookmarks()), thumbnails: ShelfThumbnailCache(),
+            apply: { _, _ in }, applyToAll: { _, _ in }
+        )
+        let stage = EditDeskStageModel()
+        let modal = LibraryModalHost(
+            library: library, stage: stage, drag: LibraryDragController(), actions: actions,
+            requestRename: { _ in }, requestDelete: { _ in }, presentedItemID: .constant(item.id), showDisplay: { _ in }
+        )
+        var observedItems: [LiveWallpaper.LibraryItem] = []
+        let host = NSHostingView(rootView: LibraryModalRefreshObservation(modal: modal, library: library) {
+            observedItems = $0
+        })
+        host.sizingOptions = []
+        let window = ParkedTestWindow(
+            contentRect: CGRect(origin: .zero, size: StageGeometry.designWindow),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        @MainActor func settle(until ready: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !ready(), ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        try await settle { reads > 0 && observedItems == library.items }
+        try #require(reads == 1, "the modal did not complete its initial load exactly once")
+        entries.append(entry("200"))
+        library.refresh()
+        try await settle { observedItems == library.items }
+        try #require(observedItems.count == 2, "the hosted view never observed the added row")
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(reads == 1, "another row caused the displayed item's manifest to be read again")
+
+        entries[1] = entry("200", importedAt: 1_727_000_001)
+        library.refresh()
+        try await settle { observedItems == library.items }
+        try #require(observedItems == library.items, "the hosted view never observed the other item's update")
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(reads == 1, "another row's update reloaded the open item")
+        entries[0] = entry("100", importedAt: 1_727_000_002)
+        library.refresh()
+        try await settle { reads > 1 }
+        #expect(reads == 2, "the open item's own update did not reload its manifest once")
+    }
+
     private static func solid(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
         let context = try #require(CGContext(
             data: nil, width: 1024, height: 576, bitsPerComponent: 8, bytesPerRow: 0,
@@ -141,6 +212,16 @@ struct LibraryModalHostLoadTests {
         }
         #expect(drawn.green > 20000, Comment(rawValue: "control: the modal drew no picture of the item's display (\(drawn))"))
         #expect(drawn.magenta < 100, Comment(rawValue: "the modal drew the cover that landed during its load (\(drawn))"))
+    }
+}
+
+private struct LibraryModalRefreshObservation: View {
+    let modal: LibraryModalHost
+    let library: SavedLibraryModel
+    let onUpdate: ([LiveWallpaper.LibraryItem]) -> Void
+
+    var body: some View {
+        modal.onChange(of: library.items, initial: true) { _, items in onUpdate(items) }
     }
 }
 #endif

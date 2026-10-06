@@ -8,6 +8,34 @@ import WebKit
 @Suite("ScreenManager ↔ PlaybackCoordinator coordination")
 @MainActor
 struct ScreenManagerCoordinationTests {
+    @Test("Display refresh preserves a live session unless a reload is explicitly requested", arguments: [false, true])
+    func displayRefreshSessionLifetime(preserve: Bool) throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = Screen(nsScreen: display)
+        let refreshed = Screen(nsScreen: display)
+        let registry = FakeDisplayRegistry(screens: [screen])
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: registry,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { manager.tearDownForTermination() }
+        let session = TestRuntimeSession(wallpaperType: .html)
+        screen.installRuntimeSession(session)
+        manager.wallpapersGloballyEnabled = true
+        registry.screens = [refreshed]
+
+        manager.refreshScreens(preserveRuntimeSessions: preserve)
+
+        #expect(manager.screens.first === refreshed)
+        #expect((refreshed.runtimeSession != nil) == preserve)
+        #expect(session.cleanupCount == (preserve ? 0 : 1))
+        if preserve {
+            #expect((refreshed.runtimeSession as AnyObject?) === session)
+        }
+    }
+
     @Test("A prepared wallpaper follows a refreshed Screen, but not removal or a newer selection",
           arguments: [false, true], ["refresh", "disconnect", "new-selection"])
     func preparedWallpaperFollowsDisplayRefresh(hasOutgoing: Bool, change: String) async throws {

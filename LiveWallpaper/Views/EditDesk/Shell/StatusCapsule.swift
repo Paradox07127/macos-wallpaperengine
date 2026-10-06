@@ -318,7 +318,7 @@ struct StatusCapsule: View {
                 statusDot
                 Text(LocalizedStringKey(StatusCapsuleModel.scopeLabelKey(for: ramScope)))
                     .font(DesignTokens.EditDesk.Typography.metaMono)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
                     .lineLimit(1)
             }
             .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
@@ -385,15 +385,14 @@ struct StatusCapsule: View {
             statusDot
             Text(LocalizedStringKey(StatusCapsuleModel.headlineKey(for: health)))
                 .font(DesignTokens.EditDesk.Typography.metaMono)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
+                .foregroundStyle(DesignTokens.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if showsChevron {
                 Spacer(minLength: DesignTokens.EditDesk.Spacing.s8)
                 Text(verbatim: "︿")
                     .font(DesignTokens.EditDesk.Typography.metaMono)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textCapsule)
-                    .opacity(0.5)
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
             }
         }
     }
