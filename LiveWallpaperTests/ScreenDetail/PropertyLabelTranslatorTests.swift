@@ -297,5 +297,91 @@ struct PropertyLabelTranslatorTests {
         translator.setEnabled(true)
         #expect(translator.revision > off)
     }
+
+    @MainActor
+    private func cachedTranslator(
+        _ url: URL, target: Locale.Language? = nil
+    ) -> WPEPropertyLabelTranslator {
+        WPEPropertyLabelTranslator(
+            targetLanguage: target ?? english, isInstalled: { _, _ in true },
+            nameCache: WallpaperNameTranslationCache(fileURL: url)
+        )
+    }
+
+    private func scratchCacheURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("PropertyLabelTranslatorTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("names.json", isDirectory: false)
+    }
+
+    @MainActor
+    @Test("A persisted library name shows its cached translation after a relaunch without queuing again", .timeLimit(.minutes(1)))
+    func persistedNameLoadsFromCache() async {
+        guard #available(macOS 15.0, *) else { return }
+        let url = scratchCacheURL()
+        let title = "夕阳下的海边小镇"
+        let first = cachedTranslator(url)
+        first.enqueue(labels: [title], persist: true)
+        await first.availabilityCheck?.value
+        #expect(first.takePending() == [title])
+        first.store([(title, "Seaside town at sunset")])
+
+        let relaunched = cachedTranslator(url)
+        #expect(relaunched.displayText(for: title) == "Seaside town at sunset")
+        relaunched.enqueue(labels: [title], persist: true)
+        await relaunched.availabilityCheck?.value
+        #expect(relaunched.configuration == nil, "a cached name was queued for translation again")
+    }
+
+    @MainActor
+    @Test("Names queued without persist stay out of the cache")
+    func unpersistedNameIsNotCached() {
+        guard #available(macOS 15.0, *) else { return }
+        let url = scratchCacheURL()
+        let library = "夕阳下的海边小镇"
+        let workshop = "雨夜的霓虹街道"
+        let first = cachedTranslator(url)
+        first.enqueue(labels: [library], persist: true)
+        first.enqueue(labels: [workshop])
+        first.store([(library, "Seaside town at sunset"), (workshop, "Neon street on a rainy night")])
+
+        let relaunched = cachedTranslator(url)
+        #expect(relaunched.displayText(for: library) == "Seaside town at sunset")
+        #expect(relaunched.displayText(for: workshop) == workshop, "a Workshop name was written to the cache")
+    }
+
+    @MainActor
+    @Test("Pruning drops cached names that left the library")
+    func retainPersistedPrunesCache() {
+        guard #available(macOS 15.0, *) else { return }
+        let url = scratchCacheURL()
+        let kept = "夕阳下的海边小镇"
+        let removed = "雨夜的霓虹街道"
+        let first = cachedTranslator(url)
+        first.enqueue(labels: [kept, removed], persist: true)
+        first.store([(kept, "Seaside town at sunset"), (removed, "Neon street on a rainy night")])
+        first.retainPersisted([kept])
+
+        let relaunched = cachedTranslator(url)
+        #expect(relaunched.displayText(for: kept) == "Seaside town at sunset")
+        #expect(relaunched.displayText(for: removed) == removed, "a name no longer in the library stayed cached")
+    }
+
+    @MainActor
+    @Test("A different target language never reads another language's cached names")
+    func cacheIsPerTargetLanguage() {
+        guard #available(macOS 15.0, *) else { return }
+        let url = scratchCacheURL()
+        let title = "夕阳下的海边小镇"
+        let translator = cachedTranslator(url)
+        translator.enqueue(labels: [title], persist: true)
+        translator.store([(title, "Seaside town at sunset")])
+
+        #expect(cachedTranslator(url, target: japanese).displayText(for: title) == title)
+        translator.retarget(to: japanese)
+        #expect(translator.displayText(for: title) == title, "the English cache answered for a Japanese target")
+        translator.retarget(to: english)
+        #expect(translator.displayText(for: title) == "Seaside town at sunset")
+    }
 }
 #endif

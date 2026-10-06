@@ -1185,7 +1185,7 @@ struct HomePage: View {
             kind: display.wallpaperKind
         )
         #if !LITE_BUILD
-        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [title])
+        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [title], persist: true)
         #endif
         display.wallpaperTitle = title.translatedWallpaperName
         // The same guards `WallpaperAutomationOrchestrator.advancePlaylist` runs: a button the
@@ -1345,7 +1345,9 @@ struct HomePage: View {
         guard let library else { return }
         let visible = library.visibleItems
         #if !LITE_BUILD
-        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: visible.map(\.title))
+        // `items`, not `visible`: a chip, filter or search would otherwise prune the rows it hides.
+        WPEPropertyLabelTranslator.wallpaperNames.retainPersisted(Set(library.items.map(\.title)))
+        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: visible.map(\.title), persist: true)
         #endif
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         stage.shelfRenderBudget = shelfCapacity
@@ -1910,7 +1912,7 @@ struct LibraryGridTile: View {
             preview?.settle(item.id, hovering: $0)
         }
         .accessibilityLabel(Text(verbatim: item.title.translatedWallpaperName))
-        .wpeTranslateWallpaperName(item.title)
+        .wpeTranslateWallpaperName(item.title, persist: true)
         // LazyVGrid may keep a scrolled-away tile alive, and any image the tile holds with it.
         .onAppear {
             // Bumped on the way back rather than on the way out, so the id never changes off screen.

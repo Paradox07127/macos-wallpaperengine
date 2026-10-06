@@ -15,7 +15,7 @@ import NaturalLanguage
 @Observable
 final class WPEPropertyLabelTranslator {
     /// One queue for names across library tiles and Workshop cards.
-    static let wallpaperNames = WPEPropertyLabelTranslator()
+    static let wallpaperNames = WPEPropertyLabelTranslator(nameCache: WallpaperNameTranslationCache())
     /// Description lines, kept apart so long text doesn't hold up the names.
     static let descriptions = WPEPropertyLabelTranslator()
     /// Posted when a language pack may have been installed; every live translator re-checks.
@@ -58,15 +58,28 @@ final class WPEPropertyLabelTranslator {
     @ObservationIgnored private let isInstalled: @Sendable (Locale.Language, Locale.Language) async -> Bool
     /// The in-flight installed-pack check; `nil` when none is running.
     @ObservationIgnored private(set) var availabilityCheck: Task<Void, Never>?
+    /// `nil`: nothing is read from or written to disk.
+    @ObservationIgnored private let nameCache: WallpaperNameTranslationCache?
+    /// Originals queued with `persist`; only their translations reach `nameCache`.
+    @ObservationIgnored private var persisted: Set<String> = []
 
     init(
         targetLanguage: Locale.Language = effectiveTargetLanguage(),
         isInstalled: @escaping @Sendable (Locale.Language, Locale.Language) async -> Bool = languagePairIsInstalled,
-        isEnabled: Bool = UserDefaults.appScoped().object(forKey: WPEPropertyLabelTranslator.enabledPreferenceKey) as? Bool ?? true
+        isEnabled: Bool = UserDefaults.appScoped().object(forKey: WPEPropertyLabelTranslator.enabledPreferenceKey) as? Bool ?? true,
+        nameCache: WallpaperNameTranslationCache? = nil
     ) {
         self.targetLanguage = targetLanguage
         self.isInstalled = isInstalled
         self.isEnabled = isEnabled
+        self.nameCache = nameCache
+        loadCachedNames()
+    }
+
+    private func loadCachedNames() {
+        guard let cached = nameCache?.translations(for: targetLanguage), !cached.isEmpty else { return }
+        translated.merge(cached) { current, _ in current }
+        revision += 1
     }
 
     /// `preference` is the stored `AppLanguagePreference` raw value; `.system`, missing and
@@ -117,8 +130,15 @@ final class WPEPropertyLabelTranslator {
         })
     }
 
-    func enqueue(labels: some Sequence<String>) {
+    /// `persist`: local-library names, whose translations are kept on disk across launches.
+    func enqueue(labels: some Sequence<String>, persist: Bool = false) {
         guard #available(macOS 15.0, *) else { return }
+        let labels = Array(labels)
+        if persist {
+            let marked = labels.filter { persisted.insert($0).inserted }
+            // A name translated before it was marked (e.g. first seen in Workshop) is otherwise never written.
+            nameCache?.merge(marked.compactMap { label in translated[label].map { (label, $0) } }, for: targetLanguage)
+        }
         let fresh = labels.filter {
             Self.needsTranslation($0, target: targetLanguage)
                 && translated[$0] == nil
@@ -164,6 +184,7 @@ final class WPEPropertyLabelTranslator {
         targetLanguage = language
         translated = [:]
         revision += 1
+        loadCachedNames()
         pending = []
         requested = []
         uninstalled = []
@@ -359,6 +380,12 @@ final class WPEPropertyLabelTranslator {
         guard !pairs.isEmpty else { return }
         translated.merge(pairs) { _, new in new }
         revision += 1
+        nameCache?.merge(pairs.filter { persisted.contains($0.0) }, for: targetLanguage)
+    }
+
+    /// Drops cached names outside `libraryNames`, the titles of every local-library row.
+    func retainPersisted(_ libraryNames: Set<String>) {
+        nameCache?.retain(libraryNames)
     }
 
     @available(macOS 15.0, *)
@@ -487,10 +514,10 @@ extension View {
 
     /// Queue a displayed name without changing the stored title or wallpaper identity.
     @ViewBuilder
-    func wpeTranslateWallpaperName(_ original: String) -> some View {
+    func wpeTranslateWallpaperName(_ original: String, persist: Bool = false) -> some View {
         #if !LITE_BUILD
         onChange(of: original, initial: true) { _, name in
-            WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [name])
+            WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [name], persist: persist)
         }
         #else
         self
