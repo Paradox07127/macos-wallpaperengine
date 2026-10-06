@@ -13,6 +13,50 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.8.4] — 2026-10-05
+
+### Added
+
+- Pro: Chinese wallpaper names, descriptions, controls and Workshop preset
+  names can be machine-translated into the app language. Settings has a
+  Translate wallpaper text switch and a language pack download row.
+- Pro: a Workshop item that is downloading shows how many bytes have arrived.
+- Pro: subscription downloads can be selected and cancelled, and batch
+  downloads run one at a time.
+- A wallpaper that fails to load lists the missing files and runs a self-check
+  that names the likely cause.
+- Settings has an Appearance page for the window and library appearance rows.
+- Pressing a display that already shows the wallpaper in the detail sheet
+  opens that display's page.
+
+### Changed
+
+- The Storage page shows both rings with a full-name legend, lists every
+  location with its path and actions, and can clear preview, shader, audio and
+  web caches.
+- Pro: library entries whose Workshop items Steam deleted are removed after
+  each SteamCMD run.
+
+### Fixed
+
+- Pro: scene scripts receive cursor input again, and parallax, cursor regions
+  and audio-driven particle rates work again.
+- Pro: clock highlights no longer turn white, and transparent layers no longer
+  get darker from double alpha.
+- Pro: 3D models keep their own material per mesh, translucent parts stay
+  blended, and padded textures no longer show seams.
+- Pro: lights under text and top-level particles, sprite UVs and text effects
+  render closer to Windows.
+- Pro: textures with conditional variants load and show their base image.
+- Pro: Sync subscribed wallpapers no longer reports every subscription as
+  missing.
+- Pro: removing Steam-deleted items no longer touches items that are
+  downloading, moved, or in a renamed Steam library.
+- A wallpaper applied while displays connect or disconnect is no longer lost.
+- A paused video keeps its seek position.
+- Clearing caches skips files that are still in use.
+- The title-bar double-click setting is honored.
+
 ## [0.8.3] — 2026-10-04
 
 ### Added
