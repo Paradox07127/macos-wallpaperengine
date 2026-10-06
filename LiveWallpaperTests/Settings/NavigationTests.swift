@@ -299,4 +299,21 @@ struct NavigationTests {
 
         #expect(results.first { $0.destination == .storage }?.anchor == .storageDashboard)
     }
+
+    @Test("Translate wallpaper text is found under Language in Pro, and not in Lite")
+    func translateWallpaperTextIsSearchableInProOnly() throws {
+        guard #available(macOS 15.0, *) else { return }
+        let general = try #require(SettingsNavigation.allItems.first { $0.destination == .general })
+
+        let pro = SettingsNavigation.filteredResults(matching: "translate", capabilities: .pro)
+            .first { $0.destination == .general }
+        #expect(pro?.anchor == .generalLanguage)
+        let focus = general.searchFocus(matching: "translate", capabilities: .pro)
+        #expect(focus?.rows.contains("Translate wallpaper text") == true)
+
+        let lite = SettingsNavigation.filteredResults(matching: "translate", capabilities: .lite)
+            .first { $0.destination == .general }
+        #expect(lite?.anchor != .generalLanguage)
+        #expect(general.searchFocus(matching: "translate", capabilities: .lite)?.rows.contains("Translate wallpaper text") != true)
+    }
 }

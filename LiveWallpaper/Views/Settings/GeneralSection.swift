@@ -232,14 +232,15 @@ extension GeneralSettingsView {
 }
 
 #if !LITE_BUILD
-/// The Language row, followed by a download row while Chinese → app language is supported but not
-/// installed. The checks ride on the Language row: a hidden row would run none of them.
+/// The Language row, then the Translate wallpaper text switch, which also offers the download while
+/// Chinese → app language is supported but not installed. The pack checks ride on the Language row.
 @available(macOS 15.0, *)
 private struct TranslationLanguageDownloadRows<Language: View>: View {
     /// Stored `AppLanguagePreference` raw value.
     let appLanguage: String
     @ViewBuilder let language: Language
     @State private var offer = TranslationPackOffer()
+    @AppStorage(WPEPropertyLabelTranslator.enabledPreferenceKey, store: .appScoped()) private var translationEnabled = true
 
     var body: some View {
         language
@@ -248,33 +249,40 @@ private struct TranslationLanguageDownloadRows<Language: View>: View {
                 Task { await offer.refresh(target: target) }
             }
             .translationTask(offer.configuration, action: offer.prepare)
-        if offer.offersDownload {
-            SettingRow(
-                icon: "translate",
-                iconColor: .blue,
-                verbatimTitle: String(
-                    localized: "Translate wallpaper text",
-                    bundle: .appLanguage, comment: "Settings row offering the translation languages for Chinese wallpaper text."
-                ),
-                verbatimSubtitle: subtitle
-            ) {
-                Button("Download") { offer.requestDownload(target: target) }
-                    .fixedSize()
+        SettingRow(
+            icon: "translate",
+            iconColor: .blue,
+            title: "Translate wallpaper text",
+            subtitle: offersDownload
+                ? "Download the translation languages for Chinese and \(languageName) to show Chinese wallpaper names, settings, and descriptions in \(languageName)."
+                : nil,
+            info: offersDownload ? nil : "Shows Chinese wallpaper names, settings, and descriptions in the app language. Translation runs on this Mac."
+        ) {
+            HStack(spacing: 8) {
+                if offersDownload {
+                    Button("Download") { offer.requestDownload(target: target) }
+                        .fixedSize()
+                }
+                Toggle("", isOn: $translationEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text("Translate wallpaper text"))
             }
         }
+    }
+
+    private var offersDownload: Bool {
+        translationEnabled && offer.offersDownload
     }
 
     private var target: Locale.Language {
         WPEPropertyLabelTranslator.effectiveTargetLanguage(preference: appLanguage)
     }
 
-    private var subtitle: String {
+    /// The app language's name in that language, such as "English"; fills both placeholders of the download subtitle.
+    private var languageName: String {
         let code = target.languageCode?.identifier ?? target.minimalIdentifier
-        let name = Locale(identifier: target.minimalIdentifier).localizedString(forLanguageCode: code) ?? code
-        return String(
-            localized: "Download the translation languages for Chinese and \(name) to show Chinese wallpaper names, settings, and descriptions in \(name).",
-            bundle: .appLanguage, comment: "Translate wallpaper text row. Both placeholders are the app language name, such as English."
-        )
+        return Locale(identifier: target.minimalIdentifier).localizedString(forLanguageCode: code) ?? code
     }
 }
 

@@ -403,12 +403,18 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             )
             return targets
         case .general:
+            var languageRows = ["Language"]
+            var languageKeywords = ["language"]
+            if capabilities.sku == .pro, #available(macOS 15.0, *) {
+                languageRows.append("Translate wallpaper text")
+                languageKeywords += ["translate", "translation", "翻译", "翻譯", "翻訳", "traducir", "traducción"]
+            }
             return [
                 SettingsNavigationSearchTarget(
                     label: "Language",
                     anchor: .generalLanguage,
-                    rows: ["Language"],
-                    keywords: ["language"]
+                    rows: languageRows,
+                    keywords: languageKeywords
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Startup",
@@ -703,23 +709,23 @@ struct SettingsNavigationItem: Identifiable, Equatable {
     }
 }
 
-struct SettingsNavigationSearchTarget: Equatable {
+struct SettingsNavigationSearchTarget: Hashable {
     let label: String
     let anchor: SettingsSearchAnchor
     /// Catalog keys of the section's rows, searched in every shipped language like `label`.
     let rows: [String]
     let keywords: [String]
 
-    /// Built once over the Pro superset; valid because capabilities decide only which
-    /// sections are offered, never what a section's names are.
-    private static let indexes: [SettingsSearchAnchor: SearchIndex] = Dictionary(
+    /// Built once over the Pro superset and keyed by the whole target: a section whose rows
+    /// differ by capability (General's Language in Lite) must miss rather than reuse Pro's names.
+    private static let indexes: [Self: SearchIndex] = Dictionary(
         uniqueKeysWithValues: SettingsNavigation.allItems
             .flatMap { $0.searchTargets(capabilities: ProductCapabilities.pro.withWorkshopOnline()) }
-            .map { ($0.anchor, SearchIndex($0)) }
+            .map { ($0, SearchIndex($0)) }
     )
 
     private var index: SearchIndex {
-        Self.indexes[anchor] ?? SearchIndex(self)
+        Self.indexes[self] ?? SearchIndex(self)
     }
 
     /// The section a query lands in: exact name first, since "Global Shortcuts" also sits inside the earlier
