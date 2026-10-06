@@ -85,7 +85,7 @@ final class WPEPropertyLabelTranslator {
     /// `preference` is the stored `AppLanguagePreference` raw value; `.system`, missing and
     /// unknown values follow the bundle's resolved localization.
     nonisolated static func effectiveTargetLanguage(
-        preference: String? = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey),
+        preference: String? = UserDefaults.appScoped().string(forKey: AppLanguagePreference.storageKey),
         preferredLocalization: String? = Bundle.main.preferredLocalizations.first
     ) -> Locale.Language {
         let explicit = preference.flatMap(AppLanguagePreference.init(rawValue:))?.localeIdentifier
@@ -427,7 +427,7 @@ final class WPEPropertyLabelTranslator {
 /// their author labels. `session` is not `Sendable` — all of its use stays inside the task's closure.
 private struct WPEPropertyLabelTranslation: ViewModifier {
     let translator: WPEPropertyLabelTranslator
-    @AppStorage(AppLanguagePreference.storageKey) private var languagePreference = AppLanguagePreference.system.rawValue
+    @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) private var languagePreference = AppLanguagePreference.system.rawValue
     @AppStorage(WPEPropertyLabelTranslator.enabledPreferenceKey, store: .appScoped()) private var translationEnabled = true
 
     func body(content: Content) -> some View {

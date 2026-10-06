@@ -130,7 +130,7 @@ struct OracleCorpusCaptureTests {
 
     /// The pointer WPE's capture recorded, read from the `WPEOracleReplayPointer*` defaults; 0.5/0.5 when a capture predates pointer recording.
     private static func replayPointer() -> SIMD2<Double> {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let x = (defaults.object(forKey: "WPEOracleReplayPointerX") as? Double) ?? 0.5
         let y = (defaults.object(forKey: "WPEOracleReplayPointerY") as? Double) ?? 0.5
         return SIMD2<Double>(x, y)
@@ -169,7 +169,7 @@ struct OracleCorpusCaptureTests {
                 SystemAudioCaptureManager.broker.resetToSilence()
             }
         }
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previousArguments
         arguments["WPEOraclePerPassHashes"] = config.perPass

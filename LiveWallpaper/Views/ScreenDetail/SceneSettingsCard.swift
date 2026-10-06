@@ -12,7 +12,7 @@ struct WPESceneCustomSettingsCard: View {
     @Environment(ScreenManager.self) private var screenManager
     /// nil = no undo stack in the environment; edits are not recorded.
     @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
-    @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
+    @AppStorage("Inspector.WPESceneCustomSettingsExpanded", store: .appScoped()) private var isExpanded = true
     @State private var editor = Editor()
     @State private var owner: SceneSettingsOwner?
     @State private var translator = WPEPropertyLabelTranslator()

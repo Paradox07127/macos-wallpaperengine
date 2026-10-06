@@ -4,7 +4,7 @@ import SwiftUI
 /// Appearance here is shared by every overlay panel on every display; the per-display
 /// parts of an overlay stay in the board's own inspector.
 struct OverlaysSettingsView: View {
-    @AppStorage(MonitorTemperature.fahrenheitDefaultsKey) private var temperatureFahrenheit = false
+    @AppStorage(MonitorTemperature.fahrenheitDefaultsKey, store: .appScoped()) private var temperatureFahrenheit = false
     @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
     private var widgetTintHex = MonitorPanelAppearance.defaultTintHex
     @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())

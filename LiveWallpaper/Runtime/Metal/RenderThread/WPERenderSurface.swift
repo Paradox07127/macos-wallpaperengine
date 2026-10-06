@@ -215,7 +215,7 @@ enum WPEDisplayHDROutput {
     static let defaultsKey = "WPEMetalDisplayHDROutputEnabled"
 
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? false
+        UserDefaults.appScoped().object(forKey: defaultsKey) as? Bool ?? false
     }
 
     /// Settings UI visibility only. Surface creation must use its own target screen's capability.

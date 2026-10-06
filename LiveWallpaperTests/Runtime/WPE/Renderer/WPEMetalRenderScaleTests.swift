@@ -275,11 +275,11 @@ struct WPEMetalRenderScaleTests {
         #expect(WPEMetalTextureLoader.uploadMipStartIndex(mipmaps: chain, maxEdge: 0) == 0)
     }
 
-    /// Pins `WPEMetalMipChainEnabled` in `UserDefaults.standard` — the domain
-    /// `mipChainOverride` actually reads, which in a test host is this machine's
-    /// real `com.loomscreen.pro` prefs — and returns the restore closure.
+    /// Pins `WPEMetalMipChainEnabled` in `UserDefaults.appScoped()` — the domain
+    /// `mipChainOverride` reads; the test host uses its isolated process suite.
+    /// Returns the restore closure.
     private static func pinMipChainDefault(_ value: Bool?) -> () -> Void {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let key = WPEMetalTextureLoader.mipChainDefaultsKey
         let previous = defaults.object(forKey: key)
         if let value {

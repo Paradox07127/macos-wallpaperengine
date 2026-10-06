@@ -1,8 +1,13 @@
 import Foundation
 
 extension UserDefaults {
-    static func appScoped() -> UserDefaults {
-        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+    /// Preview mode is launch context. Cache only this Boolean, not preference
+    /// values or stores; keep XCTest detection live for a late-loaded test bundle.
+    private nonisolated static let isPreviewProcess =
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+
+    nonisolated static func appScoped() -> UserDefaults {
+        if isPreviewProcess {
             return UserDefaults(suiteName: "com.loomscreen.pro.Previews") ?? .standard
         }
         guard NSClassFromString("XCTestCase") != nil else { return .standard }
@@ -23,7 +28,11 @@ extension UserDefaults {
 
     /// The app's `com.loomscreen.pro` defaults domain. When the current process IS the app, its standard domain already maps to that bundle ID, so we return `.standard`: passing your own bundle identifier to `init(suiteName:)` is rejected by macOS with the `_NSUserDefaults_Log_Nonsensical_Suites` warning and yields no usable store.
     /// In a host process with a different bundle ID (a screensaver/agent embedding the renderer) we open the explicit suite so `defaults write com.loomscreen.pro …` knobs are still honoured.
-    static var appSuite: UserDefaults {
+    /// Test and preview hosts use the same isolated domain as `appScoped()`,
+    /// including callers that normally fall back from this explicit app suite.
+    nonisolated static var appSuite: UserDefaults {
+        let scoped = appScoped()
+        guard scoped === UserDefaults.standard else { return scoped }
         let appBundleID = "com.loomscreen.pro"
         if Bundle.main.bundleIdentifier == appBundleID { return .standard }
         return UserDefaults(suiteName: appBundleID) ?? .standard

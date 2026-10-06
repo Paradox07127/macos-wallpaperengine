@@ -214,7 +214,7 @@ struct WPETexMipInflateScopeTests {
     }
 
     private static func pinMipChainDefault(_ value: Bool?) -> () -> Void {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let key = WPEMetalTextureLoader.mipChainDefaultsKey
         let previous = defaults.object(forKey: key)
         if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }

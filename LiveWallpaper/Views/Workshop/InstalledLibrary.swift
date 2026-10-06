@@ -31,17 +31,17 @@ final class InstalledLibraryModel {
         static let live = Dependencies(
             loadEntries: { SettingsManager.shared.loadGlobalSettings().recentWPEImports },
             loadRemoteUpdateEpochs: {
-                UserDefaults.standard.dictionary(forKey: InstalledLibraryModel.remoteUpdateEpochsKey)
+                UserDefaults.appScoped().dictionary(forKey: InstalledLibraryModel.remoteUpdateEpochsKey)
                     as? [String: Double] ?? [:]
             },
             saveRemoteUpdateEpochs: {
-                UserDefaults.standard.set($0, forKey: InstalledLibraryModel.remoteUpdateEpochsKey)
+                UserDefaults.appScoped().set($0, forKey: InstalledLibraryModel.remoteUpdateEpochsKey)
             },
             loadLastUpdateCheckEpoch: {
-                UserDefaults.standard.double(forKey: InstalledLibraryModel.lastUpdateCheckEpochKey)
+                UserDefaults.appScoped().double(forKey: InstalledLibraryModel.lastUpdateCheckEpochKey)
             },
             saveLastUpdateCheckEpoch: {
-                UserDefaults.standard.set($0, forKey: InstalledLibraryModel.lastUpdateCheckEpochKey)
+                UserDefaults.appScoped().set($0, forKey: InstalledLibraryModel.lastUpdateCheckEpochKey)
             },
             makeMetadataService: { SteamWorkshopMetadataService() },
             now: Date.init,

@@ -36,7 +36,7 @@ final class QAControlPlane {
     static func startIfEnabled(screenManager: ScreenManager) {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
               NSClassFromString("XCTestCase") == nil else { return }
-        guard UserDefaults.standard.bool(forKey: "LoomscreenQAControlPlane") else { return }
+        guard UserDefaults.appScoped().bool(forKey: "LoomscreenQAControlPlane") else { return }
         shared.start(screenManager: screenManager)
     }
 
@@ -540,7 +540,7 @@ final class QAControlPlane {
 
     private func defaultsGet(_ arguments: [String: Any]) throws -> Any {
         guard let key = arguments["key"] as? String else { throw QAError.message("Missing key") }
-        let stored = UserDefaults.standard.object(forKey: key)
+        let stored = UserDefaults.appScoped().object(forKey: key)
         return ["key": key, "value": Self.jsonSafeDefaultsValue(stored), "isSet": stored != nil]
     }
 
@@ -555,19 +555,19 @@ final class QAControlPlane {
         guard let key = arguments["key"] as? String else { throw QAError.message("Missing key") }
         guard let value = arguments["value"] else { throw QAError.message("Missing value") }
         // A key that holds a non-JSON value is product state (a bookmark, a trust table), not a diagnostic knob.
-        if let existing = UserDefaults.standard.object(forKey: key), !JSONSerialization.isValidJSONObject([existing]) {
+        if let existing = UserDefaults.appScoped().object(forKey: key), !JSONSerialization.isValidJSONObject([existing]) {
             throw QAError.message("\(key) holds \(type(of: existing)) and is not a diagnostic key")
         }
         if value is NSNull {
-            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.appScoped().removeObject(forKey: key)
         } else {
             // `UserDefaults.set` raises an ObjC exception (a crash) for anything that is not a property list.
             guard PropertyListSerialization.propertyList(value, isValidFor: .binary) else {
                 throw QAError.message("Value is not a property list (a null inside a container is not allowed)")
             }
-            UserDefaults.standard.set(value, forKey: key)
+            UserDefaults.appScoped().set(value, forKey: key)
         }
-        return ["key": key, "value": Self.jsonSafeDefaultsValue(UserDefaults.standard.object(forKey: key))]
+        return ["key": key, "value": Self.jsonSafeDefaultsValue(UserDefaults.appScoped().object(forKey: key))]
     }
 
     // MARK: - Encoding

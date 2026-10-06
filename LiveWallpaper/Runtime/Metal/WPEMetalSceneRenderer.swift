@@ -569,7 +569,7 @@ final class WPEMetalSceneRenderer: NSObject {
     #endif
 
     private static func resolvedParallaxGain() -> Double {
-        for defaults in [UserDefaults.appSuite, .standard] {
+        for defaults in [UserDefaults.appSuite, .appScoped()] {
             guard defaults.object(forKey: "WPEParallaxGain") != nil else { continue }
             return WPECameraParallaxFrame.clampedGain(defaults.double(forKey: "WPEParallaxGain"))
         }

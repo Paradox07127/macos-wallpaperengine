@@ -11,7 +11,7 @@ extension WPEMetalSceneRenderer {
     /// of the fixed 1080 fallback, so HUD text is crisp. Default ON; disable with
     /// `defaults write com.loomscreen.pro WPEMetalPerspectiveNativeResolution -bool NO`.
     static let perspectiveNativeResolutionEnabled: Bool =
-        (UserDefaults.standard.object(forKey: "WPEMetalPerspectiveNativeResolution") as? Bool) ?? true
+        (UserDefaults.appScoped().object(forKey: "WPEMetalPerspectiveNativeResolution") as? Bool) ?? true
     /// Floor for the adaptive background throttle — never drop a still-visible wallpaper below this even when occluded/on battery.
     static let adaptiveThrottleFloorFPS = 15
     /// Above this raw-bytes footprint, eager-upload of a multi-frame `.tex` would burn far more VRAM than the runtime needs; route through `WPETexLazyAnimatedTextureSource` instead.
@@ -21,7 +21,7 @@ extension WPEMetalSceneRenderer {
     /// Unset ⇒ the machine's memory-tier default; 0 or negative ⇒ unbounded; positive ⇒ that many MiB.
     static var textureCacheBudgetBytes: Int? {
         resolvedTextureCacheBudgetBytes(
-            manualValue: UserDefaults.standard.object(forKey: textureCacheBudgetMiBDefaultsKey),
+            manualValue: UserDefaults.appScoped().object(forKey: textureCacheBudgetMiBDefaultsKey),
             tier: .current
         )
     }
@@ -36,7 +36,7 @@ extension WPEMetalSceneRenderer {
 
     /// When true, emitters with no authored start offset are also pre-populated to their steady-state spread. Emitters with `starttime > 0` always prewarm.
     static var particlePrewarmEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "WPEParticlePrewarmEnabled")
+        UserDefaults.appScoped().bool(forKey: "WPEParticlePrewarmEnabled")
     }
 
     nonisolated static func particlePrewarmSeconds(
@@ -68,7 +68,7 @@ extension WPEMetalSceneRenderer {
     /// Slave a revealed loop video's playhead to lead its intro overlay by the
     /// measured phase offset (seamless intro→loop). Default on; `-bool NO` disables.
     static var introPhaseAlignEnabled: Bool {
-        UserDefaults.standard.object(forKey: "WPEMetalIntroPhaseAlignEnabled") as? Bool ?? true
+        UserDefaults.appScoped().object(forKey: "WPEMetalIntroPhaseAlignEnabled") as? Bool ?? true
     }
 
 }

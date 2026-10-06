@@ -11,7 +11,7 @@ extension WPEMetalSceneRenderer {
     /// holds either a string array or a single `defaults write ... WPEMetalCaptureScene <id>`
     /// string — optionally comma/space separated.
     private func gpuCaptureRequestedForCurrentScene() -> Bool {
-        let d = UserDefaults.standard
+        let d = UserDefaults.appScoped()
         let raw: [String]
         if let arr = d.stringArray(forKey: "WPEMetalCaptureScene") {
             raw = arr
@@ -41,7 +41,7 @@ extension WPEMetalSceneRenderer {
 
     #if DEBUG
     func dumpScenePassesIfRequested(suffix: String = "", frameOrdinal: Int = 0) {
-        let wantedID = UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
+        let wantedID = UserDefaults.appScoped().string(forKey: "WPEDumpScenePasses")
         let pngRequested = (wantedID?.isEmpty == false) && wantedID == descriptor.workshopID
         // `recordPassOutputs` matches by pass id, so passing the full dump list is idempotent.
         guard pngRequested || WPEOracleMode.perPassHashesEnabled else { return }
@@ -63,7 +63,7 @@ extension WPEMetalSceneRenderer {
 
     func maybeDumpScenePassesOverTime(time: Double, composite: MTLTexture) {
         guard !didDumpScenePassesOverTime else { return }
-        let wantedID = UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
+        let wantedID = UserDefaults.appScoped().string(forKey: "WPEDumpScenePasses")
         guard let wantedID, !wantedID.isEmpty, wantedID == descriptor.workshopID else { return }
         let threshold = ProcessInfo.processInfo.environment["WPEDumpScenePassesAtTime"].flatMap(Double.init) ?? 6.0
         guard time >= threshold else { return }
@@ -390,11 +390,11 @@ extension WPEMetalSceneRenderer {
     }
 
     func shouldSynchronizeFrames() -> Bool {
-        if UserDefaults.standard.bool(forKey: "WPEMetalSerializeFrames") { return true }
+        if UserDefaults.appScoped().bool(forKey: "WPEMetalSerializeFrames") { return true }
         if WPESceneDebugArtifacts.shared.isEnabled { return true }
         #if DEBUG
         if gpuCaptureRequestedForCurrentScene() { return true }
-        if !(UserDefaults.standard.string(forKey: "WPEDumpScenePasses") ?? "").isEmpty { return true }
+        if !(UserDefaults.appScoped().string(forKey: "WPEDumpScenePasses") ?? "").isEmpty { return true }
         #endif
         return false
     }

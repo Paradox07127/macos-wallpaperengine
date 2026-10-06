@@ -1539,7 +1539,7 @@ struct WPERenderGraphBuilder: Sendable {
         }
         textures[8] = .fbo(clipTargetName)
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "WPESceneDebugArtifactsEnabled") {
+        if UserDefaults.appScoped().bool(forKey: "WPESceneDebugArtifactsEnabled") {
             Logger.info(
                 "[WPE clip] builder injected clip-composite bindings for \(context.model.puppetPath ?? "?") "
                     + "(masks=\(context.model.puppetClipMaskNames), rt=\(clipTargetName))",

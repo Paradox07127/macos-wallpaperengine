@@ -18,24 +18,24 @@ struct QAControlPlaneDefaultsTests {
     @Test("A null value removes the key instead of crashing the app")
     func nullRemovesKey() async {
         let key = "loomscreen.qa.test.\(UUID().uuidString)"
-        defer { UserDefaults.standard.removeObject(forKey: key) }
+        defer { UserDefaults.appScoped().removeObject(forKey: key) }
         let set = await call("defaults.set", #"{"key":"\#(key)","value":1}"#)
         #expect(set["ok"] as? Bool == true)
-        #expect(UserDefaults.standard.integer(forKey: key) == 1)
+        #expect(UserDefaults.appScoped().integer(forKey: key) == 1)
 
         let cleared = await call("defaults.set", #"{"key":"\#(key)","value":null}"#)
         #expect(cleared["ok"] as? Bool == true)
-        #expect(UserDefaults.standard.object(forKey: key) == nil)
+        #expect(UserDefaults.appScoped().object(forKey: key) == nil)
         #expect(await call("defaults.get", #"{"key":"\#(key)"}"#)["ok"] as? Bool == true)
     }
 
     @Test("A non-property-list value is refused, not written")
     func nonPropertyListIsRefused() async {
         let key = "loomscreen.qa.test.\(UUID().uuidString)"
-        defer { UserDefaults.standard.removeObject(forKey: key) }
+        defer { UserDefaults.appScoped().removeObject(forKey: key) }
         let refused = await call("defaults.set", #"{"key":"\#(key)","value":{"nested":null}}"#)
         #expect(refused["ok"] as? Bool == false)
-        #expect(UserDefaults.standard.object(forKey: key) == nil)
+        #expect(UserDefaults.appScoped().object(forKey: key) == nil)
     }
 }
 

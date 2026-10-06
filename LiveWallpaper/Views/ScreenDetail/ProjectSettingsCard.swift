@@ -11,8 +11,8 @@ struct WPEProjectCustomSettingsCard: View {
     @Binding var config: HTMLConfig
 
     @Environment(ScreenManager.self) private var screenManager
-    @AppStorage("Inspector.WPEProjectCustomSettingsExpanded") private var isExpanded = true
-    @AppStorage("Web.Interaction.Acknowledged") private var webInteractionAcknowledged = false
+    @AppStorage("Inspector.WPEProjectCustomSettingsExpanded", store: .appScoped()) private var isExpanded = true
+    @AppStorage("Web.Interaction.Acknowledged", store: .appScoped()) private var webInteractionAcknowledged = false
     @State private var pendingEnable = false
     @State private var translator = WPEPropertyLabelTranslator()
 

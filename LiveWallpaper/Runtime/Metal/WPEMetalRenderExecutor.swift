@@ -71,7 +71,7 @@ final class WPEMetalRenderExecutor {
     /// Off by default and read once. `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
     static let tracePassLabels: Bool = {
         let key = "WPETracePassLabels"
-        for suite in [UserDefaults.appSuite, UserDefaults.standard] where suite.object(forKey: key) != nil {
+        for suite in [UserDefaults.appSuite, UserDefaults.appScoped()] where suite.object(forKey: key) != nil {
             return suite.bool(forKey: key)
         }
         return false
@@ -92,11 +92,11 @@ final class WPEMetalRenderExecutor {
     /// Default ON; opt out with `defaults write com.loomscreen.pro WPEPuppetClipComposite -bool NO`. Only takes effect when the builder injected a clip-mask binding (texture slot 8).
     static let puppetClipCompositeEnabled: Bool = puppetDefaultsFlagOptional("WPEPuppetClipComposite") ?? true
 
-    /// Preserves unset (`nil`). Suite first, then `.standard`.
+    /// Preserves unset (`nil`). Explicit app suite first, then the scoped host store.
     static func puppetDefaultsFlagOptional(
         _ key: String,
         suite: UserDefaults = .appSuite,
-        standard: UserDefaults = .standard
+        standard: UserDefaults = .appScoped()
     ) -> Bool? {
         if suite.object(forKey: key) != nil {
             return suite.bool(forKey: key)
@@ -113,14 +113,14 @@ final class WPEMetalRenderExecutor {
     /// Default OFF so the existing render path stays byte-identical unless explicitly enabled. Read once on first use — restart to apply.
     static let isStaticLayerCacheEnabled: Bool = readStaticLayerCacheEnabled()
     static func readStaticLayerCacheEnabled() -> Bool {
-        UserDefaults.standard.object(forKey: staticLayerCacheDefaultsKey) == nil
+        UserDefaults.appScoped().object(forKey: staticLayerCacheDefaultsKey) == nil
             ? false
-            : UserDefaults.standard.bool(forKey: staticLayerCacheDefaultsKey)
+            : UserDefaults.appScoped().bool(forKey: staticLayerCacheDefaultsKey)
     }
 
     /// VRAM budget for cached composites (MiB; default 256). Over budget → LRU eviction, never wrong.
     static let staticLayerCacheBudgetBytes: Int = {
-        let raw = UserDefaults.standard.object(forKey: staticLayerCacheBudgetMiBDefaultsKey)
+        let raw = UserDefaults.appScoped().object(forKey: staticLayerCacheBudgetMiBDefaultsKey)
         return resolvedStaticLayerCacheBudgetBytes(mib: (raw as? NSNumber)?.intValue ?? 256)
     }()
 
@@ -692,9 +692,9 @@ final class WPEMetalRenderExecutor {
     var oracleSceneStagesEnabled = false
     private var dumpLayerPassesID: String?
     private let dumpScenePassesDefaultID: String? =
-        UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
+        UserDefaults.appScoped().string(forKey: "WPEDumpScenePasses")
     private let dumpLayerPassesDefaultID: String? = {
-        let id = UserDefaults.standard.string(forKey: "WPEDumpLayerPasses")
+        let id = UserDefaults.appScoped().string(forKey: "WPEDumpLayerPasses")
         return (id?.isEmpty == false) ? id : nil
     }()
     #endif
@@ -3089,7 +3089,7 @@ final class WPEMetalRenderExecutor {
 
     /// Kill switch: `defaults write com.loomscreen.pro WPEMetalSceneBloomEnabled -bool NO`.
     static let isSceneBloomEnabled: Bool =
-        (UserDefaults.standard.object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
+        (UserDefaults.appScoped().object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
 
 
     /// Bound only to a reflecting model; the contents are the published prior frame.

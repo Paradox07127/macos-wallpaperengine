@@ -16,8 +16,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     static let mipChainDefaultsKey = "WPEMetalMipChainEnabled"
 
     static var mipChainOverride: Bool? {
-        UserDefaults.standard.object(forKey: mipChainDefaultsKey) != nil
-            ? UserDefaults.standard.bool(forKey: mipChainDefaultsKey)
+        UserDefaults.appScoped().object(forKey: mipChainDefaultsKey) != nil
+            ? UserDefaults.appScoped().bool(forKey: mipChainDefaultsKey)
             : nil
     }
 

@@ -5,11 +5,8 @@ import os
 
 enum WPEFrameOccupancyMeter {
     static let isEnabled: Bool = {
-        // XCTest hosts `appSuite` as the real `com.loomscreen.pro` domain, so a
-        // live occupancy session would leak into tests. Isolated scratch only.
-        let suites: [UserDefaults] = NSClassFromString("XCTestCase") != nil
-            ? [UserDefaults.appScoped()]
-            : [UserDefaults.appSuite, UserDefaults.standard]
+        // Both entry points resolve to scratch defaults in tests and previews.
+        let suites = [UserDefaults.appSuite, UserDefaults.appScoped()]
         for suite in suites where suite.object(forKey: "WPEFrameOccupancyLog") != nil {
             return suite.bool(forKey: "WPEFrameOccupancyLog")
         }

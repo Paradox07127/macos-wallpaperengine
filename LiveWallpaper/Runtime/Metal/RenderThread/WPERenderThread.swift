@@ -135,7 +135,7 @@ final class WPERenderThread: @unchecked Sendable {
     static let adaptiveQoSDefaultsKey = "loomscreen.wallpapers.adaptiveRenderQoS.v1"
 
     static var adaptiveQoSEnabledFromDefaults: Bool {
-        UserDefaults.standard.object(forKey: adaptiveQoSDefaultsKey) as? Bool ?? true
+        UserDefaults.appScoped().object(forKey: adaptiveQoSDefaultsKey) as? Bool ?? true
     }
 
     /// Adaptive-QoS state machine. Mutated ONLY on the render thread (via

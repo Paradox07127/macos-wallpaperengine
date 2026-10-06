@@ -18,7 +18,7 @@ final class WPEMetalDepthStateCache {
         if suite.object(forKey: memorylessDepthDefaultsKey) != nil {
             return suite.bool(forKey: memorylessDepthDefaultsKey)
         }
-        return UserDefaults.standard.object(forKey: memorylessDepthDefaultsKey) as? Bool ?? true
+        return UserDefaults.appScoped().object(forKey: memorylessDepthDefaultsKey) as? Bool ?? true
     }()
 
     /// The caller additionally opts a target out (`allowTransient: false`) when more than one pass writes its depth, since those can load depth across encoders.

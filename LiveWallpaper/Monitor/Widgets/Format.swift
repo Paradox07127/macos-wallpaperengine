@@ -4,7 +4,7 @@ enum MonitorTemperature {
     static let fahrenheitDefaultsKey = "MonitorTemperatureFahrenheit"
 
     static var isFahrenheit: Bool {
-        UserDefaults.standard.bool(forKey: fahrenheitDefaultsKey)
+        UserDefaults.appScoped().bool(forKey: fahrenheitDefaultsKey)
     }
 
     static var symbol: String { isFahrenheit ? "°F" : "°C" }

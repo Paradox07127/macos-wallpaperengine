@@ -8,7 +8,7 @@ import MetalKit
 import os
 import simd
 extension WPEMetalRenderExecutor {
-    private static let puppetSkinBreadcrumbEnabled = UserDefaults.standard.bool(forKey: "WPEPuppetSkinDebugLog")
+    private static let puppetSkinBreadcrumbEnabled = UserDefaults.appScoped().bool(forKey: "WPEPuppetSkinDebugLog")
 
     func recordPuppetSkinningBreadcrumbs(
         pipeline: WPEPreparedRenderPipeline,
@@ -1987,8 +1987,8 @@ extension WPEMetalRenderExecutor {
 
     private static func clipDiagnosticLog(_ message: @autoclosure () -> String) {
         #if DEBUG
-        guard UserDefaults.standard.bool(forKey: "WPESceneDebugArtifactsEnabled")
-                || UserDefaults.standard.bool(forKey: "WPEPuppetSkinDebugLog") else { return }
+        guard UserDefaults.appScoped().bool(forKey: "WPESceneDebugArtifactsEnabled")
+                || UserDefaults.appScoped().bool(forKey: "WPEPuppetSkinDebugLog") else { return }
         Logger.info(message(), category: .wpeRender)
         #endif
     }

@@ -58,7 +58,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         if let testingOverride { return testingOverride }
         // The render oracle needs the canonical trace recorder to run, so enabling oracle mode implies artifacts are enabled (no need to set both defaults). Both stay live reads: WPEMetalSceneRendererTests flips the defaults key at runtime, and WPEOracleMode's testingOverride flips too.
         // DEBUG-only cost — Release compiles isEnabled to a constant false.
-        return UserDefaults.standard.bool(forKey: Self.defaultsKey) || WPEOracleMode.isEnabled
+        return UserDefaults.appScoped().bool(forKey: Self.defaultsKey) || WPEOracleMode.isEnabled
         #else
         return false
         #endif

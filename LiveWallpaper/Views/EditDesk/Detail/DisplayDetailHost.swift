@@ -59,7 +59,7 @@ struct DisplayDetailHost: View {
     #if !LITE_BUILD
     @State private var showsSceneLog = false
     #endif
-    @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
+    @AppStorage("Inspector.ColorExpanded", store: .appScoped()) private var isColorExpanded = false
 
     private enum LibraryHandoff {
         case schemes

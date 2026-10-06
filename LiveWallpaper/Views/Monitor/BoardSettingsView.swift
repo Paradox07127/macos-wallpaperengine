@@ -9,7 +9,7 @@ struct BoardSettingsView: View {
     /// Applies an edit to the latest persisted board through the Edit Desk session.
     let editBoard: @MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void
 
-    @AppStorage("Monitor.SettingsExpanded") private var isExpanded = true
+    @AppStorage("Monitor.SettingsExpanded", store: .appScoped()) private var isExpanded = true
 
     @State private var draft: MonitorBoardConfiguration = .default
     @State private var layoutImporter = BoardLayoutImporter()

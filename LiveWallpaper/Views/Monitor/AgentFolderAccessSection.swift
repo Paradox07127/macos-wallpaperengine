@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct AgentFolderAccessSection: View {
-    @AppStorage("Monitor.AuthorizationExpanded") private var isAuthorizationExpanded = true
+    @AppStorage("Monitor.AuthorizationExpanded", store: .appScoped()) private var isAuthorizationExpanded = true
 
     @State private var claudeAuthorized = false
     @State private var codexAuthorized = false

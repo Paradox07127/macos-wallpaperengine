@@ -10,7 +10,7 @@ struct SecurityInspector: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var trustStore = TrustedHostStore.shared
     @State private var pendingTrustOrigin: TrustedHTMLOrigin?
-    @AppStorage("Inspector.ContentSecurityExpanded") private var isExpanded = false
+    @AppStorage("Inspector.ContentSecurityExpanded", store: .appScoped()) private var isExpanded = false
 
     var body: some View {
         GroupBox {
