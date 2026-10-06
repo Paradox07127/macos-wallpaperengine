@@ -121,4 +121,42 @@ struct HTMLAudioSpectrumBridgeTests {
         #expect(values[127] == Double(right[63]))
     }
 }
+
+@Suite("HTML audio spectrum pump lifecycle")
+@MainActor
+struct HTMLAudioSpectrumPumpLifecycleTests {
+    @Test("Registration, suspension, drop, resume and cleanup balance one pump and capture demand", .timeLimit(.minutes(1)))
+    func lifecycleKeepsSinglePumpAndBalancedDemand() async throws {
+        let manager = SystemAudioCaptureManager.shared
+        // The test host's default-off capture remains off: no feature enabling or tap request.
+        try #require(manager.state == .idle)
+        let consumers = manager.consumerCountForTesting
+        let view = HTMLWallpaperView(frame: .zero, initialEphemeral: true)
+        defer { view.cleanup() }
+        view.applyPerformanceProfile(.suspended)
+        view.noteAudioSpectrumListenerRegistered()
+        #expect(view.audioSpectrumListenerActive && view.audioSpectrumPumpTask == nil && !view.audioSpectrumCaptureRetained)
+        view.applyPerformanceProfile(.quality)
+        let first = try #require(view.audioSpectrumPumpTask)
+        #expect(view.audioSpectrumCaptureRetained && manager.consumerCountForTesting == consumers + 1)
+        view.noteAudioSpectrumListenerRegistered()
+        view.reconcileAudioSpectrumPump()
+        #expect(manager.consumerCountForTesting == consumers + 1)
+        view.applyPerformanceProfile(.suspended)
+        await first.value
+        #expect(view.audioSpectrumPumpTask == nil && !view.audioSpectrumCaptureRetained && manager.consumerCountForTesting == consumers)
+        view.dropAudioSpectrumListeners()
+        view.applyPerformanceProfile(.quality)
+        #expect(!view.audioSpectrumListenerActive && view.audioSpectrumPumpTask == nil)
+        view.noteAudioSpectrumListenerRegistered()
+        let second = try #require(view.audioSpectrumPumpTask)
+        #expect(view.audioSpectrumCaptureRetained)
+        view.cleanup()
+        await second.value
+        view.reconcileAudioSpectrumPump()
+        #expect(view.audioSpectrumPumpTask == nil && !view.audioSpectrumCaptureRetained && manager.consumerCountForTesting == consumers)
+        #expect(manager.state == .idle)
+    }
+}
+
 #endif
