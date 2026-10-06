@@ -74,9 +74,7 @@ public extension ConfigurationBundle {
     /// Import merges by Workshop id: a bookmark already saved keeps its entry, and nothing saved is cleared.
     @MainActor
     func mergeWorkshopBookmarks(into store: WorkshopBookmarkStore) {
-        for bookmark in workshopBookmarks ?? [] {
-            store.add(bookmark)
-        }
+        store.merge(workshopBookmarks ?? [])
     }
 
     /// Import adds the backup's marks; nothing marked here is cleared.

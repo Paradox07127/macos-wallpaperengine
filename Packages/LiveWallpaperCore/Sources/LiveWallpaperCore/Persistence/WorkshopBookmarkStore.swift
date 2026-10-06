@@ -55,6 +55,32 @@ public final class WorkshopBookmarkStore {
         save(bookmarks + [bookmark])
     }
 
+    /// Append new ids in input order and persist one archive on a healthy import.
+    /// Existing entries win. Encoding failures retain sequential, per-item recovery.
+    public func merge(_ incoming: [WorkshopBookmark]) {
+        guard !incoming.isEmpty else { return }
+        var ids = Set(bookmarks.map(\.id))
+        var updated = bookmarks
+        for bookmark in incoming where ids.insert(bookmark.id).inserted {
+            updated.append(bookmark)
+        }
+        guard updated.count != bookmarks.count else { return }
+        guard !isArchiveUnreadable else {
+            hasStorageError = true
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(updated)
+            commit(data, bookmarks: updated)
+        } catch {
+            // A rejected candidate must not reserve its id, and later valid
+            // records still save. Replay the original input, not the deduped list.
+            for bookmark in incoming {
+                add(bookmark)
+            }
+        }
+    }
+
     /// Hydration never re-adds a bookmark removed while its request was running.
     public func updateDetailsSnapshot(_ data: Data, for id: UInt64) {
         guard let index = bookmarks.firstIndex(where: { $0.id == id }),
@@ -98,12 +124,16 @@ public final class WorkshopBookmarkStore {
         }
         do {
             let data = try JSONEncoder().encode(updated)
-            defaults.set(data, forKey: Self.preferencesKey)
-            bookmarks = updated
-            hasStorageError = false
+            commit(data, bookmarks: updated)
         } catch {
             hasStorageError = true
             Logger.error("Could not save Workshop bookmarks", category: .ui)
         }
+    }
+
+    private func commit(_ data: Data, bookmarks updated: [WorkshopBookmark]) {
+        defaults.set(data, forKey: Self.preferencesKey)
+        bookmarks = updated
+        hasStorageError = false
     }
 }
