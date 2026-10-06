@@ -139,10 +139,11 @@ final class WPEPropertyLabelTranslator {
             // A name translated before it was marked (e.g. first seen in Workshop) is otherwise never written.
             nameCache?.merge(marked.compactMap { label in translated[label].map { (label, $0) } }, for: targetLanguage)
         }
+        // Recorded before the language filter so a retarget re-checks labels already in the old target language.
         let fresh = labels.filter {
-            Self.needsTranslation($0, target: targetLanguage)
+            requested.insert($0).inserted
                 && translated[$0] == nil
-                && requested.insert($0).inserted
+                && Self.needsTranslation($0, target: targetLanguage)
         }
         guard isEnabled, !fresh.isEmpty else { return }
         let now = ContinuousClock.now
@@ -501,15 +502,10 @@ extension String {
 }
 
 extension View {
-    /// `help` takes a non-optional `Text`; this skips the modifier entirely
-    /// while a row still shows its author label.
-    @ViewBuilder
+    /// Always applied, empty while a row still shows its author label: an if/else here would remount the
+    /// row when a translation lands, and a remounted `CoalescedSlider` drops its pending commit.
     func wpeAuthorLabelHelp(_ original: String?) -> some View {
-        if let original {
-            help(Text(verbatim: original))
-        } else {
-            self
-        }
+        help(Text(verbatim: original ?? ""))
     }
 
     /// Queue a displayed name without changing the stored title or wallpaper identity.

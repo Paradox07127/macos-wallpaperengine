@@ -96,7 +96,7 @@ struct PasteSheet: View {
                     Button("Clear queue", role: .destructive) {
                         for row in model.rows {
                             if let id = row.publishedFileID {
-                                queue.remove(id)
+                                queue.cancel(id)
                             }
                         }
                         model.removeAll()
@@ -186,7 +186,7 @@ struct PasteSheet: View {
                         onRetry: { model.retry(rowID: row.id) },
                         onRemove: {
                             if let id = row.publishedFileID {
-                                queue.remove(id)
+                                queue.cancel(id)
                             }
                             model.remove(rowID: row.id)
                         },

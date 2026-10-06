@@ -225,7 +225,7 @@ final class SavedLibraryModel {
     static func isRunning(_ entry: WPEHistoryEntry, in configuration: ScreenConfiguration) -> Bool {
         guard let origin = configuration.wpeOrigin, origin.workshopID == entry.origin.workshopID,
               origin.steamFolderItemID == entry.origin.steamFolderItemID else { return false }
-        return foldsIntoWorkshopRow(configuration.activeWallpaper)
+        return foldsIntoWorkshopRow(configuration.activeWallpaper) && configuration.activeWallpaper.sceneDescriptor?.presetID == nil
     }
 
     /// The rows of `installed` Workshop IDs that saved entries fold into, each once, in the entries' order.

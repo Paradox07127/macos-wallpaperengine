@@ -199,6 +199,26 @@ struct WorkshopBookmarkTests {
         #expect(!WorkshopBookmarkActions.bookmarkedIDs(workshopStore: workshop).contains(item.id))
     }
 
+    @Test("Deleting one library copy keeps the saved records another copy of the same Workshop ID still owns")
+    func deletingOneCopyKeepsSharedRecords() throws {
+        let (local, _, suite) = try Self.stores("sharedCopy")
+        defer { suite.discard() }
+        let marks = LibraryBookmarkStore(defaults: suite.defaults)
+        let bookmark = Self.addLocal("424242", to: local)
+        marks.add("workshop:424242")
+        marks.add("bookmark:\(bookmark.id)")
+        let remaining = WPEHistoryEntry(origin: Self.origin("424242"), importedAt: Date(timeIntervalSince1970: 1_700_000_000))
+
+        WorkshopSavedRecords.remove(workshopID: "424242", bookmarks: local, libraryBookmarks: marks, history: { [remaining] })
+        #expect(local.containsWPEBookmark(workshopID: "424242"), "deleting one copy removed the saved entries the other copy owns")
+        #expect(marks.contains("workshop:424242"), "deleting one copy removed the other copy's library mark")
+        #expect(marks.contains("bookmark:\(bookmark.id)"), "deleting one copy removed the saved entry's library mark")
+
+        WorkshopSavedRecords.remove(workshopID: "424242", bookmarks: local, libraryBookmarks: marks, history: { [] })
+        #expect(!local.containsWPEBookmark(workshopID: "424242"), "deleting the last copy left its saved entries behind")
+        #expect(!marks.contains("workshop:424242"), "deleting the last copy left its library mark behind")
+    }
+
     // MARK: - Wiring
 
     @Test("Deleting an installed item leaves its like alone and clears only the library's own marks")

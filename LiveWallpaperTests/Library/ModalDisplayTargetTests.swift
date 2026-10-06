@@ -28,11 +28,12 @@ struct ModalDisplayTargetTests {
     }
 
     private func running(
-        _ origin: WPEOrigin, overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
+        _ origin: WPEOrigin, overrides: [String: WallpaperEngineProjectPropertyValue] = [:], presetID: String? = nil
     ) -> ScreenConfiguration {
         let scene = SceneDescriptor(
             workshopID: Self.workshopID, cacheRelativePath: Self.workshopID, entryFile: "scene.json",
-            capabilityTier: .imageOnly, propertyOverrides: overrides
+            capabilityTier: .imageOnly, propertyOverrides: overrides,
+            presetID: presetID, presetSnapshot: presetID == nil ? [:] : ["speed": .number(2)]
         )
         var configuration = ScreenConfiguration(screenID: 1, wallpaper: .scene(scene))
         configuration.wpeOrigin = origin
@@ -78,6 +79,14 @@ struct ModalDisplayTargetTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let variant = running(local.origin, overrides: ["speed": .number(2)])
         #expect(press(for: local, whileRunning: variant) == .apply, "the project's button opened the display running its variant")
+    }
+
+    @Test("The project's button applies while a preset of its scene runs there with no edits on top")
+    func aRunningPresetDoesNotApplyItsProject() throws {
+        let (root, local, _) = try copies()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let preset = running(local.origin, presetID: "preset-1")
+        #expect(press(for: local, whileRunning: preset) == .apply, "the project's button opened the display running its preset")
     }
 }
 #endif

@@ -165,6 +165,13 @@ struct WorkshopDownloadQueueTests {
         await TestScratch.discard(root, flushing: settings)
     }
 
+    @Test("Removing a paste row or clearing the queue cancels its download, not only its waiting request")
+    func pasteRowRemovalCancelsDownload() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/PasteSheet.swift")
+        #expect(!source.contains("queue.remove("), "Remove or Clear queue leaves the row's running download going")
+        #expect(source.components(separatedBy: "queue.cancel(id)").count == 3, "Remove and Clear queue must both cancel")
+    }
+
     @Test("A queued row shows Queued instead of a finished phase's action")
     func queuedRowShowsQueued() {
         for phase: WorkshopDownloadCoordinator.DownloadPhase in [.idle, .failed("x"), .succeeded] {

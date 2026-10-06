@@ -1,8 +1,11 @@
 #if !LITE_BUILD
+import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import os
+import SwiftUI
 import Testing
 @preconcurrency import Translation
 
@@ -152,6 +155,53 @@ struct PropertyLabelTranslatorTests {
         await translator.availabilityCheck?.value
         #expect(translator.configuration?.target == simplifiedChinese)
         #expect(translator.takePending() == [traditional])
+    }
+
+    @MainActor
+    @Test("A label already in the app language translates once the app switches to another language")
+    func retargetTranslatesLabelsSeenInTargetLanguage() async {
+        guard #available(macOS 15.0, *) else { return }
+        let label = "显示触发区域"
+        let translator = WPEPropertyLabelTranslator(targetLanguage: simplifiedChinese, isInstalled: { _, _ in true })
+        translator.enqueue(labels: [label])
+        #expect(translator.availabilityCheck == nil)
+
+        translator.retarget(to: english)
+        await translator.availabilityCheck?.value
+        #expect(translator.configuration?.target == english, "a label seen in the old target language was never queued for the new one")
+        #expect(translator.takePending() == [label])
+    }
+
+    @MainActor
+    @Test("A translation arriving keeps the labelled row mounted", .timeLimit(.minutes(1)))
+    func authorHelpKeepsRowIdentity() async {
+        let mount = AuthorHelpMount()
+        let host = NSHostingView(rootView: AuthorHelpProbe(mount: mount))
+        let window = ParkedTestWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 120, height: 40),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        func settle() async {
+            for _ in 0 ..< 20 {
+                host.layoutSubtreeIfNeeded()
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        await settle()
+        #expect(mount.appearances == 1)
+
+        mount.original = "显示触发区域"
+        await settle()
+        #expect(mount.disappearances == 0, "the row was torn down when its tooltip arrived, cancelling a slider's pending commit")
+        #expect(mount.appearances == 1)
     }
 
     @Test("Descriptions split into lines, queue only the Chinese ones, and rejoin in order")
@@ -382,6 +432,26 @@ struct PropertyLabelTranslatorTests {
         #expect(translator.displayText(for: title) == title, "the English cache answered for a Japanese target")
         translator.retarget(to: english)
         #expect(translator.displayText(for: title) == "Seaside town at sunset")
+    }
+}
+
+@MainActor @Observable
+private final class AuthorHelpMount {
+    /// The author label handed to `wpeAuthorLabelHelp`; nil while no translation replaced it.
+    var original: String?
+    @ObservationIgnored var appearances = 0
+    @ObservationIgnored var disappearances = 0
+}
+
+private struct AuthorHelpProbe: View {
+    let mount: AuthorHelpMount
+
+    var body: some View {
+        Color.clear
+            .onAppear { mount.appearances += 1 }
+            .onDisappear { mount.disappearances += 1 }
+            .wpeAuthorLabelHelp(mount.original)
+            .frame(width: 120, height: 40)
     }
 }
 #endif
