@@ -72,8 +72,36 @@ struct SteamWorkshopManifestACFTests {
 
     @Test("A brace inside a line comment does not close the installed block")
     func commentedBraceDoesNotCloseBlock() {
-        let text = "\"WorkshopItemsInstalled\"\n{\n// } x\n\"111\" { }\n}"
+        let text = "\"AppWorkshop\"\n{\n\"WorkshopItemsInstalled\"\n{\n// } x\n\"111\" { }\n}\n}"
         #expect(SteamWorkshopManifest.installedIDs(fromACF: text) == ["111"])
+    }
+
+    @Test("An installed block nested below the root, before or after the real one, fails the whole set")
+    func nestedInstalledBlockIsRejected() {
+        let nested = "\t\"Junk\"\n\t{\n\t\t\"WorkshopItemsInstalled\"\n\t\t{\n\t\t}\n\t}\n"
+        let before = acf(installed: entry111).replacingOccurrences(of: "\t\"SizeOnDisk\"", with: nested + "\t\"SizeOnDisk\"")
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: before) == nil)
+        let onlyNested = "\"AppWorkshop\"\n{\n" + nested + "}\n"
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: onlyNested) == nil)
+        let twice = acf(installed: entry111).replacingOccurrences(
+            of: "\t\"WorkshopItemDetails\"", with: "\t\"WorkshopItemsInstalled\"\n\t{\n\t}\n\t\"WorkshopItemDetails\""
+        )
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: twice) == nil)
+    }
+
+    @Test("Malformed content around a complete installed block fails the whole set", arguments: [
+        "unclosed root", "stray close", "trailing token", "dangling key",
+    ])
+    func malformedEnclosingDocumentIsRejected(damage: String) throws {
+        let whole = acf(installed: entry111)
+        let rootClose = try #require(whole.range(of: "}", options: .backwards))
+        let text = switch damage {
+        case "unclosed root": String(whole[..<rootClose.lowerBound])
+        case "stray close": whole + "}\n"
+        case "trailing token": whole + "garbage\n"
+        default: whole.replacingOccurrences(of: "\t\"WorkshopItemDetails\"", with: "\t\"Orphan\"\n\t}\n\t\"WorkshopItemDetails\"")
+        }
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: text) == nil)
     }
 
     @Test("The installed key followed by a value instead of a block is rejected")

@@ -125,6 +125,78 @@ struct WorkshopSteamDeletedPruneTests {
         #expect(library.bookmarks.bookmarks.map(\.id) == [favorite.id])
     }
 
+    @Test("A folder restored outside any mutation while the prune surveys keeps its item")
+    func folderRestoredDuringSurveyIsKept() async throws {
+        let hold = SurveyHold()
+        let library = try PruneLibrary(itemCount: 2, holdingSurveysWith: hold)
+        defer { await library.discard() }
+        await library.ingest()
+        let gone = library.ids[0]
+        let favorite = try library.bookmarks.add(
+            label: "Favorite", content: .video(bookmarkData: Data([1])), wpeOrigin: #require(library.entry(gone)).origin
+        )
+        try library.steamDeletes(0, listing: [library.ids[1]])
+        hold.isArmed = true
+        let prune = Task { [coordinator = library.coordinator, doctor = library.doctor] in
+            await coordinator.pruneSteamDeletedImports(using: doctor)
+        }
+        #expect(await waitUntil { hold.isParked })
+
+        try FileManager.default.createDirectory(at: library.itemFolders[0], withIntermediateDirectories: true)
+        hold.release()
+        await prune.value
+
+        #expect(library.importedIDs == Set(library.ids), "a prune surveyed before the folder came back removed its item")
+        #expect(library.bookmarks.bookmarks.map(\.id) == [favorite.id])
+    }
+
+    @Test("A removal that fails keeps its id in the baseline, so the next prune retries it")
+    func failedRemovalIsRetried() async throws {
+        let library = try PruneLibrary(itemCount: 2)
+        defer { await library.discard() }
+        await library.ingest()
+        let removes = library.coordinator.removeVanishedImport
+        try library.steamDeletes(0, listing: [library.ids[1]])
+
+        library.coordinator.removeVanishedImport = { _ in false }
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+        #expect(library.importedIDs == Set(library.ids))
+        library.coordinator.removeVanishedImport = removes
+        await library.coordinator.pruneSteamDeletedImports(using: library.doctor)
+
+        #expect(library.importedIDs == [library.ids[1]], "the failed removal dropped out of the baseline and was never retried")
+    }
+
+    @Test("The survey takes an entry as Steam-deleted only when its bookmark reports the folder gone", arguments: [
+        "gone", "denied", "found but unreachable",
+    ])
+    func surveyNeedsConfirmedMissingSource(resolution: String) async throws {
+        let library = try PruneLibrary(itemCount: 1)
+        defer { await library.discard() }
+        await library.ingest()
+        let entry = try #require(library.entry(library.ids[0]))
+        let baseline = library.coordinator.steamPruneBaseline
+        try library.steamDeletes(0, listing: [])
+        // The folder is gone from here, so a resolve answering with it stands for one the sandbox won't let the app stat.
+        let unreachable = library.itemFolders[0]
+        let resolve: @Sendable (Data) throws -> (URL, Bool) = { _ in
+            switch resolution {
+            case "gone": throw CocoaError(.fileNoSuchFile)
+            case "denied": throw CocoaError(.fileReadNoPermission)
+            default: return (unreachable, false)
+            }
+        }
+
+        let survey = WorkshopFolderImportCoordinator.entriesSteamDeleted(
+            [entry], steamRoot: library.steamRoot, baseline: baseline,
+            identity: WorkshopFolderImportCoordinator.libraryIdentity(of: library.steamRoot),
+            resolver: SecurityScopedBookmarkResolver(resolveData: resolve, refreshData: { _ in Data() })
+        )
+
+        let expected = resolution == "gone" ? [entry.origin.workshopID] : []
+        #expect(survey?.deleted.map(\.origin.workshopID) == expected, "a source the bookmark could not confirm gone was taken as deleted")
+    }
+
     @Test("A prune that starts while another surveys does not run")
     func overlappingPruneDoesNotRun() async throws {
         let hold = SurveyHold()

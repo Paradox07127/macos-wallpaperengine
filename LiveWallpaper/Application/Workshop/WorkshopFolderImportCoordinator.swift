@@ -326,14 +326,25 @@ final class WorkshopFolderImportCoordinator {
                       $0.origin.workshopID == entry.origin.workshopID && $0.importedAt == entry.importedAt
                           && $0.origin.sourceFolderBookmark == entry.origin.sourceFolderBookmark
                   }
-              })
+              }),
+              // Steam or Finder can bring a source back during the survey without bumping the epoch.
+              survey.deleted.isEmpty || Self.entriesSteamDeleted(
+                  survey.deleted, steamRoot: steamRoot, baseline: baseline, identity: Self.libraryIdentity(of: steamRoot)
+              )?.deleted.count == survey.deleted.count
         else { return }
         var removed = 0
-        for entry in survey.deleted where removeVanishedImport(entry) {
-            removed += 1
+        var unremoved: Set<String> = []
+        for entry in survey.deleted {
+            if removeVanishedImport(entry) {
+                removed += 1
+            } else if let id = entry.origin.steamFolderItemID {
+                unremoved.insert(id)
+            }
         }
-        // Advanced only here: a skipped or voided pass must leave the removal it missed to the next one.
-        if let next = survey.baseline, let data = try? JSONEncoder().encode(next) {
+        // Advanced only here: a skipped or voided pass, or a failed removal, must leave what it missed to the next one.
+        if let next = survey.baseline, let data = try? JSONEncoder().encode(SteamPruneBaseline(
+            libraryIdentity: next.libraryIdentity, listedIDs: Set(next.listedIDs).union(unremoved).sorted()
+        )) {
             defaults.set(data, forKey: Self.pruneBaselineKey)
         }
         if removed > 0 {
@@ -368,13 +379,14 @@ final class WorkshopFolderImportCoordinator {
     }
 
     /// Entries whose folder is missing from the content root listing, unlisted by the acf though `baseline` listed them for this same
-    /// `identity`, and whose bookmark no longer resolves; nil when the content root can't be listed or the acf can't be read. Needs
-    /// `steamRoot`'s access open. The app's own delete keeps the acf entry, so an unlisted id means Steam removed the item.
+    /// `identity`, and whose bookmark reports its folder gone; nil when the content root can't be listed or the acf can't be read.
+    /// Needs `steamRoot`'s access open. The app's own delete keeps the acf entry, so an unlisted id means Steam removed the item.
     nonisolated static func entriesSteamDeleted(
         _ entries: [WPEHistoryEntry],
         steamRoot: URL,
         baseline: SteamPruneBaseline?,
-        identity: String?
+        identity: String?,
+        resolver: SecurityScopedBookmarkResolver = .shared
     ) -> SteamDeletedSurvey? {
         let contentRoot = SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot)
         let acf = steamRoot.appendingPathComponent(
@@ -403,7 +415,7 @@ final class WorkshopFolderImportCoordinator {
                 && listedBefore.contains(folder.lastPathComponent)
                 && parent.path(percentEncoded: false) == canonicalContentRoot
                 && !present.contains(folder.lastPathComponent)
-                && !resolvesToFolder(entry.origin)
+                && sourceFolderConfirmedMissing(entry.origin, resolver: resolver)
         }
         return SteamDeletedSurvey(
             deleted: deleted,
@@ -420,16 +432,14 @@ final class WorkshopFolderImportCoordinator {
         return "\(volume):\(file)"
     }
 
-    /// True when the bookmark still finds the folder, wherever the user moved it.
-    private nonisolated static func resolvesToFolder(_ origin: WPEOrigin) -> Bool {
-        guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-            origin.sourceFolderBookmark,
-            target: .transient
-        ) else { return false }
-        return SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-            var isDirectory: ObjCBool = false
-            return FileManager().fileExists(atPath: resolved.url.path(percentEncoded: false), isDirectory: &isDirectory)
-                && isDirectory.boolValue
+    /// True only when resolving the bookmark reports its folder gone; a folder it finds anywhere, or can't reach, is not.
+    private nonisolated static func sourceFolderConfirmedMissing(_ origin: WPEOrigin, resolver: SecurityScopedBookmarkResolver) -> Bool {
+        do {
+            _ = try resolver.resolveData(origin.sourceFolderBookmark)
+            return false
+        } catch {
+            let error = error as NSError
+            return error.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code)
         }
     }
 

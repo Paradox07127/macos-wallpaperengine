@@ -1218,28 +1218,38 @@ enum SteamWorkshopManifest {
         return ids
     }
 
-    /// The block of the first `"WorkshopItemsInstalled"` key, matched as a key token rather than inside a comment or as a value;
-    /// nil when that key is followed by anything but `{`, or the text holds an unquoted token.
+    /// The block of the one `"WorkshopItemsInstalled"` key directly under the root, matched as a key token rather than inside a
+    /// comment or as a value; nil unless the whole text is balanced key/value pairs holding that key there once and nowhere deeper.
     private static func installedBlock(in text: Substring) -> Substring? {
         var cursor = text.startIndex
+        var depth = 0
         var expectsKey = true
+        var installed: Substring?
         while skipTrivia(in: text, from: &cursor) {
             switch text[cursor] {
             case "\"":
                 guard let token = SteamAccountsFile.nextQuoted(in: text, from: &cursor) else { return nil }
                 if expectsKey, token.caseInsensitiveCompare("WorkshopItemsInstalled") == .orderedSame {
-                    guard skipTrivia(in: text, from: &cursor), text[cursor] == "{" else { return nil }
-                    return SteamAccountsFile.nextBraceBlock(in: text, from: &cursor)
+                    guard depth == 1, installed == nil, skipTrivia(in: text, from: &cursor), text[cursor] == "{",
+                          let block = SteamAccountsFile.nextBraceBlock(in: text, from: &cursor) else { return nil }
+                    installed = block
+                } else {
+                    expectsKey.toggle()
                 }
-                expectsKey.toggle()
-            case "{", "}":
+            case "{":
+                guard !expectsKey else { return nil }
+                depth += 1
                 expectsKey = true
+                cursor = text.index(after: cursor)
+            case "}":
+                guard expectsKey, depth > 0 else { return nil }
+                depth -= 1
                 cursor = text.index(after: cursor)
             default:
                 return nil
             }
         }
-        return nil
+        return depth == 0 && expectsKey ? installed : nil
     }
 
     /// Advances past whitespace and `//` line comments; false once `text` is exhausted.
