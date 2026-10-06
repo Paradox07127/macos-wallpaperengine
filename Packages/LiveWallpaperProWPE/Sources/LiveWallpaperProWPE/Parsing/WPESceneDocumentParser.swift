@@ -822,6 +822,14 @@ public enum WPESceneDocumentParser {
                 append(raw: object["visible"], target: .particleObject(id: objectID), kind: .visible, action: .reload)
                 append(raw: object["color"], target: .particleObject(id: objectID), kind: .color, action: .reload)
                 append(raw: object["alpha"], target: .particleObject(id: objectID), kind: .alpha, action: .reload)
+                // No live consumer for rate-script properties: a key also bound incrementally elsewhere would otherwise skip the reload.
+                let instanceOverride = (object["instanceoverride"] ?? object["instanceOverride"]) as? [String: Any]
+                append(
+                    raw: (instanceOverride?["rate"] as? [String: Any])?["scriptproperties"],
+                    target: .particleObject(id: objectID),
+                    kind: .scriptProperty,
+                    action: .reload
+                )
             case .sound:
                 append(raw: object["visible"], target: .soundObject(id: objectID), kind: .visible, action: .incremental)
                 append(raw: object["volume"], target: .soundObject(id: objectID), kind: .volume, action: .incremental)

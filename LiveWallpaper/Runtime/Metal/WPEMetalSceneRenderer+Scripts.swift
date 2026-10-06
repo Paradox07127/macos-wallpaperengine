@@ -445,7 +445,8 @@ extension WPEMetalSceneRenderer {
             dynamicScaleScriptInstances,
             dynamicAnglesScriptInstances,
             dynamicColorScriptInstances,
-            particleRateScriptInstances
+            particleRateScriptInstances,
+            dynamicParallaxDepthScriptInstances
         ] {
             for (_, instance) in instances.sorted(by: { $0.key < $1.key }) {
                 instance.seedAsyncTick(pointerPosition: neutralPointer)

@@ -331,6 +331,7 @@ extension WPEMetalSceneRenderer {
                     let frame = try renderCurrentFrame(inputs: makeFrameInputs())
                     outputTexture = frame
                     outputFrameProduction = latestFrameProduction
+                    if plan.cameraParallax != nil { pushPointerEventMonitoring() }
                     applySoundPropertyUpdates(plan)
                     surfaceControl.drawImmediately()
                     return true
@@ -343,6 +344,7 @@ extension WPEMetalSceneRenderer {
                 }
             }
         }
+        if plan.cameraParallax != nil { pushPointerEventMonitoring() }
         applySoundPropertyUpdates(plan)
         surfaceControl.setNeedsRedraw()
         return true
