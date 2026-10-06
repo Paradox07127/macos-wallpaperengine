@@ -16,11 +16,12 @@ private struct SettingsFormChrome: ViewModifier {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .contentMargins(.horizontal, DesignTokens.Settings.formHorizontalMargin, for: .scrollContent)
-            .contentMargins(.vertical, DesignTokens.Settings.formVerticalMargin, for: .scrollContent)
+            .contentMargins(.top, DesignTokens.Settings.formTopMargin, for: .scrollContent)
+            .contentMargins(.bottom, DesignTokens.Settings.formVerticalMargin, for: .scrollContent)
             .frame(minWidth: minWidth, minHeight: minHeight)
-            // Two frames on purpose: the first sizes the form, the second re-expands
-            // the slot so the narrower form centers and the background still fills it.
-            .containerRelativeFrame(.horizontal) { width, _ in width * DesignTokens.Settings.contentWidthFraction }
+            // Two frames on purpose: the first bounds the form, the second re-expands
+            // the slot so the bounded form centers and the background still fills it.
+            .frame(maxWidth: DesignTokens.Settings.maxContentWidth)
             .frame(maxWidth: .infinity)
             .contentColumnBackground()
     }

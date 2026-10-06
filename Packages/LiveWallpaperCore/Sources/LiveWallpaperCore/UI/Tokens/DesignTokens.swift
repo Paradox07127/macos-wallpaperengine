@@ -357,8 +357,10 @@ public enum DesignTokens {
     public enum Settings {
         public static let formHorizontalMargin: CGFloat = 18
         public static let formVerticalMargin: CGFloat = Spacing.md
-        /// Share of the detail column's width the centered settings form takes.
-        public static let contentWidthFraction: CGFloat = 0.9
+        /// Negative on purpose: the grouped form sets its first header ~21pt down; this centres it on the sidebar search field.
+        public static let formTopMargin: CGFloat = -13.5
+        /// Widest the centered settings column grows in a wide window.
+        public static let maxContentWidth: CGFloat = 1100
         /// Longer throw than `Inspector.sliderWidth` on purpose: this window has no 268pt
         /// panel floor, and these tracks are dragged for a value rather than nudged.
         public static let sliderWidth: CGFloat = 240
