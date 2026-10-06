@@ -2,7 +2,8 @@
   "images": [
     {
       "filename": "assembly.png",
-      "idiom": "universal"
+      "idiom": "universal",
+      "compression-type": "lossy"
     }
   ],
   "info": {
