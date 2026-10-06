@@ -122,6 +122,11 @@ public struct CoalescedSlider<Readout: View>: View {
                 .modifier(SliderSizing(sizing: sizing))
 
             readout(value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                // A grouped Form can give the readout zero width after sizing the
+                // track. Keep its value visible instead of wrapping digits vertically.
+                .fixedSize(horizontal: true, vertical: false)
         }
         .onChange(of: owner) { _, _ in
             // The row now belongs to something else; a pending commit was

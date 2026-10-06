@@ -72,7 +72,7 @@ struct TopBarBudgetTests {
                     print("TOPBAR \(label) = pill \(pillWidth) clusterX \(layout.clusterX) capsule \(layout.showsCapsule) overflow \(layout.overflow)")
                     #expect(layout.overflow == 0, Comment(rawValue: "\(label): overflow \(layout.overflow)"))
                     #expect(
-                        layout.clusterX >= pillTrailingEdge(windowWidth: windowWidth, pillWidth: pillWidth) - 0.001,
+                        layout.clusterX >= pillTrailingEdge(windowWidth: windowWidth, pillWidth: pillWidth) + DesignTokens.EditDesk.Spacing.s12 - 0.001,
                         Comment(rawValue: "\(label): cluster starts at \(layout.clusterX)")
                     )
                 }
@@ -196,11 +196,11 @@ struct TopBarBudgetTests {
     /// The cluster clears above only because it may drop the capsule; with six pages these are the
     /// corners where it has to.
     @MainActor
-    @Test("English at 1040 and 1280 and Spanish at 1040 are the corners that have to spend the capsule")
+    @Test("Navigation spacing takes precedence over onboarding when the trailing cluster does not fit")
     func capsuleIsSpentOnlyWhereThePillLeavesNoRoom() throws {
         for (windowWidth, language, keepsCapsule) in [
             (CGFloat(1280), "en", false), (1280, "zh-Hans", true),
-            (1040, "en", false), (1040, "zh-Hans", true), (1040, "es", false),
+            (1040, "en", false), (1040, "zh-Hans", false), (1040, "es", false),
         ] {
             let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: language)
             let capsuleWidth = try Self.capsule(pages: 6, language: language)
@@ -241,11 +241,11 @@ struct TopBarBudgetTests {
     @Test("Until the pill is measured the capsule is not drawn")
     func unmeasuredPillDrawsNoCapsule() throws {
         let asked = try Self.capsule(pages: 6, language: "zh-Hans")
-        let unmeasured = TopBarBudget.layout(windowWidth: 1040, pillWidth: 0, capsuleWidth: asked, statusWidth: Self.status)
+        let unmeasured = TopBarBudget.layout(windowWidth: 1280, pillWidth: 0, capsuleWidth: asked, statusWidth: Self.status)
         #expect(!unmeasured.showsCapsule)
         // Control: the same bar with its pill measured keeps the capsule.
         let pillWidth = try Self.pill(workshop: true, systemWallpaper: true, language: "zh-Hans")
-        let measured = TopBarBudget.layout(windowWidth: 1040, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
+        let measured = TopBarBudget.layout(windowWidth: 1280, pillWidth: pillWidth, capsuleWidth: asked, statusWidth: Self.status)
         #expect(measured.showsCapsule)
     }
 

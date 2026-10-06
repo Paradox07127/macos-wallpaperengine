@@ -56,7 +56,10 @@ struct TopBar<Trailing: View>: View {
             }
             PageGuideButton(context: .page(page))
             trailing()
+            // Stay compact, but give long status text only the space beside navigation.
             status
+                .frame(maxWidth: budget.maximumStatusWidth, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
                 .pageGuideTarget(.status)
                 .onGeometryChange(for: CGFloat.self, of: \.size.width) { statusWidth = $0 }
         }

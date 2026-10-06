@@ -458,7 +458,8 @@ struct StatusCapsule: View {
         }
         .lineLimit(1)
         .minimumScaleFactor(0.8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Also used directly in the toolbar: keep the footer intrinsic so the
+        // wallpapers-only panel cannot consume the navigation's width.
         .font(DesignTokens.EditDesk.Typography.metaMono)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
     }

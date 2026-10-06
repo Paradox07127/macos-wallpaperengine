@@ -646,6 +646,9 @@ private struct MusicOptionSlider: View {
                 Text(verbatim: format(live))
                     .font(DesignTokens.Typography.metric)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .help(Text(verbatim: format(live)))
                     .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
             }
         }

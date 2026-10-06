@@ -457,6 +457,9 @@ struct SceneSettingsRows: View {
                         Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property))
                             .font(DesignTokens.Typography.metric)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .help(Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property)))
                             .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
                     }
                 }

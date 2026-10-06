@@ -2,10 +2,86 @@ import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 @Suite("StatusCapsule — pure health/thermal mapping")
 struct StatusCapsuleTests {
+    @MainActor
+    private final class Footprint {
+        var frames: [PageGuideTarget: CGRect] = [:]
+    }
+
+    private struct CapsuleInToolbar: View {
+        let content: StatusCapsuleContent
+        let windowWidth: CGFloat
+        let footprint: Footprint
+
+        var body: some View {
+            TopBar(
+                page: .constant(.home), workshopAvailable: true,
+                windowWidth: windowWidth,
+                status: StatusCapsule(
+                    content: content,
+                    footerLabels: [.displaysConfigured(1), .pausesOnBattery],
+                    memoryPressure: { .normal }
+                )
+            ) { EmptyView() }
+            .overlayPreferenceValue(PageGuideAnchorKey.self) { anchors in
+                GeometryReader { _ in
+                    Color.clear
+                        .onGeometryChange(for: [PageGuideTarget: CGRect].self, of: { proxy in
+                            anchors.mapValues { proxy[$0] }
+                        }, action: { footprint.frames = $0 })
+                }
+            }
+            .frame(width: windowWidth, height: DesignTokens.EditDesk.Spacing.topBar)
+        }
+    }
+
+    @MainActor
+    @Test("Switching to wallpapers-only clears navigation at narrow and wide toolbar sizes", arguments: ["en", "zh-Hans", "zh-Hant", "ja", "es"])
+    func wallpapersOnlyDoesNotFillTheToolbar(language: String) throws {
+        let footprint = Footprint()
+        func root(_ content: StatusCapsuleContent, _ width: CGFloat) -> some View {
+            CapsuleInToolbar(content: content, windowWidth: width, footprint: footprint)
+                .environment(\.locale, Locale(identifier: language))
+        }
+        let host = NSHostingView(rootView: root(.systemHealth, 1040))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 100),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        func layout(_ content: StatusCapsuleContent, _ width: CGFloat) -> CGFloat {
+            host.rootView = root(content, width)
+            window.setContentSize(NSSize(width: width, height: 100))
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let status = footprint.frames[.status] ?? .zero
+            let navigation = footprint.frames[.navigation] ?? .zero
+            #expect(navigation.width > 0)
+            #expect(abs(navigation.midX - width / 2) < 1, "navigation must remain centered")
+            if content != .hidden {
+                #expect(status.width > 0)
+                #expect(status.minX >= navigation.maxX + DesignTokens.iconButtonDiameter(.large) + 2 * DesignTokens.EditDesk.Spacing.s12 - 1,
+                        "page guide must leave 12pt beside navigation, plus its 12pt gap to status: \(navigation) / \(status)")
+                #expect(status.maxX <= width - DesignTokens.Spacing.lg + 1)
+            }
+            return status.width
+        }
+        let collapsed = layout(.systemHealth, 1040)
+        let narrow = layout(.wallpapersOnly, 1040)
+        let wide = layout(.wallpapersOnly, 1600)
+        #expect(collapsed > 0 && collapsed < 200)
+        #expect(wide < 300, "the footer must not absorb extra toolbar width: \(wide)")
+        #expect(wide >= narrow - 1, "the narrow toolbar may compress the panel")
+        _ = layout(.hidden, 1040)
+        #expect(abs(layout(.wallpapersOnly, 1040) - narrow) < 1, "hiding and restoring must not change the footprint")
+    }
+
     @Test("Below both thresholds and thermal nominal reads as normal")
     func normalBand() {
         let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, memoryPressure: .normal, thermal: .nominal)
