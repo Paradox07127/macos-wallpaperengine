@@ -7459,42 +7459,6 @@
         }
       }
     },
-    "Applies to every widget panel on every display." : {
-      "comment" : "Footer clarifying that overlay widget appearance is a global preference, not per-display.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Applies to every widget panel on every display."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se aplica a todos los paneles de widgets en todas las pantallas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのディスプレイのすべてのウィジェットパネルに適用されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到所有显示器上的全部小组件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用至所有顯示器上的所有小工具面板。"
-          }
-        }
-      }
-    },
     "Applies to screenshots, recording, and sharing, including widgets. When off, shows the macOS desktop picture." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
