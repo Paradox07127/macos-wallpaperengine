@@ -66528,6 +66528,36 @@
         }
       }
     },
+    "The Workshop folder in your Steam library could not be read. Authorize your Steam library folder again, then check your subscriptions." : {
+      "comment" : "Subscription sync error when the Workshop content folder exists but cannot be read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede leer la carpeta de Workshop de tu biblioteca de Steam. Vuelve a autorizar la carpeta de tu biblioteca de Steam y comprueba de nuevo tus suscripciones."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ライブラリ内のワークショップフォルダを読み取れません。Steam ライブラリフォルダを再度許可してから、サブスクリプションを確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取 Steam 库中的创意工坊文件夹。请重新授权 Steam 库文件夹，然后再检查订阅。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取 Steam 收藏庫中的工作坊資料夾。請重新授權 Steam 收藏庫資料夾，然後再檢查訂閱。"
+          }
+        }
+      }
+    },
     "The archive contains a symbolic link that escapes the install directory: %@" : {
       "comment" : "Managed SteamCMD install error. Placeholder is the symlink path.",
       "extractionState" : "manual",

@@ -59,13 +59,14 @@ final class WorkshopSubscriptionSync {
         submitted.removeAll { !isActive($0) }
 
         // Without the library grant every subscription would read as missing.
-        guard let workdir = try? doctor.resolveWorkdirURL() else {
+        guard let access = try? doctor.beginWorkdirAccess() else {
             fail(String(
                 localized: "Authorize your Steam library folder before checking your subscriptions.",
                 bundle: .appLanguage, comment: "Subscription sync error when the Steam library folder is not authorized."
             ))
             return
         }
+        defer { access.end() }
         guard let result = await listSubscriptions(account) else {
             fail(String(
                 localized: "Loomscreen's Steam connector did not respond.",
@@ -77,7 +78,13 @@ final class WorkshopSubscriptionSync {
         switch result.outcome {
         case .listed:
             // Read after the listing: the SteamCMD run behind it can install items.
-            let installed = installedWorkshopIDs(in: workdir)
+            guard let installed = installedWorkshopIDs(in: access.url) else {
+                fail(String(
+                    localized: "The Workshop folder in your Steam library could not be read. Authorize your Steam library folder again, then check your subscriptions.",
+                    bundle: .appLanguage, comment: "Subscription sync error when the Workshop content folder exists but cannot be read."
+                ))
+                return
+            }
             let missing = result.workshopIDs.compactMap(UInt64.init).filter { !installed.contains($0) }
             for itemID in missing where !isActive(itemID) {
                 downloads.forgetSettledPhase(itemID)
@@ -163,18 +170,18 @@ final class WorkshopSubscriptionSync {
         phase = .failed(reason)
     }
 
-    private func installedWorkshopIDs(in workdir: URL) -> Set<UInt64> {
-        let scope = workdir.startAccessingSecurityScopedResource()
-        defer {
-            if scope {
-                workdir.stopAccessingSecurityScopedResource()
-            }
+    /// nil = the content folder exists but could not be read, so nothing is known about what is installed.
+    /// `steamRoot` must be read while its `WorkdirAccess` is held.
+    private func installedWorkshopIDs(in steamRoot: URL) -> Set<UInt64>? {
+        let content = SteamLibraryPaths.workshopContentRoot(steamRoot: steamRoot)
+        do {
+            let entries = try FileManager.default.contentsOfDirectory(atPath: content.path(percentEncoded: false))
+            return Set(entries.compactMap(UInt64.init))
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        } catch {
+            return nil
         }
-        let content = SteamLibraryPaths.workshopContentRoot(steamRoot: workdir)
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            atPath: content.path(percentEncoded: false)
-        )) ?? []
-        return Set(entries.compactMap(UInt64.init))
     }
 
     /// Titles from the keyless batch endpoint in ≤50 chunks. Failures are silent: an id is a usable label.

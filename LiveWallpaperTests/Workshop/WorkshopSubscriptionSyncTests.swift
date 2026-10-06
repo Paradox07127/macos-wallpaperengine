@@ -51,6 +51,34 @@ struct WorkshopSubscriptionSyncTests {
         #expect(fixture.sync.phase == .ready(missing: []))
     }
 
+    @Test("A workshop folder that cannot be read fails the check instead of listing every item as missing")
+    func unreadableContentFolderFailsCheck() async throws {
+        let fixture = try SyncFixture()
+        defer { await fixture.discard() }
+        try fixture.installInLibrary(itemID)
+        try fixture.setContentFolderPermissions(0o000)
+        fixture.listing.ids = [itemID]
+
+        await fixture.sync.refresh(using: fixture.doctor)
+
+        guard case .failed = fixture.sync.phase else {
+            Issue.record("an unreadable library was read as empty, got \(fixture.sync.phase)")
+            return
+        }
+    }
+
+    @Test("A library with no workshop folder lists every subscription as missing")
+    func absentContentFolderListsAllMissing() async throws {
+        let fixture = try SyncFixture()
+        defer { await fixture.discard() }
+        try FileManager.default.removeItem(at: fixture.contentFolder)
+        fixture.listing.ids = [itemID]
+
+        await fixture.sync.refresh(using: fixture.doctor)
+
+        #expect(fixture.sync.phase == .ready(missing: [itemID]))
+    }
+
     @Test("A check that fails mid-download keeps the download active and cancellable")
     func failedCheckKeepsActiveDownload() async throws {
         let fixture = try SyncFixture(parks: true)
@@ -192,14 +220,24 @@ private final class SyncFixture {
         )
     }
 
+    var contentFolder: URL {
+        SteamLibraryPaths.workshopContentRoot(steamRoot: root)
+    }
+
     func installInLibrary(_ itemID: UInt64) throws {
         try FileManager.default.createDirectory(
-            at: SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(String(itemID), isDirectory: true),
+            at: contentFolder.appendingPathComponent(String(itemID), isDirectory: true),
             withIntermediateDirectories: true
         )
     }
 
+    func setContentFolderPermissions(_ mode: Int) throws {
+        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: contentFolder.path(percentEncoded: false))
+    }
+
     func discard() async {
+        // An unreadable folder would block removing the scratch root.
+        try? setContentFolderPermissions(0o755)
         steamSuite.discard()
         librarySuite.discard()
         await TestScratch.discard(root, flushing: settings)
