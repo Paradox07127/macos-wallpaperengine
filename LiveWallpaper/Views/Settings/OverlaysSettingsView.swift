@@ -22,8 +22,6 @@ struct OverlaysSettingsView: View {
                 widgetGlassRow
             } header: {
                 SettingsSearchSectionHeader("Widgets", anchor: .overlaysAppearance)
-            } footer: {
-                Text("Applies to every widget panel on every display.")
             }
 
             Section {
@@ -36,12 +34,7 @@ struct OverlaysSettingsView: View {
     }
 
     private var widgetTintRow: some View {
-        SettingRow(
-            icon: "paintpalette",
-            iconColor: .teal,
-            title: "Widget tint",
-            valueSubtitle: widgetTintHex.isEmpty ? nil : widgetTintHex
-        ) {
+        SettingRow(icon: "paintpalette", iconColor: .teal, title: "Widget tint") {
             HStack(spacing: DesignTokens.Spacing.sm) {
                 ColorPicker("", selection: Binding(
                     get: { MonitorPanelAppearance.color(fromHex: widgetTintHex) ?? Design.panelFillTop },
@@ -49,6 +42,7 @@ struct OverlaysSettingsView: View {
                 ), supportsOpacity: false)
                     .labelsHidden()
                     .accessibilityLabel(Text("Widget tint"))
+                    .help(Text(verbatim: widgetTintHex))
 
                 Button("Reset") { widgetTintHex = MonitorPanelAppearance.defaultTintHex }
                     .controlSize(.small)
@@ -60,12 +54,7 @@ struct OverlaysSettingsView: View {
     }
 
     private var widgetOpacityRow: some View {
-        SettingRow(
-            icon: "circle.lefthalf.filled",
-            iconColor: .teal,
-            title: "Widget opacity",
-            valueSubtitle: "\(Int(MonitorPanelAppearance.resolvedOpacity(widgetOpacity) * 100))%"
-        ) {
+        SettingRow(icon: "circle.lefthalf.filled", iconColor: .teal, title: "Widget opacity") {
             CoalescedSlider(
                 value: MonitorPanelAppearance.resolvedOpacity(widgetOpacity),
                 in: MonitorPanelAppearance.opacityRange,
@@ -120,7 +109,7 @@ struct OverlaysSettingsView: View {
                 Text(verbatim: fahrenheit ? "°F" : "°C")
                     .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
             }
-            .frame(width: 100)
+            .frame(width: DesignTokens.Settings.segmentedPickerWidth)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Temperature unit"))
         }

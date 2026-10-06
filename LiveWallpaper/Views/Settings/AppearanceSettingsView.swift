@@ -47,7 +47,7 @@ struct AppearanceSettingsView: View {
             shell: .flat,
             title: { Self.appearanceTitle($0) }
         )
-        .frame(width: 180)
+        .frame(width: DesignTokens.Settings.segmentedPickerWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Appearance"))
     }
@@ -77,7 +77,7 @@ struct AppearanceSettingsView: View {
             shell: .flat,
             title: { $0.title }
         )
-        .frame(width: 180)
+        .frame(width: DesignTokens.Settings.segmentedPickerWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Library tile size"))
     }

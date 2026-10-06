@@ -145,7 +145,7 @@ struct MainWindowBackgroundRow: View {
             shell: .flat,
             title: { Self.backgroundTitle($0) }
         )
-        .frame(width: 200)
+        .frame(width: DesignTokens.Settings.segmentedPickerWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Main window background"))
     }

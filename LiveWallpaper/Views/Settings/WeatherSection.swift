@@ -37,7 +37,7 @@ extension GeneralSettingsView {
                             }
                         }
                     )
-                    .frame(width: 180)
+                    .frame(width: DesignTokens.Settings.segmentedPickerWidth)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(Text("Weather location source"))
                 }

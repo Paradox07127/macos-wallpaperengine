@@ -362,6 +362,8 @@ public enum DesignTokens {
         /// Longer throw than `Inspector.sliderWidth` on purpose: this window has no 268pt
         /// panel floor, and these tracks are dragged for a value rather than nudged.
         public static let sliderWidth: CGFloat = 240
+        /// Every 2- and 3-segment settings picker: three equal segments plus 2pt padding fit Spanish "Desactivado" semibold.
+        public static let segmentedPickerWidth: CGFloat = 250
     }
 
     public enum Card {

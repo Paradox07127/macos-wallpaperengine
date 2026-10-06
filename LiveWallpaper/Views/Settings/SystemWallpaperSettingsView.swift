@@ -22,7 +22,7 @@ struct SystemWallpaperSettingsView: View {
                         values: [.always, .stillOnDesktop], shell: .flat,
                         title: { (mode: SystemWallpaperPlaybackMode) in mode == .always ? "Always" : "Lock screen only" }
                     )
-                    .frame(width: 230)
+                    .frame(width: DesignTokens.Settings.segmentedPickerWidth)
                 }
             } header: {
                 SettingsSearchSectionHeader("Playback", anchor: .systemWallpaperPlayback)
