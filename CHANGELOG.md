@@ -19,7 +19,8 @@ what shipped at that time; current behavior is documented in `docs/`.
 
 - Pro: Chinese wallpaper names, descriptions, controls and Workshop preset
   names can be machine-translated into the app language. Settings has a
-  Translate wallpaper text switch and a language pack download row.
+  Translate wallpaper text switch and a language pack download row
+  ([#141](https://github.com/Paradox07127/macos-wallpaperengine/pull/141), thanks @Aleem2Z).
 - Pro: a Workshop item that is downloading shows how many bytes have arrived.
 - Pro: subscription downloads can be selected and cancelled, and batch
   downloads run one at a time.
@@ -36,18 +37,22 @@ what shipped at that time; current behavior is documented in `docs/`.
   web caches.
 - Pro: library entries whose Workshop items Steam deleted are removed after
   each SteamCMD run.
+- Pro: scene diagnostic reports keep earlier scenes after a switch and have a
+  Copy All Scenes button. Exported reports hide IDs, paths and credentials
+  ([#144](https://github.com/Paradox07127/macos-wallpaperengine/pull/144), thanks @Aleem2Z).
 
 ### Fixed
 
 - Pro: scene scripts receive cursor input again, and parallax, cursor regions
-  and audio-driven particle rates work again.
+  and audio-driven particle rates work again ([#142](https://github.com/Paradox07127/macos-wallpaperengine/pull/142), thanks @Aleem2Z).
 - Pro: clock highlights no longer turn white, and transparent layers no longer
   get darker from double alpha.
 - Pro: 3D models keep their own material per mesh, translucent parts stay
   blended, and padded textures no longer show seams.
 - Pro: lights under text and top-level particles, sprite UVs and text effects
-  render closer to Windows.
-- Pro: textures with conditional variants load and show their base image.
+  render closer to Windows ([#143](https://github.com/Paradox07127/macos-wallpaperengine/pull/143), thanks @Aleem2Z).
+- Pro: textures with conditional variants load and show their base image
+  ([#143](https://github.com/Paradox07127/macos-wallpaperengine/pull/143), thanks @Aleem2Z).
 - Pro: Sync subscribed wallpapers no longer reports every subscription as
   missing.
 - Pro: removing Steam-deleted items no longer touches items that are
