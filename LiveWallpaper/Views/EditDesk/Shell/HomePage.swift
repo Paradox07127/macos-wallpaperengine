@@ -164,7 +164,7 @@ struct HomePage: View {
             content
                 .onChange(of: page.library?.visibleItems) { page.syncShelf() }
                 #if !LITE_BUILD
-                .onChange(of: WPEPropertyLabelTranslator.wallpaperNames.translated) { page.syncShelf() }
+                .onChange(of: WPEPropertyLabelTranslator.wallpaperNames.revision) { page.refreshWallpaperNames() }
                 #endif
                 // State refreshes rewrite `stage.displays` without rebuilding the cards, whose capsules wave by it.
                 .onChange(of: page.drawingDisplayIDs) { page.syncShelf() }
@@ -1144,6 +1144,14 @@ struct HomePage: View {
         }
     }
 
+    /// Not `refreshAllStates()`: that also starts a cover capture for a display still missing one.
+    private func refreshWallpaperNames() {
+        syncShelf()
+        for display in stage.displays {
+            refreshState(for: display.id)
+        }
+    }
+
     private func refreshState(for id: CGDirectDisplayID) {
         guard let screen = screenManager.screens.first(where: { $0.id == id }),
               let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
@@ -1169,13 +1177,17 @@ struct HomePage: View {
             nil
         }
         display.wallpaperKind = DisplayDetailHost.kindLine(configuration.activeWallpaper)
-        display.wallpaperTitle = StageWallpaperName.resolve(
+        let title = StageWallpaperName.resolve(
             libraryTitle: libraryTitle(for: configuration),
             originTitle: configuration.wpeOrigin?.title,
             fileURL: configuration.wallpaperType == .video ? screen.videoPlayer?.videoURL : nil,
             host: host,
             kind: display.wallpaperKind
         )
+        #if !LITE_BUILD
+        WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: [title])
+        #endif
+        display.wallpaperTitle = title.translatedWallpaperName
         // The same guards `WallpaperAutomationOrchestrator.advancePlaylist` runs: a button the
         // orchestrator would refuse is drawn dimmed rather than looking live.
         display.showsPlaylistControls = featureCatalog.isEnabled(.playlists) && configuration.canNavigatePlaylist

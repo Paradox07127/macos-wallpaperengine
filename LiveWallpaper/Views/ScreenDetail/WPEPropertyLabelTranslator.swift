@@ -28,6 +28,8 @@ final class WPEPropertyLabelTranslator {
     private(set) var translated: [String: String] = [:]
     /// While `false`, rows show author text and queued labels only join `requested`; `translated` is kept.
     private(set) var isEnabled: Bool
+    /// Bumped whenever `displayText` may answer differently; AppKit-drawn text watches it to re-read its labels.
+    private(set) var revision = 0
     /// Attempted labels stay requested after a declined download or a language pair that isn't
     /// installed (until a re-check). Internal errors clear their entry so opening the card again can retry.
     /// While disabled it is the set of labels seen, re-queued by `setEnabled(true)`.
@@ -137,6 +139,7 @@ final class WPEPropertyLabelTranslator {
     func setEnabled(_ enabled: Bool) {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
+        revision += 1
         if enabled {
             let seen = requested
             requested = []
@@ -160,6 +163,7 @@ final class WPEPropertyLabelTranslator {
         let seen = requested.union(translated.keys)
         targetLanguage = language
         translated = [:]
+        revision += 1
         pending = []
         requested = []
         uninstalled = []
@@ -352,7 +356,9 @@ final class WPEPropertyLabelTranslator {
 
     /// Stores finished translations in one mutation, so observers rebuild once per batch.
     func store(_ pairs: [(String, String)]) {
+        guard !pairs.isEmpty else { return }
         translated.merge(pairs) { _, new in new }
+        revision += 1
     }
 
     @available(macOS 15.0, *)

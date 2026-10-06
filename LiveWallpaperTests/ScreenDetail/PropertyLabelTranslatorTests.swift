@@ -269,5 +269,33 @@ struct PropertyLabelTranslatorTests {
         #expect(translator.configuration?.source == simplifiedChinese)
         #expect(translator.takePending() == [seen])
     }
+
+    @MainActor
+    @Test("Revision advances when translations land, not for an empty store")
+    func revisionAdvancesOnStore() {
+        let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
+        let start = translator.revision
+        translator.store([])
+        #expect(translator.revision == start)
+        translator.store([("显示触发区域", "Show trigger area")])
+        #expect(translator.revision > start)
+    }
+
+    @MainActor
+    @Test("Revision advances when the switch flips, not when it is set to its current value")
+    func revisionAdvancesOnToggle() {
+        guard #available(macOS 15.0, *) else { return }
+        let translator = WPEPropertyLabelTranslator(targetLanguage: english, isInstalled: { _, _ in true })
+        let start = translator.revision
+        translator.setEnabled(true)
+        #expect(translator.revision == start)
+        translator.setEnabled(false)
+        let off = translator.revision
+        #expect(off > start)
+        translator.setEnabled(false)
+        #expect(translator.revision == off)
+        translator.setEnabled(true)
+        #expect(translator.revision > off)
+    }
 }
 #endif
