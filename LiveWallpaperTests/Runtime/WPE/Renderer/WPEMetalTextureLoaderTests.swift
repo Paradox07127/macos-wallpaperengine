@@ -613,7 +613,7 @@ struct WPEMetalTextureLoaderTests {
             hasAnimationFrames: false
         )
 
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let key = WPEMetalTextureLoader.mipChainDefaultsKey
         let previous = defaults.object(forKey: key)
         defer {

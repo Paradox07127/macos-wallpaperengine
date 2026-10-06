@@ -829,7 +829,7 @@ struct WPEDisplayRenderActorTests {
 
     @Test("off-main render flag defaults to true (render-thread backing)")
     func offMainFlagDefaultsTrue() {
-        UserDefaults.standard.removeObject(forKey: WPEOffMainRenderFlag.defaultsKey)
+        UserDefaults.appScoped().removeObject(forKey: WPEOffMainRenderFlag.defaultsKey)
         #expect(WPEOffMainRenderFlag.isEnabled == true)
         if case .renderThread = WPEOffMainRenderFlag.backing {} else {
             Issue.record("absent flag must select .renderThread backing")
@@ -838,8 +838,8 @@ struct WPEDisplayRenderActorTests {
 
     @Test("writing the flag false rolls back to main backing")
     func offMainFlagFalseSelectsMain() {
-        UserDefaults.standard.set(false, forKey: WPEOffMainRenderFlag.defaultsKey)
-        defer { UserDefaults.standard.removeObject(forKey: WPEOffMainRenderFlag.defaultsKey) }
+        UserDefaults.appScoped().set(false, forKey: WPEOffMainRenderFlag.defaultsKey)
+        defer { UserDefaults.appScoped().removeObject(forKey: WPEOffMainRenderFlag.defaultsKey) }
         #expect(WPEOffMainRenderFlag.isEnabled == false)
         if case .main = WPEOffMainRenderFlag.backing {} else {
             Issue.record("flag written false must select .main backing")
@@ -848,8 +848,8 @@ struct WPEDisplayRenderActorTests {
 
     @Test("M2c1b-3c: flag-on selects the dedicated render-thread backing")
     func offMainFlagSelectsRenderThread() {
-        UserDefaults.standard.set(true, forKey: WPEOffMainRenderFlag.defaultsKey)
-        defer { UserDefaults.standard.removeObject(forKey: WPEOffMainRenderFlag.defaultsKey) }
+        UserDefaults.appScoped().set(true, forKey: WPEOffMainRenderFlag.defaultsKey)
+        defer { UserDefaults.appScoped().removeObject(forKey: WPEOffMainRenderFlag.defaultsKey) }
         #expect(WPEOffMainRenderFlag.isEnabled == true)
         if case .renderThread = WPEOffMainRenderFlag.backing {} else {
             Issue.record("flag-on must select .renderThread backing after b-3c")

@@ -27,7 +27,7 @@ struct OverlayWorkspace: View {
     @ObservedObject private var interaction: InteractionModel
     @State private var addExpanded = true
     @State private var addDrag: OverlayAddDragController
-    @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var previewMode: MonitorBoardPreviewMode = .snapshot
+    @AppStorage(MonitorBoardPreviewMode.defaultsKey, store: .appScoped()) private var previewMode: MonitorBoardPreviewMode = .snapshot
 
     init(session: OverlayEditorSession, cover: CGImage?, screen: Screen, size: CGSize,
          layersVisible: Binding<Bool>, inspectorVisible: Binding<Bool>,

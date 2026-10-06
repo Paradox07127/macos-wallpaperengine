@@ -66,12 +66,12 @@
                 return profiler
             }
 
-            private static func defaultsFlag(_ key: String) -> Bool {
-                for suite in [UserDefaults.appSuite, UserDefaults.standard] where suite.object(forKey: key) != nil {
-                    return suite.bool(forKey: key)
-                }
-                return false
-            }
+    private static func defaultsFlag(_ key: String) -> Bool {
+        for suite in [UserDefaults.appSuite, UserDefaults.appScoped()] where suite.object(forKey: key) != nil {
+            return suite.bool(forKey: key)
+        }
+        return false
+    }
 
             private init(device: MTLDevice, counterSet: MTLCounterSet) {
                 self.device = device

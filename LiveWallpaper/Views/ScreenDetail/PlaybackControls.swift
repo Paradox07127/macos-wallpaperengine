@@ -25,8 +25,8 @@ struct PlaybackControls: View {
     /// Real pointer input; steals desktop clicks while on.
     @Binding var sceneClickCaptureEnabled: Bool
 
-    @AppStorage("Scene.ClickCapture.Acknowledged") private var clickCaptureAcknowledged = false
-    @AppStorage("Web.Interaction.Acknowledged") private var webInteractionAcknowledged = false
+    @AppStorage("Scene.ClickCapture.Acknowledged", store: .appScoped()) private var clickCaptureAcknowledged = false
+    @AppStorage("Web.Interaction.Acknowledged", store: .appScoped()) private var webInteractionAcknowledged = false
     /// The wallpaper type whose Interaction switch waits on first-use confirmation; nil when none does.
     @State private var pendingInteraction: WallpaperType?
     /// HTML-only: mute path for WKWebView media (`AVPlayer.muted` is a no-op here).

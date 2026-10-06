@@ -274,6 +274,7 @@ PARALLEL_SUITES=(
 # (display configuration, the undo stack, the one ScreenManager, preview queues)
 # or hold a wall-clock budget. Run afterwards with parallelism off.
 SERIAL_SUITES=(
+  DefaultsIsolationTests
   # Native menu localization reads process-wide language changed by parallel fixtures.
   EditDeskWindowHostTests
   # These fixtures mutate global render defaults/language or need prompt AppKit/decoder delivery.

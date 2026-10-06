@@ -58,7 +58,7 @@ struct MonitorOverlaySection: View {
 
 /// Controls preview contents without changing the desktop overlay.
 struct MonitorPreviewModeRow: View {
-    @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var mode: MonitorBoardPreviewMode = .snapshot
+    @AppStorage(MonitorBoardPreviewMode.defaultsKey, store: .appScoped()) private var mode: MonitorBoardPreviewMode = .snapshot
 
     var body: some View {
         SettingRow(

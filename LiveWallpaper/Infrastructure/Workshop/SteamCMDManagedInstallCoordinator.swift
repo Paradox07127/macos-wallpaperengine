@@ -30,7 +30,7 @@ final class SteamCMDManagedInstallCoordinator {
     static let managedInstallDefaultsKey = "steamcmd.managedInstall.v1"
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = .appScoped(),
         remove: @escaping () async -> SteamCMDManagedRemovalResult? = {
             await SteamConnectorClient.removeManagedSteamCMD()
         },
@@ -53,7 +53,7 @@ final class SteamCMDManagedInstallCoordinator {
     private(set) var managedInstall: ManagedInstallRecord?
 
     /// Deliberately doesn't stat canonicalPath — it lives outside the container, so a filesystem check here would always say no.
-    static func recordedInstall(defaults: UserDefaults = .standard) -> ManagedInstallRecord? {
+    static func recordedInstall(defaults: UserDefaults = .appScoped()) -> ManagedInstallRecord? {
         guard let data = defaults.data(forKey: managedInstallDefaultsKey) else { return nil }
         return try? JSONDecoder().decode(ManagedInstallRecord.self, from: data)
     }

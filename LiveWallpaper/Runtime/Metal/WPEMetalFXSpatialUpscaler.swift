@@ -18,7 +18,7 @@ final class WPEMetalFXSpatialUpscaler {
                 ? renderScale(fromRaw: scoped.double(forKey: renderScaleDefaultsKey))
                 : 1.0
         }
-        for suite in [UserDefaults.appSuite, UserDefaults.standard]
+        for suite in [UserDefaults.appSuite, .appScoped()]
         where suite.object(forKey: renderScaleDefaultsKey) != nil {
             return renderScale(fromRaw: suite.double(forKey: renderScaleDefaultsKey))
         }

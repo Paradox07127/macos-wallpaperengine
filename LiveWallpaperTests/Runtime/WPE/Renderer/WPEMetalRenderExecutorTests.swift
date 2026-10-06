@@ -6086,7 +6086,7 @@ private extension WPEMetalRenderExecutorTests {
 private extension WPEMetalRenderExecutorTests {
     @Test("Static layer cache flag defaults off")
     func staticLayerCacheFlagDefaultsOff() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let key = WPEMetalRenderExecutor.staticLayerCacheDefaultsKey
         let previous = defaults.object(forKey: key)
         defaults.removeObject(forKey: key)

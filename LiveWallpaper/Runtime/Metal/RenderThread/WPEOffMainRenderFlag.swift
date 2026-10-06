@@ -5,7 +5,7 @@ enum WPEOffMainRenderFlag {
 
     /// Read once per display-actor construction. Absent ⇒ true (render-thread).
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? true
+        UserDefaults.appScoped().object(forKey: defaultsKey) as? Bool ?? true
     }
 
     static var backing: WPEDisplayRenderActor.Backing {

@@ -305,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lifecycle.schedule(after: .seconds(3)) { [workshopDoctorService] in
                 await workshopDoctorService.prepareAtLaunch()
                 guard workshopDoctorService.workdirBookmarkData != nil else { return }
-                guard UserDefaults.standard.bool(forKey: "loomscreen.workshop.checkAssetsUpdateAtLaunch.v1"),
+                guard UserDefaults.appScoped().bool(forKey: "loomscreen.workshop.checkAssetsUpdateAtLaunch.v1"),
                       WPEEngineAssetsInstaller.shared.hasManagedInstall else { return }
                 WPEEngineAssetsInstaller.shared.checkForUpdate(using: workshopDoctorService)
             }

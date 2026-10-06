@@ -44,10 +44,10 @@ struct GeneralSettingsView: View {
     @State var audioResponseEnabled: Bool
     @State var adaptiveFrameRateEnabled: Bool
     #if !LITE_BUILD
-    @AppStorage(WPEOffMainRenderFlag.defaultsKey) var offMainRenderEnabled = true
+    @AppStorage(WPEOffMainRenderFlag.defaultsKey, store: .appScoped()) var offMainRenderEnabled = true
     /// Unset and 1.0 both mean upscaling off.
     @AppStorage(WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey, store: .appScoped()) var metalFXRenderScale = 1.0
-    @AppStorage(WPEDisplayHDROutput.defaultsKey) var displayHDROutputEnabled = false
+    @AppStorage(WPEDisplayHDROutput.defaultsKey, store: .appScoped()) var displayHDROutputEnabled = false
     #endif
     @State var weatherLocation: WeatherLocationPreference
     @State var locationAuthorizationStatus: CLAuthorizationStatus

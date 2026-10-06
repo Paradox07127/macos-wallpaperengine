@@ -13,10 +13,14 @@ enum WPEOracleMode {
 
     static var isEnabled: Bool {
         #if DEBUG
-        if let testingOverride { return testingOverride }
+        if let testingOverride {
+            return testingOverride
+        }
         // Test host: ignore persisted WPEOracleEnabled (it freezes clock/RNG in suite).
-        if isRunningInTestHost { return false }
-        return UserDefaults.standard.bool(forKey: "WPEOracleEnabled")
+        if isRunningInTestHost {
+            return false
+        }
+        return UserDefaults.appScoped().bool(forKey: "WPEOracleEnabled")
         #else
         return false
         #endif
@@ -31,7 +35,7 @@ enum WPEOracleMode {
     /// Opt-in per-pass hashes (`WPEOraclePerPassHashes`); off by default (costly).
     static var perPassHashesEnabled: Bool {
         #if DEBUG
-        return isEnabled && UserDefaults.standard.bool(forKey: "WPEOraclePerPassHashes")
+        return isEnabled && UserDefaults.appScoped().bool(forKey: "WPEOraclePerPassHashes")
         #else
         return false
         #endif
@@ -40,7 +44,7 @@ enum WPEOracleMode {
     /// Frozen scene time for oracle runs (default 6.0s; `WPEOracleFreezeTime`).
     static var freezeTime: Double {
         #if DEBUG
-        if let value = UserDefaults.standard.object(forKey: "WPEOracleFreezeTime") as? Double, value >= 0 {
+        if let value = UserDefaults.appScoped().object(forKey: "WPEOracleFreezeTime") as? Double, value >= 0 {
             return value
         }
         #endif
@@ -59,7 +63,7 @@ enum WPEOracleMode {
 
     static func loadFrameOverride() -> WPEOracleFrameOverride? {
         guard isEnabled else { return nil }
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let time = (defaults.object(forKey: "WPEOracleReplayTime") as? Double) ?? freezeTime
         let daytime = (defaults.object(forKey: "WPEOracleReplayDaytime") as? Double) ?? 0.5
         let pointerX = (defaults.object(forKey: "WPEOracleReplayPointerX") as? Double) ?? 0.5

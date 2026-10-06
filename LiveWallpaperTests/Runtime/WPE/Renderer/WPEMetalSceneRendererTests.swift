@@ -1728,9 +1728,9 @@ struct WPEMetalSceneRendererTests {
         defer { fixture.cleanup() }
 
         let key = WPESceneDebugArtifacts.defaultsKey
-        let previous = UserDefaults.standard.object(forKey: key)
-        UserDefaults.standard.set(true, forKey: key)
-        defer { UserDefaults.standard.set(previous, forKey: key) }
+        let previous = UserDefaults.appScoped().object(forKey: key)
+        UserDefaults.appScoped().set(true, forKey: key)
+        defer { UserDefaults.appScoped().set(previous, forKey: key) }
 
         let renderer = try WPEMetalSceneRenderer(
             descriptor: fixture.descriptor,

@@ -792,7 +792,7 @@ extension WPEMetalSceneRenderer {
 
     /// `defaults write com.loomscreen.pro WPEMemoryAuditLog -bool YES`. Census is registry-owned textures only; `device allocated` is the only true total.
     func logMemoryAuditIfEnabled() {
-        guard UserDefaults.standard.bool(forKey: "WPEMemoryAuditLog") else { return }
+        guard UserDefaults.appScoped().bool(forKey: "WPEMemoryAuditLog") else { return }
         let census = WPEMetalTextureMetadataRegistry.shared.census()
         let contexts = WPESceneScriptContextBeacon.liveCount
         func mib(_ bytes: Int) -> String { String(format: "%.1f MiB", Double(bytes) / 1_048_576) }

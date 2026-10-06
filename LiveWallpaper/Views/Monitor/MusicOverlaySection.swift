@@ -8,12 +8,12 @@ struct MusicOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
 
-    @AppStorage("Music.AppearanceExpanded") private var isAppearanceExpanded = true
-    @AppStorage("Music.TypographyExpanded") private var isTypographyExpanded = true
-    @AppStorage("Music.ElementsExpanded") private var isElementsExpanded = true
-    @AppStorage("Music.LyricsExpanded") private var isLyricsExpanded = false
-    @AppStorage("Music.PlaybackExpanded") private var isPlaybackExpanded = true
-    @AppStorage("Music.EffectsExpanded") private var isEffectsExpanded = false
+    @AppStorage("Music.AppearanceExpanded", store: .appScoped()) private var isAppearanceExpanded = true
+    @AppStorage("Music.TypographyExpanded", store: .appScoped()) private var isTypographyExpanded = true
+    @AppStorage("Music.ElementsExpanded", store: .appScoped()) private var isElementsExpanded = true
+    @AppStorage("Music.LyricsExpanded", store: .appScoped()) private var isLyricsExpanded = false
+    @AppStorage("Music.PlaybackExpanded", store: .appScoped()) private var isPlaybackExpanded = true
+    @AppStorage("Music.EffectsExpanded", store: .appScoped()) private var isEffectsExpanded = false
 
     private var overlay: MonitorOverlayConfiguration {
         screenManager.monitorOverlay(for: screen)

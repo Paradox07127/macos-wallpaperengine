@@ -61,7 +61,7 @@ struct WPEMetalTextureCacheBudgetTests {
 
     @Test("Budget defaults-key round-trip matches the resolution rules")
     func textureCacheBudgetDefaultsRoundTrip() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let key = WPEMetalSceneRenderer.textureCacheBudgetMiBDefaultsKey
         let previous = defaults.object(forKey: key)
         defer {

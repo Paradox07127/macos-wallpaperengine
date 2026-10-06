@@ -13,8 +13,8 @@
                   device.supportsCounterSampling(.atStageBoundary) else {
                 return
             }
-            UserDefaults.standard.set(true, forKey: Self.flagKey)
-            defer { UserDefaults.standard.removeObject(forKey: Self.flagKey) }
+        UserDefaults.appScoped().set(true, forKey: Self.flagKey)
+        defer { UserDefaults.appScoped().removeObject(forKey: Self.flagKey) }
             let profiler = try #require(WPEMetalPassGPUProfiler.makeIfEnabled(device: device))
 
             let library = try device.makeLibrary(

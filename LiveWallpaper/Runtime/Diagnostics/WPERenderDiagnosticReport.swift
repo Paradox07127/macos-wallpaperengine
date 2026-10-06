@@ -197,7 +197,7 @@ enum WPERenderDiagnosticEnvironment {
     }
 
     private static func nonDefaultRenderFlags() -> [String] {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         var flags = renderFlagKeys.compactMap { key -> String? in
             guard let value = defaults.object(forKey: key) else { return nil }
             return "\(key.dropFirst(3))=\(value)"

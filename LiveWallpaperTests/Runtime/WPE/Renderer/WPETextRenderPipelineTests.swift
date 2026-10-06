@@ -111,7 +111,7 @@ struct WPETextRenderPipelineTests {
     @Test("Native effect text retains coverage through border, pulse, and blur/pulse publication",
           arguments: ["copy", "border", "pulse", "blur-pulse"])
     func nativeEffectTextSurfaceCarrier(operatorName: String) throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "native-text"
@@ -236,7 +236,7 @@ struct WPETextRenderPipelineTests {
     @Test("Native opacity distinguishes independent text carrier from PMA",
           arguments: [UInt8(0), 128], [false, true])
     func nativeOpacityIndependentTextCarrier(sourceAlpha: UInt8, independent: Bool) throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "carrier-opacity"
@@ -321,7 +321,7 @@ struct WPETextRenderPipelineTests {
     @Test("Native colour balance grades a text carrier's RGB directly and keeps PMA inputs on the PMA path",
           arguments: [false, true])
     func nativeColorBalanceIndependentTextCarrier(independent: Bool) throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "carrier-balance"
@@ -427,7 +427,7 @@ struct WPETextRenderPipelineTests {
     @Test("Text carrier copy and opacity preserve physical R8 values across gates",
           arguments: [UInt8(0), 128], ["copy-disabled-open", "copy-pma-open", "opacity-disabled-open", "opacity-disabled-closed"])
     func textCarrierPhysicalR8Consumer(sourceAlpha: UInt8, configuration: String) throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "carrier-r8"
@@ -797,7 +797,7 @@ struct WPETextRenderPipelineTests {
         let pmaControl = !configuration.hasPrefix("carrier")
         let sourceAlpha: UInt8 = configuration.hasSuffix("0") && configuration != "rgb0alpha128" ? 0 : 128
         let pipeline = try carrierBoundaryDirectSceneFixture(root: root, pmaControl: pmaControl)
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "carrier-direct"
@@ -967,7 +967,7 @@ struct WPETextRenderPipelineTests {
         #expect(direct.renderContract.nativeAlpha.input == .none)
         #expect(direct.renderContract.nativeAlpha.independentCoverageInput)
         #expect(!direct.renderContract.nativeAlpha.straightOutput)
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.appScoped()
         let previous = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var arguments = previous
         arguments["WPEDumpScenePasses"] = "carrier-hdr-opacity"
