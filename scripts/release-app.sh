@@ -64,6 +64,9 @@ fi
 PRERELEASE=0
 [[ "$VERSION" == *-* ]] && PRERELEASE=1
 
+# Leave Lite's universal architectures to the project. Pro's archive override
+# also keeps package dependencies and helpers from compiling unused Intel slices.
+ARCHIVE_ARCHS=""
 case "$SKU" in
   lite)
     SCHEME="LiveWallpaperLite"
@@ -74,6 +77,7 @@ case "$SKU" in
     DISPLAY_NAME="Loomscreen"
     ;;
   pro)
+    ARCHIVE_ARCHS="arm64"
     SCHEME="LiveWallpaper"
     APP_NAME="Loomscreen Pro"
     ARTIFACT="Loomscreen-Pro"
@@ -284,6 +288,7 @@ xcodebuild archive \
   DEVELOPMENT_TEAM="$EXPECTED_TEAM_ID" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
+  ${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"} \
   > "$OUTPUT_DIR/archive-$ARTIFACT.log" 2>&1 || {
     echo "ERROR: xcodebuild archive failed. Tail of log:" >&2
     tail -40 "$OUTPUT_DIR/archive-$ARTIFACT.log" >&2
@@ -421,7 +426,7 @@ create-dmg \
   --app-drop-link "$DMG_APPS_X" "$DMG_APPS_Y" \
   --icon "$README_NAME" "$DMG_README_X" "$DMG_README_Y" \
   --hide-extension "${APP_NAME}.app" \
-  --format UDZO \
+  --format ULMO \
   "$DMG_PATH" "$STAGING_DIR" \
   > "$OUTPUT_DIR/dmg-$ARTIFACT.log" 2>&1 || {
     echo "ERROR: create-dmg failed. Tail of log:" >&2

@@ -315,6 +315,12 @@ grep -q '^app=Loomscreen Pro.app$' <<<"$pro_plan"
 grep -q '^bundle_id=com.loomscreen.pro$' <<<"$pro_plan"
 grep -q '^dmg=Loomscreen-Pro-0.0.0.dmg$' <<<"$pro_plan"
 
+# Pro archives arm64 only; Lite keeps the project's universal ARCHS. Both DMGs use ULMO.
+pro_sku_block="$(sed -n '/^  pro)$/,/;;/p' scripts/release-app.sh)"
+grep -q 'ARCHIVE_ARCHS="arm64"' <<<"$pro_sku_block"
+grep -Fq '${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"}' scripts/release-app.sh
+grep -q -- '--format ULMO' scripts/release-app.sh
+
 # macOS refuses to load an appex whose CFBundleVersion differs from its containing
 # app's. Both shipped 0.6.5 with the extension still stamped 0.6.1/2, because the
 # appex plists hardcoded the numbers while the apps interpolated MARKETING_VERSION.
