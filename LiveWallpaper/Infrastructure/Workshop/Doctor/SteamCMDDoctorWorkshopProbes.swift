@@ -20,11 +20,10 @@ extension SteamCMDDoctorService {
             return
         }
         do {
-            let workdir = try resolveWorkdirURL()
-            let didStart = workdir.startAccessingSecurityScopedResource()
-            defer { if didStart { workdir.stopAccessingSecurityScopedResource() } }
+            let access = try beginWorkdirAccess()
+            defer { access.end() }
 
-            let content = SteamLibraryPaths.workshopContentRoot(steamRoot: workdir)
+            let content = SteamLibraryPaths.workshopContentRoot(steamRoot: access.url)
             let path = content.path(percentEncoded: false)
             var isDirectory = ObjCBool(false)
             guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {

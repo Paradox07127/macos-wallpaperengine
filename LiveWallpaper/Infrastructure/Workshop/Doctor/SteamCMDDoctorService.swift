@@ -785,9 +785,9 @@ final class SteamCMDDoctorService {
 
     private func runWorkingDirectoryProbe() {
         do {
-            let workdir = try resolveWorkdirURL()
-            let didStart = workdir.startAccessingSecurityScopedResource()
-            defer { if didStart { workdir.stopAccessingSecurityScopedResource() } }
+            let access = try beginWorkdirAccess()
+            defer { access.end() }
+            let workdir = access.url
 
             var isDirectory = ObjCBool(false)
             guard fileManager.fileExists(atPath: workdir.path(percentEncoded: false), isDirectory: &isDirectory),

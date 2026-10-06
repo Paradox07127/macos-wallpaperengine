@@ -268,10 +268,9 @@ final class WPEEngineAssetsInstaller {
         doctor: SteamCMDDoctorService,
         attempt: UUID
     ) -> Bool {
-        guard let steamRoot = try? doctor.resolveWorkdirURL() else { return false }
-        let scope = steamRoot.startAccessingSecurityScopedResource()
-        defer { if scope { steamRoot.stopAccessingSecurityScopedResource() } }
-        let installRoot = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: steamRoot)
+        guard let access = try? doctor.beginWorkdirAccess() else { return false }
+        defer { access.end() }
+        let installRoot = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: access.url)
         let assets = installRoot.appendingPathComponent("assets", isDirectory: true)
         var isDirectory = ObjCBool(false)
         guard FileManager.default.fileExists(atPath: assets.path(percentEncoded: false), isDirectory: &isDirectory),
@@ -312,20 +311,12 @@ final class WPEEngineAssetsInstaller {
         // Bookmark the install root (parent of `assets/`), matching what a
         // manual link stores.
         let installRoot = URL(fileURLWithPath: assetsPath, isDirectory: true).deletingLastPathComponent()
-        guard let steamRoot = try? doctor.resolveWorkdirURL() else {
+        // Bookmarking the install root below needs the library scope held open.
+        guard let access = try? doctor.beginWorkdirAccess() else {
             fail(String(localized: "No Steam Library is authorized.", bundle: .appLanguage, comment: "Workshop diagnostics error."))
             return
         }
-        let scope = steamRoot.startAccessingSecurityScopedResource()
-        defer { if scope { steamRoot.stopAccessingSecurityScopedResource() } }
-        if !scope {
-            // Bookmarking below needs this scope; without it the failure surfaces
-            // as an opaque "Operation not permitted" from bookmarkData.
-            Logger.warning(
-                "Steam library scope did not start; bookmarking the install is likely to fail",
-                category: .fileAccess
-            )
-        }
+        defer { access.end() }
         guard WPEEngineAssetsLibrary.adoptManagedInstall(at: installRoot, buildID: result.buildID) else {
             fail(String(localized: "Installed Wallpaper Engine, but Loomscreen could not keep access to it.", bundle: .appLanguage, comment: "Engine-assets install succeeded but the bookmark could not be created."))
             return
