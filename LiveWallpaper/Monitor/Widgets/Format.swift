@@ -97,15 +97,4 @@ enum Format {
         return "\(Int((f * 100).rounded()))"
     }
 
-    static func interfaceTypeLabel(_ type: String?) -> String {
-        switch type {
-        case "wifi": return "Wi-Fi"
-        case "wiredEthernet", "wired": return "Ethernet"
-        case "cellular": return "Cellular"
-        case "other": return "Other"
-        case let .some(value) where !value.isEmpty:
-            return value.prefix(1).uppercased() + value.dropFirst()
-        default: return ""
-        }
-    }
 }

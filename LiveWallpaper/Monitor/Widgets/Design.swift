@@ -60,7 +60,6 @@ enum Design {
     // MARK: - Panel material
 
     static let panelFillTop = oklch(0.212, 0.013, 74, alpha: 0.72)
-    static let panelFillBottom = oklch(0.176, 0.012, 74, alpha: 0.60)
     static let panelStroke = oklch(0.40, 0.018, 74, alpha: 0.55)      // --panel-line
     static let panelTopHighlight = Color.white.opacity(0.055)          // --panel-hi
     static let boardWash = oklch(0.135, 0.010, 74)
