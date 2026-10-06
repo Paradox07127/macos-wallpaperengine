@@ -152,7 +152,8 @@ extension WPECacheManagementView {
                     .font(DesignTokens.Typography.sectionTitle)
                     .padding(.bottom, DesignTokens.Spacing.xs)
 
-                let items = storageDiskItems
+                // Before the first measurement every row reads 0 bytes; hiding them then would empty the card.
+                let items = isLoading ? storageDiskItems : StorageDiskItem.listed(storageDiskItems)
                 let total = items.reduce(0) { $0 + $1.bytes }
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if index > 0 {
@@ -197,7 +198,7 @@ extension WPECacheManagementView {
                     .font(DesignTokens.Typography.caption).foregroundStyle(DesignTokens.Colors.textSecondary)
                 }
 
-                ForEach(Array(cacheDiskItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array((isLoading ? cacheDiskItems : StorageDiskItem.listed(cacheDiskItems)).enumerated()), id: \.element.id) { index, item in
                     if index > 0 {
                         Divider()
                     }

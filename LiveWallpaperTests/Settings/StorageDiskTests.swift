@@ -23,22 +23,23 @@ struct StorageDiskTests {
         #expect(StorageDiskSlice.partition([item("empty", 0)]).isEmpty)
     }
 
-    @Test func calloutsSpreadEvenlyOverTheCardHeightInArcOrder() {
-        let arcs: [(id: String, start: Double, end: Double)] = (0 ..< 5).map { index in
-            let offset = Double(index) * 0.01
-            return (id: "a\(index)", start: 0.70 + offset, end: 0.71 + offset)
-        }
-        let callouts = StorageCallout.layout(arcs: arcs, center: CGPoint(x: 100, y: 80), radius: 60, height: 160)
-        let left = callouts.filter { !$0.isTrailing }
-        #expect(left.map(\.id) == ["a4", "a3", "a2", "a1", "a0"])
-        #expect(left.map(\.labelY) == [16, 48, 80, 112, 144])
+    @Test func legendListsEveryNonZeroItemLargestFirstWithOneArcEach() {
+        let spec = StorageRingSpec(id: "ring", title: "Storage", items: [
+            item("a", 30), item("zero", 0), item("b", 700), item("c", 5),
+            item("d", 90), item("e", 1), item("f", 400), item("g", 12),
+        ])
+        let expected = ["b", "f", "d", "a", "g", "c", "e"]
+        #expect(spec.legend.map(\.id) == expected)
+        #expect(StorageDiskSlice.partition(spec.legend).map(\.id) == expected)
     }
 
-    @Test func calloutsTakeTheSideOfTheirArc() {
-        let callouts = StorageCallout.layout(arcs: [(id: "right", start: 0, end: 0.5), (id: "left", start: 0.5, end: 1)],
-                                             center: .zero, radius: 10, height: 100)
-        #expect(callouts.first { $0.id == "right" }?.isTrailing == true)
-        #expect(callouts.first { $0.id == "left" }?.isTrailing == false)
+    @Test func locationRowsHideMeasuredEmptyLocationsButKeepUnknownSizes() {
+        let rows: [(String, UInt64, AppStorageMeasurement.Status)] = [
+            ("full", 10, .complete), ("empty", 0, .complete), ("absent", 0, .missing),
+            ("failed", 0, .unavailable), ("partial", 0, .partial),
+        ]
+        let items = rows.map { StorageDiskItem(id: $0.0, title: "Storage", bytes: $0.1, color: .accentColor, status: $0.2) }
+        #expect(StorageDiskItem.listed(items).map(\.id) == ["full", "failed", "partial"])
     }
 
     @Test func veryLargeTotalsDoNotOverflowThePartition() {

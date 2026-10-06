@@ -43,6 +43,11 @@ struct StorageDiskItem: Identifiable {
         }
         return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
+
+    /// Drops rows measured as empty; a size that is unknown (`.unavailable`, `.partial`) is not zero.
+    static func listed(_ items: [StorageDiskItem]) -> [StorageDiskItem] {
+        items.filter { $0.bytes > 0 || $0.status == .partial || $0.status == .unavailable }
+    }
 }
 
 /// Settings search marks are injected inside the Form, below the page view that builds the rows.
@@ -56,7 +61,7 @@ struct StorageSearchTitleReader<Content: View>: View {
     }
 }
 
-/// Fractions remain proportional even for tiny categories; the menu exposes zero-size items.
+/// Fractions remain proportional even for tiny categories.
 struct StorageDiskSlice: Identifiable {
     let id: String
     let start: Double
@@ -103,42 +108,16 @@ struct StorageRingSpec: Identifiable {
             inventoryIncomplete: false, componentStatuses: items.map(\.status), unresolvedSources: 0
         ) == .partial
     }
-}
 
-/// One label beside a ring, joined to its segment by a leader line.
-struct StorageCallout: Identifiable {
-    let id: String
-    let isTrailing: Bool
-    /// Leader start on the ring's outer edge.
-    let anchor: CGPoint
-    /// Vertical center of the label in the card.
-    let labelY: CGFloat
-
-    /// Places one callout per arc (fractions of a full turn, 0 = 12 o'clock, clockwise) on the arc's side of the ring,
-    /// then spreads each side's labels evenly over `height`, top to bottom in the order of their arcs.
-    static func layout(arcs: [(id: String, start: Double, end: Double)], center: CGPoint, radius: CGFloat,
-                       height: CGFloat) -> [StorageCallout] {
-        let placed = arcs.map { arc -> (id: String, trailing: Bool, anchor: CGPoint) in
-            let angle = ((arc.start + arc.end) / 2) * 2 * .pi - .pi / 2
-            let anchor = CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
-            return (arc.id, cos(angle) >= 0, anchor)
-        }
-        return [true, false].flatMap { trailing in
-            let side = placed.filter { $0.trailing == trailing }.sorted { $0.anchor.y < $1.anchor.y }
-            let slot = height / CGFloat(max(side.count, 1))
-            return side.enumerated().map { index, callout in
-                StorageCallout(id: callout.id, isTrailing: trailing, anchor: callout.anchor,
-                               labelY: slot * (CGFloat(index) + 0.5))
-            }
-        }
+    /// Non-empty items, largest first: the ring's slices and the legend rows, in that order.
+    var legend: [StorageDiskItem] {
+        items.filter { $0.bytes > 0 }.sorted { $0.bytes > $1.bytes }
     }
 }
 
 private struct StorageDonutRing: View {
     let title: LocalizedStringKey
     let items: [StorageDiskItem]
-    /// Turn fraction added to every slice, so the layout can choose where the first slice sits.
-    let rotation: Double
     let total: UInt64
     /// Includes zero-byte items, which `items` leaves out.
     let isTotalPartial: Bool
@@ -161,7 +140,7 @@ private struct StorageDonutRing: View {
                     let isSelected = selectedItemID == item.id
                     let isHighlighted = hoveredItemID == item.id || (hoveredItemID == nil && isSelected)
                     let opacity = isHighlighted ? 1.0 : (hoveredItemID != nil ? DesignTokens.Opacity.fadedSegment : DesignTokens.Opacity.restingSegment)
-                    let wedge = StorageDiskWedge(start: slice.start + rotation, end: slice.end + rotation)
+                    let wedge = StorageDiskWedge(start: slice.start, end: slice.end)
 
                     Button {
                         selectedItemID = (selectedItemID == item.id ? nil : item.id)
@@ -214,118 +193,62 @@ private struct StorageDonutRing: View {
     }
 }
 
-/// A ring with its largest categories labelled on either side; smaller ones fold into "Other Items".
-private struct StorageCalloutRing: View {
+/// A ring beside a legend that names each of its slices in full.
+private struct StorageLegendRing: View {
     let spec: StorageRingSpec
     let isLoading: Bool
     let formatBytes: (UInt64) -> String
     @Binding var hoveredItemID: String?
     @Binding var selectedItemID: String?
 
-    /// Largest categories named beside the ring.
-    private static let calloutLimit = 4
-    private static let otherID = "storage.other"
-
-    private var ranked: [StorageDiskItem] {
-        spec.items.filter { $0.bytes > 0 }.sorted { $0.bytes > $1.bytes }
-    }
-
-    private var total: UInt64 {
-        spec.items.reduce(0) { $0 + $1.bytes }
-    }
-
-    /// Centers the largest slice at 3 o'clock so the small slices gather on the left, where their labels stack.
-    private var rotation: Double {
-        guard let first = StorageDiskSlice.partition(ranked).first else { return 0 }
-        return 0.25 - first.end / 2
-    }
+    private static let diameter: CGFloat = 128
 
     var body: some View {
-        GeometryReader { proxy in
-            let diameter = min(proxy.size.height - DesignTokens.Spacing.sm, proxy.size.width * 0.42)
-            let radius = diameter / 2
-            let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            let callouts = isLoading ? [] : StorageCallout.layout(
-                arcs: arcs, center: center, radius: radius + 2, height: proxy.size.height
-            )
-            let labelWidth = max(0, proxy.size.width / 2 - radius - 28)
+        let legend = spec.legend
+        HStack(spacing: DesignTokens.Spacing.lg) {
+            StorageDonutRing(title: spec.title, items: legend, total: spec.items.reduce(0) { $0 + $1.bytes },
+                             isTotalPartial: spec.isTotalPartial, isLoading: isLoading,
+                             formatBytes: formatBytes, hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
+                .frame(width: Self.diameter, height: Self.diameter)
 
-            ZStack(alignment: .topLeading) {
-                StorageDonutRing(title: spec.title, items: ranked, rotation: rotation, total: total,
-                                 isTotalPartial: spec.isTotalPartial, isLoading: isLoading,
-                                 formatBytes: formatBytes, hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
-                    .frame(width: diameter, height: diameter)
-                    .position(center)
-
-                ForEach(callouts) { callout in
-                    let labelX = center.x + (callout.isTrailing ? 1 : -1) * (radius + 24)
-                    let color = color(for: callout.id)
-                    let scale = (radius + 8) / (radius + 2)
-                    Path { path in
-                        path.move(to: callout.anchor)
-                        // Leave the ring radially first so the straight run to the label stays outside it.
-                        path.addLine(to: CGPoint(x: center.x + (callout.anchor.x - center.x) * scale,
-                                                 y: center.y + (callout.anchor.y - center.y) * scale))
-                        path.addLine(to: CGPoint(x: labelX - (callout.isTrailing ? 4 : -4), y: callout.labelY))
-                    }
-                    .stroke(color.opacity(0.7), lineWidth: 1)
-                    .allowsHitTesting(false)
-
-                    label(for: callout.id, alignment: callout.isTrailing ? .leading : .trailing)
-                        .frame(width: labelWidth, alignment: callout.isTrailing ? .leading : .trailing)
-                        .position(x: labelX + (callout.isTrailing ? 1 : -1) * labelWidth / 2, y: callout.labelY)
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                if !isLoading {
+                    ForEach(legend) { legendRow($0) }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var arcs: [(id: String, start: Double, end: Double)] {
-        let slices = StorageDiskSlice.partition(ranked)
-        let named = slices.prefix(slices.count > Self.calloutLimit + 1 ? Self.calloutLimit : slices.count)
-        var arcs = named.map { (id: $0.id, start: $0.start + rotation, end: $0.end + rotation) }
-        if let firstRest = slices.dropFirst(named.count).first {
-            arcs.append((id: Self.otherID, start: firstRest.start + rotation, end: 1 + rotation))
-        }
-        return arcs
-    }
-
-    private func color(for id: String) -> Color {
-        ranked.first { $0.id == id }?.color ?? DesignTokens.Colors.textTertiary
-    }
-
-    @ViewBuilder
-    private func label(for id: String, alignment: HorizontalAlignment) -> some View {
-        if let item = ranked.first(where: { $0.id == id }) {
-            let isActive = hoveredItemID == item.id || selectedItemID == item.id
-            Button {
-                selectedItemID = (selectedItemID == item.id ? nil : item.id)
-            } label: {
-                labelText(Text(item.title), bytes: item.bytes, alignment: alignment, isActive: isActive)
+    private func legendRow(_ item: StorageDiskItem) -> some View {
+        let isActive = hoveredItemID == item.id || selectedItemID == item.id
+        return Button {
+            selectedItemID = (selectedItemID == item.id ? nil : item.id)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.sm) {
+                Text(Image(systemName: "circle.fill"))
+                    .foregroundStyle(item.color)
+                    .imageScale(.small)
+                Text(item.title)
+                    .foregroundStyle(isActive ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                Text(verbatim: formatBytes(item.bytes))
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    .monospacedDigit()
+                    .fixedSize()
             }
-            .buttonStyle(.plain)
-            .settledHover { isHov in
-                hoveredItemID = isHov ? item.id : (hoveredItemID == item.id ? nil : hoveredItemID)
-            }
-        } else {
-            let named = Set(arcs.map(\.id))
-            labelText(Text("Other Items"), bytes: ranked.filter { !named.contains($0.id) }.reduce(0) { $0 + $1.bytes },
-                      alignment: alignment, isActive: false)
+            .font(DesignTokens.Typography.caption)
+            .contentShape(Rectangle())
         }
-    }
-
-    private func labelText(_ title: Text, bytes: UInt64, alignment: HorizontalAlignment, isActive: Bool) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
-            title
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(isActive ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Text(verbatim: formatBytes(bytes))
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(DesignTokens.Colors.textPrimary)
-                .monospacedDigit()
+        .buttonStyle(.plain)
+        .settledHover { isHov in
+            hoveredItemID = isHov ? item.id : (hoveredItemID == item.id ? nil : hoveredItemID)
         }
-        .contentShape(Rectangle())
+        .accessibilityLabel(Text(item.title))
+        .accessibilityValue(Text(verbatim: formatBytes(item.bytes)))
+        .accessibilityAddTraits(selectedItemID == item.id ? .isSelected : [])
     }
 }
 
@@ -338,13 +261,15 @@ struct StorageRingsCard: View {
 
     var body: some View {
         GroupBox {
-            HStack(spacing: 0) {
-                ForEach(rings) { spec in
-                    StorageCalloutRing(spec: spec, isLoading: isLoading, formatBytes: formatBytes,
-                                       hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
+            VStack(spacing: DesignTokens.Spacing.md) {
+                ForEach(Array(rings.enumerated()), id: \.element.id) { index, spec in
+                    if index > 0 {
+                        Divider()
+                    }
+                    StorageLegendRing(spec: spec, isLoading: isLoading, formatBytes: formatBytes,
+                                      hoveredItemID: $hoveredItemID, selectedItemID: $selectedItemID)
                 }
             }
-            .frame(height: 196)
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
