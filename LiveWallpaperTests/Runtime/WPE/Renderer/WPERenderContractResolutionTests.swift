@@ -6,6 +6,27 @@ import Testing
 
 @Suite("WPE render contract resolution")
 struct WPERenderContractResolutionTests {
+    @Test("RGBA cursor ripple buffers preserve all four force channels", arguments: ["effects/", "workshop/123/effects/"])
+    func cursorRippleForcesAreData(prefix: String) {
+        let apply = prepared("apply", shader: prefix + "cursorripple_apply_force",
+                             source: .fbo("simulation"), target: .fbo(name: "force"), blending: "normal")
+        let simulate = prepared("simulate", shader: prefix + "cursorripple_simulate_force",
+                                source: .fbo("force"), target: .fbo(name: "simulation"), blending: "normal")
+        let combine = prepared("combine", shader: prefix + "cursorripple_combine",
+                               source: .fbo("simulation"), target: .scene, blending: "normal")
+        let passes = graph([apply, simulate, combine]).resolvingRenderContracts().layers[0].passes
+        for pass in passes {
+            #expect(pass.renderContract.inputs[0]?.semantics == .data(.flow))
+            #expect(!pass.renderContract.shaderAlpha.unpremultipliedInputSlots.contains(0))
+        }
+        for pass in passes.prefix(2) {
+            #expect(pass.renderContract.stored == .data(.flow))
+            #expect(!pass.renderContract.shaderAlpha.premultipliedOutput)
+        }
+        #expect(passes[2].renderContract.shaderAlpha.premultipliedOutput)
+        #expect(passes[2].renderContract.stored == .opaqueColor)
+    }
+
     @Test("Texture roles come from active, uncommented shader source", arguments: [false, true])
     func normalRoleFollowsActiveSource(active: Bool) {
         let program = custom("""

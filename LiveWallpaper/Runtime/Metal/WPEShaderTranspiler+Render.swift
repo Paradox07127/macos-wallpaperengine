@@ -87,6 +87,7 @@ extension WPEShaderTranspiler {
         out.append("inline float clamp(int value, float lower, int upper) { return metal::clamp(float(value), lower, float(upper)); }")
         out.append("inline float clamp(float value, int lower, int upper) { return metal::clamp(value, float(lower), float(upper)); }")
         out.append(Self.glslMathPrelude)
+        out.append(Self.glslAnglePrelude(authoredHelpers: warningCleanHelpers))
         if matrixInverseRequired || maskComments(helpers + mainBody).contains("wpe_glsl_inverse") {
             out.append(Self.glslMatrixInversePrelude)
         }

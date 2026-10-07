@@ -1476,8 +1476,11 @@ public enum WPEMdlParser {
             )
         }
 
+        // UV is emitted whenever either texcoord flag is set: a UV2-only mesh (e.g. the
+        // channel-map companion mesh in MDLV0021 multi-mesh puppets, flags 0x800021) still
+        // stores texcoords in front of texcoord2.
         let uv: SIMD2<Float>
-        if meshFlags & WPEMdlMeshFlags.uv != 0 {
+        if meshFlags & (WPEMdlMeshFlags.uv | WPEMdlMeshFlags.uv2) != 0 {
             uv = SIMD2<Float>(try reader.readFloat(), try reader.readFloat())
         } else {
             uv = SIMD2<Float>(0, 0)
@@ -1517,7 +1520,7 @@ public enum WPEMdlParser {
         if meshFlags & WPEMdlMeshFlags.skinBlendWeights != 0 {
             stride += 4 * MemoryLayout<Float>.size
         }
-        if meshFlags & WPEMdlMeshFlags.uv != 0 {
+        if meshFlags & (WPEMdlMeshFlags.uv | WPEMdlMeshFlags.uv2) != 0 {
             stride += 2 * MemoryLayout<Float>.size
         }
         if meshFlags & WPEMdlMeshFlags.uv2 != 0 {

@@ -183,6 +183,19 @@ struct WPERenderPipelineBuilder: Sendable {
         if (layer.imagePath as NSString).pathExtension.lowercased() == "mdl" {
             return model
         }
+        // Channel overlays need their own UVs and blend weights. The image compositor draws
+        // every mesh with the base texture, so keep the flat image until these are supported.
+        for materialPath in Set(model.meshes.map(\.materialPath)) {
+            guard let data = try? resolver.data(relativePath: materialPath),
+                  let material = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let passes = material["passes"] as? [[String: Any]] else { continue }
+            if passes.contains(where: {
+                guard let shader = $0["shader"] as? String else { return false }
+                return WPEBuiltinShaderName.normalized(shader) == "puppettexturechannels"
+            }) {
+                return nil
+            }
+        }
         // Assembly is chosen from the data (frame-0 against the MDLS raw bind), not the generation
         // number, so no generation is refused here. A version gate here would reject a puppet the
         // downstream classifier handles correctly — MDLV0013 is pre-assembled like MDLV0021/0023.

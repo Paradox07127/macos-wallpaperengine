@@ -2367,6 +2367,22 @@ struct WPERenderPipelineBuilderTests {
         #expect(effect.fragmentSource.contains("#define MASK 1"))
     }
 
+    @Test("Unsupported puppet channel overlays retain the flat image", arguments: ["genericimage3", "puppettexturechannels"])
+    func puppetChannelOverlayFallsBack(shader: String) throws {
+        let fixture = try makeFixture(dataFiles: [
+            "models/layer_puppet.mdl": makeSingleTrianglePuppetMDL(),
+            "materials/layer.json": Data("{\"passes\":[{\"shader\":\"\(shader)\"}]}".utf8),
+        ])
+        defer { fixture.cleanup() }
+
+        let graph = WPERenderGraph(layers: [puppetLayer()])
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let layer = try #require(pipeline.layers.first)
+        #expect((layer.puppetModel == nil) == (shader == "puppettexturechannels"))
+        #expect(layer.passes.count == graph.layers[0].passes.count)
+        #expect(layer.passes.first?.pass.source == .image("materials/layer.png"))
+    }
+
     @Test("Loads puppet model from render graph layer path")
     func loadsPuppetModelFromRenderGraphLayerPath() throws {
         let fixture = try makeFixture(dataFiles: [

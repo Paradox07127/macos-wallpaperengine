@@ -574,6 +574,34 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    @Test("GLSL radians/degrees builtins emit compilable MSL")
+    func translatesRadiansAndDegrees() throws {
+        let source = """
+        // stage: fragment
+        #version 410 core
+        uniform sampler2D g_Texture0;
+        uniform float u_hueShift;
+        in vec4 v_TexCoord;
+        vec3 rotateHue(vec3 color) {
+            const vec3 k = vec3(0.57735);
+            const float cosAngle = cos(radians(u_hueShift));
+            return color * cosAngle + cross(k, color) * sin(radians(u_hueShift)) + k * dot(k, color) * (1.0 - cosAngle);
+        }
+        void main() {
+            vec4 color = texture(g_Texture0, v_TexCoord.xy + vec2(radians(90.0), degrees(0.5)));
+            gl_FragColor = vec4(rotateHue(color.rgb), color.a);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "workshop/2795521260/effects/color_grading",
+            preprocessedSource: source
+        )
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
     @Test("The vertex-only inverse effect projection reaches the fragment layout; other vertex matrices do not")
     func vertexOnlyInverseEffectProjectionIsInjectedIntoFragment() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

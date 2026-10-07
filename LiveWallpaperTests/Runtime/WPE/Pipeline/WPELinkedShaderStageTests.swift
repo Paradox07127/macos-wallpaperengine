@@ -570,6 +570,155 @@ struct WPELinkedShaderStageTests {
         }
     }
 
+    @Test func fragmentReadsVertexOutputItNeverDeclared() throws {
+        // foliagesway's fragment reads v_Bounds but only the vertex stage
+        // declares it; WPE links vertex outputs into the fragment implicitly.
+        let vertex = """
+        attribute vec3 a_Position;
+        attribute vec2 a_TexCoord;
+        varying vec2 v_UV;
+        varying vec2 v_Bounds;
+        varying vec2 v_Unread;
+        void main() {
+            gl_Position = vec4(a_Position, 1.0);
+            v_UV = a_TexCoord;
+            v_Bounds = a_TexCoord * 0.25 + 0.375;
+            v_Unread = vec2(0.0);
+        }
+        """
+        let fragment = """
+        varying vec2 v_UV;
+        void main() { gl_FragColor = vec4(v_UV, v_Bounds.x, v_Bounds.y); }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        for y in 0 ..< 4 {
+            for x in 0 ..< 4 {
+                let uv = SIMD2<Float>((Float(x) + 0.5) / 4, (Float(y) + 0.5) / 4)
+                let pixel = pixels[y * 4 + x]
+                #expect(abs(pixel.x - uv.x) < 0.00001 && abs(pixel.y - uv.y) < 0.00001)
+                #expect(abs(pixel.z - (0.375 + uv.x * 0.25)) < 0.00001)
+                #expect(abs(pixel.w - (0.375 + uv.y * 0.25)) < 0.00001)
+            }
+        }
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.fragmentDeclarations.contains { $0.contains("float2 v_Bounds = in.wpe_v1_0;") })
+        // Unreferenced outputs stay unbound; a same-named fragment uniform keeps its own meaning.
+        #expect(!link.fragmentDeclarations.contains { $0.contains("v_Unread") })
+        let shadowed = try WPEShaderStageLink(vertex: vertex, fragment: fragment.replacingOccurrences(
+            of: "varying vec2 v_UV;", with: "varying vec2 v_UV;\nuniform vec2 v_Bounds;"
+        ))
+        #expect(!shadowed.fragmentDeclarations.contains { $0.contains("v_Bounds = in.") })
+    }
+
+    @Test func authoredFragmentNamesDoNotBecomeImplicitInputs() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        varying vec2 v_Bounds;
+        void main() { gl_Position = vec4(a_Position, 1.0); v_Bounds = vec2(0.9); }
+        """
+        let fragments = [
+            "void main() { vec2 v_Bounds = vec2(0.25, 0.75); gl_FragColor = vec4(v_Bounds, 0.0, 1.0); }",
+            "void main() { vec2 scratch, v_Bounds; v_Bounds = vec2(0.25, 0.75); gl_FragColor = vec4(v_Bounds, 0.0, 1.0); }",
+            "void main() { vec2 scratch = vec2(0.0, 1.0), v_Bounds = vec2(0.25, 0.75); gl_FragColor = vec4(v_Bounds, 0.0, 1.0); }",
+            """
+            vec2 v_Bounds = vec2(0.25, 0.75);
+            void main() { gl_FragColor = vec4(v_Bounds, 0.0, 1.0); }
+            """,
+            """
+            vec2 readBounds(vec2 v_Bounds) { return v_Bounds; }
+            void main() { gl_FragColor = vec4(readBounds(vec2(0.25, 0.75)), 0.0, 1.0); }
+            """,
+        ]
+        for fragment in fragments {
+            let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+            #expect(!link.fragmentDeclarations.contains { $0.contains("v_Bounds = in.") })
+            let pixels = try replay(vertex: vertex, fragment: fragment)
+            #expect(pixels.allSatisfy { abs($0.x - 0.25) < 0.00001 && abs($0.y - 0.75) < 0.00001 })
+        }
+    }
+
+    @Test func helperParameterOwnershipDoesNotHideUnboundMainRead() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        varying vec2 v_Bounds;
+        void main() { gl_Position = vec4(a_Position, 1.0); v_Bounds = vec2(0.25, 0.75); }
+        """
+        let fragment = """
+        vec2 readBounds(vec2 v_Bounds) { return v_Bounds; }
+        void main() {
+            vec2 scratch = vec2(v_Bounds.x, v_Bounds.y), offset = readBounds(vec2(0.0));
+            gl_FragColor = vec4(scratch + offset, 0.0, 1.0);
+        }
+        """
+        let link = try WPEShaderStageLink(vertex: vertex, fragment: fragment)
+        #expect(link.fragmentDeclarations.contains { $0.contains("v_Bounds = in.") })
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        #expect(pixels.allSatisfy { abs($0.x - 0.25) < 0.00001 && abs($0.y - 0.75) < 0.00001 })
+    }
+
+    @Test func implicitPositionReadRemainsRequiredForFullscreenAdmission() {
+        let vertex = """
+        attribute vec3 a_Position;
+        uniform mat4 g_ModelViewProjectionMatrix;
+        varying vec2 v_Position;
+        void main() {
+            gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1.0);
+            v_Position = a_Position.xy;
+        }
+        """
+        #expect(!WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(
+            vertex, fragment: "void main() { gl_FragColor = vec4(v_Position, 0.0, 1.0); }"
+        ))
+        #expect(WPEShaderStageLink.usesMVPOnlyForFullscreenPosition(
+            vertex, fragment: "void main() { vec2 v_Position = vec2(0.5); gl_FragColor = vec4(v_Position, 0.0, 1.0); }"
+        ))
+    }
+
+    @Test func singleAuthoredAngleSignaturesPreserveBuiltinOtherWidths() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        void main() { gl_Position = vec4(a_Position, 1.0); }
+        """
+        let fragment = """
+        float radians(float value) { return value + 0.25; }
+        vec2 degrees(vec2 value) { return value + vec2(0.5); }
+        void main() {
+            gl_FragColor = vec4(radians(0.0), degrees(vec2(0.0)), radians(vec3(180.0)).x / degrees(3.141592653589793));
+        }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        #expect(pixels.allSatisfy {
+            abs($0.x - 0.25) < 0.00001 && abs($0.y - 0.5) < 0.00001
+                && abs($0.z - 0.5) < 0.00001 && abs($0.w - .pi / 180) < 0.00001
+        })
+    }
+
+    @Test func authoredAngleOverloadsPreserveBuiltinOtherWidths() throws {
+        let vertex = """
+        attribute vec3 a_Position;
+        void main() { gl_Position = vec4(a_Position, 1.0); }
+        """
+        let fragment = """
+        float radians(float value) { return value + 0.25; }
+        vec2 radians(vec2 value) { return value + vec2(0.5); }
+        float degrees(float value) { return value + 1.0; }
+        vec2 degrees(vec2 value) { return value + vec2(0.75); }
+        void main() {
+            vec2 authoredRadians = radians(vec2(0.0));
+            vec2 authoredDegrees = degrees(vec2(0.0));
+            vec3 builtinRadians = radians(vec3(180.0));
+            vec4 builtinDegrees = degrees(vec4(3.141592653589793));
+            gl_FragColor = vec4(radians(0.0) + authoredRadians.x, degrees(0.0) + authoredDegrees.x,
+                                authoredDegrees.y, builtinRadians.x / builtinDegrees.x);
+        }
+        """
+        let pixels = try replay(vertex: vertex, fragment: fragment)
+        #expect(pixels.allSatisfy {
+            abs($0.x - 0.75) < 0.00001 && abs($0.y - 1.75) < 0.00001
+                && abs($0.z - 0.75) < 0.00001 && abs($0.w - .pi / 180) < 0.00001
+        })
+    }
+
     private func replay(vertex: String, fragment: String,
                         vertexValues: [String: WPESceneShaderConstantValue] = [:],
                         fragmentValues: [String: WPESceneShaderConstantValue] = [:],

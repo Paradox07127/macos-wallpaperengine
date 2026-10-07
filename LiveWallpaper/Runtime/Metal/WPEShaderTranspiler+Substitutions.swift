@@ -385,21 +385,26 @@ extension WPEShaderTranspiler {
         var result = source
         for name in vector2Names {
             let escapedName = NSRegularExpression.escapedPattern(for: name)
-            let pattern = #"(\b"# + escapedName + #"\s*[+\-*/]?=\s*[^;\n]*?)\b(g_Texture[0-9]+Resolution)\b(?!\s*\.)"#
+            // Every bare resolution operand in the statement needs `.xy`, not
+            // just the first: fxc truncates the whole vec4 expression to the
+            // declared vec2 and component-wise ops commute with truncation.
+            let pattern = #"(\b"# + escapedName + #"\s*[+\-*/]?=)(?![=])([^;\n]*);"#
             guard let regex = try? NSRegularExpression(pattern: pattern) else {
                 continue
             }
             let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
             for match in matches.reversed() {
-                guard let fullRange = Range(match.range(at: 0), in: result),
-                      let prefixRange = Range(match.range(at: 1), in: result),
-                      let resolutionRange = Range(match.range(at: 2), in: result) else {
+                guard let rhsRange = Range(match.range(at: 2), in: result) else {
                     continue
                 }
-                result.replaceSubrange(
-                    fullRange,
-                    with: "\(result[prefixRange])\(result[resolutionRange]).xy"
+                let rhs = String(result[rhsRange])
+                let narrowed = rhs.replacingOccurrences(
+                    of: #"\b(g_Texture[0-9]+Resolution)\b(?!\s*\.)"#,
+                    with: "$1.xy",
+                    options: .regularExpression
                 )
+                guard narrowed != rhs else { continue }
+                result.replaceSubrange(rhsRange, with: narrowed)
             }
         }
         return result
@@ -864,6 +869,8 @@ extension WPEShaderTranspiler {
         guard !parameters.isEmpty else { return source }
         var result = source
         for (name, parameterWidths) in parameters {
+            // The angle prelude supplies other widths even when only one overload is authored.
+            guard name != "radians", name != "degrees" else { continue }
             var cursor = result.startIndex
             while let hit = result.range(of: name, range: cursor..<result.endIndex) {
                 cursor = hit.upperBound

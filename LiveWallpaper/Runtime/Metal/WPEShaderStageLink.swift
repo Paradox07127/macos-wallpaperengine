@@ -65,9 +65,10 @@ struct WPEShaderStageLink {
         let interface = WPEShaderInterfaceParser.parse(vertex: source, fragment: fragment)
         let outputs = interface.variables(stage: .vertex, kind: .varyingOutput)
         let unused = Set(interface.unreferencedFragmentInputs ?? [])
-        let consumed = Set(interface.variables(stage: .fragment, kind: .varyingInput).filter {
+        var consumed = Set(interface.variables(stage: .fragment, kind: .varyingInput).filter {
             !unused.contains($0.key.name)
         }.compactMap { matchingOutput(for: $0, in: outputs)?.key.name })
+        consumed.formUnion(implicitFragmentInputNames(outputs: outputs, interface: interface, fragment: fragment))
         var result = source
         for output in outputs where output.arrayDimensions.isEmpty && !consumed.contains(output.key.name) {
             let name = NSRegularExpression.escapedPattern(for: output.key.name)
@@ -86,6 +87,87 @@ struct WPEShaderStageLink {
             // shadowed local retains the original source, including inverse use.
             guard candidate.range(of: "\\b" + name + "\\b", options: .regularExpression) == nil else { continue }
             result = candidate
+        }
+        return result
+    }
+
+    /// Bind undeclared reads, preserving the lexical ownership of authored
+    /// globals, locals and helper parameters with the same name as a VS output.
+    private static func implicitFragmentInputNames(
+        outputs: [WPEShaderInterfaceVariable], interface: WPEShaderInterface, fragment: String
+    ) -> Set<String> {
+        let source = WPEShaderTranspiler.maskComments(WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragment))
+        let declared = Set(interface.variables.filter { $0.key.stage == .fragment }.map(\.key.name))
+        let helpers = WPEShaderTranspiler.parseHelperFunctions(in: source)
+        guard let declarations = try? NSRegularExpression(
+            pattern: #"\b(?:float|int|uint|bool|[biu]?vec[234]|mat[234](?:x[234])?)\s+([A-Za-z_]\w*)"#
+        )
+        else { return [] }
+        let wholeSource = NSRange(source.startIndex..., in: source)
+        let declarationNames = declarations.matches(in: source, range: wholeSource).flatMap { declaration -> [Range<String.Index>] in
+            guard let first = Range(declaration.range(at: 1), in: source) else { return [] }
+            var names = [first]
+            // Reuse the argument splitter so commas inside constructor/call initializers
+            // cannot turn reads into declarations. Parameters keep their typed match above.
+            if let end = source[first.upperBound...].firstIndex(where: { ";{}".contains($0) }), source[end] == ";" {
+                for declarator in WPEShaderTranspiler.topLevelArgumentRanges(
+                    in: source, open: source.index(before: first.lowerBound), close: end
+                ).dropFirst() {
+                    if let name = source.range(of: #"[A-Za-z_]\w*"#, options: .regularExpression, range: declarator) {
+                        names.append(name)
+                    }
+                }
+            }
+            return names
+        }
+        var result = Set<String>()
+        for output in outputs where !declared.contains(output.key.name) {
+            let name = NSRegularExpression.escapedPattern(for: output.key.name)
+            guard let identifiers = try? NSRegularExpression(pattern: "\\b" + name + "\\b") else { continue }
+            var ownership: [Range<String.Index>] = []
+            var hasGlobal = false
+            for range in declarationNames where source[range] == output.key.name {
+                ownership.append(range)
+                if let helper = helpers.first(where: { $0.parameterRange.contains(range.lowerBound) }) {
+                    ownership.append(helper.bodyRange)
+                    continue
+                }
+                var braces: [String.Index] = []
+                var parentheses: [String.Index] = []
+                for index in source.indices where index < range.lowerBound {
+                    if source[index] == "{" {
+                        braces.append(index)
+                    }
+                    if source[index] == "}" {
+                        _ = braces.popLast()
+                    }
+                    if source[index] == "(" {
+                        parentheses.append(index)
+                    }
+                    if source[index] == ")" {
+                        _ = parentheses.popLast()
+                    }
+                }
+                // Unresolved parameter/for scopes retain the input conservatively;
+                // they must not hide a read after the loop or in another helper.
+                if let parenthesis = parentheses.last, braces.last.map({ parenthesis > $0 }) ?? true {
+                    continue
+                }
+                guard let open = braces.last else { hasGlobal = true; break }
+                if let close = WPEShaderTranspiler.matchingDelimiter(in: source, open: open, openChar: "{", closeChar: "}") {
+                    ownership.append(range.lowerBound ..< close)
+                }
+            }
+            guard !hasGlobal else { continue }
+            let hasUnboundRead = identifiers.matches(in: source, range: wholeSource).contains { match in
+                guard let range = Range(match.range, in: source),
+                      !ownership.contains(where: { $0.contains(range.lowerBound) }) else { return false }
+                // A member selector does not refer to a stage input.
+                return source[..<range.lowerBound].last(where: { !$0.isWhitespace }) != "."
+            }
+            if hasUnboundRead {
+                result.insert(output.key.name)
+            }
         }
         return result
     }
@@ -159,6 +241,11 @@ struct WPEShaderStageLink {
     let interface: WPEShaderInterface
     let varyings: [Varying]
     private let promotedFragmentInputs: Set<String>
+    /// Vertex outputs the fragment references without declaring. WPE links the
+    /// vertex output list into the fragment interface implicitly (e.g.
+    /// foliagesway reads `v_Bounds` in the fragment but only declares it in the
+    /// vertex stage), so these bind by name at the output's own type.
+    private let implicitFragmentBindings: [FragmentBinding]
 
     init(vertex: String, fragment: String) throws {
         let inventory = WPEShaderInterfaceParser.parse(vertex: vertex, fragment: fragment)
@@ -226,6 +313,24 @@ struct WPEShaderStageLink {
             return Varying(variable: v, metalType: type.metalType, elementCount: count,
                            isArray: !v.arrayDimensions.isEmpty, fieldIndex: index)
         }
+        let implicitNames = Self.implicitFragmentInputNames(
+            outputs: varyings.map(\.variable), interface: inventory, fragment: activeFragment
+        )
+        implicitFragmentBindings = varyings.compactMap { output in
+            let name = output.variable.key.name
+            guard implicitNames.contains(name) else { return nil }
+            let input = WPEShaderInterfaceVariable(
+                key: WPEShaderBindingKey(stage: .fragment, name: name),
+                kind: .varyingInput,
+                glslType: output.variable.glslType,
+                arrayDimensions: output.variable.arrayDimensions,
+                interpolation: output.variable.interpolation,
+                centroid: output.variable.centroid,
+                sample: output.variable.sample,
+                location: output.variable.location
+            )
+            return FragmentBinding(input: input, output: output, usesProducedWidth: true)
+        }
     }
 
     var stageInDeclaration: String {
@@ -284,7 +389,7 @@ struct WPEShaderStageLink {
                 }
                 return output.variable.location == nil && output.name == input.key.name
             }.map { FragmentBinding(input: input, output: $0, usesProducedWidth: promotedFragmentInputs.contains(input.key.name)) }
-        }
+        } + implicitFragmentBindings
     }
 
     var fragmentDeclarations: [String] {
