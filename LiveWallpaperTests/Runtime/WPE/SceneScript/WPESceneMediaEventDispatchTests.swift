@@ -50,7 +50,7 @@ struct WPESceneMediaEventDispatchTests {
         let instance = try textInstance(script: """
         var title = "stale title";
         export function update() { return title; }
-        export function mediaPropertiesChanged(event) { title = event.title; }
+        export function mediaPropertiesChanged(event) { title = event.title == null ? "" : event.title; }
         """)
         let empty = MonitorNowPlayingState(phase: .noPlayer, title: "")
         let state = MonitorNowPlayingState(phase: .playing, title: "Oracle title", duration: 120,
@@ -63,7 +63,8 @@ struct WPESceneMediaEventDispatchTests {
             dispatcher.start()
             #expect(source.replayCount == 1)
             let events = dispatcher.mailbox.drain()
-            #expect(events.contains(.propertiesChanged(.init(title: input.title))))
+            let properties: WPESceneMediaProperties? = input.phase == .noPlayer ? nil : .init(title: input.title)
+            #expect(events.contains(.propertiesChanged(properties)))
             for event in events {
                 instance.dispatchMediaEvent(event)
             }
@@ -314,7 +315,7 @@ struct WPESceneMediaEventDispatchTests {
         #expect(gate.events(for: paused) == [.playbackChanged(.paused)])
 
         var nextTrack = paused
-        nextTrack.properties.title = "Sober"
+        nextTrack.properties?.title = "Sober"
         #expect(
             gate.events(for: nextTrack)
                 == [.propertiesChanged(nextTrack.properties)]

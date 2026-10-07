@@ -131,7 +131,8 @@ struct WPESceneMediaTimeline: Sendable, Equatable {
 
 enum WPESceneMediaEvent: Sendable, Equatable {
     case playbackChanged(WPESceneMediaPlaybackState)
-    case propertiesChanged(WPESceneMediaProperties)
+    /// nil = no player; the payload carries no fields, so a script keeps its own track name.
+    case propertiesChanged(WPESceneMediaProperties?)
     case thumbnailChanged(WPESceneMediaThumbnail)
     case timelineChanged(WPESceneMediaTimeline)
 
@@ -183,7 +184,7 @@ struct WPESceneMediaHandlerSet: Sendable, Equatable {
 
 struct WPESceneMediaSnapshot: Sendable, Equatable {
     var state: WPESceneMediaPlaybackState
-    var properties: WPESceneMediaProperties
+    var properties: WPESceneMediaProperties?
     var thumbnail: WPESceneMediaThumbnail
     var timeline: WPESceneMediaTimeline?
     /// Distinguishes "the source has not reported yet" from a real stop, which
@@ -192,7 +193,7 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
 
     init(
         state: WPESceneMediaPlaybackState,
-        properties: WPESceneMediaProperties,
+        properties: WPESceneMediaProperties?,
         thumbnail: WPESceneMediaThumbnail = .absent,
         timeline: WPESceneMediaTimeline? = nil,
         isAwaitingFirstEvent: Bool = false
@@ -216,7 +217,7 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
         case .noPlayer, .awaitingFirstEvent: self.state = .stopped
         }
         self.isAwaitingFirstEvent = state.phase == .awaitingFirstEvent
-        self.properties = WPESceneMediaProperties(
+        properties = self.state == .stopped ? nil : WPESceneMediaProperties(
             title: state.title,
             artist: state.artist ?? "",
             albumTitle: state.album ?? ""
@@ -246,7 +247,9 @@ func wpeMediaEventObject(_ event: WPESceneMediaEvent, in context: JSContext) -> 
     case let .timelineChanged(timeline):
         object.setObject(timeline.position, forKeyedSubscript: "position" as NSString)
         object.setObject(timeline.duration, forKeyedSubscript: "duration" as NSString)
-    case let .propertiesChanged(properties):
+    case .propertiesChanged(nil):
+        break
+    case let .propertiesChanged(properties?):
         object.setObject(properties.title, forKeyedSubscript: "title" as NSString)
         object.setObject(properties.artist, forKeyedSubscript: "artist" as NSString)
         object.setObject(properties.subTitle, forKeyedSubscript: "subTitle" as NSString)
