@@ -1141,8 +1141,36 @@ final class SteamCMDDoctorService {
                 bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
             ))
         case .unrecognized:
-            return .failed(reason: redacted(result.diagnosticTail))
+            return .failed(reason: Self.unrecognizedDownloadReason(result, redactedTail: redacted(result.diagnosticTail)))
         }
+    }
+
+    nonisolated static func unrecognizedDownloadReason(_ result: SteamWorkshopDownloadResult, redactedTail: String) -> String {
+        let summary: String? = switch (result.failureDetail, result.terminationSignal, result.exitCode) {
+        case (.leftInPrivateProfile, _, _):
+            String(
+                localized: "SteamCMD saved the item to its private profile instead of your Steam library.", bundle: .appLanguage,
+                comment: "Workshop download failure: SteamCMD ignored the requested install folder. Followed by SteamCMD's raw output."
+            )
+        case (.invalidCommittedItem, _, _):
+            String(
+                localized: "SteamCMD reported the download as complete, but the downloaded project or its content is invalid.", bundle: .appLanguage,
+                comment: "Workshop download failure: SteamCMD claimed success but the item on disk is missing or unreadable. Followed by SteamCMD's raw output."
+            )
+        case let (nil, signal?, _):
+            String(
+                localized: "SteamCMD was terminated by signal \(Int(signal)).", bundle: .appLanguage,
+                comment: "Workshop download failure: SteamCMD crashed. Placeholder is the POSIX signal number. Followed by SteamCMD's raw output."
+            )
+        case let (nil, nil, status?) where status != 0:
+            String(
+                localized: "SteamCMD exited with status \(Int(status)).", bundle: .appLanguage,
+                comment: "Workshop download failure: SteamCMD quit with a non-zero exit code. Placeholder is the exit code. Followed by SteamCMD's raw output."
+            )
+        default:
+            nil
+        }
+        return [summary, redactedTail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     /// `result.itemPath` is a claim from the connector's JSON, not an authorization; revalidate among the library's own items before the importer sees a URL.

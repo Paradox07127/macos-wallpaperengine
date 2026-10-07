@@ -62353,6 +62353,41 @@
         }
       }
     },
+    "SteamCMD exited with status %lld." : {
+      "comment" : "Workshop download failure: SteamCMD quit with a non-zero exit code. Placeholder is the exit code. Followed by SteamCMD's raw output.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD exited with status %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD terminó con el estado %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD はステータス %lld で終了しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 以状态码 %lld 退出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 以狀態碼 %lld 結束。"
+          }
+        }
+      }
+    },
     "SteamCMD failed the launch sanity check. If macOS blocked it, clear the quarantine attribute." : {
       "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
       "localizations" : {
@@ -62796,6 +62831,76 @@
         }
       }
     },
+    "SteamCMD reported the download as complete, but the downloaded project or its content is invalid." : {
+      "comment" : "Workshop download failure: SteamCMD claimed success but the item on disk is missing or unreadable. Followed by SteamCMD's raw output.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD reported the download as complete, but the downloaded project or its content is invalid."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD informó de que la descarga se completó, pero el proyecto descargado o su contenido no es válido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD はダウンロードの完了を報告しましたが、ダウンロードしたプロジェクトまたはその内容が無効です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 报告下载已完成，但下载的项目或其内容无效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 回報下載已完成，但下載的項目或其內容無效。"
+          }
+        }
+      }
+    },
+    "SteamCMD saved the item to its private profile instead of your Steam library." : {
+      "comment" : "Workshop download failure: SteamCMD ignored the requested install folder. Followed by SteamCMD's raw output.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD saved the item to its private profile instead of your Steam library."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD guardó el elemento en su perfil privado en lugar de en tu biblioteca de Steam."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD はアイテムを Steam ライブラリではなく、自身のプライベートプロファイルに保存しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 将该项目保存到了其私有配置目录，而不是你的 Steam 库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 將該項目儲存到其私人設定目錄，而非你的 Steam 收藏庫。"
+          }
+        }
+      }
+    },
     "SteamCMD signature is missing or could not be verified." : {
       "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
       "localizations" : {
@@ -62967,6 +63072,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 已安裝。"
+          }
+        }
+      }
+    },
+    "SteamCMD was terminated by signal %lld." : {
+      "comment" : "Workshop download failure: SteamCMD crashed. Placeholder is the POSIX signal number. Followed by SteamCMD's raw output.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD was terminated by signal %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD fue terminado por la señal %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD はシグナル %lld によって終了しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 被信号 %lld 终止。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 被訊號 %lld 終止。"
           }
         }
       }
