@@ -120,7 +120,8 @@ struct WorkshopDownloadPresentation: Equatable {
         bytesPerSecond: Double?,
         isInstalled: Bool,
         reportsSave: Bool,
-        blocker: String?
+        blocker: String?,
+        transferState: WorkshopDownloadCoordinator.TransferState? = nil
     ) -> WorkshopDownloadPresentation {
         var presentation = WorkshopDownloadPresentation()
         // A settled ticket is the outcome of record while nothing of the item is in flight. It stays
@@ -166,8 +167,8 @@ struct WorkshopDownloadPresentation: Equatable {
         }
         switch phase {
         case .downloading:
-            presentation.progress = (fraction ?? byteFraction(downloaded: downloadedBytes, total: totalBytes))
-                .map { .fraction($0) } ?? .indeterminate
+            let effectiveFraction = fraction ?? byteFraction(downloaded: downloadedBytes, total: totalBytes)
+            presentation.progress = effectiveFraction.map { .fraction($0) } ?? .indeterminate
             presentation.status = ticketState == .waiting
                 ? String(
                     localized: "Will apply to \(screenName) when done", bundle: .appLanguage,
@@ -178,8 +179,15 @@ struct WorkshopDownloadPresentation: Equatable {
                     comment: "Workshop download in progress."
                 )
             presentation.detail = detailText(
-                downloaded: downloadedBytes, total: totalBytes, bytesPerSecond: bytesPerSecond, fraction: fraction
+                downloaded: downloadedBytes, total: totalBytes, bytesPerSecond: bytesPerSecond, fraction: effectiveFraction
             )
+            if transferState == .waiting {
+                presentation.status = String(localized: "Waiting for Steam…", bundle: .appLanguage)
+            } else if transferState == .restarting {
+                presentation.status = String(localized: "Restarting SteamCMD…", bundle: .appLanguage)
+            } else if transferState == .stalled {
+                presentation.status = String(localized: "Waiting for download progress…", bundle: .appLanguage)
+            }
         case .importing:
             presentation.progress = .indeterminate
             presentation.status = String(
@@ -226,6 +234,10 @@ struct WorkshopDownloadRateMeter {
         let delta = Int64(clamping: downloadedBytes) - Int64(clamping: previousBytes)
         if let rate = WorkshopDownloadPresentation.rate(bytes: delta, elapsed: now.timeIntervalSince(previousAt)) {
             bytesPerSecond = rate
+            sampledBytes = downloadedBytes
+            sampledAt = now
+        } else if delta == 0, now.timeIntervalSince(previousAt) >= 5 {
+            bytesPerSecond = nil
             sampledBytes = downloadedBytes
             sampledAt = now
         } else if delta < 0 {

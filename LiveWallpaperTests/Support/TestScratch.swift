@@ -16,13 +16,25 @@ enum TestScratch {
         case defaultsSuiteUnavailable(String)
     }
 
-    /// Call from a `defer` right after the last manager built on `directory` exists. Pass *every*
+    /// Await after the test body. Pass *every*
     /// manager built on `directory`, read-only ones included: `init` alone queues writes.
     static func discard(_ directory: URL, flushing managers: SettingsManager...) async {
         for manager in managers {
             await manager.flushPendingWrites()
         }
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Async cleanup finishes before the test returns, including after an early return or throw.
+    @MainActor
+    static func withCleanup(_ cleanup: () async -> Void, operation: () async throws -> Void) async rethrows {
+        do {
+            try await operation()
+        } catch {
+            await cleanup()
+            throw error
+        }
+        await cleanup()
     }
 
     struct DefaultsSuite {

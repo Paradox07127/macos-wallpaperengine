@@ -159,7 +159,8 @@ struct EditDeskAccessibilityTests {
         #expect(glyph.lowerBound < labelled.lowerBound, "the glyph button would read as its symbol")
         #expect(ModalHeaderAction(kind: .openInSteam, perform: {}).title == String(localized: "Open in Steam", bundle: .appLanguage))
         let card = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
-        #expect(card.contains("accessibilityElement(children: .ignore)"), "the card's badges would each be read out")
+        #expect(card.contains("accessibilityElement(children: shouldBlur ? .ignore : .contain)"),
+                "visible thumbnails must expose Retry while mature cards remain one reveal control")
         #expect(card.contains("accessibilityLabel(Text(accessibilityLabelText))"))
         #expect(card.contains("stars"), "the card's label drops the rating")
     }

@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 @Suite("Workshop download queue", .serialized, .timeLimit(.minutes(1)))
@@ -62,6 +63,7 @@ struct WorkshopDownloadQueueTests {
 
         queue.remove(second)
         #expect(!queue.isQueued(second))
+        #expect(downloads.cancelledItems.contains(second))
         downloader.release(first)
 
         #expect(await waitUntil { queue.current == nil && queue.pending.isEmpty && downloads.phase(for: first) != .downloading })
@@ -93,6 +95,86 @@ struct WorkshopDownloadQueueTests {
         #expect(downloads.phase(for: first) == .idle)
         #expect(!downloads.isBusy(first))
         downloader.releaseAll()
+    }
+
+    @Test("A failed download retains its title and reason and retries through the queue")
+    func failedDownloadCanRetry() async {
+        let queue = makeQueue()
+        queue.enqueue([request(first)])
+        #expect(await waitUntil { downloader.requestedIDs == [first] })
+        downloader.release(first)
+        #expect(await waitUntil { queue.current == nil && downloads.phase(for: first) == .failed("released by test") })
+        #expect(downloads.titles[first] == String(first))
+        #expect(downloads.downloadOrder == [first])
+
+        downloads.forgetSettledPhase(first)
+        #expect(downloads.phase(for: first) == .failed("released by test"))
+        queue.retry(first, using: downloader)
+        #expect(await waitUntil { downloader.requestedIDs == [first, first] })
+        #expect(downloads.downloadOrder == [first])
+        downloader.releaseAll()
+        #expect(await waitUntil { queue.current == nil && queue.pending.isEmpty })
+    }
+
+    @Test("Dismissing history keeps the result and allows a future download to reappear")
+    func dismissingHistoryPreservesResult() async {
+        let queue = makeQueue()
+        queue.enqueue([request(first)])
+        #expect(await waitUntil { downloader.requestedIDs == [first] })
+        downloads.removeFromHistory(first)
+        #expect(downloads.downloadOrder == [first], "a running download must stay visible")
+
+        downloader.release(first)
+        #expect(await waitUntil { queue.current == nil && downloads.phase(for: first) == .failed("released by test") })
+        #expect(downloads.hasFailedDownloadsInHistory)
+        downloads.removeFromHistory(first)
+        #expect(downloads.downloadOrder.isEmpty)
+        #expect(!downloads.hasFailedDownloadsInHistory)
+        #expect(downloads.titles[first] == nil)
+        #expect(downloads.retryRequest(for: first) == nil)
+        #expect(downloads.phase(for: first) == .failed("released by test"))
+
+        queue.enqueue([request(first)])
+        #expect(await waitUntil { downloader.requestedIDs == [first, first] })
+        #expect(downloads.downloadOrder == [first])
+        #expect(downloads.titles[first] == String(first))
+        downloader.releaseAll()
+        #expect(await waitUntil { queue.current == nil && queue.pending.isEmpty })
+    }
+
+    @Test("Failures survive restart until dismissed or retried, and a failed retry persists again")
+    func failedHistorySurvivesRestart() async throws {
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.FailedDownloadHistory")
+        defer { suite.discard() }
+        func restoredDownloads() -> WorkshopDownloadCoordinator {
+            WorkshopDownloadCoordinator(
+                repositoryCoordinator: WorkshopRepositoryCoordinator(), toasts: WorkshopToastCenter(),
+                historyDefaults: suite.defaults
+            )
+        }
+        let original = restoredDownloads()
+        let originalQueue = WorkshopDownloadQueue(downloads: original)
+        originalQueue.enqueue([request(first)])
+        #expect(await waitUntil { downloader.requestedIDs == [first] })
+        downloader.release(first)
+        #expect(await waitUntil { originalQueue.current == nil })
+
+        let restored = restoredDownloads()
+        #expect(restored.downloadOrder == [first])
+        #expect(restored.titles[first] == String(first))
+        #expect(restored.phase(for: first) == .failed("released by test"))
+        let restoredQueue = WorkshopDownloadQueue(downloads: restored)
+        restoredQueue.retry(first, using: downloader)
+        #expect(await waitUntil { downloader.requestedIDs == [first, first] })
+        #expect(restoredDownloads().downloadOrder.isEmpty, "Retry must remove the saved failure")
+        downloader.release(first)
+        #expect(await waitUntil { restoredQueue.current == nil })
+
+        let failedAgain = restoredDownloads()
+        #expect(failedAgain.phase(for: first) == .failed("released by test"))
+        #expect(failedAgain.downloadOrder == [first])
+        failedAgain.removeFromHistory(first)
+        #expect(restoredDownloads().downloadOrder.isEmpty, "X must remove the saved failure")
     }
 
     @Test("Enqueueing the same item twice requests it once")
@@ -162,7 +244,74 @@ struct WorkshopDownloadQueueTests {
         #expect(downloader.requestedIDs == [first, second], "the queue downloaded an item that already finished")
         downloader.releaseAll()
         #expect(await waitUntil { queue.current == nil })
+        downloads.removeFromHistory(second)
+        #expect(!downloads.downloadOrder.contains(second))
+        #expect(downloads.phase(for: second) == .succeeded)
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("project.json").path))
         await TestScratch.discard(root, flushing: settings)
+    }
+
+    @Test("Queued replacement keeps the approved copy while it waits", arguments: [false, true])
+    func queuedReplacementKeepsApproval(copyChanges: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("QueuedApproval-\(UUID())", isDirectory: true)
+        let suite = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.QueuedApproval")
+        let settings = SettingsManager(directory: ConfigurationDirectory(root: root.appendingPathComponent("settings")), defaults: suite.defaults)
+        let downloads = WorkshopDownloadCoordinator(
+            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
+            repositoryCoordinator: WorkshopRepositoryCoordinator(), settings: settings,
+            toasts: WorkshopToastCenter(), cancelSteamCMD: { _ in }
+        )
+        let queue = WorkshopDownloadQueue(downloads: downloads)
+        try await TestScratch.withCleanup {
+            queue.cancel(first)
+            queue.cancel(second)
+            downloader.releaseAll()
+            _ = await waitUntil { queue.current == nil && queue.pending.isEmpty }
+            await TestScratch.discard(root, flushing: settings)
+            suite.discard()
+        } operation: {
+            @MainActor func recordLocalCopy(_ title: String) throws {
+                let folder = root.appendingPathComponent(title, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let origin = try WPEOrigin(
+                    workshopID: String(second), title: title, originalType: .video,
+                    sourceFolderBookmark: folder.bookmarkData(), cacheRelativePath: nil, previewFileName: nil
+                )
+                settings.recordWPEImport(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil))
+            }
+            try recordLocalCopy("Copy A")
+            let approved = try #require(downloads.localCopyToReplace(for: second))
+            let remote = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent(String(second), isDirectory: true)
+            try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
+            try Data(#"{"workshopid":"\#(second)","title":"Remote","type":"video","file":"video.mp4"}"#.utf8)
+                .write(to: remote.appendingPathComponent("project.json"))
+            try Data([0]).write(to: remote.appendingPathComponent("video.mp4"))
+            downloader.folders[second] = remote
+            queue.enqueue([
+                request(first),
+                .init(itemID: second, title: "Remote", replacesLocalCopy: true, doctor: downloader, approvedReplacement: approved),
+            ])
+            try #require(await waitUntil { downloader.requestedIDs == [first] })
+            if copyChanges {
+                try recordLocalCopy("Copy B")
+            }
+            downloader.release(first)
+            if copyChanges {
+                try #require(await waitUntil { queue.current == nil && queue.pending.isEmpty })
+                guard case let .failed(reason) = downloads.phase(for: second) else {
+                    Issue.record("The queued download approved the changed copy")
+                    return
+                }
+                #expect(reason.contains("Copy B"))
+                #expect(downloader.requestedIDs == [first])
+                #expect(settings.loadGlobalSettings().recentWPEImports.map(\.origin.title) == ["Copy B"])
+            } else {
+                try #require(await waitUntil { downloader.requestedIDs == [first, second] })
+                downloader.release(second)
+                try #require(await waitUntil { queue.current == nil && queue.pending.isEmpty })
+                #expect(downloads.phase(for: second) == .succeeded)
+            }
+        }
     }
 
     @Test("Removing a paste row or clearing the queue cancels its download, not only its waiting request")

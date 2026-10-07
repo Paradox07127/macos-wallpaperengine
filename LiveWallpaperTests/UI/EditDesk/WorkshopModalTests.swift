@@ -44,7 +44,10 @@ struct WorkshopModalTests {
         meter.record(attemptID: second, downloadedBytes: 1_500_000, at: start.addingTimeInterval(4))
         #expect(meter.bytesPerSecond == 1_000_000)
 
-        meter.record(attemptID: nil, downloadedBytes: nil, at: start.addingTimeInterval(5))
+        meter.record(attemptID: second, downloadedBytes: 1_500_000, at: start.addingTimeInterval(10))
+        #expect(meter.bytesPerSecond == nil, "an unchanged counter must expire its old speed")
+
+        meter.record(attemptID: nil, downloadedBytes: nil, at: start.addingTimeInterval(11))
         #expect(meter.bytesPerSecond == nil, "no attempt means no speed to show")
     }
 
