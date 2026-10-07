@@ -837,6 +837,9 @@ extension WPEMetalSceneRenderer {
         let width = Double(max(sceneSize.width, 1))
         let height = Double(max(sceneSize.height, 1))
         let minHalf = max(height, 1) * 0.02
+        // Must match the draw path's X/Y-angle fold, or tilted / ±π-flipped layers hit-test off their drawn quad.
+        let scaleX = geometry.scale.x * cos(geometry.angles.y)
+        let scaleY = geometry.scale.y * cos(geometry.angles.x)
         var center: SIMD2<Double>
         var half: SIMD2<Double>
         if let projection {
@@ -845,8 +848,8 @@ extension WPEMetalSceneRenderer {
                 height * 0.5 - projection.center.y
             )
             half = SIMD2<Double>(
-                Double(size.width) * abs(geometry.scale.x) * projection.depthScale * 0.5,
-                Double(size.height) * abs(geometry.scale.y) * projection.depthScale * 0.5
+                Double(size.width) * abs(scaleX) * projection.depthScale * 0.5,
+                Double(size.height) * abs(scaleY) * projection.depthScale * 0.5
             )
         } else {
             // Authored origins are Y-up (`origin.y - sceneHeight/2`, no negation); the pointer arrives Y-down (`pointerSample` returns `1 - y`). Comparing the two raw would invert every hover.
@@ -856,15 +859,15 @@ extension WPEMetalSceneRenderer {
             let zoom = camera.sceneMotion.zoom
             center = SIMD2<Double>(geometry.origin.x + Double(shift.x), height - geometry.origin.y - Double(shift.y))
             half = SIMD2<Double>(
-                Double(size.width) * abs(geometry.scale.x) * zoom * 0.5,
-                Double(size.height) * abs(geometry.scale.y) * zoom * 0.5
+                Double(size.width) * abs(scaleX) * zoom * 0.5,
+                Double(size.height) * abs(scaleY) * zoom * 0.5
             )
         }
         // Same shift the draw path applies; it is Y-up, so its Y flips into pointer space.
         let alignmentOffset = WPEMetalRenderExecutor.alignmentCenterOffset(
             alignment: geometry.alignment,
-            width: Float(half.x * 2) * (geometry.scale.x < 0 ? -1 : 1),
-            height: Float(half.y * 2) * (geometry.scale.y < 0 ? -1 : 1)
+            width: Float(half.x * 2) * (scaleX < 0 ? -1 : 1),
+            height: Float(half.y * 2) * (scaleY < 0 ? -1 : 1)
         )
         center.x += Double(alignmentOffset.x)
         center.y -= Double(alignmentOffset.y)
