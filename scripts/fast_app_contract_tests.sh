@@ -321,6 +321,7 @@ SERIAL_SUITES=(
   WPESceneScriptContainmentCharacterizationTests
   WPESceneScriptBatchCompletionTests
   WPESceneScriptRuntimeTests
+  WPESceneScriptCanvasVectorTests
   WPESceneScriptTransformGetterCopyTests
   WPESceneScriptInitializationOrderingTests
   WPESceneScriptLaneRunLoopTests

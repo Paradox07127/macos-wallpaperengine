@@ -138,11 +138,11 @@ protocol WPESceneScriptCanvasSizedEngine: WPESceneScriptEngineExecutionGuarding 
 
 extension WPESceneScriptCanvasSizedEngine {
     func installCanvasSize(in context: JSContext) {
+        // WPE types both as Vec2, so scripts call Vec2 methods on them; update(_:x:y:) keeps the instance.
         guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-              let canvas = JSValue(newObjectIn: context),
-              let screen = JSValue(newObjectIn: context) else { return }
-        update(canvas, x: canvasSize.x, y: canvasSize.y)
-        update(screen, x: screenSize.x, y: screenSize.y)
+              let vec2 = context.objectForKeyedSubscript("Vec2"),
+              let canvas = vec2.construct(withArguments: [canvasSize.x, canvasSize.y]),
+              let screen = vec2.construct(withArguments: [screenSize.x, screenSize.y]) else { return }
         engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
         engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
         screenResolution = screen
@@ -1299,13 +1299,12 @@ final class WPESceneScriptInstance {
         }
 
         private func installCanvasSize(in context: JSContext) {
-            guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject else { return }
-            if let canvasSize, let canvas = JSValue(newObjectIn: context) {
-                update(canvas, x: canvasSize.x, y: canvasSize.y)
+            guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
+                  let vec2 = context.objectForKeyedSubscript("Vec2") else { return }
+            if let canvasSize, let canvas = vec2.construct(withArguments: [canvasSize.x, canvasSize.y]) {
                 engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
             }
-            if let screenSize, let screen = JSValue(newObjectIn: context) {
-                update(screen, x: screenSize.x, y: screenSize.y)
+            if let screenSize, let screen = vec2.construct(withArguments: [screenSize.x, screenSize.y]) {
                 engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
                 screenResolution = screen
             }
@@ -3160,9 +3159,8 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
 
     private func installCanvasSize(in context: JSContext) {
         guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-              let size = JSValue(newObjectIn: context) else { return }
-        size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
-        size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
+              let size = context.objectForKeyedSubscript("Vec2")?.construct(withArguments: [canvasSize.x, canvasSize.y])
+        else { return }
         engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
         // Set both canvasSize and screenResolution, or the sandbox's hardcoded 1920x1080 screenResolution survives and contradicts canvasSize.
         engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
