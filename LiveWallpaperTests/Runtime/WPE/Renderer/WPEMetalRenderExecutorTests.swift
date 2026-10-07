@@ -1947,6 +1947,51 @@ struct WPEMetalRenderExecutorTests {
             geometry: geo(size: nil), sceneSize: scene) == .fullscreen)
     }
 
+    @Test("Scene-capture utility output geometry folds X/Y angles into the composelayer footprint")
+    func sceneCaptureUtilityOutputGeometryFoldsXYAngles() {
+        let scene = CGSize(width: 3840, height: 2160)
+        func geo(size: CGSize, scale: SIMD3<Double>, angles: SIMD3<Double>) -> WPERenderLayerGeometry {
+            WPERenderLayerGeometry(
+                origin: SIMD3<Double>(-772.6, 494.6, 0),
+                scale: scale,
+                angles: angles,
+                alignment: .center,
+                size: size,
+                alpha: 1,
+                color: SIMD3<Double>(1, 1, 1),
+                brightness: 1
+            )
+        }
+        typealias Models = WPEMetalSceneCaptureUtilityModels
+        let path = "models/util/composelayer.json"
+        let unit = SIMD3<Double>(1, 1, 1)
+
+        #expect(Models.outputGeometry(
+            path: path,
+            geometry: geo(
+                size: CGSize(width: 600, height: 600),
+                scale: SIMD3<Double>(1.6, 0.3, 1),
+                angles: SIMD3<Double>(0.17453, -0.55851, -0.13963)
+            ),
+            sceneSize: scene
+        ) == .subregion)
+        #expect(Models.outputGeometry(
+            path: path,
+            geometry: geo(size: CGSize(width: 1280, height: 720), scale: unit, angles: SIMD3<Double>(0, .pi, 0)),
+            sceneSize: scene
+        ) == .fullscreen)
+        #expect(Models.outputGeometry(
+            path: path,
+            geometry: geo(size: CGSize(width: 1280, height: 720), scale: unit, angles: SIMD3<Double>(.pi, .pi, 0)),
+            sceneSize: scene
+        ) == .subregion)
+        #expect(Models.outputGeometry(
+            path: path,
+            geometry: geo(size: CGSize(width: 5000, height: 2300), scale: unit, angles: SIMD3<Double>(0.1, 0.1, 0)),
+            sceneSize: scene
+        ) == .fullscreen)
+    }
+
     @Test("Compose parent of a composite-only compose child keeps its subregion box")
     func composeParentOfCompositeOnlyChildKeepsSubregionBox() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

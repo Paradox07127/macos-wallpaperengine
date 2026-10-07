@@ -254,18 +254,17 @@ enum WPEMetalSceneCaptureUtilityModels {
         guard let size = geometry.size else { return .fullscreen }
         let sceneW = max(Float(sceneSize.width), 1)
         let sceneH = max(Float(sceneSize.height), 1)
-        let width = Float(size.width) * max(abs(Float(geometry.scale.x)), 0.0001)
-        let height = Float(size.height) * max(abs(Float(geometry.scale.y)), 0.0001)
+        // Must match objectQuadUniforms' X/Y fold, or routing and the drawn quad disagree on footprint and flips.
+        let foldedScaleX = Float(geometry.scale.x) * cos(Float(geometry.angles.y))
+        let foldedScaleY = Float(geometry.scale.y) * cos(Float(geometry.angles.x))
+        let width = Float(size.width) * max(abs(foldedScaleX), 0.0001)
+        let height = Float(size.height) * max(abs(foldedScaleY), 0.0001)
         guard width.isFinite, height.isFinite, width > 1, height > 1 else { return .fullscreen }
         let rotationEpsilon: Float = 0.001
         let zAxisTurn = normalizedAbsoluteZTurn(Float(geometry.angles.z))
         let isHalfTurn = abs(zAxisTurn - .pi) <= rotationEpsilon
-        if abs(Float(geometry.angles.x)) > rotationEpsilon
-            || abs(Float(geometry.angles.y)) > rotationEpsilon {
-            return .fullscreen
-        }
-        let flipsX = geometry.scale.x < 0
-        let flipsY = geometry.scale.y < 0
+        let flipsX = foldedScaleX < 0
+        let flipsY = foldedScaleY < 0
         if flipsX != flipsY && !isHalfTurn { return .fullscreen }
         let fullCoverage: Float = 0.95
         if width >= sceneW * fullCoverage && height >= sceneH * fullCoverage { return .fullscreen }
