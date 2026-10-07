@@ -20,9 +20,11 @@ struct CacheClearAccountingTests {
             let after = [Self.measured(.video, 0, status), Self.measured(.query, 0)]
             #expect(WPECacheManagementView.freedBytes(of: [.video, .query], before: before, after: after) == nil)
         }
-        let unreadable = [Self.measured(.video, 0, .unavailable), Self.measured(.query, 20)]
         let after = [Self.measured(.video, 0), Self.measured(.query, 0)]
-        #expect(WPECacheManagementView.freedBytes(of: [.video, .query], before: unreadable, after: after) == nil)
+        for status in [AppStorageMeasurement.Status.partial, .unavailable] {
+            let incomplete = [Self.measured(.video, 300, status), Self.measured(.query, 20)]
+            #expect(WPECacheManagementView.freedBytes(of: [.video, .query], before: incomplete, after: after) == nil)
+        }
     }
 
     @Test("An incomplete scan of a cache that was not cleared does not hide the figure")

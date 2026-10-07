@@ -12,6 +12,24 @@ protocol WorkshopItemDownloading {
         onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?,
         onContentReady: @MainActor @Sendable (URL) async -> Imported
     ) async -> WorkshopItemDownloadResult<Imported>
+
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?,
+        onPhase: (@Sendable (SteamOperationProgress.Phase) -> Void)?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported>
+}
+
+extension WorkshopItemDownloading {
+    func downloadWorkshopItem<Imported: Sendable>(
+        _ itemID: UInt64,
+        onProgress: SteamCMDDoctorService.SteamCMDProgressHandler?,
+        onPhase _: (@Sendable (SteamOperationProgress.Phase) -> Void)?,
+        onContentReady: @MainActor @Sendable (URL) async -> Imported
+    ) async -> WorkshopItemDownloadResult<Imported> {
+        await downloadWorkshopItem(itemID, onProgress: onProgress, onContentReady: onContentReady)
+    }
 }
 
 extension SteamCMDDoctorService: WorkshopItemDownloading {}
@@ -34,9 +52,117 @@ final class WorkshopDownloadCoordinator {
         let total: UInt64?
     }
 
-    static let shared = WorkshopDownloadCoordinator()
+    enum TransferState: Equatable {
+        case waiting, restarting, transferring, stalled
+    }
+
+    private struct FailedDownload: Codable {
+        let itemID: UInt64
+        let title: String
+        let reason: String
+        let replacesLocalCopy: Bool
+        let approvedReplacement: WPEHistoryEntry?
+    }
+
+    private static let failedHistoryKey = "workshop.failedDownloadHistory"
+    static let shared = WorkshopDownloadCoordinator(historyDefaults: .appScoped())
+
+    /// Completed/cancelled rows last for this session; failures also survive restarts.
+    private(set) var downloadOrder: [UInt64] = []
+    private(set) var titles: [UInt64: String] = [:]
+    private(set) var cancelledItems: Set<UInt64> = []
+    private(set) var listedSizes: [UInt64: UInt64] = [:]
+    @ObservationIgnored private var retryRequests: [UInt64: WorkshopDownloadQueue.Request] = [:]
+    @ObservationIgnored private var failedHistory: [UInt64: FailedDownload] = [:]
+    @ObservationIgnored private let historyDefaults: UserDefaults?
+    @ObservationIgnored private var rateMeters: [UInt64: WorkshopDownloadRateMeter] = [:]
+    private(set) var lastAdvanceAt: [UInt64: Date] = [:]
+    private(set) var restartingItems: Set<UInt64> = []
+
+    func retainRequest(_ request: WorkshopDownloadQueue.Request) {
+        if titles[request.itemID] == nil {
+            downloadOrder.append(request.itemID)
+        }
+        titles[request.itemID] = request.title
+        retryRequests[request.itemID] = request
+        cancelledItems.remove(request.itemID)
+        if failedHistory.removeValue(forKey: request.itemID) != nil {
+            saveFailedHistory()
+        }
+    }
+
+    func retryRequest(for itemID: UInt64) -> WorkshopDownloadQueue.Request? {
+        retryRequests[itemID]
+    }
+
+    /// Restored failures use the current Steam session while keeping the original replacement approval.
+    func retryRequest(for itemID: UInt64, using doctor: any WorkshopItemDownloading) -> WorkshopDownloadQueue.Request? {
+        if let request = retryRequests[itemID] {
+            return request
+        }
+        guard let failure = failedHistory[itemID] else { return nil }
+        return WorkshopDownloadQueue.Request(
+            itemID: itemID, title: failure.title, replacesLocalCopy: failure.replacesLocalCopy,
+            doctor: doctor, approvedReplacement: failure.approvedReplacement
+        )
+    }
+
+    /// Dismisses a settled row without changing its shared phase or installed files.
+    func removeFromHistory(_ itemID: UInt64) {
+        guard !isBusy(itemID) else { return }
+        downloadOrder.removeAll { $0 == itemID }
+        titles[itemID] = nil
+        retryRequests[itemID] = nil
+        cancelledItems.remove(itemID)
+        if failedHistory.removeValue(forKey: itemID) != nil {
+            saveFailedHistory()
+        }
+    }
+
+    private func saveFailedHistory() {
+        guard let historyDefaults else { return }
+        let failures = downloadOrder.compactMap { failedHistory[$0] }
+        guard let data = try? JSONEncoder().encode(failures) else { return }
+        historyDefaults.set(data, forKey: Self.failedHistoryKey)
+    }
+
+    func markCancelled(_ itemID: UInt64) {
+        guard !isBusy(itemID) else { return }
+        cancelledItems.insert(itemID)
+        phases[itemID] = .idle
+        clearProgress(itemID)
+    }
+
+    func transferState(for itemID: UInt64, at now: Date) -> TransferState {
+        if restartingItems.contains(itemID) {
+            return .restarting
+        }
+        guard let lastAdvance = lastAdvanceAt[itemID] else { return .waiting }
+        return now.timeIntervalSince(lastAdvance) >= 10 ? .stalled : .transferring
+    }
+
+    func bytesPerSecond(for itemID: UInt64, at now: Date) -> Double? {
+        guard let lastAdvance = lastAdvanceAt[itemID], now.timeIntervalSince(lastAdvance) < 5 else { return nil }
+        return rateMeters[itemID]?.bytesPerSecond
+    }
+
+    func retainListedSize(_ bytes: UInt64?, for itemID: UInt64) {
+        if let bytes, bytes > 0 {
+            listedSizes[itemID] = bytes
+        }
+    }
 
     private(set) var phases: [UInt64: DownloadPhase] = [:]
+    var hasFailedDownloadsInHistory: Bool {
+        downloadOrder.contains {
+            if case .failed = phase(for: $0) {
+                true
+            } else {
+                false
+            }
+        }
+    }
+
     /// Per-item download fraction (0...1); absent = indeterminate.
     private(set) var progress: [UInt64: Double] = [:]
     private(set) var progressBytes: [UInt64: DownloadProgressBytes] = [:]
@@ -58,6 +184,7 @@ final class WorkshopDownloadCoordinator {
         repositoryCoordinator: WorkshopRepositoryCoordinator = .shared,
         settings: SettingsManager = .shared,
         toasts: WorkshopToastCenter = .shared,
+        historyDefaults: UserDefaults? = nil,
         cancelSteamCMD: @escaping @MainActor (UUID) async -> Void = {
             _ = await SteamConnectorClient.cancelActiveSteamCMD(operationID: $0.uuidString)
         },
@@ -69,6 +196,18 @@ final class WorkshopDownloadCoordinator {
         self.toasts = toasts
         self.cancelSteamCMD = cancelSteamCMD
         self.afterSteamCMDRun = afterSteamCMDRun
+        self.historyDefaults = historyDefaults
+        if let data = historyDefaults?.data(forKey: Self.failedHistoryKey),
+           let failures = try? JSONDecoder().decode([FailedDownload].self, from: data) {
+            for failure in failures {
+                if titles[failure.itemID] == nil {
+                    downloadOrder.append(failure.itemID)
+                }
+                titles[failure.itemID] = failure.title
+                phases[failure.itemID] = .failed(failure.reason)
+                failedHistory[failure.itemID] = failure
+            }
+        }
     }
 
     func phase(for itemID: UInt64) -> DownloadPhase {
@@ -86,10 +225,13 @@ final class WorkshopDownloadCoordinator {
         }
     }
 
-    /// A settled phase outlives the item's files; a check that finds the item missing clears it so it can be offered again.
+    /// A success outlives the item's files; clear it when missing without losing a failed attempt's reason.
     func forgetSettledPhase(_ itemID: UInt64) {
         guard !isBusy(itemID) else { return }
-        phases[itemID] = .idle
+        switch phases[itemID] {
+        case .succeeded, .succeededAsPreset: phases[itemID] = .idle
+        default: break
+        }
     }
 
     func activeAttempt(for itemID: UInt64) -> WorkshopDownloadAttempt? {
@@ -101,6 +243,9 @@ final class WorkshopDownloadCoordinator {
         itemID: UInt64, title: String, using doctor: any WorkshopItemDownloading, replacing: WPEHistoryEntry? = nil
     ) -> WorkshopDownloadAttempt? {
         guard !isBusy(itemID) else { return activeDownloads[itemID] }
+        retainRequest(WorkshopDownloadQueue.Request(
+            itemID: itemID, title: title, replacesLocalCopy: false, doctor: doctor, approvedReplacement: replacing
+        ))
         let attemptID = UUID()
         let attempt = WorkshopDownloadAttempt(id: attemptID, itemID: itemID)
         activeDownloads[itemID] = attempt
@@ -120,6 +265,7 @@ final class WorkshopDownloadCoordinator {
         tasks[itemID] = nil
         let cancelledAttempt = activeDownloads[itemID]?.id
         phases[itemID] = .idle
+        markCancelled(itemID)
         clearProgress(itemID)
         fetchingDependencies.remove(itemID)
         activeDownloads.removeValue(forKey: itemID)?.finish(.cancelled)
@@ -177,6 +323,11 @@ final class WorkshopDownloadCoordinator {
                                 )
                             }
                         },
+                        onPhase: { [weak self] phase in
+                            Task { [weak self] in
+                                await self?.recordPhase(phase, itemID: itemID, attemptID: attemptID)
+                            }
+                        },
                         onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
                             guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                             phases[itemID] = .importing
@@ -225,7 +376,11 @@ final class WorkshopDownloadCoordinator {
                 // A cancel, or a retry that started after it, owns the item now.
                 if isCurrent(itemID: itemID, attemptID: attemptID) {
                     fetchingDependencies.remove(itemID)
-                    phases[itemID] = .succeeded
+                    if case let .failed(reason)? = outcome {
+                        phases[itemID] = .failed(reason)
+                    } else {
+                        phases[itemID] = .succeeded
+                    }
                 }
             }
         case let .notConfigured(reason):
@@ -246,6 +401,13 @@ final class WorkshopDownloadCoordinator {
         // Released here rather than in `finish` so the dependency fetch above
         // still counts as this item's in-flight download for `cancel`.
         if isCurrent(itemID: itemID, attemptID: attemptID) {
+            if case let .failed(reason) = phases[itemID], let request = retryRequests[itemID] {
+                failedHistory[itemID] = FailedDownload(
+                    itemID: itemID, title: title, reason: reason,
+                    replacesLocalCopy: request.replacesLocalCopy, approvedReplacement: request.approvedReplacement
+                )
+                saveFailedHistory()
+            }
             tasks[itemID] = nil
             let attempt = activeDownloads.removeValue(forKey: itemID)
             if let outcome {
@@ -266,20 +428,44 @@ final class WorkshopDownloadCoordinator {
         totalBytes: UInt64?
     ) {
         guard isCurrent(itemID: itemID, attemptID: attemptID), case .downloading? = phases[itemID] else { return }
-        // nil percent: only bytes are known, so the last reported fraction stands.
-        if let percent {
-            guard percent.isFinite else { return }
+        let previous = progressBytes[itemID]
+        let downloaded = downloadedBytes ?? previous?.downloaded
+        let total = totalBytes.flatMap { $0 > 0 ? $0 : nil } ?? previous?.total ?? listedSizes[itemID]
+        let oldFraction = progress[itemID]
+        if let percent, percent.isFinite {
             progress[itemID] = min(max(percent / 100, 0), 1)
+        } else if downloadedBytes != nil {
+            // A byte-only sample supersedes a stale Steam percentage.
+            progress[itemID] = WorkshopDownloadPresentation.byteFraction(downloaded: downloaded, total: total)
         }
-        progressBytes[itemID] = DownloadProgressBytes(
-            downloaded: downloadedBytes,
-            total: (totalBytes ?? 0) > 0 ? totalBytes : nil
-        )
+        progressBytes[itemID] = DownloadProgressBytes(downloaded: downloaded, total: total)
+        let now = Date()
+        let hasProgress = (downloaded ?? 0) > 0 || (progress[itemID] ?? 0) > 0
+        if hasProgress, downloaded != previous?.downloaded || progress[itemID] != oldFraction {
+            lastAdvanceAt[itemID] = now
+            restartingItems.remove(itemID)
+        }
+        var meter = rateMeters[itemID] ?? WorkshopDownloadRateMeter()
+        meter.record(attemptID: attemptID, downloadedBytes: downloaded, at: now)
+        rateMeters[itemID] = meter
+    }
+
+    private func recordPhase(_ phase: SteamOperationProgress.Phase, itemID: UInt64, attemptID: UUID) {
+        guard isCurrent(itemID: itemID, attemptID: attemptID), case .downloading? = phases[itemID] else { return }
+        if phase == .restarting {
+            let total = progressBytes[itemID]?.total
+            clearProgress(itemID)
+            progressBytes[itemID] = DownloadProgressBytes(downloaded: nil, total: total)
+            restartingItems.insert(itemID)
+        }
     }
 
     private func clearProgress(_ itemID: UInt64) {
         progress[itemID] = nil
         progressBytes[itemID] = nil
+        rateMeters[itemID] = nil
+        lastAdvanceAt[itemID] = nil
+        restartingItems.remove(itemID)
     }
 
     private func finishImport(

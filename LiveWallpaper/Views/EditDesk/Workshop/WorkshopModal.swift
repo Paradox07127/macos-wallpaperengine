@@ -84,40 +84,47 @@ struct WorkshopModal: View {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge, style: .continuous)
     }
 
-    /// The whole animation fitted into the layout's 4:3 box. A Button keeps one view identity across the
-    /// reveal: branching on the blur would rebuild the thumbnail and lose its unblur animation.
+    /// Keep the thumbnail mounted across reveal; only the mature cover intercepts clicks.
     private var preview: some View {
-        Button {
-            guard shouldBlurPreview else { return }
-            if MatureContentSettings.isConfirmed {
-                actions.reveal()
-            } else {
-                showingAgeConfirm = true
-            }
-        } label: {
-            ZStack {
-                DesignTokens.Colors.surfaceSunken
-                AnimatedGIFThumbnail(
-                    url: item.previewImageURL,
-                    playbackMode: .autoPlay,
-                    showsPlayingBadge: false,
-                    previewSize: .hero,
-                    isBlurred: shouldBlurPreview,
-                    contentMode: .fit
-                )
-            }
-            .clipShape(previewShape)
-            .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
-            .overlay(alignment: .topLeading) {
-                mediaChip(Text("▶ GIF preview"))
-                    .padding(DesignTokens.EditDesk.Spacing.s8)
-            }
-            .contentShape(Rectangle())
+        ZStack {
+            DesignTokens.Colors.surfaceSunken
+            AnimatedGIFThumbnail(
+                url: item.previewImageURL,
+                playbackMode: .autoPlay,
+                showsPlayingBadge: false,
+                previewSize: .hero,
+                isBlurred: shouldBlurPreview,
+                contentMode: .fit
+            )
+            .accessibilityHidden(shouldBlurPreview)
         }
-        .buttonStyle(.plain)
-        .allowsHitTesting(shouldBlurPreview)
-        .accessibilityHidden(!shouldBlurPreview)
-        .accessibilityLabel(Text("Show mature content?"))
+        .clipShape(previewShape)
+        .overlay {
+            previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .overlay(alignment: .topLeading) {
+            mediaChip(Text("▶ GIF preview"))
+                .padding(DesignTokens.EditDesk.Spacing.s8)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .overlay {
+            if shouldBlurPreview {
+                Button {
+                    if MatureContentSettings.isConfirmed {
+                        actions.reveal()
+                    } else {
+                        showingAgeConfirm = true
+                    }
+                } label: {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Show mature content?"))
+            }
+        }
     }
 
     private func mediaChip(_ label: Text) -> some View {

@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import Observation
 
 /// Hands downloads to the coordinator one at a time: the connector runs SteamCMD on a serial queue and drops a request that waited too long, so a batch sent at once times out everything after the first item.
@@ -12,6 +13,8 @@ final class WorkshopDownloadQueue {
         /// true: resolve `downloads.libraryCopyBlockingDownload(of:)` when the item's turn comes and pass it as `replacing:`.
         let replacesLocalCopy: Bool
         let doctor: any WorkshopItemDownloading
+        /// A manual retry keeps the exact copy originally approved for replacement.
+        var approvedReplacement: WPEHistoryEntry?
     }
 
     static let shared = WorkshopDownloadQueue()
@@ -33,6 +36,7 @@ final class WorkshopDownloadQueue {
         for request in newRequests {
             let itemID = request.itemID
             guard itemID != current, requests[itemID] == nil, !downloads.isBusy(itemID) else { continue }
+            downloads.retainRequest(request)
             requests[itemID] = (request, downloads.phase(for: itemID))
             pending.append(itemID)
         }
@@ -45,8 +49,10 @@ final class WorkshopDownloadQueue {
     }
 
     func remove(_ itemID: UInt64) {
+        guard isQueued(itemID) else { return }
         pending.removeAll { $0 == itemID }
         requests[itemID] = nil
+        downloads.markCancelled(itemID)
     }
 
     /// Also stops a download another entry point started, so a row's cancel works whoever sent it.
@@ -57,6 +63,11 @@ final class WorkshopDownloadQueue {
         }
     }
 
+    func retry(_ itemID: UInt64, using doctor: any WorkshopItemDownloading) {
+        guard let request = downloads.retryRequest(for: itemID, using: doctor) else { return }
+        enqueue([request])
+    }
+
     private func drain() async {
         while !pending.isEmpty {
             let itemID = pending.removeFirst()
@@ -65,7 +76,8 @@ final class WorkshopDownloadQueue {
                 continue
             }
             current = itemID
-            let replacing = request.replacesLocalCopy ? downloads.libraryCopyBlockingDownload(of: itemID) : nil
+            let replacing = request.approvedReplacement
+                ?? (request.replacesLocalCopy ? downloads.libraryCopyBlockingDownload(of: itemID) : nil)
             if let attempt = downloads.download(
                 itemID: itemID, title: request.title, using: request.doctor, replacing: replacing
             ) {

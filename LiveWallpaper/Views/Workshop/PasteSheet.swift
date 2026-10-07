@@ -248,7 +248,7 @@ struct PasteSheet: View {
                 return
             }
             pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) {
-                queue.enqueue([.init(itemID: itemID, title: title, replacesLocalCopy: true, doctor: doctor)])
+                queue.enqueue([.init(itemID: itemID, title: title, replacesLocalCopy: true, doctor: doctor, approvedReplacement: local)])
             }
         }
     }

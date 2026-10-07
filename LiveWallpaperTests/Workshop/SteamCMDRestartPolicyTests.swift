@@ -251,3 +251,109 @@ struct SteamCMDSelfUpdateRestartTests {
         #expect(!source.contains("SteamCMDSelfUpdateRetryPolicy"))
     }
 }
+
+@Suite("Workshop download completion across SteamCMD restarts")
+struct SteamWorkshopDownloadCompletionTests {
+    @Test("An exit-42 download receipt survives a relaunch that crashes before login")
+    func receiptSurvivesStartupCrash() {
+        var completion = SteamWorkshopDownloadCompletion(workshopID: "123")
+        completion.record(output: "Success. Downloaded item 123 to /library/123", exitCode: 42,
+                          timedOut: false, terminationSignal: nil)
+        completion.record(output: "Steam Console Client\nLoading Steam API...OK", exitCode: 11,
+                          timedOut: false, terminationSignal: 11)
+        #expect(completion.completed)
+    }
+
+    @Test("Completion belongs to this item and cannot be established by a killed or failed run")
+    func requiresCurrentItemAndSuccessfulRun() {
+        for (itemID, exitCode, timedOut, signal) in [
+            ("456", Int32(0), false, Int32?.none),
+            ("123", Int32(1), false, nil),
+            ("123", Int32(42), true, nil),
+            ("123", Int32(42), false, Int32(42)),
+        ] {
+            var completion = SteamWorkshopDownloadCompletion(workshopID: "123")
+            completion.record(output: "Success. Downloaded item \(itemID) to /library/\(itemID)",
+                              exitCode: exitCode, timedOut: timedOut, terminationSignal: signal)
+            #expect(!completion.completed)
+        }
+    }
+
+    @Test("A relaunch that fails the requested item invalidates the previous receipt")
+    func laterItemFailureInvalidatesReceipt() {
+        var completion = SteamWorkshopDownloadCompletion(workshopID: "123")
+        completion.record(output: "Success. Downloaded item 123 to /library/123", exitCode: 42,
+                          timedOut: false, terminationSignal: nil)
+        completion.record(output: "ERROR! Download item 123 failed (Failure).", exitCode: 1,
+                          timedOut: false, terminationSignal: nil)
+        #expect(!completion.completed)
+    }
+
+    @Test("Committed-item validation rejects missing content, corrupt JSON and escaped payloads")
+    func validatesCommittedContent() throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: root).appendingPathComponent("123")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = folder.appendingPathComponent("project.json")
+        try Data(#"{"type":"scene","file":"scene.json"}"#.utf8).write(to: project)
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data("payload".utf8).write(to: folder.appendingPathComponent("scene.pkg"))
+        #expect(SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        // An existing valid item is not evidence that this attempt completed.
+        var stale = SteamWorkshopDownloadCompletion(workshopID: "123")
+        stale.record(output: "Steam Console Client\nLoading Steam API...OK", exitCode: 11,
+                     timedOut: false, terminationSignal: 11)
+        #expect(!stale.completed)
+        try Data("invalid JSON".utf8).write(to: project)
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data(#"{"type":"scene","file":"../scene.pkg"}"#.utf8).write(to: project)
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data(#"{"type":"scene","file":"scene.pkg"}"#.utf8).write(to: project)
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("scene.pkg"))
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("scene.pkg"), withDestinationURL: project)
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data(#"{"dependency":"123456789","preset":{"speed":0.5}}"#.utf8).write(to: project)
+        #expect(SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+        try Data(#"{"dependency":"123456789","preset":{},"file":"../unsafe"}"#.utf8).write(to: project)
+        #expect(!SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: root))
+    }
+
+    @Test("A successful receipt cannot rescue a refused replacement")
+    func refusedRestartIsNotRescued() {
+        var completion = SteamWorkshopDownloadCompletion(workshopID: "123")
+        let outcome = SteamCMDSelfUpdateRestartPolicy.run(
+            deadline: SteamCMDRunDeadline(timeout: 60),
+            execute: {
+                completion.record(output: "Success. Downloaded item 123 to /library/123", exitCode: 42,
+                                  timedOut: false, terminationSignal: nil)
+                return FakeRun(exitCode: 42)
+            }, exitCode: { $0.exitCode }, timedOut: { $0.timedOut },
+            revalidate: { "signature rejected" }
+        )
+        #expect(completion.completed)
+        guard case .gateFailed = outcome else { Issue.record("untrusted replacement must remain refused"); return }
+    }
+
+    @Test("Crash diagnostics name a real signal and ordinary failures retain their exit status")
+    func reportsTerminationReason() {
+        #expect(SteamWorkshopDownloadCompletion.diagnostic(output: "Loading Steam API...OK", exitCode: 11,
+                                                           terminationSignal: 11).contains("terminated by signal 11"))
+        #expect(SteamWorkshopDownloadCompletion.diagnostic(output: "failure", exitCode: 11,
+                                                           terminationSignal: nil).contains("exited with status 11"))
+    }
+
+    @Test("Explicit cancellation is recorded only for the matching active child and resets for its successor")
+    func distinguishesCancellationFromCrash() {
+        let registry = SteamCMDActiveProcessRegistry()
+        registry.register(pid: 123, hasOwnGroup: false, operationID: "first", kill: { _, _ in 0 })
+        #expect(!registry.terminateActive(operationID: "stale", kill: { _, _ in 0 }))
+        #expect(!registry.cancellationRequested)
+        #expect(registry.terminateActive(operationID: "first", kill: { _, _ in 0 }))
+        #expect(registry.cancellationRequested)
+        registry.clear()
+        registry.register(pid: 124, hasOwnGroup: false, operationID: "next", kill: { _, _ in 0 })
+        #expect(!registry.cancellationRequested)
+    }
+}

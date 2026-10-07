@@ -428,29 +428,30 @@ struct WorkshopFolderImportCoordinatorTests {
                 refreshData: { try $0.bookmarkData() }
             )
         )
-        defer { await TestScratch.discard(root, flushing: manager) }
-        let coordinator = WorkshopFolderImportCoordinator(
-            importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
-            settings: manager,
-            toastCenter: WorkshopToastCenter(),
-            defaults: suite.defaults
-        )
-        let downloadedIDs = steam.itemFolders.map(\.lastPathComponent)
-        let wallpapers = root.appendingPathComponent("Wallpapers", isDirectory: true)
-        for id in downloadedIDs + ["1001", "1002", "1003", "1004"] {
-            try writeVideoProject(at: wallpapers.appendingPathComponent(id, isDirectory: true), workshopID: id)
+        try await TestScratch.withCleanup { await TestScratch.discard(root, flushing: manager) } operation: {
+            let coordinator = WorkshopFolderImportCoordinator(
+                importService: WallpaperEngineImportService(validateVideo: { _ in }, makeBookmark: { try? $0.bookmarkData() }),
+                settings: manager,
+                toastCenter: WorkshopToastCenter(),
+                defaults: suite.defaults
+            )
+            let downloadedIDs = steam.itemFolders.map(\.lastPathComponent)
+            let wallpapers = root.appendingPathComponent("Wallpapers", isDirectory: true)
+            for id in downloadedIDs + ["1001", "1002", "1003", "1004"] {
+                try writeVideoProject(at: wallpapers.appendingPathComponent(id, isDirectory: true), workshopID: id)
+            }
+            coordinator.importProjects(from: [wallpapers])
+            try await settle { !coordinator.isImporting }
+            let history = manager.loadGlobalSettings().recentWPEImports
+            #expect(history.count == downloadedIDs.count + 4)
+            resolves.withLock { $0 = 0 }
+
+            await coordinator.ingestExistingDownloads(using: steam.doctor)
+
+            #expect(manager.loadGlobalSettings().recentWPEImports.count == history.count + downloadedIDs.count, "the scan did not bring the Steam items in beside their local copies")
+            let count = resolves.withLock { $0 }
+            #expect(count <= history.count + downloadedIDs.count, "the scan resolved \(count) bookmarks for \(history.count) history entries")
         }
-        coordinator.importProjects(from: [wallpapers])
-        try await settle { !coordinator.isImporting }
-        let history = manager.loadGlobalSettings().recentWPEImports
-        #expect(history.count == downloadedIDs.count + 4)
-        resolves.withLock { $0 = 0 }
-
-        await coordinator.ingestExistingDownloads(using: steam.doctor)
-
-        #expect(manager.loadGlobalSettings().recentWPEImports.count == history.count + downloadedIDs.count, "the scan did not bring the Steam items in beside their local copies")
-        let count = resolves.withLock { $0 }
-        #expect(count <= history.count + downloadedIDs.count, "the scan resolved \(count) bookmarks for \(history.count) history entries")
     }
 
     // MARK: - Library scan without the Workshop page

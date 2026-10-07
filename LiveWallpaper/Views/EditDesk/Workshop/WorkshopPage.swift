@@ -22,6 +22,7 @@ struct WorkshopPage: View {
 
     @State private var isShowingWizard = false
     @State private var isShowingPasteSheet = false
+    @State private var isShowingDownloads = false
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
     @State private var isShowingSetupAlert = false
@@ -50,7 +51,10 @@ struct WorkshopPage: View {
                 windowWidth: stageSize.width,
                 status: nil
             ) {
-                steamMenu.pageGuideTarget(.steamMenu)
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    downloadsButton
+                    steamMenu.pageGuideTarget(.steamMenu)
+                }
             }
             WorkshopModalHost(
                 presentedItemID: $presentedItemID,
@@ -101,6 +105,30 @@ struct WorkshopPage: View {
         Binding(get: { router.page }, set: { router.select($0) })
     }
 
+    private var downloadsButton: some View {
+        let downloads = WorkshopDownloadCoordinator.shared
+        let queue = WorkshopDownloadQueue.shared
+        let activeCount = Set(queue.pending).union(downloads.downloadOrder.filter { downloads.isBusy($0) }).count
+        let hasFailures = downloads.hasFailedDownloadsInHistory
+        return Button { isShowingDownloads = true } label: {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Label("Downloads", systemImage: "arrow.down.circle")
+                if activeCount > 0 {
+                    Text(verbatim: activeCount.formatted())
+                        .font(DesignTokens.Typography.metric)
+                }
+                if hasFailures {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DesignTokens.Colors.Status.danger)
+                        .accessibilityLabel(Text("Download failed"))
+                }
+            }
+            .font(DesignTokens.EditDesk.Typography.chip)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+
     private var steamMenu: some View {
         WorkshopSteamMenu(
             accounts: setupController.discoveredAccounts,
@@ -134,6 +162,11 @@ struct WorkshopPage: View {
                 .infoOverlay(isPresented: page.$isShowingWizard) { close in
                     AppLanguageScope(defaults: .appScoped()) {
                         SteamWizard(onDismiss: close)
+                    }
+                }
+                .sheet(isPresented: page.$isShowingDownloads) {
+                    AppLanguageScope(defaults: .appScoped()) {
+                        WorkshopDownloadsSheet()
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {

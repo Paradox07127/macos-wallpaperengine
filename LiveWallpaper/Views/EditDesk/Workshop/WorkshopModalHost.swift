@@ -106,7 +106,6 @@ struct WorkshopModalHost: View {
     /// The opened item when it is not on the current page, fetched once.
     @State private var detachedItem: WorkshopQueryItem?
     @State private var installedEntry: WPEHistoryEntry?
-    @State private var rateMeter = WorkshopDownloadRateMeter()
     @State private var pendingDestructive: PendingDestructive?
 
     private var downloads: WorkshopDownloadCoordinator {
@@ -123,31 +122,32 @@ struct WorkshopModalHost: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let item {
-                WorkshopModal(
-                    content: content(for: item),
-                    doctor: doctor,
-                    facts: WorkshopModalContent.facts(
-                        item: item, importedAt: installedExtras(for: item) == nil ? nil : installedEntry?.importedAt,
-                        now: Date(), locale: AppLanguagePreference.current.locale
-                    ),
-                    row: row(for: item),
-                    download: presentation(for: item),
-                    unsupportedOrigin: unsupportedInstalledOrigin(for: item),
-                    isRevealed: session.matureReveal.isRevealed(item.id),
-                    matureReveal: session.matureReveal,
-                    navigation: navigation(for: item),
-                    windowSize: windowSize,
-                    // The whole top bar stays clickable: traffic lights and the window drag region live there.
-                    titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
-                    onDismiss: { presentedItemID = nil },
-                    actions: actions(for: item)
-                )
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    WorkshopModal(
+                        content: content(for: item),
+                        doctor: doctor,
+                        facts: WorkshopModalContent.facts(
+                            item: item, importedAt: installedExtras(for: item) == nil ? nil : installedEntry?.importedAt,
+                            now: Date(), locale: AppLanguagePreference.current.locale
+                        ),
+                        row: row(for: item),
+                        download: presentation(for: item, at: context.date),
+                        unsupportedOrigin: unsupportedInstalledOrigin(for: item),
+                        isRevealed: session.matureReveal.isRevealed(item.id),
+                        matureReveal: session.matureReveal,
+                        navigation: navigation(for: item),
+                        windowSize: windowSize,
+                        // The whole top bar stays clickable: traffic lights and the window drag region live there.
+                        titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
+                        onDismiss: { presentedItemID = nil },
+                        actions: actions(for: item)
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: presentedItemID != nil)
         .task(id: presentedItemID) { await open() }
-        .onChange(of: downloadSample) { _, _ in recordRate() }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()
         }
@@ -160,7 +160,6 @@ struct WorkshopModalHost: View {
         guard let presentedItemID else {
             detachedItem = nil
             installedEntry = nil
-            rateMeter = WorkshopDownloadRateMeter()
             return
         }
         refreshInstalledEntry()
@@ -239,7 +238,7 @@ struct WorkshopModalHost: View {
         )
     }
 
-    private func presentation(for item: WorkshopQueryItem) -> WorkshopDownloadPresentation {
+    private func presentation(for item: WorkshopQueryItem, at now: Date) -> WorkshopDownloadPresentation {
         WorkshopDownloadPresentation.make(
             ticketState: wiring.ticket(for: item.id)?.state,
             screenName: ticketScreenName(for: item),
@@ -249,10 +248,11 @@ struct WorkshopModalHost: View {
             fraction: downloads.progress[item.id],
             downloadedBytes: downloads.progressBytes[item.id]?.downloaded,
             totalBytes: downloads.progressBytes[item.id]?.total ?? item.fileSizeBytes,
-            bytesPerSecond: rateMeter.bytesPerSecond,
+            bytesPerSecond: downloads.bytesPerSecond(for: item.id, at: now),
             isInstalled: installedExtras(for: item) != nil,
             reportsSave: true,
-            blocker: doctor.downloadBlockerMessage
+            blocker: doctor.downloadBlockerMessage,
+            transferState: downloads.transferState(for: item.id, at: now)
         )
     }
 
@@ -267,30 +267,15 @@ struct WorkshopModalHost: View {
         return DeferredApplyToasts.screenName(for: ticket.target, in: screenManager.screens)
     }
 
-    /// One value so `onChange` fires on every published byte count, including a stall at the same
-    /// fraction: the speed has to fall to zero rather than freeze at its last reading.
-    private var downloadSample: String {
-        guard let presentedItemID else { return "" }
-        let bytes = downloads.progressBytes[presentedItemID]?.downloaded ?? 0
-        return "\(downloads.activeAttempt(for: presentedItemID)?.id.uuidString ?? "") \(bytes)"
-    }
-
-    private func recordRate() {
-        guard let presentedItemID else { return }
-        rateMeter.record(
-            attemptID: downloads.activeAttempt(for: presentedItemID)?.id,
-            downloadedBytes: downloads.progressBytes[presentedItemID]?.downloaded,
-            at: Date()
-        )
-    }
-
     // MARK: Actions
 
     private var wiring: WorkshopModalWiring {
         WorkshopModalWiring(
             downloads: .init(
                 start: { [doctor, items, detachedItem] itemID, replacing in
-                    let title = (items.first { $0.id == itemID } ?? detachedItem)?.title ?? String(itemID)
+                    let item = items.first { $0.id == itemID } ?? detachedItem
+                    let title = item?.title ?? String(itemID)
+                    WorkshopDownloadCoordinator.shared.retainListedSize(item?.fileSizeBytes, for: itemID)
                     return WorkshopDownloadCoordinator.shared.download(
                         itemID: itemID, title: title, using: doctor, replacing: replacing
                     )
