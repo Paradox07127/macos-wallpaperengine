@@ -292,6 +292,7 @@ SERIAL_SUITES=(
   SteamConnectorClientCancellationTests
   SteamConnectorEnvironmentTests
   SteamCMDSelfUpdateRestartTests
+  SteamWorkshopDownloadCompletionTests
   # Pin native menu/page persistence, child-frame script ownership and static preview fallback.
   EditDeskLibraryStateTests
   HTMLWallpaperFrameLifecycleTests
