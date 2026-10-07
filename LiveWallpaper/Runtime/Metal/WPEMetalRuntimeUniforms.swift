@@ -395,6 +395,8 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     /// matrix. WPE keeps a perspective `g_ViewProjectionMatrix` available scene-wide
     /// whenever the override FOV is set; only these objects are projected through it.
     let perspectiveObjectIDs: Set<String>
+    /// Script-written `layer.perspective`, keyed by object id; an entry replaces `perspectiveObjectIDs` membership for composelayer routing only.
+    private(set) var livePerspectiveOverrides: [String: Bool]
     /// Column-major, same layout as `viewProjectionMatrix`. Equals it when no perspective
     /// camera exists.
     let objectPerspectiveViewProjectionMatrix: [Double]
@@ -428,6 +430,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         usesPerspectiveProjection: Bool = false,
         perspectiveOverrideFOVDegrees: Double = 0,
         perspectiveObjectIDs: Set<String> = [],
+        livePerspectiveOverrides: [String: Bool] = [:],
         lightAmbientColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         lightSkylightColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         sceneHDR: Bool = false,
@@ -440,6 +443,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.usesPerspectiveProjection = usesPerspectiveProjection
         self.perspectiveOverrideFOVDegrees = perspectiveOverrideFOVDegrees
         self.perspectiveObjectIDs = perspectiveObjectIDs
+        self.livePerspectiveOverrides = livePerspectiveOverrides
         self.sceneCamera = sceneCamera
         self.lightAmbientColor = lightAmbientColor
         self.lightSkylightColor = lightSkylightColor
@@ -481,6 +485,18 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
 
     func usesObjectPerspective(objectID: String) -> Bool {
         perspectiveOverrideFOVDegrees > 0 && perspectiveObjectIDs.contains(objectID)
+    }
+
+    /// Composelayer-only routing; it never selects the object-perspective model path above.
+    func usesProjectedCompose(objectID: String) -> Bool {
+        perspectiveOverrideFOVDegrees > 0 && !usesPerspectiveProjection
+            && (livePerspectiveOverrides[objectID] ?? perspectiveObjectIDs.contains(objectID))
+    }
+
+    func withLivePerspectiveOverrides(_ overrides: [String: Bool]) -> Self {
+        var copy = self
+        copy.livePerspectiveOverrides = overrides
+        return copy
     }
 
     /// Windows keeps global shader VP separate from a flat scene draw MVP,
@@ -577,6 +593,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.usesPerspectiveProjection = usesPerspectiveProjection
         perspectiveOverrideFOVDegrees = 0
         perspectiveObjectIDs = []
+        livePerspectiveOverrides = [:]
         objectPerspectiveViewProjectionMatrix = viewProjectionMatrix
         particlePerspectiveViewProjectionMatrix = nil
         self.sceneCamera = sceneCamera
@@ -591,7 +608,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         Self(orthogonalProjection: .init(width: renderSize.width, height: renderSize.height, auto: false),
              sceneCamera: sceneCamera, usesPerspectiveProjection: usesPerspectiveProjection,
              perspectiveOverrideFOVDegrees: perspectiveOverrideFOVDegrees, perspectiveObjectIDs: perspectiveObjectIDs,
-             lightAmbientColor: lightAmbientColor, lightSkylightColor: lightSkylightColor,
+             livePerspectiveOverrides: livePerspectiveOverrides, lightAmbientColor: lightAmbientColor, lightSkylightColor: lightSkylightColor,
              sceneHDR: sceneHDR, bloom: bloom, sceneMotion: motion)
     }
 

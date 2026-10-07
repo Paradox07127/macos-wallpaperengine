@@ -422,6 +422,7 @@ extension WPEMetalSceneRenderer {
             visibility: liveLayerVisibility.merging(liveTextVisibility) { _, text in text }
         )
         lastFrameDirectionalLighting = lighting
+        let frameCamera = cameraUniforms.withLivePerspectiveOverrides(liveLayerPresentation.compactMapValues(\.perspective))
         return try withFrameSignpost("encode") { () throws -> MTLTexture in
             let currentTextures = try texturesForCurrentFrame(
                 time: uniforms.time,
@@ -431,7 +432,7 @@ extension WPEMetalSceneRenderer {
             return try executor.render(
                 pipeline: textFrame.pipeline.resolvingSceneModelMatrices(
                     origins: transforms.origins, scales: transforms.scales, angles: transforms.angles,
-                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID, camera: cameraUniforms
+                    parentByID: objectParentByID, hostTransforms: layerAncestorLocalTransformsByID, camera: frameCamera
                 ),
                 size: sceneRenderSize,
                 textures: currentTextures,
@@ -439,7 +440,7 @@ extension WPEMetalSceneRenderer {
                 dynamicTextureNames: dynamicTextureNames,
                 dynamicLayerIDs: staticCacheExcludedLayerIDs,
                 runtimeUniforms: uniforms,
-                cameraUniforms: cameraUniforms,
+                cameraUniforms: frameCamera,
                 directionalLighting: lighting,
                 scriptedConstants: liveEffectConstants,
                 passVisibility: liveEffectVisibility,

@@ -50,6 +50,7 @@ struct WPELayerScriptPresentationMutation: Sendable, Equatable {
     var alignment: String?
     var parallaxDepth: SIMD2<Double>?
     var sortIndex: Int?
+    var perspective: Bool?
 
     mutating func merge(_ newer: Self) {
         if let alignment = newer.alignment {
@@ -60,6 +61,9 @@ struct WPELayerScriptPresentationMutation: Sendable, Equatable {
         }
         if let sortIndex = newer.sortIndex {
             self.sortIndex = sortIndex
+        }
+        if let perspective = newer.perspective {
+            self.perspective = perspective
         }
     }
 }

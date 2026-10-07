@@ -78,6 +78,7 @@ struct WPECreatedLayerScriptState: Sendable, Equatable {
     var alignment: String?
     var parallaxDepth: SIMD2<Double>?
     var sortIndex: Int?
+    var perspective: Bool?
 }
 
 struct WPELayerScriptTextDelivery: Sendable, Equatable {
@@ -2102,7 +2103,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
                 if let name = spec.objectForKeyedSubscript("name"), name.isString {
                     handle.setObject(name, forKeyedSubscript: "name" as NSString)
                 }
-                for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth"] {
+                for property in ["origin", "color", "scale", "alpha", "visible", "angles", "alignment", "parallaxDepth", "perspective"] {
                     if let value = spec.objectForKeyedSubscript(property), !value.isUndefined {
                         handle.setObject(value, forKeyedSubscript: property as NSString)
                     }
@@ -2548,8 +2549,29 @@ class WPELayerScriptBridge: @unchecked Sendable {
                   x.toDouble().isFinite, y.toDouble().isFinite else { return }
             self?.presentationMutations[key, default: .init()].parallaxDepth = SIMD2(x.toDouble(), y.toDouble())
         }
+        let getPerspective: @convention(block) () -> Bool = { [weak self] in
+            self?.presentationMutations[key]?.perspective ?? self?.authoredPerspective(forKey: key) ?? false
+        }
+        let setPerspective: @convention(block) (JSValue) -> Void = { [weak self] value in
+            self?.presentationMutations[key, default: .init()].perspective = value.toBool()
+        }
         defineAccessor(on: handle, property: "alignment", get: getAlignment, set: setAlignment, in: context)
         defineAccessor(on: handle, property: "parallaxDepth", get: getDepth, set: setDepth, in: context)
+        defineAccessor(on: handle, property: "perspective", get: getPerspective, set: setPerspective, in: context)
+    }
+
+    /// Same reading as the scene parser's `perspective`: a bool/number, or a property-bound `{value}` envelope.
+    fileprivate func authoredPerspective(forKey key: String) -> Bool {
+        guard case let .object(configuration)? = layerInfo(forKey: key)?.initialConfiguration else { return false }
+        var raw = configuration["perspective"]
+        if case let .object(envelope)? = raw {
+            raw = envelope["value"]
+        }
+        switch raw {
+        case let .bool(flag)?: return flag
+        case let .number(number)?: return number != 0
+        default: return false
+        }
     }
 
     /// Reading a vector or mutating only the returned object's x/y/z does not publish a geometry assignment; the script must assign the vector back to thisLayer.origin/scale/angles.
@@ -3070,7 +3092,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
             angles: createdAngles[key],
             alignment: presentationMutations[key]?.alignment,
             parallaxDepth: presentationMutations[key]?.parallaxDepth,
-            sortIndex: didSortLayers ? currentLayerOrder.firstIndex(of: key) : nil
+            sortIndex: didSortLayers ? currentLayerOrder.firstIndex(of: key) : nil,
+            perspective: presentationMutations[key]?.perspective
         )
     }
 

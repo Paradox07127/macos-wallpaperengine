@@ -764,6 +764,7 @@ extension WPEMetalSceneRenderer {
                   let layer = pipeline.layers.first(where: { $0.graphLayer.objectID == id }) else { continue }
             geometryByID[id] = attachmentGeometry[id] ?? layer.graphLayer.geometry
         }
+        let projectedQuads = projectedComposeHoverQuads(pipeline: pipeline, geometryByID: geometryByID)
         let width = Double(max(sceneRenderSize.width, 1))
         let height = Double(max(sceneRenderSize.height, 1))
         let pointerPixels = pointer.map { SIMD2<Double>($0.x * width, $0.y * height) }
@@ -777,7 +778,8 @@ extension WPEMetalSceneRenderer {
         forEachCursorScriptInstance { objectID, instance in
             let inside: Bool
             if let pointerPixels, let geometry = geometryByID[objectID] {
-                inside = pointerHits(pointerPixels, geometry: geometry)
+                inside = projectedQuads[objectID]?.contains(screenPixel: pointerPixels)
+                    ?? pointerHits(pointerPixels, geometry: geometry)
             } else {
                 inside = false
             }
@@ -792,6 +794,26 @@ extension WPEMetalSceneRenderer {
             deliver(instance, events, pointerFrame)
         }
 
+    }
+
+    /// Perspective composelayers hit-test against their projected trapezoid instead of the folded rect.
+    private func projectedComposeHoverQuads(
+        pipeline: WPEPreparedRenderPipeline,
+        geometryByID: [String: WPERenderLayerGeometry]
+    ) -> [String: WPEProjectedComposeQuad] {
+        let camera = cameraUniforms.withLivePerspectiveOverrides(liveLayerPresentation.compactMapValues(\.perspective))
+        guard camera.perspectiveOverrideFOVDegrees > 0, !camera.usesPerspectiveProjection else { return [:] }
+        var quads: [String: WPEProjectedComposeQuad] = [:]
+        for layer in pipeline.layers where layer.graphLayer.utilityModelKind == .composeLayer {
+            let objectID = layer.graphLayer.objectID
+            guard camera.usesProjectedCompose(objectID: objectID), let geometry = geometryByID[objectID],
+                  let size = geometry.size else { continue }
+            quads[objectID] = WPEProjectedComposeQuad(
+                origin: geometry.origin, scale: geometry.scale, angles: geometry.angles, size: size,
+                sceneSize: sceneRenderSize, fovDegrees: camera.perspectiveOverrideFOVDegrees
+            )
+        }
+        return quads
     }
 
     private func pointerHits(_ pointerPixels: SIMD2<Double>, geometry: WPERenderLayerGeometry) -> Bool {
