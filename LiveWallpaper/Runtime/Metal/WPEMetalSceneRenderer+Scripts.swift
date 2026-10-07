@@ -866,8 +866,8 @@ extension WPEMetalSceneRenderer {
         // Same shift the draw path applies; it is Y-up, so its Y flips into pointer space.
         let alignmentOffset = WPEMetalRenderExecutor.alignmentCenterOffset(
             alignment: geometry.alignment,
-            width: Float(half.x * 2),
-            height: Float(half.y * 2)
+            width: Float(half.x * 2) * (geometry.scale.x < 0 ? -1 : 1),
+            height: Float(half.y * 2) * (geometry.scale.y < 0 ? -1 : 1)
         )
         center.x += Double(alignmentOffset.x)
         center.y -= Double(alignmentOffset.y)

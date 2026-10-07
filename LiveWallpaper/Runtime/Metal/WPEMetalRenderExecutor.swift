@@ -2602,8 +2602,8 @@ final class WPEMetalRenderExecutor {
         let anchor = Self.centeredOrigin(of: geometry, sceneSize: sceneSize)
         let center = anchor + Self.alignmentCenterOffset(
             alignment: geometry.alignment,
-            width: width,
-            height: height
+            width: scaleX < 0 ? -width : width,
+            height: scaleY < 0 ? -height : height
         ) + cameraParallax.pixelOffset(
             objectCenter: parallaxObjectCenter(for: layer, fallback: anchor),
             depth: layer.parallaxDepth,
@@ -2659,7 +2659,7 @@ final class WPEMetalRenderExecutor {
         let width = max(baseWidth * max(abs(scaleX), 0.0001) * projection.depthScale, 0.0001)
         let height = max(baseHeight * max(abs(scaleY), 0.0001) * projection.depthScale, 0.0001)
         let quadCenter = projection.center
-            + Self.alignmentCenterOffset(alignment: geometry.alignment, width: width, height: height)
+            + Self.alignmentCenterOffset(alignment: geometry.alignment, width: scaleX < 0 ? -width : width, height: scaleY < 0 ? -height : height)
             + cameraParallax.pixelOffset(
                 objectCenter: parallaxObjectCenter(for: layer, fallback: projection.center),
                 depth: layer.parallaxDepth,
