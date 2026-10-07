@@ -333,10 +333,7 @@ extension WPEMetalSceneRenderer {
                 generation: loadGeneration
             )
         }
-        for (name, text) in output.texts {
-            guard let id = name.isEmpty ? ownObjectID : scriptTargetObjectID(name) else { continue }
-            liveScriptAssignedText[id] = text
-        }
+        applyScriptTextAssignments(output, ownObjectID: ownObjectID)
     }
 
     /// Duplicate or empty layer names reach scripts as object-ID keys; plain names map through the scene name index.
@@ -966,22 +963,21 @@ extension WPEMetalSceneRenderer {
 
     /// Property-return scripts bind only their own alpha; their other layer and transport writes use the normal journal.
     func applyLayerScriptSideEffects(_ output: WPELayerScriptOutput, ownObjectID: String) {
-        let targetID = scriptTargetObjectID
         layerTransformMutationJournal.record(
             output.ownTransform,
             objectID: ownObjectID,
             generation: loadGeneration
         )
         for (name, state) in output.others {
-            guard let targetID = targetID(name) else { continue }
+            guard let targetID = scriptTargetObjectID(name) else { continue }
             applyLayerScriptState(state, objectID: targetID)
         }
         for call in output.videoCalls {
-            guard let id = call.layerKey.isEmpty ? ownObjectID : targetID(call.layerKey) else { continue }
+            guard let id = call.layerKey.isEmpty ? ownObjectID : scriptTargetObjectID(call.layerKey) else { continue }
             sceneScriptVideoCommandBuffer.enqueue([call.command], objectID: id)
         }
         for (name, mutation) in output.otherTransforms {
-            guard let targetID = targetID(name) else { continue }
+            guard let targetID = scriptTargetObjectID(name) else { continue }
             layerTransformMutationJournal.record(
                 mutation,
                 objectID: targetID,
@@ -989,13 +985,10 @@ extension WPEMetalSceneRenderer {
             )
         }
         for (name, mutation) in output.presentation {
-            guard let id = name.isEmpty ? ownObjectID : targetID(name) else { continue }
+            guard let id = name.isEmpty ? ownObjectID : scriptTargetObjectID(name) else { continue }
             liveLayerPresentation[id, default: .init()].merge(mutation)
         }
-        for (name, text) in output.texts {
-            guard let id = name.isEmpty ? ownObjectID : targetID(name) else { continue }
-            liveScriptAssignedText[id] = text
-        }
+        applyScriptTextAssignments(output, ownObjectID: ownObjectID)
         for created in output.created {
             guard !created.imagePath.isEmpty else { continue }
             var state = created
@@ -1004,6 +997,14 @@ extension WPEMetalSceneRenderer {
         }
         for key in output.destroyedCreatedKeys {
             liveCreatedLayers.removeValue(forKey: "\(ownObjectID).\(key)")
+        }
+    }
+
+    private func applyScriptTextAssignments(_ output: WPELayerScriptOutput, ownObjectID: String) {
+        for (name, text) in output.texts {
+            guard let id = name.isEmpty ? ownObjectID : scriptTargetObjectID(name),
+                  output.acceptsTextDelivery(in: sceneScriptSharedState, key: name) else { continue }
+            liveScriptAssignedText[id] = text
         }
     }
 

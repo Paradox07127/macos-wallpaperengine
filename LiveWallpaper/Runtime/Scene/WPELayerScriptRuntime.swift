@@ -80,6 +80,12 @@ struct WPECreatedLayerScriptState: Sendable, Equatable {
     var sortIndex: Int?
 }
 
+struct WPELayerScriptTextDelivery: Sendable, Equatable {
+    let stateIdentity: UUID
+    let publicationRevision: UInt64
+    var explicitKeys: Set<String>
+}
+
 struct WPELayerScriptOutput: Sendable, Equatable {
     var own: WPELayerScriptState
     var others: [String: WPELayerScriptState]
@@ -90,9 +96,17 @@ struct WPELayerScriptOutput: Sendable, Equatable {
     var otherTransforms: [String: WPELayerScriptTransformMutation] = [:]
     /// Explicit `.text` assignments; key "" = thisLayer, else the getLayer name.
     var texts: [String: String] = [:]
+    /// Nil preserves hand-built legacy outputs; scene-owned bridge text always
+    /// carries its owner and observed publication plus current-entry writes.
+    var textDelivery: WPELayerScriptTextDelivery?
     /// Every handle's video commands in call order; the renderer replays this, not the per-layer
     /// `videoCommands`, so handles sharing one source keep their interleaving.
     var videoCalls: [WPELayerScriptVideoCall] = []
+
+    func acceptsTextDelivery(in shared: WPESharedScriptState?, key: String) -> Bool {
+        guard let textDelivery else { return true }
+        return shared?.acceptsTextDelivery(textDelivery, key: key) == true
+    }
 }
 
 enum WPELayerScriptOutputMode: Sendable, Equatable {
@@ -787,6 +801,14 @@ final class WPELayerScriptInstance {
         newer: WPELayerScriptOutput
     ) -> WPELayerScriptOutput {
         var merged = newer
+        if var delivery = newer.textDelivery,
+           pending.textDelivery == nil || pending.textDelivery?.stateIdentity == delivery.stateIdentity {
+            let explicitKeys = pending.textDelivery?.explicitKeys ?? Set(pending.texts.keys)
+            for key in explicitKeys where pending.texts[key] == newer.texts[key] && newer.texts[key] != nil {
+                delivery.explicitKeys.insert(key)
+            }
+            merged.textDelivery = delivery
+        }
         merged.destroyedCreatedKeys.formUnion(pending.destroyedCreatedKeys)
         let destroyedKeys = merged.destroyedCreatedKeys
         merged.created.removeAll { destroyedKeys.contains($0.key) }
@@ -1680,7 +1702,12 @@ class WPELayerScriptBridge: @unchecked Sendable {
     /// Layers whose visible/alpha the script explicitly assigned. A getLayer(x) the script only read never lands here, so readOutput won't drive it.
     fileprivate var assignedVisible: [String: Bool] = [:]
     fileprivate var assignedAlpha: [String: Double] = [:]
-    fileprivate var assignedText: [String: String] = [:]
+    fileprivate struct TextAssignment {
+        let value: String
+        var publicationRevision: UInt64
+    }
+
+    fileprivate var assignedText: [String: TextAssignment] = [:]
     /// Deliberately separate from the JS vector objects so a read or nested-object edit does not masquerade as thisLayer.<field> = value.
     fileprivate var assignedOwnTransform = WPELayerScriptTransformMutation()
     fileprivate var ownOriginValue: JSValue?
@@ -1737,7 +1764,8 @@ class WPELayerScriptBridge: @unchecked Sendable {
     private struct EvaluationJournal {
         let visible: [String: Bool]
         let alpha: [String: Double]
-        let text: [String: String]
+        let text: [String: TextAssignment]
+        var textWrites: Set<String> = []
         let ownTransform: WPELayerScriptTransformMutation
         let otherTransforms: [String: WPELayerScriptTransformMutation]
         let presentation: [String: WPELayerScriptPresentationMutation]
@@ -1756,6 +1784,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
     }
 
     private var evaluationJournal: EvaluationJournal?
+    private var completedEntryTextWrites: Set<String> = []
 
     func configureOutputPublisher(
         publishesOwnEntry: Bool = true,
@@ -1816,6 +1845,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     func beginLocalEvaluation() {
         localEvaluationFailed = false
+        completedEntryTextWrites.removeAll(keepingCapacity: false)
         evaluationJournal = EvaluationJournal(
             visible: assignedVisible, alpha: assignedAlpha, text: assignedText,
             ownTransform: assignedOwnTransform, otherTransforms: assignedOtherTransforms,
@@ -1849,6 +1879,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
 
     func finishLocalEvaluation(commit: Bool, ownsEntry: Bool) {
         let commit = commit && !localEvaluationFailed
+        var keptTextWrites = commit
         particleBridge.finishEvaluation(commit: commit)
         cameraBridge.finishEvaluation(commit: commit)
         if commit, !cameraParallaxEdits.isEmpty {
@@ -1870,6 +1901,7 @@ class WPELayerScriptBridge: @unchecked Sendable {
             }
         } else if ownsEntry, preservesOwnLayerWritesAfterFailure,
                   instanceLimitToken?.acceptsCompletion() ?? true {
+            keptTextWrites = true
             // Preserve existing partial visible/alpha/text writes only, not the
             // richer transport, geometry or creation commands on a failed entry.
             if let previous = evaluationJournal {
@@ -1884,6 +1916,15 @@ class WPELayerScriptBridge: @unchecked Sendable {
             assignedText = previous.text
             restoreRichLayerState(previous)
         }
+        // A concurrent frame publication cannot supersede a write still in this
+        // entry. Accepted writes start yielding only to subsequent publications.
+        if keptTextWrites, let writtenKeys = evaluationJournal?.textWrites, !writtenKeys.isEmpty {
+            let revision = shared?.layerTextSnapshot(id: nil).revision ?? 0
+            for key in writtenKeys {
+                assignedText[key]?.publicationRevision = revision
+            }
+        }
+        completedEntryTextWrites = keptTextWrites ? (evaluationJournal?.textWrites ?? []) : []
         evaluationJournal = nil
     }
 
@@ -2286,6 +2327,32 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
     }
 
+    private func textReadback(forKey key: String) -> String {
+        let snapshot = shared?.layerTextSnapshot(id: layerInfo(forKey: key)?.id)
+        if let assigned = assignedText[key],
+           evaluationJournal?.textWrites.contains(key) == true || snapshot?.value == nil
+           || assigned.publicationRevision >= (snapshot?.revision ?? 0) {
+            return assigned.value
+        }
+        return snapshot?.value ?? authoredText(forKey: key) ?? ""
+    }
+
+    private func pendingTextAssignments(
+        snapshot: WPESharedScriptState.LayerTextPublicationSnapshot?, explicitKeys: Set<String>
+    ) -> [String: String] {
+        var pending: [String: String] = [:]
+        for (key, assigned) in assignedText {
+            let published = layerInfo(forKey: key).flatMap { snapshot?.texts[$0.id] }
+            // A cached handle must not re-emit an intent already superseded by
+            // the accepted text binding, even when this entry only reads it.
+            if explicitKeys.contains(key) || published == nil
+                || assigned.publicationRevision >= (snapshot?.revision ?? 0) {
+                pending[key] = assigned.value
+            }
+        }
+        return pending
+    }
+
     fileprivate func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
         let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         // `key` is "" for the script's own layer, so anything addressed by
@@ -2430,11 +2497,16 @@ class WPELayerScriptBridge: @unchecked Sendable {
         defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
         let getText: @convention(block) () -> String = { [weak self] in
             guard let self else { return "" }
-            return assignedText[key] ?? authoredText(forKey: key) ?? ""
+            return textReadback(forKey: key)
         }
         let setText: @convention(block) (JSValue) -> Void = { [weak self] value in
             guard !value.isUndefined, !value.isNull, let text = value.toString() else { return }
-            self?.assignedText[key] = text
+            guard let self else { return }
+            assignedText[key] = TextAssignment(
+                value: text,
+                publicationRevision: shared?.layerTextSnapshot(id: nil).revision ?? 0
+            )
+            evaluationJournal?.textWrites.insert(key)
         }
         defineAccessor(on: handle, property: "text", get: getText, set: setText, in: context)
         let getAlignment: @convention(block) () -> String = { [weak self] in
@@ -2839,6 +2911,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
         let videoCalls = pendingVideo.map(\.call)
         pendingVideo.removeAll(keepingCapacity: true)
+        // One atomic COW snapshot couples the projection and receipt. A frame
+        // accepted after this read must still be detected at delivery time.
+        let textSnapshot = assignedText.isEmpty ? nil : shared?.layerTextPublicationSnapshot()
+        let explicitTextKeys = evaluationJournal?.textWrites ?? completedEntryTextWrites
         return WPELayerScriptOutput(
             own: own,
             others: others,
@@ -2847,7 +2923,10 @@ class WPELayerScriptBridge: @unchecked Sendable {
             presentation: presentation,
             ownTransform: assignedOwnTransform,
             otherTransforms: assignedOtherTransforms,
-            texts: assignedText,
+            texts: pendingTextAssignments(snapshot: textSnapshot, explicitKeys: explicitTextKeys),
+            textDelivery: textSnapshot.map {
+                .init(stateIdentity: $0.stateIdentity, publicationRevision: $0.revision, explicitKeys: explicitTextKeys)
+            },
             videoCalls: videoCalls
         )
     }

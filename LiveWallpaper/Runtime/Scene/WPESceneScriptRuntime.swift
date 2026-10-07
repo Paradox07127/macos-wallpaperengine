@@ -2123,6 +2123,11 @@ final class WPESharedScriptState: @unchecked Sendable {
     }
 
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
+    // Publication acquires completion permission first. Shared-value storage
+    // can acquire the token while holding `lock`, so text uses its own lock.
+    private let layerTextLock = NSLock()
+    private var acceptedLayerTextByID: [String: String] = [:]
+    private var layerTextPublicationRevision: UInt64 = 0
     private var cursorProjectionMatrix: [Double]?
     private var inverseCursorProjection: simd_double4x4?
     private var cursorSceneMotion: WPESceneCameraMotionSample?
@@ -2530,6 +2535,44 @@ final class WPESharedScriptState: @unchecked Sendable {
         lock.lock()
         liveLayerTransformsByID = snapshot
         lock.unlock()
+    }
+
+    /// Only renderer-accepted frames publish here. The revision distinguishes a
+    /// later publication of the same string from a script's intervening write.
+    func publishLayerTexts(_ texts: [String: String], loadState: WPESceneScriptLoadState) {
+        guard !texts.isEmpty, let token = sceneScriptLoadToken else { return }
+        loadState.withCompletionPermission(for: token) {
+            layerTextLock.lock()
+            acceptedLayerTextByID = texts
+            layerTextPublicationRevision &+= 1
+            layerTextLock.unlock()
+        }
+    }
+
+    func layerTextSnapshot(id: String?) -> (value: String?, revision: UInt64) {
+        layerTextLock.lock()
+        defer { layerTextLock.unlock() }
+        return (id.flatMap { acceptedLayerTextByID[$0] }, layerTextPublicationRevision)
+    }
+
+    struct LayerTextPublicationSnapshot: Sendable {
+        let stateIdentity: UUID
+        let texts: [String: String]
+        let revision: UInt64
+    }
+
+    func layerTextPublicationSnapshot() -> LayerTextPublicationSnapshot {
+        layerTextLock.lock()
+        defer { layerTextLock.unlock() }
+        return .init(stateIdentity: layerOrderIdentity, texts: acceptedLayerTextByID, revision: layerTextPublicationRevision)
+    }
+
+    func acceptsTextDelivery(_ delivery: WPELayerScriptTextDelivery, key: String) -> Bool {
+        guard delivery.stateIdentity == layerOrderIdentity else { return false }
+        guard !delivery.explicitKeys.contains(key) else { return true }
+        layerTextLock.lock()
+        defer { layerTextLock.unlock() }
+        return delivery.publicationRevision >= layerTextPublicationRevision
     }
 
     func layerTransform(named name: String) -> (info: WPESceneScriptLayerInfo, transform: LiveLayerTransform)? {
