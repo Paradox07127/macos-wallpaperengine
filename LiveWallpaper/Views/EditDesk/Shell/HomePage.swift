@@ -1224,10 +1224,18 @@ struct HomePage: View {
                 // A fresh session has no frame yet right after the change notification.
                 try? await Task.sleep(for: .milliseconds(600))
             }
-            guard let screen = screenManager.screens.first(where: { $0.id == id }),
-                  let configuration = screenManager.getConfiguration(for: screen),
-                  let image = await WallpaperCoverCapture.captureWallpaper(screen: screen, configuration: configuration)?
-                  .cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let captured = await Self.captureCover(
+                retryDelays: Self.coverRetryDelays,
+                isNewest: { coverGenerations[id] == generation },
+                sleep: { try? await Task.sleep(for: $0) },
+                capture: {
+                    guard let screen = screenManager.screens.first(where: { $0.id == id }),
+                          let configuration = screenManager.getConfiguration(for: screen) else { return nil }
+                    return await WallpaperCoverCapture.captureWallpaper(screen: screen, configuration: configuration)?
+                        .cgImage(forProposedRect: nil, context: nil, hints: nil)
+                }
+            )
+            guard let image = captured,
                   coverGenerations[id] == generation,
                   let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
             if crossfade, stage.displays[index].cover != nil {
@@ -1239,6 +1247,27 @@ struct HomePage: View {
             await saveWorkshopCover(for: id, generation: generation, at: saveAt)
             #endif
         }
+    }
+
+    /// A new session held through a transition, or one suspended, captures nil; retrying spans the longest
+    /// transition hold so the card does not keep the previous wallpaper's still.
+    private static let coverRetryDelays: [Duration] = Array(repeating: .milliseconds(400), count: 11)
+
+    /// `isNewest`: no newer capture was asked for since; once false, nothing more is captured and nil is returned.
+    static func captureCover(
+        retryDelays: [Duration],
+        isNewest: () -> Bool,
+        sleep: (Duration) async -> Void,
+        capture: () async -> CGImage?
+    ) async -> CGImage? {
+        if let image = await capture() { return image }
+        for delay in retryDelays {
+            guard isNewest() else { return nil }
+            await sleep(delay)
+            guard isNewest() else { return nil }
+            if let image = await capture() { return image }
+        }
+        return nil
     }
 
     #if !LITE_BUILD
