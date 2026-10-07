@@ -528,11 +528,11 @@ struct WPESceneScriptRuntimeTests {
         #expect(instance.takeLayerOutput()?.otherTransforms["Target"]?.scale == SIMD3(1, 1, 1))
     }
 
-    @Test("Failed own and cross-publisher entries restore vector contents without replacing getter aliases", arguments: [false, true])
-    func failedEntryRestoresTransformAliases(crossPublisher: Bool) throws {
+    @Test("Failed own and cross-publisher entries restore the vectors read back before the failure", arguments: [false, true])
+    func failedEntryRestoresTransformVectors(crossPublisher: Bool) throws {
         let store = callableTransactionStore()
         let producer = try LiveWallpaper.WPESceneScriptInstance(script: """
-        let aliases;
+        let before;
         function fields() {
             let target = thisScene.getLayer('Target');
             return [thisLayer.origin, thisLayer.scale, thisLayer.angles, target.origin, target.scale, target.angles];
@@ -546,7 +546,10 @@ struct WPESceneScriptRuntimeTests {
             }
             let restored = fields();
             shared.components = restored.map(function(v) { return v.x; }).join(':');
-            shared.sameAliases = restored.every(function(v, i) { return v === aliases[i]; });
+            shared.sameValues = restored.every(function(v, i) {
+                let b = before[i];
+                return v !== b && v.x === b.x && v.y === b.y && v.z === b.z;
+            });
             thisLayer.origin = restored[0]; thisLayer.scale = restored[1]; thisLayer.angles = restored[2];
             target.origin = restored[3]; target.scale = restored[4]; target.angles = restored[5];
         }
@@ -554,7 +557,7 @@ struct WPESceneScriptRuntimeTests {
             let target = thisScene.getLayer('Target');
             thisLayer.origin = new Vec3(2, 3, 4); thisLayer.scale = new Vec3(3, 4, 5); thisLayer.angles = new Vec3(4, 5, 6);
             target.origin = new Vec3(5, 6, 7); target.scale = new Vec3(6, 7, 8); target.angles = new Vec3(7, 8, 9);
-            aliases = fields(); shared.action = act; return value;
+            before = fields(); shared.action = act; return value;
         }
         export function update(value) { act(true); return value; }
         """, initialValue: "?", shared: store, governor: isolatedGovernor, ownLayerName: "Producer", ownObjectID: "producer")
@@ -572,7 +575,7 @@ struct WPESceneScriptRuntimeTests {
         _ = producer.takeLayerOutput()
         _ = consumer.applyUserProperties(["fail": .bool(false)])
         #expect(store.get("components") as? String == "2:3:4:5:6:7")
-        #expect(store.get("sameAliases") as? Bool == true)
+        #expect(store.get("sameValues") as? Bool == true)
         let output = try #require(producer.takeLayerOutput())
         #expect(output.ownTransform.origin == SIMD3(2, 3, 4))
         #expect(output.ownTransform.scale == SIMD3(3, 4, 5))
@@ -4056,26 +4059,28 @@ export function init(value) {
         #expect(instance.initialOutput.created.first?.sortIndex == nil)
     }
 
-    @Test("Vector copy is independent while cached getter identity retains assignment updates")
-    func layerVectorCopyPreservesGetterAliasContract() throws {
+    @Test("A cached getter result keeps its value after the layer vector is reassigned")
+    func layerVectorGetterReturnsIndependentCopy() throws {
         let shared = WPESharedScriptState(layers: [
             .init(id: "bar", name: "MAIN", size: SIMD2(8, 8), origin: SIMD2(1, 2), index: 0, parentName: nil),
         ])
         _ = try WPELayerScriptInstance(script: """
         export function init() {
-            const alias = thisLayer.origin;
-            const copy = alias.copy();
+            const cached = thisLayer.origin;
+            const copy = cached.copy();
             copy.x = 99;
             shared.afterCopy = thisLayer.origin.x;
             thisLayer.origin = new Vec3(4, 5, 6);
-            shared.aliasUpdated = alias.x;
-            shared.sameObject = alias === thisLayer.origin;
+            shared.cachedAfterAssign = cached.x;
+            shared.sameObject = cached === thisLayer.origin;
+            shared.reread = thisLayer.origin.x;
             shared.unknownIsNull = thisScene.getLayer('not-in-scene') === null;
         }
         """, shared: shared, ownLayerName: "MAIN")
         #expect(shared.get("afterCopy") as? Double == 1)
-        #expect(shared.get("aliasUpdated") as? Double == 4)
-        #expect(shared.get("sameObject") as? Bool == true)
+        #expect(shared.get("cachedAfterAssign") as? Double == 1)
+        #expect(shared.get("sameObject") as? Bool == false)
+        #expect(shared.get("reread") as? Double == 4)
         #expect(shared.get("unknownIsNull") as? Bool == true)
     }
 

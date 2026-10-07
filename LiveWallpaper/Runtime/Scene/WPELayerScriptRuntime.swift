@@ -2647,7 +2647,12 @@ class WPELayerScriptBridge: @unchecked Sendable {
         }
     }
 
+    /// Returns a copy: a script that caches a getter result and later assigns the property must not see its cache rewritten.
     private func transformValue(forKey key: String, field: OwnTransformField) -> JSValue? {
+        refreshedTransformBridgeValue(forKey: key, field: field)?.invokeMethod("copy", withArguments: [])
+    }
+
+    private func refreshedTransformBridgeValue(forKey key: String, field: OwnTransformField) -> JSValue? {
         let value = transformBridgeValue(forKey: key, field: field)
         let assigned = key == Self.ownKey ? assignedOwnTransform : assignedOtherTransforms[key] ?? .init()
         switch field {
