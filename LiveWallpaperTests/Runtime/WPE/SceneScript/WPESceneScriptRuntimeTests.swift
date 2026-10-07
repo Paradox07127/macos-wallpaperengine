@@ -4273,6 +4273,32 @@ export function init(value) {
         #expect(merged.others["loop"]?.videoCommands == [.seek(0)])
     }
 
+    @Test("Layer perspective reads the authored flag and publishes script writes")
+    func layerPerspectiveAccessor() throws {
+        let shared = WPESharedScriptState(layers: [
+            .init(id: "compose", name: "Compose", size: SIMD2(8, 8), origin: SIMD2(4, 4), index: 0, parentName: nil,
+                  initialConfiguration: .object(["perspective": .bool(true)])),
+            .init(id: "flat", name: "Flat", size: SIMD2(8, 8), origin: SIMD2(4, 4), index: 1, parentName: nil),
+        ])
+        let instance = try LiveWallpaper.WPELayerScriptInstance(script: """
+        export function init() {
+            shared.authored = thisLayer.perspective;
+            const flat = thisScene.getLayer('Flat');
+            shared.flatBefore = flat.perspective;
+            flat.perspective = true;
+            shared.flatAfter = flat.perspective;
+            thisLayer.perspective = false;
+            shared.ownAfter = thisLayer.perspective;
+        }
+        """, shared: shared, ownLayerName: "Compose", ownObjectID: "compose")
+        #expect(shared.get("authored") as? Bool == true)
+        #expect(shared.get("flatBefore") as? Bool == false)
+        #expect(shared.get("flatAfter") as? Bool == true)
+        #expect(shared.get("ownAfter") as? Bool == false)
+        #expect(instance.initialOutput.presentation[""]?.perspective == false)
+        #expect(instance.initialOutput.presentation["Flat"]?.perspective == true)
+    }
+
     @Test("Seeded text script serves the scripted value on the first live tick")
     func textSeedAvoidsPlaceholderPop() throws {
         let instance = try WPESceneScriptInstance(

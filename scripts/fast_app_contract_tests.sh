@@ -102,6 +102,7 @@ PARALLEL_SUITES=(
   WPEWorkshopVaryingReconstructionTests
   WPERendererOwnershipCharacterizationTests
   WPEMetalFBOAliasPlannerTests
+  WPEProjectedComposeQuadTests
   # Shared scene output geometry and frame leases use synthetic, hardware-free fixtures.
   WPESceneSpanMappingTests
   WPESceneSpanFramesTests
