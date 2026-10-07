@@ -215,6 +215,7 @@ PARALLEL_SUITES=(
   DisplayFloatLayerTests
   WallpaperModalTests
   WorkshopCoverSaveTimeTests
+  HomeCoverCaptureRetryTests
   DisplayDetailTests
   DetailTransitionTests
   StorageDiskTests
